@@ -587,7 +587,21 @@ struct PlayVariant: Identifiable, Hashable {
     }
 
     nonisolated var isPlayable: Bool {
-        videoURL != nil
+        videoURL != nil && isHardwareDecodingCompatible
+    }
+
+    nonisolated var isHardwareDecodingCompatible: Bool {
+        if let videoStream {
+            guard videoStream.isHardwareDecodingCompatibleVideo else { return false }
+        } else if audioURL != nil {
+            return false
+        }
+
+        if let audioStream {
+            guard audioStream.isHardwareDecodingCompatibleAudio else { return false }
+        }
+
+        return videoURL != nil
     }
 
     nonisolated var isProgressiveFastStart: Bool {
@@ -871,6 +885,37 @@ struct DASHStream: Decodable, Hashable, Sendable {
         Self.displayFrameRate(from: frameRate)
     }
 
+    nonisolated var isHardwareDecodingCompatibleVideo: Bool {
+        if let codecs, !codecs.isEmpty {
+            let lowered = codecs.lowercased()
+            if lowered.contains("av01") { return false }
+            return lowered.contains("avc1")
+                || lowered.contains("avc3")
+                || lowered.contains("hvc1")
+                || lowered.contains("hev1")
+                || lowered.contains("dvh1")
+                || lowered.contains("dvhe")
+        }
+
+        switch codecid {
+        case 7, 12:
+            return true
+        default:
+            return false
+        }
+    }
+
+    nonisolated var isHardwareDecodingCompatibleAudio: Bool {
+        if let codecs, !codecs.isEmpty {
+            let lowered = codecs.lowercased()
+            return lowered.contains("mp4a")
+                || lowered.contains("alac")
+                || lowered.contains("ac-3")
+                || lowered.contains("ec-3")
+        }
+        return true
+    }
+
     nonisolated static func displayFrameRate(from rawValue: String?) -> String? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -892,12 +937,26 @@ struct DASHStream: Decodable, Hashable, Sendable {
     }
 
     nonisolated static func preferPlayable(_ lhs: DASHStream, _ rhs: DASHStream) -> Bool {
-        codecRank(lhs) != codecRank(rhs)
+        if lhs.isHardwareDecodingCompatibleVideo != rhs.isHardwareDecodingCompatibleVideo {
+            return lhs.isHardwareDecodingCompatibleVideo && !rhs.isHardwareDecodingCompatibleVideo
+        }
+        return codecRank(lhs) != codecRank(rhs)
             ? codecRank(lhs) > codecRank(rhs)
             : (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
     }
 
     nonisolated private static func codecRank(_ stream: DASHStream) -> Int {
+        if let codecs = stream.codecs?.lowercased() {
+            if codecs.contains("hvc1") || codecs.contains("hev1") || codecs.contains("dvh1") || codecs.contains("dvhe") {
+                return 3
+            }
+            if codecs.contains("avc1") || codecs.contains("avc3") {
+                return 2
+            }
+            if codecs.contains("av01") {
+                return 1
+            }
+        }
         switch stream.codecid {
         case 12:
             return 3

@@ -131,6 +131,8 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         if isNativePlaybackControllerEnabled {
             installNativePlayerViewControllerIfPossible()
             nativePlayerViewController.view.frame = drawableView.bounds
+            nativePlayerViewController.view.setNeedsLayout()
+            nativePlayerViewController.view.layoutIfNeeded()
         }
         guard bounds.width > 1, bounds.height > 1 else { return }
         guard lastReportedBounds.size != bounds.size else { return }
@@ -429,6 +431,8 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
         nativePlayerViewController.view.frame = drawableView.bounds
         nativePlayerViewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        nativePlayerViewController.view.setNeedsLayout()
+        nativePlayerViewController.view.layoutIfNeeded()
         nativePlayerViewController.view.isHidden = false
     }
 

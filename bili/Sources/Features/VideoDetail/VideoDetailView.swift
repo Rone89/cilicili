@@ -116,6 +116,7 @@ struct VideoDetailView: View {
                     playerHero(
                         viewModel,
                         isLandscape: true,
+                        playerWidth: proxy.size.width,
                         playerHeight: proxy.size.height
                     )
                         .frame(width: proxy.size.width, height: proxy.size.height)
@@ -324,6 +325,7 @@ struct VideoDetailView: View {
     private func playerHero(
         _ viewModel: VideoDetailViewModel,
         isLandscape: Bool,
+        playerWidth: CGFloat? = nil,
         playerHeight: CGFloat,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
@@ -345,8 +347,9 @@ struct VideoDetailView: View {
                     onExitManualFullscreen: onExitManualFullscreen
                 )
                 .id(ObjectIdentifier(playerViewModel))
+                .frame(width: playerWidth)
                 .frame(maxWidth: .infinity)
-                .frame(height: isLandscape ? playerHeight : playerHeight)
+                .frame(height: playerHeight)
                 .overlay {
                     playbackPosterOverlay(
                         viewModel,
@@ -361,6 +364,7 @@ struct VideoDetailView: View {
                     message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
                     isFinishing: false
                 )
+                .frame(width: playerWidth)
                 .frame(maxWidth: .infinity)
                 .frame(height: playerHeight)
 
@@ -375,6 +379,9 @@ struct VideoDetailView: View {
                 }
             }
         }
+        .frame(width: playerWidth)
+        .frame(maxWidth: .infinity)
+        .frame(height: playerHeight)
         .background(.black)
     }
 

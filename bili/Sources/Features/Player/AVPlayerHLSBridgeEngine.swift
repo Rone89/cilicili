@@ -650,6 +650,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard let videoURL = source.videoURL else {
             throw PlayerEngineError.missingVideoURL
         }
+        try enforceHardwareDecodingCompatibility(for: source)
 
         let headers = httpHeaders(referer: source.referer)
 
@@ -690,6 +691,28 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 2
         return PreparedPlayerItem(item: item, bridge: nil, assets: [asset])
+    }
+
+    private nonisolated static func enforceHardwareDecodingCompatibility(for source: PlayerStreamSource) throws {
+        if let videoStream = source.videoStream {
+            guard videoStream.isHardwareDecodingCompatibleVideo else {
+                PlayerMetricsLog.logger.error(
+                    "hardwareDecodeRejected media=video codec=\(videoStream.codecs ?? "-", privacy: .public) codecid=\(videoStream.codecid ?? -1, privacy: .public)"
+                )
+                throw PlayerEngineError.unsupportedMedia
+            }
+        } else if source.audioURL != nil {
+            PlayerMetricsLog.logger.error("hardwareDecodeRejected media=video codec=missing")
+            throw PlayerEngineError.unsupportedMedia
+        }
+
+        if let audioStream = source.audioStream,
+           !audioStream.isHardwareDecodingCompatibleAudio {
+            PlayerMetricsLog.logger.error(
+                "hardwareDecodeRejected media=audio codec=\(audioStream.codecs ?? "-", privacy: .public) codecid=\(audioStream.codecid ?? -1, privacy: .public)"
+            )
+            throw PlayerEngineError.unsupportedMedia
+        }
     }
 
     private nonisolated static func makeComposition(

@@ -225,11 +225,13 @@ struct BiliPlayerView: View {
                     .clipped()
             } else if showsNavigationChrome {
                 playerSurface
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .ignoresContainerSafeArea(ignoresContainerSafeArea)
                     .navigationTitle(viewModel.title)
                     .navigationBarTitleDisplayMode(.inline)
             } else {
                 playerSurface
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .ignoresContainerSafeArea(ignoresContainerSafeArea)
             }
         }
@@ -441,6 +443,7 @@ struct BiliPlayerView: View {
                     .zIndex(8)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(.black)
         .animation(.easeInOut(duration: 0.18), value: controlsVisible)
         .animation(.easeInOut(duration: 0.18), value: lockAffordanceVisible)
