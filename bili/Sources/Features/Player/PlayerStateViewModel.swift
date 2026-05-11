@@ -166,6 +166,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
         let isNewSurface = surfaceView !== view
         surfaceView = view
+        view.setNativePlaybackControllerEnabled(engine.usesNativePlaybackControls)
+        if engine.usesNativePlaybackControls {
+            engine.attachNativePlaybackController(view.nativePlayerViewController)
+        }
         if isNewSurface {
             engine.attachSurface(view.drawableView)
         }
@@ -177,7 +181,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func detachSurface(_ view: VideoSurfaceContainerView) {
         guard surfaceView === view else { return }
+        engine.detachNativePlaybackController(view.nativePlayerViewController)
         engine.detachSurface(view.drawableView)
+        view.setNativePlaybackControllerEnabled(false)
         surfaceView = nil
     }
 

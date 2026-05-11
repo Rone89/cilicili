@@ -170,6 +170,15 @@ struct VideoDetailView: View {
     }
 
     private func updateManualLandscapeOrientation(_ orientation: UIDeviceOrientation) {
+        guard !usesNativePlaybackControls else {
+            pendingManualLandscapeEnterTask?.cancel()
+            pendingManualLandscapeExitTask?.cancel()
+            manualFullscreenMode = nil
+            isRestoringPortraitFromManualLandscape = false
+            AppOrientationLock.update(to: .allButUpsideDown, in: nil)
+            return
+        }
+
         switch orientation {
         case .landscapeLeft, .landscapeRight:
             pendingManualLandscapeExitTask?.cancel()
@@ -245,6 +254,7 @@ struct VideoDetailView: View {
     }
 
     private func enterManualLandscapePlayback() {
+        guard !usesNativePlaybackControls else { return }
         guard manualFullscreenMode == nil else { return }
         pendingManualLandscapeExitTask?.cancel()
         pendingManualLandscapeEnterTask?.cancel()
@@ -261,6 +271,10 @@ struct VideoDetailView: View {
     private var shouldUsePortraitFullscreen: Bool {
         guard let viewModel = holder.viewModel else { return false }
         return videoAspectRatio(for: viewModel).map { $0 < 0.9 } == true
+    }
+
+    private var usesNativePlaybackControls: Bool {
+        holder.viewModel?.stablePlayerViewModel?.usesNativePlaybackControls ?? true
     }
 
     private func videoAspectRatio(for viewModel: VideoDetailViewModel) -> Double? {

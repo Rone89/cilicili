@@ -401,13 +401,6 @@ struct BiliPlayerView: View {
                 .zIndex(3)
             }
 
-            if usesNativePlaybackControls, let controlsAccessory {
-                controlsAccessory
-                    .padding(.horizontal, presentation == .embedded ? 12 : 16)
-                    .padding(.bottom, presentation == .embedded ? 12 : 18 + controlsBottomLift)
-                    .zIndex(4)
-            }
-
             if usesCustomPlaybackControls {
                 PlayerGestureOverlay(
                     onSingleTap: handlePlayerTap,

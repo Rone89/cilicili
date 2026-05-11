@@ -14,9 +14,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var playerObservers: [NSKeyValueObservation] = []
     private var itemObservers: [NSKeyValueObservation] = []
     private var layerReadyForDisplayObserver: NSKeyValueObservation?
+    private var controllerReadyForDisplayObserver: NSKeyValueObservation?
     private var periodicTimeObserver: Any?
     private weak var surfaceView: UIView?
     private weak var playerLayer: AVPlayerLayer?
+    private weak var playerViewController: AVPlayerViewController?
     private var playerItem: AVPlayerItem?
     private var source: PlayerStreamSource?
     private var hlsBridge: LocalHLSBridge?
@@ -49,7 +51,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     var usesNativePlaybackControls: Bool {
-        false
+        true
     }
 
     var volume: Float {
@@ -74,6 +76,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     deinit {
         itemObservers.removeAll()
         layerReadyForDisplayObserver = nil
+        controllerReadyForDisplayObserver = nil
         if let itemEndObserver {
             NotificationCenter.default.removeObserver(itemEndObserver)
         }
@@ -93,17 +96,19 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func attachSurface(_ surface: UIView) {
         surfaceView = surface
-        let layer = ensurePlayerLayer(in: surface)
-        layer.player = player
+        if let playerViewController {
+            configureNativePlaybackController(playerViewController)
+            removePlayerLayer()
+        } else {
+            let layer = ensurePlayerLayer(in: surface)
+            layer.player = player
+        }
         refreshSurfaceLayout()
     }
 
     func detachSurface(_ surface: UIView) {
         guard surfaceView === surface else { return }
-        playerLayer?.player = nil
-        playerLayer?.removeFromSuperlayer()
-        layerReadyForDisplayObserver = nil
-        playerLayer = nil
+        removePlayerLayer()
         surfaceView = nil
     }
 
@@ -116,6 +121,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func recoverSurface() {
         configureAudioSession()
+        if let playerViewController {
+            configureNativePlaybackController(playerViewController)
+            return
+        }
         guard let surfaceView else { return }
         let layer = ensurePlayerLayer(in: surfaceView)
         layer.player = nil
@@ -128,6 +137,23 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func setViewModel(_: PlayerStateViewModel?) {}
+
+    func attachNativePlaybackController(_ controller: AVPlayerViewController) {
+        if let playerViewController, playerViewController !== controller {
+            playerViewController.player = nil
+            controllerReadyForDisplayObserver = nil
+        }
+        playerViewController = controller
+        configureNativePlaybackController(controller)
+        removePlayerLayer()
+    }
+
+    func detachNativePlaybackController(_ controller: AVPlayerViewController) {
+        guard playerViewController === controller else { return }
+        controller.player = nil
+        controllerReadyForDisplayObserver = nil
+        playerViewController = nil
+    }
 
     func setHostFullscreenActive(_: Bool, exitTarget _: PlayerHostFullscreenExitTarget?) {}
 
@@ -152,7 +178,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         player.automaticallyWaitsToMinimizeStalling = false
         observeCurrentItem(item)
         ensurePeriodicTimeObserver()
-        if let surfaceView {
+        if let playerViewController {
+            configureNativePlaybackController(playerViewController)
+        } else if let surfaceView {
             ensurePlayerLayer(in: surfaceView).player = player
             refreshSurfaceLayout()
         }
@@ -283,6 +311,25 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func invalidatePictureInPicturePlaybackState() {}
 
+    private func configureNativePlaybackController(_ controller: AVPlayerViewController) {
+        controller.player = player
+        controller.showsPlaybackControls = true
+        controller.videoGravity = .resizeAspect
+        controller.allowsPictureInPicturePlayback = AVPictureInPictureController.isPictureInPictureSupported()
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.requiresLinearPlayback = false
+        controller.updatesNowPlayingInfoCenter = false
+        controller.view.backgroundColor = .black
+        observeControllerReadyForDisplay(controller)
+    }
+
+    private func removePlayerLayer() {
+        playerLayer?.player = nil
+        playerLayer?.removeFromSuperlayer()
+        layerReadyForDisplayObserver = nil
+        playerLayer = nil
+    }
+
     private func ensurePlayerLayer(in surface: UIView) -> AVPlayerLayer {
         if let playerLayer {
             if playerLayer.superlayer !== surface.layer {
@@ -387,10 +434,15 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if rate > 0 {
+                        self.updatePlaybackIntent(true)
                         self.publishPlaybackState(.playing)
                         self.reportFirstFrameIfPossible(
                             currentTime: self.displayTime(fromPlayerTime: currentSeconds)
                         )
+                    } else if timeControlStatus == .paused,
+                              itemStatus == .readyToPlay {
+                        self.updatePlaybackIntent(false)
+                        self.publishPlaybackState(.paused)
                     } else if self.wantsPlayback,
                               itemStatus == .readyToPlay,
                               timeControlStatus == .waitingToPlayAtSpecifiedRate {
@@ -473,6 +525,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private func observeControllerReadyForDisplay(_ controller: AVPlayerViewController) {
+        guard controllerReadyForDisplayObserver == nil else { return }
+        controllerReadyForDisplayObserver = controller.observe(\.isReadyForDisplay, options: [.new]) { [weak self] controller, _ in
+            guard controller.isReadyForDisplay else { return }
+            Task { @MainActor [weak self] in
+                self?.reportFirstFrameIfPossible()
+            }
+        }
+    }
+
     private func ensurePeriodicTimeObserver() {
         guard periodicTimeObserver == nil else { return }
         periodicTimeObserver = player.addPeriodicTimeObserver(
@@ -515,6 +577,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 publishPlaybackState(.buffering)
             }
         case .playing:
+            updatePlaybackIntent(true)
             publishPlaybackState(.playing)
             reportFirstFrameIfPossible()
         @unknown default:
@@ -522,9 +585,18 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private func updatePlaybackIntent(_ wantsPlayback: Bool) {
+        guard self.wantsPlayback != wantsPlayback else { return }
+        self.wantsPlayback = wantsPlayback
+        onPlaybackIntentChange?(wantsPlayback)
+    }
+
     private func reportFirstFrameIfPossible(currentTime: TimeInterval? = nil) {
         guard !didReportFirstFrame else { return }
-        guard playerLayer?.isReadyForDisplay == true || player.rate > 0 else { return }
+        guard playerViewController?.isReadyForDisplay == true
+            || playerLayer?.isReadyForDisplay == true
+            || player.rate > 0
+        else { return }
         didReportFirstFrame = true
         let resolvedTime = currentTime ?? displayTime(fromPlayerTime: player.currentTime().seconds)
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)

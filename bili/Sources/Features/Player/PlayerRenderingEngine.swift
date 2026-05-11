@@ -74,6 +74,8 @@ protocol PlayerRenderingEngine: AnyObject {
     func refreshSurfaceLayout()
     func recoverSurface()
     func setViewModel(_ viewModel: PlayerStateViewModel?)
+    func attachNativePlaybackController(_ controller: AVPlayerViewController)
+    func detachNativePlaybackController(_ controller: AVPlayerViewController)
     func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget?)
     func prepare(source: PlayerStreamSource) async throws
     func play()

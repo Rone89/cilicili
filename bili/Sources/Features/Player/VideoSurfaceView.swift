@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -65,9 +66,11 @@ enum ManualVideoFullscreenMode: Equatable {
 
 final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     let drawableView = UIView()
+    let nativePlayerViewController = AVPlayerViewController()
     var onBoundsChange: (() -> Void)?
     var onFullscreenTransitionEnd: (() -> Void)?
     private(set) var isInManualFullscreen = false
+    private var isNativePlaybackControllerEnabled = false
     private var lastReportedBounds = CGRect.null
     private var fullscreenState: FullscreenState?
     private var pendingFullscreenMode: ManualVideoFullscreenMode?
@@ -78,11 +81,30 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     func setPlayerViewModel(_ viewModel: PlayerStateViewModel) {
         playerViewModel = viewModel
         fullscreenState?.fullscreenController.viewModel = viewModel
+        setNativePlaybackControllerEnabled(viewModel.usesNativePlaybackControls)
     }
 
     func detachPlayerSurface() {
         playerViewModel?.detachSurface(self)
+        setNativePlaybackControllerEnabled(false)
         playerViewModel = nil
+    }
+
+    func setNativePlaybackControllerEnabled(_ isEnabled: Bool) {
+        guard isNativePlaybackControllerEnabled != isEnabled else {
+            if isEnabled {
+                installNativePlayerViewControllerIfPossible()
+            }
+            return
+        }
+
+        isNativePlaybackControllerEnabled = isEnabled
+        if isEnabled {
+            configureNativePlayerViewController()
+            installNativePlayerViewControllerIfPossible()
+        } else {
+            removeNativePlayerViewController()
+        }
     }
 
     override init(frame: CGRect) {
@@ -94,6 +116,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         drawableView.isOpaque = true
         drawableView.clipsToBounds = true
         addSubview(drawableView)
+        configureNativePlayerViewController()
     }
 
     required init?(coder: NSCoder) {
@@ -105,6 +128,10 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         if fullscreenState == nil {
             drawableView.frame = bounds
         }
+        if isNativePlaybackControllerEnabled {
+            installNativePlayerViewControllerIfPossible()
+            nativePlayerViewController.view.frame = drawableView.bounds
+        }
         guard bounds.width > 1, bounds.height > 1 else { return }
         guard lastReportedBounds.size != bounds.size else { return }
         lastReportedBounds = bounds
@@ -113,6 +140,11 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        if window == nil {
+            removeNativePlayerViewController()
+        } else if isNativePlaybackControllerEnabled {
+            installNativePlayerViewControllerIfPossible()
+        }
         guard let pendingFullscreenMode else { return }
         self.pendingFullscreenMode = nil
         setManualFullscreenMode(pendingFullscreenMode, onExit: onExitFullscreen, animated: false)
@@ -124,6 +156,14 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         animated: Bool
     ) {
         onExitFullscreen = onExit
+
+        guard playerViewModel?.usesNativePlaybackControls != true else {
+            pendingFullscreenMode = nil
+            if fullscreenState != nil {
+                exitManualFullscreen(animated: animated)
+            }
+            return
+        }
 
         guard let mode else {
             pendingFullscreenMode = nil
@@ -362,6 +402,43 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         }
     }
 
+    private func configureNativePlayerViewController() {
+        nativePlayerViewController.showsPlaybackControls = true
+        nativePlayerViewController.videoGravity = .resizeAspect
+        nativePlayerViewController.allowsPictureInPicturePlayback = true
+        nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline = true
+        nativePlayerViewController.requiresLinearPlayback = false
+        nativePlayerViewController.updatesNowPlayingInfoCenter = false
+        nativePlayerViewController.view.backgroundColor = .black
+        nativePlayerViewController.view.isOpaque = true
+    }
+
+    private func installNativePlayerViewControllerIfPossible() {
+        guard isNativePlaybackControllerEnabled else { return }
+        guard let parentController = nearestViewController else { return }
+
+        if nativePlayerViewController.parent !== parentController {
+            removeNativePlayerViewController()
+            parentController.addChild(nativePlayerViewController)
+            drawableView.insertSubview(nativePlayerViewController.view, at: 0)
+            nativePlayerViewController.didMove(toParent: parentController)
+        } else if nativePlayerViewController.view.superview !== drawableView {
+            nativePlayerViewController.view.removeFromSuperview()
+            drawableView.insertSubview(nativePlayerViewController.view, at: 0)
+        }
+
+        nativePlayerViewController.view.frame = drawableView.bounds
+        nativePlayerViewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        nativePlayerViewController.view.isHidden = false
+    }
+
+    private func removeNativePlayerViewController() {
+        guard nativePlayerViewController.parent != nil || nativePlayerViewController.view.superview != nil else { return }
+        nativePlayerViewController.willMove(toParent: nil)
+        nativePlayerViewController.view.removeFromSuperview()
+        nativePlayerViewController.removeFromParent()
+    }
+
     private final class FullscreenState {
         let sourceWindow: UIWindow
         let fullscreenController: ManualVideoFullscreenViewController
@@ -398,6 +475,19 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             self.contentView = contentView
             self.mode = mode
         }
+    }
+}
+
+private extension UIView {
+    var nearestViewController: UIViewController? {
+        var responder: UIResponder? = self
+        while let currentResponder = responder {
+            if let viewController = currentResponder as? UIViewController {
+                return viewController
+            }
+            responder = currentResponder.next
+        }
+        return nil
     }
 }
 
