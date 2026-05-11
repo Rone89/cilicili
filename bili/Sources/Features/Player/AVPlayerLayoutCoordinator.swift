@@ -27,9 +27,21 @@ final class AVPlayerLayoutCoordinator {
         in containerView: UIView,
         gravity: AVLayerVideoGravity
     ) {
+        apply(
+            playerController: playerController,
+            bounds: containerView.bounds,
+            gravity: gravity
+        )
+    }
+
+    func apply(
+        playerController: AVPlayerViewController,
+        bounds: CGRect,
+        gravity: AVLayerVideoGravity
+    ) {
         playerController.videoGravity = gravity
-        playerController.view.frame = containerView.bounds
-        playerController.view.center = CGPoint(x: containerView.bounds.midX, y: containerView.bounds.midY)
+        playerController.view.bounds = CGRect(origin: .zero, size: bounds.size)
+        playerController.view.center = CGPoint(x: bounds.midX, y: bounds.midY)
         playerController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         playerController.view.setNeedsLayout()
         playerController.view.layoutIfNeeded()

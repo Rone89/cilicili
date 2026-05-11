@@ -75,15 +75,20 @@ final class NativePlayerHostViewController: UIViewController {
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
+        applyPlayerControllerLayout(in: CGRect(origin: .zero, size: size))
         AVPlayerLayoutCoordinator.shared.transition(to: size, coordinator: coordinator) { [weak self] in
             self?.layoutPlayerController()
         }
     }
 
     private func layoutPlayerController() {
+        applyPlayerControllerLayout(in: view.bounds)
+    }
+
+    private func applyPlayerControllerLayout(in bounds: CGRect) {
         AVPlayerLayoutCoordinator.shared.apply(
             playerController: playerController,
-            in: view,
+            bounds: bounds,
             gravity: videoGravity
         )
     }

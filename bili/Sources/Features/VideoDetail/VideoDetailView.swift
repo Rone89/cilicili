@@ -104,7 +104,9 @@ struct VideoDetailView: View {
     @ViewBuilder
     private func content(_ viewModel: VideoDetailViewModel) -> some View {
         GeometryReader { proxy in
-            let sceneIsLandscape = proxy.size.width > proxy.size.height
+            let fullscreenSize = proxy.fullscreenContainerSize
+            let fullscreenOffset = proxy.fullscreenContainerOffset
+            let sceneIsLandscape = fullscreenSize.width > fullscreenSize.height
             let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
             let isLandscape = sceneIsLandscape && !isManualFullscreen
             let shouldHideSystemChrome = isLandscape || isManualFullscreen
@@ -117,10 +119,10 @@ struct VideoDetailView: View {
                     playerHero(
                         viewModel,
                         isLandscape: true,
-                        playerWidth: proxy.size.width,
-                        playerHeight: proxy.size.height
+                        playerWidth: fullscreenSize.width,
+                        playerHeight: fullscreenSize.height
                     )
-                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .frame(width: fullscreenSize.width, height: fullscreenSize.height)
                         .background(.black)
                         .ignoresSafeArea()
                 } else {
@@ -130,7 +132,11 @@ struct VideoDetailView: View {
                     )
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            .frame(
+                width: isLandscape ? fullscreenSize.width : proxy.size.width,
+                height: isLandscape ? fullscreenSize.height : proxy.size.height
+            )
+            .offset(isLandscape ? fullscreenOffset : .zero)
             .background(isLandscape ? Color.black : Color.videoDetailBackground)
             .ignoresSafeArea(.container, edges: (isLandscape || manualFullscreenMode != nil) ? .all : [])
             .preference(key: VideoDetailChromeHiddenPreferenceKey.self, value: shouldHideSystemChrome)
@@ -977,6 +983,45 @@ private struct VideoTitleText: UIViewRepresentable {
     private static var font: UIFont {
         let baseFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
         return UIFontMetrics(forTextStyle: .title3).scaledFont(for: baseFont)
+    }
+}
+
+private extension GeometryProxy {
+    var fullscreenContainerSize: CGSize {
+        let expandedSize = CGSize(
+            width: size.width + safeAreaInsets.leading + safeAreaInsets.trailing,
+            height: size.height + safeAreaInsets.top + safeAreaInsets.bottom
+        )
+        guard let windowSize = UIApplication.shared.videoDetailKeyWindowSize else {
+            return expandedSize
+        }
+        guard (windowSize.width > windowSize.height) == (expandedSize.width > expandedSize.height) else {
+            return expandedSize
+        }
+        return CGSize(
+            width: max(size.width, min(expandedSize.width, windowSize.width)),
+            height: max(size.height, min(expandedSize.height, windowSize.height))
+        )
+    }
+
+    var fullscreenContainerOffset: CGSize {
+        let targetSize = fullscreenContainerSize
+        return CGSize(
+            width: targetSize.width > size.width + 0.5 ? -safeAreaInsets.leading : 0,
+            height: targetSize.height > size.height + 0.5 ? -safeAreaInsets.top : 0
+        )
+    }
+}
+
+private extension UIApplication {
+    var videoDetailKeyWindowSize: CGSize? {
+        connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .bounds
+            .size
     }
 }
 
