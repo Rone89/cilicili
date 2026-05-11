@@ -4,6 +4,7 @@ import UIKit
 
 struct NativePlayerControllerView: UIViewControllerRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
+    let videoGravity: AVLayerVideoGravity
 
     final class Coordinator {
         weak var viewModel: PlayerStateViewModel?
@@ -20,6 +21,7 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> NativePlayerHostViewController {
         let hostController = NativePlayerHostViewController()
+        hostController.videoGravity = videoGravity
         context.coordinator.playerController = hostController.playerController
         viewModel.attachNativePlaybackController(hostController.playerController)
         return hostController
@@ -28,6 +30,7 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
     func updateUIViewController(_ hostController: NativePlayerHostViewController, context: Context) {
         context.coordinator.viewModel = viewModel
         context.coordinator.playerController = hostController.playerController
+        hostController.videoGravity = videoGravity
         hostController.view.setNeedsLayout()
         hostController.view.layoutIfNeeded()
         viewModel.attachNativePlaybackController(hostController.playerController)
@@ -42,6 +45,11 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
 
 final class NativePlayerHostViewController: UIViewController {
     let playerController = AVPlayerViewController()
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill {
+        didSet {
+            layoutPlayerController()
+        }
+    }
 
     override func loadView() {
         let view = UIView()
@@ -62,9 +70,22 @@ final class NativePlayerHostViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        playerController.view.frame = view.bounds
-        playerController.view.setNeedsLayout()
-        playerController.view.layoutIfNeeded()
+        layoutPlayerController()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        AVPlayerLayoutCoordinator.shared.transition(to: size, coordinator: coordinator) { [weak self] in
+            self?.layoutPlayerController()
+        }
+    }
+
+    private func layoutPlayerController() {
+        AVPlayerLayoutCoordinator.shared.apply(
+            playerController: playerController,
+            in: view,
+            gravity: videoGravity
+        )
     }
 }
 
@@ -196,9 +217,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         }
         if isNativePlaybackControllerEnabled {
             installNativePlayerViewControllerIfPossible()
-            nativePlayerViewController.view.frame = drawableView.bounds
-            nativePlayerViewController.view.setNeedsLayout()
-            nativePlayerViewController.view.layoutIfNeeded()
+            applyNativePlayerLayout()
         }
         guard bounds.width > 1, bounds.height > 1 else { return }
         guard lastReportedBounds.size != bounds.size else { return }
@@ -495,11 +514,16 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             drawableView.insertSubview(nativePlayerViewController.view, at: 0)
         }
 
-        nativePlayerViewController.view.frame = drawableView.bounds
-        nativePlayerViewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        nativePlayerViewController.view.setNeedsLayout()
-        nativePlayerViewController.view.layoutIfNeeded()
+        applyNativePlayerLayout()
         nativePlayerViewController.view.isHidden = false
+    }
+
+    private func applyNativePlayerLayout() {
+        AVPlayerLayoutCoordinator.shared.apply(
+            playerController: nativePlayerViewController,
+            in: drawableView,
+            gravity: nativePlayerViewController.videoGravity
+        )
     }
 
     private func removeNativePlayerViewController() {

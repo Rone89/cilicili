@@ -448,7 +448,10 @@ struct BiliPlayerView: View {
     @ViewBuilder
     private var playbackSurface: some View {
         if usesNativePlaybackControls {
-            NativePlayerControllerView(viewModel: viewModel)
+            NativePlayerControllerView(
+                viewModel: viewModel,
+                videoGravity: presentation == .fullScreen ? .resizeAspectFill : .resizeAspect
+            )
         } else {
             VideoSurfaceView(
                 viewModel: viewModel,

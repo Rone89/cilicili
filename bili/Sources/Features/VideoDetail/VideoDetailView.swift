@@ -334,7 +334,10 @@ struct VideoDetailView: View {
         ZStack {
             if let playerViewModel = viewModel.stablePlayerViewModel {
                 if isLandscape, playerViewModel.usesNativePlaybackControls {
-                    NativePlayerControllerView(viewModel: playerViewModel)
+                    NativePlayerControllerView(
+                        viewModel: playerViewModel,
+                        videoGravity: .resizeAspectFill
+                    )
                         .id(ObjectIdentifier(playerViewModel))
                         .frame(width: playerWidth)
                         .frame(maxWidth: .infinity)

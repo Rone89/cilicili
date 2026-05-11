@@ -114,10 +114,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func refreshSurfaceLayout() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        playerLayer?.frame = surfaceView?.bounds ?? .zero
-        CATransaction.commit()
+        AVPlayerLayoutCoordinator.shared.apply(
+            playerLayer: playerLayer,
+            in: surfaceView,
+            gravity: videoGravity
+        )
     }
 
     func recoverSurface() {
@@ -353,13 +354,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             if layerReadyForDisplayObserver == nil {
                 observeLayerReadyForDisplay(playerLayer)
             }
+            AVPlayerLayoutCoordinator.shared.apply(playerLayer: playerLayer, in: surface, gravity: videoGravity)
             return playerLayer
         }
 
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = videoGravity
         layer.backgroundColor = UIColor.black.cgColor
-        layer.frame = surface.bounds
+        AVPlayerLayoutCoordinator.shared.apply(playerLayer: layer, in: surface, gravity: videoGravity)
         layer.needsDisplayOnBoundsChange = false
         layer.actions = [
             "bounds": NSNull(),
