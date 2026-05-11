@@ -706,7 +706,7 @@ struct BiliPlayerView: View {
         action: @escaping () -> Void
     ) -> some View {
         let size: CGFloat = isCompact ? (isPrimary ? 32 : 28) : (isPrimary ? 40 : 34)
-        Button(action: action) {
+        return Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: isCompact ? (isPrimary ? 13.5 : 12) : (isPrimary ? 16 : 13.5), weight: isPrimary ? .bold : .semibold))
                 .frame(width: size, height: size)
