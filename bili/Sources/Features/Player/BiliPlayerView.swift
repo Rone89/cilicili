@@ -21,44 +21,6 @@ enum BiliPlaybackRate: Double, CaseIterable, Identifiable {
     }
 }
 
-enum BiliDanmakuOpacity: Double, CaseIterable, Identifiable {
-    case light = 0.55
-    case normal = 0.82
-    case strong = 1.0
-
-    var id: Double { rawValue }
-
-    var title: String {
-        switch self {
-        case .light:
-            return "较淡"
-        case .normal:
-            return "正常"
-        case .strong:
-            return "高亮"
-        }
-    }
-}
-
-enum BiliDanmakuFontScale: Double, CaseIterable, Identifiable {
-    case small = 0.86
-    case normal = 1.0
-    case large = 1.16
-
-    var id: Double { rawValue }
-
-    var title: String {
-        switch self {
-        case .small:
-            return "小"
-        case .normal:
-            return "中"
-        case .large:
-            return "大"
-        }
-    }
-}
-
 struct BiliPlayerView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
@@ -69,7 +31,13 @@ struct BiliPlayerView: View {
     @State private var autoHideControlsTask: Task<Void, Never>?
     @State private var isScrubbing = false
     @State private var scrubProgress = 0.0
+    @State private var controlsLocked = false
+    @State private var lockAffordanceVisible = false
+    @State private var autoHideLockTask: Task<Void, Never>?
     @State private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    @State private var gestureFeedback: PlayerGestureFeedback?
+    @State private var gestureFeedbackTask: Task<Void, Never>?
+    @State private var longPressRateRestoreValue: BiliPlaybackRate?
     private let usesOwnedViewModel: Bool
     private let historyVideo: VideoItem?
     private let historyCID: Int?
@@ -77,15 +45,27 @@ struct BiliPlayerView: View {
     private let presentation: BiliPlayerPresentation
     private let showsNavigationChrome: Bool
     private let showsPlaybackControls: Bool
+    private let showsStartupLoadingIndicator: Bool
     private let pausesOnDisappear: Bool
     private let controlsAccessory: AnyView?
     private let controlsBottomLift: CGFloat
     private let durationHint: TimeInterval?
     private let embeddedAspectRatio: CGFloat
-    private let manualFullscreenOrientation: UIDeviceOrientation?
+    private let ignoresContainerSafeArea: Bool
+    private let manualFullscreenMode: ManualVideoFullscreenMode?
+    private let onRequestManualFullscreen: (() -> Void)?
     private let onExitManualFullscreen: (() -> Void)?
     private var isManualFullscreenActive: Bool {
-        manualFullscreenOrientation?.isLandscape == true
+        manualFullscreenMode != nil
+    }
+    private var usesNativePlaybackControls: Bool {
+        showsPlaybackControls && viewModel.usesNativePlaybackControls
+    }
+    private var usesCustomPlaybackControls: Bool {
+        showsPlaybackControls && !usesNativePlaybackControls
+    }
+    private var canRequestManualFullscreen: Bool {
+        onRequestManualFullscreen != nil && !isManualFullscreenActive
     }
     private var viewModel: PlayerStateViewModel {
         usesOwnedViewModel ? ownedViewModel : observedViewModel
@@ -99,11 +79,14 @@ struct BiliPlayerView: View {
         presentation: BiliPlayerPresentation = .fullScreen,
         showsNavigationChrome: Bool = true,
         showsPlaybackControls: Bool = true,
+        showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
-        manualFullscreenOrientation: UIDeviceOrientation? = nil,
+        ignoresContainerSafeArea: Bool = true,
+        manualFullscreenMode: ManualVideoFullscreenMode? = nil,
+        onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
     ) {
         self.historyVideo = historyVideo
@@ -112,12 +95,15 @@ struct BiliPlayerView: View {
         self.presentation = presentation
         self.showsNavigationChrome = showsNavigationChrome
         self.showsPlaybackControls = showsPlaybackControls
+        self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
-        self.manualFullscreenOrientation = manualFullscreenOrientation
+        self.ignoresContainerSafeArea = ignoresContainerSafeArea
+        self.manualFullscreenMode = manualFullscreenMode
+        self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
         self.usesOwnedViewModel = false
         _observedViewModel = ObservedObject(wrappedValue: viewModel)
@@ -127,17 +113,19 @@ struct BiliPlayerView: View {
     init(
         videoURL: URL,
         title: String,
-        danmakus: [DanmakuItem],
         referer: String = "https://www.bilibili.com",
         duration: TimeInterval? = nil,
         presentation: BiliPlayerPresentation = .fullScreen,
         showsNavigationChrome: Bool = true,
         showsPlaybackControls: Bool = true,
+        showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
-        manualFullscreenOrientation: UIDeviceOrientation? = nil,
+        ignoresContainerSafeArea: Bool = true,
+        manualFullscreenMode: ManualVideoFullscreenMode? = nil,
+        onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
     ) {
         self.historyVideo = nil
@@ -146,12 +134,15 @@ struct BiliPlayerView: View {
         self.presentation = presentation
         self.showsNavigationChrome = showsNavigationChrome
         self.showsPlaybackControls = showsPlaybackControls
+        self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
-        self.manualFullscreenOrientation = manualFullscreenOrientation
+        self.ignoresContainerSafeArea = ignoresContainerSafeArea
+        self.manualFullscreenMode = manualFullscreenMode
+        self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
         self.usesOwnedViewModel = true
         let playerViewModel = PlayerStateViewModel(
@@ -160,9 +151,9 @@ struct BiliPlayerView: View {
             videoStream: nil,
             audioStream: nil,
             title: title,
-            danmakus: danmakus,
             referer: referer,
-            durationHint: duration
+            durationHint: duration,
+            metricsID: historyVideo?.bvid
         )
         _observedViewModel = ObservedObject(wrappedValue: playerViewModel)
         _ownedViewModel = StateObject(wrappedValue: playerViewModel)
@@ -171,7 +162,6 @@ struct BiliPlayerView: View {
     init(
         playVariant: PlayVariant,
         title: String,
-        danmakus: [DanmakuItem],
         referer: String = "https://www.bilibili.com",
         duration: TimeInterval? = nil,
         resumeTime: TimeInterval? = nil,
@@ -180,11 +170,14 @@ struct BiliPlayerView: View {
         presentation: BiliPlayerPresentation = .fullScreen,
         showsNavigationChrome: Bool = true,
         showsPlaybackControls: Bool = true,
+        showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
-        manualFullscreenOrientation: UIDeviceOrientation? = nil,
+        ignoresContainerSafeArea: Bool = true,
+        manualFullscreenMode: ManualVideoFullscreenMode? = nil,
+        onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
     ) {
         self.historyVideo = historyVideo
@@ -193,12 +186,15 @@ struct BiliPlayerView: View {
         self.presentation = presentation
         self.showsNavigationChrome = showsNavigationChrome
         self.showsPlaybackControls = showsPlaybackControls
+        self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
-        self.manualFullscreenOrientation = manualFullscreenOrientation
+        self.ignoresContainerSafeArea = ignoresContainerSafeArea
+        self.manualFullscreenMode = manualFullscreenMode
+        self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
         self.usesOwnedViewModel = true
         let playerViewModel = PlayerStateViewModel(
@@ -207,10 +203,11 @@ struct BiliPlayerView: View {
             videoStream: playVariant.videoStream,
             audioStream: playVariant.audioStream,
             title: title,
-            danmakus: danmakus,
             referer: referer,
             durationHint: duration,
-            resumeTime: resumeTime ?? 0
+            resumeTime: resumeTime ?? 0,
+            dynamicRange: playVariant.dynamicRange,
+            metricsID: historyVideo?.bvid
         )
         _observedViewModel = ObservedObject(wrappedValue: playerViewModel)
         _ownedViewModel = StateObject(wrappedValue: playerViewModel)
@@ -223,26 +220,34 @@ struct BiliPlayerView: View {
                     .aspectRatio(max(embeddedAspectRatio, 0.3), contentMode: .fit)
             } else if showsNavigationChrome {
                 playerSurface
-                    .ignoresSafeArea()
+                    .ignoresContainerSafeArea(ignoresContainerSafeArea)
                     .navigationTitle(viewModel.title)
                     .navigationBarTitleDisplayMode(.inline)
             } else {
                 playerSurface
-                    .ignoresSafeArea()
+                    .ignoresContainerSafeArea(ignoresContainerSafeArea)
             }
         }
         .onAppear {
+            viewModel.setHostFullscreenRequestHandler(onRequestManualFullscreen)
             applyPlaybackDefaults()
             reportPlaybackProgress(0)
-            viewModel.play()
-            controlsVisible = showsPlaybackControls
+            if viewModel.wantsAutoplay {
+                viewModel.play()
+            }
+            controlsVisible = usesCustomPlaybackControls
             scheduleControlsAutoHideIfNeeded()
         }
         .onReceive(viewModel.$currentTime.throttle(for: .seconds(5), scheduler: RunLoop.main, latest: true)) { time in
             savePlaybackProgress(time)
         }
         .onChange(of: viewModel.isPlaying) { _, isPlaying in
-            guard showsPlaybackControls else {
+            guard usesCustomPlaybackControls else {
+                controlsVisible = false
+                cancelControlsAutoHide()
+                return
+            }
+            guard !controlsLocked else {
                 controlsVisible = false
                 cancelControlsAutoHide()
                 return
@@ -263,6 +268,7 @@ struct BiliPlayerView: View {
                 Task {
                     await VideoPreloadCenter.shared.cancelAll()
                 }
+                restoreLongPressPlaybackRateIfNeeded()
                 savePlaybackProgressInBackground()
             }
         }
@@ -271,12 +277,21 @@ struct BiliPlayerView: View {
             scheduleControlsAutoHideIfNeeded()
         }
         .onDisappear {
+            viewModel.setHostFullscreenRequestHandler(nil)
+            restoreLongPressPlaybackRateIfNeeded()
             savePlaybackProgress(viewModel.currentTime)
             cancelControlsAutoHide()
             endBackgroundTaskIfNeeded()
             guard pausesOnDisappear else { return }
             guard !isManualFullscreenActive, !ManualVideoFullscreenSession.isActive else { return }
             viewModel.suspendForNavigation()
+        }
+        .onChange(of: isManualFullscreenActive) { _, isActive in
+            if !isActive {
+                controlsLocked = false
+                lockAffordanceVisible = false
+                cancelLockAutoHide()
+            }
         }
     }
 
@@ -316,7 +331,6 @@ struct BiliPlayerView: View {
     }
 
     private func applyPlaybackDefaults() {
-        viewModel.setDanmakuEnabled(libraryStore.defaultDanmakuEnabled)
         viewModel.setPlaybackRate(BiliPlaybackRate(rawValue: libraryStore.defaultPlaybackRate) ?? .x10)
     }
 
@@ -343,40 +357,29 @@ struct BiliPlayerView: View {
         ZStack(alignment: .bottom) {
             VideoSurfaceView(
                 viewModel: viewModel,
-                manualFullscreenOrientation: manualFullscreenOrientation,
+                manualFullscreenMode: manualFullscreenMode,
                 onExitManualFullscreen: onExitManualFullscreen
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .allowsHitTesting(false)
                 .background(.black)
                 .zIndex(0)
-                .overlay(alignment: .topTrailing) {
-                    if viewModel.danmakuEnabled {
-                        DanmakuOverlayView(
-                            danmakus: viewModel.visibleDanmakus,
-                            opacity: viewModel.danmakuOpacity,
-                            fontScale: viewModel.danmakuFontScale
-                        )
-                            .allowsHitTesting(false)
-                            .padding(.top, presentation == .embedded ? 14 : 24)
-                    }
-                }
-                .overlay {
-                    NavigationContentBackGestureOverlay {
-                        handlePlayerTap()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
                 .zIndex(1)
 
-            if viewModel.isPreparing {
-                ProgressView()
-                    .padding()
-                    .background(.black.opacity(0.5))
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                    .padding(presentation == .embedded ? 12 : 16)
-                    .zIndex(2)
+            if showsPlayerLoadingChrome {
+                VStack(spacing: 7) {
+                    ProgressView()
+                    if viewModel.isBuffering {
+                        Text("缓冲中")
+                            .font(.caption2.weight(.medium))
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.5))
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
+                .padding(presentation == .embedded ? 12 : 16)
+                .zIndex(2)
             }
 
             if let message = viewModel.errorMessage {
@@ -394,33 +397,72 @@ struct BiliPlayerView: View {
                 .zIndex(3)
             }
 
-            if showsPlaybackControls, controlsVisible {
+            if usesNativePlaybackControls, let controlsAccessory {
+                controlsAccessory
+                    .padding(.horizontal, presentation == .embedded ? 12 : 16)
+                    .padding(.bottom, presentation == .embedded ? 12 : 18 + controlsBottomLift)
+                    .zIndex(4)
+            }
+
+            if usesCustomPlaybackControls {
+                PlayerGestureOverlay(
+                    onSingleTap: handlePlayerTap,
+                    onDoubleTap: handlePlayerDoubleTap,
+                    onLongPressStart: handlePlayerLongPressStart,
+                    onLongPressEnd: handlePlayerLongPressEnd
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .zIndex(5)
+            }
+
+            if let gestureFeedback {
+                playerGestureFeedbackView(gestureFeedback)
+                    .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    .zIndex(6)
+            }
+
+            if usesCustomPlaybackControls, isManualFullscreenActive, controlsLocked, lockAffordanceVisible {
+                lockedControlsAffordance
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    .zIndex(7)
+            }
+
+            if usesCustomPlaybackControls, controlsVisible {
                 playerControls
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(4)
+                    .zIndex(8)
             }
         }
         .background(.black)
         .animation(.easeInOut(duration: 0.18), value: controlsVisible)
+        .animation(.easeInOut(duration: 0.18), value: lockAffordanceVisible)
+        .animation(.snappy(duration: 0.2), value: gestureFeedback)
+    }
+
+    private var showsPlayerLoadingChrome: Bool {
+        guard !usesNativePlaybackControls else { return false }
+        guard viewModel.isPreparing || viewModel.isBuffering else { return false }
+        return viewModel.hasPresentedPlayback || showsStartupLoadingIndicator
     }
 
     private var playerControls: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             if let controlsAccessory {
                 controlsAccessory
                     .padding(.horizontal, presentation == .embedded ? 12 : 16)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, 4)
             }
 
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
+            VStack(spacing: 12) {
+                HStack(spacing: 9) {
                     playerControlButton(systemName: "gobackward.10", isEnabled: viewModel.canSeek) {
                         Haptics.light()
                         viewModel.seek(by: -10)
                         handlePlayerInteraction()
                     }
 
-                    playerControlButton(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill") {
+                    playerControlButton(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", isPrimary: true) {
                         Haptics.light()
                         viewModel.togglePlayback()
                         handlePlayerInteraction()
@@ -434,6 +476,24 @@ struct BiliPlayerView: View {
 
                     Spacer(minLength: 8)
 
+                    if canRequestManualFullscreen {
+                        playerControlButton(systemName: "arrow.up.left.and.arrow.down.right") {
+                            Haptics.light()
+                            _ = viewModel.requestHostFullscreen()
+                            handlePlayerInteraction()
+                        }
+                    }
+
+                    if isManualFullscreenActive {
+                        playerControlButton(systemName: "arrow.down.right.and.arrow.up.left") {
+                            exitManualFullscreen()
+                        }
+
+                        playerControlButton(systemName: controlsLocked ? "lock.fill" : "lock.open") {
+                            toggleControlsLock()
+                        }
+                    }
+
                     if viewModel.isPictureInPictureSupported {
                         playerControlButton(systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter") {
                             viewModel.togglePictureInPicture()
@@ -442,7 +502,6 @@ struct BiliPlayerView: View {
                     }
 
                     speedMenu
-                    danmakuMenu
                 }
 
                 HStack(spacing: 10) {
@@ -457,7 +516,9 @@ struct BiliPlayerView: View {
                             in: 0...1,
                             onEditingChanged: handleScrubbingChanged
                         )
-                        .tint(.pink)
+                        .tint(Color(red: 1.0, green: 0.25, blue: 0.50))
+                        .controlSize(.mini)
+                        .frame(height: 22)
 
                         Text(BiliFormatters.duration(Int(duration.rounded())))
                             .font(.caption2.monospacedDigit())
@@ -473,17 +534,45 @@ struct BiliPlayerView: View {
                 }
             }
             .padding(.horizontal, presentation == .embedded ? 12 : 16)
-            .padding(.top, 12)
-            .padding(.bottom, presentation == .embedded ? 12 : 18 + controlsBottomLift)
+            .padding(.top, 14)
+            .padding(.bottom, presentation == .embedded ? 12 : 20 + controlsBottomLift)
             .background(
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.78)],
+                    colors: [.clear, .black.opacity(0.54), .black.opacity(0.86)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             )
         }
         .foregroundStyle(.white)
+    }
+
+    private var lockedControlsAffordance: some View {
+        HStack {
+            Button {
+                unlockControls()
+            } label: {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 48, height: 48)
+                    .background(.black.opacity(0.42))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(.white.opacity(0.18), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.4), radius: 14, y: 7)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("解锁播放控件")
+
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .padding(.leading, 22)
+        .padding(.trailing, 22)
+        .padding(.bottom, 18 + controlsBottomLift)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private var speedMenu: some View {
@@ -501,62 +590,39 @@ struct BiliPlayerView: View {
             Text(viewModel.playbackRate.title)
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
-                .frame(width: 48, height: 38)
-                .background(.white.opacity(0.12))
-                .clipShape(Capsule())
+                .frame(minWidth: 50, minHeight: 36)
+                .padding(.horizontal, 2)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(.white.opacity(0.11))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .stroke(.white.opacity(0.08), lineWidth: 0.8)
+                        }
+                }
         }
         .buttonStyle(.plain)
     }
 
-    private var danmakuMenu: some View {
-        Menu {
-            Button {
-                let nextValue = !viewModel.danmakuEnabled
-                viewModel.setDanmakuEnabled(nextValue)
-                libraryStore.setDefaultDanmakuEnabled(nextValue)
-                handlePlayerInteraction()
-            } label: {
-                Label(viewModel.danmakuEnabled ? "关闭弹幕" : "开启弹幕", systemImage: viewModel.danmakuEnabled ? "text.bubble.fill" : "text.bubble")
-            }
-
-            Section("显示强度") {
-                ForEach(BiliDanmakuOpacity.allCases) { opacity in
-                    Button {
-                        viewModel.setDanmakuOpacity(opacity)
-                        handlePlayerInteraction()
-                    } label: {
-                        Label(opacity.title, systemImage: viewModel.danmakuOpacityPreset == opacity ? "checkmark" : "circle")
-                    }
-                }
-            }
-
-            Section("字号") {
-                ForEach(BiliDanmakuFontScale.allCases) { scale in
-                    Button {
-                        viewModel.setDanmakuFontScale(scale)
-                        handlePlayerInteraction()
-                    } label: {
-                        Label(scale.title, systemImage: viewModel.danmakuFontScalePreset == scale ? "checkmark" : "textformat.size")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: viewModel.danmakuEnabled ? "text.bubble.fill" : "text.bubble")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 38, height: 38)
-                .background(.white.opacity(0.12))
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func playerControlButton(systemName: String, isEnabled: Bool = true, action: @escaping () -> Void) -> some View {
+    private func playerControlButton(
+        systemName: String,
+        isEnabled: Bool = true,
+        isPrimary: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 38, height: 38)
-                .background(.white.opacity(0.12))
-                .clipShape(Circle())
+                .font(.system(size: isPrimary ? 17 : 14.5, weight: isPrimary ? .bold : .semibold))
+                .frame(width: isPrimary ? 44 : 38, height: isPrimary ? 44 : 38)
+                .background {
+                    Circle()
+                        .fill(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50).opacity(0.96) : .white.opacity(0.10))
+                        .overlay {
+                            Circle()
+                                .stroke(.white.opacity(isPrimary ? 0.16 : 0.08), lineWidth: 0.8)
+                        }
+                }
+                .shadow(color: .black.opacity(isPrimary ? 0.28 : 0.12), radius: isPrimary ? 8 : 4, y: isPrimary ? 4 : 2)
         }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
@@ -564,7 +630,11 @@ struct BiliPlayerView: View {
     }
 
     private func handlePlayerTap() {
-        guard showsPlaybackControls else { return }
+        guard usesCustomPlaybackControls else { return }
+        if controlsLocked {
+            showLockAffordance()
+            return
+        }
         withAnimation(.easeInOut(duration: 0.18)) {
             controlsVisible.toggle()
         }
@@ -575,14 +645,53 @@ struct BiliPlayerView: View {
         }
     }
 
+    private func handlePlayerDoubleTap() {
+        guard usesCustomPlaybackControls else { return }
+        if controlsLocked {
+            showLockAffordance()
+            return
+        }
+        Haptics.medium()
+        viewModel.togglePlayback()
+        controlsVisible = true
+        scheduleControlsAutoHideIfNeeded()
+        showGestureFeedback(viewModel.isPlaying ? .pause : .play)
+    }
+
+    private func handlePlayerLongPressStart() {
+        guard usesCustomPlaybackControls else { return }
+        guard !controlsLocked else {
+            showLockAffordance()
+            return
+        }
+        guard viewModel.isPlaying, longPressRateRestoreValue == nil else { return }
+        longPressRateRestoreValue = viewModel.playbackRate
+        Haptics.medium()
+        viewModel.setPlaybackRate(.x20)
+        controlsVisible = false
+        cancelControlsAutoHide()
+        showGestureFeedback(.speed("2.0x"))
+    }
+
+    private func handlePlayerLongPressEnd() {
+        restoreLongPressPlaybackRateIfNeeded()
+        if !controlsLocked {
+            scheduleControlsAutoHideIfNeeded()
+        }
+    }
+
     private func handlePlayerInteraction() {
-        guard showsPlaybackControls else { return }
+        guard usesCustomPlaybackControls else { return }
+        guard !controlsLocked else {
+            showLockAffordance()
+            return
+        }
         controlsVisible = true
         scheduleControlsAutoHideIfNeeded()
     }
 
     private func handleScrubbingChanged(_ editing: Bool) {
-        guard showsPlaybackControls else { return }
+        guard usesCustomPlaybackControls else { return }
         if editing {
             isScrubbing = true
             scrubProgress = currentProgress
@@ -598,7 +707,8 @@ struct BiliPlayerView: View {
 
     private func scheduleControlsAutoHideIfNeeded() {
         cancelControlsAutoHide()
-        guard showsPlaybackControls else { return }
+        guard usesCustomPlaybackControls else { return }
+        guard !controlsLocked else { return }
         guard viewModel.isPlaying else { return }
         autoHideControlsTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_800_000_000)
@@ -611,30 +721,192 @@ struct BiliPlayerView: View {
         autoHideControlsTask?.cancel()
         autoHideControlsTask = nil
     }
+
+    private func restoreLongPressPlaybackRateIfNeeded() {
+        guard let restoreRate = longPressRateRestoreValue else { return }
+        longPressRateRestoreValue = nil
+        viewModel.setPlaybackRate(restoreRate)
+        gestureFeedbackTask?.cancel()
+        if gestureFeedback?.isSpeedFeedback == true {
+            gestureFeedback = nil
+        }
+    }
+
+    private func toggleControlsLock() {
+        if controlsLocked {
+            unlockControls()
+        } else {
+            lockControls()
+        }
+    }
+
+    private func exitManualFullscreen() {
+        guard isManualFullscreenActive else { return }
+        Haptics.light()
+        controlsLocked = false
+        lockAffordanceVisible = false
+        cancelLockAutoHide()
+        onExitManualFullscreen?()
+    }
+
+    private func lockControls() {
+        guard isManualFullscreenActive else { return }
+        Haptics.light()
+        controlsLocked = true
+        controlsVisible = false
+        lockAffordanceVisible = true
+        cancelControlsAutoHide()
+        scheduleLockAutoHide()
+    }
+
+    private func unlockControls() {
+        Haptics.light()
+        controlsLocked = false
+        lockAffordanceVisible = false
+        cancelLockAutoHide()
+        controlsVisible = true
+        scheduleControlsAutoHideIfNeeded()
+    }
+
+    private func showLockAffordance() {
+        guard controlsLocked else { return }
+        lockAffordanceVisible = true
+        scheduleLockAutoHide()
+    }
+
+    private func scheduleLockAutoHide() {
+        cancelLockAutoHide()
+        guard controlsLocked else { return }
+        autoHideLockTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled, controlsLocked else { return }
+            lockAffordanceVisible = false
+        }
+    }
+
+    private func cancelLockAutoHide() {
+        autoHideLockTask?.cancel()
+        autoHideLockTask = nil
+    }
+
+    private func showGestureFeedback(_ feedback: PlayerGestureFeedback) {
+        gestureFeedbackTask?.cancel()
+        gestureFeedback = feedback
+        guard !feedback.isSpeedFeedback else { return }
+        gestureFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 620_000_000)
+            guard !Task.isCancelled else { return }
+            gestureFeedback = nil
+        }
+    }
+
+    private func playerGestureFeedbackView(_ feedback: PlayerGestureFeedback) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: feedback.systemName)
+                .font(.system(size: feedback.title == nil ? 34 : 24, weight: .bold))
+
+            if let title = feedback.title {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .monospacedDigit()
+            }
+        }
+            .foregroundStyle(.white)
+            .frame(width: 86, height: 78)
+            .background(.black.opacity(0.44))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.42), radius: 18, y: 8)
+            .allowsHitTesting(false)
+    }
 }
 
-private struct NavigationContentBackGestureOverlay: UIViewRepresentable {
-    let onTap: () -> Void
+private enum PlayerGestureFeedback: Equatable {
+    case play
+    case pause
+    case speed(String)
+
+    var systemName: String {
+        switch self {
+        case .play:
+            return "play.fill"
+        case .pause:
+            return "pause.fill"
+        case .speed:
+            return "forward.fill"
+        }
+    }
+
+    var title: String? {
+        switch self {
+        case .speed(let title):
+            return title
+        case .play, .pause:
+            return nil
+        }
+    }
+
+    var isSpeedFeedback: Bool {
+        if case .speed = self {
+            return true
+        }
+        return false
+    }
+}
+
+private struct PlayerGestureOverlay: UIViewRepresentable {
+    let onSingleTap: () -> Void
+    let onDoubleTap: () -> Void
+    let onLongPressStart: () -> Void
+    let onLongPressEnd: () -> Void
 
     func makeUIView(context: Context) -> GestureOverlayView {
         let view = GestureOverlayView()
-        view.onTap = onTap
+        view.onSingleTap = onSingleTap
+        view.onDoubleTap = onDoubleTap
+        view.onLongPressStart = onLongPressStart
+        view.onLongPressEnd = onLongPressEnd
         return view
     }
 
     func updateUIView(_ uiView: GestureOverlayView, context: Context) {
-        uiView.onTap = onTap
+        uiView.onSingleTap = onSingleTap
+        uiView.onDoubleTap = onDoubleTap
+        uiView.onLongPressStart = onLongPressStart
+        uiView.onLongPressEnd = onLongPressEnd
         uiView.refreshGestureDependenciesIfNeeded()
     }
 
     final class GestureOverlayView: UIView, UIGestureRecognizerDelegate {
-        var onTap: (() -> Void)?
+        var onSingleTap: (() -> Void)?
+        var onDoubleTap: (() -> Void)?
+        var onLongPressStart: (() -> Void)?
+        var onLongPressEnd: (() -> Void)?
 
         private weak var attachedNavigationController: UINavigationController?
         private weak var attachedPopGesture: UIGestureRecognizer?
         private weak var attachedContentPopGesture: UIGestureRecognizer?
-        private lazy var tapGesture: UITapGestureRecognizer = {
-            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        private lazy var singleTapGesture: UITapGestureRecognizer = {
+            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
+            gesture.numberOfTapsRequired = 1
+            gesture.cancelsTouchesInView = false
+            gesture.delegate = self
+            return gesture
+        }()
+        private lazy var doubleTapGesture: UITapGestureRecognizer = {
+            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
+            gesture.numberOfTapsRequired = 2
+            gesture.cancelsTouchesInView = false
+            gesture.delegate = self
+            return gesture
+        }()
+        private lazy var longPressGesture: UILongPressGestureRecognizer = {
+            let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress))
+            gesture.minimumPressDuration = 0.38
+            gesture.allowableMovement = 18
             gesture.cancelsTouchesInView = false
             gesture.delegate = self
             return gesture
@@ -644,7 +916,10 @@ private struct NavigationContentBackGestureOverlay: UIViewRepresentable {
             super.init(frame: frame)
             backgroundColor = .clear
             isUserInteractionEnabled = true
-            addGestureRecognizer(tapGesture)
+            singleTapGesture.require(toFail: doubleTapGesture)
+            addGestureRecognizer(singleTapGesture)
+            addGestureRecognizer(doubleTapGesture)
+            addGestureRecognizer(longPressGesture)
         }
 
         required init?(coder: NSCoder) {
@@ -656,8 +931,23 @@ private struct NavigationContentBackGestureOverlay: UIViewRepresentable {
             refreshGestureDependenciesIfNeeded()
         }
 
-        @objc private func handleTap() {
-            onTap?()
+        @objc private func handleSingleTap() {
+            onSingleTap?()
+        }
+
+        @objc private func handleDoubleTap() {
+            onDoubleTap?()
+        }
+
+        @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began:
+                onLongPressStart?()
+            case .ended, .cancelled, .failed:
+                onLongPressEnd?()
+            default:
+                break
+            }
         }
 
         func refreshGestureDependenciesIfNeeded() {
@@ -666,12 +956,14 @@ private struct NavigationContentBackGestureOverlay: UIViewRepresentable {
 
             if let popGesture = navigationController.interactivePopGestureRecognizer,
                attachedPopGesture !== popGesture {
-                tapGesture.require(toFail: popGesture)
+                singleTapGesture.require(toFail: popGesture)
+                doubleTapGesture.require(toFail: popGesture)
                 attachedPopGesture = popGesture
             }
             if let contentPopGesture = navigationController.interactiveContentPopGestureRecognizer,
                attachedContentPopGesture !== contentPopGesture {
-                tapGesture.require(toFail: contentPopGesture)
+                singleTapGesture.require(toFail: contentPopGesture)
+                doubleTapGesture.require(toFail: contentPopGesture)
                 attachedContentPopGesture = contentPopGesture
             }
         }
@@ -694,38 +986,13 @@ private struct NavigationContentBackGestureOverlay: UIViewRepresentable {
     }
 }
 
-private struct DanmakuOverlayView: View {
-    let danmakus: [DanmakuItem]
-    let opacity: Double
-    let fontScale: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(danmakus) { item in
-                Text(item.text)
-                    .font(.system(size: fontSize(for: item), weight: .semibold))
-                    .foregroundStyle(Color(hexRGB: item.color))
-                    .shadow(color: .black, radius: 2)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
+private extension View {
+    @ViewBuilder
+    func ignoresContainerSafeArea(_ isEnabled: Bool) -> some View {
+        if isEnabled {
+            ignoresSafeArea()
+        } else {
+            self
         }
-        .opacity(opacity)
-        .animation(.easeOut(duration: 0.25), value: danmakus)
-        .padding(.horizontal)
-    }
-
-    private func fontSize(for item: DanmakuItem) -> CGFloat {
-        CGFloat(min(max(Double(item.fontSize) * fontScale, 14), 32))
-    }
-}
-
-private extension Color {
-    init(hexRGB: Int) {
-        let red = Double((hexRGB >> 16) & 0xff) / 255
-        let green = Double((hexRGB >> 8) & 0xff) / 255
-        let blue = Double(hexRGB & 0xff) / 255
-        self.init(red: red, green: green, blue: blue)
     }
 }

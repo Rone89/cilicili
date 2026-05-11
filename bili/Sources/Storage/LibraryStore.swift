@@ -16,7 +16,6 @@ struct StoredVideo: Identifiable, Codable, Hashable {
     let ownerName: String?
     let ownerFace: String?
     let viewCount: Int?
-    let danmakuCount: Int?
     let cid: Int?
     let savedAt: Date
     let playbackTime: TimeInterval?
@@ -40,7 +39,6 @@ struct StoredVideo: Identifiable, Codable, Hashable {
         self.ownerName = video.owner?.name
         self.ownerFace = video.owner?.face
         self.viewCount = video.stat?.view
-        self.danmakuCount = video.stat?.danmaku
         self.cid = cid ?? video.cid
         self.savedAt = savedAt
         self.playbackTime = playbackTime
@@ -57,7 +55,7 @@ struct StoredVideo: Identifiable, Codable, Hashable {
             duration: duration,
             pubdate: pubdate,
             owner: owner,
-            stat: VideoStat(view: viewCount, danmaku: danmakuCount, reply: nil, like: nil, coin: nil, favorite: nil),
+            stat: VideoStat(view: viewCount, reply: nil, like: nil, coin: nil, favorite: nil),
             cid: cid,
             pages: nil,
             dimension: nil
@@ -88,26 +86,30 @@ struct StoredVideo: Identifiable, Codable, Hashable {
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var appearanceMode: AppAppearanceMode
-    @Published private(set) var defaultDanmakuEnabled: Bool
     @Published private(set) var defaultPlaybackRate: Double
+    @Published private(set) var preferredVideoQuality: Int?
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
     @Published private(set) var sponsorBlockEnabled: Bool
+    @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var homeRefreshTriggerDistance: Double
 
     private let userDefaults: UserDefaults
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
-    private static let defaultDanmakuEnabledKey = "cc.bili.playback.defaultDanmakuEnabled.v1"
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
+    private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
+    private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
+    static let defaultPreferredVideoQuality = 112
+    static let supportedVideoQualities = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
     static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
     static let defaultHomeRefreshTriggerDistance = 110.0
 
@@ -116,11 +118,16 @@ final class LibraryStore: ObservableObject {
         self.appearanceMode = AppAppearanceMode(
             rawValue: userDefaults.string(forKey: Self.appearanceModeKey) ?? ""
         ) ?? .system
-        self.defaultDanmakuEnabled = userDefaults.object(forKey: Self.defaultDanmakuEnabledKey) as? Bool ?? true
         self.defaultPlaybackRate = Self.normalizedPlaybackRate(userDefaults.object(forKey: Self.defaultPlaybackRateKey) as? Double ?? 1.0)
-        self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? false
-        self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? false
-        self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? true
+        if let storedVideoQuality = userDefaults.object(forKey: Self.preferredVideoQualityKey) as? Int {
+            self.preferredVideoQuality = storedVideoQuality == 0 ? nil : Self.normalizedVideoQuality(storedVideoQuality)
+        } else {
+            self.preferredVideoQuality = Self.defaultPreferredVideoQuality
+        }
+        self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? true
+        self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? true
+        self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
+        self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         self.homeRefreshTriggerDistance = Self.normalizedHomeRefreshDistance(
@@ -133,15 +140,20 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(mode.rawValue, forKey: Self.appearanceModeKey)
     }
 
-    func setDefaultDanmakuEnabled(_ isEnabled: Bool) {
-        defaultDanmakuEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.defaultDanmakuEnabledKey)
-    }
-
     func setDefaultPlaybackRate(_ rate: Double) {
         let normalizedRate = Self.normalizedPlaybackRate(rate)
         defaultPlaybackRate = normalizedRate
         userDefaults.set(normalizedRate, forKey: Self.defaultPlaybackRateKey)
+    }
+
+    func setPreferredVideoQuality(_ quality: Int?) {
+        let normalizedQuality = Self.normalizedVideoQuality(quality)
+        preferredVideoQuality = normalizedQuality
+        if let normalizedQuality {
+            userDefaults.set(normalizedQuality, forKey: Self.preferredVideoQualityKey)
+        } else {
+            userDefaults.set(0, forKey: Self.preferredVideoQualityKey)
+        }
     }
 
     func setBlocksGoodsDynamics(_ isEnabled: Bool) {
@@ -157,6 +169,11 @@ final class LibraryStore: ObservableObject {
     func setSponsorBlockEnabled(_ isEnabled: Bool) {
         sponsorBlockEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.sponsorBlockEnabledKey)
+    }
+
+    func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {
+        playerPerformanceOverlayEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.playerPerformanceOverlayEnabledKey)
     }
 
     func setIncognitoModeEnabled(_ isEnabled: Bool) {
@@ -177,6 +194,43 @@ final class LibraryStore: ObservableObject {
 
     private static func normalizedPlaybackRate(_ rate: Double) -> Double {
         supportedPlaybackRates.contains(rate) ? rate : 1.0
+    }
+
+    private static func normalizedVideoQuality(_ quality: Int?) -> Int? {
+        guard let quality, supportedVideoQualities.contains(quality) else { return nil }
+        return quality
+    }
+
+    static func videoQualityTitle(_ quality: Int?) -> String {
+        guard let quality else { return "自动（快速开播）" }
+        switch quality {
+        case 127:
+            return "超高清 8K"
+        case 126:
+            return "杜比视界"
+        case 125:
+            return "真彩 HDR"
+        case 120:
+            return "超清 4K"
+        case 116:
+            return "1080P 高帧率"
+        case 112:
+            return "1080P 高码率"
+        case 80:
+            return "1080P"
+        case 74:
+            return "720P 高帧率"
+        case 64:
+            return "720P"
+        case 32:
+            return "480P"
+        case 16:
+            return "360P"
+        case 6:
+            return "240P"
+        default:
+            return "清晰度 \(quality)"
+        }
     }
 
     private static func normalizedHomeRefreshDistance(_ distance: Double) -> Double {

@@ -5,7 +5,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
     case comprehensive
     case mostPlayed
     case newest
-    case mostDanmaku
     case mostSaved
 
     var id: String { rawValue }
@@ -18,8 +17,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
             return "最多播放"
         case .newest:
             return "最新发布"
-        case .mostDanmaku:
-            return "最多弹幕"
         case .mostSaved:
             return "最多收藏"
         }
@@ -33,8 +30,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
             return "播放"
         case .newest:
             return "最新"
-        case .mostDanmaku:
-            return "弹幕"
         case .mostSaved:
             return "收藏"
         }
@@ -48,8 +43,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
             return "click"
         case .newest:
             return "pubdate"
-        case .mostDanmaku:
-            return "dm"
         case .mostSaved:
             return "stow"
         }

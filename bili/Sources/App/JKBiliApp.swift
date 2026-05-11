@@ -8,10 +8,9 @@ struct JKBiliApp: App {
     @StateObject private var dependencies = AppDependencies()
 
     init() {
-        AppNavigationChrome.configureGlobalAppearance()
         URLCache.shared = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024
+            memoryCapacity: 96 * 1024 * 1024,
+            diskCapacity: 768 * 1024 * 1024
         )
     }
 

@@ -94,7 +94,7 @@ struct UploaderView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 14) {
-                AsyncImage(url: (card?.face ?? owner.face).flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 160)) }) { image in
+                CachedRemoteImage(url: (card?.face ?? owner.face).flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 160)) }) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "person.crop.circle.fill")
@@ -111,6 +111,10 @@ struct UploaderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer(minLength: 8)
+
+                followButton(viewModel)
             }
 
             if let sign = card?.sign, !sign.isEmpty {
@@ -120,8 +124,14 @@ struct UploaderView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if let message = viewModel.followMessage, !message.isEmpty {
+                Label(message, systemImage: viewModel.isFollowing ? "checkmark.circle" : "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(viewModel.isFollowing ? Color.pink : Color.secondary)
+            }
+
             HStack(spacing: 14) {
-                statItem("粉丝", value: viewModel.profile?.follower ?? card?.fans)
+                statItem("粉丝", value: viewModel.followerCount ?? card?.fans)
                 statItem("关注", value: card?.attention)
                 statItem("获赞", value: viewModel.profile?.likeNum)
                 statItem("投稿", value: viewModel.profile?.archiveCount)
@@ -131,6 +141,42 @@ struct UploaderView: View {
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .padding(.horizontal, 12)
+    }
+
+    private func followButton(_ viewModel: UploaderViewModel) -> some View {
+        Button {
+            Task {
+                let didSucceed = await viewModel.toggleFollow()
+                if didSucceed {
+                    Haptics.success()
+                } else {
+                    Haptics.light()
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if viewModel.isMutatingFollow {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(viewModel.isFollowing ? .secondary : .white)
+                } else {
+                    Image(systemName: viewModel.isFollowing ? "checkmark" : "plus")
+                        .font(.caption.weight(.bold))
+                }
+
+                Text(viewModel.isFollowing ? "已关注" : "关注")
+                    .font(.subheadline.weight(.bold))
+            }
+            .frame(minWidth: 82, minHeight: 34)
+            .padding(.horizontal, 10)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(viewModel.isFollowing ? Color(.tertiarySystemFill) : Color.pink)
+            }
+            .foregroundStyle(viewModel.isFollowing ? Color.secondary : Color.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isMutatingFollow || owner.mid <= 0)
     }
 
     private func statItem(_ title: String, value: Int?) -> some View {

@@ -5,21 +5,20 @@ import UIKit
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
-    @Environment(\.dismiss) private var dismiss
     let seedVideo: VideoItem
     private let hidesRootTabBar: Bool
 
     @StateObject private var holder = VideoDetailViewModelHolder()
     @State private var isShowingDescription = false
-    @State private var isShowingPortraitInfoSheet = false
     @State private var isShowingCommentsSheet = false
     @State private var replySheetComment: Comment?
-    @State private var nativeTopSafeAreaInset: CGFloat = 0
-    @State private var isPortraitPlayerModeEnabled = true
     @State private var introScrollOffset: CGFloat = 0
-    @State private var manualLandscapeOrientation: UIDeviceOrientation?
+    @State private var manualFullscreenMode: ManualVideoFullscreenMode?
     @State private var isRestoringPortraitFromManualLandscape = false
+    @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
     @State private var pendingManualLandscapeExitTask: Task<Void, Never>?
+    @State private var lastManualLandscapeRequestTime: Date?
+    @State private var preloadedRelatedVideos = Set<String>()
 
     init(
         seedVideo: VideoItem,
@@ -45,31 +44,53 @@ struct VideoDetailView: View {
                     }
             }
         }
-        .navigationTitle("")
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .nativeTopNavigationChrome()
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .hideRootTabBarWhenNeeded(hidesRootTabBar)
-        .overlay(alignment: .topLeading) {
-            NativeNavigationBackGestureSupport(
-                topSafeAreaInset: $nativeTopSafeAreaInset,
-                isPopGestureEnabled: manualLandscapeOrientation == nil
+        .background(
+            VideoDetailLifecycleBridge(
+                onWillDisappear: {
+                    holder.viewModel?.suspendPlaybackForNavigation()
+                }
             )
-                .frame(width: 1, height: 1)
-                .allowsHitTesting(false)
+        )
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                uploaderToolbarButton
+            }
         }
+        .hideRootTabBarWhenNeeded(hidesRootTabBar)
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             updateManualLandscapeOrientation(UIDevice.current.orientation)
         }
         .onDisappear {
+            pendingManualLandscapeEnterTask?.cancel()
             pendingManualLandscapeExitTask?.cancel()
+            holder.viewModel?.stopPlaybackForNavigation()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
-            holder.viewModel?.suspendPlaybackForNavigation()
+            AppOrientationLock.restorePortrait()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateManualLandscapeOrientation(UIDevice.current.orientation)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .biliStopActiveVideoPlayback)) { _ in
+            holder.viewModel?.stopPlaybackForNavigation()
+        }
+    }
+
+    private var navigationTitle: String {
+        holder.viewModel?.detail.title ?? seedVideo.title
+    }
+
+    @ViewBuilder
+    private var uploaderToolbarButton: some View {
+        let owner = holder.viewModel?.detail.owner ?? seedVideo.owner
+        if let owner, owner.mid > 0 {
+            NavigationLink(value: owner) {
+                ToolbarAvatar(urlString: owner.face)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开 \(owner.name) 的主页")
         }
     }
 
@@ -77,42 +98,37 @@ struct VideoDetailView: View {
     private func content(_ viewModel: VideoDetailViewModel) -> some View {
         GeometryReader { proxy in
             let sceneIsLandscape = proxy.size.width > proxy.size.height
-            let isManualLandscape = manualLandscapeOrientation != nil || isRestoringPortraitFromManualLandscape
-            let isLandscape = sceneIsLandscape && !isManualLandscape
-            let layoutSize = isManualLandscape
+            let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
+            let isLandscape = sceneIsLandscape && !isManualFullscreen
+            let layoutSize = isManualFullscreen
                 ? CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height))
                 : proxy.size
-            let statusBarInset = isLandscape ? 0 : max(proxy.safeAreaInsets.top, nativeTopSafeAreaInset, UIApplication.shared.activeWindowSafeAreaTop)
-            let isPortraitPlaybackReady = viewModel.supportsPortraitPlayerMode
 
             Group {
                 if isLandscape {
                     playerHero(
                         viewModel,
                         isLandscape: true,
-                        playerHeight: proxy.size.height,
-                        usesPortraitMode: false,
-                        showsPortraitModeToggle: false
+                        playerHeight: proxy.size.height
                     )
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .background(.black)
                         .ignoresSafeArea()
-                } else if isPortraitPlaybackReady {
-                    portraitPlaybackPage(viewModel, statusBarInset: statusBarInset)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
                 } else {
                     standardPlaybackPage(
                         viewModel,
-                        screenSize: layoutSize,
-                        statusBarInset: statusBarInset
+                        screenSize: layoutSize
                     )
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .background(isLandscape ? Color.black : Color.videoDetailBackground)
-            .ignoresSafeArea(.container, edges: (isLandscape || manualLandscapeOrientation != nil) ? .all : .top)
+            .ignoresSafeArea(.container, edges: (isLandscape || manualFullscreenMode != nil) ? .all : [])
             .background {
-                StatusBarStyleBridge(style: .lightContent, isHidden: manualLandscapeOrientation != nil)
+                StatusBarStyleBridge(
+                    style: (isLandscape || isManualFullscreen) ? .lightContent : .default,
+                    isHidden: isManualFullscreen
+                )
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
             }
@@ -124,28 +140,33 @@ struct VideoDetailView: View {
                     .background(.background.opacity(0.95))
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if libraryStore.playerPerformanceOverlayEnabled {
+                    PlayerPerformanceOverlay(metricsID: viewModel.detail.bvid)
+                        .padding(.top, isLandscape || isManualFullscreen ? 14 : 10)
+                        .padding(.leading, 10)
+                        .allowsHitTesting(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+                }
+            }
             .task {
                 await viewModel.load()
             }
             .sheet(isPresented: $isShowingDescription) {
                 VideoDescriptionSheet(
-                    title: viewModel.detail.title,
-                    description: viewModel.detail.desc ?? ""
+                    viewModel: viewModel
                 )
             }
-            .sheet(isPresented: $isShowingPortraitInfoSheet) {
-                portraitInfoSheet(viewModel)
-            }
             .sheet(isPresented: $isShowingCommentsSheet) {
-                portraitCommentsSheet(viewModel)
+                commentsSheet(viewModel)
             }
             .sheet(item: $replySheetComment) { comment in
                 CommentRepliesSheet(rootComment: comment, viewModel: viewModel)
             }
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .statusBar(hidden: manualLandscapeOrientation != nil)
-        .persistentSystemOverlays(manualLandscapeOrientation == nil ? .automatic : .hidden)
+        .ignoresSafeArea(.container, edges: manualFullscreenMode != nil ? .all : [])
+        .statusBar(hidden: manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape)
+        .persistentSystemOverlays((manualFullscreenMode == nil && !isRestoringPortraitFromManualLandscape) ? .automatic : .hidden)
     }
 
     private func updateManualLandscapeOrientation(_ orientation: UIDeviceOrientation) {
@@ -153,26 +174,20 @@ struct VideoDetailView: View {
         case .landscapeLeft, .landscapeRight:
             pendingManualLandscapeExitTask?.cancel()
             isRestoringPortraitFromManualLandscape = false
-            guard manualLandscapeOrientation != orientation else { return }
-            withAnimation(.smooth(duration: 0.22)) {
-                manualLandscapeOrientation = orientation
+            let mode: ManualVideoFullscreenMode = .landscape(orientation)
+            guard manualFullscreenMode != mode else { return }
+            pendingManualLandscapeEnterTask?.cancel()
+            if shouldApplyManualLandscapeOrientation(orientation) {
+                manualFullscreenMode = mode
             }
         case .portrait, .portraitUpsideDown:
-            guard manualLandscapeOrientation != nil else {
+            pendingManualLandscapeEnterTask?.cancel()
+            guard manualFullscreenMode?.isLandscape == true else {
                 pendingManualLandscapeExitTask?.cancel()
                 return
             }
             pendingManualLandscapeExitTask?.cancel()
-            pendingManualLandscapeExitTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 420_000_000)
-                guard !Task.isCancelled else { return }
-                switch UIDevice.current.orientation {
-                case .portrait, .portraitUpsideDown:
-                    beginRestoringPortraitFromManualLandscape()
-                default:
-                    break
-                }
-            }
+            beginRestoringPortraitFromManualLandscape()
         default:
             break
         }
@@ -180,33 +195,27 @@ struct VideoDetailView: View {
 
     private func standardPlaybackPage(
         _ viewModel: VideoDetailViewModel,
-        screenSize: CGSize,
-        statusBarInset: CGFloat
+        screenSize: CGSize
     ) -> some View {
         let standardHeight = screenSize.width * 9 / 16
-        let isManualLandscape = manualLandscapeOrientation != nil
+        let isManualFullscreen = manualFullscreenMode != nil
+        let playerHeight = isManualFullscreen ? screenSize.height : standardHeight
 
         return ZStack(alignment: .top) {
-            Color.videoDetailBackground
-                .opacity(isManualLandscape ? 0 : 1)
+                Color.videoDetailBackground
+                    .opacity(isManualFullscreen ? 0 : 1)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                if statusBarInset > 0 {
-                    Color.black
-                        .frame(height: statusBarInset)
-                        .allowsHitTesting(false)
-                }
-
                 Color.clear
                     .frame(height: standardHeight)
 
                 detailScrollPage(viewModel)
-                    .opacity(isManualLandscape ? 0 : 1)
-                    .allowsHitTesting(!isManualLandscape)
+                    .opacity(isManualFullscreen ? 0 : 1)
+                    .allowsHitTesting(!isManualFullscreen)
             }
 
-            if isManualLandscape {
+            if isManualFullscreen {
                 Color.black
                     .ignoresSafeArea()
                     .transition(.opacity)
@@ -215,44 +224,78 @@ struct VideoDetailView: View {
             playerHero(
                 viewModel,
                 isLandscape: false,
-                playerHeight: standardHeight,
-                usesPortraitMode: false,
-                showsPortraitModeToggle: false,
-                manualFullscreenOrientation: manualLandscapeOrientation,
+                playerHeight: playerHeight,
+                manualFullscreenMode: manualFullscreenMode,
                 onExitManualFullscreen: exitManualLandscapePlayback
             )
             .frame(maxWidth: .infinity)
-            .frame(height: standardHeight)
-            .padding(.top, isManualLandscape ? 0 : statusBarInset)
+            .frame(height: playerHeight)
             .zIndex(1)
             .clipped()
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .background(isManualLandscape ? Color.black : Color.videoDetailBackground)
-        .ignoresSafeArea(.container, edges: isManualLandscape ? .all : .top)
-        .animation(.smooth(duration: 0.28), value: isManualLandscape)
+        .background(isManualFullscreen ? Color.black : Color.videoDetailBackground)
+        .ignoresSafeArea(.container, edges: isManualFullscreen ? .all : [])
     }
 
     private func exitManualLandscapePlayback() {
-        guard manualLandscapeOrientation != nil else { return }
+        guard manualFullscreenMode != nil else { return }
         pendingManualLandscapeExitTask?.cancel()
         beginRestoringPortraitFromManualLandscape()
     }
 
+    private func enterManualLandscapePlayback() {
+        guard manualFullscreenMode == nil else { return }
+        pendingManualLandscapeExitTask?.cancel()
+        pendingManualLandscapeEnterTask?.cancel()
+        isRestoringPortraitFromManualLandscape = false
+
+        let deviceOrientation = UIDevice.current.orientation
+        if shouldUsePortraitFullscreen {
+            manualFullscreenMode = .portrait
+        } else {
+            manualFullscreenMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
+        }
+    }
+
+    private var shouldUsePortraitFullscreen: Bool {
+        guard let viewModel = holder.viewModel else { return false }
+        return videoAspectRatio(for: viewModel).map { $0 < 0.9 } == true
+    }
+
+    private func videoAspectRatio(for viewModel: VideoDetailViewModel) -> Double? {
+        viewModel.selectedPlayVariant?.videoAspectRatio
+            ?? viewModel.detail.dimension?.aspectRatio
+            ?? selectedPage(in: viewModel)?.dimension?.aspectRatio
+            ?? viewModel.playVariants.compactMap(\.videoAspectRatio).first
+    }
+
+    private func selectedPage(in viewModel: VideoDetailViewModel) -> VideoPage? {
+        guard let selectedCID = viewModel.selectedCID else { return nil }
+        return viewModel.detail.pages?.first { $0.cid == selectedCID }
+    }
+
     private func beginRestoringPortraitFromManualLandscape() {
-        guard manualLandscapeOrientation != nil else { return }
+        guard manualFullscreenMode != nil else { return }
+        pendingManualLandscapeEnterTask?.cancel()
+        pendingManualLandscapeExitTask?.cancel()
         isRestoringPortraitFromManualLandscape = true
-        AppOrientationLock.update(to: .portrait, in: nil)
-        UIApplication.shared.requestPortraitGeometryForConnectedScenes()
+        AppOrientationLock.restorePortrait()
+        manualFullscreenMode = nil
+        lastManualLandscapeRequestTime = nil
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 360_000_000)
-            withAnimation(.smooth(duration: 0.24)) {
-                manualLandscapeOrientation = nil
-            }
-            try? await Task.sleep(nanoseconds: 180_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             isRestoringPortraitFromManualLandscape = false
         }
+    }
+
+    private func shouldApplyManualLandscapeOrientation(_ orientation: UIDeviceOrientation) -> Bool {
+        guard orientation.isLandscape else { return false }
+        let now = Date()
+        defer { lastManualLandscapeRequestTime = now }
+        guard let lastManualLandscapeRequestTime else { return true }
+        return now.timeIntervalSince(lastManualLandscapeRequestTime) > 0.34
     }
 
     @ViewBuilder
@@ -260,19 +303,10 @@ struct VideoDetailView: View {
         _ viewModel: VideoDetailViewModel,
         isLandscape: Bool,
         playerHeight: CGFloat,
-        usesPortraitMode: Bool,
-        showsPortraitModeToggle: Bool,
-        manualFullscreenOrientation: UIDeviceOrientation? = nil,
+        manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
     ) -> some View {
         ZStack {
-            if usesPortraitMode {
-                cover(viewModel.detail)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: playerHeight)
-                    .overlay(Color.black.opacity(0.58))
-            }
-
             if let playerViewModel = viewModel.stablePlayerViewModel {
                 BiliPlayerView(
                     viewModel: playerViewModel,
@@ -281,34 +315,34 @@ struct VideoDetailView: View {
                     duration: viewModel.detail.duration.map(TimeInterval.init),
                     presentation: isLandscape ? .fullScreen : .embedded,
                     showsNavigationChrome: false,
+                    showsStartupLoadingIndicator: false,
                     pausesOnDisappear: false,
-                    embeddedAspectRatio: usesPortraitMode ? CGFloat(viewModel.selectedVideoAspectRatio) : 16 / 9,
-                    manualFullscreenOrientation: manualFullscreenOrientation,
+                    embeddedAspectRatio: 16 / 9,
+                    manualFullscreenMode: manualFullscreenMode,
+                    onRequestManualFullscreen: enterManualLandscapePlayback,
                     onExitManualFullscreen: onExitManualFullscreen
                 )
+                .id(ObjectIdentifier(playerViewModel))
                 .frame(maxWidth: .infinity)
                 .frame(height: isLandscape ? playerHeight : playerHeight)
-                .clipShape(RoundedRectangle(cornerRadius: usesPortraitMode ? 18 : 0, style: .continuous))
-                .padding(.horizontal, usesPortraitMode ? 12 : 0)
+                .overlay {
+                    playbackPosterOverlay(
+                        viewModel,
+                        playerViewModel: playerViewModel,
+                        dimOpacity: 0.36,
+                        showsLoader: true
+                    )
+                }
             } else {
-                cover(viewModel.detail)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: playerHeight)
-                    .overlay {
-                        LinearGradient(
-                            colors: [.black.opacity(0.08), .black.opacity(0.48)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    }
+                PlayerLoadingPlaceholder(
+                    progress: viewModel.playURLState.isLoading ? 0.08 : 0,
+                    message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
+                    isFinishing: false
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: playerHeight)
 
-                if viewModel.playURLState.isLoading {
-                    ProgressView()
-                        .tint(.white)
-                        .padding(16)
-                        .background(.black.opacity(0.38))
-                        .clipShape(Circle())
-                } else if viewModel.selectedPlayVariant != nil {
+                if !viewModel.playURLState.isLoading, viewModel.selectedPlayVariant != nil {
                     Label("当前档位暂不可播放", systemImage: "lock.fill")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
@@ -320,225 +354,30 @@ struct VideoDetailView: View {
             }
         }
         .background(.black)
-        .overlay(alignment: .topLeading) {
-            if showsPortraitModeToggle {
-                Button {
-                    withAnimation(.smooth(duration: 0.24)) {
-                        isPortraitPlayerModeEnabled.toggle()
-                    }
-                } label: {
-                    Image(systemName: isPortraitModeToggleOn ? "iphone" : "rectangle")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 34, height: 34)
-                        .background(.black.opacity(0.38))
-                        .foregroundStyle(.white)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 12)
-                .padding(.top, 12)
-            }
-        }
     }
 
-    private var isPortraitModeToggleOn: Bool {
-        isPortraitPlayerModeEnabled
-    }
-
-    private func playerHeight(
-        proxy: GeometryProxy,
-        statusBarInset: CGFloat,
-        isLandscape: Bool,
-        usesPortraitMode: Bool,
-        aspectRatio: Double,
-        scrollOffset: CGFloat
-    ) -> CGFloat {
-        if isLandscape {
-            return proxy.size.height
-        }
-
-        let standardHeight = proxy.size.width * 9 / 16
-        guard usesPortraitMode else {
-            return standardHeight
-        }
-
-        let availableHeight = max(proxy.size.height - statusBarInset, 0)
-        let portraitAspect = CGFloat(max(aspectRatio, 0.35))
-        let naturalHeight = proxy.size.width / portraitAspect
-        let maxPortraitHeight = max(standardHeight, availableHeight * 0.74)
-        let minPortraitHeight = max(240, min(standardHeight, availableHeight * 0.32))
-        let expandedHeight = min(max(naturalHeight, standardHeight), maxPortraitHeight)
-        let collapseRange = max(expandedHeight - minPortraitHeight, 0)
-        let collapse = min(max(scrollOffset, 0), collapseRange)
-        let stretch = min(max(-scrollOffset, 0) * 0.35, availableHeight * 0.10)
-        return max(minPortraitHeight, expandedHeight - collapse + stretch)
-    }
-
-    private func playbackLoadingView(_ viewModel: VideoDetailViewModel, statusBarInset: CGFloat) -> some View {
-        ZStack {
-            cover(viewModel.detail)
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
-                .overlay(Color.black.opacity(0.72))
-
-            if statusBarInset > 0 {
-                Color.black
-                    .frame(height: statusBarInset)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
-            }
-
-            ProgressView()
-                .tint(.white)
-                .padding(16)
-                .background(.black.opacity(0.38))
-                .clipShape(Circle())
-        }
-        .background(Color.black)
-    }
-
-    private func portraitPlaybackPage(_ viewModel: VideoDetailViewModel, statusBarInset: CGFloat) -> some View {
-        ZStack(alignment: .bottom) {
-            Color.black
-                .ignoresSafeArea()
-
-            if let playerViewModel = viewModel.stablePlayerViewModel {
-                BiliPlayerView(
-                    viewModel: playerViewModel,
-                    historyVideo: viewModel.detail,
-                    historyCID: viewModel.selectedCID,
-                    duration: viewModel.detail.duration.map(TimeInterval.init),
-                    presentation: .fullScreen,
-                    showsNavigationChrome: false,
-                    showsPlaybackControls: true,
-                    pausesOnDisappear: false,
-                    controlsAccessory: AnyView(portraitControlAccessory(viewModel, compact: true)),
-                    controlsBottomLift: 160,
-                    embeddedAspectRatio: CGFloat(viewModel.selectedVideoAspectRatio),
-                    manualFullscreenOrientation: manualLandscapeOrientation,
-                    onExitManualFullscreen: exitManualLandscapePlayback
-                )
-                .ignoresSafeArea()
-            } else {
-                cover(viewModel.detail)
-                    .ignoresSafeArea()
-                    .overlay(Color.black.opacity(0.42))
-                if viewModel.playURLState.isLoading {
-                    ProgressView()
-                        .tint(.white)
-                        .padding(16)
-                        .background(.black.opacity(0.38))
-                        .clipShape(Circle())
-                } else {
-                    portraitControlAccessory(viewModel, compact: false)
-                }
-            }
-
-            if statusBarInset > 0 {
-                Color.black
-                    .frame(height: statusBarInset)
-                    .ignoresSafeArea(.container, edges: .top)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
-            }
-
-        }
-        .background(Color.black)
-        .overlay {
-            StatusBarStyleBridge(style: .lightContent, isHidden: manualLandscapeOrientation != nil)
-                .frame(width: 0, height: 0)
-                .allowsHitTesting(false)
-        }
-    }
-
-    private func portraitControlAccessory(
+    @ViewBuilder
+    private func playbackPosterOverlay(
         _ viewModel: VideoDetailViewModel,
-        compact: Bool
+        playerViewModel: PlayerStateViewModel,
+        dimOpacity: Double,
+        showsLoader: Bool
     ) -> some View {
-        GlassEffectContainer(spacing: 20) {
-            HStack {
-                Button {
-                    isShowingPortraitInfoSheet = true
-                } label: {
-                    PortraitAvatarButton(urlString: viewModel.detail.owner?.face)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("视频简介")
-
-                Spacer()
-
-                Button {
-                    isShowingCommentsSheet = true
-                } label: {
-                    PortraitGlassIconButton(systemImage: "bubble.left.and.bubble.right.fill")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("评论")
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, compact ? 6 : 22)
-        .padding(.bottom, compact ? 0 : 160)
+        PlaybackPosterOverlay(
+            video: viewModel.detail,
+            playerViewModel: playerViewModel,
+            dimOpacity: dimOpacity,
+            showsLoader: showsLoader
+        )
     }
 
-    private func portraitInfoSheet(_ viewModel: VideoDetailViewModel) -> some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ownerRow(viewModel)
-
-                    Text(viewModel.detail.title.normalizedDetailTitle)
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 12) {
-                        Label(BiliFormatters.compactCount(viewModel.detail.stat?.view), systemImage: "play.rectangle")
-                        Label(BiliFormatters.publishDate(viewModel.detail.pubdate), systemImage: "calendar")
-                        Spacer(minLength: 6)
-                        qualityInlineButton(viewModel)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                    actionStrip(viewModel)
-                    interactionNotice(viewModel)
-                    playURLNotice(viewModel)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("视频简介")
-                            .font(.headline)
-
-                        Text(displayDescription(for: viewModel.detail))
-                            .font(.body)
-                            .lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.top, 4)
-
-                    episodeSection(viewModel)
-                }
-                .padding(16)
-            }
-            .navigationTitle("视频简介")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-
-    private func displayDescription(for video: VideoItem) -> String {
-        let desc = video.desc?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return desc.isEmpty ? video.title.normalizedDetailTitle : desc
-    }
-
-    private func portraitCommentsSheet(_ viewModel: VideoDetailViewModel) -> some View {
+    private func commentsSheet(_ viewModel: VideoDetailViewModel) -> some View {
         PortraitCommentsSheet(viewModel: viewModel)
     }
 
     private func detailCard(_ viewModel: VideoDetailViewModel) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            ownerRow(viewModel)
-            titleBlock(viewModel)
+            metadataBlock(viewModel)
             actionStrip(viewModel)
             interactionNotice(viewModel)
             playURLNotice(viewModel)
@@ -547,27 +386,22 @@ struct VideoDetailView: View {
         .background(Color.videoDetailSurface)
     }
 
-    private func titleBlock(_ viewModel: VideoDetailViewModel) -> some View {
+    private func metadataBlock(_ viewModel: VideoDetailViewModel) -> some View {
         let video = viewModel.detail
 
-        return VStack(alignment: .leading, spacing: 8) {
-            VideoTitleText(text: video.title.normalizedDetailTitle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return HStack(spacing: 9) {
+            Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.rectangle")
+                .frame(height: 28)
+            Label(BiliFormatters.publishDate(video.pubdate), systemImage: "calendar")
+                .frame(height: 28)
 
-            HStack(spacing: 9) {
-                Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.rectangle")
-                    .frame(height: 28)
-                Label(BiliFormatters.publishDate(video.pubdate), systemImage: "calendar")
-                    .frame(height: 28)
+            Spacer(minLength: 2)
 
-                Spacer(minLength: 2)
-
-                descriptionInlineButton(video.desc)
-                qualityInlineButton(viewModel)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            descriptionInlineButton()
+            qualityInlineButton(viewModel)
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -631,6 +465,12 @@ struct VideoDetailView: View {
 
     @ViewBuilder
     private func interactionNotice(_ viewModel: VideoDetailViewModel) -> some View {
+        if let message = viewModel.playbackFallbackMessage, !message.isEmpty {
+            Label(message, systemImage: "sparkles.tv")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
         if let message = viewModel.interactionMessage, !message.isEmpty {
             Label(message, systemImage: "exclamationmark.circle")
                 .font(.caption)
@@ -654,40 +494,80 @@ struct VideoDetailView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func descriptionInlineButton(_ desc: String?) -> some View {
+    private func descriptionInlineButton() -> some View {
         Button {
             isShowingDescription = true
         } label: {
             InlineMetadataButtonLabel(title: "简介", systemImage: "text.alignleft")
         }
         .buttonStyle(.plain)
-        .disabled(desc?.isEmpty != false)
-        .opacity(desc?.isEmpty == false ? 1 : 0.45)
     }
 
     @ViewBuilder
     private func qualityInlineButton(_ viewModel: VideoDetailViewModel) -> some View {
         if !viewModel.playVariants.isEmpty {
             Menu {
+                if viewModel.isSupplementingPlayQualities {
+                    Button {} label: {
+                        Label("正在补全高清档位", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(true)
+                }
+                if viewModel.isSwitchingPlayQuality {
+                    Button {} label: {
+                        Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(true)
+                }
+
                 ForEach(viewModel.playVariants) { variant in
                     Button {
                         viewModel.selectPlayVariant(variant)
                     } label: {
                         Label(
-                            variant.title,
-                            systemImage: viewModel.selectedPlayVariant == variant ? "checkmark" : (variant.isPlayable ? "circle" : "lock.fill")
+                            qualityMenuTitle(for: variant),
+                            systemImage: qualityMenuIcon(for: variant, viewModel: viewModel)
                         )
                     }
-                    .disabled(!variant.isPlayable)
+                    .disabled(!variant.isPlayable || viewModel.isSwitchingPlayQuality)
                 }
             } label: {
-                InlineMetadataButtonLabel(title: viewModel.selectedPlayVariant?.title ?? "清晰度", systemImage: "slider.horizontal.3")
+                InlineMetadataButtonLabel(
+                    title: qualityButtonTitle(viewModel),
+                    systemImage: viewModel.isSupplementingPlayQualities || viewModel.isSwitchingPlayQuality ? "arrow.triangle.2.circlepath" : "slider.horizontal.3"
+                )
             }
             .buttonStyle(.plain)
         } else {
             InlineMetadataButtonLabel(title: "清晰度", systemImage: "slider.horizontal.3")
                 .opacity(0.45)
         }
+    }
+
+    private func qualityButtonTitle(_ viewModel: VideoDetailViewModel) -> String {
+        if viewModel.isSwitchingPlayQuality {
+            return "切换中"
+        }
+        if viewModel.isSupplementingPlayQualities {
+            return "补高清中"
+        }
+        return viewModel.selectedPlayVariant?.title ?? "清晰度"
+    }
+
+    private func qualityMenuIcon(for variant: PlayVariant, viewModel: VideoDetailViewModel) -> String {
+        if viewModel.pendingPlayVariantID == variant.id {
+            return "arrow.triangle.2.circlepath"
+        }
+        if viewModel.selectedPlayVariant == variant {
+            return "checkmark"
+        }
+        return variant.isPlayable ? "circle" : "lock.fill"
+    }
+
+    private func qualityMenuTitle(for variant: PlayVariant) -> String {
+        let subtitle = variant.subtitle
+        guard !subtitle.isEmpty else { return variant.title }
+        return "\(variant.title)  \(subtitle)"
     }
 
     @ViewBuilder
@@ -728,12 +608,14 @@ struct VideoDetailView: View {
 
     private func detailScrollPage(_ viewModel: VideoDetailViewModel) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: 10) {
                 scrollOffsetReader()
                 detailCard(viewModel)
                 episodeSection(viewModel)
-                relatedSection(viewModel.related)
-                commentsSection(viewModel, maxVisibleComments: 6)
+                if viewModel.shouldShowRelatedSectionShell {
+                    relatedSection(viewModel)
+                }
+                deferredCommentsEntry(viewModel)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 20)
@@ -743,7 +625,6 @@ struct VideoDetailView: View {
         .onPreferenceChange(ScrollOffsetPreferenceKey.self) { offset in
             updatePortraitScrollOffset(offset)
         }
-        .background(NativeContentPopGestureDependency())
         .background(Color.videoDetailBackground)
     }
 
@@ -806,7 +687,7 @@ struct VideoDetailView: View {
     }
 
     private func cover(_ video: VideoItem) -> some View {
-        AsyncImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 960, height: 540)) }) { image in
+        CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 960, height: 540)) }) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Color.gray.opacity(0.14)
@@ -817,71 +698,6 @@ struct VideoDetailView: View {
 
     private func playerIdentity(_ viewModel: VideoDetailViewModel, variant: PlayVariant) -> String {
         "\(viewModel.selectedCID ?? 0)-\(variant.id)"
-    }
-
-    @ViewBuilder
-    private func ownerRow(_ viewModel: VideoDetailViewModel) -> some View {
-        let owner = viewModel.detail.owner
-        let fanCount = viewModel.uploaderFanCount
-        let canOpenUploader = (owner?.mid ?? 0) > 0
-        let isFollowing = viewModel.interactionState.isFollowing
-
-        HStack(spacing: 10) {
-            if let owner, canOpenUploader {
-                NavigationLink(value: owner) {
-                    ownerIdentity(owner: owner, fanCount: fanCount, showsChevron: true)
-                }
-                .buttonStyle(.plain)
-            } else {
-                ownerIdentity(owner: owner, fanCount: fanCount, showsChevron: false)
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                Task { await viewModel.toggleFollow() }
-            } label: {
-                Text(isFollowing ? "已关注" : "+ 关注")
-                    .font(.caption.weight(.bold))
-                    .frame(minWidth: 58)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(isFollowing ? Color(.tertiarySystemFill) : Color.pink.opacity(0.12))
-                    .foregroundStyle(isFollowing ? Color.secondary : Color.pink)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canOpenUploader || viewModel.isMutatingInteraction)
-        }
-    }
-
-    private func ownerIdentity(owner: VideoOwner?, fanCount: Int?, showsChevron: Bool) -> some View {
-        HStack(spacing: 10) {
-            AsyncImage(url: owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 36, height: 36)
-            .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(owner?.name ?? "Unknown")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text("粉丝 \(BiliFormatters.compactCount(fanCount))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
     }
 
     private func pageSelector(pages: [VideoPage], selectedCID: Int?, viewModel: VideoDetailViewModel) -> some View {
@@ -918,41 +734,120 @@ struct VideoDetailView: View {
     private func commentsSection(
         _ viewModel: VideoDetailViewModel,
         style: CommentSectionStyle = .grouped,
-        maxVisibleComments: Int? = nil
+        maxVisibleComments: Int? = nil,
+        autoLoads: Bool = true
     ) -> some View {
         CommentsSectionView(
             viewModel: viewModel,
             style: style,
             maxVisibleComments: maxVisibleComments,
-            showAllComments: {
-                isShowingCommentsSheet = true
+            autoLoads: autoLoads,
+                showAllComments: {
+                    isShowingCommentsSheet = true
+                }
+            ) { comment in
+                replySheetComment = comment
             }
-        ) { comment in
-            replySheetComment = comment
-        }
     }
 
-    private func relatedSection(_ videos: [VideoItem]) -> some View {
+    private func relatedSection(_ viewModel: VideoDetailViewModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("相关推荐")
-                .font(.headline)
-                .padding(.horizontal, 14)
-
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 12) {
-                    ForEach(videos.prefix(5)) { video in
-                        VideoRouteLink(video) {
-                            RelatedVideoCard(video: video)
+            if !viewModel.related.isEmpty {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(viewModel.related.prefix(5)) { video in
+                            VideoRouteLink(video) {
+                                RelatedVideoCard(video: video)
+                            }
+                            .onAppear {
+                                beginRelatedPreloadIfNeeded(video)
+                            }
                         }
                     }
                 }
+                .contentMargins(.horizontal, 14, for: .scrollContent)
+                .scrollIndicators(.hidden)
+                .overlay(alignment: .topTrailing) {
+                    if viewModel.relatedState.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.trailing, 14)
+                    }
+                }
+                .transition(.opacity)
+            } else if viewModel.relatedState == .idle || viewModel.relatedState.isLoading {
+                relatedPlaceholderContent(viewModel)
             }
-            .contentMargins(.horizontal, 14, for: .scrollContent)
-            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14)
         .background(Color.videoDetailSurface)
+        .animation(.easeOut(duration: 0.18), value: viewModel.related.isEmpty)
+        .animation(.easeOut(duration: 0.18), value: viewModel.relatedState)
+    }
+
+    private func beginRelatedPreloadIfNeeded(_ video: VideoItem) {
+        guard !video.bvid.isEmpty,
+              !preloadedRelatedVideos.contains(video.bvid),
+              preloadedRelatedVideos.count < 3,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+        else { return }
+        preloadedRelatedVideos.insert(video.bvid)
+        let api = dependencies.api
+        let preferredQuality = libraryStore.preferredVideoQuality
+        Task(priority: .utility) {
+            await VideoPreloadCenter.shared.preloadPlayInfo(
+                video,
+                api: api,
+                preferredQuality: preferredQuality,
+                priority: .utility
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func relatedPlaceholderContent(_ viewModel: VideoDetailViewModel) -> some View {
+        if case .failed = viewModel.relatedState {
+            EmptyStateView(title: "暂无相关推荐", systemImage: "rectangle.stack", message: "稍后再试试。")
+                .padding(.horizontal, 14)
+                .frame(height: 146)
+        } else {
+            HStack(spacing: 12) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RelatedVideoPlaceholderCard()
+                }
+            }
+            .padding(.horizontal, 14)
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func deferredCommentsEntry(_ viewModel: VideoDetailViewModel) -> some View {
+        Button {
+            isShowingCommentsSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Label("评论", systemImage: "bubble.left.and.bubble.right")
+                    .font(.headline)
+
+                Text(BiliFormatters.compactCount(viewModel.detail.stat?.reply))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.videoDetailSurface)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("查看 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply)) 条评论")
     }
 
 }
@@ -1115,51 +1010,150 @@ private struct StatusBarStyleBridge: UIViewControllerRepresentable {
     }
 }
 
-private extension UIApplication {
-    var activeWindowSafeAreaTop: CGFloat {
-        let windowTop = connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.top }
-            .first ?? 0
-        let statusBarTop = connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.statusBarManager?.statusBarFrame.height }
-            .first ?? 0
+private struct VideoDetailLifecycleBridge: UIViewControllerRepresentable {
+    let onWillDisappear: () -> Void
 
-        return max(windowTop, statusBarTop, inferredPortraitStatusBarHeight)
+    func makeUIViewController(context _: Context) -> Controller {
+        let controller = Controller()
+        controller.onWillDisappear = onWillDisappear
+        return controller
     }
 
-    private var inferredPortraitStatusBarHeight: CGFloat {
-        let bounds = connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.screen.bounds }
-            .first ?? .zero
-        let shortSide = min(bounds.width, bounds.height)
-        let longSide = max(bounds.width, bounds.height)
-
-        guard shortSide >= 375 else { return 20 }
-        if longSide >= 852 {
-            return 62
-        }
-        if longSide >= 812 {
-            return 47
-        }
-        return 20
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.onWillDisappear = onWillDisappear
     }
 
-    func requestPortraitGeometryForConnectedScenes() {
-        if #available(iOS 16.0, *) {
-            connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .forEach { scene in
-                    scene.requestGeometryUpdate(
-                        UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
-                    ) { _ in }
-                }
+    final class Controller: UIViewController {
+        var onWillDisappear: (() -> Void)?
+
+        override func loadView() {
+            view = ClearPassthroughView()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            onWillDisappear?()
         }
     }
 }
 
-private extension UIWindowScene {
-    var keyWindow: UIWindow? {
-        windows.first { $0.isKeyWindow }
+private struct PlayerPerformanceOverlay: View {
+    @StateObject private var store = PlayerPerformanceStore.shared
+    let metricsID: String
+
+    private var session: PlayerPerformanceSession? {
+        store.sessions.first { $0.metricsID == metricsID }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg.rectangle")
+                    .font(.caption2.weight(.bold))
+                Text("播放性能")
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(shortID)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            if let session {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.fixed(74), spacing: 8),
+                        GridItem(.fixed(74), spacing: 8)
+                    ],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    metric("总首帧", session.firstFrameTotalMilliseconds)
+                    metric("播放器", session.firstFramePlayerMilliseconds)
+                    metric("取流", session.playURLMilliseconds)
+                    metric("Prepare", session.prepareMilliseconds)
+                }
+
+                if let cdnHost = session.cdnHostMessage {
+                    Label(cdnHost, systemImage: "network")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let networkMessage = session.networkMessage {
+                    Text(networkMessage)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    Text("缓冲 \(session.bufferCount)")
+                    if let quality = session.selectedQualityMessage {
+                        Text(quality)
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(session.bufferCount > 0 ? .orange : .secondary)
+
+                if let failure = session.failureMessage {
+                    Text(failure)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+            } else {
+                Text("等待播放事件")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(width: 178, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.white.opacity(0.20), lineWidth: 0.6)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+    }
+
+    private var shortID: String {
+        guard metricsID.count > 8 else { return metricsID }
+        return String(metricsID.suffix(8))
+    }
+
+    private func metric(_ title: String, _ milliseconds: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(millisecondsText(milliseconds))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(metricColor(milliseconds))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func millisecondsText(_ value: Int?) -> String {
+        guard let value else { return "-" }
+        if value >= 1000 {
+            return String(format: "%.2fs", Double(value) / 1000)
+        }
+        return "\(value)ms"
+    }
+
+    private func metricColor(_ value: Int?) -> Color {
+        guard let value else { return .secondary }
+        if value >= 2500 {
+            return .red
+        }
+        if value >= 1400 {
+            return .orange
+        }
+        return .green
     }
 }
 
@@ -1181,256 +1175,6 @@ private extension String {
             options: .regularExpression
         )
         return text
-    }
-}
-
-private struct NativeNavigationBackGestureSupport: UIViewControllerRepresentable {
-    @Binding var topSafeAreaInset: CGFloat
-    let isPopGestureEnabled: Bool
-
-    func makeUIViewController(context _: Context) -> Controller {
-        Controller()
-    }
-
-    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
-        uiViewController.onTopSafeAreaInsetChange = { topSafeAreaInset = $0 }
-        uiViewController.isPopGestureEnabled = isPopGestureEnabled
-        uiViewController.refreshGestures()
-    }
-
-    final class Controller: UIViewController {
-        private var previousTintColor: UIColor?
-        private var previousNavigationBarUserInteractionEnabled: Bool?
-        private var previousStandardAppearance: UINavigationBarAppearance?
-        private var previousScrollEdgeAppearance: UINavigationBarAppearance?
-        private var previousCompactAppearance: UINavigationBarAppearance?
-        private var previousBackIndicatorImage: UIImage?
-        private var previousBackIndicatorTransitionMaskImage: UIImage?
-        private var previousBarStyle: UIBarStyle?
-        private var didCaptureNavigationChrome = false
-        private let hiddenNavigationControls = NSHashTable<UIView>.weakObjects()
-        var onTopSafeAreaInsetChange: ((CGFloat) -> Void)?
-        var isPopGestureEnabled = true
-
-        override func viewWillAppear(_ animated: Bool) {
-            super.viewWillAppear(animated)
-            refreshGestures()
-        }
-
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            refreshGestures()
-        }
-
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
-            restoreNavigationChrome()
-        }
-
-        override func viewDidLayoutSubviews() {
-            super.viewDidLayoutSubviews()
-            refreshGestures()
-        }
-
-        func refreshGestures() {
-            guard let navigationController else { return }
-            applyNavigationChrome(to: navigationController)
-            updateTopSafeAreaInset()
-
-            let canPop = navigationController.viewControllers.count > 1
-            navigationController.interactivePopGestureRecognizer?.isEnabled = canPop && isPopGestureEnabled
-
-            if #available(iOS 26.0, *) {
-                navigationController.interactiveContentPopGestureRecognizer?.isEnabled = canPop && isPopGestureEnabled
-            }
-        }
-
-        private func applyNavigationChrome(to navigationController: UINavigationController) {
-            if !didCaptureNavigationChrome {
-                let navigationBar = navigationController.navigationBar
-                previousTintColor = navigationBar.tintColor
-                previousNavigationBarUserInteractionEnabled = navigationBar.isUserInteractionEnabled
-                previousStandardAppearance = navigationBar.standardAppearance
-                previousScrollEdgeAppearance = navigationBar.scrollEdgeAppearance
-                previousCompactAppearance = navigationBar.compactAppearance
-                previousBackIndicatorImage = navigationBar.backIndicatorImage
-                previousBackIndicatorTransitionMaskImage = navigationBar.backIndicatorTransitionMaskImage
-                previousBarStyle = navigationBar.barStyle
-                didCaptureNavigationChrome = true
-            }
-
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithTransparentBackground()
-            appearance.titleTextAttributes = [.foregroundColor: UIColor.clear]
-            appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.clear]
-            appearance.setBackIndicatorImage(Self.clearImage, transitionMaskImage: Self.clearImage)
-
-            let buttonAppearance = UIBarButtonItemAppearance(style: .plain)
-            [buttonAppearance.normal, buttonAppearance.highlighted, buttonAppearance.disabled, buttonAppearance.focused].forEach { state in
-                state.titleTextAttributes = [.foregroundColor: UIColor.clear]
-                state.backgroundImage = Self.clearImage
-            }
-            appearance.buttonAppearance = buttonAppearance
-            appearance.backButtonAppearance = buttonAppearance
-
-            let navigationBar = navigationController.navigationBar
-            navigationBar.barStyle = .black
-            navigationBar.tintColor = .clear
-            navigationBar.backIndicatorImage = Self.clearImage
-            navigationBar.backIndicatorTransitionMaskImage = Self.clearImage
-            navigationBar.standardAppearance = appearance
-            navigationBar.scrollEdgeAppearance = appearance
-            navigationBar.compactAppearance = appearance
-            hideLeadingNavigationControls(in: navigationBar)
-            DispatchQueue.main.async { [weak navigationBar] in
-                guard let navigationBar else { return }
-                self.hideLeadingNavigationControls(in: navigationBar)
-            }
-        }
-
-        private func restoreNavigationChrome() {
-            guard didCaptureNavigationChrome else { return }
-            hiddenNavigationControls.allObjects.forEach {
-                $0.alpha = 1
-                $0.isUserInteractionEnabled = true
-            }
-            hiddenNavigationControls.removeAllObjects()
-            if let navigationBar = navigationController?.navigationBar {
-                navigationBar.tintColor = previousTintColor
-                navigationBar.standardAppearance = previousStandardAppearance ?? UINavigationBarAppearance()
-                navigationBar.scrollEdgeAppearance = previousScrollEdgeAppearance
-                navigationBar.compactAppearance = previousCompactAppearance
-                navigationBar.backIndicatorImage = previousBackIndicatorImage
-                navigationBar.backIndicatorTransitionMaskImage = previousBackIndicatorTransitionMaskImage
-                navigationBar.barStyle = previousBarStyle ?? .default
-                navigationBar.isUserInteractionEnabled = previousNavigationBarUserInteractionEnabled ?? true
-            }
-            didCaptureNavigationChrome = false
-            previousTintColor = nil
-            previousNavigationBarUserInteractionEnabled = nil
-            previousStandardAppearance = nil
-            previousScrollEdgeAppearance = nil
-            previousCompactAppearance = nil
-            previousBackIndicatorImage = nil
-            previousBackIndicatorTransitionMaskImage = nil
-            previousBarStyle = nil
-        }
-
-        private func updateTopSafeAreaInset() {
-            let window = view.window ?? navigationController?.view.window
-            let windowTop = window?.safeAreaInsets.top ?? 0
-            let statusBarTop = window?.windowScene?.statusBarManager?.statusBarFrame.height ?? 0
-            let inset = max(windowTop, statusBarTop)
-
-            DispatchQueue.main.async { [weak self] in
-                self?.onTopSafeAreaInsetChange?(inset)
-            }
-        }
-
-        private static let clearImage: UIImage = {
-            UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
-        }()
-
-        private func hideLeadingNavigationControls(in navigationBar: UINavigationBar) {
-            navigationBar.layoutIfNeeded()
-            hideLeadingButtonLikeSubviews(in: navigationBar, navigationBar: navigationBar)
-        }
-
-        private func hideLeadingButtonLikeSubviews(in view: UIView, navigationBar: UINavigationBar) {
-            for subview in view.subviews {
-                let frame = subview.convert(subview.bounds, to: navigationBar)
-                let typeName = String(describing: type(of: subview))
-                let isLeadingChrome = frame.minX < 116 && frame.maxX > 0 && frame.midY > 0
-                let isCompactChrome = frame.width < 140 && frame.height < 100
-                let isBarBackground = typeName.localizedCaseInsensitiveContains("barbackground")
-
-                if isLeadingChrome && isCompactChrome && !isBarBackground {
-                    subview.alpha = 0
-                    subview.isUserInteractionEnabled = false
-                    hiddenNavigationControls.add(subview)
-                }
-
-                hideLeadingButtonLikeSubviews(in: subview, navigationBar: navigationBar)
-            }
-        }
-    }
-}
-
-private struct NativeContentPopGestureDependency: UIViewRepresentable {
-    func makeUIView(context _: Context) -> DependencyView {
-        DependencyView()
-    }
-
-    func updateUIView(_ uiView: DependencyView, context _: Context) {
-        uiView.refreshGestureDependencies()
-    }
-
-    final class DependencyView: UIView {
-        private weak var attachedNavigationController: UINavigationController?
-        private weak var attachedScrollView: UIScrollView?
-        private weak var attachedPopGesture: UIGestureRecognizer?
-        private weak var attachedContentPopGesture: UIGestureRecognizer?
-
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            backgroundColor = .clear
-            isUserInteractionEnabled = false
-        }
-
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            refreshGestureDependencies()
-        }
-
-        func refreshGestureDependencies() {
-            guard let navigationController = enclosingNavigationController(),
-                  let scrollView = enclosingScrollView() else {
-                return
-            }
-
-            attachedNavigationController = navigationController
-            attachedScrollView = scrollView
-
-            if let popGesture = navigationController.interactivePopGestureRecognizer,
-               attachedPopGesture !== popGesture {
-                scrollView.panGestureRecognizer.require(toFail: popGesture)
-                attachedPopGesture = popGesture
-            }
-
-            if #available(iOS 26.0, *),
-               let contentPopGesture = navigationController.interactiveContentPopGestureRecognizer,
-               attachedContentPopGesture !== contentPopGesture {
-                scrollView.panGestureRecognizer.require(toFail: contentPopGesture)
-                attachedContentPopGesture = contentPopGesture
-            }
-        }
-
-        private func enclosingNavigationController() -> UINavigationController? {
-            var responder: UIResponder? = self
-            while let current = responder {
-                if let viewController = current as? UIViewController,
-                   let navigationController = viewController.navigationController {
-                    return navigationController
-                }
-                responder = current.next
-            }
-            return nil
-        }
-
-        private func enclosingScrollView() -> UIScrollView? {
-            var current = superview
-            while let view = current {
-                if let scrollView = view as? UIScrollView {
-                    return scrollView
-                }
-                current = view.superview
-            }
-            return nil
-        }
     }
 }
 
@@ -1460,47 +1204,24 @@ private struct InlineMetadataButtonLabel: View {
     }
 }
 
-private struct PortraitAvatarButton: View {
+private struct ToolbarAvatar: View {
     let urlString: String?
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(.clear)
-
-            AsyncImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 120)) }) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(width: 50, height: 50)
-            .clipShape(Circle())
-            .overlay {
-                Circle()
-                    .stroke(Color.white.opacity(0.64), lineWidth: 1.4)
-            }
+        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 72)) }) { image in
+            image.resizable().scaledToFill()
+        } placeholder: {
+            Image(systemName: "person.crop.circle.fill")
+                .resizable()
+                .foregroundStyle(.secondary)
         }
-        .frame(width: 58, height: 58)
+        .frame(width: 30, height: 30)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(Color(.separator).opacity(0.18), lineWidth: 0.7)
+        }
         .contentShape(Circle())
-        .glassEffect(.regular.tint(.white.opacity(0.18)).interactive(), in: Circle())
-        .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
-    }
-}
-
-private struct PortraitGlassIconButton: View {
-    let systemImage: String
-
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 58, height: 58)
-            .contentShape(Circle())
-            .glassEffect(.regular.tint(.white.opacity(0.18)).interactive(), in: Circle())
-            .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
     }
 }
 
@@ -1529,24 +1250,167 @@ private enum CommentSectionStyle {
 private struct PortraitCommentsSheet: View {
     @ObservedObject var viewModel: VideoDetailViewModel
     @State private var replySheetComment: Comment?
+    @State private var imageSelection: CommentImageSelection?
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                CommentsSectionView(viewModel: viewModel, style: .plain) { comment in
-                    replySheetComment = comment
-                }
-                .padding(.vertical, 8)
+            List {
+                sortPickerRow
+                commentsListContent
             }
-            .background(Color.videoDetailBackground)
-            .navigationTitle("评论")
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(.clear)
+            .navigationTitle("评论 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply))")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.automatic, for: .navigationBar)
+            .nativeTopScrollEdgeEffect()
+            .refreshable {
+                await viewModel.retryComments()
+            }
+            .task {
+                viewModel.beginInitialCommentsLoadIfNeeded()
+            }
         }
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
+        .fullScreenCover(item: $imageSelection) { selection in
+            CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
+        }
         .sheet(item: $replySheetComment) { comment in
             CommentRepliesSheet(rootComment: comment, viewModel: viewModel)
         }
+    }
+
+    private var sortPickerRow: some View {
+        Picker(
+            "评论排序",
+            selection: Binding(
+                get: { viewModel.selectedCommentSort },
+                set: { sort in
+                    Task { await viewModel.selectCommentSort(sort) }
+                }
+            )
+        ) {
+            ForEach(CommentSort.allCases) { sort in
+                Text(sort.title).tag(sort)
+            }
+        }
+        .pickerStyle(.segmented)
+        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 10, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    @ViewBuilder
+    private var commentsListContent: some View {
+        if viewModel.comments.isEmpty && (viewModel.commentState.isLoading || viewModel.commentState == .idle) {
+            loadingRow
+        } else if viewModel.comments.isEmpty, case .failed(let message) = viewModel.commentState {
+            errorRow(message: message)
+        } else if viewModel.shouldShowEmptyCommentsState {
+            emptyRow
+        } else if viewModel.shouldShowCommentReloadPrompt {
+            errorRow(message: "评论暂时没有返回内容")
+        } else {
+            ForEach(viewModel.comments) { comment in
+                CommentRow(
+                    comment: comment,
+                    style: .plain,
+                    showReplies: {
+                        replySheetComment = comment
+                    },
+                    showImages: { images, initialIndex in
+                        presentImages(images, initialIndex: initialIndex)
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowBackground(Color.clear)
+                .task {
+                    await viewModel.loadMoreCommentsIfNeeded(current: comment)
+                }
+            }
+
+            footerRow
+        }
+    }
+
+    private var loadingRow: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("正在加载评论")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 34)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    private func errorRow(message: String) -> some View {
+        CommentErrorView(message: message) {
+            Task { await viewModel.retryComments() }
+        }
+        .padding(.vertical, 18)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    private var emptyRow: some View {
+        EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "这里还没有可展示的评论。")
+            .padding(.vertical, 28)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+
+    @ViewBuilder
+    private var footerRow: some View {
+        if viewModel.commentState.isLoading {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("加载更多评论")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        } else if case .failed(let message) = viewModel.commentState {
+            errorRow(message: message)
+        } else if viewModel.hasMoreComments {
+            Button {
+                Task { await viewModel.loadMoreComments() }
+            } label: {
+                Label("加载更多评论", systemImage: "arrow.down.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.pink)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        } else if !viewModel.comments.isEmpty {
+            Text("没有更多评论了")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
+    }
+
+    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0) {
+        let visibleImages = images.filter { $0.normalizedURL != nil }
+        guard !visibleImages.isEmpty else { return }
+        imageSelection = CommentImageSelection(
+            images: visibleImages,
+            initialIndex: min(max(initialIndex, 0), visibleImages.count - 1)
+        )
     }
 }
 
@@ -1554,6 +1418,7 @@ private struct CommentsSectionView: View {
     @ObservedObject var viewModel: VideoDetailViewModel
     let style: CommentSectionStyle
     var maxVisibleComments: Int?
+    var autoLoads = true
     var showAllComments: (() -> Void)?
     let showReplies: (Comment) -> Void
     @State private var imageSelection: CommentImageSelection?
@@ -1568,12 +1433,19 @@ private struct CommentsSectionView: View {
         .fullScreenCover(item: $imageSelection) { selection in
             CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
         }
+        .task {
+            guard autoLoads else { return }
+            viewModel.beginInitialCommentsLoadIfNeeded()
+        }
     }
 
-    private func presentImages(_ images: [DynamicImageItem]) {
+    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0) {
         let visibleImages = images.filter { $0.normalizedURL != nil }
         guard !visibleImages.isEmpty else { return }
-        imageSelection = CommentImageSelection(images: visibleImages, initialIndex: 0)
+        imageSelection = CommentImageSelection(
+            images: visibleImages,
+            initialIndex: min(max(initialIndex, 0), visibleImages.count - 1)
+        )
     }
 
     private var commentsHeader: some View {
@@ -1611,7 +1483,7 @@ private struct CommentsSectionView: View {
 
     @ViewBuilder
     private var commentsContent: some View {
-        if viewModel.comments.isEmpty && viewModel.commentState.isLoading {
+        if viewModel.comments.isEmpty && shouldShowLoadingPlaceholder {
             VStack(spacing: 10) {
                 ProgressView()
                 Text("正在加载评论")
@@ -1625,9 +1497,17 @@ private struct CommentsSectionView: View {
                 Task { await viewModel.retryComments() }
             }
             .padding(.horizontal, style.horizontalPadding)
-        } else if viewModel.comments.isEmpty {
+        } else if viewModel.shouldShowEmptyCommentsState {
             EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "评论加载后会显示在这里。")
                 .padding(.horizontal, style.horizontalPadding)
+        } else if viewModel.shouldShowCommentReloadPrompt {
+            CommentErrorView(message: "评论暂时没有返回内容") {
+                Task { await viewModel.retryComments() }
+            }
+            .padding(.horizontal, style.horizontalPadding)
+        } else if viewModel.comments.isEmpty {
+            Color.clear
+                .frame(height: 1)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(visibleComments) { comment in
@@ -1637,7 +1517,9 @@ private struct CommentsSectionView: View {
                         showReplies: {
                             showReplies(comment)
                         },
-                        showImages: presentImages
+                        showImages: { images, initialIndex in
+                            presentImages(images, initialIndex: initialIndex)
+                        }
                     )
                     .padding(.horizontal, style.horizontalPadding)
                     .task {
@@ -1661,6 +1543,10 @@ private struct CommentsSectionView: View {
                 .padding(.top, 8)
             }
         }
+    }
+
+    private var shouldShowLoadingPlaceholder: Bool {
+        viewModel.commentState.isLoading || (autoLoads && viewModel.commentState == .idle)
     }
 
     private var visibleComments: [Comment] {
@@ -1748,7 +1634,7 @@ private struct CommentRow: View {
     let comment: Comment
     let style: CommentSectionStyle
     let showReplies: () -> Void
-    let showImages: ([DynamicImageItem]) -> Void
+    let showImages: ([DynamicImageItem], Int) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1761,7 +1647,7 @@ private struct CommentRow: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(images: comment.content?.pictures ?? [], showImages: showImages)
+                CommentImageThumbnailGrid(images: comment.content?.pictures ?? [], showImage: showImages)
 
                 if !replyPreviews.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -1788,7 +1674,7 @@ private struct CommentRow: View {
     }
 
     private var avatar: some View {
-        AsyncImage(url: comment.member?.avatar.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
+        CachedRemoteImage(url: comment.member?.avatar.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -1884,6 +1770,94 @@ private struct CommentImageButton: View {
 
     private var title: String {
         visibleImages.count > 1 ? "点击查看图片 \(visibleImages.count) 张" : "点击查看图片"
+    }
+}
+
+private struct CommentImageThumbnailGrid: View {
+    let images: [DynamicImageItem]
+    let showImage: ([DynamicImageItem], Int) -> Void
+
+    private var visibleImages: [DynamicImageItem] {
+        images.filter { $0.normalizedURL != nil }
+    }
+
+    var body: some View {
+        if !visibleImages.isEmpty {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                ForEach(Array(visibleImages.enumerated()), id: \.offset) { index, image in
+                    Button {
+                        showImage(visibleImages, index)
+                    } label: {
+                        CommentImageThumbnail(image: image, imageCount: visibleImages.count)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: maxGridWidth, alignment: .leading)
+            .padding(.top, 2)
+        }
+    }
+
+    private var columns: [GridItem] {
+        let count = min(visibleImages.count, 3)
+        return Array(repeating: GridItem(.fixed(thumbnailSide), spacing: 6), count: max(count, 1))
+    }
+
+    private var thumbnailSide: CGFloat {
+        visibleImages.count == 1 ? 132 : 86
+    }
+
+    private var maxGridWidth: CGFloat {
+        let count = CGFloat(min(max(visibleImages.count, 1), 3))
+        return thumbnailSide * count + 6 * max(count - 1, 0)
+    }
+}
+
+private struct CommentImageThumbnail: View {
+    let image: DynamicImageItem
+    let imageCount: Int
+
+    var body: some View {
+        CachedRemoteImage(url: thumbnailURL, targetPixelSize: targetPixelSize) { loadedImage in
+            loadedImage
+                .resizable()
+                .scaledToFill()
+        } placeholder: {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.videoDetailSecondarySurface)
+                .overlay {
+                    Image(systemName: "photo")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var thumbnailURL: URL? {
+        image.normalizedURL
+            .map { $0.biliCoverThumbnailURL(width: Int(size.width * 3), height: Int(size.height * 3)) }
+            .flatMap(URL.init(string:))
+    }
+
+    private var targetPixelSize: Int {
+        Int(ceil(max(size.width, size.height) * UIScreen.main.scale))
+    }
+
+    private var size: CGSize {
+        if imageCount == 1 {
+            let width: CGFloat = 132
+            let ratio = min(max(CGFloat(image.aspectRatio), 0.55), 1.85)
+            let height = min(max(width / ratio, 78), 176)
+            return CGSize(width: width, height: height)
+        }
+        return CGSize(width: 86, height: 86)
     }
 }
 
@@ -2037,35 +2011,23 @@ private struct CommentViewerImage: View {
 
     @ViewBuilder
     private func imageContent(width: CGFloat, height: CGFloat) -> some View {
-        AsyncImage(url: image.normalizedURL.flatMap(URL.init(string:))) { phase in
-            switch phase {
-            case .success(let loadedImage):
-                loadedImage
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: close)
-            case .failure:
-                VStack(spacing: 10) {
-                    Image(systemName: "photo")
-                        .font(.title2)
-                    Text("图片加载失败")
-                        .font(.footnote)
-                }
-                .foregroundStyle(.white.opacity(0.72))
-                .frame(width: width, height: max(height, 220))
+        CachedRemoteImage(
+            url: image.normalizedURL
+                .map { $0.biliImageThumbnailURL(maxSide: 2400) }
+                .flatMap(URL.init(string:)),
+            targetPixelSize: 2400
+        ) { loadedImage in
+            loadedImage
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipped()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)
-            case .empty:
-                ProgressView()
-                    .tint(.white)
-                    .frame(width: width, height: max(height, 220))
-            @unknown default:
-                Color.clear
-                    .frame(width: width, height: height)
-            }
+        } placeholder: {
+            ProgressView()
+                .tint(.white)
+                .frame(width: width, height: max(height, 220))
         }
     }
 }
@@ -2502,7 +2464,7 @@ private struct CommentAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        AsyncImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: Int(size * 3))) }) { image in
+        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: Int(size * 3))) }) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -2515,17 +2477,25 @@ private struct CommentAvatar: View {
 }
 
 private struct VideoDescriptionSheet: View {
-    let title: String
-    let description: String
+    @ObservedObject var viewModel: VideoDetailViewModel
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(displayDescription)
-                    .font(.body)
-                    .lineSpacing(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                VStack(alignment: .leading, spacing: 18) {
+                    VideoTitleText(text: viewModel.detail.title.normalizedDetailTitle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VideoDescriptionOwnerRow(viewModel: viewModel)
+
+                    Divider()
+
+                    Text(displayDescription)
+                        .font(.body)
+                        .lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
             }
             .navigationTitle("视频简介")
             .navigationBarTitleDisplayMode(.inline)
@@ -2535,8 +2505,76 @@ private struct VideoDescriptionSheet: View {
     }
 
     private var displayDescription: String {
-        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? title : text
+        let text = (viewModel.detail.desc ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "这个视频暂时没有简介。" : text
+    }
+}
+
+private struct VideoDescriptionOwnerRow: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+
+    var body: some View {
+        let owner = viewModel.detail.owner
+        let fanCount = viewModel.uploaderFanCount
+        let canOpenUploader = (owner?.mid ?? 0) > 0
+        let isFollowing = viewModel.interactionState.isFollowing
+
+        HStack(spacing: 10) {
+            if let owner, canOpenUploader {
+                NavigationLink(value: owner) {
+                    ownerIdentity(owner: owner, fanCount: fanCount, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                ownerIdentity(owner: owner, fanCount: fanCount, showsChevron: false)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                Task { await viewModel.toggleFollow() }
+            } label: {
+                Text(isFollowing ? "已关注" : "+ 关注")
+                    .font(.caption.weight(.bold))
+                    .frame(minWidth: 58)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(isFollowing ? Color(.tertiarySystemFill) : Color.pink.opacity(0.12))
+                    .foregroundStyle(isFollowing ? Color.secondary : Color.pink)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canOpenUploader || viewModel.isMutatingInteraction)
+        }
+    }
+
+    private func ownerIdentity(owner: VideoOwner?, fanCount: Int?, showsChevron: Bool) -> some View {
+        HStack(spacing: 10) {
+            CachedRemoteImage(url: owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Image(systemName: "person.crop.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 40, height: 40)
+            .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(owner?.name ?? "Unknown")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("粉丝 \(BiliFormatters.compactCount(fanCount))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 }
 
@@ -2545,7 +2583,7 @@ private struct RelatedVideoCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            AsyncImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 228)) }) { image in
+            CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 228)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -2568,10 +2606,122 @@ private struct RelatedVideoCard: View {
     }
 }
 
+private struct RelatedVideoPlaceholderCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.videoDetailSecondarySurface)
+                .frame(width: 168, height: 96)
+
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.videoDetailSecondarySurface)
+                .frame(width: 152, height: 14)
+
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.videoDetailSecondarySurface)
+                .frame(width: 118, height: 14)
+
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.videoDetailSecondarySurface)
+                .frame(width: 84, height: 12)
+        }
+        .frame(width: 168, height: 145, alignment: .topLeading)
+        .padding(.bottom, 2)
+    }
+}
+
+private struct PlaybackPosterOverlay: View {
+    let video: VideoItem
+    @ObservedObject var playerViewModel: PlayerStateViewModel
+    let dimOpacity: Double
+    let showsLoader: Bool
+
+    var body: some View {
+        if shouldShowPoster {
+            let isFinishing = playerViewModel.loadingProgress >= 0.98
+            PlayerLoadingPlaceholder(
+                progress: playerViewModel.loadingProgress,
+                message: playerViewModel.isBuffering ? "正在缓冲" : "正在加载视频",
+                isFinishing: isFinishing
+            )
+            .background(Color.black.opacity(dimOpacity))
+            .compositingGroup()
+            .clipped()
+            .allowsHitTesting(false)
+            .transition(
+                .asymmetric(
+                    insertion: .opacity,
+                    removal: .opacity.animation(.smooth(duration: 0.30))
+                )
+            )
+            .animation(.smooth(duration: 0.30), value: playerViewModel.isPlaybackSurfaceReady)
+            .animation(.smooth(duration: 0.18), value: isFinishing)
+            .animation(.smooth(duration: 0.20), value: playerViewModel.loadingProgress)
+        }
+    }
+
+    private var shouldShowPoster: Bool {
+        !playerViewModel.isPlaybackSurfaceReady
+            && playerViewModel.errorMessage == nil
+    }
+}
+
+private struct PlayerLoadingPlaceholder: View {
+    let progress: Double
+    let message: String
+    let isFinishing: Bool
+
+    private var normalizedProgress: Double {
+        min(max(progress, 0), 1)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(1.08)
+                    .opacity(isFinishing ? 0.0 : 1.0)
+                    .scaleEffect(isFinishing ? 0.88 : 1.0)
+
+                VStack(spacing: 8) {
+                    Text(message)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(.white.opacity(0.18))
+                            Capsule()
+                                .fill(Color(red: 1, green: 0.25, blue: 0.50))
+                                .frame(width: proxy.size.width * normalizedProgress)
+                        }
+                    }
+                    .frame(width: 148, height: 3)
+
+                    Text("\(Int((normalizedProgress * 100).rounded()))%")
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .contentTransition(.numericText())
+                }
+            }
+            .opacity(isFinishing ? 0.74 : 1)
+            .scaleEffect(isFinishing ? 0.985 : 1)
+            .blur(radius: isFinishing ? 0.4 : 0)
+            .animation(.smooth(duration: 0.22), value: isFinishing)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 @MainActor
 final class VideoDetailViewModelHolder: ObservableObject {
     @Published var viewModel: VideoDetailViewModel?
     private var cancellable: AnyCancellable?
+    private var lastSnapshot: VideoDetailRenderSnapshot?
 
     func configure(
         seedVideo: VideoItem,
@@ -2587,9 +2737,54 @@ final class VideoDetailViewModelHolder: ObservableObject {
                 sponsorBlockService: sponsorBlockService
             )
             self.viewModel = viewModel
+            lastSnapshot = VideoDetailRenderSnapshot(viewModel)
             cancellable = viewModel.objectWillChange.sink { [weak self] _ in
-                self?.objectWillChange.send()
+                Task { @MainActor [weak self, weak viewModel] in
+                    guard let self, let viewModel else { return }
+                    let snapshot = VideoDetailRenderSnapshot(viewModel)
+                    guard snapshot != self.lastSnapshot else { return }
+                    self.lastSnapshot = snapshot
+                    self.objectWillChange.send()
+                }
             }
         }
+    }
+}
+
+private struct VideoDetailRenderSnapshot: Equatable {
+    let detail: VideoItem
+    let selectedCID: Int?
+    let state: LoadingState
+    let playURLState: LoadingState
+    let playVariants: [PlayVariant]
+    let selectedPlayVariant: PlayVariant?
+    let isSupplementingPlayQualities: Bool
+    let isSwitchingPlayQuality: Bool
+    let pendingPlayVariantID: String?
+    let interactionState: VideoInteractionState
+    let interactionMessage: String?
+    let isMutatingInteraction: Bool
+    let playbackFallbackMessage: String?
+    let related: [VideoItem]
+    let relatedState: LoadingState
+    let stablePlayerID: ObjectIdentifier?
+
+    init(_ viewModel: VideoDetailViewModel) {
+        detail = viewModel.detail
+        selectedCID = viewModel.selectedCID
+        state = viewModel.state
+        playURLState = viewModel.playURLState
+        playVariants = viewModel.playVariants
+        selectedPlayVariant = viewModel.selectedPlayVariant
+        isSupplementingPlayQualities = viewModel.isSupplementingPlayQualities
+        isSwitchingPlayQuality = viewModel.isSwitchingPlayQuality
+        pendingPlayVariantID = viewModel.pendingPlayVariantID
+        interactionState = viewModel.interactionState
+        interactionMessage = viewModel.interactionMessage
+        isMutatingInteraction = viewModel.isMutatingInteraction
+        playbackFallbackMessage = viewModel.playbackFallbackMessage
+        related = viewModel.related
+        relatedState = viewModel.relatedState
+        stablePlayerID = viewModel.stablePlayerViewModel.map(ObjectIdentifier.init)
     }
 }

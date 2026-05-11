@@ -215,7 +215,7 @@ private struct SearchVideoResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 225)) }) { image in
+            CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 225)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -234,7 +234,6 @@ private struct SearchVideoResultRow: View {
 
                 HStack {
                     Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.rectangle")
-                    Label(BiliFormatters.compactCount(video.stat?.danmaku), systemImage: "text.bubble")
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -248,7 +247,7 @@ private struct SearchUserResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: user.face.flatMap { URL(string: $0.normalizedBiliURL().biliAvatarThumbnailURL(size: 112)) }) { image in
+            CachedRemoteImage(url: user.face.flatMap { URL(string: $0.normalizedBiliURL().biliAvatarThumbnailURL(size: 112)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -300,7 +299,7 @@ private struct SearchMediaResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: media.cover.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 216, height: 288)) }) { image in
+            CachedRemoteImage(url: media.cover.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 216, height: 288)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -355,7 +354,7 @@ private struct SearchArticleResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: article.imageURLs.first.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 228, height: 228)) }) { image in
+            CachedRemoteImage(url: article.imageURLs.first.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 228, height: 228)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)

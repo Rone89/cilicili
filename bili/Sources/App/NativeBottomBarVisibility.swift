@@ -121,12 +121,8 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
                 return
             }
 
-            if #available(iOS 18.0, *) {
-                guard tabBarController.isTabBarHidden != hidden else { return }
-                tabBarController.setTabBarHidden(hidden, animated: animated)
-            } else {
-                tabBarController.tabBar.isHidden = hidden
-            }
+            guard tabBarController.isTabBarHidden != hidden else { return }
+            tabBarController.setTabBarHidden(hidden, animated: animated)
         }
 
         private func shouldRevealRootTabBarOnDisappear() -> Bool {

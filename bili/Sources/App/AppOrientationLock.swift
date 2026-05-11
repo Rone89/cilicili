@@ -23,6 +23,16 @@ enum AppOrientationLock {
                 controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
             }
     }
+
+    static func restorePortrait(in scene: UIWindowScene? = nil) {
+        update(to: .portrait, in: scene)
+        let scenes = scene.map { [$0] } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        scenes.forEach { scene in
+            scene.requestGeometryUpdate(
+                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
+            ) { _ in }
+        }
+    }
 }
 
 @MainActor
@@ -32,5 +42,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
         AppOrientationLock.supportedOrientations
+    }
+
+    func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
+        Task {
+            await RemoteImageCache.shared.clearMemoryCache(cancelInFlight: true)
+        }
     }
 }

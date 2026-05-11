@@ -1,7 +1,14 @@
 import AVFoundation
 import AVKit
 import Combine
+import OSLog
 import UIKit
+
+@MainActor
+enum PlayerStartupResumePolicy {
+    case deferred
+    case immediate
+}
 
 @MainActor
 final class PlayerStateViewModel: NSObject, ObservableObject {
@@ -11,38 +18,50 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     @Published var duration: TimeInterval?
     @Published var isPlaying = false
     @Published var isSeekable = false
-    @Published var danmakuEnabled = true
-    @Published var danmakuOpacityPreset: BiliDanmakuOpacity = .normal
-    @Published var danmakuFontScalePreset: BiliDanmakuFontScale = .normal
-    @Published private(set) var visibleDanmakus: [DanmakuItem] = []
     @Published var playbackRate: BiliPlaybackRate = .x10
     @Published var isPreparing = true
+    @Published var isBuffering = false
     @Published var errorMessage: String?
     @Published var isPictureInPictureActive = false
+    @Published var volume: Float = 1
+    @Published var isMuted = false
+    @Published private(set) var loadingProgress = 0.08
+    @Published private(set) var hasPresentedPlayback = false
+    @Published private(set) var isPlaybackSurfaceReady = false
     @Published private(set) var activeSponsorBlockSegment: SponsorBlockSegment?
 
     private(set) var wantsAutoplay = true
-    private let danmakus: [DanmakuItem]
+    private let metricsID: String
+    private let metricsStartTime = CACurrentMediaTime()
     private let streamSource: PlayerStreamSource
     private let durationHint: TimeInterval?
     private let resumeTime: TimeInterval
+    private let startupResumePolicy: PlayerStartupResumePolicy
     private let engine: PlayerRenderingEngine
     private weak var surfaceView: VideoSurfaceContainerView?
     private var timeObserver: Timer?
     private var didApplyResumeTime = false
     private var mediaPreparationTask: Task<Void, Never>?
     private var scrubSeekTask: Task<Void, Never>?
+    private var startupResumeRetryTask: Task<Void, Never>?
     private var pictureInPictureController: AVPictureInPictureController?
     private var didConfigurePictureInPicture = false
     private var sponsorBlockSegments: [SponsorBlockSegment] = []
     private var skippedSponsorBlockIDs = Set<String>()
     private var sponsorBlockReportedIDs = Set<String>()
+    private var ignoredStartupPlaybackTimeOutliers = 0
+    private var didLogFirstNaturalPlaybackTime = false
+    private var forcedPlaybackTimeGuard: ForcedPlaybackTimeGuard?
     private var sponsorBlockEnabled = false
     private var onSponsorBlockSegmentSkipped: (@Sendable (SponsorBlockSkipEvent) async -> Void)?
+    private var hostFullscreenRequestHandler: (() -> Void)?
+    private var isTerminated = false
+    private var isStopping = false
     private let playbackStateRefreshInterval: TimeInterval = 0.75
     private let sponsorBlockPrerollTolerance: TimeInterval = 0.35
     private let sponsorBlockTailTolerance: TimeInterval = 0.12
-    private let maxVisibleDanmakuCount = 8
+    private let forcedPlaybackTimeGuardDuration: TimeInterval = 3.5
+    private let forcedPlaybackTimeGuardTolerance: TimeInterval = 2.0
 
     init(
         videoURL: URL?,
@@ -50,37 +69,65 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         videoStream: DASHStream? = nil,
         audioStream: DASHStream? = nil,
         title: String,
-        danmakus: [DanmakuItem],
         referer: String,
         durationHint: TimeInterval? = nil,
         resumeTime: TimeInterval = 0,
+        startupResumePolicy: PlayerStartupResumePolicy = .deferred,
+        dynamicRange: BiliVideoDynamicRange = .sdr,
+        metricsID: String? = nil,
         engine: PlayerRenderingEngine? = nil
     ) {
+        let resolvedMetricsID = metricsID?.isEmpty == false ? metricsID! : UUID().uuidString
         self.title = title
-        self.danmakus = danmakus.sorted { $0.time < $1.time }
+        self.metricsID = resolvedMetricsID
         self.streamSource = PlayerStreamSource(
+            metricsID: resolvedMetricsID,
             videoURL: videoURL,
             audioURL: audioURL,
             videoStream: videoStream,
             audioStream: audioStream,
             referer: referer,
+            title: title,
             durationHint: durationHint,
-            resumeTime: resumeTime
+            resumeTime: resumeTime,
+            dynamicRange: dynamicRange
         )
         self.durationHint = durationHint
         self.duration = durationHint
         self.resumeTime = resumeTime
+        self.startupResumePolicy = startupResumePolicy
         self.engine = engine ?? AVPlayerHLSBridgeEngine()
         super.init()
+        self.volume = self.engine.volume
+        self.isMuted = self.engine.isMuted
+        self.engine.onPlaybackStateChange = { [weak self] state in
+            self?.handleEnginePlaybackState(state)
+        }
+        self.engine.onPlaybackIntentChange = { [weak self] wantsPlayback in
+            self?.handleEnginePlaybackIntentChange(wantsPlayback)
+        }
+        self.engine.onLoadingProgressChange = { [weak self] progress in
+            self?.handleEngineLoadingProgress(progress)
+        }
+        self.engine.onFirstFrame = { [weak self] currentTime in
+            self?.handleEngineFirstFrame(currentTime)
+        }
+        self.engine.setViewModel(self)
+        PlayerMetricsLog.logger.info(
+            "created id=\(self.metricsID, privacy: .public) title=\(PlayerMetricsLog.shortTitle(title), privacy: .public) hasAudio=\((audioURL != nil), privacy: .public) resume=\(resumeTime, privacy: .public)"
+        )
+        PlayerMetricsLog.record(.playerCreated, metricsID: self.metricsID, title: title)
         startTimeObserver()
     }
 
     deinit {
         mediaPreparationTask?.cancel()
         scrubSeekTask?.cancel()
+        startupResumeRetryTask?.cancel()
         timeObserver?.invalidate()
         let engine = engine
         Task { @MainActor in
+            engine.setViewModel(nil)
             engine.stop()
         }
     }
@@ -89,16 +136,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         isSeekable || (duration ?? durationHint ?? 0) > 0
     }
 
-    var danmakuOpacity: Double {
-        danmakuOpacityPreset.rawValue
-    }
-
-    var danmakuFontScale: Double {
-        danmakuFontScalePreset.rawValue
-    }
-
     var isPictureInPictureSupported: Bool {
-        AVPictureInPictureController.isPictureInPictureSupported()
+        engine.supportsPictureInPicture
+            || (AVPictureInPictureController.isPictureInPictureSupported()
+                && (pictureInPictureController != nil || engine.pictureInPictureContentSource() != nil))
+    }
+
+    var usesNativePlaybackControls: Bool {
+        engine.usesNativePlaybackControls
     }
 
     var displayDuration: TimeInterval? {
@@ -111,6 +156,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func attachSurface(_ view: VideoSurfaceContainerView) {
+        if ManualVideoFullscreenSession.isActive,
+           let currentSurface = surfaceView,
+           currentSurface !== view,
+           currentSurface.isInManualFullscreen,
+           !view.isInManualFullscreen {
+            return
+        }
+
         let isNewSurface = surfaceView !== view
         surfaceView = view
         if isNewSurface {
@@ -133,14 +186,43 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engine.refreshSurfaceLayout()
     }
 
+    func playbackSnapshot() -> PlayerPlaybackSnapshot {
+        engine.snapshot(durationHint: duration ?? durationHint)
+    }
+
+    func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget? = nil) {
+        engine.setHostFullscreenActive(isActive, exitTarget: exitTarget)
+        engine.recoverSurface()
+        engine.refreshSurfaceLayout()
+    }
+
+    func recoverSurfaceAfterHostFullscreenTransition() {
+        guard surfaceView != nil else { return }
+        engine.recoverSurface()
+        engine.refreshSurfaceLayout()
+    }
+
+    func setHostFullscreenRequestHandler(_ handler: (() -> Void)?) {
+        hostFullscreenRequestHandler = handler
+    }
+
+    @discardableResult
+    func requestHostFullscreen() -> Bool {
+        guard let hostFullscreenRequestHandler else { return false }
+        hostFullscreenRequestHandler()
+        return true
+    }
+
     func recoverPlaybackAfterAppResume() {
+        guard !isTerminated else { return }
+        guard ActivePlaybackCoordinator.shared.isActive(self) else { return }
         if timeObserver == nil {
             startTimeObserver()
         }
         engine.recoverSurface()
         refreshSurfaceLayout()
         configurePictureInPictureIfNeeded()
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
 
         guard errorMessage == nil else { return }
         if engine.needsMediaRecovery {
@@ -161,17 +243,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func rebuildMediaAfterPlaybackInterruption() {
+        guard !isTerminated else { return }
         guard mediaPreparationTask == nil else { return }
         let restoreTime = currentTime
         isPreparing = false
-        mediaPreparationTask = Task { [weak self] in
+        mediaPreparationTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
                 try await self.engine.prepare(source: self.streamSource)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !self.isTerminated else { return }
                 self.mediaPreparationTask = nil
                 if restoreTime > 0, let time = self.engine.seek(toTime: restoreTime) {
-                    self.updatePlaybackTime(time, force: true)
+                    self.updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
                 }
                 if self.wantsAutoplay {
                     self.startPreparedPlayback()
@@ -179,7 +262,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     self.refreshPlaybackState()
                 }
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !self.isTerminated else { return }
                 self.mediaPreparationTask = nil
                 self.errorMessage = error.localizedDescription
                 self.isPreparing = false
@@ -188,7 +271,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func play() {
+        guard !isTerminated else { return }
+        ActivePlaybackCoordinator.shared.activate(self)
         wantsAutoplay = true
+        errorMessage = nil
         guard streamSource.videoURL != nil else {
             errorMessage = PlayerEngineError.missingVideoURL.localizedDescription
             isPreparing = false
@@ -204,39 +290,72 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func resumePlaybackAfterUserSeek() {
+        guard !isTerminated else { return }
         wantsAutoplay = true
         play()
     }
 
     func pause() {
+        guard !isTerminated else { return }
         wantsAutoplay = false
         engine.pause()
         isPlaying = false
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
+    }
+
+    func setPlaybackIntent(_ shouldAutoplay: Bool) {
+        guard !isTerminated else { return }
+        wantsAutoplay = shouldAutoplay
+        if !shouldAutoplay {
+            isPlaying = false
+            isBuffering = false
+        }
     }
 
     func suspendForNavigation() {
+        guard !isTerminated else { return }
         mediaPreparationTask?.cancel()
         mediaPreparationTask = nil
         pause()
     }
 
-    func stop() {
+    func stop(reason: PlayerStopReason = .navigation) {
+        guard !isStopping else { return }
+        if isTerminated {
+            ActivePlaybackCoordinator.shared.deactivate(self)
+            return
+        }
+        isStopping = true
+        isTerminated = true
         mediaPreparationTask?.cancel()
         mediaPreparationTask = nil
         scrubSeekTask?.cancel()
         scrubSeekTask = nil
+        startupResumeRetryTask?.cancel()
+        startupResumeRetryTask = nil
         timeObserver?.invalidate()
         timeObserver = nil
         wantsAutoplay = false
+        engine.setViewModel(nil)
         engine.stop()
+        ActivePlaybackCoordinator.shared.deactivate(self)
         isPlaying = false
         isPreparing = false
-        pictureInPictureController?.invalidatePlaybackState()
+        isBuffering = false
+        errorMessage = nil
+        loadingProgress = 0
+        hasPresentedPlayback = false
+        isPlaybackSurfaceReady = false
+        forcedPlaybackTimeGuard = nil
+        didLogFirstNaturalPlaybackTime = false
+        invalidatePictureInPicturePlaybackState()
+        isStopping = false
     }
 
     func togglePlayback() {
-        if isPlaying {
+        guard !isTerminated else { return }
+        let snapshot = engine.snapshot(durationHint: durationHint)
+        if isPlaying || snapshot.isPlaying {
             pause()
         } else {
             play()
@@ -244,40 +363,60 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func seek(to progress: Double) {
+        guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         if let time = engine.seek(toProgress: progress, duration: duration) {
-            updatePlaybackTime(time, force: true)
+            updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
         }
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
     }
 
     func seekAfterUserScrub(to progress: Double) {
+        guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         wantsAutoplay = true
         scrubSeekTask?.cancel()
-        scrubSeekTask = Task { @MainActor [weak self] in
+        scrubSeekTask = Task(priority: .userInitiated) { @MainActor [weak self] in
             guard let self else { return }
             let time = await self.engine.seekAfterUserScrub(toProgress: progress, duration: self.duration)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !self.isTerminated else { return }
             if let time {
-                self.updatePlaybackTime(time, force: true)
+                self.updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
             }
             self.startPreparedPlayback()
         }
     }
 
     func seek(by interval: TimeInterval) {
+        guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         if let time = engine.seek(by: interval, from: currentTime, duration: duration ?? durationHint) {
-            updatePlaybackTime(time, force: true)
+            updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
         }
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
     }
 
     func setPlaybackRate(_ rate: BiliPlaybackRate) {
         playbackRate = rate
         engine.setPlaybackRate(rate.rawValue)
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
+    }
+
+    func setVolume(_ value: Float) {
+        let normalizedVolume = min(max(value, 0), 1)
+        volume = normalizedVolume
+        engine.setVolume(normalizedVolume)
+        if normalizedVolume > 0, isMuted {
+            isMuted = false
+            engine.setMuted(false)
+        }
+        invalidatePictureInPicturePlaybackState()
+    }
+
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        engine.setMuted(muted)
+        invalidatePictureInPicturePlaybackState()
     }
 
     func setSponsorBlockSegments(
@@ -302,25 +441,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
-    func setDanmakuEnabled(_ isEnabled: Bool) {
-        danmakuEnabled = isEnabled
-        if isEnabled {
-            updateVisibleDanmakus(for: currentTime, force: true)
-        } else {
-            visibleDanmakus = []
-        }
-    }
-
-    func setDanmakuOpacity(_ opacity: BiliDanmakuOpacity) {
-        danmakuOpacityPreset = opacity
-    }
-
-    func setDanmakuFontScale(_ scale: BiliDanmakuFontScale) {
-        danmakuFontScalePreset = scale
-    }
-
     func togglePictureInPicture() {
         configurePictureInPictureIfNeeded()
+        if pictureInPictureController == nil, engine.supportsPictureInPicture {
+            engine.togglePictureInPicture()
+            isPictureInPictureActive = engine.isPictureInPictureActive
+            return
+        }
         guard let pictureInPictureController else { return }
         if pictureInPictureController.isPictureInPictureActive {
             pictureInPictureController.stopPictureInPicture()
@@ -340,21 +467,40 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func prepareMediaAndPlay() {
+        guard !isTerminated else { return }
         guard mediaPreparationTask == nil else { return }
         isPreparing = true
-        mediaPreparationTask = Task { [weak self] in
+        loadingProgress = max(loadingProgress, 0.12)
+        PlayerMetricsLog.logger.info(
+            "prepareRequested id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
+        )
+        PlayerMetricsLog.record(.prepareRequested, metricsID: metricsID, title: title, message: elapsedMessage())
+        mediaPreparationTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-        do {
-            try await self.engine.prepare(source: self.streamSource)
-            guard !Task.isCancelled else { return }
-            self.mediaPreparationTask = nil
-            if self.wantsAutoplay {
-                self.startPreparedPlayback()
-            } else {
-                self.isPreparing = false
-            }
-        } catch {
-                guard !Task.isCancelled else { return }
+            do {
+                try await self.engine.prepare(source: self.streamSource)
+                guard !Task.isCancelled, !self.isTerminated else { return }
+                PlayerMetricsLog.logger.info(
+                    "prepareReturned id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
+                )
+                PlayerMetricsLog.record(.prepareReturned, metricsID: self.metricsID, title: self.title, message: self.elapsedMessage())
+                self.mediaPreparationTask = nil
+                self.loadingProgress = max(self.loadingProgress, 0.72)
+                if self.startupResumePolicy == .immediate {
+                    self.applyImmediateResumeTimeIfNeeded()
+                }
+                if self.wantsAutoplay {
+                    self.startPreparedPlayback()
+                } else {
+                    self.isPreparing = false
+                    self.refreshPlaybackState()
+                }
+            } catch {
+                guard !Task.isCancelled, !self.isTerminated else { return }
+                PlayerMetricsLog.logger.error(
+                    "prepareFailed id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
+                PlayerMetricsLog.record(.failed, metricsID: self.metricsID, title: self.title, message: "\(self.elapsedMessage()) \(error.localizedDescription)")
                 self.mediaPreparationTask = nil
                 self.errorMessage = error.localizedDescription
                 self.isPreparing = false
@@ -363,14 +509,27 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func startPreparedPlayback() {
+        guard !isTerminated else { return }
         guard engine.hasMedia else { return }
+        guard ActivePlaybackCoordinator.shared.isActive(self) else { return }
         wantsAutoplay = true
         isPreparing = false
+        isBuffering = !hasPresentedPlayback
+        loadingProgress = max(loadingProgress, 0.78)
         isPlaying = true
+        PlayerMetricsLog.logger.info(
+            "playRequested id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
+        )
+        PlayerMetricsLog.record(.playRequested, metricsID: metricsID, title: title, message: elapsedMessage())
         engine.play()
         engine.setPlaybackRate(playbackRate.rawValue)
-        applyResumeTimeIfNeeded()
-        pictureInPictureController?.invalidatePlaybackState()
+        if startupResumePolicy == .deferred {
+            applyResumeTimeIfNeeded()
+        } else {
+            scheduleImmediateResumeCorrectionIfNeeded()
+        }
+        refreshPlaybackState()
+        invalidatePictureInPicturePlaybackState()
     }
 
     private func startTimeObserver() {
@@ -385,11 +544,27 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func refreshPlaybackState() {
+        guard !isTerminated else { return }
+        guard ActivePlaybackCoordinator.shared.isActive(self) || !wantsAutoplay else { return }
+        if let playbackErrorMessage = engine.playbackErrorMessage {
+            errorMessage = playbackErrorMessage
+            isPreparing = false
+            isPlaying = false
+            wantsAutoplay = false
+            invalidatePictureInPicturePlaybackState()
+            return
+        }
+
         let snapshot = engine.snapshot(durationHint: durationHint)
-        if let snapshotTime = snapshot.currentTime {
-            updatePlaybackTime(snapshotTime)
+        var acceptedSnapshotTime: TimeInterval?
+        if let snapshotTime = snapshot.currentTime,
+           updatePlaybackTime(snapshotTime) {
+            acceptedSnapshotTime = currentTime
             if isPreparing {
                 isPreparing = false
+            }
+            if isBuffering, snapshot.isPlaying || hasPresentedPlayback {
+                isBuffering = false
             }
         }
         if let snapshotDuration = snapshot.duration {
@@ -398,6 +573,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if wantsAutoplay, engine.hasMedia, !snapshot.isPlaying, errorMessage == nil {
             engine.play()
             engine.setPlaybackRate(playbackRate.rawValue)
+            if !hasPresentedPlayback {
+                isBuffering = true
+            }
         }
         let shouldDisplayPlaying = snapshot.isPlaying || (wantsAutoplay && engine.hasMedia && errorMessage == nil)
         if isPlaying != shouldDisplayPlaying {
@@ -406,20 +584,24 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if isSeekable != snapshot.isSeekable {
             isSeekable = snapshot.isSeekable
         }
-        if let snapshotTime = snapshot.currentTime {
+        syncPictureInPictureState()
+        if let snapshotTime = acceptedSnapshotTime {
             skipSponsorBlockSegmentIfNeeded(at: snapshotTime)
         }
     }
 
     private func applyResumeTimeIfNeeded() {
-        guard !didApplyResumeTime, resumeTime >= 10 else { return }
+        guard !didApplyResumeTime, resumeTime > 0.25 else { return }
         didApplyResumeTime = true
         let milliseconds = Int32(min(resumeTime * 1000, Double(Int32.max)))
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)
-            guard let self else { return }
+            guard let self,
+                  !self.isTerminated,
+                  ActivePlaybackCoordinator.shared.isActive(self)
+            else { return }
             if let time = self.engine.seek(toTime: TimeInterval(milliseconds) / 1000) {
-                self.updatePlaybackTime(time, force: true)
+                self.updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
             }
             if self.wantsAutoplay {
                 self.engine.play()
@@ -428,12 +610,158 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
-    private func updatePlaybackTime(_ time: TimeInterval, force: Bool = false) {
+    private func applyImmediateResumeTimeIfNeeded() {
+        guard !didApplyResumeTime, resumeTime > 0.25 else { return }
+        didApplyResumeTime = true
+        seekToStartupResumeTime(reason: "prepareReturned")
+        scheduleImmediateResumeCorrectionIfNeeded()
+    }
+
+    private func scheduleImmediateResumeCorrectionIfNeeded() {
+        guard startupResumePolicy == .immediate, resumeTime > 0.25 else { return }
+        startupResumeRetryTask?.cancel()
+        let targetTime = resumeTime
+        startupResumeRetryTask = Task { @MainActor [weak self] in
+            let retryDelays: [UInt64] = [
+                90_000_000,
+                180_000_000,
+                320_000_000,
+                520_000_000,
+                850_000_000
+            ]
+            for delay in retryDelays {
+                try? await Task.sleep(nanoseconds: delay)
+                guard let self,
+                      !Task.isCancelled,
+                      !self.isTerminated,
+                      ActivePlaybackCoordinator.shared.isActive(self)
+                else { return }
+                let snapshotTime = self.engine.snapshot(durationHint: self.durationHint).currentTime
+                if let snapshotTime,
+                   snapshotTime >= max(targetTime - 1.2, 0),
+                   snapshotTime <= targetTime + 8 {
+                    self.startupResumeRetryTask = nil
+                    return
+                }
+                self.seekToStartupResumeTime(reason: "retry")
+                if self.wantsAutoplay {
+                    self.engine.play()
+                    self.engine.setPlaybackRate(self.playbackRate.rawValue)
+                }
+            }
+            self?.startupResumeRetryTask = nil
+        }
+    }
+
+    @discardableResult
+    private func seekToStartupResumeTime(reason: String) -> Bool {
+        guard resumeTime > 0.25, engine.hasMedia else { return false }
+        guard let time = engine.seek(toTime: resumeTime) else { return false }
+        updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
+        PlayerMetricsLog.logger.info(
+            "startupResumeSeek id=\(self.metricsID, privacy: .public) reason=\(reason, privacy: .public) target=\(self.resumeTime, format: .fixed(precision: 2), privacy: .public) applied=\(time, format: .fixed(precision: 2), privacy: .public)"
+        )
+        return true
+    }
+
+    @discardableResult
+    private func updatePlaybackTime(
+        _ time: TimeInterval,
+        force: Bool = false,
+        countsAsNaturalPlayback: Bool = true
+    ) -> Bool {
         let normalizedTime = max(time, 0)
-        if force || abs(currentTime - normalizedTime) >= 0.2 {
+        guard force || !shouldIgnoreStalePlaybackTimeAfterForcedSeek(normalizedTime) else {
+            return false
+        }
+        guard force || !shouldIgnoreStartupPlaybackTimeOutlier(normalizedTime) else {
+            return false
+        }
+        if countsAsNaturalPlayback, !didLogFirstNaturalPlaybackTime, normalizedTime > 0 {
+            didLogFirstNaturalPlaybackTime = true
+            PlayerMetricsLog.logger.info(
+                "firstPlaybackTime id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) current=\(normalizedTime, format: .fixed(precision: 2), privacy: .public)"
+            )
+            PlayerMetricsLog.record(.firstFrame, metricsID: metricsID, title: title, message: "\(elapsedMessage()) time=\(String(format: "%.2f", normalizedTime))s")
+        }
+        if countsAsNaturalPlayback, normalizedTime > 0 {
+            hasPresentedPlayback = true
+            loadingProgress = max(loadingProgress, 0.98)
+        }
+        if force || (currentTime <= 0 && normalizedTime > 0) || abs(currentTime - normalizedTime) >= 0.2 {
             currentTime = normalizedTime
         }
-        updateVisibleDanmakus(for: normalizedTime, force: force)
+        if force {
+            installForcedPlaybackTimeGuard(for: normalizedTime)
+        } else {
+            clearForcedPlaybackTimeGuardIfSatisfied(by: normalizedTime)
+        }
+        return true
+    }
+
+    private func handleEngineFirstFrame(_ time: TimeInterval) {
+        guard !isTerminated else { return }
+        isPlaybackSurfaceReady = true
+        hasPresentedPlayback = true
+        loadingProgress = 1
+        isPreparing = false
+        isBuffering = false
+        if time > 0 {
+            _ = updatePlaybackTime(time, force: currentTime <= 0, countsAsNaturalPlayback: false)
+        }
+    }
+
+    private func installForcedPlaybackTimeGuard(for time: TimeInterval) {
+        guard time > forcedPlaybackTimeGuardTolerance else {
+            forcedPlaybackTimeGuard = nil
+            return
+        }
+        forcedPlaybackTimeGuard = ForcedPlaybackTimeGuard(
+            targetTime: time,
+            expiresAt: CACurrentMediaTime() + forcedPlaybackTimeGuardDuration
+        )
+    }
+
+    private func shouldIgnoreStalePlaybackTimeAfterForcedSeek(_ time: TimeInterval) -> Bool {
+        guard let guardState = forcedPlaybackTimeGuard else { return false }
+        guard CACurrentMediaTime() <= guardState.expiresAt else {
+            forcedPlaybackTimeGuard = nil
+            return false
+        }
+        if abs(time - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance {
+            forcedPlaybackTimeGuard = nil
+            return false
+        }
+        guard abs(currentTime - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance else {
+            return false
+        }
+        PlayerMetricsLog.logger.info(
+            "ignoredStalePlaybackTimeAfterSeek id=\(self.metricsID, privacy: .public) target=\(guardState.targetTime, format: .fixed(precision: 2), privacy: .public) current=\(self.currentTime, format: .fixed(precision: 2), privacy: .public) candidate=\(time, format: .fixed(precision: 2), privacy: .public)"
+        )
+        return true
+    }
+
+    private func clearForcedPlaybackTimeGuardIfSatisfied(by time: TimeInterval) {
+        guard let guardState = forcedPlaybackTimeGuard else { return }
+        if abs(time - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance
+            || CACurrentMediaTime() > guardState.expiresAt {
+            forcedPlaybackTimeGuard = nil
+        }
+    }
+
+    private func shouldIgnoreStartupPlaybackTimeOutlier(_ time: TimeInterval) -> Bool {
+        guard resumeTime < 10,
+              !didApplyResumeTime,
+              currentTime < 2,
+              time - currentTime > 8,
+              PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime) < 15_000,
+              ignoredStartupPlaybackTimeOutliers < 24
+        else { return false }
+        ignoredStartupPlaybackTimeOutliers += 1
+        PlayerMetricsLog.logger.info(
+            "ignoredStartupPlaybackTimeOutlier id=\(self.metricsID, privacy: .public) current=\(self.currentTime, format: .fixed(precision: 2), privacy: .public) candidate=\(time, format: .fixed(precision: 2), privacy: .public)"
+        )
+        return true
     }
 
     private func updateDuration(_ newDuration: TimeInterval) {
@@ -442,6 +770,67 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return
         }
         duration = newDuration
+    }
+
+    private func handleEnginePlaybackState(_ state: PlayerEnginePlaybackState) {
+        guard !isTerminated else { return }
+        switch state {
+        case .idle:
+            isBuffering = false
+        case .preparing:
+            isPreparing = true
+            isBuffering = false
+            isPlaybackSurfaceReady = false
+            loadingProgress = max(loadingProgress, 0.18)
+        case .ready:
+            isPreparing = false
+            isBuffering = false
+            loadingProgress = max(loadingProgress, 0.86)
+            errorMessage = nil
+        case .buffering:
+            isPreparing = false
+            isBuffering = true
+            loadingProgress = max(loadingProgress, 0.72)
+            PlayerMetricsLog.record(.buffering, metricsID: metricsID, title: title, message: elapsedMessage())
+        case .playing:
+            isPreparing = false
+            isBuffering = false
+            isPlaying = true
+            loadingProgress = max(loadingProgress, 0.98)
+            errorMessage = nil
+        case .paused:
+            isBuffering = false
+            isPlaying = false
+        case .ended:
+            isPreparing = false
+            isBuffering = false
+            isPlaying = false
+            wantsAutoplay = false
+        case .failed(let message):
+            isPreparing = false
+            isBuffering = false
+            isPlaying = false
+            wantsAutoplay = false
+            errorMessage = message ?? PlayerEngineError.unsupportedMedia.localizedDescription
+            PlayerMetricsLog.record(.failed, metricsID: metricsID, title: title, message: errorMessage)
+        }
+    }
+
+    private func handleEnginePlaybackIntentChange(_ wantsPlayback: Bool) {
+        guard !isTerminated else { return }
+        wantsAutoplay = wantsPlayback
+        if !wantsPlayback {
+            isPlaying = false
+            isBuffering = false
+            invalidatePictureInPicturePlaybackState()
+        }
+    }
+
+    private func handleEngineLoadingProgress(_ progress: Double) {
+        guard !isTerminated, !isPlaybackSurfaceReady else { return }
+        let normalizedProgress = min(max(progress, 0), 0.98)
+        guard normalizedProgress > loadingProgress + 0.01 else { return }
+        loadingProgress = normalizedProgress
     }
 
     private func skipSponsorBlockSegmentIfNeeded(at time: TimeInterval) {
@@ -467,13 +856,17 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !skippedSponsorBlockIDs.contains(segment.id) else { return }
         guard let skippedTo = engine.seek(toTime: segment.endTime) else { return }
         skippedSponsorBlockIDs.insert(segment.id)
-        updatePlaybackTime(skippedTo, force: true)
+        updatePlaybackTime(skippedTo, force: true, countsAsNaturalPlayback: false)
+        PlayerMetricsLog.logger.info(
+            "sponsorBlockSkipped id=\(self.metricsID, privacy: .public) category=\(segment.category, privacy: .public) from=\(time, format: .fixed(precision: 2), privacy: .public) to=\(skippedTo, format: .fixed(precision: 2), privacy: .public)"
+        )
 
         if wantsAutoplay {
+            guard ActivePlaybackCoordinator.shared.isActive(self) else { return }
             engine.play()
             engine.setPlaybackRate(playbackRate.rawValue)
         }
-        pictureInPictureController?.invalidatePlaybackState()
+        invalidatePictureInPicturePlaybackState()
         reportSponsorBlockSkip(segment, from: time)
     }
 
@@ -488,44 +881,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
-    private func updateVisibleDanmakus(for time: TimeInterval, force: Bool = false) {
-        guard danmakuEnabled, !danmakus.isEmpty else {
-            if !visibleDanmakus.isEmpty {
-                visibleDanmakus = []
-            }
-            return
-        }
-
-        let startTime = max(time - 4, 0)
-        var lowerBound = 0
-        var upperBound = danmakus.count
-        while lowerBound < upperBound {
-            let midpoint = (lowerBound + upperBound) / 2
-            if danmakus[midpoint].time <= startTime {
-                lowerBound = midpoint + 1
-            } else {
-                upperBound = midpoint
-            }
-        }
-
-        var visible = [DanmakuItem]()
-        visible.reserveCapacity(maxVisibleDanmakuCount)
-        var index = lowerBound
-        while index < danmakus.count,
-              danmakus[index].time <= time,
-              visible.count < maxVisibleDanmakuCount {
-            visible.append(danmakus[index])
-            index += 1
-        }
-
-        if force || visibleDanmakus != visible {
-            visibleDanmakus = visible
-        }
-    }
-
     private func configurePictureInPictureIfNeeded() {
         guard !didConfigurePictureInPicture,
-              isPictureInPictureSupported,
+              !engine.supportsPictureInPicture,
+              AVPictureInPictureController.isPictureInPictureSupported(),
               let contentSource = engine.pictureInPictureContentSource()
         else { return }
 
@@ -535,6 +894,26 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         pictureInPictureController = controller
         didConfigurePictureInPicture = true
     }
+
+    private func invalidatePictureInPicturePlaybackState() {
+        pictureInPictureController?.invalidatePlaybackState()
+        engine.invalidatePictureInPicturePlaybackState()
+        syncPictureInPictureState()
+    }
+
+    private func syncPictureInPictureState() {
+        isPictureInPictureActive = pictureInPictureController?.isPictureInPictureActive == true
+            || engine.isPictureInPictureActive
+    }
+
+    private func elapsedMessage() -> String {
+        "\(Int(PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime).rounded()))ms"
+    }
+}
+
+private struct ForcedPlaybackTimeGuard {
+    let targetTime: TimeInterval
+    let expiresAt: CFTimeInterval
 }
 
 extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {

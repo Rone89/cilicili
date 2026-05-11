@@ -86,6 +86,8 @@
 				7FB932AE2FA5009100F93779 /* bili */,
 			);
 			name = bili;
+			packageProductDependencies = (
+			);
 			productName = bili;
 			productReference = 7FB932AC2FA5009100F93779 /* bili.app */;
 			productType = "com.apple.product-type.application";
@@ -358,6 +360,7 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
 	};
 	rootObject = 7FB932A42FA5009100F93779 /* Project object */;
 }

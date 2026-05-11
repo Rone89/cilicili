@@ -87,15 +87,29 @@ enum AppNavigationChrome {
 }
 
 struct VideoNavigationHostTransparency: UIViewControllerRepresentable {
+    var suppressesNavigationBar = false
+
     func makeUIViewController(context _: Context) -> Controller {
-        Controller()
+        Controller(suppressesNavigationBar: suppressesNavigationBar)
     }
 
     func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.suppressesNavigationBar = suppressesNavigationBar
         uiViewController.applyTransparency()
     }
 
     final class Controller: UIViewController {
+        var suppressesNavigationBar: Bool
+
+        init(suppressesNavigationBar: Bool) {
+            self.suppressesNavigationBar = suppressesNavigationBar
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
         override func loadView() {
             view = ClearPassthroughView()
         }
@@ -119,19 +133,18 @@ struct VideoNavigationHostTransparency: UIViewControllerRepresentable {
             view.backgroundColor = .clear
             view.isOpaque = false
 
-            var current: UIViewController? = self
-            while let viewController = current {
-                viewController.view.backgroundColor = .clear
-                viewController.view.isOpaque = false
-                if let navigationController = viewController as? UINavigationController {
-                    navigationController.view.backgroundColor = .clear
-                    navigationController.view.isOpaque = false
-                    AppNavigationChrome.applyTransparent(to: navigationController.navigationBar)
-                } else if let navigationController = viewController.navigationController {
-                    AppNavigationChrome.applyTransparent(to: navigationController.navigationBar)
-                }
-                current = viewController.parent
+            guard let navigationController = enclosingNavigationController() else {
+                return
             }
+
+            navigationController.view.backgroundColor = .clear
+            navigationController.view.isOpaque = false
+            navigationController.topViewController?.view.backgroundColor = .clear
+            navigationController.topViewController?.view.isOpaque = false
+
+            // Keep the hidden overlay bar stable during interactive pop. The
+            // visible top-level pages install their own translucent chrome.
+            AppNavigationChrome.applyStandard(to: navigationController.navigationBar)
         }
 
         private func applySoon() {
@@ -139,8 +152,111 @@ struct VideoNavigationHostTransparency: UIViewControllerRepresentable {
                 self?.applyTransparency()
             }
         }
+
+        private func enclosingNavigationController() -> UINavigationController? {
+            if let navigationController {
+                return navigationController
+            }
+
+            var current = parent
+            while let viewController = current {
+                if let navigationController = viewController as? UINavigationController {
+                    return navigationController
+                }
+                if let navigationController = viewController.navigationController {
+                    return navigationController
+                }
+                current = viewController.parent
+            }
+
+            var responder: UIResponder? = view
+            while let current = responder {
+                if let viewController = current as? UIViewController,
+                   let navigationController = viewController.navigationController {
+                    return navigationController
+                }
+                responder = current.next
+            }
+            return nil
+        }
     }
 
+}
+
+struct VideoNavigationTransitionObserver: UIViewControllerRepresentable {
+    let isClosing: Bool
+    let onTransitionCompleted: () -> Void
+
+    func makeUIViewController(context _: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.onTransitionCompleted = onTransitionCompleted
+        uiViewController.update(isClosing: isClosing)
+    }
+
+    final class Controller: UIViewController {
+        var onTransitionCompleted: (() -> Void)?
+        private var isScheduled = false
+
+        override func loadView() {
+            view = ClearPassthroughView()
+        }
+
+        func update(isClosing: Bool) {
+            guard isClosing else {
+                isScheduled = false
+                return
+            }
+            guard !isScheduled else { return }
+            isScheduled = true
+
+            let finish: (Bool) -> Void = { [weak self] cancelled in
+                guard let self else { return }
+                self.isScheduled = false
+                guard !cancelled else { return }
+                self.onTransitionCompleted?()
+            }
+
+            if let coordinator = enclosingNavigationController()?.transitionCoordinator {
+                coordinator.animate(alongsideTransition: nil) { context in
+                    finish(context.isCancelled)
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+                    finish(false)
+                }
+            }
+        }
+
+        private func enclosingNavigationController() -> UINavigationController? {
+            if let navigationController {
+                return navigationController
+            }
+
+            var current = parent
+            while let viewController = current {
+                if let navigationController = viewController as? UINavigationController {
+                    return navigationController
+                }
+                if let navigationController = viewController.navigationController {
+                    return navigationController
+                }
+                current = viewController.parent
+            }
+
+            var responder: UIResponder? = view
+            while let current = responder {
+                if let viewController = current as? UIViewController,
+                   let navigationController = viewController.navigationController {
+                    return navigationController
+                }
+                responder = current.next
+            }
+            return nil
+        }
+    }
 }
 
 final class ClearPassthroughView: UIView {

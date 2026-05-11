@@ -1,5 +1,27 @@
 import Foundation
 
+enum BiliVideoDynamicRange: String, Hashable, Sendable {
+    case sdr
+    case hdr10
+    case hlg
+    case dolbyVision
+
+    nonisolated var isHDR: Bool {
+        self != .sdr
+    }
+
+    nonisolated var hlsVideoRangeAttribute: String? {
+        switch self {
+        case .sdr:
+            return nil
+        case .hdr10, .dolbyVision:
+            return "PQ"
+        case .hlg:
+            return "HLG"
+        }
+    }
+}
+
 struct BiliResponse<T: Decodable>: Decodable {
     let code: Int
     let message: String?
@@ -88,7 +110,6 @@ struct VideoOwner: Decodable, Hashable {
 
 struct VideoStat: Decodable, Hashable {
     let view: Int?
-    let danmaku: Int?
     let reply: Int?
     let like: Int?
     let coin: Int?
@@ -183,12 +204,10 @@ struct UploaderVideoItem: Decodable, Hashable {
     let description: String?
     let length: String?
     let play: Int?
-    let videoReview: Int?
     let comment: Int?
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, author, mid, title, pic, description, length, play, comment
-        case videoReview = "video_review"
     }
 
     init(from decoder: Decoder) throws {
@@ -202,7 +221,6 @@ struct UploaderVideoItem: Decodable, Hashable {
         description = try container.decodeIfPresent(String.self, forKey: .description)
         length = try container.decodeIfPresent(String.self, forKey: .length)
         play = container.decodeLossyIntIfPresent(forKey: .play)
-        videoReview = container.decodeLossyIntIfPresent(forKey: .videoReview)
         comment = container.decodeLossyIntIfPresent(forKey: .comment)
     }
 
@@ -216,7 +234,7 @@ struct UploaderVideoItem: Decodable, Hashable {
             duration: length.flatMap(Self.durationSeconds),
             pubdate: nil,
             owner: VideoOwner(mid: mid ?? defaultMID, name: author ?? "", face: nil),
-            stat: VideoStat(view: play, danmaku: videoReview, reply: comment, like: nil, coin: nil, favorite: nil),
+            stat: VideoStat(view: play, reply: comment, like: nil, coin: nil, favorite: nil),
             cid: nil,
             pages: nil,
             dimension: nil
@@ -316,7 +334,7 @@ struct PlayURLData: Decodable {
         case supportFormats = "support_formats"
     }
 
-    func mergingDisplayFormats(from metadata: PlayURLData) -> PlayURLData {
+    nonisolated func mergingDisplayFormats(from metadata: PlayURLData) -> PlayURLData {
         PlayURLData(
             code: code,
             message: message,
@@ -329,27 +347,50 @@ struct PlayURLData: Decodable {
         )
     }
 
-    func mergingPlayableStreams(from other: PlayURLData) -> PlayURLData {
-        PlayURLData(
+    nonisolated func mergingPlayableStreams(from other: PlayURLData) -> PlayURLData {
+        let mergedDURL = durl ?? other.durl
+        return PlayURLData(
             code: code ?? other.code,
             message: message ?? other.message,
-            durl: durl ?? other.durl,
+            durl: mergedDURL,
             dash: dash?.mergingStreams(from: other.dash) ?? other.dash,
-            quality: quality ?? other.quality,
+            quality: durl == nil && other.durl != nil ? (other.quality ?? quality) : (quality ?? other.quality),
             acceptQuality: mergedQualities(primary: acceptQuality, secondary: other.acceptQuality),
             acceptDescription: mergedDescriptions(metadata: other),
             supportFormats: mergedSupportFormats(primary: supportFormats, secondary: other.supportFormats)
         )
     }
 
-    var highestPlayableQuality: Int {
+    nonisolated var hasPlayableStreamPayload: Bool {
+        durl?.contains(where: { !$0.url.isEmpty || $0.backupURL?.isEmpty == false }) == true
+            || dash?.video?.isEmpty == false
+    }
+
+    nonisolated var highestPlayableQuality: Int {
         playVariants
             .filter(\.isPlayable)
             .map(\.quality)
             .max() ?? 0
     }
 
-    var playVariants: [PlayVariant] {
+    nonisolated func hasPlayableQuality(_ quality: Int) -> Bool {
+        playVariants.contains { $0.isPlayable && $0.quality == quality }
+    }
+
+    nonisolated func shouldRefetchForPreferredQuality(_ quality: Int) -> Bool {
+        let playableVariants = playVariants.filter(\.isPlayable)
+        guard !playableVariants.isEmpty else { return false }
+        guard !hasPlayableQuality(quality) else { return false }
+        let advertisedQualities = Set(
+            (acceptQuality ?? [])
+                + (supportFormats ?? []).compactMap(\.quality)
+                + (dash?.video ?? []).compactMap(\.id)
+                + [self.quality].compactMap { $0 }
+        )
+        return advertisedQualities.isEmpty || advertisedQualities.contains(quality)
+    }
+
+    nonisolated var playVariants: [PlayVariant] {
         let bestAudio = dash?.bestAudioStream
         let videosByQuality = Dictionary(grouping: dash?.video ?? [], by: { $0.id ?? 0 })
         let descriptions = Dictionary(uniqueKeysWithValues: zip(acceptQuality ?? [], acceptDescription ?? []))
@@ -379,13 +420,22 @@ struct PlayURLData: Decodable {
             let stream = videosByQuality[quality]?.sorted(by: DASHStream.preferPlayable).first
             let streamURL = stream?.playURL
             let progressiveURL = quality == durlQuality ? durlURL : nil
+            let usesProgressiveStream = progressiveURL != nil
+                && Self.prefersProgressiveFastStart(quality: quality, hasAudioStream: bestAudio?.playURL != nil)
+            let selectedStream = usesProgressiveStream ? nil : stream
+            let hasSelectedStream: Bool
+            if case .some = selectedStream {
+                hasSelectedStream = true
+            } else {
+                hasSelectedStream = false
+            }
             variants.append(PlayVariant(
                 quality: quality,
                 title: support?.title ?? descriptions[quality] ?? Self.qualityTitle(quality),
-                videoURL: streamURL ?? progressiveURL,
-                audioURL: streamURL == nil ? nil : bestAudio?.playURL,
-                videoStream: stream,
-                audioStream: streamURL == nil ? nil : bestAudio,
+                videoURL: usesProgressiveStream ? progressiveURL : (streamURL ?? progressiveURL),
+                audioURL: hasSelectedStream ? bestAudio?.playURL : nil,
+                videoStream: selectedStream,
+                audioStream: hasSelectedStream ? bestAudio : nil,
                 codec: stream?.codecLabel ?? support?.codecLabel,
                 resolution: stream?.resolutionLabel,
                 frameRate: stream?.frameRate,
@@ -434,7 +484,11 @@ struct PlayURLData: Decodable {
         return variants
     }
 
-    private static func qualityTitle(_ quality: Int) -> String {
+    nonisolated private static func prefersProgressiveFastStart(quality: Int, hasAudioStream: Bool) -> Bool {
+        quality <= 64 || !hasAudioStream
+    }
+
+    nonisolated private static func qualityTitle(_ quality: Int) -> String {
         switch quality {
         case 127:
             return "超高清 8K"
@@ -465,14 +519,14 @@ struct PlayURLData: Decodable {
         }
     }
 
-    private static func isHDR(quality: Int, title: String?) -> Bool {
+    nonisolated private static func isHDR(quality: Int, title: String?) -> Bool {
         quality == 125
             || quality == 126
             || title?.localizedCaseInsensitiveContains("HDR") == true
             || title?.contains("杜比视界") == true
     }
 
-    private func mergedQualities(primary: [Int]?, secondary: [Int]?) -> [Int]? {
+    nonisolated private func mergedQualities(primary: [Int]?, secondary: [Int]?) -> [Int]? {
         var result = [Int]()
         func append(_ quality: Int) {
             guard !result.contains(quality) else { return }
@@ -483,7 +537,7 @@ struct PlayURLData: Decodable {
         return result.isEmpty ? nil : result
     }
 
-    private func mergedDescriptions(metadata: PlayURLData) -> [String]? {
+    nonisolated private func mergedDescriptions(metadata: PlayURLData) -> [String]? {
         let primary = Dictionary(uniqueKeysWithValues: zip(acceptQuality ?? [], acceptDescription ?? []))
         let secondary = Dictionary(uniqueKeysWithValues: zip(metadata.acceptQuality ?? [], metadata.acceptDescription ?? []))
         guard let qualities = mergedQualities(primary: acceptQuality, secondary: metadata.acceptQuality) else {
@@ -492,7 +546,7 @@ struct PlayURLData: Decodable {
         return qualities.map { primary[$0] ?? secondary[$0] ?? Self.qualityTitle($0) }
     }
 
-    private func mergedSupportFormats(primary: [PlaySupportFormat]?, secondary: [PlaySupportFormat]?) -> [PlaySupportFormat]? {
+    nonisolated private func mergedSupportFormats(primary: [PlaySupportFormat]?, secondary: [PlaySupportFormat]?) -> [PlaySupportFormat]? {
         var result = [PlaySupportFormat]()
         func append(_ format: PlaySupportFormat) {
             guard let quality = format.quality, !result.contains(where: { $0.quality == quality }) else { return }
@@ -522,11 +576,27 @@ struct PlayVariant: Identifiable, Hashable {
     let isHDR: Bool
     let badge: String?
 
-    var isPlayable: Bool {
+    nonisolated var dynamicRange: BiliVideoDynamicRange {
+        if quality == 126 || title.contains("杜比视界") {
+            return .dolbyVision
+        }
+        if title.localizedCaseInsensitiveContains("HLG") || badge?.localizedCaseInsensitiveContains("HLG") == true {
+            return .hlg
+        }
+        return isHDR ? .hdr10 : .sdr
+    }
+
+    nonisolated var isPlayable: Bool {
         videoURL != nil
     }
 
-    var videoAspectRatio: Double? {
+    nonisolated var isProgressiveFastStart: Bool {
+        guard isPlayable, audioURL == nil else { return false }
+        guard case nil = videoStream else { return false }
+        return true
+    }
+
+    nonisolated var videoAspectRatio: Double? {
         guard let resolution else { return nil }
         let parts = resolution
             .lowercased()
@@ -543,12 +613,12 @@ struct PlayVariant: Identifiable, Hashable {
         return width / height
     }
 
-    var isPortraitVideo: Bool {
+    nonisolated var isPortraitVideo: Bool {
         guard let videoAspectRatio else { return false }
         return videoAspectRatio < 0.9
     }
 
-    var qualityBadge: String? {
+    nonisolated var qualityBadge: String? {
         if quality == 126 {
             return "杜比"
         }
@@ -561,7 +631,7 @@ struct PlayVariant: Identifiable, Hashable {
         return nil
     }
 
-    var subtitle: String {
+    nonisolated var subtitle: String {
         var parts = [String]()
         if let resolution {
             parts.append(resolution)
@@ -587,7 +657,7 @@ struct PlayVariant: Identifiable, Hashable {
         return parts.joined(separator: " · ")
     }
 
-    private var frameRateLabel: String? {
+    nonisolated private var frameRateLabel: String? {
         if let displayFrameRate = DASHStream.displayFrameRate(from: frameRate) {
             return "\(displayFrameRate)fps"
         }
@@ -600,7 +670,7 @@ struct PlayVariant: Identifiable, Hashable {
         return nil
     }
 
-    private var bitrateLabel: String? {
+    nonisolated private var bitrateLabel: String? {
         guard let bandwidth, bandwidth > 0 else { return nil }
         if bandwidth >= 1_000_000 {
             return String(format: "%.1f Mbps", Double(bandwidth) / 1_000_000)
@@ -625,7 +695,7 @@ struct PlaySupportFormat: Decodable {
         case legacyDescription = "description"
     }
 
-    var title: String? {
+    nonisolated var title: String? {
         for value in [newDescription, legacyDescription, displayDescription] {
             if let value, !value.isEmpty {
                 return value
@@ -634,12 +704,12 @@ struct PlaySupportFormat: Decodable {
         return nil
     }
 
-    var badge: String? {
+    nonisolated var badge: String? {
         guard let superscript, !superscript.isEmpty else { return nil }
         return superscript
     }
 
-    var codecLabel: String? {
+    nonisolated var codecLabel: String? {
         guard let codecs, !codecs.isEmpty else { return nil }
         var labels = [String]()
         for codec in codecs {
@@ -659,8 +729,8 @@ struct PlayDURL: Decodable {
         case backupURL = "backup_url"
     }
 
-    var playURL: URL? {
-        URL(string: url)
+    nonisolated var playURL: URL? {
+        URL(string: url) ?? backupURL?.compactMap(URL.init(string:)).first
     }
 }
 
@@ -669,13 +739,13 @@ struct DASHInfo: Decodable {
     let video: [DASHStream]?
     let audio: [DASHStream]?
 
-    var bestAudioStream: DASHStream? {
+    nonisolated var bestAudioStream: DASHStream? {
         audio?
             .sorted { ($0.bandwidth ?? 0) > ($1.bandwidth ?? 0) }
             .first
     }
 
-    func mergingStreams(from other: DASHInfo?) -> DASHInfo {
+    nonisolated func mergingStreams(from other: DASHInfo?) -> DASHInfo {
         DASHInfo(
             duration: duration ?? other?.duration,
             video: Self.mergedStreams(primary: video, secondary: other?.video),
@@ -683,7 +753,7 @@ struct DASHInfo: Decodable {
         )
     }
 
-    private static func mergedStreams(primary: [DASHStream]?, secondary: [DASHStream]?) -> [DASHStream]? {
+    nonisolated private static func mergedStreams(primary: [DASHStream]?, secondary: [DASHStream]?) -> [DASHStream]? {
         var result = primary ?? []
         let existingKeys = Set(result.map(Self.streamKey))
 
@@ -755,15 +825,19 @@ struct DASHStream: Decodable, Hashable, Sendable {
             ?? container.decodeIfPresent(DASHSegmentBase.self, forKey: .segmentBaseAlt)
     }
 
-    var playURL: URL? {
+    nonisolated var playURL: URL? {
         URL(string: baseURL)
     }
 
-    var codecLabel: String? {
+    nonisolated var backupPlayURLs: [URL] {
+        backupURL?.compactMap(URL.init(string:)) ?? []
+    }
+
+    nonisolated var codecLabel: String? {
         Self.codecLabel(for: codecs, codecid: codecid)
     }
 
-    static func codecLabel(for codecs: String?, codecid: Int? = nil) -> String? {
+    nonisolated static func codecLabel(for codecs: String?, codecid: Int? = nil) -> String? {
         if let codecs, !codecs.isEmpty {
             if codecs.localizedCaseInsensitiveContains("hev") || codecs.localizedCaseInsensitiveContains("hvc") {
                 return "HEVC"
@@ -788,16 +862,16 @@ struct DASHStream: Decodable, Hashable, Sendable {
         }
     }
 
-    var resolutionLabel: String? {
+    nonisolated var resolutionLabel: String? {
         guard let width, let height, width > 0, height > 0 else { return nil }
         return "\(width)x\(height)"
     }
 
-    var displayFrameRate: String? {
+    nonisolated var displayFrameRate: String? {
         Self.displayFrameRate(from: frameRate)
     }
 
-    static func displayFrameRate(from rawValue: String?) -> String? {
+    nonisolated static func displayFrameRate(from rawValue: String?) -> String? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -1028,6 +1102,7 @@ struct CommentContent: Decodable, Hashable {
     let emotes: [String: CommentEmote]
     let pictures: [DynamicImageItem]
     let jumpURLs: DynamicJSONValue?
+    private let hasGoodsMetadata: Bool
 
     enum CodingKeys: String, CodingKey {
         case message
@@ -1042,6 +1117,7 @@ struct CommentContent: Decodable, Hashable {
     }
 
     init(from decoder: Decoder) throws {
+        let raw = try? DynamicJSONValue(from: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         message = container.decodeLossyStringIfPresent(forKey: .message)
         let emoteMap = try container.decodeIfPresent([String: CommentEmote].self, forKey: .emote)
@@ -1054,6 +1130,7 @@ struct CommentContent: Decodable, Hashable {
             ?? (try? container.decodeIfPresent([DynamicImageItem].self, forKey: .pics))
             ?? (try? container.decodeIfPresent([DynamicImageItem].self, forKey: .images))
             ?? []
+        hasGoodsMetadata = raw?.containsGoodsMetadata == true
     }
 
     func emote(for text: String) -> CommentEmote? {
@@ -1061,7 +1138,8 @@ struct CommentContent: Decodable, Hashable {
     }
 
     var containsGoodsPromotion: Bool {
-        message?.contains(BiliContentFilter.goodsURLPrefix) == true
+        hasGoodsMetadata
+            || message.map(BiliContentFilter.isGoodsText) == true
             || jumpURLs?.containsGoodsMetadata == true
     }
 }
@@ -1157,14 +1235,12 @@ struct SearchVideoItem: Identifiable, Decodable, Hashable {
     let author: String?
     let mid: Int?
     let play: Int?
-    let videoReview: Int?
     let duration: String?
     let description: String?
     let pubdate: Int?
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, author, mid, play, duration, description, pubdate
-        case videoReview = "video_review"
     }
 
     init(from decoder: Decoder) throws {
@@ -1176,7 +1252,6 @@ struct SearchVideoItem: Identifiable, Decodable, Hashable {
         author = try container.decodeIfPresent(String.self, forKey: .author)
         mid = container.decodeLossyIntIfPresent(forKey: .mid)
         play = container.decodeLossyIntIfPresent(forKey: .play)
-        videoReview = container.decodeLossyIntIfPresent(forKey: .videoReview)
         duration = container.decodeLossyStringIfPresent(forKey: .duration)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
@@ -1192,7 +1267,7 @@ struct SearchVideoItem: Identifiable, Decodable, Hashable {
             duration: duration.flatMap(Self.durationSeconds),
             pubdate: pubdate,
             owner: VideoOwner(mid: mid ?? 0, name: author ?? "", face: nil),
-            stat: VideoStat(view: play, danmaku: videoReview, reply: nil, like: nil, coin: nil, favorite: nil),
+            stat: VideoStat(view: play, reply: nil, like: nil, coin: nil, favorite: nil),
             cid: nil,
             pages: nil,
             dimension: nil
@@ -1433,7 +1508,7 @@ struct VideoInteractionState: Hashable {
     }
 }
 
-struct VideoCoinState: Decodable, Hashable {
+nonisolated struct VideoCoinState: Decodable, Hashable {
     let multiply: Int?
 
     init(from decoder: Decoder) throws {
@@ -1446,7 +1521,7 @@ struct VideoCoinState: Decodable, Hashable {
     }
 }
 
-struct VideoFavoriteState: Decodable, Hashable {
+nonisolated struct VideoFavoriteState: Decodable, Hashable {
     let favoured: Bool?
 
     init(from decoder: Decoder) throws {
@@ -1642,22 +1717,24 @@ private func uniqueDynamicImages(_ groups: [[DynamicImageItem]]) -> [DynamicImag
 }
 
 enum BiliContentFilter {
-    static let goodsURLPrefix = "https://gaoneng.bilibili.com/tetris"
+    nonisolated static let goodsURLPrefix = "https://gaoneng.bilibili.com/tetris"
 
-    static func isGoodsDynamicAdditionalType(_ type: String?) -> Bool {
+    nonisolated static func isGoodsDynamicAdditionalType(_ type: String?) -> Bool {
         guard let type else { return false }
         return type.uppercased().contains("ADDITIONAL_TYPE_GOODS")
     }
 
-    static func isGoodsKey(_ key: String) -> Bool {
+    nonisolated static func isGoodsKey(_ key: String) -> Bool {
         let normalized = key.lowercased()
         return normalized.contains("goods")
             || normalized.contains("commodity")
             || normalized.contains("commerce")
             || normalized.contains("shopping")
+            || normalized.contains("shop")
+            || normalized.contains("mall")
     }
 
-    static func isGoodsText(_ text: String) -> Bool {
+    nonisolated static func isGoodsText(_ text: String) -> Bool {
         let normalized = text.lowercased()
         return normalized.contains(goodsURLPrefix)
             || normalized.contains("additional_type_goods")
@@ -1665,6 +1742,13 @@ enum BiliContentFilter {
             || normalized.contains("goods_cm_control")
             || normalized.contains("goods_item_id")
             || normalized.contains("goods_prefetched_cache")
+            || normalized.contains("gaoneng.bilibili.com/tetris")
+            || normalized.contains("mall.bilibili.com")
+            || normalized.contains("b23.tv/mall")
+            || normalized.contains("bilibili.com/mall")
+            || normalized.contains("会员购")
+            || normalized.contains("小黄车")
+            || normalized.contains("small_shop")
     }
 }
 
@@ -2045,7 +2129,6 @@ enum DynamicJSONValue: Decodable, Hashable {
             : nil
         let stat = VideoStat(
             view: statObject?["play"]?.intValue ?? statObject?["view"]?.intValue,
-            danmaku: statObject?["danmaku"]?.intValue,
             reply: statObject?["reply"]?.intValue,
             like: statObject?["like"]?.intValue,
             coin: statObject?["coin"]?.intValue,
@@ -3007,7 +3090,6 @@ struct DynamicArchive: Decodable, Hashable {
             owner: author?.owner,
             stat: VideoStat(
                 view: stat?.play,
-                danmaku: stat?.danmaku,
                 reply: stat?.reply,
                 like: stat?.like,
                 coin: stat?.coin,
@@ -3033,20 +3115,18 @@ struct DynamicArchive: Decodable, Hashable {
 
 struct DynamicArchiveStat: Decodable, Hashable {
     let play: Int?
-    let danmaku: Int?
     let reply: Int?
     let like: Int?
     let coin: Int?
     let favorite: Int?
 
     enum CodingKeys: String, CodingKey {
-        case play, danmaku, reply, like, coin, favorite
+        case play, reply, like, coin, favorite
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         play = container.decodeLossyIntIfPresent(forKey: .play)
-        danmaku = container.decodeLossyIntIfPresent(forKey: .danmaku)
         reply = container.decodeLossyIntIfPresent(forKey: .reply)
         like = container.decodeLossyIntIfPresent(forKey: .like)
         coin = container.decodeLossyIntIfPresent(forKey: .coin)
@@ -3399,33 +3479,6 @@ struct LiveAnchorRelationInfo: Decodable, Hashable {
     }
 }
 
-struct LiveDanmakuHistoryData: Decodable {
-    let room: [LiveDanmakuMessage]?
-}
-
-struct LiveDanmakuMessage: Identifiable, Decodable, Hashable {
-    var id: String {
-        "\(timeline ?? "")-\(uid ?? 0)-\(nickname ?? "")-\(text)"
-    }
-
-    let uid: Int?
-    let nickname: String?
-    let text: String
-    let timeline: String?
-
-    enum CodingKeys: String, CodingKey {
-        case uid, nickname, text, timeline
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        uid = container.decodeLossyIntIfPresent(forKey: .uid)
-        nickname = try container.decodeIfPresent(String.self, forKey: .nickname)
-        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
-        timeline = try container.decodeIfPresent(String.self, forKey: .timeline)
-    }
-}
-
 struct FollowedLiveRoomsData: Decodable {
     let list: [LiveRoom]?
     let rooms: [LiveRoom]?
@@ -3555,15 +3608,6 @@ struct WBIImage: Decodable {
     }
 }
 
-struct DanmakuItem: Identifiable, Hashable {
-    let id = UUID()
-    let time: TimeInterval
-    let mode: Int
-    let fontSize: Int
-    let color: Int
-    let text: String
-}
-
 private extension Array where Element == LiveStream {
     func firstPlayableURL(preferHLS: Bool) -> URL? {
         let candidates = flatMap { stream in
@@ -3616,13 +3660,7 @@ extension String {
             return normalized
         }
 
-        let queryStart = normalized.firstIndex(of: "?") ?? normalized.endIndex
-        var base = String(normalized[..<queryStart])
-        let lastSlash = base.lastIndex(of: "/") ?? base.startIndex
-        if let suffixStart = base[lastSlash...].firstIndex(of: "@") {
-            base = String(base[..<suffixStart])
-        }
-        return "\(base)@\(width)w_\(height)h_1c.webp"
+        return normalized.biliImageView2URL(width: width, height: height)
     }
 
     func biliAvatarThumbnailURL(size: Int = 96) -> String {
@@ -3632,13 +3670,32 @@ extension String {
         }
 
         let pixelSize = max(48, size)
-        let queryStart = normalized.firstIndex(of: "?") ?? normalized.endIndex
-        var base = String(normalized[..<queryStart])
+        return normalized.biliImageView2URL(width: pixelSize, height: pixelSize)
+    }
+
+    func biliImageThumbnailURL(maxSide: Int = 1080) -> String {
+        let normalized = normalizedBiliURL()
+        guard normalized.contains("hdslb.com") else {
+            return normalized
+        }
+
+        let pixelSize = min(max(96, maxSide), 4096)
+        return "\(normalized.biliImageBaseURL())?imageView2/2/w/\(pixelSize)/format/webp"
+    }
+
+    private func biliImageView2URL(width: Int, height: Int) -> String {
+        let base = biliImageBaseURL()
+        return "\(base)?imageView2/2/w/\(width)/h/\(height)/format/webp"
+    }
+
+    private func biliImageBaseURL() -> String {
+        let queryStart = firstIndex(of: "?") ?? endIndex
+        var base = String(self[..<queryStart])
         let lastSlash = base.lastIndex(of: "/") ?? base.startIndex
         if let suffixStart = base[lastSlash...].firstIndex(of: "@") {
             base = String(base[..<suffixStart])
         }
-        return "\(base)@\(pixelSize)w_\(pixelSize)h_1c.webp"
+        return base
     }
 
     func removingHTMLTags() -> String {
@@ -3647,7 +3704,7 @@ extension String {
 }
 
 private extension KeyedDecodingContainer {
-    func decodeLossyIntIfPresent(forKey key: Key) -> Int? {
+    nonisolated func decodeLossyIntIfPresent(forKey key: Key) -> Int? {
         if let value = try? decodeIfPresent(Int.self, forKey: key) {
             return value
         }
@@ -3657,7 +3714,7 @@ private extension KeyedDecodingContainer {
         return nil
     }
 
-    func decodeLossyStringIfPresent(forKey key: Key) -> String? {
+    nonisolated func decodeLossyStringIfPresent(forKey key: Key) -> String? {
         if let value = try? decodeIfPresent(String.self, forKey: key) {
             return value
         }
@@ -3670,7 +3727,7 @@ private extension KeyedDecodingContainer {
         return nil
     }
 
-    func decodeLossyBoolIfPresent(forKey key: Key) -> Bool? {
+    nonisolated func decodeLossyBoolIfPresent(forKey key: Key) -> Bool? {
         if let value = try? decodeIfPresent(Bool.self, forKey: key) {
             return value
         }

@@ -19,6 +19,7 @@ Pods/
 Carthage/Build/
 
 # Local app build artifacts
+.codex-derived/
 .derived-unsigned/
 .derived-unsigned-device/
 .manual-build/
@@ -31,6 +32,8 @@ Carthage/Build/
 Frameworks/
 
 # Simulator captures and local verification media
+.codex-screens/
+.tmp/
 *.png
 *.jpg
 *.jpeg
@@ -40,4 +43,3 @@ Frameworks/
 
 # macOS
 .DS_Store
-

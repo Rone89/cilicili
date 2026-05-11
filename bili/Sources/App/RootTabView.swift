@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import UIKit
 
 struct RootTabView: View {
     @EnvironmentObject private var dependencies: AppDependencies
@@ -64,7 +63,7 @@ struct RootTabView: View {
             if bottomMode == .video {
                 videoNavigationHost()
                     .ignoresSafeArea()
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .transition(.identity)
                     .zIndex(1)
             }
         }
@@ -73,6 +72,10 @@ struct RootTabView: View {
         .animation(.smooth(duration: 0.28), value: bottomMode)
         .animation(.smooth(duration: 0.22), value: selectedTab)
         .preferredColorScheme(libraryStore.appearanceMode.preferredColorScheme)
+        .task {
+            openStartupVideoIfNeeded()
+            await dependencies.api.prewarmPlaybackSigningKeys()
+        }
     }
 
     @ViewBuilder
@@ -108,30 +111,43 @@ struct RootTabView: View {
     }
 
     private var shouldAutoOpenDetail: Bool {
-        !didConsumeStartupVideo && (shouldStartDetail || startBVID != nil)
+        !didConsumeStartupVideo && shouldStartDetail && startBVID == nil
+    }
+
+    private func openStartupVideoIfNeeded() {
+        guard !didConsumeStartupVideo,
+              let startBVID
+        else { return }
+
+        openVideo(Self.seedVideo(bvid: startBVID))
     }
 
     private func videoNavigationHost() -> some View {
         NavigationStack(path: $videoNavigationPath) {
             Color.clear
-                .background(VideoNavigationHostTransparency())
+                .ignoresSafeArea()
+                .background(VideoNavigationHostTransparency(suppressesNavigationBar: true))
+                .navigationTitle(selectedTab.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: VideoItem.self) { video in
                     VideoDetailView(
                         seedVideo: video,
                         hidesRootTabBar: false
                     )
-                    .navigationDestination(for: VideoOwner.self) { owner in
-                        UploaderView(owner: owner)
-                    }
-                    .navigationDestination(for: LiveRoom.self) { room in
-                        LiveRoomDetailView(seedRoom: room)
-                    }
+                    .id(video.id)
+                }
+                .navigationDestination(for: VideoOwner.self) { owner in
+                    UploaderView(owner: owner)
+                }
+                .navigationDestination(for: LiveRoom.self) { room in
+                    LiveRoomDetailView(seedRoom: room)
                 }
         }
-        .background(VideoNavigationHostTransparency())
-        .onAppear {
-            ensureVideoPath()
-        }
+        .background(VideoNavigationHostTransparency(suppressesNavigationBar: true))
+        .background(VideoNavigationTransitionObserver(isClosing: isClosingVideo) {
+            completeCloseVideoIfNeeded()
+        })
         .onChange(of: videoNavigationPath) { _, newPath in
             guard bottomMode == .video, newPath.isEmpty else { return }
             scheduleCloseVideo()
@@ -139,31 +155,84 @@ struct RootTabView: View {
     }
 
     private func openVideo(_ video: VideoItem) {
+        AppOrientationLock.restorePortrait()
+        PlayerMetricsLog.record(.routeOpen, metricsID: video.bvid, title: video.title)
         if bottomMode == .video {
             pushVideo(video)
             return
         }
 
-        withAnimation(.smooth(duration: 0.32)) {
+        beginPlaybackPreload(for: video)
+        let update = {
             didConsumeStartupVideo = true
             isClosingVideo = false
             activeVideo = video
-            videoNavigationPath = NavigationPath([video])
+            videoNavigationPath = NavigationPath()
             bottomMode = .video
         }
+
+        let opensFromStartup = shouldStartDetail && !didConsumeStartupVideo
+        if shouldStartDetail && !didConsumeStartupVideo {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction, update)
+        } else {
+            withAnimation(.smooth(duration: 0.32), update)
+        }
+        pushInitialVideo(video, animated: !opensFromStartup)
     }
 
     private func pushVideo(_ video: VideoItem) {
+        AppOrientationLock.restorePortrait()
+        PlayerMetricsLog.record(.routeOpen, metricsID: video.bvid, title: video.title)
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        NotificationCenter.default.post(name: .biliStopActiveVideoPlayback, object: nil)
+        beginPlaybackPreload(for: video)
         withAnimation(.smooth(duration: 0.28)) {
             didConsumeStartupVideo = true
             isClosingVideo = false
-            activeVideo = video
             videoNavigationPath.append(video)
+        }
+    }
+
+    private func beginPlaybackPreload(for video: VideoItem) {
+        Task { [preferredQuality = libraryStore.preferredVideoQuality, api = dependencies.api] in
+            await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: preferredQuality)
+            await VideoPreloadCenter.shared.prioritizePlayback(for: video)
+            await VideoPreloadCenter.shared.preloadPlayInfo(
+                video,
+                api: api,
+                preferredQuality: preferredQuality,
+                priority: .userInitiated
+            )
+        }
+    }
+
+    private func pushInitialVideo(_ video: VideoItem, animated: Bool) {
+        DispatchQueue.main.async {
+            guard bottomMode == .video,
+                  videoNavigationPath.isEmpty,
+                  activeVideo?.id == video.id
+            else { return }
+
+            let push = {
+                videoNavigationPath.append(video)
+            }
+
+            if animated {
+                withAnimation(.smooth(duration: 0.30), push)
+            } else {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction, push)
+            }
         }
     }
 
     private func closeVideo() {
         guard bottomMode == .video else { return }
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        NotificationCenter.default.post(name: .biliStopActiveVideoPlayback, object: nil)
 
         if videoNavigationPath.isEmpty {
             scheduleCloseVideo()
@@ -176,37 +245,22 @@ struct RootTabView: View {
         scheduleCloseVideo()
     }
 
-    private func ensureVideoPath() {
-        guard bottomMode == .video,
-              videoNavigationPath.isEmpty,
-              let activeVideo
-        else { return }
-
-        DispatchQueue.main.async {
-            guard bottomMode == .video,
-                  videoNavigationPath.isEmpty
-            else { return }
-
-            withAnimation(.smooth(duration: 0.28)) {
-                videoNavigationPath.append(activeVideo)
-            }
-        }
-    }
-
     private func scheduleCloseVideo() {
         guard bottomMode == .video, !isClosingVideo else {
             return
         }
 
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        NotificationCenter.default.post(name: .biliStopActiveVideoPlayback, object: nil)
         isClosingVideo = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            guard bottomMode == .video else { return }
-            completeCloseVideo()
-        }
     }
 
-    private func completeCloseVideo() {
-        withAnimation(.smooth(duration: 0.30)) {
+    private func completeCloseVideoIfNeeded() {
+        guard bottomMode == .video, isClosingVideo else { return }
+        AppOrientationLock.restorePortrait()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             activeVideo = nil
             videoNavigationPath = NavigationPath()
             bottomMode = .root
@@ -309,6 +363,10 @@ private struct NavigationChromeInstaller: UIViewControllerRepresentable {
     }
 }
 
+extension Notification.Name {
+    static let biliStopActiveVideoPlayback = Notification.Name("cc.bili.stopActiveVideoPlayback")
+}
+
 @MainActor
 private final class RootHomeViewModelHolder: ObservableObject {
     @Published var viewModel: HomeViewModel?
@@ -344,6 +402,19 @@ private enum AppTab: Hashable {
     case dynamic
     case mine
     case search
+
+    var title: String {
+        switch self {
+        case .home:
+            return "首页"
+        case .dynamic:
+            return "动态"
+        case .mine:
+            return "我的"
+        case .search:
+            return "搜索"
+        }
+    }
 }
 
 private enum BottomTabMode {

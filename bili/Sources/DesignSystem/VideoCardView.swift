@@ -1,14 +1,42 @@
 import SwiftUI
 
+struct VideoCardDisplayModel: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let authorName: String
+    let viewText: String
+    let durationText: String
+    let coverURL: URL?
+    let avatarURL: URL?
+
+    init(video: VideoItem) {
+        id = video.id
+        title = video.title
+        authorName = video.owner?.name ?? "未知作者"
+        viewText = BiliFormatters.compactCount(video.stat?.view)
+        durationText = BiliFormatters.duration(video.duration)
+        coverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }
+        avatarURL = video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }
+    }
+}
+
 struct VideoCardView: View {
-    let video: VideoItem
+    let display: VideoCardDisplayModel
+
+    init(video: VideoItem) {
+        self.display = VideoCardDisplayModel(video: video)
+    }
+
+    init(display: VideoCardDisplayModel) {
+        self.display = display
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             cover
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(video.title)
+                Text(display.title)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(2)
                     .foregroundStyle(.primary)
@@ -48,7 +76,10 @@ struct VideoCardView: View {
 
     @ViewBuilder
     private var coverImage: some View {
-        CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL()) }) { image in
+        CachedRemoteImage(
+            url: display.coverURL,
+            targetPixelSize: 540
+        ) { image in
             image
                 .resizable()
                 .scaledToFill()
@@ -70,12 +101,12 @@ struct VideoCardView: View {
             .frame(height: 42)
 
             HStack(spacing: 8) {
-                Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.fill")
+                Label(display.viewText, systemImage: "play.fill")
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
 
-                Text(BiliFormatters.duration(video.duration))
+                Text(display.durationText)
                     .monospacedDigit()
                     .lineLimit(1)
             }
@@ -89,7 +120,10 @@ struct VideoCardView: View {
 
     private var authorRow: some View {
         HStack(spacing: 4) {
-            CachedRemoteImage(url: video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }) { image in
+            CachedRemoteImage(
+                url: display.avatarURL,
+                targetPixelSize: 48
+            ) { image in
                 image
                     .resizable()
                     .scaledToFill()
@@ -101,7 +135,7 @@ struct VideoCardView: View {
             .frame(width: 15, height: 15)
             .clipShape(Circle())
 
-            Text(video.owner?.name ?? "未知作者")
+            Text(display.authorName)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

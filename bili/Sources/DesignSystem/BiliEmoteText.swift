@@ -341,14 +341,16 @@ final class BiliEmoteImageStore {
             return cachedImage
         }
 
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = UIImage(data: data) else { return nil }
+        if let image = await RemoteImageCache.shared.load(
+            url: url,
+            scale: 2,
+            targetPixelSize: 96
+        ) {
             cache.setObject(image, forKey: url as NSURL)
             return image
-        } catch {
-            return nil
         }
+
+        return nil
     }
 
     func placeholderImage(size: CGFloat) -> UIImage {

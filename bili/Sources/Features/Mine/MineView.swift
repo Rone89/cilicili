@@ -96,13 +96,16 @@ struct MineView: View {
             }
 
             Section("播放偏好") {
-                Label("默认选择当前可播放的最高画质", systemImage: "play.rectangle")
-
-                Toggle(isOn: Binding(
-                    get: { libraryStore.defaultDanmakuEnabled },
-                    set: { libraryStore.setDefaultDanmakuEnabled($0) }
+                Picker(selection: Binding<Int>(
+                    get: { libraryStore.preferredVideoQuality ?? 0 },
+                    set: { libraryStore.setPreferredVideoQuality($0 == 0 ? nil : $0) }
                 )) {
-                    Label("默认开启弹幕", systemImage: "text.bubble")
+                    Text(LibraryStore.videoQualityTitle(nil)).tag(0)
+                    ForEach(LibraryStore.supportedVideoQualities, id: \.self) { quality in
+                        Text(LibraryStore.videoQualityTitle(quality)).tag(quality)
+                    }
+                } label: {
+                    Label("默认画质", systemImage: "play.rectangle")
                 }
 
                 Picker(selection: Binding(
@@ -121,6 +124,19 @@ struct MineView: View {
                     set: { libraryStore.setSponsorBlockEnabled($0) }
                 )) {
                     Label("空降助手", systemImage: "forward.end")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.playerPerformanceOverlayEnabled },
+                    set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
+                )) {
+                    Label("播放性能浮层", systemImage: "waveform.path.ecg.rectangle")
+                }
+
+                NavigationLink {
+                    PlayerPerformanceLogView()
+                } label: {
+                    Label("播放性能日志", systemImage: "speedometer")
                 }
             }
 
@@ -160,6 +176,7 @@ struct MineView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .nativeTopScrollEdgeEffect()
         .task {
             await viewModel.refreshUser()
         }
@@ -209,7 +226,7 @@ struct MineView: View {
 
     private var loggedInHeader: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: sessionStore.user?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 128)) }) { image in
+            CachedRemoteImage(url: sessionStore.user?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 128)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -271,7 +288,7 @@ private struct LibraryVideoRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AsyncImage(url: item.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 320, height: 200)) }) { image in
+            CachedRemoteImage(url: item.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 320, height: 200)) }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -421,7 +438,6 @@ private struct AccountLibraryListPage: View {
         .task {
             await loadIfNeeded()
         }
-        .nativeTopScrollEdgeEffect()
         .refreshable {
             await reload()
         }
@@ -539,6 +555,199 @@ private struct LibraryErrorRow: View {
             .buttonStyle(.bordered)
         }
         .padding(.vertical, 6)
+    }
+}
+
+private struct PlayerPerformanceLogView: View {
+    @StateObject private var store = PlayerPerformanceStore.shared
+
+    var body: some View {
+        List {
+            if store.events.isEmpty {
+                ContentUnavailableView(
+                    "暂无播放日志",
+                    systemImage: "speedometer",
+                    description: Text("打开一个视频后，这里会显示首帧、缓冲和接口耗时。")
+                )
+            } else {
+                if !store.sessions.isEmpty {
+                    Section("最近视频") {
+                        ForEach(store.sessions) { session in
+                            PlayerPerformanceSessionRow(session: session)
+                        }
+                    }
+                }
+
+                Section {
+                    ForEach(store.events.reversed()) { event in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Label(event.kind.title, systemImage: systemImage(for: event.kind))
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer(minLength: 8)
+                                Text(event.date, style: .time)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let title = event.title, !title.isEmpty {
+                                Text(title)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                            }
+
+                            HStack(spacing: 8) {
+                                Text(event.metricsID)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+
+                                if let message = event.message, !message.isEmpty {
+                                    Text(message)
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("最近 \(store.events.count) 条")
+                }
+            }
+        }
+        .navigationTitle("播放性能")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("清空") {
+                    store.clear()
+                }
+                .disabled(store.events.isEmpty)
+            }
+        }
+    }
+
+    private func systemImage(for kind: PlayerPerformanceEvent.Kind) -> String {
+        switch kind {
+        case .routeOpen: return "arrow.up.forward.app"
+        case .detailLoadStart, .detailLoaded: return "doc.text.magnifyingglass"
+        case .playURLStart, .playURLLoaded: return "link"
+        case .playerCreated: return "play.rectangle"
+        case .prepareRequested, .mediaPrepared, .prepareReturned: return "gearshape"
+        case .playRequested: return "play.fill"
+        case .firstFrame: return "bolt.fill"
+        case .buffering: return "hourglass"
+        case .network: return "network"
+        case .failed: return "exclamationmark.triangle"
+        }
+    }
+}
+
+private struct PlayerPerformanceSessionRow: View {
+    let session: PlayerPerformanceSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(session.title ?? session.metricsID)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+
+                Spacer(minLength: 8)
+
+                Text(session.lastUpdatedAt, style: .time)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8)
+                ],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                metric("总首帧", milliseconds: session.firstFrameTotalMilliseconds, icon: "bolt.fill")
+                metric("播放器首帧", milliseconds: session.firstFramePlayerMilliseconds, icon: "play.rectangle")
+                metric("播放地址", milliseconds: session.playURLMilliseconds, icon: "link")
+                metric("Prepare", milliseconds: session.prepareMilliseconds, icon: "gearshape")
+            }
+
+            HStack(spacing: 8) {
+                Label("\(session.bufferCount) 次缓冲", systemImage: "hourglass")
+                if let selectedQualityMessage = session.selectedQualityMessage {
+                    Text(selectedQualityMessage)
+                        .lineLimit(1)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(session.bufferCount > 0 ? .orange : .secondary)
+
+            if let cdnHostMessage = session.cdnHostMessage {
+                Label(cdnHostMessage, systemImage: "network")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let networkMessage = session.networkMessage {
+                Text(networkMessage)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let failureMessage = session.failureMessage {
+                Label(failureMessage, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func metric(_ title: String, milliseconds: Int?, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Text(millisecondsText(milliseconds))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(metricColor(milliseconds))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func millisecondsText(_ value: Int?) -> String {
+        guard let value else { return "-" }
+        if value >= 1000 {
+            return String(format: "%.2fs", Double(value) / 1000)
+        }
+        return "\(value)ms"
+    }
+
+    private func metricColor(_ value: Int?) -> Color {
+        guard let value else { return .secondary }
+        if value >= 2500 {
+            return .red
+        }
+        if value >= 1400 {
+            return .orange
+        }
+        return .green
     }
 }
 

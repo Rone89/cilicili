@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct WBIKeys {
+struct WBIKeys: Codable, Sendable {
     let imgKey: String
     let subKey: String
 }

@@ -15,13 +15,26 @@ enum HomeFeedMode: String, CaseIterable, Hashable {
     }
 }
 
+struct HomeVideoCellModel: Identifiable, Equatable {
+    let id: String
+    let video: VideoItem
+    let display: VideoCardDisplayModel
+
+    init(video: VideoItem) {
+        self.id = video.id
+        self.video = video
+        self.display = VideoCardDisplayModel(video: video)
+    }
+}
+
 @MainActor
 final class HomeViewModel: ObservableObject {
     @Published var videos: [VideoItem] = []
+    private(set) var videoDisplays: [VideoCardDisplayModel] = []
+    private(set) var videoCells: [HomeVideoCellModel] = []
     @Published var state: LoadingState = .idle
     @Published var mode: HomeFeedMode = .recommend
     @Published var isRefreshing = false
-    @Published private(set) var feedContentVersion = 0
 
     private let api: BiliAPIClient
     private let libraryStore: LibraryStore
@@ -30,8 +43,8 @@ final class HomeViewModel: ObservableObject {
     private var requestRevision = 0
     private var lastUserRefreshDate: Date?
     private var privacyCancellable: AnyCancellable?
-    private var authorAvatarCache: [Int: String] = [:]
-    private var authorAvatarRequestsInFlight = Set<Int>()
+    private var imagePrefetchTask: Task<Void, Never>?
+    private var playbackPreloadTask: Task<Void, Never>?
 
     init(api: BiliAPIClient, libraryStore: LibraryStore, initialMode: HomeFeedMode = .recommend) {
         self.api = api
@@ -46,6 +59,11 @@ final class HomeViewModel: ObservableObject {
             }
     }
 
+    deinit {
+        imagePrefetchTask?.cancel()
+        playbackPreloadTask?.cancel()
+    }
+
     func loadInitial() async {
         guard videos.isEmpty else { return }
         await refresh(resetCursor: true)
@@ -54,6 +72,8 @@ final class HomeViewModel: ObservableObject {
     func switchMode(_ newMode: HomeFeedMode) async {
         guard mode != newMode else { return }
         mode = newMode
+        videoCells = []
+        videoDisplays = []
         videos = []
         await refresh(resetCursor: true)
     }
@@ -70,7 +90,8 @@ final class HomeViewModel: ObservableObject {
     }
 
     func refresh(resetCursor shouldResetCursor: Bool = false) async {
-        let previousIDs = videos.map(\.id)
+        let previousVideos = videos
+        let previousIDs = previousVideos.map(\.id)
         requestRevision += 1
         let revision = requestRevision
         state = .loading
@@ -88,7 +109,7 @@ final class HomeViewModel: ObservableObject {
         do {
             let refreshedVideos = try await fetchFreshPage(replacing: previousIDs)
             guard revision == requestRevision else { return }
-            replaceVideos(refreshedVideos, previousIDs: previousIDs)
+            replaceVideos(refreshedVideos, previousVideos: previousVideos)
             state = .loaded
         } catch {
             guard revision == requestRevision else { return }
@@ -98,6 +119,8 @@ final class HomeViewModel: ObservableObject {
 
     func reloadForGuestModeChange() async {
         guard mode == .recommend else { return }
+        videoCells = []
+        videoDisplays = []
         videos = []
         await refresh(resetCursor: true)
     }
@@ -121,35 +144,6 @@ final class HomeViewModel: ObservableObject {
             rollbackCursor()
             state = .failed(error.localizedDescription)
         }
-    }
-
-    func loadAuthorAvatarIfNeeded(for video: VideoItem) async {
-        guard let owner = video.owner, owner.mid > 0, owner.face?.isEmpty != false else { return }
-
-        if let cachedFace = authorAvatarCache[owner.mid] {
-            updateAuthorAvatar(mid: owner.mid, face: cachedFace)
-            return
-        }
-
-        guard !authorAvatarRequestsInFlight.contains(owner.mid) else { return }
-        authorAvatarRequestsInFlight.insert(owner.mid)
-        defer { authorAvatarRequestsInFlight.remove(owner.mid) }
-
-        guard let profile = try? await api.fetchUploaderProfile(mid: owner.mid),
-              let face = profile.card?.face,
-              !face.isEmpty
-        else { return }
-        authorAvatarCache[owner.mid] = face
-        updateAuthorAvatar(mid: owner.mid, face: face)
-    }
-
-    func preloadPlaybackIfUseful(for video: VideoItem) async {
-        guard shouldPreloadPlayback(for: video) else { return }
-        await VideoPreloadCenter.shared.preload(video, api: api)
-    }
-
-    func cancelPlaybackPreload(for video: VideoItem) async {
-        await VideoPreloadCenter.shared.cancel(video)
     }
 
     private func fetchCurrentPage() async throws -> [VideoItem] {
@@ -189,11 +183,25 @@ final class HomeViewModel: ObservableObject {
         return newFront != oldFront
     }
 
-    private func replaceVideos(_ newVideos: [VideoItem], previousIDs: [String]) {
-        videos = newVideos
-        if newVideos.map(\.id) != previousIDs {
-            feedContentVersion += 1
+    private func replaceVideos(_ newVideos: [VideoItem], previousVideos: [VideoItem]) {
+        let mergedVideos = mergedRefreshVideos(newVideos, previousVideos: previousVideos)
+        let mergedCells = mergedVideos.map(HomeVideoCellModel.init(video:))
+        videoCells = mergedCells
+        videoDisplays = mergedCells.map(\.display)
+        videos = mergedVideos
+        scheduleImagePrefetch(for: mergedVideos)
+        schedulePlaybackPreload(for: newVideos, initialDelay: 0.75)
+    }
+
+    private func mergedRefreshVideos(_ fresh: [VideoItem], previousVideos: [VideoItem]) -> [VideoItem] {
+        guard mode == .recommend, !fresh.isEmpty, !previousVideos.isEmpty else {
+            return fresh
         }
+        var seen = Set(fresh.map(\.id))
+        let retainedTail = previousVideos
+            .prefix(50)
+            .filter { seen.insert($0.id).inserted }
+        return fresh + retainedTail
     }
 
     private func resetCursor() {
@@ -234,33 +242,71 @@ final class HomeViewModel: ObservableObject {
 
     private func appendUnique(_ more: [VideoItem]) {
         let existing = Set(videos.map(\.id))
-        videos.append(contentsOf: more.filter { !existing.contains($0.id) })
+        let unique = more.filter { !existing.contains($0.id) }
+        let newCells = unique.map(HomeVideoCellModel.init(video:))
+        videoCells.append(contentsOf: newCells)
+        videoDisplays.append(contentsOf: newCells.map(\.display))
+        videos.append(contentsOf: unique)
+        scheduleImagePrefetch(for: Array(unique.prefix(8)))
+        schedulePlaybackPreload(for: unique, initialDelay: 1.2)
     }
 
-    private func updateAuthorAvatar(mid: Int, face: String) {
-        videos = videos.map { video in
-            guard let owner = video.owner, owner.mid == mid, owner.face?.isEmpty != false else { return video }
-            return VideoItem(
-                bvid: video.bvid,
-                aid: video.aid,
-                title: video.title,
-                pic: video.pic,
-                desc: video.desc,
-                duration: video.duration,
-                pubdate: video.pubdate,
-                owner: VideoOwner(mid: owner.mid, name: owner.name, face: face),
-                stat: video.stat,
-                cid: video.cid,
-                pages: video.pages,
-                dimension: video.dimension
-            )
+    private func scheduleImagePrefetch(for videos: [VideoItem]) {
+        imagePrefetchTask?.cancel()
+        var seenCovers = Set<URL>()
+        var seenAvatars = Set<URL>()
+        var coverURLs = [URL]()
+        var avatarURLs = [URL]()
+
+        for video in videos.prefix(10) {
+            if let url = video.pic.flatMap({ URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }),
+               seenCovers.insert(url).inserted {
+                coverURLs.append(url)
+            }
+            if let url = video.owner?.face.flatMap({ URL(string: $0.biliAvatarThumbnailURL(size: 48)) }),
+               seenAvatars.insert(url).inserted {
+                avatarURLs.append(url)
+            }
+        }
+
+        guard !coverURLs.isEmpty || !avatarURLs.isEmpty else { return }
+        imagePrefetchTask = Task(priority: .utility) {
+            await RemoteImageCache.shared.prefetch(coverURLs, targetPixelSize: 540, maximumConcurrentLoads: 2)
+            guard !Task.isCancelled else { return }
+            await RemoteImageCache.shared.prefetch(avatarURLs, targetPixelSize: 48, maximumConcurrentLoads: 1)
         }
     }
 
-    private func shouldPreloadPlayback(for video: VideoItem) -> Bool {
-        guard let index = videos.firstIndex(where: { $0.id == video.id }) else { return false }
-        let leadingWindow = videos.prefix(8).contains(where: { $0.id == video.id })
-        let trailingWindow = index >= max(videos.count - 8, 0)
-        return leadingWindow || trailingWindow
+    private func schedulePlaybackPreload(for videos: [VideoItem], initialDelay: TimeInterval) {
+        playbackPreloadTask?.cancel()
+        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
+            playbackPreloadTask = nil
+            return
+        }
+        let candidates = Array(videos
+            .filter { $0.cid != nil && !$0.bvid.isEmpty }
+            .prefix(mode == .recommend ? 2 : 1))
+        guard !candidates.isEmpty else {
+            playbackPreloadTask = nil
+            return
+        }
+
+        let preferredQuality = libraryStore.preferredVideoQuality
+        playbackPreloadTask = Task(priority: .background) { [api] in
+            try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+            for (index, video) in candidates.enumerated() {
+                guard !Task.isCancelled else { return }
+                await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: preferredQuality)
+                await VideoPreloadCenter.shared.preloadPlayInfo(
+                    video,
+                    api: api,
+                    preferredQuality: preferredQuality,
+                    priority: .background
+                )
+                if index < candidates.count - 1 {
+                    try? await Task.sleep(nanoseconds: 650_000_000)
+                }
+            }
+        }
     }
 }

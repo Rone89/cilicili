@@ -20,7 +20,6 @@ struct LiveRoomDetailView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .nativeTopNavigationChrome()
         .toolbarBackground(.hidden, for: .navigationBar)
         .background(Color(.systemGroupedBackground))
         .hidesRootTabBarOnPush()
@@ -34,11 +33,8 @@ struct LiveRoomDetailView: View {
 
                 LiveRoomInfoCard(viewModel: viewModel)
                     .padding(.horizontal, 12)
-
-                LiveDanmakuHistoryCard(messages: viewModel.danmakuMessages)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 20)
             }
+            .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
         .overlay {
@@ -60,7 +56,6 @@ struct LiveRoomDetailView: View {
                 BiliPlayerView(
                     videoURL: streamURL,
                     title: viewModel.title,
-                    danmakus: viewModel.danmakuItems,
                     referer: "https://live.bilibili.com/\(viewModel.roomID)",
                     presentation: .embedded,
                     embeddedAspectRatio: 16 / 9
@@ -120,7 +115,6 @@ final class LiveRoomViewModel: ObservableObject {
     @Published private(set) var roomInfo: LiveRoomInfo?
     @Published private(set) var anchorInfo: LiveAnchorInfoData?
     @Published private(set) var streamURL: URL?
-    @Published private(set) var danmakuMessages: [LiveDanmakuMessage] = []
     @Published var state: LoadingState = .idle
 
     let seedRoom: LiveRoom
@@ -193,18 +187,6 @@ final class LiveRoomViewModel: ObservableObject {
             return liveStatus == 1
         }
         return seedRoom.isLive
-    }
-
-    var danmakuItems: [DanmakuItem] {
-        danmakuMessages.enumerated().map { index, message in
-            DanmakuItem(
-                time: TimeInterval(index * 2),
-                mode: 1,
-                fontSize: 25,
-                color: 0xFFFFFF,
-                text: message.text
-            )
-        }
     }
 
     func startLoading() {
@@ -280,11 +262,9 @@ final class LiveRoomViewModel: ObservableObject {
         let api = self.api
         async let roomInfoTask: LiveRoomInfo? = optionalFetch { try await api.fetchLiveRoomInfo(roomID: roomID) }
         async let anchorInfoTask: LiveAnchorInfoData? = optionalFetch { try await api.fetchLiveAnchorInfo(roomID: roomID) }
-        async let danmakuTask: [LiveDanmakuMessage] = optionalFetchArray { try await api.fetchLiveDanmakuHistory(roomID: roomID) }
 
         roomInfo = await roomInfoTask
         anchorInfo = await anchorInfoTask
-        danmakuMessages = await danmakuTask
     }
 
     private func withTimeout<T: Sendable>(
@@ -315,13 +295,6 @@ final class LiveRoomViewModel: ObservableObject {
         }
     }
 
-    private func optionalFetchArray<T>(_ operation: @escaping () async throws -> [T]) async -> [T] {
-        do {
-            return try await operation()
-        } catch {
-            return []
-        }
-    }
 }
 
 private struct LiveRoomInfoCard: View {
@@ -330,7 +303,7 @@ private struct LiveRoomInfoCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
-                AsyncImage(url: viewModel.anchorFace.flatMap(URL.init(string:))) { image in
+                CachedRemoteImage(url: viewModel.anchorFace.flatMap(URL.init(string:))) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "person.crop.circle.fill")
@@ -392,51 +365,6 @@ private struct LiveRoomInfoCard: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-private struct LiveDanmakuHistoryCard: View {
-    let messages: [LiveDanmakuMessage]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("弹幕", systemImage: "text.bubble")
-                    .font(.headline)
-                Spacer()
-                Text(messages.isEmpty ? "暂无" : "\(messages.count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-
-            if messages.isEmpty {
-                Text("暂时没有历史弹幕")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(messages.prefix(30)) { message in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(message.nickname?.nilIfEmpty ?? "用户")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-
-                            Text(message.text)
-                                .font(.footnote)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
             }
         }
         .padding(12)

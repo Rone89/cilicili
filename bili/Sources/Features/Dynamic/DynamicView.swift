@@ -25,7 +25,7 @@ struct DynamicView: View {
     @ViewBuilder
     private func content(_ viewModel: DynamicViewModel) -> some View {
         ScrollView {
-            LazyVStack(spacing: 10) {
+            LazyVStack(spacing: 0) {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -54,11 +54,10 @@ struct DynamicView: View {
                     dynamicFooter(viewModel)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
         }
-        .background(Color(.systemGroupedBackground))
         .nativeTopScrollEdgeEffect()
+        .background(Color(.systemBackground))
         .refreshable {
             await viewModel.refresh()
         }
@@ -100,6 +99,8 @@ struct DynamicView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
         } else {
             Text("没有更多动态了")
                 .font(.caption)
@@ -151,7 +152,7 @@ private struct DynamicFeedCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 11) {
             authorHeader
 
             if let text = DynamicTextSegment.displayText(from: textSegments), !text.isEmpty {
@@ -160,13 +161,13 @@ private struct DynamicFeedCard: View {
 
             if let video {
                 VideoRouteLink(video) {
-                    DynamicArchivePreview(video: video)
+                    DynamicArchivePreview(video: video, style: .large)
                 }
             }
 
             if let live {
                 DynamicLiveRouteLink(room: liveRoom) {
-                    DynamicLivePreview(live: live)
+                    DynamicLivePreview(live: live, style: .large)
                 }
             }
 
@@ -184,14 +185,16 @@ private struct DynamicFeedCard: View {
 
             actionBar
         }
-        .padding(12)
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.5)
+        .background(Color(.systemBackground))
+        .overlay(alignment: .bottom) {
+            Divider()
+                .padding(.leading, 64)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .fullScreenCover(item: $imageSelection) { selection in
             DynamicImageViewer(images: imageItems, initialIndex: selection.index)
         }
@@ -254,9 +257,9 @@ private struct DynamicFeedCard: View {
         VStack(alignment: .leading, spacing: 5) {
             DynamicRichTextView(
                 segments: segments,
-                font: .subheadline,
+                font: .headline.weight(.semibold),
                 textColor: .primary,
-                emoteSize: 22,
+                emoteSize: 24,
                 maxLines: isTextExpanded ? nil : 6
             )
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,8 +415,12 @@ private struct DynamicRichTextView: View {
     }
 
     private var resolvedUIFont: UIFont {
-        let textStyle: UIFont.TextStyle = emoteSize <= 20 ? .footnote : .subheadline
-        return UIFont.preferredFont(forTextStyle: textStyle)
+        let textStyle: UIFont.TextStyle = emoteSize >= 24 ? .headline : (emoteSize <= 20 ? .footnote : .subheadline)
+        let pointSize = UIFont.preferredFont(forTextStyle: textStyle).pointSize
+        let weight: UIFont.Weight = emoteSize >= 24 ? .semibold : .regular
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: UIFont.systemFont(ofSize: pointSize, weight: weight)
+        )
     }
 }
 
@@ -430,6 +437,28 @@ private struct DynamicAttributedTextInput: Equatable {
             && lhs.textColor == rhs.textColor
             && lhs.emoteSize == rhs.emoteSize
             && lhs.maxLines == rhs.maxLines
+    }
+
+    var cacheKey: String {
+        let segmentKey = segments
+            .map { segment -> String in
+                switch segment {
+                case .text(let text):
+                    return "t:\(text)"
+                case .emoji(let text, let url):
+                    return "e:\(text):\(url ?? "")"
+                case .link(let text, let url):
+                    return "l:\(text):\(url)"
+                }
+            }
+            .joined(separator: "\u{1f}")
+        return [
+            segmentKey,
+            "\(baseFont.pointSize)",
+            "\(textColor.dynamicRGBAKey)",
+            "\(emoteSize)",
+            "\(maxLines ?? -1)"
+        ].joined(separator: "\u{1e}")
     }
 
     func render() -> (attributedString: NSAttributedString, missingImageURLs: [URL]) {
@@ -513,10 +542,14 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     func updateUIView(_ label: UILabel, context: Context) {
         label.numberOfLines = input.maxLines ?? 0
         label.lineBreakMode = input.maxLines == nil ? .byCharWrapping : .byTruncatingTail
-        label.attributedText = input.render().attributedString
-        label.invalidateIntrinsicContentSize()
+        let renderResult = context.coordinator.render(input)
+        if context.coordinator.appliedRenderKey != renderResult.key {
+            label.attributedText = renderResult.attributedString
+            label.invalidateIntrinsicContentSize()
+            context.coordinator.appliedRenderKey = renderResult.key
+        }
         context.coordinator.currentInput = input
-        context.coordinator.loadMissingImages(from: input, into: label)
+        context.coordinator.loadMissingImages(renderResult.missingImageURLs, into: label)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
@@ -527,10 +560,28 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
 
     final class Coordinator {
         var currentInput: DynamicAttributedTextInput?
+        var appliedRenderKey: String?
+        private var cachedInputKey: String?
+        private var cachedRenderResult: DynamicAttributedTextRenderResult?
         private var imageTasks: [URL: Task<Void, Never>] = [:]
 
-        func loadMissingImages(from input: DynamicAttributedTextInput, into label: UILabel) {
-            let urls = input.render().missingImageURLs
+        func render(_ input: DynamicAttributedTextInput) -> DynamicAttributedTextRenderResult {
+            if cachedInputKey == input.cacheKey, let cachedRenderResult {
+                return cachedRenderResult
+            }
+
+            let result = input.render()
+            let renderResult = DynamicAttributedTextRenderResult(
+                key: input.cacheKey + "|" + result.missingImageURLs.map(\.absoluteString).sorted().joined(separator: ","),
+                attributedString: result.attributedString,
+                missingImageURLs: result.missingImageURLs
+            )
+            cachedInputKey = input.cacheKey
+            cachedRenderResult = renderResult
+            return renderResult
+        }
+
+        func loadMissingImages(_ urls: [URL], into label: UILabel) {
             guard !urls.isEmpty else { return }
 
             for url in urls where imageTasks[url] == nil {
@@ -541,7 +592,10 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
                         guard let self else { return }
                         self.imageTasks[url] = nil
                         guard let label, let currentInput = self.currentInput else { return }
-                        label.attributedText = currentInput.render().attributedString
+                        self.cachedInputKey = nil
+                        let renderResult = self.render(currentInput)
+                        self.appliedRenderKey = renderResult.key
+                        label.attributedText = renderResult.attributedString
                         label.invalidateIntrinsicContentSize()
                     }
                 }
@@ -554,8 +608,26 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     }
 }
 
+private struct DynamicAttributedTextRenderResult {
+    let key: String
+    let attributedString: NSAttributedString
+    let missingImageURLs: [URL]
+}
+
+private extension UIColor {
+    var dynamicRGBAKey: String {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return "\(red),\(green),\(blue),\(alpha)"
+    }
+}
+
 private struct DynamicCommentsSheet: View {
     let item: DynamicFeedItem
+    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var viewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
 
@@ -570,20 +642,25 @@ private struct DynamicCommentsSheet: View {
                 VStack(alignment: .leading, spacing: 0) {
                     commentsHeader
                         .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 6)
+                        .padding(.top, 2)
+                        .padding(.bottom, 4)
 
                     commentsContent
                 }
             }
-            .background(Color(.systemBackground))
             .navigationTitle("评论")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadInitial()
             }
         }
-        .presentationDetents([.medium, .large])
+        .onAppear {
+            viewModel.setLibraryStore(libraryStore)
+        }
+        .onChange(of: libraryStore.blocksGoodsComments) { _, _ in
+            viewModel.refilterLoadedComments()
+        }
+        .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .sheet(item: $replySheetComment) { comment in
             DynamicCommentRepliesSheet(rootComment: comment, viewModel: viewModel)
@@ -610,13 +687,12 @@ private struct DynamicCommentsSheet: View {
                     } label: {
                         Text(sort.title)
                             .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(viewModel.selectedSort == sort ? Color.pink.opacity(0.13) : Color.clear)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
                             .foregroundStyle(viewModel.selectedSort == sort ? .pink : .secondary)
-                            .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .dynamicCommentGlassButtonStyle(prominent: viewModel.selectedSort == sort)
+                    .controlSize(.mini)
                 }
             }
         }
@@ -691,7 +767,8 @@ private struct DynamicCommentsSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
             }
-            .buttonStyle(.bordered)
+            .dynamicCommentGlassButtonStyle()
+            .controlSize(.small)
             .tint(.pink)
         } else {
             Text("没有更多评论了")
@@ -700,6 +777,21 @@ private struct DynamicCommentsSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
         }
+    }
+}
+
+private extension View {
+    func dynamicCommentGlassButtonStyle(prominent: Bool = false) -> some View {
+        biliGlassButtonStyle(prominent: prominent)
+    }
+
+    @ViewBuilder
+    func dynamicCommentGlassCard() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .biliGlassEffect(
+                tint: Color(.secondarySystemBackground).opacity(0.18),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
     }
 }
 
@@ -717,6 +809,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private let item: DynamicFeedItem
     private let api: BiliAPIClient
+    private weak var libraryStore: LibraryStore?
     private var cursor = ""
     private var commentsEnd = false
 
@@ -731,6 +824,10 @@ private final class DynamicCommentsViewModel: ObservableObject {
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
         self.api = api
+    }
+
+    func setLibraryStore(_ libraryStore: LibraryStore) {
+        self.libraryStore = libraryStore
     }
 
     func loadInitial() async {
@@ -841,7 +938,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
             let pageComments = comments.isEmpty
                 ? (page.topReplies ?? []) + (page.replies ?? [])
                 : (page.replies ?? [])
-            appendUniqueComments(pageComments)
+            appendUniqueComments(filteredComments(pageComments))
             cursor = page.cursor?.next ?? ""
             commentsEnd = page.cursor?.isEnd ?? true
             state = .loaded
@@ -860,8 +957,10 @@ private final class DynamicCommentsViewModel: ObservableObject {
         do {
             let nextPage = reset ? 1 : (replyPages[comment.id] ?? 1) + 1
             let page = try await api.fetchCommentReplies(oid: oid, type: type, root: comment.rpid, page: nextPage)
-            let fetchedReplies = page.replies ?? []
-            let existingReplies = reset ? (comment.replies ?? []) : (replyThreads[comment.id] ?? comment.replies ?? [])
+            let fetchedReplies = filteredComments(page.replies ?? [])
+            let existingReplies = reset
+                ? filteredComments(comment.replies ?? [])
+                : filteredComments(replyThreads[comment.id] ?? comment.replies ?? [])
             let replies = uniqueComments(existingReplies + fetchedReplies)
             replyThreads[comment.id] = replies
             replyPages[comment.id] = nextPage
@@ -870,7 +969,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
             replyStates[comment.id] = .loaded
         } catch {
             if reset {
-                replyThreads[comment.id] = comment.replies ?? []
+                replyThreads[comment.id] = filteredComments(comment.replies ?? [])
             }
             replyStates[comment.id] = .failed(error.localizedDescription)
         }
@@ -883,7 +982,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
         }
 
         let key = dialogKey(root: root, reply: reply)
-        let fallbackReplies = localDialogReplies(root: root, reply: reply)
+        let fallbackReplies = filteredComments(localDialogReplies(root: root, reply: reply))
 
         guard let dialogID = reply.dialogID, dialogID > 0 else {
             dialogThreads[key] = fallbackReplies
@@ -894,7 +993,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
         dialogStates[key] = .loading
         do {
             let page = try await api.fetchCommentDialog(oid: oid, type: type, root: root.rpid, dialog: dialogID)
-            let replies = uniqueComments((page.replies ?? []) + fallbackReplies)
+            let replies = uniqueComments(filteredComments(page.replies ?? []) + fallbackReplies)
             dialogThreads[key] = replies.isEmpty ? fallbackReplies : replies
             dialogStates[key] = .loaded
         } catch {
@@ -906,6 +1005,21 @@ private final class DynamicCommentsViewModel: ObservableObject {
     private func appendUniqueComments(_ more: [Comment]) {
         let existing = Set(comments.map(\.id))
         comments.append(contentsOf: more.filter { !existing.contains($0.id) })
+    }
+
+    private func filteredComments(_ values: [Comment]) -> [Comment] {
+        guard libraryStore?.blocksGoodsComments == true else { return values }
+        return values.filter { !$0.containsGoodsPromotion }
+    }
+
+    func refilterLoadedComments() {
+        if libraryStore?.blocksGoodsComments == true {
+            comments = filteredComments(comments)
+            replyThreads = replyThreads.mapValues(filteredComments)
+            dialogThreads = dialogThreads.mapValues(filteredComments)
+        } else {
+            Task { await reload() }
+        }
     }
 
     private func dialogKey(root: Comment, reply: Comment) -> String {
@@ -1065,14 +1179,13 @@ private struct DynamicCommentRepliesSheet: View {
                     repliesContent
                 }
             }
-            .background(Color(.systemBackground))
             .navigationTitle("评论回复")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadReplies(for: rootComment)
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .sheet(item: $dialogReply) { reply in
             DynamicCommentDialogSheet(rootComment: rootComment, focusReply: reply, viewModel: viewModel)
@@ -1146,7 +1259,8 @@ private struct DynamicCommentRepliesSheet: View {
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .dynamicCommentGlassButtonStyle()
+            .controlSize(.small)
             .tint(.pink)
         }
     }
@@ -1256,14 +1370,13 @@ private struct DynamicCommentDialogSheet: View {
                     dialogContent
                 }
             }
-            .background(Color(.systemBackground))
             .navigationTitle("查看对话")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadDialog(for: rootComment, reply: focusReply)
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
     }
 
@@ -1452,12 +1565,12 @@ private struct DynamicCommentErrorView: View {
                 Label("重试", systemImage: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .dynamicCommentGlassButtonStyle()
+            .controlSize(.small)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .dynamicCommentGlassCard()
     }
 }
 
@@ -1556,13 +1669,13 @@ private struct DynamicOriginalPreview: View {
 
                 if let video {
                     VideoRouteLink(video) {
-                        DynamicArchivePreview(video: video)
+                        DynamicArchivePreview(video: video, style: .compact)
                     }
                 }
 
                 if let live {
                     DynamicLiveRouteLink(room: liveRoom) {
-                        DynamicLivePreview(live: live)
+                        DynamicLivePreview(live: live, style: .compact)
                     }
                 }
 
@@ -1637,9 +1750,9 @@ private struct DynamicImageGrid: View {
     @ViewBuilder
     private func content(width: CGFloat) -> some View {
         if displayedImages.count == 1, let image = displayedImages.first {
-            let imageWidth = floor(width * 0.7)
+            let imageWidth = floor(width * 0.82)
             let aspectRatio = CGFloat(max(image.element.aspectRatio, 0.1))
-            let imageHeight = imageWidth / aspectRatio
+            let imageHeight = min(max(imageWidth / aspectRatio, 150), 360)
             HStack {
                 Button {
                     openImage(image.offset)
@@ -1727,7 +1840,12 @@ private struct DynamicImageCell: View {
         ZStack {
             Color.gray.opacity(0.12)
 
-            CachedRemoteImage(url: image.normalizedURL.flatMap(URL.init(string:))) { loadedImage in
+            CachedRemoteImage(
+                url: image.normalizedURL
+                    .map { $0.biliImageThumbnailURL(maxSide: displayMode == .single ? 1280 : 720) }
+                    .flatMap(URL.init(string:)),
+                targetPixelSize: displayMode == .single ? 1280 : 720
+            ) { loadedImage in
                 loadedImage
                     .resizable()
                     .scaledToFill()
@@ -1894,7 +2012,12 @@ private struct DynamicViewerImage: View {
 
     @ViewBuilder
     private func imageContent(width: CGFloat, height: CGFloat) -> some View {
-        CachedRemoteImage(url: image.normalizedURL.flatMap(URL.init(string:))) { loadedImage in
+        CachedRemoteImage(
+            url: image.normalizedURL
+                .map { $0.biliImageThumbnailURL(maxSide: 2400) }
+                .flatMap(URL.init(string:)),
+            targetPixelSize: 2400
+        ) { loadedImage in
             loadedImage
                 .resizable()
                 .scaledToFill()
@@ -1911,29 +2034,41 @@ private struct DynamicViewerImage: View {
 }
 
 private struct DynamicArchivePreview: View {
+    enum Style {
+        case large
+        case compact
+    }
+
     let video: VideoItem
+    var style: Style = .large
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: .bottomTrailing) {
-                CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.gray.opacity(0.14)
-                }
-                .frame(width: 118, height: 66)
-                .clipped()
+        switch style {
+        case .large:
+            largeContent
+        case .compact:
+            compactContent
+        }
+    }
 
-                Text(BiliFormatters.duration(video.duration))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.54))
-                    .clipShape(Capsule())
-                    .padding(5)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    private var largeContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            cover(showsPlayGlyph: true, aspectRatio: 16 / 9)
+
+            Text(video.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("视频 \(video.title)")
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 10) {
+            cover(showsPlayGlyph: false, aspectRatio: 16 / 9)
+                .frame(width: 118, height: 66)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(video.title)
@@ -1942,13 +2077,7 @@ private struct DynamicArchivePreview: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 10) {
-                    Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.rectangle")
-                    Text(video.owner?.name ?? "")
-                        .lineLimit(1)
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                metadata
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1956,43 +2085,119 @@ private struct DynamicArchivePreview: View {
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
-}
 
-private struct DynamicLivePreview: View {
-    let live: DynamicLive
-
-    var body: some View {
-        liveContent
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("直播 \(live.displayTitle)")
-    }
-
-    private var liveContent: some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: .topLeading) {
-                CachedRemoteImage(url: live.normalizedCoverURL.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }) { image in
+    private func cover(showsPlayGlyph: Bool, aspectRatio: CGFloat) -> some View {
+        FixedAspectPreview(aspectRatio: aspectRatio) {
+            ZStack(alignment: .bottomTrailing) {
+                CachedRemoteImage(
+                    url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 720, height: 405)) },
+                    targetPixelSize: 720
+                ) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Color.gray.opacity(0.14)
-                        .overlay {
-                            Image(systemName: "play.tv")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                        }
                 }
-                .frame(width: 118, height: 66)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
 
-                Text(live.statusText)
-                    .font(.caption2.weight(.bold))
+                if showsPlayGlyph {
+                    Circle()
+                        .fill(.black.opacity(0.38))
+                        .frame(width: 46, height: 46)
+                        .overlay {
+                            Image(systemName: "play.fill")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .offset(x: 1)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
+
+                Text(BiliFormatters.duration(video.duration))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.pink.opacity(0.92))
+                    .background(.black.opacity(0.58))
                     .clipShape(Capsule())
-                    .padding(5)
+                    .padding(6)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .background(Color.gray.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var metadata: some View {
+        HStack(spacing: 10) {
+            Label(BiliFormatters.compactCount(video.stat?.view), systemImage: "play.rectangle")
+            if let ownerName = video.owner?.name, !ownerName.isEmpty {
+                Text(ownerName)
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+}
+
+private struct FixedAspectPreview<Content: View>: View {
+    let aspectRatio: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            content()
+                .frame(width: width, height: width / aspectRatio)
+                .clipped()
+        }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipped()
+    }
+}
+
+private struct DynamicLivePreview: View {
+    enum Style {
+        case large
+        case compact
+    }
+
+    let live: DynamicLive
+    var style: Style = .large
+
+    var body: some View {
+        switch style {
+        case .large:
+            largeContent
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("直播 \(live.displayTitle)")
+        case .compact:
+            compactContent
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("直播 \(live.displayTitle)")
+        }
+    }
+
+    private var largeContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            cover(showsCenterBadge: true)
+                .aspectRatio(16 / 9, contentMode: .fit)
+
+            Text(live.displayTitle)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            metadata
+        }
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 10) {
+            cover(showsCenterBadge: false)
+                .frame(width: 118, height: 66)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(live.displayTitle)
@@ -2001,24 +2206,70 @@ private struct DynamicLivePreview: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 10) {
-                    if let viewerText = live.viewerText {
-                        Label(viewerText, systemImage: "person.2")
-                    }
-
-                    if let areaName = live.areaName, !areaName.isEmpty {
-                        Label(areaName, systemImage: "tag")
-                            .lineLimit(1)
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                metadata
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(8)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func cover(showsCenterBadge: Bool) -> some View {
+        ZStack(alignment: .topLeading) {
+            CachedRemoteImage(
+                url: live.normalizedCoverURL.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 720, height: 405)) },
+                targetPixelSize: 720
+            ) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.gray.opacity(0.14)
+                    .overlay {
+                        Image(systemName: "play.tv")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+
+            if showsCenterBadge {
+                Label("直播中", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.42))
+                    .clipShape(Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+
+            Text(live.statusText)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.pink.opacity(0.92))
+                .clipShape(Capsule())
+                .padding(6)
+        }
+        .background(Color.gray.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var metadata: some View {
+        HStack(spacing: 10) {
+            if let viewerText = live.viewerText {
+                Label(viewerText, systemImage: "person.2")
+            }
+
+            if let areaName = live.areaName, !areaName.isEmpty {
+                Label(areaName, systemImage: "tag")
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 
