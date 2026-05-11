@@ -546,7 +546,8 @@ actor VideoPreloadCenter {
 
     private func cachedOrPendingBVIDPlayInfo(
         for bvid: String,
-        preferredQuality: Int?
+        preferredQuality: Int?,
+        maximumPendingWait: UInt64? = nil
     ) async -> PlayURLData? {
         trimExpiredBVIDPlayInfo()
         let effectivePreferredQuality = preferredQuality ?? defaultPreferredQuality
@@ -556,6 +557,14 @@ actor VideoPreloadCenter {
                 return cached.data
             }
             if let task = bvidPlayInfoTasks[key] {
+                if let maximumPendingWait {
+                    guard maximumPendingWait > 0 else { return nil }
+                    return await waitForCachedBVIDPlayInfo(
+                        bvid: bvid,
+                        preferredQuality: effectivePreferredQuality,
+                        timeout: maximumPendingWait
+                    )
+                }
                 return await task.value
             }
         }
@@ -673,7 +682,8 @@ actor VideoPreloadCenter {
         cid: Int,
         page: Int?,
         waitsForPending: Bool,
-        preferredQuality: Int? = nil
+        preferredQuality: Int? = nil,
+        maximumPendingWait: UInt64? = nil
     ) async -> PlayURLData? {
         if let cached = cachedPlayURL(
             for: bvid,
@@ -704,7 +714,8 @@ actor VideoPreloadCenter {
         else {
             if let data = await cachedOrPendingBVIDPlayInfo(
                 for: bvid,
-                preferredQuality: preferredQuality
+                preferredQuality: preferredQuality,
+                maximumPendingWait: maximumPendingWait
             ) {
                 if !storeBVIDPlayInfoDataIfNeeded(
                     data,
@@ -722,7 +733,18 @@ actor VideoPreloadCenter {
             }
             return nil
         }
-        _ = await task.value
+        if let maximumPendingWait {
+            guard maximumPendingWait > 0 else { return nil }
+            return await waitForCachedPlayURL(
+                bvid: bvid,
+                cid: cid,
+                page: page,
+                preferredQuality: preferredQuality,
+                timeout: maximumPendingWait
+            )
+        } else {
+            _ = await task.value
+        }
         return cachedPlayURL(for: bvid, cid: cid, page: page, preferredQuality: preferredQuality)
     }
 
@@ -935,6 +957,51 @@ actor VideoPreloadCenter {
             mediaWarmupCache[key] = Date()
         }
         trimMediaWarmupCacheIfNeeded()
+    }
+
+    private func waitForCachedPlayURL(
+        bvid: String,
+        cid: Int,
+        page: Int?,
+        preferredQuality: Int?,
+        timeout nanoseconds: UInt64
+    ) async -> PlayURLData? {
+        var remaining = nanoseconds
+        let tick = min(80_000_000, nanoseconds)
+        while remaining > 0 {
+            if let cached = cachedPlayURL(for: bvid, cid: cid, page: page, preferredQuality: preferredQuality) {
+                return cached
+            }
+            let sleepDuration = min(tick, remaining)
+            try? await Task.sleep(nanoseconds: sleepDuration)
+            remaining -= sleepDuration
+        }
+        return cachedPlayURL(for: bvid, cid: cid, page: page, preferredQuality: preferredQuality)
+    }
+
+    private func waitForCachedBVIDPlayInfo(
+        bvid: String,
+        preferredQuality: Int?,
+        timeout nanoseconds: UInt64
+    ) async -> PlayURLData? {
+        var remaining = nanoseconds
+        let tick = min(80_000_000, nanoseconds)
+        while remaining > 0 {
+            for key in bvidPlayInfoKeys(bvid: bvid, preferredQuality: preferredQuality) {
+                if let cached = bvidPlayInfoCache[key] {
+                    return cached.data
+                }
+            }
+            let sleepDuration = min(tick, remaining)
+            try? await Task.sleep(nanoseconds: sleepDuration)
+            remaining -= sleepDuration
+        }
+        for key in bvidPlayInfoKeys(bvid: bvid, preferredQuality: preferredQuality) {
+            if let cached = bvidPlayInfoCache[key] {
+                return cached.data
+            }
+        }
+        return nil
     }
 
     private func trimIfNeeded() {

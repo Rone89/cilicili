@@ -553,7 +553,7 @@ final class VideoDetailViewModel: ObservableObject {
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
-                waitsForPending: true,
+                waitsForPending: false,
                 preferredQuality: libraryStore.preferredVideoQuality
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
@@ -565,6 +565,24 @@ final class VideoDetailViewModel: ObservableObject {
                 PlayerMetricsLog.logger.info(
                     "playURLCacheBypass bvid=\(self.detail.bvid, privacy: .public) preferred=\(self.libraryStore.preferredVideoQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(cachedData.playVariants), privacy: .public)"
                 )
+            }
+            if let pendingData = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
+                for: detail.bvid,
+                cid: cid,
+                page: pageNumber,
+                waitsForPending: true,
+                preferredQuality: libraryStore.preferredVideoQuality,
+                maximumPendingWait: PlaybackEnvironment.current.preferredPlayURLStartupGrace
+            ) {
+                guard !isPlaybackInvalidatedForNavigation else { return }
+                applyPlayURLData(
+                    pendingData,
+                    cid: cid,
+                    page: pageNumber,
+                    source: shouldRefetchForPreferredQuality(pendingData) ? "pendingCacheStaleWhileRefresh" : "pendingCache"
+                )
+                PlayerMetricsLog.record(.playURLLoaded, metricsID: detail.bvid, title: detail.title, message: "\(pendingData.playVariants.filter(\.isPlayable).count) pending cache variants")
+                return
             }
             let data = try await startupPlayURL(
                 bvid: detail.bvid,

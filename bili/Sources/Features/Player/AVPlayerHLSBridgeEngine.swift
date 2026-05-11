@@ -144,7 +144,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         mediaTimeOffset = prepared.bridge?.mediaTimeOffset ?? 0
         retainedAssets = prepared.assets
         let item = prepared.item
-        item.preferredForwardBufferDuration = PlaybackEnvironment.current.preferredForwardBufferDuration
+        item.preferredForwardBufferDuration = source.audioURL == nil
+            ? PlaybackEnvironment.current.preferredForwardBufferDuration
+            : min(PlaybackEnvironment.current.preferredForwardBufferDuration, 0.04)
         player.replaceCurrentItem(with: item)
         player.automaticallyWaitsToMinimizeStalling = false
         observeCurrentItem(item)

@@ -556,8 +556,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
     }
 
-    private let topChrome = FullscreenControlsGradientView(direction: .top)
-    private let bottomChrome = FullscreenControlsGradientView(direction: .bottom)
+    private let topChrome = FullscreenControlsGlassView(direction: .top)
+    private let bottomChrome = FullscreenControlsGlassView(direction: .bottom)
     private let exitButton = UIButton(type: .system)
     private let rewindButton = UIButton(type: .system)
     private let playPauseButton = UIButton(type: .system)
@@ -779,23 +779,25 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 
     private func configureIconButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 17, isPrimary: Bool = false) {
-        var configuration = UIButton.Configuration.plain()
+        var configuration = isPrimary ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         configuration.baseForegroundColor = .white
+        configuration.baseBackgroundColor = isPrimary
+            ? UIColor(red: 1.0, green: 0.25, blue: 0.50, alpha: 1)
+            : UIColor.white.withAlphaComponent(0.16)
+        configuration.cornerStyle = .capsule
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
         button.configuration = configuration
-        button.backgroundColor = isPrimary
-            ? UIColor(red: 1.0, green: 0.25, blue: 0.50, alpha: 0.96)
-            : UIColor.white.withAlphaComponent(0.11)
+        button.backgroundColor = .clear
+        button.tintColor = .white
         button.layer.cornerRadius = 22
-        button.layer.borderWidth = 0.8
-        button.layer.borderColor = UIColor.white.withAlphaComponent(isPrimary ? 0.16 : 0.08).cgColor
-        button.layer.shadowColor = UIColor.black.withAlphaComponent(isPrimary ? 0.30 : 0.12).cgColor
-        button.layer.shadowOpacity = 1
-        button.layer.shadowRadius = isPrimary ? 8 : 4
-        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 4 : 2)
-        button.clipsToBounds = true
+        button.layer.borderWidth = 0
+        button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
+        button.layer.shadowOpacity = isPrimary ? 0.9 : 0.55
+        button.layer.shadowRadius = isPrimary ? 10 : 6
+        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 5 : 3)
+        button.clipsToBounds = false
         button.widthAnchor.constraint(equalToConstant: 44).isActive = true
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
     }
@@ -1034,37 +1036,23 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 }
 
-private final class FullscreenControlsGradientView: UIView {
+private final class FullscreenControlsGlassView: UIVisualEffectView {
     enum Direction {
         case top
         case bottom
     }
 
-    private let direction: Direction
-
-    override class var layerClass: AnyClass {
-        CAGradientLayer.self
-    }
-
     init(direction: Direction) {
-        self.direction = direction
-        super.init(frame: .zero)
+        let glass = UIGlassEffect(style: .regular)
+        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.16 : 0.24)
+        glass.isInteractive = false
+        super.init(effect: glass)
         isUserInteractionEnabled = false
-        configureGradient()
+        backgroundColor = .clear
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    private func configureGradient() {
-        guard let gradient = layer as? CAGradientLayer else { return }
-        gradient.colors = [
-            UIColor.black.withAlphaComponent(direction == .top ? 0.62 : 0).cgColor,
-            UIColor.black.withAlphaComponent(direction == .top ? 0 : 0.78).cgColor
-        ]
-        gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        gradient.endPoint = CGPoint(x: 0.5, y: 1)
     }
 }
 

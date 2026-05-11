@@ -534,14 +534,25 @@ struct BiliPlayerView: View {
                 }
             }
             .padding(.horizontal, presentation == .embedded ? 12 : 16)
-            .padding(.top, 14)
+            .padding(.top, 12)
             .padding(.bottom, presentation == .embedded ? 12 : 20 + controlsBottomLift)
             .background(
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.54), .black.opacity(0.86)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                Rectangle()
+                    .fill(.clear)
+                    .biliGlassEffect(
+                        tint: .black.opacity(0.26),
+                        interactive: false,
+                        in: RoundedRectangle(
+                            cornerRadius: presentation == .embedded ? 18 : 0,
+                            style: .continuous
+                        )
+                    )
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(.white.opacity(0.08))
+                            .frame(height: 0.6)
+                    }
+                    .ignoresSafeArea(edges: presentation == .embedded ? [] : .bottom)
             )
         }
         .foregroundStyle(.white)
@@ -555,15 +566,9 @@ struct BiliPlayerView: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .frame(width: 48, height: 48)
-                    .background(.black.opacity(0.42))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(.white.opacity(0.18), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.4), radius: 14, y: 7)
             }
-            .buttonStyle(.plain)
+            .biliGlassButtonStyle()
+            .tint(.white.opacity(0.18))
             .accessibilityLabel("解锁播放控件")
 
             Spacer(minLength: 0)
@@ -592,16 +597,9 @@ struct BiliPlayerView: View {
                 .monospacedDigit()
                 .frame(minWidth: 50, minHeight: 36)
                 .padding(.horizontal, 2)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(.white.opacity(0.11))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.08), lineWidth: 0.8)
-                        }
-                }
         }
-        .buttonStyle(.plain)
+        .biliGlassButtonStyle()
+        .tint(.white.opacity(0.18))
     }
 
     private func playerControlButton(
@@ -614,19 +612,11 @@ struct BiliPlayerView: View {
             Image(systemName: systemName)
                 .font(.system(size: isPrimary ? 17 : 14.5, weight: isPrimary ? .bold : .semibold))
                 .frame(width: isPrimary ? 44 : 38, height: isPrimary ? 44 : 38)
-                .background {
-                    Circle()
-                        .fill(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50).opacity(0.96) : .white.opacity(0.10))
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(isPrimary ? 0.16 : 0.08), lineWidth: 0.8)
-                        }
-                }
-                .shadow(color: .black.opacity(isPrimary ? 0.28 : 0.12), radius: isPrimary ? 8 : 4, y: isPrimary ? 4 : 2)
         }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
-        .buttonStyle(.plain)
+        .biliGlassButtonStyle(prominent: isPrimary)
+        .tint(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50) : .white.opacity(0.16))
     }
 
     private func handlePlayerTap() {

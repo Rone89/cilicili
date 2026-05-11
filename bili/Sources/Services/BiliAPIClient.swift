@@ -918,10 +918,20 @@ nonisolated final class BiliAPIClient {
     ) async throws -> PlayURLData? {
         let raceStart = CACurrentMediaTime()
         let shouldRaceWBI = await shouldAttemptStartupWBI()
+        let playbackEnvironment = PlaybackEnvironment.current
+        let startupGrace = playbackEnvironment.preferredPlayURLStartupGrace
+        let usableStartupQuality = min(requestedQuality, playbackEnvironment.fastStartQuality)
         var bestStartupData: PlayURLData?
         var lastError: Error?
 
         return await withTaskGroup(of: StartupPlayURLAttempt.self, returning: PlayURLData?.self) { group in
+            if startupGrace > 0 {
+                group.addTask(priority: .userInitiated) {
+                    try? await Task.sleep(nanoseconds: startupGrace)
+                    return StartupPlayURLAttempt(stage: "startupRaceTimeout", data: nil, error: nil)
+                }
+            }
+
             group.addTask(priority: .userInitiated) { [self] in
                 do {
                     let data = try await fetchWebPagePlayURL(
@@ -959,6 +969,27 @@ nonisolated final class BiliAPIClient {
                     return nil
                 }
 
+                if attempt.stage == "startupRaceTimeout" {
+                    if let bestStartupData {
+                        logPlayURLStage(
+                            "startupRaceGraceFallback",
+                            bvid: bvid,
+                            cid: cid,
+                            start: raceStart,
+                            data: bestStartupData
+                        )
+                    } else {
+                        logPlayURLStage(
+                            "startupRaceGraceExpired",
+                            bvid: bvid,
+                            cid: cid,
+                            start: raceStart
+                        )
+                    }
+                    group.cancelAll()
+                    return bestStartupData
+                }
+
                 if let data = attempt.data {
                     if data.hasPlayableQuality(requestedQuality) {
                         logPlayURLStage(
@@ -979,6 +1010,17 @@ nonisolated final class BiliAPIClient {
                         data: data
                     )
                     bestStartupData = preferredStartupCandidate(bestStartupData, data)
+                    if data.highestPlayableQuality >= usableStartupQuality {
+                        logPlayURLStage(
+                            "startupRaceUsableFallback.\(attempt.stage)",
+                            bvid: bvid,
+                            cid: cid,
+                            start: raceStart,
+                            data: data
+                        )
+                        group.cancelAll()
+                        return data
+                    }
                     continue
                 }
 
