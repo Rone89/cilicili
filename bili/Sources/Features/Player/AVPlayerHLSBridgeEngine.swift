@@ -147,9 +147,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         mediaTimeOffset = prepared.bridge?.mediaTimeOffset ?? 0
         retainedAssets = prepared.assets
         let item = prepared.item
-        item.preferredForwardBufferDuration = source.audioURL == nil
-            ? PlaybackEnvironment.current.preferredForwardBufferDuration
-            : min(PlaybackEnvironment.current.preferredForwardBufferDuration, 0.04)
+        configureStartupBuffering(for: item, source: source)
         player.replaceCurrentItem(with: item)
         player.automaticallyWaitsToMinimizeStalling = false
         observeCurrentItem(item)
@@ -329,6 +327,21 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             try session.setActive(true)
         } catch {
             // Playback can still proceed if the simulator or system declines the session update.
+        }
+    }
+
+    private func configureStartupBuffering(for item: AVPlayerItem, source: PlayerStreamSource) {
+        let environment = PlaybackEnvironment.current
+        let bufferDuration = source.audioURL == nil
+            ? environment.preferredForwardBufferDuration
+            : min(environment.preferredForwardBufferDuration, 0.02)
+        item.preferredForwardBufferDuration = bufferDuration
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        if let bandwidth = source.videoStream?.bandwidth, bandwidth > 0 {
+            item.preferredPeakBitRate = Double(bandwidth) * 1.18
+        }
+        if source.audioURL == nil {
+            item.preferredPeakBitRate = 0
         }
     }
 

@@ -648,9 +648,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
 
         let exitButtonTopConstraint = exitButton.topAnchor.constraint(equalTo: topAnchor, constant: 10)
-        let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16)
-        let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 92)
-        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 138)
+        let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
+        let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 74)
+        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 110)
         self.exitButtonTopConstraint = exitButtonTopConstraint
         self.controlsStackBottomConstraint = controlsStackBottomConstraint
         self.topChromeHeightConstraint = topChromeHeightConstraint
@@ -667,17 +667,17 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             bottomChrome.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomChromeHeightConstraint,
 
-            exitButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 18),
+            exitButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
             exitButtonTopConstraint,
 
-            controlsStack.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 18),
-            controlsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -18),
+            controlsStack.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
+            controlsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
             controlsStackBottomConstraint,
 
             feedbackView.centerXAnchor.constraint(equalTo: centerXAnchor),
             feedbackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            feedbackView.widthAnchor.constraint(equalToConstant: 88),
-            feedbackView.heightAnchor.constraint(equalToConstant: 88)
+            feedbackView.widthAnchor.constraint(equalToConstant: 78),
+            feedbackView.heightAnchor.constraint(equalToConstant: 78)
         ])
     }
 
@@ -697,10 +697,10 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let minimumBottomInset: CGFloat = isPortraitFullscreen ? 20 : 0
         let topInset = max(safeAreaInsets.top, minimumTopInset)
         let bottomInset = max(safeAreaInsets.bottom, minimumBottomInset)
-        exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 10 : 8)
-        controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 18 : 16))
-        topChromeHeightConstraint?.constant = topInset + (isPortraitFullscreen ? 84 : 92)
-        bottomChromeHeightConstraint?.constant = bottomInset + (isPortraitFullscreen ? 148 : 138)
+        exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 6)
+        controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
+        topChromeHeightConstraint?.constant = topInset + (isPortraitFullscreen ? 70 : 74)
+        bottomChromeHeightConstraint?.constant = bottomInset + (isPortraitFullscreen ? 124 : 110)
         bottomChrome.setNeedsLayout()
         topChrome.setNeedsLayout()
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())
@@ -717,7 +717,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private func configureControls() {
         configureIconButton(exitButton, systemName: "xmark")
         configureIconButton(rewindButton, systemName: "gobackward.10")
-        configureIconButton(playPauseButton, systemName: "play.fill", pointSize: 20, isPrimary: true)
+        configureIconButton(playPauseButton, systemName: "play.fill", pointSize: 18, isPrimary: true)
         configureIconButton(forwardButton, systemName: "goforward.10")
 
         exitButton.addTarget(self, action: #selector(handleExitButton), for: .touchUpInside)
@@ -727,10 +727,10 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
         [currentTimeLabel, durationLabel].forEach { label in
             label.textColor = .white.withAlphaComponent(0.92)
-            label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
             label.textAlignment = label === currentTimeLabel ? .left : .right
             label.setContentCompressionResistancePriority(.required, for: .horizontal)
-            label.widthAnchor.constraint(equalToConstant: 48).isActive = true
+            label.widthAnchor.constraint(equalToConstant: 44).isActive = true
         }
 
         progressSlider.minimumValue = 0
@@ -738,10 +738,10 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let progressColor = UIColor(red: 1.0, green: 0.25, blue: 0.50, alpha: 1)
         progressSlider.minimumTrackTintColor = progressColor
         progressSlider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.22)
-        progressSlider.setMinimumTrackImage(Self.sliderTrackImage(height: 3.4, color: progressColor), for: .normal)
-        progressSlider.setMaximumTrackImage(Self.sliderTrackImage(height: 3.4, color: UIColor.white.withAlphaComponent(0.22)), for: .normal)
-        progressSlider.setThumbImage(Self.sliderThumbImage(visualDiameter: 9, canvasDiameter: 23, color: progressColor), for: .normal)
-        progressSlider.setThumbImage(Self.sliderThumbImage(visualDiameter: 15, canvasDiameter: 27, color: progressColor), for: .highlighted)
+        progressSlider.setMinimumTrackImage(Self.sliderTrackImage(height: 3, color: progressColor), for: .normal)
+        progressSlider.setMaximumTrackImage(Self.sliderTrackImage(height: 3, color: UIColor.white.withAlphaComponent(0.22)), for: .normal)
+        progressSlider.setThumbImage(Self.sliderThumbImage(visualDiameter: 8, canvasDiameter: 21, color: progressColor), for: .normal)
+        progressSlider.setThumbImage(Self.sliderThumbImage(visualDiameter: 13, canvasDiameter: 25, color: progressColor), for: .highlighted)
         progressSlider.addTarget(self, action: #selector(handleSliderTouchDown), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(handleSliderValueChanged), for: .valueChanged)
         progressSlider.addTarget(self, action: #selector(handleSliderTouchUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
@@ -754,7 +754,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         ])
         buttonRow.axis = .horizontal
         buttonRow.alignment = .center
-        buttonRow.spacing = 10
+        buttonRow.spacing = 8
 
         let progressRow = UIStackView(arrangedSubviews: [
             currentTimeLabel,
@@ -767,12 +767,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
         controlsStack.axis = .vertical
         controlsStack.alignment = .fill
-        controlsStack.spacing = 13
+        controlsStack.spacing = 10
         controlsStack.addArrangedSubview(buttonRow)
         controlsStack.addArrangedSubview(progressRow)
 
         feedbackView.backgroundColor = UIColor.black.withAlphaComponent(0.46)
-        feedbackView.layer.cornerRadius = 44
+        feedbackView.layer.cornerRadius = 39
         feedbackView.alpha = 0
         feedbackView.isUserInteractionEnabled = false
         feedbackImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -787,7 +787,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         ])
     }
 
-    private func configureIconButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 17, isPrimary: Bool = false) {
+    private func configureIconButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 15, isPrimary: Bool = false) {
         var configuration = isPrimary ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
@@ -800,15 +800,16 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.configuration = configuration
         button.backgroundColor = .clear
         button.tintColor = .white
-        button.layer.cornerRadius = 22
+        let buttonSize: CGFloat = isPrimary ? 40 : 36
+        button.layer.cornerRadius = buttonSize / 2
         button.layer.borderWidth = 0
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
         button.layer.shadowOpacity = isPrimary ? 0.9 : 0.55
         button.layer.shadowRadius = isPrimary ? 10 : 6
         button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 5 : 3)
         button.clipsToBounds = false
-        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        button.widthAnchor.constraint(equalToConstant: buttonSize).isActive = true
+        button.heightAnchor.constraint(equalToConstant: buttonSize).isActive = true
     }
 
     private func startRefreshTimerIfNeeded() {

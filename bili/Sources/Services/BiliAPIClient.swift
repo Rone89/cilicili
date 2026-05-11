@@ -855,8 +855,8 @@ nonisolated final class BiliAPIClient {
             }
         }
 
-        if honorsConfiguredQuality {
-            let requestedQuality = configuredQuality ?? 112
+        if honorsConfiguredQuality || !environment.shouldPreferConservativePlayback {
+            let requestedQuality = min(configuredQuality ?? environment.startupPreferredQualityCeiling, environment.startupPreferredQualityCeiling)
             var bestStartupData: PlayURLData?
             if let racedStartupData = try await fetchRacedStartupPlayURL(
                 bvid: bvid,
@@ -864,7 +864,7 @@ nonisolated final class BiliAPIClient {
                 page: page,
                 requestedQuality: requestedQuality
             ) {
-                if racedStartupData.hasPlayableQuality(requestedQuality) {
+                if !honorsConfiguredQuality || racedStartupData.hasPlayableQuality(requestedQuality) {
                     return racedStartupData
                 }
                 bestStartupData = preferredStartupCandidate(bestStartupData, racedStartupData)
@@ -921,6 +921,14 @@ nonisolated final class BiliAPIClient {
         let playbackEnvironment = PlaybackEnvironment.current
         let startupGrace = playbackEnvironment.preferredPlayURLStartupGrace
         let usableStartupQuality = min(requestedQuality, playbackEnvironment.fastStartQuality)
+        let html5Query = [
+            "bvid": bvid,
+            "cid": String(cid),
+            "qn": String(playbackEnvironment.fastStartQuality),
+            "fnval": "0",
+            "fnver": "0",
+            "platform": "html5"
+        ]
         var bestStartupData: PlayURLData?
         var lastError: Error?
 
@@ -943,6 +951,19 @@ nonisolated final class BiliAPIClient {
                     return StartupPlayURLAttempt(stage: "startupWebpage", data: data, error: nil)
                 } catch {
                     return StartupPlayURLAttempt(stage: "startupWebpage", data: nil, error: error)
+                }
+            }
+
+            group.addTask(priority: .userInitiated) { [self] in
+                do {
+                    let data = try await fetchHTML5StartupPlayURL(
+                        bvid: bvid,
+                        cid: cid,
+                        query: html5Query
+                    )
+                    return StartupPlayURLAttempt(stage: "startupHTML5", data: data, error: nil)
+                } catch {
+                    return StartupPlayURLAttempt(stage: "startupHTML5", data: nil, error: error)
                 }
             }
 
@@ -978,6 +999,8 @@ nonisolated final class BiliAPIClient {
                             start: raceStart,
                             data: bestStartupData
                         )
+                        group.cancelAll()
+                        return bestStartupData
                     } else {
                         logPlayURLStage(
                             "startupRaceGraceExpired",
@@ -985,12 +1008,12 @@ nonisolated final class BiliAPIClient {
                             cid: cid,
                             start: raceStart
                         )
+                        continue
                     }
-                    group.cancelAll()
-                    return bestStartupData
                 }
 
                 if let data = attempt.data {
+                    bestStartupData = preferredStartupCandidate(bestStartupData, data)
                     if data.hasPlayableQuality(requestedQuality) {
                         logPlayURLStage(
                             "startupRaceWinner.\(attempt.stage)",
@@ -1009,8 +1032,7 @@ nonisolated final class BiliAPIClient {
                         requestedQuality: requestedQuality,
                         data: data
                     )
-                    bestStartupData = preferredStartupCandidate(bestStartupData, data)
-                    if data.highestPlayableQuality >= usableStartupQuality {
+                    if data.highestPlayableQuality >= usableStartupQuality || data.hasPlayableStreamPayload {
                         logPlayURLStage(
                             "startupRaceUsableFallback.\(attempt.stage)",
                             bvid: bvid,
@@ -1124,6 +1146,36 @@ nonisolated final class BiliAPIClient {
             return try requirePlayURLData(response, requirePlayablePayload: true)
         }
         logPlayURLStage("startupLegacy", bvid: bvid, cid: cid, start: stageStart, data: data)
+        return data
+    }
+
+    private func fetchHTML5StartupPlayURL(
+        bvid: String,
+        cid: Int,
+        query: [String: String]
+    ) async throws -> PlayURLData {
+        let stageStart = CACurrentMediaTime()
+        let referer = "https://www.bilibili.com/video/\(bvid)"
+        let data = try await runCachedPlayURLStage(
+            "startupHTML5",
+            bvid: bvid,
+            cid: cid,
+            qn: PlaybackEnvironment.current.fastStartQuality,
+            cookieMode: "auth-html5-startup",
+            start: stageStart
+        ) { [self] in
+            let response: BiliResponse<PlayURLData> = try await get(
+                base: baseURL,
+                path: "/x/player/playurl",
+                query: query,
+                referer: referer,
+                userAgent: Self.mobileUserAgent,
+                cookieHeader: await cookieHeader(),
+                priority: .userInitiated
+            )
+            return try requirePlayURLData(response, requirePlayablePayload: true)
+        }
+        logPlayURLStage("startupHTML5", bvid: bvid, cid: cid, start: stageStart, data: data)
         return data
     }
 

@@ -81,7 +81,7 @@ actor VideoPreloadCenter {
         preferredQuality: Int?,
         priority: TaskPriority = .utility
     ) {
-        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
+        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback || priority == .userInitiated else {
             PlayerMetricsLog.logger.info(
                 "playInfoPreloadSkipped reason=conservative bvid=\(video.bvid, privacy: .public) preferred=\(preferredQuality ?? 0, privacy: .public)"
             )
@@ -192,21 +192,12 @@ actor VideoPreloadCenter {
         tasks[key] = Task(priority: priority) {
             do {
                 let data: PlayURLData
-                if warmsMedia {
-                    data = try await api.fetchStartupPlayURL(
-                        bvid: bvid,
-                        cid: cid,
-                        page: page,
-                        preferredQuality: effectivePreferredQuality
-                    )
-                } else {
-                    data = try await api.fetchWebPagePlayURL(
-                        bvid: bvid,
-                        cid: cid,
-                        page: page,
-                        preferredQuality: effectivePreferredQuality
-                    )
-                }
+                data = try await api.fetchStartupPlayURL(
+                    bvid: bvid,
+                    cid: cid,
+                    page: page,
+                    preferredQuality: effectivePreferredQuality
+                )
                 guard !Task.isCancelled else {
                     self.finish(key)
                     return nil

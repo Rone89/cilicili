@@ -571,7 +571,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 waitsForPending: true,
-                preferredQuality: libraryStore.preferredVideoQuality,
+                preferredQuality: nil,
                 maximumPendingWait: PlaybackEnvironment.current.preferredPlayURLStartupGrace
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
@@ -929,14 +929,14 @@ final class VideoDetailViewModel: ObservableObject {
     private func preferredDefaultVariant(in variants: [PlayVariant]) -> PlayVariant? {
         let playableVariants = sortedPlayVariants(variants).filter(\.isPlayable)
         let playbackEnvironment = PlaybackEnvironment.current
-        if let preferredVariant = storedPreferredVariant(in: playableVariants) {
-            return preferredVariant
-        }
-
         if let fastStartVariant = playableVariants
             .filter(\.isProgressiveFastStart)
             .max(by: { $0.quality < $1.quality }) {
             return fastStartVariant
+        }
+
+        if let preferredVariant = storedPreferredVariant(in: playableVariants) {
+            return preferredVariant
         }
 
         let preferredQualities = playbackEnvironment.preferredQualityLadder
