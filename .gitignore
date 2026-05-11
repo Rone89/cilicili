@@ -1,0 +1,43 @@
+# Xcode
+DerivedData/
+build/
+Build/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.xccheckout
+*.xcuserdatad/
+xcuserdata/
+
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods / Carthage
+Pods/
+Carthage/Build/
+
+# Local app build artifacts
+.derived-unsigned/
+.derived-unsigned-device/
+.manual-build/
+.ipa-staging/
+*.ipa
+*.app
+*.dSYM/
+
+# Local binary dependencies
+Frameworks/
+
+# Simulator captures and local verification media
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.mov
+*.mp4
+
+# macOS
+.DS_Store
+
