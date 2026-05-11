@@ -216,8 +216,12 @@ struct BiliPlayerView: View {
     var body: some View {
         Group {
             if presentation == .embedded {
-                playerSurface
+                Color.black
                     .aspectRatio(max(embeddedAspectRatio, 0.3), contentMode: .fit)
+                    .overlay {
+                        playerSurface
+                    }
+                    .clipped()
             } else if showsNavigationChrome {
                 playerSurface
                     .ignoresContainerSafeArea(ignoresContainerSafeArea)

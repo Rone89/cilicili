@@ -108,7 +108,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func refreshSurfaceLayout() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         playerLayer?.frame = surfaceView?.bounds ?? .zero
+        CATransaction.commit()
     }
 
     func recoverSurface() {
@@ -285,8 +288,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func ensurePlayerLayer(in surface: UIView) -> AVPlayerLayer {
         if let playerLayer {
             if playerLayer.superlayer !== surface.layer {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
                 playerLayer.removeFromSuperlayer()
                 surface.layer.insertSublayer(playerLayer, at: 0)
+                CATransaction.commit()
             }
             if playerLayer.player == nil {
                 playerLayer.player = player
@@ -300,7 +306,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
         layer.backgroundColor = UIColor.black.cgColor
+        layer.frame = surface.bounds
+        layer.needsDisplayOnBoundsChange = false
+        layer.actions = [
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "frame": NSNull()
+        ]
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         surface.layer.insertSublayer(layer, at: 0)
+        CATransaction.commit()
         playerLayer = layer
         observeLayerReadyForDisplay(layer)
         return layer

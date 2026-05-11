@@ -166,12 +166,6 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             let fullscreenController = ManualVideoFullscreenViewController()
             fullscreenController.viewModel = playerViewModel
             fullscreenController.mode = mode
-            fullscreenController.onExit = { [weak self] in
-                self?.handleExitFullscreenButton()
-            }
-            fullscreenController.onLayout = { [weak self] in
-                self?.applyManualFullscreenLayout(animated: false)
-            }
 
             let fullscreenSuperview = sourceWindow.rootViewController?.view ?? sourceWindow
             fullscreenController.view.frame = fullscreenSuperview.bounds
@@ -194,7 +188,9 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
             let contentView = UIView()
             contentView.backgroundColor = .black
+            contentView.isOpaque = true
             contentView.clipsToBounds = true
+            contentView.layer.backgroundColor = UIColor.black.cgColor
             let fullscreenBounds = fullscreenController.view.bounds
             contentView.bounds = CGRect(origin: .zero, size: fullscreenBounds.size)
             contentView.center = CGPoint(x: fullscreenBounds.midX, y: fullscreenBounds.midY)
@@ -203,6 +199,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             fullscreenController.view.addSubview(contentView)
             contentView.addSubview(drawableView)
             drawableView.frame = contentView.bounds
+            playerViewModel?.refreshSurfaceLayout()
             fullscreenController.bringPlayerToFront()
 
             fullscreenState = FullscreenState(
@@ -217,6 +214,12 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
                 contentView: contentView,
                 mode: mode
             )
+            fullscreenController.onExit = { [weak self] in
+                self?.handleExitFullscreenButton()
+            }
+            fullscreenController.onLayout = { [weak self] in
+                self?.applyManualFullscreenLayout(animated: false)
+            }
             playerViewModel?.setHostFullscreenActive(true, exitTarget: self)
             playerViewModel?.recoverSurfaceAfterHostFullscreenTransition()
             applyManualFullscreenLayout(animated: false)
@@ -286,17 +289,23 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         }
 
         let applyLayout = {
-            state.lastAppliedBounds = bounds
-            state.backdropView.frame = bounds
-            state.contentView.transform = .identity
-            state.contentView.bounds = CGRect(origin: .zero, size: bounds.size)
-            state.contentView.center = CGPoint(x: bounds.midX, y: bounds.midY)
-            self.drawableView.transform = .identity
-            self.drawableView.frame = state.contentView.bounds
-            state.fullscreenController.view.bringSubviewToFront(state.contentView)
-            state.fullscreenController.bringPlayerToFront()
-            state.fullscreenController.refreshFullscreenLayout(flush: false)
-            state.fullscreenController.refreshSystemChrome()
+            UIView.performWithoutAnimation {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                state.lastAppliedBounds = bounds
+                state.backdropView.frame = bounds
+                state.contentView.transform = .identity
+                state.contentView.bounds = CGRect(origin: .zero, size: bounds.size)
+                state.contentView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+                self.drawableView.transform = .identity
+                self.drawableView.frame = state.contentView.bounds
+                self.playerViewModel?.refreshSurfaceLayout()
+                state.fullscreenController.view.bringSubviewToFront(state.contentView)
+                state.fullscreenController.bringPlayerToFront()
+                state.fullscreenController.refreshFullscreenLayout(flush: false)
+                state.fullscreenController.refreshSystemChrome()
+                CATransaction.commit()
+            }
         }
 
         let finish = { [weak self] in

@@ -192,13 +192,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget? = nil) {
         engine.setHostFullscreenActive(isActive, exitTarget: exitTarget)
-        engine.recoverSurface()
         engine.refreshSurfaceLayout()
     }
 
     func recoverSurfaceAfterHostFullscreenTransition() {
         guard surfaceView != nil else { return }
-        engine.recoverSurface()
         engine.refreshSurfaceLayout()
     }
 
