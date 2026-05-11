@@ -1,8 +1,9 @@
+import AVFoundation
 import Combine
 import SwiftUI
 import UIKit
 
-enum BiliPlayerPresentation {
+enum BiliPlayerPresentation: Equatable {
     case fullScreen
     case embedded
 }
@@ -234,6 +235,7 @@ struct BiliPlayerView: View {
         }
         .onAppear {
             viewModel.setHostFullscreenRequestHandler(onRequestManualFullscreen)
+            applyVideoGravity()
             applyPlaybackDefaults()
             reportPlaybackProgress(0)
             if viewModel.wantsAutoplay {
@@ -296,7 +298,15 @@ struct BiliPlayerView: View {
                 lockAffordanceVisible = false
                 cancelLockAutoHide()
             }
+            applyVideoGravity()
         }
+        .onChange(of: presentation) { _, _ in
+            applyVideoGravity()
+        }
+    }
+
+    private func applyVideoGravity() {
+        viewModel.setVideoGravity(presentation == .fullScreen ? .resizeAspectFill : .resizeAspect)
     }
 
     private func savePlaybackProgress(_ time: TimeInterval) {

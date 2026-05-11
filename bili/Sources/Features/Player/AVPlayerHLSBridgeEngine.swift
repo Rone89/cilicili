@@ -28,6 +28,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var wantsPlayback = false
     private var didReportFirstFrame = false
     private var lastPlaybackState: PlayerEnginePlaybackState = .idle
+    private var videoGravity: AVLayerVideoGravity = .resizeAspect
 
     var hasMedia: Bool {
         player.currentItem != nil
@@ -137,6 +138,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func setViewModel(_: PlayerStateViewModel?) {}
+
+    func setVideoGravity(_ gravity: AVLayerVideoGravity) {
+        guard videoGravity != gravity else { return }
+        videoGravity = gravity
+        playerViewController?.videoGravity = gravity
+        playerLayer?.videoGravity = gravity
+    }
 
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
         if let playerViewController, playerViewController !== controller {
@@ -314,7 +322,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func configureNativePlaybackController(_ controller: AVPlayerViewController) {
         controller.player = player
         controller.showsPlaybackControls = true
-        controller.videoGravity = .resizeAspect
+        controller.videoGravity = videoGravity
         controller.allowsPictureInPicturePlayback = AVPictureInPictureController.isPictureInPictureSupported()
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.requiresLinearPlayback = false
@@ -349,7 +357,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
 
         let layer = AVPlayerLayer(player: player)
-        layer.videoGravity = .resizeAspect
+        layer.videoGravity = videoGravity
         layer.backgroundColor = UIColor.black.cgColor
         layer.frame = surface.bounds
         layer.needsDisplayOnBoundsChange = false

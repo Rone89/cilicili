@@ -179,6 +179,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    func setVideoGravity(_ gravity: AVLayerVideoGravity) {
+        engine.setVideoGravity(gravity)
+        engine.refreshSurfaceLayout()
+    }
+
     func detachSurface(_ view: VideoSurfaceContainerView) {
         guard surfaceView === view else { return }
         engine.detachNativePlaybackController(view.nativePlayerViewController)

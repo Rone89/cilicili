@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AVFoundation
 import AVKit
 import OSLog
 import UIKit
@@ -74,6 +75,7 @@ protocol PlayerRenderingEngine: AnyObject {
     func refreshSurfaceLayout()
     func recoverSurface()
     func setViewModel(_ viewModel: PlayerStateViewModel?)
+    func setVideoGravity(_ gravity: AVLayerVideoGravity)
     func attachNativePlaybackController(_ controller: AVPlayerViewController)
     func detachNativePlaybackController(_ controller: AVPlayerViewController)
     func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget?)

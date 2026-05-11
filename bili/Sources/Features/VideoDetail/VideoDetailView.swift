@@ -18,6 +18,7 @@ struct VideoDetailView: View {
     @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
     @State private var pendingManualLandscapeExitTask: Task<Void, Never>?
     @State private var lastManualLandscapeRequestTime: Date?
+    @State private var hidesPlayerSystemChrome = false
     @State private var preloadedRelatedVideos = Set<String>()
 
     init(
@@ -59,6 +60,10 @@ struct VideoDetailView: View {
             }
         }
         .hideRootTabBarWhenNeeded(hidesRootTabBar)
+        .toolbar(hidesPlayerSystemChrome ? .hidden : .visible, for: .navigationBar)
+        .onPreferenceChange(VideoDetailChromeHiddenPreferenceKey.self) { isHidden in
+            hidesPlayerSystemChrome = isHidden
+        }
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             updateManualLandscapeOrientation(UIDevice.current.orientation)
@@ -69,6 +74,7 @@ struct VideoDetailView: View {
             holder.viewModel?.stopPlaybackForNavigation()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             AppOrientationLock.restorePortrait()
+            hidesPlayerSystemChrome = false
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateManualLandscapeOrientation(UIDevice.current.orientation)
@@ -100,6 +106,7 @@ struct VideoDetailView: View {
             let sceneIsLandscape = proxy.size.width > proxy.size.height
             let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
             let isLandscape = sceneIsLandscape && !isManualFullscreen
+            let shouldHideSystemChrome = isLandscape || isManualFullscreen
             let layoutSize = isManualFullscreen
                 ? CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height))
                 : proxy.size
@@ -124,10 +131,13 @@ struct VideoDetailView: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
             .background(isLandscape ? Color.black : Color.videoDetailBackground)
             .ignoresSafeArea(.container, edges: (isLandscape || manualFullscreenMode != nil) ? .all : [])
+            .preference(key: VideoDetailChromeHiddenPreferenceKey.self, value: shouldHideSystemChrome)
+            .statusBar(hidden: shouldHideSystemChrome)
+            .persistentSystemOverlays(shouldHideSystemChrome ? .hidden : .automatic)
             .background {
                 StatusBarStyleBridge(
                     style: (isLandscape || isManualFullscreen) ? .lightContent : .default,
-                    isHidden: isManualFullscreen
+                    isHidden: shouldHideSystemChrome
                 )
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
@@ -165,8 +175,6 @@ struct VideoDetailView: View {
             }
         }
         .ignoresSafeArea(.container, edges: manualFullscreenMode != nil ? .all : [])
-        .statusBar(hidden: manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape)
-        .persistentSystemOverlays((manualFullscreenMode == nil && !isRestoringPortraitFromManualLandscape) ? .automatic : .hidden)
     }
 
     private func updateManualLandscapeOrientation(_ orientation: UIDeviceOrientation) {
@@ -938,6 +946,14 @@ private struct VideoTitleText: UIViewRepresentable {
     private static var font: UIFont {
         let baseFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
         return UIFontMetrics(forTextStyle: .title3).scaledFont(for: baseFont)
+    }
+}
+
+private struct VideoDetailChromeHiddenPreferenceKey: PreferenceKey {
+    static var defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 
