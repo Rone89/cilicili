@@ -308,7 +308,7 @@ struct BiliPlayerView: View {
     }
 
     private func applyVideoGravity() {
-        viewModel.setVideoGravity(presentation == .fullScreen ? .resizeAspectFill : .resizeAspect)
+        viewModel.setVideoGravity(.resizeAspect)
     }
 
     private func savePlaybackProgress(_ time: TimeInterval) {
@@ -380,7 +380,7 @@ struct BiliPlayerView: View {
                 VStack(spacing: 7) {
                     ProgressView()
                     if viewModel.isBuffering {
-                        Text("缓冲中")
+                        Text("缂撳啿涓?)
                             .font(.caption2.weight(.medium))
                     }
                 }
@@ -450,7 +450,7 @@ struct BiliPlayerView: View {
         if usesNativePlaybackControls {
             NativePlayerControllerView(
                 viewModel: viewModel,
-                videoGravity: presentation == .fullScreen ? .resizeAspectFill : .resizeAspect
+                videoGravity: .resizeAspect
             )
         } else {
             VideoSurfaceView(
@@ -668,7 +668,7 @@ struct BiliPlayerView: View {
             }
             .biliGlassButtonStyle()
             .tint(.white.opacity(0.18))
-            .accessibilityLabel("解锁播放控件")
+            .accessibilityLabel("瑙ｉ攣鎾斁鎺т欢")
 
             Spacer(minLength: 0)
         }
