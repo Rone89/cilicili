@@ -380,7 +380,7 @@ struct BiliPlayerView: View {
                 VStack(spacing: 7) {
                     ProgressView()
                     if viewModel.isBuffering {
-                        Text("缂撳啿涓?)
+                        Text("缓冲中")
                             .font(.caption2.weight(.medium))
                     }
                 }
@@ -668,7 +668,7 @@ struct BiliPlayerView: View {
             }
             .biliGlassButtonStyle()
             .tint(.white.opacity(0.18))
-            .accessibilityLabel("瑙ｉ攣鎾斁鎺т欢")
+            .accessibilityLabel("解锁播放控件")
 
             Spacer(minLength: 0)
         }
