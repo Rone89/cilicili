@@ -97,7 +97,7 @@ struct VideoDetailView: View {
                 ToolbarAvatar(urlString: owner.face)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("鎵撳紑 \(owner.name) 鐨勪富椤?)
+            .accessibilityLabel("打开 \(owner.name) 的主页")
         }
     }
 
@@ -152,7 +152,7 @@ struct VideoDetailView: View {
             }
             .overlay {
                 if case .failed(let message) = viewModel.state {
-                    ErrorStateView(title: "瑙嗛鍔犺浇澶辫触", message: message) {
+                    ErrorStateView(title: "视频加载失败", message: message) {
                         Task { await viewModel.load() }
                     }
                     .background(.background.opacity(0.95))
@@ -390,14 +390,14 @@ struct VideoDetailView: View {
             } else {
                 PlayerLoadingPlaceholder(
                     progress: viewModel.playURLState.isLoading ? 0.08 : 0,
-                    message: viewModel.playURLState.isLoading ? "姝ｅ湪鑾峰彇鎾斁鍦板潃" : "鍑嗗鎾斁",
+                    message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
                     isFinishing: false
                 )
                 .frame(width: playerWidth)
                 .frame(height: playerHeight)
 
                 if !viewModel.playURLState.isLoading, viewModel.selectedPlayVariant != nil {
-                    Label("褰撳墠妗ｄ綅鏆備笉鍙挱鏀?, systemImage: "lock.fill")
+                    Label("当前档位暂不可播放", systemImage: "lock.fill")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -506,7 +506,7 @@ struct VideoDetailView: View {
                 }
             } label: {
                 detailActionContent(
-                    title: interaction.isFavorited ? "宸叉敹钘? : BiliFormatters.compactCount(video.stat?.favorite),
+                    title: interaction.isFavorited ? "已收藏" : BiliFormatters.compactCount(video.stat?.favorite),
                     systemImage: interaction.isFavorited ? "star.fill" : "star",
                     foregroundStyle: interaction.isFavorited ? .pink : .secondary
                 )
@@ -514,7 +514,7 @@ struct VideoDetailView: View {
             .buttonStyle(.plain)
             .disabled(viewModel.isMutatingInteraction)
 
-            detailAction(title: "鍒嗕韩", systemImage: "arrowshape.turn.up.right")
+            detailAction(title: "分享", systemImage: "arrowshape.turn.up.right")
         }
         .padding(.vertical, 4)
     }
@@ -554,7 +554,7 @@ struct VideoDetailView: View {
         Button {
             isShowingDescription = true
         } label: {
-            InlineMetadataButtonLabel(title: "绠€浠?, systemImage: "text.alignleft")
+            InlineMetadataButtonLabel(title: "简介", systemImage: "text.alignleft")
         }
         .buttonStyle(.plain)
     }
@@ -565,13 +565,13 @@ struct VideoDetailView: View {
             Menu {
                 if viewModel.isSupplementingPlayQualities {
                     Button {} label: {
-                        Label("姝ｅ湪琛ュ叏楂樻竻妗ｄ綅", systemImage: "arrow.triangle.2.circlepath")
+                        Label("正在补全高清档位", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(true)
                 }
                 if viewModel.isSwitchingPlayQuality {
                     Button {} label: {
-                        Label("姝ｅ湪鍒囨崲娓呮櫚搴?, systemImage: "arrow.triangle.2.circlepath")
+                        Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(true)
                 }
@@ -595,19 +595,19 @@ struct VideoDetailView: View {
             }
             .buttonStyle(.plain)
         } else {
-            InlineMetadataButtonLabel(title: "娓呮櫚搴?, systemImage: "slider.horizontal.3")
+            InlineMetadataButtonLabel(title: "清晰度", systemImage: "slider.horizontal.3")
                 .opacity(0.45)
         }
     }
 
     private func qualityButtonTitle(_ viewModel: VideoDetailViewModel) -> String {
         if viewModel.isSwitchingPlayQuality {
-            return "鍒囨崲涓?
+            return "切换中"
         }
         if viewModel.isSupplementingPlayQualities {
-            return "琛ラ珮娓呬腑"
+            return "补高清中"
         }
-        return viewModel.selectedPlayVariant?.title ?? "娓呮櫚搴?
+        return viewModel.selectedPlayVariant?.title ?? "清晰度"
     }
 
     private func qualityMenuIcon(for variant: PlayVariant, viewModel: VideoDetailViewModel) -> String {
@@ -635,7 +635,7 @@ struct VideoDetailView: View {
                 playURLStatus(viewModel)
             }
         } else if viewModel.selectedPlayVariant?.isPlayable == false {
-            Label("褰撳墠妗ｄ綅鏆備笉鍙挱鏀?, systemImage: "lock.fill")
+            Label("当前档位暂不可播放", systemImage: "lock.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
@@ -646,7 +646,7 @@ struct VideoDetailView: View {
         if let pages = viewModel.detail.pages, pages.count > 1 {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("閫夐泦")
+                    Text("选集")
                         .font(.headline)
                     Spacer()
                     Text("\(pages.count)P")
@@ -718,7 +718,7 @@ struct VideoDetailView: View {
                         await viewModel.retryPlayURL()
                     }
                 } label: {
-                    Label("鎾斁鍦板潃鍔犺浇澶辫触锛岀偣鍑婚噸璇?, systemImage: "arrow.clockwise")
+                    Label("播放地址加载失败，点击重试", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -735,7 +735,7 @@ struct VideoDetailView: View {
                     await viewModel.retryPlayURL()
                 }
             } label: {
-                Label("鍔犺浇鎾斁鍦板潃", systemImage: "play.rectangle")
+                Label("加载播放地址", systemImage: "play.rectangle")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -767,7 +767,7 @@ struct VideoDetailView: View {
                             Text("P\(page.page ?? 1)")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(page.cid == selectedCID ? .pink : .secondary)
-                            Text(page.part ?? "绗?\(page.page ?? 1) 闆?)
+                            Text(page.part ?? "第 \(page.page ?? 1) 集")
                                 .font(.caption.weight(.semibold))
                                 .lineLimit(2)
                         }
@@ -864,7 +864,7 @@ struct VideoDetailView: View {
     @ViewBuilder
     private func relatedPlaceholderContent(_ viewModel: VideoDetailViewModel) -> some View {
         if case .failed = viewModel.relatedState {
-            EmptyStateView(title: "鏆傛棤鐩稿叧鎺ㄨ崘", systemImage: "rectangle.stack", message: "绋嶅悗鍐嶈瘯璇曘€?)
+            EmptyStateView(title: "暂无相关推荐", systemImage: "rectangle.stack", message: "稍后再试试。")
                 .padding(.horizontal, 14)
                 .frame(height: 146)
         } else {
@@ -884,7 +884,7 @@ struct VideoDetailView: View {
             isShowingCommentsSheet = true
         } label: {
             HStack(spacing: 10) {
-                Label("璇勮", systemImage: "bubble.left.and.bubble.right")
+                Label("评论", systemImage: "bubble.left.and.bubble.right")
                     .font(.headline)
 
                 Text(BiliFormatters.compactCount(viewModel.detail.stat?.reply))
@@ -903,7 +903,7 @@ struct VideoDetailView: View {
             .background(Color.videoDetailSurface)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("鏌ョ湅 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply)) 鏉¤瘎璁?)
+        .accessibilityLabel("查看 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply)) 条评论")
     }
 
 }
@@ -1150,7 +1150,7 @@ private struct PlayerPerformanceOverlay: View {
             HStack(spacing: 6) {
                 Image(systemName: "waveform.path.ecg.rectangle")
                     .font(.caption2.weight(.bold))
-                Text("鎾斁鎬ц兘")
+                Text("播放性能")
                     .font(.caption.weight(.semibold))
                 Spacer(minLength: 8)
                 Text(shortID)
@@ -1167,9 +1167,9 @@ private struct PlayerPerformanceOverlay: View {
                     alignment: .leading,
                     spacing: 6
                 ) {
-                    metric("鎬婚甯?, session.firstFrameTotalMilliseconds)
-                    metric("鎾斁鍣?, session.firstFramePlayerMilliseconds)
-                    metric("鍙栨祦", session.playURLMilliseconds)
+                    metric("总首帧", session.firstFrameTotalMilliseconds)
+                    metric("播放器", session.firstFramePlayerMilliseconds)
+                    metric("取流", session.playURLMilliseconds)
                     metric("Prepare", session.prepareMilliseconds)
                 }
 
@@ -1188,7 +1188,7 @@ private struct PlayerPerformanceOverlay: View {
                 }
 
                 HStack(spacing: 8) {
-                    Text("缂撳啿 \(session.bufferCount)")
+                    Text("缓冲 \(session.bufferCount)")
                     if let quality = session.selectedQualityMessage {
                         Text(quality)
                             .lineLimit(1)
@@ -1204,7 +1204,7 @@ private struct PlayerPerformanceOverlay: View {
                         .lineLimit(2)
                 }
             } else {
-                Text("绛夊緟鎾斁浜嬩欢")
+                Text("等待播放事件")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -1270,7 +1270,7 @@ private extension String {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         text = text.replacingOccurrences(
-            of: #"([\p{Han}\p{Hiragana}\p{Katakana}\p{Bopomofo}\p{N}锛屻€傦紒锛熴€侊細锛涳紙锛夈€娿€嬧€溾€濃€樷€欍€愩€慮)\s+([\p{Han}\p{Hiragana}\p{Katakana}\p{Bopomofo}\p{N}锛屻€傦紒锛熴€侊細锛涳紙锛夈€娿€嬧€溾€濃€樷€欍€愩€慮)"#,
+            of: #"([\p{Han}\p{Hiragana}\p{Katakana}\p{Bopomofo}\p{N}，。！？、：；（）《》“”‘’【】])\s+([\p{Han}\p{Hiragana}\p{Katakana}\p{Bopomofo}\p{N}，。！？、：；（）《》“”‘’【】])"#,
             with: "$1$2",
             options: .regularExpression
         )
@@ -1361,7 +1361,7 @@ private struct PortraitCommentsSheet: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(.clear)
-            .navigationTitle("璇勮 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply))")
+            .navigationTitle("评论 \(BiliFormatters.compactCount(viewModel.detail.stat?.reply))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.automatic, for: .navigationBar)
             .nativeTopScrollEdgeEffect()
@@ -1384,7 +1384,7 @@ private struct PortraitCommentsSheet: View {
 
     private var sortPickerRow: some View {
         Picker(
-            "璇勮鎺掑簭",
+            "评论排序",
             selection: Binding(
                 get: { viewModel.selectedCommentSort },
                 set: { sort in
@@ -1411,7 +1411,7 @@ private struct PortraitCommentsSheet: View {
         } else if viewModel.shouldShowEmptyCommentsState {
             emptyRow
         } else if viewModel.shouldShowCommentReloadPrompt {
-            errorRow(message: "璇勮鏆傛椂娌℃湁杩斿洖鍐呭")
+            errorRow(message: "评论暂时没有返回内容")
         } else {
             ForEach(viewModel.comments) { comment in
                 CommentRow(
@@ -1438,7 +1438,7 @@ private struct PortraitCommentsSheet: View {
     private var loadingRow: some View {
         HStack(spacing: 10) {
             ProgressView()
-            Text("姝ｅ湪鍔犺浇璇勮")
+            Text("正在加载评论")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -1458,7 +1458,7 @@ private struct PortraitCommentsSheet: View {
     }
 
     private var emptyRow: some View {
-        EmptyStateView(title: "鏆傛棤璇勮", systemImage: "bubble.left", message: "杩欓噷杩樻病鏈夊彲灞曠ず鐨勮瘎璁恒€?)
+        EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "这里还没有可展示的评论。")
             .padding(.vertical, 28)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
@@ -1470,7 +1470,7 @@ private struct PortraitCommentsSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村璇勮")
+                Text("加载更多评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1484,7 +1484,7 @@ private struct PortraitCommentsSheet: View {
             Button {
                 Task { await viewModel.loadMoreComments() }
             } label: {
-                Label("鍔犺浇鏇村璇勮", systemImage: "arrow.down.circle")
+                Label("加载更多评论", systemImage: "arrow.down.circle")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
@@ -1494,7 +1494,7 @@ private struct PortraitCommentsSheet: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else if !viewModel.comments.isEmpty {
-            Text("娌℃湁鏇村璇勮浜?)
+            Text("没有更多评论了")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -1550,7 +1550,7 @@ private struct CommentsSectionView: View {
 
     private var commentsHeader: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text("璇勮")
+            Text("评论")
                 .font(.headline)
 
             if let count = viewModel.detail.stat?.reply {
@@ -1586,7 +1586,7 @@ private struct CommentsSectionView: View {
         if viewModel.comments.isEmpty && shouldShowLoadingPlaceholder {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇璇勮")
+                Text("正在加载评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1598,10 +1598,10 @@ private struct CommentsSectionView: View {
             }
             .padding(.horizontal, style.horizontalPadding)
         } else if viewModel.shouldShowEmptyCommentsState {
-            EmptyStateView(title: "鏆傛棤璇勮", systemImage: "bubble.left", message: "璇勮鍔犺浇鍚庝細鏄剧ず鍦ㄨ繖閲屻€?)
+            EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "评论加载后会显示在这里。")
                 .padding(.horizontal, style.horizontalPadding)
         } else if viewModel.shouldShowCommentReloadPrompt {
-            CommentErrorView(message: "璇勮鏆傛椂娌℃湁杩斿洖鍐呭") {
+            CommentErrorView(message: "评论暂时没有返回内容") {
                 Task { await viewModel.retryComments() }
             }
             .padding(.horizontal, style.horizontalPadding)
@@ -1660,7 +1660,7 @@ private struct CommentsSectionView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇璇勮")
+                Text("加载评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1670,7 +1670,7 @@ private struct CommentsSectionView: View {
             Button {
                 showAllComments?()
             } label: {
-                Label("鏌ョ湅鍏ㄩ儴璇勮", systemImage: "bubble.left.and.bubble.right")
+                Label("查看全部评论", systemImage: "bubble.left.and.bubble.right")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -1688,7 +1688,7 @@ private struct CommentsSectionView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村璇勮")
+                Text("加载更多评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1703,7 +1703,7 @@ private struct CommentsSectionView: View {
                 Task { await viewModel.loadMoreComments() }
             } label: {
                 if style.usesGroupedFooter {
-                    Label("鍔犺浇鏇村璇勮", systemImage: "arrow.down.circle")
+                    Label("加载更多评论", systemImage: "arrow.down.circle")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -1711,7 +1711,7 @@ private struct CommentsSectionView: View {
                         .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
-                    Label("鍔犺浇鏇村璇勮", systemImage: "arrow.down.circle")
+                    Label("加载更多评论", systemImage: "arrow.down.circle")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
@@ -1720,7 +1720,7 @@ private struct CommentsSectionView: View {
             }
             .buttonStyle(.plain)
         } else {
-            Text("娌℃湁鏇村璇勮浜?)
+            Text("没有更多评论了")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -1762,7 +1762,7 @@ private struct CommentRow: View {
 
                 if visibleReplyCount > 0 {
                     Button(action: showReplies) {
-                        Label("\(visibleReplyCount) 鏉″洖澶?, systemImage: "bubble.left.and.bubble.right")
+                        Label("\(visibleReplyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -1869,7 +1869,7 @@ private struct CommentImageButton: View {
     }
 
     private var title: String {
-        visibleImages.count > 1 ? "鐐瑰嚮鏌ョ湅鍥剧墖 \(visibleImages.count) 寮? : "鐐瑰嚮鏌ョ湅鍥剧墖"
+        visibleImages.count > 1 ? "点击查看图片 \(visibleImages.count) 张" : "点击查看图片"
     }
 }
 
@@ -2134,7 +2134,7 @@ private struct CommentViewerImage: View {
 
 private enum CommentTextBuilder {
     static func nameAndMessage(name: String, message: String, font: Font, contentColor: Color) -> AttributedString {
-        var user = AttributedString("\(name)锛?)
+        var user = AttributedString("\(name)：")
         user.font = font.weight(.semibold)
         user.foregroundColor = .secondary
 
@@ -2150,7 +2150,7 @@ private enum CommentTextBuilder {
             return content
         }
 
-        var verb = AttributedString("鍥炲 ")
+        var verb = AttributedString("回复 ")
         verb.font = font
         verb.foregroundColor = contentColor
 
@@ -2175,7 +2175,7 @@ private enum CommentTextBuilder {
     }
 
     private static func replyPrefixSplit(in message: String) -> (target: String, separator: String, content: String)? {
-        let supportedVerbs = ["鍥炲", "鍥炶", "鍥炲京"]
+        let supportedVerbs = ["回复", "回覆", "回復"]
         guard let verb = supportedVerbs.first(where: { message.hasPrefix($0) }) else { return nil }
 
         var cursor = message.index(message.startIndex, offsetBy: verb.count)
@@ -2184,7 +2184,7 @@ private enum CommentTextBuilder {
         }
 
         guard cursor < message.endIndex, message[cursor] == "@" else { return nil }
-        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "锛? }) else { return nil }
+        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "：" }) else { return nil }
 
         let prefixEnd = message.index(after: colon)
         let target = String(message[cursor..<colon]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2204,7 +2204,7 @@ private struct CommentErrorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundStyle(.orange)
-                Text("璇勮鍔犺浇澶辫触")
+                Text("评论加载失败")
                     .font(.subheadline.weight(.semibold))
             }
 
@@ -2214,7 +2214,7 @@ private struct CommentErrorView: View {
                 .lineLimit(2)
 
             Button(action: retry) {
-                Label("閲嶈瘯", systemImage: "arrow.clockwise")
+                Label("重试", systemImage: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
             }
             .buttonStyle(.bordered)
@@ -2245,7 +2245,7 @@ private struct CommentRepliesSheet: View {
                     repliesContent
                 }
             }
-            .navigationTitle("璇勮鍥炲")
+            .navigationTitle("评论回复")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadReplies(for: rootComment)
@@ -2275,7 +2275,7 @@ private struct CommentRepliesSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇鍥炲")
+                Text("正在加载回复")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2287,7 +2287,7 @@ private struct CommentRepliesSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "鏆傛棤鍥炲", systemImage: "bubble.left.and.bubble.right", message: "杩欐潯璇勮杩樻病鏈夊彲灞曠ず鐨勫洖澶嶃€?)
+            EmptyStateView(title: "暂无回复", systemImage: "bubble.left.and.bubble.right", message: "这条评论还没有可展示的回复。")
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -2317,7 +2317,7 @@ private struct CommentRepliesSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村鍥炲")
+                Text("加载更多回复")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2330,7 +2330,7 @@ private struct CommentRepliesSheet: View {
             Button {
                 Task { await viewModel.loadMoreReplies(for: rootComment) }
             } label: {
-                Label("鏌ョ湅鏇村鍥炲", systemImage: "chevron.down")
+                Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
@@ -2419,7 +2419,7 @@ private struct CommentReplyDetailRow: View {
 
                 if let showDialog {
                     Button(action: showDialog) {
-                        Label("鏌ョ湅瀵硅瘽", systemImage: "text.bubble")
+                        Label("查看对话", systemImage: "text.bubble")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -2451,7 +2451,7 @@ private struct CommentDialogSheet: View {
                     dialogContent
                 }
             }
-            .navigationTitle("鏌ョ湅瀵硅瘽")
+            .navigationTitle("查看对话")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadDialog(for: rootComment, reply: focusReply)
@@ -2478,7 +2478,7 @@ private struct CommentDialogSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇瀵硅瘽")
+                Text("正在加载对话")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2490,7 +2490,7 @@ private struct CommentDialogSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "鏆傛棤瀵硅瘽", systemImage: "text.bubble", message: "鏆傛椂娌℃湁鎵惧埌杩欐潯鍥炲鐨勪笂涓嬫枃銆?)
+            EmptyStateView(title: "暂无对话", systemImage: "text.bubble", message: "暂时没有找到这条回复的上下文。")
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -2597,7 +2597,7 @@ private struct VideoDescriptionSheet: View {
                 }
                 .padding(16)
             }
-            .navigationTitle("瑙嗛绠€浠?)
+            .navigationTitle("视频简介")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
@@ -2606,7 +2606,7 @@ private struct VideoDescriptionSheet: View {
 
     private var displayDescription: String {
         let text = (viewModel.detail.desc ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? "杩欎釜瑙嗛鏆傛椂娌℃湁绠€浠嬨€? : text
+        return text.isEmpty ? "这个视频暂时没有简介。" : text
     }
 }
 
@@ -2634,7 +2634,7 @@ private struct VideoDescriptionOwnerRow: View {
             Button {
                 Task { await viewModel.toggleFollow() }
             } label: {
-                Text(isFollowing ? "宸插叧娉? : "+ 鍏虫敞")
+                Text(isFollowing ? "已关注" : "+ 关注")
                     .font(.caption.weight(.bold))
                     .frame(minWidth: 58)
                     .padding(.horizontal, 12)
@@ -2664,7 +2664,7 @@ private struct VideoDescriptionOwnerRow: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text("绮変笣 \(BiliFormatters.compactCount(fanCount))")
+                Text("粉丝 \(BiliFormatters.compactCount(fanCount))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2741,7 +2741,7 @@ private struct PlaybackPosterOverlay: View {
             let isFinishing = playerViewModel.loadingProgress >= 0.98
             PlayerLoadingPlaceholder(
                 progress: playerViewModel.loadingProgress,
-                message: playerViewModel.isBuffering ? "姝ｅ湪缂撳啿" : "姝ｅ湪鍔犺浇瑙嗛",
+                message: playerViewModel.isBuffering ? "正在缓冲" : "正在加载视频",
                 isFinishing: isFinishing
             )
             .background(Color.black.opacity(dimOpacity))
