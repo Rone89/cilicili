@@ -884,12 +884,13 @@ struct LocalHLSBridge: Sendable {
         let masterPlaylistVersion = supplementalCodecAttribute.isEmpty
             ? (videoRangeAttribute.isEmpty ? 7 : 8)
             : 10
+        let resolutionAttribute = videoRendition.hlsResolutionAttribute
         let masterPlaylist = """
         #EXTM3U
         #EXT-X-VERSION:\(masterPlaylistVersion)
         #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="audio",DEFAULT=YES,AUTOSELECT=YES,URI="\(audioPlaylistURL.absoluteString)"
-        #EXT-X-STREAM-INF:BANDWIDTH=\(videoRendition.bandwidth),CODECS="\(videoRendition.codec),\(audioRendition.codec)",AUDIO="audio"\(videoRangeAttribute)\(supplementalCodecAttribute)
+        #EXT-X-STREAM-INF:BANDWIDTH=\(videoRendition.bandwidth),CODECS="\(videoRendition.codec),\(audioRendition.codec)",AUDIO="audio"\(resolutionAttribute)\(videoRangeAttribute)\(supplementalCodecAttribute)
         \(videoPlaylistURL.absoluteString)
         """
 
@@ -1412,7 +1413,8 @@ struct LocalHLSBridge: Sendable {
             codec: normalizedCodec(track.stream?.codecs, mediaType: track.mediaType),
             mediaTimeOffset: mediaTimeOffset,
             baseMediaDecodeTimeOffsetTicks: timelineOffset.baseMediaDecodeTimeTicks,
-            dynamicRange: track.dynamicRange
+            dynamicRange: track.dynamicRange,
+            dimensions: track.stream?.hlsDimensions
         )
     }
 
@@ -1598,6 +1600,7 @@ private struct HLSRendition: Sendable {
     let mediaTimeOffset: TimeInterval
     let baseMediaDecodeTimeOffsetTicks: UInt64
     let dynamicRange: BiliVideoDynamicRange
+    let dimensions: CGSize?
 
     nonisolated var hlsSupplementalCodecAttribute: String {
         guard dynamicRange == .dolbyVision,
@@ -1606,6 +1609,15 @@ private struct HLSRendition: Sendable {
         else { return "" }
 
         return ",SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\""
+    }
+
+    nonisolated var hlsResolutionAttribute: String {
+        guard mediaType == .video,
+              let dimensions,
+              dimensions.width > 0,
+              dimensions.height > 0
+        else { return "" }
+        return ",RESOLUTION=\(Int(dimensions.width))x\(Int(dimensions.height))"
     }
 
     nonisolated func playlist(baseURL: URL, routePrefix: String) -> String {

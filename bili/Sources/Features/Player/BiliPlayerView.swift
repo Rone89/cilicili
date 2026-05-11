@@ -308,7 +308,7 @@ struct BiliPlayerView: View {
     }
 
     private func applyVideoGravity() {
-        viewModel.setVideoGravity(.resizeAspect)
+        viewModel.setVideoGravity(presentation == .fullScreen ? .resizeAspectFill : .resizeAspect)
     }
 
     private func savePlaybackProgress(_ time: TimeInterval) {

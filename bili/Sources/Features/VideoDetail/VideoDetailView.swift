@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import Combine
 import UIKit
@@ -332,31 +333,51 @@ struct VideoDetailView: View {
     ) -> some View {
         ZStack {
             if let playerViewModel = viewModel.stablePlayerViewModel {
-                BiliPlayerView(
-                    viewModel: playerViewModel,
-                    historyVideo: viewModel.detail,
-                    historyCID: viewModel.selectedCID,
-                    duration: viewModel.detail.duration.map(TimeInterval.init),
-                    presentation: isLandscape ? .fullScreen : .embedded,
-                    showsNavigationChrome: false,
-                    showsStartupLoadingIndicator: false,
-                    pausesOnDisappear: false,
-                    embeddedAspectRatio: 16 / 9,
-                    manualFullscreenMode: manualFullscreenMode,
-                    onRequestManualFullscreen: enterManualLandscapePlayback,
-                    onExitManualFullscreen: onExitManualFullscreen
-                )
-                .id(ObjectIdentifier(playerViewModel))
-                .frame(width: playerWidth)
-                .frame(maxWidth: .infinity)
-                .frame(height: playerHeight)
-                .overlay {
-                    playbackPosterOverlay(
-                        viewModel,
-                        playerViewModel: playerViewModel,
-                        dimOpacity: 0.36,
-                        showsLoader: true
+                if isLandscape, playerViewModel.usesNativePlaybackControls {
+                    NativePlayerControllerView(viewModel: playerViewModel)
+                        .id(ObjectIdentifier(playerViewModel))
+                        .frame(width: playerWidth)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: playerHeight)
+                        .background(.black)
+                        .onAppear {
+                            playerViewModel.setVideoGravity(.resizeAspectFill)
+                        }
+                        .overlay {
+                            playbackPosterOverlay(
+                                viewModel,
+                                playerViewModel: playerViewModel,
+                                dimOpacity: 0.36,
+                                showsLoader: true
+                            )
+                        }
+                } else {
+                    BiliPlayerView(
+                        viewModel: playerViewModel,
+                        historyVideo: viewModel.detail,
+                        historyCID: viewModel.selectedCID,
+                        duration: viewModel.detail.duration.map(TimeInterval.init),
+                        presentation: isLandscape ? .fullScreen : .embedded,
+                        showsNavigationChrome: false,
+                        showsStartupLoadingIndicator: false,
+                        pausesOnDisappear: false,
+                        embeddedAspectRatio: 16 / 9,
+                        manualFullscreenMode: manualFullscreenMode,
+                        onRequestManualFullscreen: enterManualLandscapePlayback,
+                        onExitManualFullscreen: onExitManualFullscreen
                     )
+                    .id(ObjectIdentifier(playerViewModel))
+                    .frame(width: playerWidth)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: playerHeight)
+                    .overlay {
+                        playbackPosterOverlay(
+                            viewModel,
+                            playerViewModel: playerViewModel,
+                            dimOpacity: 0.36,
+                            showsLoader: true
+                        )
+                    }
                 }
             } else {
                 PlayerLoadingPlaceholder(

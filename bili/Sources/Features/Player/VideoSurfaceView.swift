@@ -7,6 +7,7 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
 
     final class Coordinator {
         weak var viewModel: PlayerStateViewModel?
+        weak var playerController: AVPlayerViewController?
 
         init(viewModel: PlayerStateViewModel) {
             self.viewModel = viewModel
@@ -17,25 +18,53 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    func makeUIViewController(context _: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.view.backgroundColor = .black
-        controller.view.isOpaque = true
-        viewModel.attachNativePlaybackController(controller)
-        return controller
+    func makeUIViewController(context: Context) -> NativePlayerHostViewController {
+        let hostController = NativePlayerHostViewController()
+        context.coordinator.playerController = hostController.playerController
+        viewModel.attachNativePlaybackController(hostController.playerController)
+        return hostController
     }
 
-    func updateUIViewController(_ controller: AVPlayerViewController, context _: Context) {
-        controller.view.backgroundColor = .black
-        controller.view.isOpaque = true
-        controller.view.setNeedsLayout()
-        controller.view.layoutIfNeeded()
-        viewModel.attachNativePlaybackController(controller)
+    func updateUIViewController(_ hostController: NativePlayerHostViewController, context: Context) {
+        context.coordinator.viewModel = viewModel
+        context.coordinator.playerController = hostController.playerController
+        hostController.view.setNeedsLayout()
+        hostController.view.layoutIfNeeded()
+        viewModel.attachNativePlaybackController(hostController.playerController)
     }
 
-    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
+    static func dismantleUIViewController(_ hostController: NativePlayerHostViewController, coordinator: Coordinator) {
+        let controller = coordinator.playerController ?? hostController.playerController
         coordinator.viewModel?.detachNativePlaybackController(controller)
         controller.player = nil
+    }
+}
+
+final class NativePlayerHostViewController: UIViewController {
+    let playerController = AVPlayerViewController()
+
+    override func loadView() {
+        let view = UIView()
+        view.backgroundColor = .black
+        view.isOpaque = true
+        view.clipsToBounds = true
+        self.view = view
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        playerController.view.backgroundColor = .black
+        playerController.view.isOpaque = true
+        addChild(playerController)
+        view.addSubview(playerController.view)
+        playerController.didMove(toParent: self)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        playerController.view.frame = view.bounds
+        playerController.view.setNeedsLayout()
+        playerController.view.layoutIfNeeded()
     }
 }
 

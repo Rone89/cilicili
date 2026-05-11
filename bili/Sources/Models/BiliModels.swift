@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum BiliVideoDynamicRange: String, Hashable, Sendable {
@@ -879,6 +880,11 @@ struct DASHStream: Decodable, Hashable, Sendable {
     nonisolated var resolutionLabel: String? {
         guard let width, let height, width > 0, height > 0 else { return nil }
         return "\(width)x\(height)"
+    }
+
+    nonisolated var hlsDimensions: CGSize? {
+        guard let width, let height, width > 0, height > 0 else { return nil }
+        return CGSize(width: width, height: height)
     }
 
     nonisolated var displayFrameRate: String? {
