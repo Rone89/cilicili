@@ -72,8 +72,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     deinit {
-        removeCurrentItemObservers()
-        removePeriodicTimeObserver()
+        itemObservers.removeAll()
+        layerReadyForDisplayObserver = nil
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
+        }
+        if let itemFailedObserver {
+            NotificationCenter.default.removeObserver(itemFailedObserver)
+        }
+        if let periodicTimeObserver {
+            player.removeTimeObserver(periodicTimeObserver)
+        }
         if let backgroundObserver {
             NotificationCenter.default.removeObserver(backgroundObserver)
         }
