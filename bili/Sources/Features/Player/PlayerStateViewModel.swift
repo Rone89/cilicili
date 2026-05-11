@@ -179,6 +179,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    func attachNativePlaybackController(_ controller: AVPlayerViewController) {
+        engine.attachNativePlaybackController(controller)
+        configurePictureInPictureIfNeeded()
+        if engine.hasMedia {
+            engine.refreshSurfaceLayout()
+        }
+    }
+
+    func detachNativePlaybackController(_ controller: AVPlayerViewController) {
+        engine.detachNativePlaybackController(controller)
+    }
+
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
         engine.setVideoGravity(gravity)
         engine.refreshSurfaceLayout()

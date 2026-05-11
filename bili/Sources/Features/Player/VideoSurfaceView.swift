@@ -2,6 +2,43 @@ import AVKit
 import SwiftUI
 import UIKit
 
+struct NativePlayerControllerView: UIViewControllerRepresentable {
+    @ObservedObject var viewModel: PlayerStateViewModel
+
+    final class Coordinator {
+        weak var viewModel: PlayerStateViewModel?
+
+        init(viewModel: PlayerStateViewModel) {
+            self.viewModel = viewModel
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(viewModel: viewModel)
+    }
+
+    func makeUIViewController(context _: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.view.backgroundColor = .black
+        controller.view.isOpaque = true
+        viewModel.attachNativePlaybackController(controller)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context _: Context) {
+        controller.view.backgroundColor = .black
+        controller.view.isOpaque = true
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        viewModel.attachNativePlaybackController(controller)
+    }
+
+    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
+        coordinator.viewModel?.detachNativePlaybackController(controller)
+        controller.player = nil
+    }
+}
+
 struct VideoSurfaceView: UIViewRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
     let manualFullscreenMode: ManualVideoFullscreenMode?
