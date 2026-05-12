@@ -25,7 +25,7 @@ struct DynamicView: View {
     @ViewBuilder
     private func content(_ viewModel: DynamicViewModel) -> some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 18) {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -46,6 +46,8 @@ struct DynamicView: View {
                 } else {
                     ForEach(viewModel.items) { item in
                         DynamicFeedCard(item: item, api: dependencies.api)
+                            .frame(maxWidth: 460)
+                            .padding(.horizontal, 20)
                             .task {
                                 await viewModel.loadMoreIfNeeded(current: item)
                             }
@@ -57,7 +59,7 @@ struct DynamicView: View {
             .padding(.vertical, 8)
         }
         .nativeTopScrollEdgeEffect()
-        .background(Color(.systemBackground))
+        .background(Color(.systemGroupedBackground))
         .refreshable {
             await viewModel.refresh()
         }
@@ -161,7 +163,7 @@ private struct DynamicFeedCard: View {
 
             if let video {
                 VideoRouteLink(video) {
-                    DynamicArchivePreview(video: video, style: .large)
+                    DynamicArchivePreview(video: video, style: .large, showsHeader: false)
                 }
             }
 
@@ -186,15 +188,17 @@ private struct DynamicFeedCard: View {
             actionBar
         }
         .padding(.leading, 16)
-        .padding(.trailing, 12)
+        .padding(.trailing, 16)
         .padding(.top, 14)
-        .padding(.bottom, 10)
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .overlay(alignment: .bottom) {
-            Divider()
-                .padding(.leading, 64)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
         }
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         .fullScreenCover(item: $imageSelection) { selection in
             DynamicImageViewer(images: imageItems, initialIndex: selection.index)
         }
@@ -2041,6 +2045,7 @@ private struct DynamicArchivePreview: View {
 
     let video: VideoItem
     var style: Style = .large
+    var showsHeader = true
 
     var body: some View {
         switch style {
@@ -2052,15 +2057,7 @@ private struct DynamicArchivePreview: View {
     }
 
     private var largeContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            cover(showsPlayGlyph: true, aspectRatio: 16 / 9)
-
-            Text(video.title)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        VideoFeedStoryCardView(video: video, showsHeader: showsHeader)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("视频 \(video.title)")
     }

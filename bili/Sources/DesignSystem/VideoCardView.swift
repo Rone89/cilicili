@@ -25,18 +25,23 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
 
 struct VideoFeedStoryCardView: View {
     let display: VideoCardDisplayModel
+    private let showsHeader: Bool
 
-    init(video: VideoItem) {
+    init(video: VideoItem, showsHeader: Bool = true) {
         self.display = VideoCardDisplayModel(video: video)
+        self.showsHeader = showsHeader
     }
 
-    init(display: VideoCardDisplayModel) {
+    init(display: VideoCardDisplayModel, showsHeader: Bool = true) {
         self.display = display
+        self.showsHeader = showsHeader
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
+        VStack(alignment: .leading, spacing: showsHeader ? 8 : 0) {
+            if showsHeader {
+                header
+            }
             mediaContainer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,7 +70,12 @@ struct VideoFeedStoryCardView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 10)
+
+            Text(display.publishTimeText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 2)
     }
@@ -86,10 +96,13 @@ struct VideoFeedStoryCardView: View {
     }
 
     private var cover: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.12))
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-            .overlay {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let height = max(proxy.size.height, 1)
+
+            ZStack(alignment: .bottom) {
+                Color.gray.opacity(0.12)
+
                 CachedRemoteImage(
                     url: display.coverURL,
                     targetPixelSize: 760
@@ -101,35 +114,18 @@ struct VideoFeedStoryCardView: View {
                     Color.gray.opacity(0.12)
                         .overlay(ProgressView())
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: width, height: height)
                 .clipped()
-            }
-            .overlay(alignment: .bottom) {
-                coverMetaOverlay
-            }
-            .overlay(alignment: .topTrailing) {
-                publishTimeBadge
-                    .padding(.top, 8)
-                    .padding(.trailing, 8)
-            }
-    }
 
-    @ViewBuilder
-    private var publishTimeBadge: some View {
-        if !display.publishTimeText.isEmpty {
-            Text(display.publishTimeText)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.black.opacity(0.48), in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(.white.opacity(0.18), lineWidth: 0.6)
-                }
-                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                coverMetaOverlay
+                    .frame(width: width, height: height, alignment: .bottom)
+            }
+            .frame(width: width, height: height)
+            .clipped()
         }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipped()
     }
 
     private var coverMetaOverlay: some View {
@@ -171,16 +167,16 @@ struct VideoFeedStoryCardView: View {
 }
 struct VideoCardView: View {
     let display: VideoCardDisplayModel
-    private let showsPublishTimeBadge: Bool
+    private let showsPublishTimeInAuthorRow: Bool
 
-    init(video: VideoItem, showsPublishTimeBadge: Bool = false) {
+    init(video: VideoItem, showsPublishTimeInAuthorRow: Bool = false) {
         self.display = VideoCardDisplayModel(video: video)
-        self.showsPublishTimeBadge = showsPublishTimeBadge
+        self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
     }
 
-    init(display: VideoCardDisplayModel, showsPublishTimeBadge: Bool = false) {
+    init(display: VideoCardDisplayModel, showsPublishTimeInAuthorRow: Bool = false) {
         self.display = display
-        self.showsPublishTimeBadge = showsPublishTimeBadge
+        self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
     }
 
     var body: some View {
@@ -213,20 +209,23 @@ struct VideoCardView: View {
     }
 
     private var cover: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.12))
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-            .overlay {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let height = max(proxy.size.height, 1)
+
+            ZStack(alignment: .bottom) {
+                Color.gray.opacity(0.12)
                 coverImage
-            }
-            .overlay(alignment: .bottom) {
+                    .frame(width: width, height: height)
+                    .clipped()
+
                 coverMetaOverlay
+                    .frame(width: width, height: height, alignment: .bottom)
             }
-            .overlay(alignment: .topTrailing) {
-                publishTimeBadge
-                    .padding(.top, 6)
-                    .padding(.trailing, 6)
-            }
+            .frame(width: width, height: height)
+            .clipped()
+        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipped()
     }
@@ -246,24 +245,6 @@ struct VideoCardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-    }
-
-    @ViewBuilder
-    private var publishTimeBadge: some View {
-        if showsPublishTimeBadge, !display.publishTimeText.isEmpty {
-            Text(display.publishTimeText)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.48), in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(.white.opacity(0.18), lineWidth: 0.5)
-                }
-                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-        }
     }
 
     private var coverMetaOverlay: some View {
@@ -314,6 +295,16 @@ struct VideoCardView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+            if showsPublishTimeInAuthorRow {
+                Spacer(minLength: 6)
+
+                Text(display.publishTimeText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -254,7 +254,7 @@ struct HomeView: View {
         if libraryStore.homeFeedLayout == .singleColumn {
             VideoFeedStoryCardView(display: display)
         } else {
-            VideoCardView(display: display, showsPublishTimeBadge: true)
+            VideoCardView(display: display, showsPublishTimeInAuthorRow: true)
         }
     }
 
