@@ -157,6 +157,8 @@ private struct DynamicFeedCard: View {
         Group {
             if let video, shouldUseHomeVideoCardStyle {
                 homeVideoCard(video)
+            } else if shouldUseSeparatedDynamicLayout {
+                separatedDynamicContent
             } else {
                 dynamicCardContent
             }
@@ -180,6 +182,12 @@ private struct DynamicFeedCard: View {
         return true
     }
 
+    private var shouldUseSeparatedDynamicLayout: Bool {
+        item.original != nil
+            || item.isForward
+            || (!imageItems.isEmpty && video == nil)
+    }
+
     private func homeVideoCard(_ video: VideoItem) -> some View {
         VideoRouteLink(video) {
             VideoFeedStoryCardView(video: video)
@@ -192,9 +200,7 @@ private struct DynamicFeedCard: View {
         VStack(alignment: .leading, spacing: 11) {
             authorHeader
 
-            if let text = DynamicTextSegment.displayText(from: textSegments), !text.isEmpty {
-                dynamicText(segments: textSegments, displayText: text)
-            }
+            topLevelText
 
             if let video {
                 VideoRouteLink(video) {
@@ -236,6 +242,28 @@ private struct DynamicFeedCard: View {
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
+    private var separatedDynamicContent: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            authorHeader
+            topLevelText
+
+            if !imageItems.isEmpty {
+                DynamicImageGrid(images: imageItems) { index in
+                    imageSelection = DynamicImageSelection(index: index)
+                }
+            }
+
+            if let original = item.original {
+                DynamicOriginalPreview(item: original)
+            } else if item.isForward {
+                DynamicForwardUnavailableView()
+            }
+
+            actionBar
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var authorHeader: some View {
         HStack(spacing: 10) {
             if let authorOwner, authorOwner.mid > 0 {
@@ -249,7 +277,15 @@ private struct DynamicFeedCard: View {
                 authorIdentity
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 10)
+
+            if !publishTime.isEmpty {
+                Text(publishTime)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
         }
     }
 
@@ -264,16 +300,10 @@ private struct DynamicFeedCard: View {
             .frame(width: 38, height: 38)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.author?.name ?? "Unknown")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text(publishTime)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(item.author?.name ?? "Unknown")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
         }
         .contentShape(Rectangle())
     }
@@ -283,6 +313,13 @@ private struct DynamicFeedCard: View {
             return BiliFormatters.relativeTime(timestamp)
         }
         return item.author?.pubTime ?? ""
+    }
+
+    @ViewBuilder
+    private var topLevelText: some View {
+        if let text = DynamicTextSegment.displayText(from: textSegments), !text.isEmpty {
+            dynamicText(segments: textSegments, displayText: text)
+        }
     }
 
     @ViewBuilder
