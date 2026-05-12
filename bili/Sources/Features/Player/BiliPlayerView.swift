@@ -473,7 +473,7 @@ struct BiliPlayerView: View {
     }
 
     private var videoGravity: AVLayerVideoGravity {
-        presentation == .fullScreen || isManualFullscreenActive ? .resizeAspectFill : .resizeAspect
+        .resizeAspect
     }
 
     private var showsPlayerLoadingChrome: Bool {
