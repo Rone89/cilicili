@@ -216,7 +216,6 @@ struct VideoDetailView: View {
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
         let pageBackground: Color = expandsToFullscreen ? Color(UIColor.black) : .videoDetailBackground
-        let ignoredSafeAreaEdges: Edge.Set = expandsToFullscreen ? .all : Edge.Set()
 
         return ZStack(alignment: .top) {
                 Color.videoDetailBackground
@@ -256,7 +255,6 @@ struct VideoDetailView: View {
         }
         .frame(width: screenSize.width, height: screenSize.height)
         .background(pageBackground)
-        .ignoresSafeArea(.container, edges: ignoredSafeAreaEdges)
     }
 
     private func exitManualLandscapePlayback() {
