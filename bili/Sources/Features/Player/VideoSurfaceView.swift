@@ -122,7 +122,7 @@ struct VideoSurfaceView: UIViewRepresentable {
         view.onFullscreenTransitionEnd = { [weak viewModel] in
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
-        view.setPlayerViewModel(viewModel)
+        view.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
         viewModel.attachSurface(view, prefersNativePlaybackControls: prefersNativePlaybackControls)
         view.setManualFullscreenMode(
             manualFullscreenMode,
@@ -139,7 +139,7 @@ struct VideoSurfaceView: UIViewRepresentable {
         uiView.onFullscreenTransitionEnd = { [weak viewModel] in
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
-        uiView.setPlayerViewModel(viewModel)
+        uiView.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
         viewModel.attachSurface(uiView, prefersNativePlaybackControls: prefersNativePlaybackControls)
         uiView.setManualFullscreenMode(
             manualFullscreenMode,
@@ -176,6 +176,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     var onBoundsChange: (() -> Void)?
     var onFullscreenTransitionEnd: (() -> Void)?
     private(set) var isInManualFullscreen = false
+    private(set) var prefersNativePlaybackControls = true
     private var isNativePlaybackControllerEnabled = false
     private var lastReportedBounds = CGRect.null
     private var fullscreenState: FullscreenState?
@@ -184,10 +185,14 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     private weak var playerViewModel: PlayerStateViewModel?
     private var lastRequestedOrientationMask: UIInterfaceOrientationMask?
 
-    func setPlayerViewModel(_ viewModel: PlayerStateViewModel) {
+    func setPlayerViewModel(_ viewModel: PlayerStateViewModel, prefersNativePlaybackControls: Bool) {
         playerViewModel = viewModel
         fullscreenState?.fullscreenController.viewModel = viewModel
-        setNativePlaybackControllerEnabled(viewModel.usesNativePlaybackControls)
+        self.prefersNativePlaybackControls = prefersNativePlaybackControls
+        fullscreenState?.fullscreenController.usesNativePlaybackControls = isNativePlaybackControllerEnabled
+        if !prefersNativePlaybackControls {
+            setNativePlaybackControllerEnabled(false)
+        }
     }
 
     func detachPlayerSurface() {
@@ -197,15 +202,18 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     }
 
     func setNativePlaybackControllerEnabled(_ isEnabled: Bool) {
-        guard isNativePlaybackControllerEnabled != isEnabled else {
-            if isEnabled {
+        let resolvedIsEnabled = isEnabled && prefersNativePlaybackControls
+        guard isNativePlaybackControllerEnabled != resolvedIsEnabled else {
+            if resolvedIsEnabled {
                 installNativePlayerViewControllerIfPossible()
             }
+            fullscreenState?.fullscreenController.usesNativePlaybackControls = resolvedIsEnabled
             return
         }
 
-        isNativePlaybackControllerEnabled = isEnabled
-        if isEnabled {
+        isNativePlaybackControllerEnabled = resolvedIsEnabled
+        fullscreenState?.fullscreenController.usesNativePlaybackControls = resolvedIsEnabled
+        if resolvedIsEnabled {
             configureNativePlayerViewController()
             installNativePlayerViewControllerIfPossible()
         } else {
@@ -263,7 +271,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     ) {
         onExitFullscreen = onExit
 
-        guard playerViewModel?.usesNativePlaybackControls != true else {
+        guard !isNativePlaybackControllerEnabled else {
             pendingFullscreenMode = nil
             if fullscreenState != nil {
                 exitManualFullscreen(animated: animated)
@@ -311,6 +319,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             let originalIndex = originalSuperview.subviews.firstIndex(of: drawableView) ?? originalSuperview.subviews.count
             let fullscreenController = ManualVideoFullscreenViewController()
             fullscreenController.viewModel = playerViewModel
+            fullscreenController.usesNativePlaybackControls = isNativePlaybackControllerEnabled
             fullscreenController.mode = mode
 
             let fullscreenSuperview = sourceWindow.rootViewController?.view ?? sourceWindow
@@ -617,6 +626,12 @@ private final class ManualVideoFullscreenViewController: UIViewController {
             refreshControlsOverlayVisibility()
         }
     }
+    var usesNativePlaybackControls = false {
+        didSet {
+            guard oldValue != usesNativePlaybackControls else { return }
+            refreshControlsOverlayVisibility()
+        }
+    }
     var mode: ManualVideoFullscreenMode = .landscape(.landscapeLeft) {
         didSet {
             controlsOverlay.mode = mode
@@ -737,10 +752,9 @@ private final class ManualVideoFullscreenViewController: UIViewController {
     }
 
     private func refreshControlsOverlayVisibility() {
-        let usesNativeControls = viewModel?.usesNativePlaybackControls == true
         controlsOverlay.isHidden = false
-        controlsOverlay.suppressesPlaybackChrome = usesNativeControls
-        controlsOverlay.isUserInteractionEnabled = !usesNativeControls
+        controlsOverlay.suppressesPlaybackChrome = usesNativePlaybackControls
+        controlsOverlay.isUserInteractionEnabled = !usesNativePlaybackControls
         view.bringSubviewToFront(controlsOverlay)
     }
 }

@@ -19,6 +19,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private weak var playerViewController: AVPlayerViewController?
     private weak var hostFullscreenExitTarget: PlayerHostFullscreenExitTarget?
     private var hostingController: UIHostingController<PillarboxVideoSurface>?
+    private var playerLayer: AVPlayerLayer?
+    private var layerReadyForDisplayObserver: NSKeyValueObservation?
     private var itemEndObserver: Any?
     private var itemFailedObserver: Any?
     private var systemItemObservers: [NSKeyValueObservation] = []
@@ -33,7 +35,6 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private var playbackError: String?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
     private var isHostFullscreenActive = false
-    private var isPillarboxPictureInPictureActive = false
 
     var hasMedia: Bool {
         player.currentItem != nil || player.systemPlayer.currentItem != nil
@@ -48,11 +49,11 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     var supportsPictureInPicture: Bool {
-        AVPictureInPictureController.isPictureInPictureSupported()
+        false
     }
 
     var isPictureInPictureActive: Bool {
-        isPillarboxPictureInPictureActive
+        false
     }
 
     var usesNativePlaybackControls: Bool {
@@ -75,7 +76,6 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     override init() {
         player = Self.makePlayer()
         super.init()
-        PictureInPicture.shared.delegate = self
         configureAudioSession()
         observePlayer()
         observeAppLifecycle()
@@ -97,9 +97,6 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         if let backgroundObserver = backgroundObserver {
             NotificationCenter.default.removeObserver(backgroundObserver)
         }
-        if PictureInPicture.shared.delegate === self {
-            PictureInPicture.shared.delegate = nil
-        }
     }
 
     func attachSurface(_ surface: UIView) {
@@ -108,12 +105,13 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             refreshSurfaceLayout()
             return
         }
-        installPillarboxSurfaceIfNeeded(in: surface)
+        installPlayerLayerIfNeeded(in: surface)
         refreshSurfaceLayout()
     }
 
     func detachSurface(_ surface: UIView) {
         guard surfaceView === surface else { return }
+        removePlayerLayer()
         uninstallPillarboxSurface()
         surfaceView = nil
     }
@@ -129,10 +127,14 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         guard let surfaceView = surfaceView else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        hostingController?.view.frame = surfaceView.bounds
-        hostingController?.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        hostingController?.view.setNeedsLayout()
-        hostingController?.view.layoutIfNeeded()
+        if playerViewController == nil {
+            let layer = installPlayerLayerIfNeeded(in: surfaceView)
+            AVPlayerLayoutCoordinator.shared.apply(
+                playerLayer: layer,
+                in: surfaceView,
+                gravity: videoGravity
+            )
+        }
         CATransaction.commit()
     }
 
@@ -144,7 +146,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             return
         }
         if let surfaceView = surfaceView {
-            installPillarboxSurfaceIfNeeded(in: surfaceView)
+            installPlayerLayerIfNeeded(in: surfaceView)
             refreshSurfaceLayout()
         }
         if wantsPlayback {
@@ -159,7 +161,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         guard videoGravity != gravity else { return }
         videoGravity = gravity
         playerViewController?.videoGravity = gravity
-        rebuildPillarboxSurface()
+        playerLayer?.videoGravity = gravity
+        refreshSurfaceLayout()
     }
 
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
@@ -168,6 +171,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         }
         playerViewController = controller
         configureNativePlaybackController(controller)
+        removePlayerLayer()
         uninstallPillarboxSurface()
     }
 
@@ -260,7 +264,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         player.pause()
         player.currentItem = nil
         playerViewController?.player = nil
-        PictureInPicture.shared.stop()
+        playerLayer?.player = nil
         player.resignActive()
         removeCurrentItemObservers()
         systemItemObservationTask?.cancel()
@@ -359,15 +363,12 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? {
-        nil
+        guard let playerLayer else { return nil }
+        return AVPictureInPictureController.ContentSource(playerLayer: playerLayer)
     }
 
     func togglePictureInPicture() {
-        if isPillarboxPictureInPictureActive {
-            PictureInPicture.shared.stop()
-        } else {
-            PictureInPicture.shared.startIfPossible()
-        }
+        // PlayerStateViewModel owns AVPictureInPictureController for direct AVPlayerLayer surfaces.
     }
 
     func invalidatePictureInPicturePlaybackState() {}
@@ -407,6 +408,60 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         refreshSurfaceLayout()
     }
 
+    @discardableResult
+    private func installPlayerLayerIfNeeded(in surface: UIView) -> AVPlayerLayer {
+        if let playerLayer {
+            if playerLayer.superlayer !== surface.layer {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                playerLayer.removeFromSuperlayer()
+                surface.layer.insertSublayer(playerLayer, at: 0)
+                CATransaction.commit()
+            }
+            if playerLayer.player !== player.systemPlayer {
+                playerLayer.player = player.systemPlayer
+            }
+            if layerReadyForDisplayObserver == nil {
+                observeLayerReadyForDisplay(playerLayer)
+            }
+            AVPlayerLayoutCoordinator.shared.apply(
+                playerLayer: playerLayer,
+                in: surface,
+                gravity: videoGravity
+            )
+            return playerLayer
+        }
+
+        let layer = AVPlayerLayer(player: player.systemPlayer)
+        layer.videoGravity = videoGravity
+        layer.backgroundColor = UIColor.black.cgColor
+        layer.needsDisplayOnBoundsChange = false
+        layer.actions = [
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "frame": NSNull()
+        ]
+        AVPlayerLayoutCoordinator.shared.apply(
+            playerLayer: layer,
+            in: surface,
+            gravity: videoGravity
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        surface.layer.insertSublayer(layer, at: 0)
+        CATransaction.commit()
+        playerLayer = layer
+        observeLayerReadyForDisplay(layer)
+        return layer
+    }
+
+    private func removePlayerLayer() {
+        playerLayer?.player = nil
+        playerLayer?.removeFromSuperlayer()
+        layerReadyForDisplayObserver = nil
+        playerLayer = nil
+    }
+
     private func uninstallPillarboxSurface() {
         guard let hostingController = hostingController else { return }
         hostingController.willMove(toParent: nil)
@@ -416,7 +471,9 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     private func rebuildPillarboxSurface() {
-        guard hostingController != nil else { return }
+        if let surfaceView, playerViewController == nil {
+            installPlayerLayerIfNeeded(in: surfaceView)
+        }
         hostingController?.rootView = makePillarboxSurface()
         refreshSurfaceLayout()
     }
@@ -424,8 +481,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private func makePillarboxSurface() -> PillarboxVideoSurface {
         PillarboxVideoSurface(
             player: player,
-            gravity: videoGravity,
-            persistable: self
+            gravity: videoGravity
         )
     }
 
@@ -434,6 +490,9 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         view.isOpaque = true
         view.clipsToBounds = true
         view.isHidden = false
+        view.insetsLayoutMarginsFromSafeArea = false
+        view.preservesSuperviewLayoutMargins = false
+        view.layoutMargins = .zero
         view.frame = surface.bounds
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     }
@@ -703,6 +762,15 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         observeCurrentSystemItemIfReady()
     }
 
+    private func observeLayerReadyForDisplay(_ layer: AVPlayerLayer) {
+        layerReadyForDisplayObserver = layer.observe(\.isReadyForDisplay, options: [.new]) { [weak self] layer, _ in
+            guard layer.isReadyForDisplay else { return }
+            Task { @MainActor [weak self] in
+                self?.reportFirstFrameIfPossible()
+            }
+        }
+    }
+
     private func handlePlaybackFailure(_ message: String?) {
         let resolvedMessage = message ?? PlayerEngineError.unsupportedMedia.localizedDescription
         playbackError = resolvedMessage
@@ -804,63 +872,17 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
 
 }
 
-extension PillarboxPlayerRenderingEngine: PictureInPicturePersistable {}
-
-extension PillarboxPlayerRenderingEngine: PictureInPictureDelegate {
-    nonisolated func pictureInPictureWillStart() {
-        Task { @MainActor in
-            self.isPillarboxPictureInPictureActive = true
-        }
-    }
-
-    nonisolated func pictureInPictureDidStart() {
-        Task { @MainActor in
-            self.isPillarboxPictureInPictureActive = true
-        }
-    }
-
-    nonisolated func pictureInPictureControllerFailedToStart(with error: Error) {
-        Task { @MainActor in
-            self.isPillarboxPictureInPictureActive = false
-            self.handlePlaybackFailure(error.localizedDescription)
-        }
-    }
-
-    nonisolated func pictureInPictureRestoreUserInterfaceForStop(with completion: @escaping (Bool) -> Void) {
-        Task { @MainActor in
-            if self.isHostFullscreenActive {
-                self.hostFullscreenExitTarget?.exitHostFullscreen()
-            }
-            completion(true)
-        }
-    }
-
-    nonisolated func pictureInPictureWillStop() {
-        Task { @MainActor in
-            self.isPillarboxPictureInPictureActive = false
-        }
-    }
-
-    nonisolated func pictureInPictureDidStop() {
-        Task { @MainActor in
-            self.isPillarboxPictureInPictureActive = false
-        }
-    }
-}
-
 private struct PillarboxVideoSurface: View {
     let player: Player
     let gravity: AVLayerVideoGravity
-    let persistable: PictureInPicturePersistable
 
     var body: some View {
         VideoView(player: player)
             .gravity(gravity)
-            .supportsPictureInPicture(true)
-            .enabledForInAppPictureInPicture(persisting: persistable)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .background(Color.black)
             .clipped()
+            .ignoresSafeArea()
     }
 }
 

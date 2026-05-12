@@ -54,6 +54,7 @@ struct BiliPlayerView: View {
     private let embeddedAspectRatio: CGFloat
     private let ignoresContainerSafeArea: Bool
     private let keepsPlayerSurfaceStable: Bool
+    private let prefersNativePlaybackControls: Bool
     private let manualFullscreenMode: ManualVideoFullscreenMode?
     private let onRequestManualFullscreen: (() -> Void)?
     private let onExitManualFullscreen: (() -> Void)?
@@ -61,7 +62,7 @@ struct BiliPlayerView: View {
         manualFullscreenMode != nil
     }
     private var forcesDirectPlaybackSurface: Bool {
-        presentation == .fullScreen || isManualFullscreenActive
+        !prefersNativePlaybackControls || presentation == .fullScreen || isManualFullscreenActive
     }
     private var usesNativePlaybackControls: Bool {
         showsPlaybackControls && viewModel.usesNativePlaybackControls && !forcesDirectPlaybackSurface
@@ -91,6 +92,7 @@ struct BiliPlayerView: View {
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
+        prefersNativePlaybackControls: Bool = true,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
@@ -109,6 +111,7 @@ struct BiliPlayerView: View {
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
         self.keepsPlayerSurfaceStable = keepsPlayerSurfaceStable
+        self.prefersNativePlaybackControls = prefersNativePlaybackControls
         self.manualFullscreenMode = manualFullscreenMode
         self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
@@ -132,6 +135,7 @@ struct BiliPlayerView: View {
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
+        prefersNativePlaybackControls: Bool = true,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
@@ -150,6 +154,7 @@ struct BiliPlayerView: View {
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
         self.keepsPlayerSurfaceStable = keepsPlayerSurfaceStable
+        self.prefersNativePlaybackControls = prefersNativePlaybackControls
         self.manualFullscreenMode = manualFullscreenMode
         self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
@@ -186,6 +191,7 @@ struct BiliPlayerView: View {
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
+        prefersNativePlaybackControls: Bool = true,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
@@ -204,6 +210,7 @@ struct BiliPlayerView: View {
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
         self.keepsPlayerSurfaceStable = keepsPlayerSurfaceStable
+        self.prefersNativePlaybackControls = prefersNativePlaybackControls
         self.manualFullscreenMode = manualFullscreenMode
         self.onRequestManualFullscreen = onRequestManualFullscreen
         self.onExitManualFullscreen = onExitManualFullscreen
