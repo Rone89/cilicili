@@ -5,16 +5,13 @@ import UIKit
 struct NativePlayerControllerView: UIViewControllerRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
     let videoGravity: AVLayerVideoGravity
-    let fillsWindowBoundsInLandscape: Bool
 
     init(
         viewModel: PlayerStateViewModel,
-        videoGravity: AVLayerVideoGravity,
-        fillsWindowBoundsInLandscape: Bool = false
+        videoGravity: AVLayerVideoGravity
     ) {
         self.viewModel = viewModel
         self.videoGravity = videoGravity
-        self.fillsWindowBoundsInLandscape = fillsWindowBoundsInLandscape
     }
 
     final class Coordinator {
@@ -33,7 +30,6 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> NativePlayerHostViewController {
         let hostController = NativePlayerHostViewController()
         hostController.videoGravity = videoGravity
-        hostController.fillsWindowBoundsInLandscape = fillsWindowBoundsInLandscape
         context.coordinator.playerController = hostController.playerController
         viewModel.attachNativePlaybackController(hostController.playerController)
         return hostController
@@ -43,7 +39,6 @@ struct NativePlayerControllerView: UIViewControllerRepresentable {
         context.coordinator.viewModel = viewModel
         context.coordinator.playerController = hostController.playerController
         hostController.videoGravity = videoGravity
-        hostController.fillsWindowBoundsInLandscape = fillsWindowBoundsInLandscape
         hostController.view.setNeedsLayout()
         hostController.view.layoutIfNeeded()
         viewModel.attachNativePlaybackController(hostController.playerController)
@@ -63,17 +58,12 @@ final class NativePlayerHostViewController: UIViewController {
             layoutPlayerController()
         }
     }
-    var fillsWindowBoundsInLandscape = false {
-        didSet {
-            layoutPlayerController()
-        }
-    }
 
     override func loadView() {
         let view = UIView()
         view.backgroundColor = .black
         view.isOpaque = true
-        view.clipsToBounds = false
+        view.clipsToBounds = true
         self.view = view
     }
 
@@ -103,37 +93,15 @@ final class NativePlayerHostViewController: UIViewController {
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        applyPlayerControllerLayout(in: CGRect(origin: .zero, size: size))
         AVPlayerLayoutCoordinator.shared.transition(to: size, coordinator: coordinator) { [weak self] in
             self?.layoutPlayerController()
         }
     }
 
     private func layoutPlayerController() {
-        applyPlayerControllerLayout(in: effectivePlayerFrame)
-    }
-
-    private var effectivePlayerFrame: CGRect {
-        guard fillsWindowBoundsInLandscape,
-              let window = view.window,
-              window.bounds.width > window.bounds.height
-        else {
-            return view.bounds
-        }
-
-        let windowFrame = view.convert(window.bounds, from: window)
-        guard windowFrame.width > view.bounds.width + 0.5
-                || windowFrame.height > view.bounds.height + 0.5
-        else {
-            return view.bounds
-        }
-        return windowFrame
-    }
-
-    private func applyPlayerControllerLayout(in frame: CGRect) {
         AVPlayerLayoutCoordinator.shared.apply(
             playerController: playerController,
-            bounds: frame,
+            in: view,
             gravity: videoGravity
         )
     }

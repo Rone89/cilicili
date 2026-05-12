@@ -12,6 +12,7 @@ struct PlayerStreamSource: Equatable, Sendable {
     let videoStream: DASHStream?
     let audioStream: DASHStream?
     let referer: String
+    let httpHeaders: [String: String]
     let title: String
     let durationHint: TimeInterval?
     let resumeTime: TimeInterval

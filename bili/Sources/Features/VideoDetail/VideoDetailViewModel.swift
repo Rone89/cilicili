@@ -929,11 +929,6 @@ final class VideoDetailViewModel: ObservableObject {
     private func preferredDefaultVariant(in variants: [PlayVariant]) -> PlayVariant? {
         let playableVariants = sortedPlayVariants(variants).filter(\.isPlayable)
         let playbackEnvironment = PlaybackEnvironment.current
-        if let fastStartVariant = playableVariants
-            .filter(\.isProgressiveFastStart)
-            .max(by: { $0.quality < $1.quality }) {
-            return fastStartVariant
-        }
 
         if let preferredVariant = storedPreferredVariant(in: playableVariants) {
             return preferredVariant
@@ -1002,11 +997,11 @@ final class VideoDetailViewModel: ObservableObject {
             if lhs.isPlayable != rhs.isPlayable {
                 return lhs.isPlayable && !rhs.isPlayable
             }
-            if lhs.quality != rhs.quality {
-                return lhs.quality > rhs.quality
-            }
             if lhs.isProgressiveFastStart != rhs.isProgressiveFastStart {
                 return !lhs.isProgressiveFastStart && rhs.isProgressiveFastStart
+            }
+            if lhs.quality != rhs.quality {
+                return lhs.quality > rhs.quality
             }
             return (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
         }

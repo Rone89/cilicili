@@ -87,6 +87,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             videoStream: videoStream,
             audioStream: audioStream,
             referer: referer,
+            httpHeaders: BiliHLSManifestBuilder.httpHeaders(referer: referer),
             title: title,
             durationHint: durationHint,
             resumeTime: resumeTime,
@@ -96,7 +97,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         self.duration = durationHint
         self.resumeTime = resumeTime
         self.startupResumePolicy = startupResumePolicy
-        self.engine = engine ?? AVPlayerHLSBridgeEngine()
+        self.engine = engine ?? PillarboxPlayerRenderingEngine()
         super.init()
         self.volume = self.engine.volume
         self.isMuted = self.engine.isMuted

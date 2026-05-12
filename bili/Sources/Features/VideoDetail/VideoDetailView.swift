@@ -114,24 +114,11 @@ struct VideoDetailView: View {
                 ? CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height))
                 : proxy.size
 
-            Group {
-                if isLandscape {
-                    playerHero(
-                        viewModel,
-                        isLandscape: true,
-                        playerWidth: fullscreenSize.width,
-                        playerHeight: fullscreenSize.height
-                    )
-                        .frame(width: fullscreenSize.width, height: fullscreenSize.height)
-                        .background(.black)
-                        .ignoresSafeArea()
-                } else {
-                    standardPlaybackPage(
-                        viewModel,
-                        screenSize: layoutSize
-                    )
-                }
-            }
+            standardPlaybackPage(
+                viewModel,
+                screenSize: isLandscape ? fullscreenSize : layoutSize,
+                isLandscape: isLandscape
+            )
             .frame(
                 width: isLandscape ? fullscreenSize.width : proxy.size.width,
                 height: isLandscape ? fullscreenSize.height : proxy.size.height
@@ -220,27 +207,31 @@ struct VideoDetailView: View {
 
     private func standardPlaybackPage(
         _ viewModel: VideoDetailViewModel,
-        screenSize: CGSize
+        screenSize: CGSize,
+        isLandscape: Bool = false
     ) -> some View {
         let standardHeight = screenSize.width * 9 / 16
         let isManualFullscreen = manualFullscreenMode != nil
-        let playerHeight = isManualFullscreen ? screenSize.height : standardHeight
+        let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
+        let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
 
         return ZStack(alignment: .top) {
                 Color.videoDetailBackground
-                    .opacity(isManualFullscreen ? 0 : 1)
+                    .opacity(isManualFullscreen || isLandscape ? 0 : 1)
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: standardHeight)
+            if !isLandscape {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: standardHeight)
 
-                detailScrollPage(viewModel)
-                    .opacity(isManualFullscreen ? 0 : 1)
-                    .allowsHitTesting(!isManualFullscreen)
+                    detailScrollPage(viewModel)
+                        .opacity(isManualFullscreen ? 0 : 1)
+                        .allowsHitTesting(!isManualFullscreen)
+                }
             }
 
-            if isManualFullscreen {
+            if isManualFullscreen || isLandscape {
                 Color.black
                     .ignoresSafeArea()
                     .transition(.opacity)
@@ -248,19 +239,21 @@ struct VideoDetailView: View {
 
             playerHero(
                 viewModel,
-                isLandscape: false,
+                isLandscape: isLandscape,
+                playerWidth: playerWidth,
                 playerHeight: playerHeight,
-                manualFullscreenMode: manualFullscreenMode,
-                onExitManualFullscreen: exitManualLandscapePlayback
+                manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
+                onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback
             )
+            .frame(width: playerWidth)
             .frame(maxWidth: .infinity)
             .frame(height: playerHeight)
             .zIndex(1)
             .clipped()
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .background(isManualFullscreen ? Color.black : Color.videoDetailBackground)
-        .ignoresSafeArea(.container, edges: isManualFullscreen ? .all : [])
+        .background(isManualFullscreen || isLandscape ? Color.black : Color.videoDetailBackground)
+        .ignoresSafeArea(.container, edges: (isManualFullscreen || isLandscape) ? .all : [])
     }
 
     private func exitManualLandscapePlayback() {
@@ -339,53 +332,31 @@ struct VideoDetailView: View {
     ) -> some View {
         ZStack {
             if let playerViewModel = viewModel.stablePlayerViewModel {
-                if isLandscape, playerViewModel.usesNativePlaybackControls {
-                    NativePlayerControllerView(
-                        viewModel: playerViewModel,
-                        videoGravity: .resizeAspect,
-                        fillsWindowBoundsInLandscape: true
+                BiliPlayerView(
+                    viewModel: playerViewModel,
+                    historyVideo: viewModel.detail,
+                    historyCID: viewModel.selectedCID,
+                    duration: viewModel.detail.duration.map(TimeInterval.init),
+                    presentation: isLandscape ? .fullScreen : .embedded,
+                    showsNavigationChrome: false,
+                    showsStartupLoadingIndicator: false,
+                    pausesOnDisappear: false,
+                    embeddedAspectRatio: 16 / 9,
+                    keepsPlayerSurfaceStable: true,
+                    manualFullscreenMode: manualFullscreenMode,
+                    onRequestManualFullscreen: enterManualLandscapePlayback,
+                    onExitManualFullscreen: onExitManualFullscreen
+                )
+                .id(ObjectIdentifier(playerViewModel))
+                .frame(width: playerWidth)
+                .frame(height: playerHeight)
+                .overlay {
+                    playbackPosterOverlay(
+                        viewModel,
+                        playerViewModel: playerViewModel,
+                        dimOpacity: 0.36,
+                        showsLoader: true
                     )
-                        .id(ObjectIdentifier(playerViewModel))
-                        .frame(width: playerWidth)
-                        .frame(height: playerHeight)
-                        .background(.black)
-                        .onAppear {
-                            playerViewModel.setVideoGravity(.resizeAspect)
-                        }
-                        .overlay {
-                            playbackPosterOverlay(
-                                viewModel,
-                                playerViewModel: playerViewModel,
-                                dimOpacity: 0.36,
-                                showsLoader: true
-                            )
-                        }
-                } else {
-                    BiliPlayerView(
-                        viewModel: playerViewModel,
-                        historyVideo: viewModel.detail,
-                        historyCID: viewModel.selectedCID,
-                        duration: viewModel.detail.duration.map(TimeInterval.init),
-                        presentation: isLandscape ? .fullScreen : .embedded,
-                        showsNavigationChrome: false,
-                        showsStartupLoadingIndicator: false,
-                        pausesOnDisappear: false,
-                        embeddedAspectRatio: 16 / 9,
-                        manualFullscreenMode: manualFullscreenMode,
-                        onRequestManualFullscreen: enterManualLandscapePlayback,
-                        onExitManualFullscreen: onExitManualFullscreen
-                    )
-                    .id(ObjectIdentifier(playerViewModel))
-                    .frame(width: playerWidth)
-                    .frame(height: playerHeight)
-                    .overlay {
-                        playbackPosterOverlay(
-                            viewModel,
-                            playerViewModel: playerViewModel,
-                            dimOpacity: 0.36,
-                            showsLoader: true
-                        )
-                    }
                 }
             } else {
                 PlayerLoadingPlaceholder(

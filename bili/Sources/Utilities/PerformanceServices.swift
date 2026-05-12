@@ -1254,11 +1254,11 @@ actor VideoPreloadCenter {
         let playableVariants = variants
             .filter(\.isPlayable)
             .sorted { lhs, rhs in
-                if lhs.quality != rhs.quality {
-                    return lhs.quality > rhs.quality
-                }
                 if lhs.isProgressiveFastStart != rhs.isProgressiveFastStart {
                     return !lhs.isProgressiveFastStart && rhs.isProgressiveFastStart
+                }
+                if lhs.quality != rhs.quality {
+                    return lhs.quality > rhs.quality
                 }
                 return (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
             }
@@ -1299,7 +1299,9 @@ actor VideoPreloadCenter {
         [
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
             "Referer": referer,
-            "Origin": "https://www.bilibili.com"
+            "Origin": "https://www.bilibili.com",
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9"
         ]
     }
 }

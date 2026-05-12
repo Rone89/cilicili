@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7FB934002FA9000000F93779 /* PillarboxPlayer in Frameworks */ = {isa = PBXBuildFile; productRef = 7FB934022FA9000000F93779 /* PillarboxPlayer */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		2CAB4F7EF14C4D4F92A6A43D /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7FB934002FA9000000F93779 /* PillarboxPlayer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -87,6 +92,7 @@
 			);
 			name = bili;
 			packageProductDependencies = (
+				7FB934022FA9000000F93779 /* PillarboxPlayer */,
 			);
 			productName = bili;
 			productReference = 7FB932AC2FA5009100F93779 /* bili.app */;
@@ -117,6 +123,7 @@
 			mainGroup = 7FB932A32FA5009100F93779;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				7FB934012FA9000000F93779 /* XCRemoteSwiftPackageReference "pillarbox-apple" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7FB932AD2FA5009100F93779 /* Products */;
@@ -360,6 +367,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7FB934012FA9000000F93779 /* XCRemoteSwiftPackageReference "pillarbox-apple" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SRGSSR/pillarbox-apple.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 18.0.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7FB934022FA9000000F93779 /* PillarboxPlayer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7FB934012FA9000000F93779 /* XCRemoteSwiftPackageReference "pillarbox-apple" */;
+			productName = PillarboxPlayer;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 	};
 	rootObject = 7FB932A42FA5009100F93779 /* Project object */;

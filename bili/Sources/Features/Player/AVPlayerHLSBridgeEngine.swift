@@ -321,9 +321,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func invalidatePictureInPicturePlaybackState() {}
 
     private func configureNativePlaybackController(_ controller: AVPlayerViewController) {
-        controller.player = player
+        if controller.player !== player {
+            controller.player = player
+        }
         controller.showsPlaybackControls = true
-        controller.videoGravity = videoGravity
+        if controller.videoGravity != videoGravity {
+            controller.videoGravity = videoGravity
+        }
         controller.allowsPictureInPicturePlayback = AVPictureInPictureController.isPictureInPictureSupported()
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.requiresLinearPlayback = false
@@ -654,7 +658,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         try enforceHardwareDecodingCompatibility(for: source)
 
-        let headers = httpHeaders(referer: source.referer)
+        let headers = source.httpHeaders
 
         if let audioURL = source.audioURL {
             let hlsBridge = try? await LocalHLSBridge.make(
@@ -765,14 +769,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             return rhs
         }
         return .positiveInfinity
-    }
-
-    private nonisolated static func httpHeaders(referer: String) -> [String: String] {
-        [
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
-            "Referer": referer,
-            "Origin": "https://www.bilibili.com"
-        ]
     }
 
     private nonisolated static func hlsBridgeTrack(
