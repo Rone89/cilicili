@@ -897,12 +897,16 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let isPortraitFullscreen = mode.isPortrait || (bounds.height > bounds.width * 1.08 && !mode.isLandscape)
         let minimumTopInset: CGFloat = isPortraitFullscreen ? 54 : 0
         let minimumBottomInset: CGFloat = isPortraitFullscreen ? 20 : 0
-        let topInset = max(safeAreaInsets.top, minimumTopInset)
-        let bottomInset = max(safeAreaInsets.bottom, minimumBottomInset)
+        let topInset = isPortraitFullscreen ? max(safeAreaInsets.top, minimumTopInset) : min(max(safeAreaInsets.top, 0), 18)
+        let bottomInset = isPortraitFullscreen ? max(safeAreaInsets.bottom, minimumBottomInset) : min(max(safeAreaInsets.bottom, 0), 18)
         exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 6)
         controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
-        topChromeHeightConstraint?.constant = topInset + (isPortraitFullscreen ? 70 : 74)
-        bottomChromeHeightConstraint?.constant = bottomInset + (isPortraitFullscreen ? 124 : 110)
+        topChromeHeightConstraint?.constant = isPortraitFullscreen
+            ? topInset + 70
+            : min(topInset + 62, max(bounds.height * 0.18, 54))
+        bottomChromeHeightConstraint?.constant = isPortraitFullscreen
+            ? bottomInset + 124
+            : min(bottomInset + 94, max(bounds.height * 0.26, 72))
         bottomChrome.setNeedsLayout()
         topChrome.setNeedsLayout()
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())

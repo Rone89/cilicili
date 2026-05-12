@@ -953,23 +953,23 @@ struct DASHStream: Decodable, Hashable, Sendable {
 
     nonisolated private static func codecRank(_ stream: DASHStream) -> Int {
         if let codecs = stream.codecs?.lowercased() {
-            if codecs.contains("avc1") || codecs.contains("avc3") {
+            if codecs.contains("hvc1") || codecs.contains("hev1") {
                 return 4
             }
-            if codecs.contains("hvc1") || codecs.contains("hev1") {
-                return 3
-            }
             if codecs.contains("dvh1") || codecs.contains("dvhe") {
-                return 2
+                return 4
+            }
+            if codecs.contains("avc1") || codecs.contains("avc3") {
+                return 3
             }
             if codecs.contains("av01") {
                 return 1
             }
         }
         switch stream.codecid {
-        case 7:
-            return 4
         case 12:
+            return 4
+        case 7:
             return 3
         case 13:
             return 1
