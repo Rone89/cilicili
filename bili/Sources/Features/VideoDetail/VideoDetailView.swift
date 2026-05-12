@@ -216,23 +216,20 @@ struct VideoDetailView: View {
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
         let detailContent = AnyView(detailScrollPage(viewModel))
-        let playerContent = playerHeroContent(
-            viewModel,
-            isLandscape: isLandscape,
-            playerWidth: playerWidth,
-            playerHeight: playerHeight,
-            manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
-            onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback
-        )
 
         return VideoDetailStandardPlaybackPage(
+            viewModel: viewModel,
             screenSize: screenSize,
             standardHeight: standardHeight,
             isLandscape: isLandscape,
             isManualFullscreen: isManualFullscreen,
             expandsToFullscreen: expandsToFullscreen,
-            detailContent: detailContent,
-            playerContent: playerContent
+            playerWidth: playerWidth,
+            playerHeight: playerHeight,
+            manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
+            onRequestManualFullscreen: enterManualLandscapePlayback,
+            onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback,
+            detailContent: detailContent
         )
     }
 
@@ -299,129 +296,6 @@ struct VideoDetailView: View {
         defer { lastManualLandscapeRequestTime = now }
         guard let lastManualLandscapeRequestTime else { return true }
         return now.timeIntervalSince(lastManualLandscapeRequestTime) > 0.34
-    }
-
-    private func playerHeroContent(
-        _ viewModel: VideoDetailViewModel,
-        isLandscape: Bool,
-        playerWidth: CGFloat? = nil,
-        playerHeight: CGFloat,
-        manualFullscreenMode: ManualVideoFullscreenMode? = nil,
-        onExitManualFullscreen: (() -> Void)? = nil
-    ) -> AnyView {
-        let content: AnyView
-        if let playerViewModel = viewModel.stablePlayerViewModel {
-            content = playerHeroPlaybackContent(
-                viewModel,
-                playerViewModel: playerViewModel,
-                isLandscape: isLandscape,
-                playerWidth: playerWidth,
-                playerHeight: playerHeight,
-                manualFullscreenMode: manualFullscreenMode,
-                onExitManualFullscreen: onExitManualFullscreen
-            )
-        } else {
-            content = playerHeroPlaceholderContent(
-                viewModel,
-                playerWidth: playerWidth,
-                playerHeight: playerHeight
-            )
-        }
-
-        return AnyView(
-            content
-                .frame(width: playerWidth)
-                .frame(maxWidth: .infinity)
-                .frame(height: playerHeight)
-                .zIndex(1)
-                .clipped()
-        )
-    }
-
-    private func playerHeroPlaybackContent(
-        _ viewModel: VideoDetailViewModel,
-        playerViewModel: PlayerStateViewModel,
-        isLandscape: Bool,
-        playerWidth: CGFloat?,
-        playerHeight: CGFloat,
-        manualFullscreenMode: ManualVideoFullscreenMode?,
-        onExitManualFullscreen: (() -> Void)?
-    ) -> AnyView {
-        AnyView(
-            BiliPlayerView(
-                viewModel: playerViewModel,
-                historyVideo: viewModel.detail,
-                historyCID: viewModel.selectedCID,
-                duration: viewModel.detail.duration.map(TimeInterval.init),
-                presentation: isLandscape ? .fullScreen : .embedded,
-                showsNavigationChrome: false,
-                showsStartupLoadingIndicator: false,
-                pausesOnDisappear: false,
-                embeddedAspectRatio: 16 / 9,
-                keepsPlayerSurfaceStable: true,
-                manualFullscreenMode: manualFullscreenMode,
-                onRequestManualFullscreen: enterManualLandscapePlayback,
-                onExitManualFullscreen: onExitManualFullscreen
-            )
-            .id(ObjectIdentifier(playerViewModel))
-            .frame(width: playerWidth)
-            .frame(height: playerHeight)
-            .overlay {
-                playbackPosterOverlay(
-                    viewModel,
-                    playerViewModel: playerViewModel,
-                    dimOpacity: 0.36,
-                    showsLoader: true
-                )
-            }
-            .background(.black)
-        )
-    }
-
-    private func playerHeroPlaceholderContent(
-        _ viewModel: VideoDetailViewModel,
-        playerWidth: CGFloat?,
-        playerHeight: CGFloat
-    ) -> AnyView {
-        AnyView(
-            ZStack {
-                PlayerLoadingPlaceholder(
-                    progress: viewModel.playURLState.isLoading ? 0.08 : 0,
-                    message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
-                    isFinishing: false
-                )
-                .frame(width: playerWidth)
-                .frame(height: playerHeight)
-
-                if !viewModel.playURLState.isLoading, viewModel.selectedPlayVariant != nil {
-                    Label("当前档位暂不可播放", systemImage: "lock.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.black.opacity(0.48))
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
-                }
-            }
-            .frame(width: playerWidth)
-            .frame(height: playerHeight)
-            .background(.black)
-        )
-    }
-
-    @ViewBuilder
-    private func playbackPosterOverlay(
-        _ viewModel: VideoDetailViewModel,
-        playerViewModel: PlayerStateViewModel,
-        dimOpacity: Double,
-        showsLoader: Bool
-    ) -> some View {
-        PlaybackPosterOverlay(
-            video: viewModel.detail,
-            playerViewModel: playerViewModel,
-            dimOpacity: dimOpacity,
-            showsLoader: showsLoader
-        )
     }
 
     private func commentsSheet(_ viewModel: VideoDetailViewModel) -> some View {
@@ -917,13 +791,18 @@ private extension View {
 }
 
 private struct VideoDetailStandardPlaybackPage: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
     let screenSize: CGSize
     let standardHeight: CGFloat
     let isLandscape: Bool
     let isManualFullscreen: Bool
     let expandsToFullscreen: Bool
+    let playerWidth: CGFloat?
+    let playerHeight: CGFloat
+    let manualFullscreenMode: ManualVideoFullscreenMode?
+    let onRequestManualFullscreen: (() -> Void)?
+    let onExitManualFullscreen: (() -> Void)?
     let detailContent: AnyView
-    let playerContent: AnyView
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -948,9 +827,127 @@ private struct VideoDetailStandardPlaybackPage: View {
                     .transition(.opacity)
             }
 
-            playerContent
+            VideoDetailPlayerHero(
+                viewModel: viewModel,
+                isLandscape: isLandscape,
+                playerWidth: playerWidth,
+                playerHeight: playerHeight,
+                manualFullscreenMode: manualFullscreenMode,
+                onRequestManualFullscreen: onRequestManualFullscreen,
+                onExitManualFullscreen: onExitManualFullscreen
+            )
         }
         .frame(width: screenSize.width, height: screenSize.height)
+    }
+}
+
+private struct VideoDetailPlayerHero: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+    let isLandscape: Bool
+    let playerWidth: CGFloat?
+    let playerHeight: CGFloat
+    let manualFullscreenMode: ManualVideoFullscreenMode?
+    let onRequestManualFullscreen: (() -> Void)?
+    let onExitManualFullscreen: (() -> Void)?
+
+    var body: some View {
+        Group {
+            if let playerViewModel = viewModel.stablePlayerViewModel {
+                VideoDetailPlayerSurface(
+                    viewModel: viewModel,
+                    playerViewModel: playerViewModel,
+                    isLandscape: isLandscape,
+                    playerWidth: playerWidth,
+                    playerHeight: playerHeight,
+                    manualFullscreenMode: manualFullscreenMode,
+                    onRequestManualFullscreen: onRequestManualFullscreen,
+                    onExitManualFullscreen: onExitManualFullscreen
+                )
+            } else {
+                VideoDetailPlayerPlaceholder(
+                    viewModel: viewModel,
+                    playerWidth: playerWidth,
+                    playerHeight: playerHeight
+                )
+            }
+        }
+        .frame(width: playerWidth)
+        .frame(maxWidth: .infinity)
+        .frame(height: playerHeight)
+        .zIndex(1)
+        .clipped()
+    }
+}
+
+private struct VideoDetailPlayerSurface: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+    @ObservedObject var playerViewModel: PlayerStateViewModel
+    let isLandscape: Bool
+    let playerWidth: CGFloat?
+    let playerHeight: CGFloat
+    let manualFullscreenMode: ManualVideoFullscreenMode?
+    let onRequestManualFullscreen: (() -> Void)?
+    let onExitManualFullscreen: (() -> Void)?
+
+    var body: some View {
+        BiliPlayerView(
+            viewModel: playerViewModel,
+            historyVideo: viewModel.detail,
+            historyCID: viewModel.selectedCID,
+            duration: viewModel.detail.duration.map(TimeInterval.init),
+            presentation: isLandscape ? .fullScreen : .embedded,
+            showsNavigationChrome: false,
+            showsStartupLoadingIndicator: false,
+            pausesOnDisappear: false,
+            embeddedAspectRatio: 16 / 9,
+            keepsPlayerSurfaceStable: true,
+            manualFullscreenMode: manualFullscreenMode,
+            onRequestManualFullscreen: onRequestManualFullscreen,
+            onExitManualFullscreen: onExitManualFullscreen
+        )
+        .id(ObjectIdentifier(playerViewModel))
+        .frame(width: playerWidth)
+        .frame(height: playerHeight)
+        .overlay {
+            PlaybackPosterOverlay(
+                video: viewModel.detail,
+                playerViewModel: playerViewModel,
+                dimOpacity: 0.36,
+                showsLoader: true
+            )
+        }
+        .background(Color.black)
+    }
+}
+
+private struct VideoDetailPlayerPlaceholder: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+    let playerWidth: CGFloat?
+    let playerHeight: CGFloat
+
+    var body: some View {
+        ZStack {
+            PlayerLoadingPlaceholder(
+                progress: viewModel.playURLState.isLoading ? 0.08 : 0,
+                message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
+                isFinishing: false
+            )
+            .frame(width: playerWidth)
+            .frame(height: playerHeight)
+
+            if !viewModel.playURLState.isLoading, viewModel.selectedPlayVariant != nil {
+                Label("当前档位暂不可播放", systemImage: "lock.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.48))
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+            }
+        }
+        .frame(width: playerWidth)
+        .frame(height: playerHeight)
+        .background(Color.black)
     }
 }
 
