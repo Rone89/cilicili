@@ -203,7 +203,8 @@ struct RootTabView: View {
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
-                priority: .userInitiated
+                priority: .userInitiated,
+                warmsMedia: true
             )
         }
     }

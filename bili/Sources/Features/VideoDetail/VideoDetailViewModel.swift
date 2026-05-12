@@ -571,7 +571,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 waitsForPending: true,
-                preferredQuality: nil,
+                preferredQuality: libraryStore.preferredVideoQuality,
                 maximumPendingWait: PlaybackEnvironment.current.preferredPlayURLStartupGrace
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
@@ -675,6 +675,7 @@ final class VideoDetailViewModel: ObservableObject {
         let preferredVariant = preferredDefaultVariant(in: variants)
         selectedPlayVariant = preferredVariant
         logSelectedPlayVariant(preferredVariant, availableVariants: variants, source: source)
+        warmPlayVariantForStartupIfNeeded(preferredVariant, cid: cid, page: page)
         updateStablePlayerViewModelIfNeeded()
         playURLState = variants.isEmpty ? .failed("播放接口没有返回清晰度或播放地址") : .loaded
         if schedulesSupplementalLoad,
@@ -1004,6 +1005,23 @@ final class VideoDetailViewModel: ObservableObject {
                 return lhs.quality > rhs.quality
             }
             return (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
+        }
+    }
+
+    private func warmPlayVariantForStartupIfNeeded(_ variant: PlayVariant?, cid: Int?, page: Int?) {
+        guard !isPlaybackInvalidatedForNavigation,
+              let cid,
+              let variant,
+              !variant.isProgressiveFastStart
+        else { return }
+        Task(priority: .userInitiated) { [detailBVID = detail.bvid, variant] in
+            await VideoPreloadCenter.shared.warmVariant(
+                variant,
+                bvid: detailBVID,
+                cid: cid,
+                page: page,
+                delay: 0
+            )
         }
     }
 

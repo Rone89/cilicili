@@ -79,7 +79,9 @@ actor VideoPreloadCenter {
         _ video: VideoItem,
         api: BiliAPIClient,
         preferredQuality: Int?,
-        priority: TaskPriority = .utility
+        priority: TaskPriority = .utility,
+        warmsMedia: Bool = false,
+        mediaWarmupDelay: TimeInterval = 0
     ) {
         guard !PlaybackEnvironment.current.shouldPreferConservativePlayback || priority == .userInitiated else {
             PlayerMetricsLog.logger.info(
@@ -102,8 +104,8 @@ actor VideoPreloadCenter {
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
-                warmsMedia: false,
-                mediaWarmupDelay: 0,
+                warmsMedia: warmsMedia,
+                mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority
             )
             return
@@ -114,8 +116,8 @@ actor VideoPreloadCenter {
             page: nil,
             preferredQuality: preferredQuality,
             api: api,
-            warmsMedia: false,
-            mediaWarmupDelay: 0,
+            warmsMedia: warmsMedia,
+            mediaWarmupDelay: mediaWarmupDelay,
             priority: priority
         )
     }

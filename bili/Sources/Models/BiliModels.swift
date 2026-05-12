@@ -318,7 +318,7 @@ struct RecommendFeedItem: Identifiable, Decodable, Hashable {
     }
 }
 
-struct PlayURLData: Decodable {
+struct PlayURLData: Decodable, Sendable {
     let code: Int?
     let message: String?
     let durl: [PlayDURL]?
@@ -559,7 +559,7 @@ struct PlayURLData: Decodable {
     }
 }
 
-struct PlayVariant: Identifiable, Hashable {
+struct PlayVariant: Identifiable, Hashable, Sendable {
     var id: String {
         "\(quality)-\(videoURL?.absoluteString ?? "locked")"
     }
@@ -694,7 +694,7 @@ struct PlayVariant: Identifiable, Hashable {
     }
 }
 
-struct PlaySupportFormat: Decodable {
+struct PlaySupportFormat: Decodable, Sendable {
     let quality: Int?
     let format: String?
     let newDescription: String?
@@ -735,7 +735,7 @@ struct PlaySupportFormat: Decodable {
     }
 }
 
-struct PlayDURL: Decodable {
+struct PlayDURL: Decodable, Sendable {
     let url: String
     let backupURL: [String]?
 
@@ -749,7 +749,7 @@ struct PlayDURL: Decodable {
     }
 }
 
-struct DASHInfo: Decodable {
+struct DASHInfo: Decodable, Sendable {
     let duration: Int?
     let video: [DASHStream]?
     let audio: [DASHStream]?

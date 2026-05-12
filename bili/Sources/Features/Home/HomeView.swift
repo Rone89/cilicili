@@ -243,7 +243,8 @@ struct HomeView: View {
                     video,
                     api: api,
                     preferredQuality: preferredQuality,
-                    priority: .userInitiated
+                    priority: .userInitiated,
+                    warmsMedia: true
                 )
             }
         }

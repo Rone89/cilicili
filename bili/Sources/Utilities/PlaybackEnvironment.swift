@@ -49,11 +49,11 @@ struct PlaybackEnvironment: Sendable {
     nonisolated var preferredPlayURLStartupGrace: UInt64 {
         switch networkClass {
         case .wifi:
-            return 280_000_000
+            return 160_000_000
         case .unknown:
-            return 220_000_000
+            return 140_000_000
         case .cellular, .constrained:
-            return 120_000_000
+            return 90_000_000
         }
     }
 }
