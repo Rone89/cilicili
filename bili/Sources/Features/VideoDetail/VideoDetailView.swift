@@ -104,8 +104,9 @@ struct VideoDetailView: View {
     @ViewBuilder
     private func content(_ viewModel: VideoDetailViewModel) -> some View {
         GeometryReader { proxy in
-            let fullscreenSize = proxy.fullscreenContainerSize
-            let fullscreenOffset = proxy.fullscreenContainerOffset
+            let fullscreenGeometry = proxy.fullscreenContainerGeometry
+            let fullscreenSize = fullscreenGeometry.size
+            let fullscreenOffset = fullscreenGeometry.offset
             let sceneIsLandscape = fullscreenSize.width > fullscreenSize.height
             let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
             let isLandscape = sceneIsLandscape && !isManualFullscreen
@@ -1038,42 +1039,41 @@ private struct VideoTitleText: UIViewRepresentable {
     }
 }
 
+private struct FullscreenContainerGeometry {
+    let size: CGSize
+    let offset: CGSize
+}
+
 private extension GeometryProxy {
-    var fullscreenContainerSize: CGSize {
-        if let windowSize = UIApplication.shared.videoDetailKeyWindowSize,
-           windowSize.width > 1,
-           windowSize.height > 1 {
-            return windowSize
+    var fullscreenContainerGeometry: FullscreenContainerGeometry {
+        if let window = UIApplication.shared.biliForegroundKeyWindow,
+           let rootView = window.rootViewController?.view {
+            let localFrame = frame(in: .global)
+            let frameInWindow = rootView.convert(localFrame, from: nil)
+            return FullscreenContainerGeometry(
+                size: window.bounds.size,
+                offset: CGSize(width: -frameInWindow.minX, height: -frameInWindow.minY)
+            )
         }
 
         let expandedSize = CGSize(
             width: size.width + safeAreaInsets.leading + safeAreaInsets.trailing,
             height: size.height + safeAreaInsets.top + safeAreaInsets.bottom
         )
-        return expandedSize
-    }
-
-    var fullscreenContainerOffset: CGSize {
-        let targetSize = fullscreenContainerSize
-        let globalFrame = frame(in: .global)
-        let expandsWidth = targetSize.width > size.width + 0.5 || abs(globalFrame.minX) > 0.5
-        let expandsHeight = targetSize.height > size.height + 0.5 || abs(globalFrame.minY) > 0.5
-        return CGSize(
-            width: expandsWidth ? -globalFrame.minX : 0,
-            height: expandsHeight ? -globalFrame.minY : 0
+        return FullscreenContainerGeometry(
+            size: expandedSize,
+            offset: CGSize(width: -safeAreaInsets.leading, height: -safeAreaInsets.top)
         )
     }
 }
 
 private extension UIApplication {
-    var videoDetailKeyWindowSize: CGSize? {
+    var biliForegroundKeyWindow: UIWindow? {
         connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .filter { $0.activationState == .foregroundActive }
             .flatMap(\.windows)
-            .first { $0.isKeyWindow }?
-            .bounds
-            .size
+            .first { $0.isKeyWindow }
     }
 }
 
