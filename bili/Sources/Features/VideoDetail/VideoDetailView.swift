@@ -1041,7 +1041,8 @@ private struct VideoTitleText: UIViewRepresentable {
 private extension GeometryProxy {
     var fullscreenContainerSize: CGSize {
         if let windowSize = UIApplication.shared.videoDetailKeyWindowSize,
-           windowSize.width > size.width + 0.5 || windowSize.height > size.height + 0.5 {
+           windowSize.width > 1,
+           windowSize.height > 1 {
             return windowSize
         }
 
@@ -1055,9 +1056,11 @@ private extension GeometryProxy {
     var fullscreenContainerOffset: CGSize {
         let targetSize = fullscreenContainerSize
         let globalFrame = frame(in: .global)
+        let expandsWidth = targetSize.width > size.width + 0.5 || abs(globalFrame.minX) > 0.5
+        let expandsHeight = targetSize.height > size.height + 0.5 || abs(globalFrame.minY) > 0.5
         return CGSize(
-            width: targetSize.width > size.width + 0.5 ? -max(globalFrame.minX, 0) : 0,
-            height: targetSize.height > size.height + 0.5 ? -max(globalFrame.minY, 0) : 0
+            width: expandsWidth ? -globalFrame.minX : 0,
+            height: expandsHeight ? -globalFrame.minY : 0
         )
     }
 }
