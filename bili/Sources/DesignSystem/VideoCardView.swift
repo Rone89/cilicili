@@ -64,14 +64,7 @@ struct VideoFeedStoryCardView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            Spacer(minLength: 10)
-
-            if !display.publishTimeText.isEmpty {
-                Text(display.publishTimeText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 2)
     }
@@ -113,6 +106,29 @@ struct VideoFeedStoryCardView: View {
             .overlay(alignment: .bottom) {
                 coverMetaOverlay
             }
+            .overlay(alignment: .topTrailing) {
+                publishTimeBadge
+                    .padding(.top, 8)
+                    .padding(.trailing, 8)
+            }
+    }
+
+    @ViewBuilder
+    private var publishTimeBadge: some View {
+        if !display.publishTimeText.isEmpty {
+            Text(display.publishTimeText)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.48), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(.white.opacity(0.18), lineWidth: 0.6)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+        }
     }
 
     private var coverMetaOverlay: some View {
@@ -154,13 +170,16 @@ struct VideoFeedStoryCardView: View {
 }
 struct VideoCardView: View {
     let display: VideoCardDisplayModel
+    private let showsPublishTimeBadge: Bool
 
-    init(video: VideoItem) {
+    init(video: VideoItem, showsPublishTimeBadge: Bool = false) {
         self.display = VideoCardDisplayModel(video: video)
+        self.showsPublishTimeBadge = showsPublishTimeBadge
     }
 
-    init(display: VideoCardDisplayModel) {
+    init(display: VideoCardDisplayModel, showsPublishTimeBadge: Bool = false) {
         self.display = display
+        self.showsPublishTimeBadge = showsPublishTimeBadge
     }
 
     var body: some View {
@@ -202,6 +221,11 @@ struct VideoCardView: View {
             .overlay(alignment: .bottom) {
                 coverMetaOverlay
             }
+            .overlay(alignment: .topTrailing) {
+                publishTimeBadge
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
+            }
         .frame(maxWidth: .infinity)
         .clipped()
     }
@@ -221,6 +245,24 @@ struct VideoCardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+    }
+
+    @ViewBuilder
+    private var publishTimeBadge: some View {
+        if showsPublishTimeBadge, !display.publishTimeText.isEmpty {
+            Text(display.publishTimeText)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.48), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(.white.opacity(0.18), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+        }
     }
 
     private var coverMetaOverlay: some View {
