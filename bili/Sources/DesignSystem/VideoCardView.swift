@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct VideoCardDisplayModel: Identifiable, Equatable {
     let id: String
@@ -13,7 +13,7 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
     init(video: VideoItem) {
         id = video.id
         title = video.title
-        authorName = video.owner?.name ?? "未知作者"
+        authorName = video.owner?.name ?? "鏈煡浣滆€?
         viewText = BiliFormatters.compactCount(video.stat?.view)
         durationText = BiliFormatters.duration(video.duration)
         publishTimeText = BiliFormatters.relativeTime(video.pubdate)
@@ -34,20 +34,11 @@ struct VideoFeedStoryCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
-            cover
-            title
+            mediaContainer
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
-        }
         .contentShape(Rectangle())
     }
 
@@ -68,17 +59,10 @@ struct VideoFeedStoryCardView: View {
             .frame(width: 32, height: 32)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(display.authorName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text("发布了视频")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text(display.authorName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
 
             Spacer(minLength: 10)
 
@@ -89,6 +73,22 @@ struct VideoFeedStoryCardView: View {
                     .lineLimit(1)
             }
         }
+        .padding(.horizontal, 2)
+    }
+
+    private var mediaContainer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            cover
+            title
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
+        }
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     private var cover: some View {
@@ -113,7 +113,6 @@ struct VideoFeedStoryCardView: View {
             .overlay(alignment: .bottom) {
                 coverMetaOverlay
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var coverMetaOverlay: some View {
@@ -149,9 +148,10 @@ struct VideoFeedStoryCardView: View {
             .foregroundStyle(.primary)
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
     }
 }
-
 struct VideoCardView: View {
     let display: VideoCardDisplayModel
 
