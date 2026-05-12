@@ -46,7 +46,7 @@ struct DynamicView: View {
                 } else {
                     ForEach(viewModel.items) { item in
                         DynamicFeedCard(item: item, api: dependencies.api)
-                            .frame(maxWidth: 460)
+                            .frame(maxWidth: 420)
                             .padding(.horizontal, 20)
                             .task {
                                 await viewModel.loadMoreIfNeeded(current: item)
@@ -154,6 +154,41 @@ private struct DynamicFeedCard: View {
     }
 
     var body: some View {
+        Group {
+            if let video, shouldUseHomeVideoCardStyle {
+                homeVideoCard(video)
+            } else {
+                dynamicCardContent
+            }
+        }
+        .fullScreenCover(item: $imageSelection) { selection in
+            DynamicImageViewer(images: imageItems, initialIndex: selection.index)
+        }
+        .sheet(item: $commentsTarget) { target in
+            DynamicCommentsSheet(item: target, api: api)
+        }
+    }
+
+    private var shouldUseHomeVideoCardStyle: Bool {
+        guard video != nil,
+              item.original == nil,
+              !item.isForward
+        else {
+            return false
+        }
+
+        return true
+    }
+
+    private func homeVideoCard(_ video: VideoItem) -> some View {
+        VideoRouteLink(video) {
+            VideoFeedStoryCardView(video: video)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("瑙嗛 \(video.title)")
+    }
+
+    private var dynamicCardContent: some View {
         VStack(alignment: .leading, spacing: 11) {
             authorHeader
 
@@ -199,12 +234,6 @@ private struct DynamicFeedCard: View {
                 .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
         }
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
-        .fullScreenCover(item: $imageSelection) { selection in
-            DynamicImageViewer(images: imageItems, initialIndex: selection.index)
-        }
-        .sheet(item: $commentsTarget) { target in
-            DynamicCommentsSheet(item: target, api: api)
-        }
     }
 
     private var authorHeader: some View {

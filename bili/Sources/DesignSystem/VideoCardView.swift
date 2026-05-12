@@ -87,9 +87,9 @@ struct VideoFeedStoryCardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
         }
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
