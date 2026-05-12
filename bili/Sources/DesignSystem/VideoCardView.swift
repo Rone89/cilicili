@@ -13,7 +13,7 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
     init(video: VideoItem) {
         id = video.id
         title = video.title
-        authorName = video.owner?.name ?? "鏈煡浣滆€?
+        authorName = video.owner?.name ?? "Unknown"
         viewText = BiliFormatters.compactCount(video.stat?.view)
         durationText = BiliFormatters.duration(video.duration)
         publishTimeText = BiliFormatters.relativeTime(video.pubdate)
