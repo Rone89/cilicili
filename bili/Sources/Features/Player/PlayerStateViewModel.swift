@@ -39,6 +39,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let startupResumePolicy: PlayerStartupResumePolicy
     private let engine: PlayerRenderingEngine
     private weak var surfaceView: VideoSurfaceContainerView?
+    private weak var nativePlaybackController: AVPlayerViewController?
     private var timeObserver: Timer?
     private var didApplyResumeTime = false
     private var mediaPreparationTask: Task<Void, Never>?
@@ -156,7 +157,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         return min(max(currentTime / duration, 0), 1)
     }
 
-    func attachSurface(_ view: VideoSurfaceContainerView) {
+    func attachSurface(_ view: VideoSurfaceContainerView, prefersNativePlaybackControls: Bool = true) {
         if ManualVideoFullscreenSession.isActive,
            let currentSurface = surfaceView,
            currentSurface !== view,
@@ -166,21 +167,31 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
 
         let isNewSurface = surfaceView !== view
+        let usesNativePlaybackControls = engine.usesNativePlaybackControls && prefersNativePlaybackControls
+        let shouldAttachDirectSurface = !usesNativePlaybackControls && nativePlaybackController != nil
         surfaceView = view
-        view.setNativePlaybackControllerEnabled(engine.usesNativePlaybackControls)
-        if engine.usesNativePlaybackControls {
+        view.setNativePlaybackControllerEnabled(usesNativePlaybackControls)
+        if usesNativePlaybackControls {
+            nativePlaybackController = view.nativePlayerViewController
             engine.attachNativePlaybackController(view.nativePlayerViewController)
+        } else {
+            if let nativePlaybackController {
+                engine.detachNativePlaybackController(nativePlaybackController)
+                self.nativePlaybackController = nil
+            }
+            engine.detachNativePlaybackController(view.nativePlayerViewController)
         }
-        if isNewSurface {
+        if isNewSurface || shouldAttachDirectSurface {
             engine.attachSurface(view.drawableView)
         }
         configurePictureInPictureIfNeeded()
-        if isNewSurface, engine.hasMedia {
+        if (isNewSurface || shouldAttachDirectSurface), engine.hasMedia {
             engine.refreshSurfaceLayout()
         }
     }
 
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
+        nativePlaybackController = controller
         engine.attachNativePlaybackController(controller)
         configurePictureInPictureIfNeeded()
         if engine.hasMedia {
@@ -190,6 +201,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
         engine.detachNativePlaybackController(controller)
+        if nativePlaybackController === controller {
+            nativePlaybackController = nil
+        }
     }
 
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
