@@ -209,16 +209,29 @@ struct VideoDetailView: View {
         _ viewModel: VideoDetailViewModel,
         screenSize: CGSize,
         isLandscape: Bool = false
-    ) -> some View {
-        let standardHeight = screenSize.width * 9 / 16
-        let isManualFullscreen = manualFullscreenMode != nil
-        let expandsToFullscreen = isManualFullscreen || isLandscape
-        let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
-        let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
-        let detailContent = AnyView(detailScrollPage(viewModel))
-
-        return VideoDetailStandardPlaybackPage(
+    ) -> AnyView {
+        let config = makeStandardPlaybackPageConfig(screenSize: screenSize, isLandscape: isLandscape)
+        let page = VideoDetailStandardPlaybackPage(
+            config: config,
             viewModel: viewModel,
+            detailContent: AnyView(detailScrollPage(viewModel))
+        )
+        return AnyView(page)
+    }
+
+    private func makeStandardPlaybackPageConfig(
+        screenSize: CGSize,
+        isLandscape: Bool
+    ) -> VideoDetailStandardPlaybackPage.Config {
+        let standardHeight: CGFloat = screenSize.width * 9 / 16
+        let isManualFullscreen: Bool = manualFullscreenMode != nil
+        let expandsToFullscreen: Bool = isManualFullscreen || isLandscape
+        let playerHeight: CGFloat = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
+        let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
+        let activeManualFullscreenMode: ManualVideoFullscreenMode? = isLandscape ? nil : manualFullscreenMode
+        let exitHandler: (() -> Void)? = isLandscape ? nil : exitManualLandscapePlayback
+
+        return VideoDetailStandardPlaybackPage.Config(
             screenSize: screenSize,
             standardHeight: standardHeight,
             isLandscape: isLandscape,
@@ -226,10 +239,9 @@ struct VideoDetailView: View {
             expandsToFullscreen: expandsToFullscreen,
             playerWidth: playerWidth,
             playerHeight: playerHeight,
-            manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
+            manualFullscreenMode: activeManualFullscreenMode,
             onRequestManualFullscreen: enterManualLandscapePlayback,
-            onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback,
-            detailContent: detailContent
+            onExitManualFullscreen: exitHandler
         )
     }
 
@@ -791,37 +803,41 @@ private extension View {
 }
 
 private struct VideoDetailStandardPlaybackPage: View {
+    struct Config {
+        let screenSize: CGSize
+        let standardHeight: CGFloat
+        let isLandscape: Bool
+        let isManualFullscreen: Bool
+        let expandsToFullscreen: Bool
+        let playerWidth: CGFloat?
+        let playerHeight: CGFloat
+        let manualFullscreenMode: ManualVideoFullscreenMode?
+        let onRequestManualFullscreen: (() -> Void)?
+        let onExitManualFullscreen: (() -> Void)?
+    }
+
+    let config: Config
     @ObservedObject var viewModel: VideoDetailViewModel
-    let screenSize: CGSize
-    let standardHeight: CGFloat
-    let isLandscape: Bool
-    let isManualFullscreen: Bool
-    let expandsToFullscreen: Bool
-    let playerWidth: CGFloat?
-    let playerHeight: CGFloat
-    let manualFullscreenMode: ManualVideoFullscreenMode?
-    let onRequestManualFullscreen: (() -> Void)?
-    let onExitManualFullscreen: (() -> Void)?
     let detailContent: AnyView
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.videoDetailBackground
-                .opacity(expandsToFullscreen ? 0 : 1)
+                .opacity(config.expandsToFullscreen ? 0 : 1)
                 .ignoresSafeArea()
 
-            if !isLandscape {
+            if !config.isLandscape {
                 VStack(spacing: 0) {
                     Color.clear
-                        .frame(height: standardHeight)
+                        .frame(height: config.standardHeight)
 
                     detailContent
-                        .opacity(isManualFullscreen ? 0 : 1)
-                        .allowsHitTesting(!isManualFullscreen)
+                        .opacity(config.isManualFullscreen ? 0 : 1)
+                        .allowsHitTesting(!config.isManualFullscreen)
                 }
             }
 
-            if expandsToFullscreen {
+            if config.expandsToFullscreen {
                 Color.black
                     .ignoresSafeArea()
                     .transition(.opacity)
@@ -829,15 +845,15 @@ private struct VideoDetailStandardPlaybackPage: View {
 
             VideoDetailPlayerHero(
                 viewModel: viewModel,
-                isLandscape: isLandscape,
-                playerWidth: playerWidth,
-                playerHeight: playerHeight,
-                manualFullscreenMode: manualFullscreenMode,
-                onRequestManualFullscreen: onRequestManualFullscreen,
-                onExitManualFullscreen: onExitManualFullscreen
+                isLandscape: config.isLandscape,
+                playerWidth: config.playerWidth,
+                playerHeight: config.playerHeight,
+                manualFullscreenMode: config.manualFullscreenMode,
+                onRequestManualFullscreen: config.onRequestManualFullscreen,
+                onExitManualFullscreen: config.onExitManualFullscreen
             )
         }
-        .frame(width: screenSize.width, height: screenSize.height)
+        .frame(width: config.screenSize.width, height: config.screenSize.height)
     }
 }
 
