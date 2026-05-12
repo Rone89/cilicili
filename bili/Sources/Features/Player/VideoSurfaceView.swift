@@ -992,7 +992,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         controlsStack.spacing = 10
         controlsStack.addArrangedSubview(buttonRow)
         controlsStack.addArrangedSubview(progressRow)
-        controlsStack.layoutMargins = NSDirectionalEdgeInsets(top: 6, leading: 0, bottom: 0, trailing: 0)
+        controlsStack.layoutMargins = UIEdgeInsets(top: 6, left: 0, bottom: 0, right: 0)
         controlsStack.isLayoutMarginsRelativeArrangement = true
 
         feedbackView.backgroundColor = .clear
