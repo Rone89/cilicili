@@ -247,9 +247,9 @@ struct HomeView: View {
     @ViewBuilder
     private func cardContent(_ display: VideoCardDisplayModel) -> some View {
         if libraryStore.homeFeedLayout == .singleColumn {
-            VideoFeedStoryCardView(display: display, coverAspectRatio: 9.0 / 16.0)
+            VideoFeedStoryCardView(display: display)
         } else {
-            VideoCardView(display: display, coverAspectRatio: 9.0 / 16.0)
+            VideoCardView(display: display)
         }
     }
 

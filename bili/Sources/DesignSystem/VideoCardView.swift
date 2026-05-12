@@ -8,7 +8,6 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
     let durationText: String
     let publishTimeText: String
     let coverURL: URL?
-    let portraitCoverURL: URL?
     let avatarURL: URL?
 
     init(video: VideoItem) {
@@ -19,23 +18,19 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
         durationText = BiliFormatters.duration(video.duration)
         publishTimeText = BiliFormatters.relativeTime(video.pubdate)
         coverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }
-        portraitCoverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 540, height: 960)) }
         avatarURL = video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }
     }
 }
 
 struct VideoFeedStoryCardView: View {
     let display: VideoCardDisplayModel
-    private let coverAspectRatio: CGFloat
 
-    init(video: VideoItem, coverAspectRatio: CGFloat = 16.0 / 9.0) {
+    init(video: VideoItem) {
         self.display = VideoCardDisplayModel(video: video)
-        self.coverAspectRatio = coverAspectRatio
     }
 
-    init(display: VideoCardDisplayModel, coverAspectRatio: CGFloat = 16.0 / 9.0) {
+    init(display: VideoCardDisplayModel) {
         self.display = display
-        self.coverAspectRatio = coverAspectRatio
     }
 
     var body: some View {
@@ -99,11 +94,11 @@ struct VideoFeedStoryCardView: View {
     private var cover: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.12))
-            .aspectRatio(coverAspectRatio, contentMode: .fit)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .overlay {
                 CachedRemoteImage(
-                    url: coverImageURL,
-                    targetPixelSize: coverImageTargetPixelSize
+                    url: display.coverURL,
+                    targetPixelSize: 760
                 ) { image in
                     image
                         .resizable()
@@ -118,14 +113,6 @@ struct VideoFeedStoryCardView: View {
             .overlay(alignment: .bottom) {
                 coverMetaOverlay
             }
-    }
-
-    private var coverImageURL: URL? {
-        coverAspectRatio < 1 ? display.portraitCoverURL : display.coverURL
-    }
-
-    private var coverImageTargetPixelSize: Int {
-        coverAspectRatio < 1 ? 960 : 760
     }
 
     private var coverMetaOverlay: some View {
@@ -167,16 +154,13 @@ struct VideoFeedStoryCardView: View {
 }
 struct VideoCardView: View {
     let display: VideoCardDisplayModel
-    private let coverAspectRatio: CGFloat
 
-    init(video: VideoItem, coverAspectRatio: CGFloat = 16.0 / 9.0) {
+    init(video: VideoItem) {
         self.display = VideoCardDisplayModel(video: video)
-        self.coverAspectRatio = coverAspectRatio
     }
 
-    init(display: VideoCardDisplayModel, coverAspectRatio: CGFloat = 16.0 / 9.0) {
+    init(display: VideoCardDisplayModel) {
         self.display = display
-        self.coverAspectRatio = coverAspectRatio
     }
 
     var body: some View {
@@ -211,7 +195,7 @@ struct VideoCardView: View {
     private var cover: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.12))
-            .aspectRatio(coverAspectRatio, contentMode: .fit)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .overlay {
                 coverImage
             }
@@ -225,8 +209,8 @@ struct VideoCardView: View {
     @ViewBuilder
     private var coverImage: some View {
         CachedRemoteImage(
-            url: coverImageURL,
-            targetPixelSize: coverImageTargetPixelSize
+            url: display.coverURL,
+            targetPixelSize: 540
         ) { image in
             image
                 .resizable()
@@ -237,14 +221,6 @@ struct VideoCardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-    }
-
-    private var coverImageURL: URL? {
-        coverAspectRatio < 1 ? display.portraitCoverURL : display.coverURL
-    }
-
-    private var coverImageTargetPixelSize: Int {
-        coverAspectRatio < 1 ? 720 : 540
     }
 
     private var coverMetaOverlay: some View {
