@@ -270,15 +270,18 @@ struct RecommendFeedItem: Identifiable, Decodable, Hashable {
     let cover: String?
     let goto: String?
     let duration: Int?
+    let pubdate: Int?
     let owner: VideoOwner?
     let ownerInfo: VideoOwner?
     let stat: VideoStat?
     let dimension: VideoDimension?
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, cid, title, pic, cover, goto, duration, owner, stat, dimension
+        case aid, bvid, cid, title, pic, cover, goto, duration, pubdate, ctime, owner, stat, dimension
         case idValue = "id"
         case ownerInfo = "owner_info"
+        case pubDate = "pub_date"
+        case publishTime = "publish_time"
     }
 
     init(from decoder: Decoder) throws {
@@ -292,6 +295,10 @@ struct RecommendFeedItem: Identifiable, Decodable, Hashable {
         cover = try container.decodeIfPresent(String.self, forKey: .cover)
         goto = try container.decodeIfPresent(String.self, forKey: .goto)
         duration = container.decodeLossyIntIfPresent(forKey: .duration)
+        pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
+            ?? container.decodeLossyIntIfPresent(forKey: .pubDate)
+            ?? container.decodeLossyIntIfPresent(forKey: .publishTime)
+            ?? container.decodeLossyIntIfPresent(forKey: .ctime)
         owner = try container.decodeIfPresent(VideoOwner.self, forKey: .owner)
         ownerInfo = try container.decodeIfPresent(VideoOwner.self, forKey: .ownerInfo)
         stat = try container.decodeIfPresent(VideoStat.self, forKey: .stat)
@@ -308,7 +315,7 @@ struct RecommendFeedItem: Identifiable, Decodable, Hashable {
             pic: pic ?? cover,
             desc: nil,
             duration: duration,
-            pubdate: nil,
+            pubdate: pubdate,
             owner: owner ?? ownerInfo,
             stat: stat,
             cid: cid,

@@ -16,7 +16,8 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
         authorName = video.owner?.name ?? "Unknown"
         viewText = BiliFormatters.compactCount(video.stat?.view)
         durationText = BiliFormatters.duration(video.duration)
-        publishTimeText = BiliFormatters.relativeTime(video.pubdate)
+        let formattedPublishTime = BiliFormatters.relativeTime(video.pubdate)
+        publishTimeText = formattedPublishTime.isEmpty ? "投稿" : formattedPublishTime
         coverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }
         avatarURL = video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }
     }
