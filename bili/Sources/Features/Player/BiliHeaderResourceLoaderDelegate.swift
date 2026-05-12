@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import OSLog
 import UniformTypeIdentifiers
 
 final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {

@@ -252,7 +252,7 @@ struct VideoDetailView: View {
             .clipped()
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .background(isManualFullscreen || isLandscape ? Color.black : Color.videoDetailBackground)
+        .background((isManualFullscreen || isLandscape) ? SwiftUI.Color.black : Color.videoDetailBackground)
         .ignoresSafeArea(.container, edges: (isManualFullscreen || isLandscape) ? .all : [])
     }
 

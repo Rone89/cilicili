@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct BiliHLSPlaybackManifest: Sendable {
     let masterPlaylistURL: URL
