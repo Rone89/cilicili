@@ -866,22 +866,23 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
         let exitButtonTopConstraint = exitButton.topAnchor.constraint(equalTo: topAnchor, constant: 10)
         let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
-        let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 74)
-        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 110)
+        let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 58)
+        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 96)
         self.exitButtonTopConstraint = exitButtonTopConstraint
         self.controlsStackBottomConstraint = controlsStackBottomConstraint
         self.topChromeHeightConstraint = topChromeHeightConstraint
         self.bottomChromeHeightConstraint = bottomChromeHeightConstraint
 
         NSLayoutConstraint.activate([
-            topChrome.leadingAnchor.constraint(equalTo: leadingAnchor),
-            topChrome.trailingAnchor.constraint(equalTo: trailingAnchor),
-            topChrome.topAnchor.constraint(equalTo: topAnchor),
+            topChrome.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            topChrome.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            topChrome.topAnchor.constraint(equalTo: exitButton.topAnchor, constant: -8),
+            topChrome.widthAnchor.constraint(equalToConstant: 58),
             topChromeHeightConstraint,
 
-            bottomChrome.leadingAnchor.constraint(equalTo: leadingAnchor),
-            bottomChrome.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bottomChrome.bottomAnchor.constraint(equalTo: bottomAnchor),
+            bottomChrome.leadingAnchor.constraint(equalTo: controlsStack.leadingAnchor, constant: -12),
+            bottomChrome.trailingAnchor.constraint(equalTo: controlsStack.trailingAnchor, constant: 12),
+            bottomChrome.bottomAnchor.constraint(equalTo: controlsStack.bottomAnchor, constant: 12),
             bottomChromeHeightConstraint,
 
             exitButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
@@ -917,11 +918,11 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 6)
         controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
         topChromeHeightConstraint?.constant = isPortraitFullscreen
-            ? topInset + 70
-            : min(topInset + 62, max(bounds.height * 0.18, 54))
+            ? 58
+            : 54
         bottomChromeHeightConstraint?.constant = isPortraitFullscreen
-            ? bottomInset + 124
-            : min(bottomInset + 94, max(bounds.height * 0.26, 72))
+            ? 118
+            : min(102, max(bounds.height * 0.22, 78))
         bottomChrome.setNeedsLayout()
         topChrome.setNeedsLayout()
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())
@@ -991,16 +992,32 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         controlsStack.spacing = 10
         controlsStack.addArrangedSubview(buttonRow)
         controlsStack.addArrangedSubview(progressRow)
+        controlsStack.layoutMargins = NSDirectionalEdgeInsets(top: 6, leading: 0, bottom: 0, trailing: 0)
+        controlsStack.isLayoutMarginsRelativeArrangement = true
 
-        feedbackView.backgroundColor = UIColor.black.withAlphaComponent(0.46)
+        feedbackView.backgroundColor = .clear
         feedbackView.layer.cornerRadius = 39
+        feedbackView.layer.cornerCurve = .continuous
+        let feedbackGlass = UIGlassEffect(style: .regular)
+        feedbackGlass.tintColor = UIColor.black.withAlphaComponent(0.18)
+        feedbackGlass.isInteractive = false
+        let feedbackGlassView = UIVisualEffectView(effect: feedbackGlass)
+        feedbackGlassView.translatesAutoresizingMaskIntoConstraints = false
+        feedbackGlassView.clipsToBounds = true
+        feedbackGlassView.layer.cornerRadius = 39
+        feedbackGlassView.layer.cornerCurve = .continuous
         feedbackView.alpha = 0
         feedbackView.isUserInteractionEnabled = false
         feedbackImageView.translatesAutoresizingMaskIntoConstraints = false
         feedbackImageView.tintColor = .white
         feedbackImageView.contentMode = .scaleAspectFit
+        feedbackView.addSubview(feedbackGlassView)
         feedbackView.addSubview(feedbackImageView)
         NSLayoutConstraint.activate([
+            feedbackGlassView.leadingAnchor.constraint(equalTo: feedbackView.leadingAnchor),
+            feedbackGlassView.trailingAnchor.constraint(equalTo: feedbackView.trailingAnchor),
+            feedbackGlassView.topAnchor.constraint(equalTo: feedbackView.topAnchor),
+            feedbackGlassView.bottomAnchor.constraint(equalTo: feedbackView.bottomAnchor),
             feedbackImageView.centerXAnchor.constraint(equalTo: feedbackView.centerXAnchor),
             feedbackImageView.centerYAnchor.constraint(equalTo: feedbackView.centerYAnchor),
             feedbackImageView.widthAnchor.constraint(equalToConstant: 34),
@@ -1275,11 +1292,14 @@ private final class FullscreenControlsGlassView: UIVisualEffectView {
 
     init(direction: Direction) {
         let glass = UIGlassEffect(style: .regular)
-        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.16 : 0.24)
+        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.12 : 0.18)
         glass.isInteractive = false
         super.init(effect: glass)
         isUserInteractionEnabled = false
         backgroundColor = .clear
+        clipsToBounds = true
+        layer.cornerCurve = .continuous
+        layer.cornerRadius = direction == .top ? 29 : 26
     }
 
     required init?(coder: NSCoder) {

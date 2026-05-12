@@ -494,115 +494,58 @@ struct BiliPlayerView: View {
     }
 
     private var playerControls: some View {
-        VStack(spacing: 6) {
-            if let controlsAccessory {
-                controlsAccessory
-                    .padding(.horizontal, presentation == .embedded ? 10 : 16)
-                    .padding(.bottom, presentation == .embedded ? 0 : 4)
-            }
+        GlassEffectContainer(spacing: presentation == .embedded ? 6 : 10) {
+            VStack(spacing: 8) {
+                if let controlsAccessory {
+                    controlsAccessory
+                        .padding(.horizontal, presentation == .embedded ? 10 : 16)
+                        .padding(.bottom, presentation == .embedded ? 0 : 2)
+                }
 
-            if presentation == .embedded {
-                embeddedPlayerControls
-            } else {
-                fullscreenPlayerControls
+                if presentation == .embedded {
+                    embeddedPlayerControls
+                } else {
+                    fullscreenPlayerControls
+                }
             }
         }
         .foregroundStyle(.white)
     }
 
     private var embeddedPlayerControls: some View {
-        HStack(spacing: 6) {
-            playerControlButton(
-                systemName: viewModel.isPlaying ? "pause.fill" : "play.fill",
-                isPrimary: true,
-                isCompact: true
-            ) {
-                Haptics.light()
-                viewModel.togglePlayback()
-                handlePlayerInteraction()
-            }
-
-            inlineProgressBar
-                .layoutPriority(1)
-
-            if viewModel.isPictureInPictureSupported {
+        HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 playerControlButton(
-                    systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter",
+                    systemName: viewModel.isPlaying ? "pause.fill" : "play.fill",
+                    isPrimary: true,
                     isCompact: true
                 ) {
-                    viewModel.togglePictureInPicture()
-                    handlePlayerInteraction()
-                }
-            }
-
-            if canRequestManualFullscreen {
-                playerControlButton(systemName: "arrow.up.left.and.arrow.down.right", isCompact: true) {
-                    Haptics.light()
-                    _ = viewModel.requestHostFullscreen()
-                    handlePlayerInteraction()
-                }
-            }
-
-            speedMenu
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.clear)
-                .biliGlassEffect(
-                    tint: .black.opacity(0.22),
-                    interactive: false,
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                )
-        )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6 + controlsBottomLift)
-    }
-
-    private var fullscreenPlayerControls: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 9) {
-                playerControlButton(systemName: "gobackward.10", isEnabled: viewModel.canSeek) {
-                    Haptics.light()
-                    viewModel.seek(by: -10)
-                    handlePlayerInteraction()
-                }
-
-                playerControlButton(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", isPrimary: true) {
                     Haptics.light()
                     viewModel.togglePlayback()
                     handlePlayerInteraction()
                 }
 
-                playerControlButton(systemName: "goforward.10", isEnabled: viewModel.canSeek) {
-                    Haptics.light()
-                    viewModel.seek(by: 10)
-                    handlePlayerInteraction()
-                }
+                inlineProgressBar
+                    .layoutPriority(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
 
-                Spacer(minLength: 8)
-
-                if isManualFullscreenActive {
-                    playerControlButton(systemName: "arrow.down.right.and.arrow.up.left") {
-                        exitManualFullscreen()
-                    }
-
-                    playerControlButton(systemName: controlsLocked ? "lock.fill" : "lock.open") {
-                        toggleControlsLock()
-                    }
-                }
-
+            HStack(spacing: 6) {
                 if viewModel.isPictureInPictureSupported {
-                    playerControlButton(systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter") {
+                    playerControlButton(
+                        systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter",
+                        isCompact: true
+                    ) {
                         viewModel.togglePictureInPicture()
                         handlePlayerInteraction()
                     }
                 }
 
                 if canRequestManualFullscreen {
-                    playerControlButton(systemName: "arrow.up.left.and.arrow.down.right") {
+                    playerControlButton(systemName: "arrow.up.left.and.arrow.down.right", isCompact: true) {
                         Haptics.light()
                         _ = viewModel.requestHostFullscreen()
                         handlePlayerInteraction()
@@ -611,27 +554,79 @@ struct BiliPlayerView: View {
 
                 speedMenu
             }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6 + controlsBottomLift)
+    }
+
+    private var fullscreenPlayerControls: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    playerControlButton(systemName: "gobackward.10", isEnabled: viewModel.canSeek) {
+                        Haptics.light()
+                        viewModel.seek(by: -10)
+                        handlePlayerInteraction()
+                    }
+
+                    playerControlButton(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", isPrimary: true) {
+                        Haptics.light()
+                        viewModel.togglePlayback()
+                        handlePlayerInteraction()
+                    }
+
+                    playerControlButton(systemName: "goforward.10", isEnabled: viewModel.canSeek) {
+                        Haptics.light()
+                        viewModel.seek(by: 10)
+                        handlePlayerInteraction()
+                    }
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
+                .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    if isManualFullscreenActive {
+                        playerControlButton(systemName: "arrow.down.right.and.arrow.up.left") {
+                            exitManualFullscreen()
+                        }
+
+                        playerControlButton(systemName: controlsLocked ? "lock.fill" : "lock.open") {
+                            toggleControlsLock()
+                        }
+                    }
+
+                    if viewModel.isPictureInPictureSupported {
+                        playerControlButton(systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter") {
+                            viewModel.togglePictureInPicture()
+                            handlePlayerInteraction()
+                        }
+                    }
+
+                    if canRequestManualFullscreen {
+                        playerControlButton(systemName: "arrow.up.left.and.arrow.down.right") {
+                            Haptics.light()
+                            _ = viewModel.requestHostFullscreen()
+                            handlePlayerInteraction()
+                        }
+                    }
+
+                    speedMenu
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
+                .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
+            }
 
             progressRow
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .liquidPlayerGlassCapsule(tint: .black.opacity(0.16))
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 20 + controlsBottomLift)
-        .background(
-            Rectangle()
-                .fill(.clear)
-                .biliGlassEffect(
-                    tint: .black.opacity(0.26),
-                    interactive: false,
-                    in: Rectangle()
-                )
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(.white.opacity(0.08))
-                        .frame(height: 0.6)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .padding(.bottom, 18 + controlsBottomLift)
     }
 
     private var inlineProgressBar: some View {
@@ -757,7 +752,7 @@ struct BiliPlayerView: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
         .biliGlassButtonStyle(prominent: isPrimary)
-        .tint(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50) : .white.opacity(0.16))
+        .tint(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50) : .white.opacity(0.10))
     }
 
     private func handlePlayerTap() {
@@ -1125,5 +1120,14 @@ private extension View {
         } else {
             self
         }
+    }
+
+    func liquidPlayerGlassCapsule(tint: Color) -> some View {
+        glassEffect(
+            .regular
+                .tint(tint)
+                .interactive(false),
+            in: Capsule()
+        )
     }
 }
