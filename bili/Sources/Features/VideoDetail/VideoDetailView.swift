@@ -216,20 +216,13 @@ struct VideoDetailView: View {
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
         let detailContent = AnyView(detailScrollPage(viewModel))
-        let playerContent = AnyView(
-            playerHero(
-                viewModel,
-                isLandscape: isLandscape,
-                playerWidth: playerWidth,
-                playerHeight: playerHeight,
-                manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
-                onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback
-            )
-            .frame(width: playerWidth)
-            .frame(maxWidth: .infinity)
-            .frame(height: playerHeight)
-            .zIndex(1)
-            .clipped()
+        let playerContent = playerHeroContent(
+            viewModel,
+            isLandscape: isLandscape,
+            playerWidth: playerWidth,
+            playerHeight: playerHeight,
+            manualFullscreenMode: isLandscape ? nil : manualFullscreenMode,
+            onExitManualFullscreen: isLandscape ? nil : exitManualLandscapePlayback
         )
 
         return VideoDetailStandardPlaybackPage(
@@ -308,44 +301,90 @@ struct VideoDetailView: View {
         return now.timeIntervalSince(lastManualLandscapeRequestTime) > 0.34
     }
 
-    @ViewBuilder
-    private func playerHero(
+    private func playerHeroContent(
         _ viewModel: VideoDetailViewModel,
         isLandscape: Bool,
         playerWidth: CGFloat? = nil,
         playerHeight: CGFloat,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
-    ) -> some View {
-        ZStack {
-            if let playerViewModel = viewModel.stablePlayerViewModel {
-                BiliPlayerView(
-                    viewModel: playerViewModel,
-                    historyVideo: viewModel.detail,
-                    historyCID: viewModel.selectedCID,
-                    duration: viewModel.detail.duration.map(TimeInterval.init),
-                    presentation: isLandscape ? .fullScreen : .embedded,
-                    showsNavigationChrome: false,
-                    showsStartupLoadingIndicator: false,
-                    pausesOnDisappear: false,
-                    embeddedAspectRatio: 16 / 9,
-                    keepsPlayerSurfaceStable: true,
-                    manualFullscreenMode: manualFullscreenMode,
-                    onRequestManualFullscreen: enterManualLandscapePlayback,
-                    onExitManualFullscreen: onExitManualFullscreen
-                )
-                .id(ObjectIdentifier(playerViewModel))
+    ) -> AnyView {
+        let content: AnyView
+        if let playerViewModel = viewModel.stablePlayerViewModel {
+            content = playerHeroPlaybackContent(
+                viewModel,
+                playerViewModel: playerViewModel,
+                isLandscape: isLandscape,
+                playerWidth: playerWidth,
+                playerHeight: playerHeight,
+                manualFullscreenMode: manualFullscreenMode,
+                onExitManualFullscreen: onExitManualFullscreen
+            )
+        } else {
+            content = playerHeroPlaceholderContent(
+                viewModel,
+                playerWidth: playerWidth,
+                playerHeight: playerHeight
+            )
+        }
+
+        return AnyView(
+            content
                 .frame(width: playerWidth)
+                .frame(maxWidth: .infinity)
                 .frame(height: playerHeight)
-                .overlay {
-                    playbackPosterOverlay(
-                        viewModel,
-                        playerViewModel: playerViewModel,
-                        dimOpacity: 0.36,
-                        showsLoader: true
-                    )
-                }
-            } else {
+                .zIndex(1)
+                .clipped()
+        )
+    }
+
+    private func playerHeroPlaybackContent(
+        _ viewModel: VideoDetailViewModel,
+        playerViewModel: PlayerStateViewModel,
+        isLandscape: Bool,
+        playerWidth: CGFloat?,
+        playerHeight: CGFloat,
+        manualFullscreenMode: ManualVideoFullscreenMode?,
+        onExitManualFullscreen: (() -> Void)?
+    ) -> AnyView {
+        AnyView(
+            BiliPlayerView(
+                viewModel: playerViewModel,
+                historyVideo: viewModel.detail,
+                historyCID: viewModel.selectedCID,
+                duration: viewModel.detail.duration.map(TimeInterval.init),
+                presentation: isLandscape ? .fullScreen : .embedded,
+                showsNavigationChrome: false,
+                showsStartupLoadingIndicator: false,
+                pausesOnDisappear: false,
+                embeddedAspectRatio: 16 / 9,
+                keepsPlayerSurfaceStable: true,
+                manualFullscreenMode: manualFullscreenMode,
+                onRequestManualFullscreen: enterManualLandscapePlayback,
+                onExitManualFullscreen: onExitManualFullscreen
+            )
+            .id(ObjectIdentifier(playerViewModel))
+            .frame(width: playerWidth)
+            .frame(height: playerHeight)
+            .overlay {
+                playbackPosterOverlay(
+                    viewModel,
+                    playerViewModel: playerViewModel,
+                    dimOpacity: 0.36,
+                    showsLoader: true
+                )
+            }
+            .background(.black)
+        )
+    }
+
+    private func playerHeroPlaceholderContent(
+        _ viewModel: VideoDetailViewModel,
+        playerWidth: CGFloat?,
+        playerHeight: CGFloat
+    ) -> AnyView {
+        AnyView(
+            ZStack {
                 PlayerLoadingPlaceholder(
                     progress: viewModel.playURLState.isLoading ? 0.08 : 0,
                     message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
@@ -364,10 +403,10 @@ struct VideoDetailView: View {
                         .clipShape(Capsule())
                 }
             }
-        }
-        .frame(width: playerWidth)
-        .frame(height: playerHeight)
-        .background(.black)
+            .frame(width: playerWidth)
+            .frame(height: playerHeight)
+            .background(.black)
+        )
     }
 
     @ViewBuilder
