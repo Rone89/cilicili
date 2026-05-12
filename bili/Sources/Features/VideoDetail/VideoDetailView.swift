@@ -215,29 +215,8 @@ struct VideoDetailView: View {
         let expandsToFullscreen = isManualFullscreen || isLandscape
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
-
-        return ZStack(alignment: .top) {
-                Color.videoDetailBackground
-                    .opacity(expandsToFullscreen ? 0 : 1)
-                .ignoresSafeArea()
-
-            if !isLandscape {
-                VStack(spacing: 0) {
-                    Color.clear
-                        .frame(height: standardHeight)
-
-                    detailScrollPage(viewModel)
-                        .opacity(isManualFullscreen ? 0 : 1)
-                        .allowsHitTesting(!isManualFullscreen)
-                }
-            }
-
-            if expandsToFullscreen {
-                Color.black
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
-
+        let detailContent = AnyView(detailScrollPage(viewModel))
+        let playerContent = AnyView(
             playerHero(
                 viewModel,
                 isLandscape: isLandscape,
@@ -251,8 +230,17 @@ struct VideoDetailView: View {
             .frame(height: playerHeight)
             .zIndex(1)
             .clipped()
-        }
-        .frame(width: screenSize.width, height: screenSize.height)
+        )
+
+        return VideoDetailStandardPlaybackPage(
+            screenSize: screenSize,
+            standardHeight: standardHeight,
+            isLandscape: isLandscape,
+            isManualFullscreen: isManualFullscreen,
+            expandsToFullscreen: expandsToFullscreen,
+            detailContent: detailContent,
+            playerContent: playerContent
+        )
     }
 
     private func exitManualLandscapePlayback() {
@@ -886,6 +874,44 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+private struct VideoDetailStandardPlaybackPage: View {
+    let screenSize: CGSize
+    let standardHeight: CGFloat
+    let isLandscape: Bool
+    let isManualFullscreen: Bool
+    let expandsToFullscreen: Bool
+    let detailContent: AnyView
+    let playerContent: AnyView
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.videoDetailBackground
+                .opacity(expandsToFullscreen ? 0 : 1)
+                .ignoresSafeArea()
+
+            if !isLandscape {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: standardHeight)
+
+                    detailContent
+                        .opacity(isManualFullscreen ? 0 : 1)
+                        .allowsHitTesting(!isManualFullscreen)
+                }
+            }
+
+            if expandsToFullscreen {
+                Color.black
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+
+            playerContent
+        }
+        .frame(width: screenSize.width, height: screenSize.height)
     }
 }
 
