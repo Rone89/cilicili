@@ -214,6 +214,7 @@ struct VideoDetailView: View {
         let isManualFullscreen = manualFullscreenMode != nil
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
+        let pageBackground: Color = (isManualFullscreen || isLandscape) ? Color(UIColor.black) : .videoDetailBackground
 
         return ZStack(alignment: .top) {
                 Color.videoDetailBackground
@@ -252,7 +253,7 @@ struct VideoDetailView: View {
             .clipped()
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .background((isManualFullscreen || isLandscape) ? SwiftUI.Color.black : Color.videoDetailBackground)
+        .background(pageBackground)
         .ignoresSafeArea(.container, edges: (isManualFullscreen || isLandscape) ? .all : [])
     }
 
