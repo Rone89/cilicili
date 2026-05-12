@@ -228,8 +228,15 @@ struct VideoDetailView: View {
         let expandsToFullscreen: Bool = isManualFullscreen || isLandscape
         let playerHeight: CGFloat = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
-        let activeManualFullscreenMode: ManualVideoFullscreenMode? = isLandscape ? nil : manualFullscreenMode
-        let exitHandler: (() -> Void)? = isLandscape ? nil : exitManualLandscapePlayback
+        let activeManualFullscreenMode: ManualVideoFullscreenMode?
+        let exitHandler: (() -> Void)?
+        if isLandscape {
+            activeManualFullscreenMode = nil
+            exitHandler = nil
+        } else {
+            activeManualFullscreenMode = manualFullscreenMode
+            exitHandler = { exitManualLandscapePlayback() }
+        }
 
         return VideoDetailStandardPlaybackPage.Config(
             screenSize: screenSize,
@@ -240,7 +247,7 @@ struct VideoDetailView: View {
             playerWidth: playerWidth,
             playerHeight: playerHeight,
             manualFullscreenMode: activeManualFullscreenMode,
-            onRequestManualFullscreen: enterManualLandscapePlayback,
+            onRequestManualFullscreen: { enterManualLandscapePlayback() },
             onExitManualFullscreen: exitHandler
         )
     }
