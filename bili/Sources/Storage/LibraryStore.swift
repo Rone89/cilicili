@@ -95,6 +95,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var homeRefreshTriggerDistance: Double
+    @Published private(set) var homeFeedLayout: HomeFeedLayout
 
     private let userDefaults: UserDefaults
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
@@ -107,6 +108,7 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
+    private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
     static let defaultPreferredVideoQuality = 112
     static let supportedVideoQualities = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
@@ -133,6 +135,9 @@ final class LibraryStore: ObservableObject {
         self.homeRefreshTriggerDistance = Self.normalizedHomeRefreshDistance(
             userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double ?? Self.defaultHomeRefreshTriggerDistance
         )
+        self.homeFeedLayout = HomeFeedLayout(
+            rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
+        ) ?? .doubleColumn
     }
 
     func setAppearanceMode(_ mode: AppAppearanceMode) {
@@ -190,6 +195,11 @@ final class LibraryStore: ObservableObject {
         let normalizedDistance = Self.normalizedHomeRefreshDistance(distance)
         homeRefreshTriggerDistance = normalizedDistance
         userDefaults.set(normalizedDistance, forKey: Self.homeRefreshTriggerDistanceKey)
+    }
+
+    func setHomeFeedLayout(_ layout: HomeFeedLayout) {
+        homeFeedLayout = layout
+        userDefaults.set(layout.rawValue, forKey: Self.homeFeedLayoutKey)
     }
 
     private static func normalizedPlaybackRate(_ rate: Double) -> Double {
@@ -264,6 +274,31 @@ enum AppAppearanceMode: String, CaseIterable, Identifiable {
             return .light
         case .dark:
             return .dark
+        }
+    }
+}
+
+enum HomeFeedLayout: String, CaseIterable, Identifiable {
+    case doubleColumn
+    case singleColumn
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .doubleColumn:
+            return "双列"
+        case .singleColumn:
+            return "单列"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .doubleColumn:
+            return "square.grid.2x2"
+        case .singleColumn:
+            return "rectangle.grid.1x2"
         }
     }
 }

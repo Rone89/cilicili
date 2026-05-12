@@ -75,6 +75,21 @@ struct MineView: View {
                 .padding(.vertical, 4)
 
                 VStack(alignment: .leading, spacing: 10) {
+                    Label("首页布局", systemImage: "rectangle.grid.1x2")
+
+                    Picker("首页布局", selection: Binding(
+                        get: { libraryStore.homeFeedLayout },
+                        set: { libraryStore.setHomeFeedLayout($0) }
+                    )) {
+                        ForEach(HomeFeedLayout.allCases) { layout in
+                            Label(layout.title, systemImage: layout.systemImage).tag(layout)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.vertical, 4)
+
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Label("首页下拉刷新距离", systemImage: "arrow.down.circle")
                         Spacer()

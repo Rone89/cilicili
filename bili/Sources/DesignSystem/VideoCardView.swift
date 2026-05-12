@@ -6,6 +6,7 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
     let authorName: String
     let viewText: String
     let durationText: String
+    let publishTimeText: String
     let coverURL: URL?
     let avatarURL: URL?
 
@@ -15,8 +16,139 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
         authorName = video.owner?.name ?? "未知作者"
         viewText = BiliFormatters.compactCount(video.stat?.view)
         durationText = BiliFormatters.duration(video.duration)
+        publishTimeText = BiliFormatters.relativeTime(video.pubdate)
         coverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }
         avatarURL = video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }
+    }
+}
+
+struct VideoFeedStoryCardView: View {
+    let display: VideoCardDisplayModel
+
+    init(video: VideoItem) {
+        self.display = VideoCardDisplayModel(video: video)
+    }
+
+    init(display: VideoCardDisplayModel) {
+        self.display = display
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            cover
+            title
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var header: some View {
+        HStack(spacing: 9) {
+            CachedRemoteImage(
+                url: display.avatarURL,
+                targetPixelSize: 64
+            ) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(width: 32, height: 32)
+            .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(display.authorName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("发布了视频")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 10)
+
+            if !display.publishTimeText.isEmpty {
+                Text(display.publishTimeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var cover: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.12))
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .overlay {
+                CachedRemoteImage(
+                    url: display.coverURL,
+                    targetPixelSize: 760
+                ) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Color.gray.opacity(0.12)
+                        .overlay(ProgressView())
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+            }
+            .overlay(alignment: .bottom) {
+                coverMetaOverlay
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var coverMetaOverlay: some View {
+        ZStack(alignment: .bottom) {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.64)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 48)
+
+            HStack(spacing: 10) {
+                Label(display.viewText, systemImage: "play.fill")
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text(display.durationText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 7)
+            .shadow(color: .black.opacity(0.45), radius: 1, y: 1)
+        }
+    }
+
+    private var title: some View {
+        Text(display.title)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -13,9 +13,12 @@ struct HomeView: View {
     @State private var didAutoOpenDetail = false
     @State private var pullDistance: CGFloat = 0
 
-    private let columns = [
+    private let doubleColumns = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10)
+    ]
+    private let singleColumns = [
+        GridItem(.flexible(), spacing: 0)
     ]
     @State private var pressedPreloadVideos = Set<String>()
     @State private var visiblePreloadVideos = Set<String>()
@@ -111,7 +114,7 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 120)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 18) {
+                    LazyVGrid(columns: feedColumns, spacing: feedSpacing) {
                         ForEach(viewModel.videoCells) { cell in
                             videoCard(cell.video, display: cell.display)
                                 .onAppear {
@@ -128,11 +131,11 @@ struct HomeView: View {
                         if viewModel.state.isLoading && !viewModel.isRefreshing {
                             ProgressView()
                                 .frame(maxWidth: .infinity)
-                                .gridCellColumns(2)
+                                .gridCellColumns(feedColumns.count)
                                 .padding()
                         }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, feedHorizontalPadding)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .offset(y: 12)),
                         removal: .opacity
@@ -147,6 +150,7 @@ struct HomeView: View {
         .background(Color(.systemGroupedBackground))
         .animation(.smooth(duration: 0.22), value: pullRefreshIndicatorHeight)
         .animation(.smooth(duration: 0.2), value: isPullRefreshIndicatorVisible)
+        .animation(.smooth(duration: 0.24), value: libraryStore.homeFeedLayout)
         .overlay {
             if case .failed(let message) = viewModel.state, viewModel.videos.isEmpty {
                 ErrorStateView(title: "加载失败", message: message) {
@@ -154,6 +158,18 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    private var feedColumns: [GridItem] {
+        libraryStore.homeFeedLayout == .singleColumn ? singleColumns : doubleColumns
+    }
+
+    private var feedSpacing: CGFloat {
+        libraryStore.homeFeedLayout == .singleColumn ? 14 : 18
+    }
+
+    private var feedHorizontalPadding: CGFloat {
+        libraryStore.homeFeedLayout == .singleColumn ? 12 : 10
     }
 
     private func refreshBridge(_ viewModel: HomeViewModel) -> some View {
@@ -208,7 +224,7 @@ struct HomeView: View {
             Button {
                 onVideoSelect(video)
             } label: {
-                VideoCardView(display: display)
+                cardContent(display)
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
             }
             .buttonStyle(.plain)
@@ -219,12 +235,21 @@ struct HomeView: View {
             Button {
                 detailPath.append(video)
             } label: {
-                VideoCardView(display: display)
+                cardContent(display)
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
             }
             .buttonStyle(PressPreloadButtonStyle {
                 beginPressedPreloadIfNeeded(for: video)
             })
+        }
+    }
+
+    @ViewBuilder
+    private func cardContent(_ display: VideoCardDisplayModel) -> some View {
+        if libraryStore.homeFeedLayout == .singleColumn {
+            VideoFeedStoryCardView(display: display)
+        } else {
+            VideoCardView(display: display)
         }
     }
 

@@ -24,7 +24,6 @@ struct RootTabView: View {
                     }
                 } label: {
                     Label(RootTab.home.title, systemImage: RootTab.home.systemImage)
-                        .labelStyle(.iconOnly)
                 }
 
                 Tab(value: AppTab.dynamic) {
@@ -34,7 +33,6 @@ struct RootTabView: View {
                     }
                 } label: {
                     Label(RootTab.dynamic.title, systemImage: RootTab.dynamic.systemImage)
-                        .labelStyle(.iconOnly)
                 }
 
                 Tab(value: AppTab.mine) {
@@ -44,7 +42,6 @@ struct RootTabView: View {
                     }
                 } label: {
                     Label(RootTab.mine.title, systemImage: RootTab.mine.systemImage)
-                        .labelStyle(.iconOnly)
                 }
 
                 Tab(value: AppTab.search, role: .search) {
@@ -54,10 +51,10 @@ struct RootTabView: View {
                     }
                 } label: {
                     Label(RootTab.search.title, systemImage: RootTab.search.systemImage)
-                        .labelStyle(.iconOnly)
                 }
             }
             .tint(.pink)
+            .tabBarMinimizeBehavior(.onScrollDown)
             .liquidGlassTabBarBackground()
 
             if bottomMode == .video {
