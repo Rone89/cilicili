@@ -259,7 +259,7 @@ final class HomeViewModel: ObservableObject {
         var avatarURLs = [URL]()
 
         for video in videos.prefix(10) {
-            if let url = video.pic.flatMap({ URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }),
+            if let url = video.pic.flatMap({ URL(string: $0.biliCoverThumbnailURL(width: 540, height: 960)) }),
                seenCovers.insert(url).inserted {
                 coverURLs.append(url)
             }
@@ -271,7 +271,7 @@ final class HomeViewModel: ObservableObject {
 
         guard !coverURLs.isEmpty || !avatarURLs.isEmpty else { return }
         imagePrefetchTask = Task(priority: .utility) {
-            await RemoteImageCache.shared.prefetch(coverURLs, targetPixelSize: 540, maximumConcurrentLoads: 2)
+            await RemoteImageCache.shared.prefetch(coverURLs, targetPixelSize: 960, maximumConcurrentLoads: 2)
             guard !Task.isCancelled else { return }
             await RemoteImageCache.shared.prefetch(avatarURLs, targetPixelSize: 48, maximumConcurrentLoads: 1)
         }
