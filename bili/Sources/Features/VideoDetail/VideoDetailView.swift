@@ -215,7 +215,6 @@ struct VideoDetailView: View {
         let expandsToFullscreen = isManualFullscreen || isLandscape
         let playerHeight = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
-        let pageBackground: Color = expandsToFullscreen ? Color(UIColor.black) : .videoDetailBackground
 
         return ZStack(alignment: .top) {
                 Color.videoDetailBackground
@@ -254,7 +253,6 @@ struct VideoDetailView: View {
             .clipped()
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .background(pageBackground)
     }
 
     private func exitManualLandscapePlayback() {
