@@ -211,12 +211,12 @@ struct VideoDetailView: View {
         isLandscape: Bool = false
     ) -> AnyView {
         let config = makeStandardPlaybackPageConfig(screenSize: screenSize, isLandscape: isLandscape)
-        let page = VideoDetailStandardPlaybackPage(
+        let detailContent = AnyView(detailScrollPage(viewModel))
+        return AnyView(VideoDetailStandardPlaybackPage(
             config: config,
             viewModel: viewModel,
-            detailContent: AnyView(detailScrollPage(viewModel))
-        )
-        return AnyView(page)
+            detailContent: detailContent
+        ))
     }
 
     private func makeStandardPlaybackPageConfig(
