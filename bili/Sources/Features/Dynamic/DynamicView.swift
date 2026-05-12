@@ -164,7 +164,11 @@ private struct DynamicFeedCard: View {
             }
         }
         .fullScreenCover(item: $imageSelection) { selection in
-            DynamicImageViewer(images: imageItems, initialIndex: selection.index)
+            DynamicImageViewer(
+                images: imageItems,
+                initialIndex: selection.index,
+                sourceFrame: selection.sourceFrame
+            )
         }
         .sheet(item: $commentsTarget) { target in
             DynamicCommentsSheet(item: target, api: api)
@@ -215,8 +219,8 @@ private struct DynamicFeedCard: View {
             }
 
             if !imageItems.isEmpty {
-                DynamicImageGrid(images: imageItems) { index in
-                    imageSelection = DynamicImageSelection(index: index)
+                DynamicImageGrid(images: imageItems) { index, sourceFrame in
+                    presentImage(index: index, sourceFrame: sourceFrame)
                 }
             }
 
@@ -248,8 +252,8 @@ private struct DynamicFeedCard: View {
             topLevelText
 
             if !imageItems.isEmpty {
-                DynamicImageGrid(images: imageItems) { index in
-                    imageSelection = DynamicImageSelection(index: index)
+                DynamicImageGrid(images: imageItems) { index, sourceFrame in
+                    presentImage(index: index, sourceFrame: sourceFrame)
                 }
             }
 
@@ -404,6 +408,14 @@ private struct DynamicFeedCard: View {
         withAnimation(.snappy(duration: 0.2)) {
             isLiked.toggle()
             likeCount = max(0, likeCount + (isLiked ? 1 : -1))
+        }
+    }
+
+    private func presentImage(index: Int, sourceFrame: CGRect?) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            imageSelection = DynamicImageSelection(index: index, sourceFrame: sourceFrame)
         }
     }
 }
@@ -1703,7 +1715,11 @@ private struct DynamicOriginalPreview: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .fullScreenCover(item: $imageSelection) { selection in
-            DynamicImageViewer(images: imageItems, initialIndex: selection.index)
+            DynamicImageViewer(
+                images: imageItems,
+                initialIndex: selection.index,
+                sourceFrame: selection.sourceFrame
+            )
         }
     }
 
@@ -1750,8 +1766,8 @@ private struct DynamicOriginalPreview: View {
                 }
 
                 if !imageItems.isEmpty {
-                    DynamicImageGrid(images: imageItems) { index in
-                        imageSelection = DynamicImageSelection(index: index)
+                    DynamicImageGrid(images: imageItems) { index, sourceFrame in
+                        presentImage(index: index, sourceFrame: sourceFrame)
                     }
                 }
             }
@@ -1776,6 +1792,14 @@ private struct DynamicOriginalPreview: View {
         }
         .contentShape(Rectangle())
     }
+
+    private func presentImage(index: Int, sourceFrame: CGRect?) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            imageSelection = DynamicImageSelection(index: index, sourceFrame: sourceFrame)
+        }
+    }
 }
 
 private struct DynamicForwardUnavailableView: View {
@@ -1796,13 +1820,14 @@ private struct DynamicForwardUnavailableView: View {
 
 private struct DynamicImageSelection: Identifiable {
     let index: Int
+    let sourceFrame: CGRect?
 
     var id: Int { index }
 }
 
 private struct DynamicImageGrid: View {
     let images: [DynamicImageItem]
-    let openImage: (Int) -> Void
+    let openImage: (Int, CGRect?) -> Void
     private static let spacing: CGFloat = 4
 
     private var displayedImages: Array<(offset: Int, element: DynamicImageItem)> {
@@ -1824,13 +1849,13 @@ private struct DynamicImageGrid: View {
             let aspectRatio = CGFloat(max(image.element.aspectRatio, 0.1))
             let imageHeight = min(max(imageWidth / aspectRatio, 150), 360)
             HStack {
-                Button {
-                    openImage(image.offset)
-                } label: {
-                    DynamicImageCell(image: image.element, displayMode: .single)
-                        .frame(width: imageWidth, height: imageHeight)
-                }
-                .buttonStyle(.plain)
+                DynamicImageButton(
+                    image: image.element,
+                    index: image.offset,
+                    displayMode: .single,
+                    openImage: openImage
+                )
+                .frame(width: imageWidth, height: imageHeight)
                 Spacer(minLength: 0)
             }
             .frame(width: width, alignment: .leading)
@@ -1842,22 +1867,21 @@ private struct DynamicImageGrid: View {
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
                 ForEach(displayedImages, id: \.offset) { index, image in
-                    Button {
-                        openImage(index)
-                    } label: {
-                        DynamicImageCell(image: image, displayMode: .square)
-                            .overlay {
-                                if index == 8, images.count > 9 {
-                                    ZStack {
-                                        Color.black.opacity(0.46)
-                                        Text("+\(images.count - 8)")
-                                            .font(.title3.weight(.bold))
-                                            .foregroundStyle(.white)
-                                    }
-                                }
+                    DynamicImageButton(
+                        image: image,
+                        index: index,
+                        displayMode: .square,
+                        openImage: openImage
+                    ) {
+                        if index == 8, images.count > 9 {
+                            ZStack {
+                                Color.black.opacity(0.46)
+                                Text("+\(images.count - 8)")
+                                    .font(.title3.weight(.bold))
+                                    .foregroundStyle(.white)
                             }
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .frame(width: width, alignment: .leading)
@@ -1875,6 +1899,86 @@ private struct DynamicImageGrid: View {
         }
     }
 
+}
+
+private struct DynamicImageButton<Overlay: View>: View {
+    let image: DynamicImageItem
+    let index: Int
+    let displayMode: DynamicImageCell.DisplayMode
+    let openImage: (Int, CGRect?) -> Void
+    @ViewBuilder let overlay: () -> Overlay
+    @State private var sourceFrame: CGRect = .zero
+    @State private var isPressed = false
+
+    init(
+        image: DynamicImageItem,
+        index: Int,
+        displayMode: DynamicImageCell.DisplayMode,
+        openImage: @escaping (Int, CGRect?) -> Void,
+        @ViewBuilder overlay: @escaping () -> Overlay
+    ) {
+        self.image = image
+        self.index = index
+        self.displayMode = displayMode
+        self.openImage = openImage
+        self.overlay = overlay
+    }
+
+    var body: some View {
+        Button {
+            openImage(index, sourceFrame == .zero ? nil : sourceFrame)
+        } label: {
+            DynamicImageCell(image: image, displayMode: displayMode)
+                .overlay(overlay())
+                .scaleEffect(isPressed ? 0.985 : 1)
+                .opacity(isPressed ? 0.86 : 1)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear {
+                                sourceFrame = proxy.frame(in: .global)
+                            }
+                            .onChange(of: proxy.frame(in: .global)) { _, frame in
+                                sourceFrame = frame
+                            }
+                    }
+                )
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isPressed {
+                        withAnimation(.smooth(duration: 0.12)) {
+                            isPressed = true
+                        }
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.smooth(duration: 0.16)) {
+                        isPressed = false
+                    }
+                }
+        )
+    }
+}
+
+private extension DynamicImageButton where Overlay == EmptyView {
+    init(
+        image: DynamicImageItem,
+        index: Int,
+        displayMode: DynamicImageCell.DisplayMode,
+        openImage: @escaping (Int, CGRect?) -> Void
+    ) {
+        self.init(
+            image: image,
+            index: index,
+            displayMode: displayMode,
+            openImage: openImage
+        ) {
+            EmptyView()
+        }
+    }
 }
 
 private struct DynamicImageCell: View {
@@ -1941,57 +2045,69 @@ private struct DynamicImageCell: View {
 private struct DynamicImageViewer: View {
     let images: [DynamicImageItem]
     let initialIndex: Int
+    let sourceFrame: CGRect?
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
     @State private var dragOffset: CGSize = .zero
     @State private var isPresented = false
     @State private var isClosing = false
+    @State private var didStartPresentation = false
 
-    init(images: [DynamicImageItem], initialIndex: Int) {
+    init(images: [DynamicImageItem], initialIndex: Int, sourceFrame: CGRect?) {
         self.images = images
         self.initialIndex = initialIndex
+        self.sourceFrame = sourceFrame
         _selection = State(initialValue: initialIndex)
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Color.black
-                .opacity(backgroundOpacity)
-                .ignoresSafeArea()
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                Color.black
+                    .opacity(backgroundOpacity)
+                    .ignoresSafeArea()
 
-            TabView(selection: $selection) {
-                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
-                    DynamicViewerImage(image: image) {
-                        close()
+                TabView(selection: $selection) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                        DynamicViewerImage(image: image) {
+                            close()
+                        }
+                        .tag(index)
                     }
-                    .tag(index)
+                }
+                .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
+                .modifier(
+                    DynamicImageViewerPresentationModifier(
+                        sourceFrame: sourceFrame,
+                        containerSize: proxy.size,
+                        progress: presentationProgress,
+                        dismissProgress: dismissProgress,
+                        dragOffset: dragOffset
+                    )
+                )
+                .opacity(presentationOpacity)
+
+                if images.count > 1 {
+                    Text("\(selection + 1) / \(images.count)")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.92))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.44))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 22)
+                        .opacity(indicatorOpacity)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
-            .offset(y: dragOffset.height)
-            .scaleEffect(viewerScale * presentationScale)
-            .opacity(presentationOpacity)
-
-            if images.count > 1 {
-                Text("\(selection + 1) / \(images.count)")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.44))
-                    .clipShape(Capsule())
-                    .padding(.bottom, 22)
-                    .opacity(1 - dismissProgress)
-            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(dragToDismissGesture)
         }
-        .contentShape(Rectangle())
-        .simultaneousGesture(dragToDismissGesture)
-        .animation(.smooth(duration: 0.2), value: isPresented)
-        .animation(.smooth(duration: 0.16), value: isClosing)
-        .animation(.interactiveSpring(duration: 0.24, extraBounce: 0.08), value: dragOffset)
+        .background(Color.black.opacity(backgroundOpacity).ignoresSafeArea())
+        .animation(.smooth(duration: 0.28), value: isPresented)
+        .animation(.smooth(duration: 0.2), value: isClosing)
         .onAppear {
-            isPresented = true
+            beginPresentation()
         }
         .preferredColorScheme(.dark)
     }
@@ -2001,28 +2117,36 @@ private struct DynamicImageViewer: View {
     }
 
     private var backgroundOpacity: Double {
-        Double(presentationOpacity) * Double(1 - dismissProgress * 0.72)
+        Double(presentationProgress) * Double(1 - dismissProgress * 0.78)
     }
 
-    private var viewerScale: CGFloat {
-        1 - dismissProgress * 0.08
-    }
-
-    private var presentationOpacity: CGFloat {
+    private var presentationProgress: CGFloat {
         isClosing ? 0 : (isPresented ? 1 : 0)
     }
 
-    private var presentationScale: CGFloat {
-        isClosing ? 0.96 : (isPresented ? 1 : 0.96)
+    private var presentationOpacity: CGFloat {
+        guard didStartPresentation else { return 0 }
+        return max(presentationProgress, 0.01)
+    }
+
+    private var indicatorOpacity: CGFloat {
+        presentationProgress * (1 - dismissProgress)
+    }
+
+    private func beginPresentation() {
+        didStartPresentation = true
+        withAnimation(.smooth(duration: 0.30)) {
+            isPresented = true
+        }
     }
 
     private func close() {
         guard !isClosing else { return }
-        withAnimation(.smooth(duration: 0.16)) {
+        withAnimation(.smooth(duration: 0.22)) {
             isClosing = true
         }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: 210_000_000)
             dismiss()
         }
     }
@@ -2034,11 +2158,17 @@ private struct DynamicImageViewer: View {
                 let horizontal = abs(value.translation.width)
                 guard vertical > horizontal * 1.1 else {
                     if dragOffset != .zero {
-                        dragOffset = .zero
+                        withAnimation(.interactiveSpring(duration: 0.22, extraBounce: 0.06)) {
+                            dragOffset = .zero
+                        }
                     }
                     return
                 }
-                dragOffset = value.translation
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    dragOffset = value.translation
+                }
             }
             .onEnded { value in
                 let vertical = abs(value.translation.height)
@@ -2050,11 +2180,59 @@ private struct DynamicImageViewer: View {
                 if shouldDismiss {
                     close()
                 } else {
-                    withAnimation(.interactiveSpring(duration: 0.26, extraBounce: 0.1)) {
+                    withAnimation(.interactiveSpring(duration: 0.28, extraBounce: 0.12)) {
                         dragOffset = .zero
                     }
                 }
             }
+    }
+}
+
+private struct DynamicImageViewerPresentationModifier: ViewModifier {
+    let sourceFrame: CGRect?
+    let containerSize: CGSize
+    let progress: CGFloat
+    let dismissProgress: CGFloat
+    let dragOffset: CGSize
+
+    func body(content: Content) -> some View {
+        let resolved = resolvedTransform
+        content
+            .scaleEffect(resolved.scale)
+            .offset(x: resolved.offset.width, y: resolved.offset.height)
+    }
+
+    private var resolvedTransform: (scale: CGFloat, offset: CGSize) {
+        let startScale = sourceScale
+        let startOffset = sourceOffset
+        let easedProgress = progress
+        let dragScale = 1 - dismissProgress * 0.10
+        let scale = (startScale + (1 - startScale) * easedProgress) * dragScale
+        let openingOffset = CGSize(
+            width: startOffset.width * (1 - easedProgress),
+            height: startOffset.height * (1 - easedProgress)
+        )
+        return (
+            scale: scale,
+            offset: CGSize(
+                width: openingOffset.width + dragOffset.width * (1 - dismissProgress * 0.18),
+                height: openingOffset.height + dragOffset.height
+            )
+        )
+    }
+
+    private var sourceScale: CGFloat {
+        guard let sourceFrame else { return 0.96 }
+        let widthScale = sourceFrame.width / max(containerSize.width, 1)
+        let heightScale = sourceFrame.height / max(containerSize.height, 1)
+        return min(max(max(widthScale, heightScale), 0.18), 0.96)
+    }
+
+    private var sourceOffset: CGSize {
+        guard let sourceFrame else { return .zero }
+        let sourceCenter = CGPoint(x: sourceFrame.midX, y: sourceFrame.midY)
+        let targetCenter = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
+        return CGSize(width: sourceCenter.x - targetCenter.x, height: sourceCenter.y - targetCenter.y)
     }
 }
 
