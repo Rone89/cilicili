@@ -319,10 +319,7 @@ struct BiliPlayerView: View {
     }
 
     private func applyVideoGravity() {
-        let gravity: AVLayerVideoGravity = isManualFullscreenActive || presentation == .fullScreen
-            ? .resizeAspectFill
-            : .resizeAspect
-        viewModel.setVideoGravity(gravity)
+        viewModel.setVideoGravity(videoGravity)
     }
 
     private func savePlaybackProgress(_ time: TimeInterval) {
@@ -464,7 +461,7 @@ struct BiliPlayerView: View {
         if usesNativePlaybackControls {
             NativePlayerControllerView(
                 viewModel: viewModel,
-                videoGravity: isManualFullscreenActive || presentation == .fullScreen ? .resizeAspectFill : .resizeAspect
+                videoGravity: videoGravity
             )
         } else {
             VideoSurfaceView(
@@ -473,6 +470,10 @@ struct BiliPlayerView: View {
                 onExitManualFullscreen: onExitManualFullscreen
             )
         }
+    }
+
+    private var videoGravity: AVLayerVideoGravity {
+        presentation == .fullScreen || isManualFullscreenActive ? .resizeAspectFill : .resizeAspect
     }
 
     private var showsPlayerLoadingChrome: Bool {
