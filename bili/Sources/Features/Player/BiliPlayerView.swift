@@ -60,8 +60,11 @@ struct BiliPlayerView: View {
     private var isManualFullscreenActive: Bool {
         manualFullscreenMode != nil
     }
+    private var forcesDirectPlaybackSurface: Bool {
+        presentation == .fullScreen || isManualFullscreenActive
+    }
     private var usesNativePlaybackControls: Bool {
-        showsPlaybackControls && viewModel.usesNativePlaybackControls
+        showsPlaybackControls && viewModel.usesNativePlaybackControls && !forcesDirectPlaybackSurface
     }
     private var usesCustomPlaybackControls: Bool {
         showsPlaybackControls && !usesNativePlaybackControls
@@ -466,6 +469,7 @@ struct BiliPlayerView: View {
         } else {
             VideoSurfaceView(
                 viewModel: viewModel,
+                prefersNativePlaybackControls: usesNativePlaybackControls,
                 manualFullscreenMode: manualFullscreenMode,
                 onExitManualFullscreen: onExitManualFullscreen
             )
