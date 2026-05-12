@@ -109,6 +109,7 @@ final class NativePlayerHostViewController: UIViewController {
 
 struct VideoSurfaceView: UIViewRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
+    let prefersNativePlaybackControls: Bool
     let manualFullscreenMode: ManualVideoFullscreenMode?
     let onExitManualFullscreen: (() -> Void)?
 
@@ -122,12 +123,12 @@ struct VideoSurfaceView: UIViewRepresentable {
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
         view.setPlayerViewModel(viewModel)
+        viewModel.attachSurface(view, prefersNativePlaybackControls: prefersNativePlaybackControls)
         view.setManualFullscreenMode(
             manualFullscreenMode,
             onExit: onExitManualFullscreen,
             animated: false
         )
-        viewModel.attachSurface(view)
         return view
     }
 
@@ -139,7 +140,7 @@ struct VideoSurfaceView: UIViewRepresentable {
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
         uiView.setPlayerViewModel(viewModel)
-        viewModel.attachSurface(uiView)
+        viewModel.attachSurface(uiView, prefersNativePlaybackControls: prefersNativePlaybackControls)
         uiView.setManualFullscreenMode(
             manualFullscreenMode,
             onExit: onExitManualFullscreen,
