@@ -708,7 +708,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         if countsAsNaturalPlayback, normalizedTime > 0 {
             hasPresentedPlayback = true
-            loadingProgress = max(loadingProgress, 0.98)
+            isPlaybackSurfaceReady = true
+            isBuffering = false
+            loadingProgress = 1
         }
         if force || (currentTime <= 0 && normalizedTime > 0) || abs(currentTime - normalizedTime) >= 0.2 {
             currentTime = normalizedTime
@@ -723,14 +725,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func handleEngineFirstFrame(_ time: TimeInterval) {
         guard !isTerminated else { return }
+        markPlaybackSurfaceReady()
+        if time > 0 {
+            _ = updatePlaybackTime(time, force: currentTime <= 0, countsAsNaturalPlayback: false)
+        }
+    }
+
+    private func markPlaybackSurfaceReady() {
         isPlaybackSurfaceReady = true
         hasPresentedPlayback = true
         loadingProgress = 1
         isPreparing = false
         isBuffering = false
-        if time > 0 {
-            _ = updatePlaybackTime(time, force: currentTime <= 0, countsAsNaturalPlayback: false)
-        }
     }
 
     private func installForcedPlaybackTimeGuard(for time: TimeInterval) {
@@ -802,7 +808,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         case .preparing:
             isPreparing = true
             isBuffering = false
-            isPlaybackSurfaceReady = false
+            if !hasPresentedPlayback {
+                isPlaybackSurfaceReady = false
+            }
             loadingProgress = max(loadingProgress, 0.18)
         case .ready:
             isPreparing = false
@@ -815,10 +823,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             loadingProgress = max(loadingProgress, 0.72)
             PlayerMetricsLog.record(.buffering, metricsID: metricsID, title: title, message: elapsedMessage())
         case .playing:
-            isPreparing = false
-            isBuffering = false
+            markPlaybackSurfaceReady()
             isPlaying = true
-            loadingProgress = max(loadingProgress, 0.98)
             errorMessage = nil
         case .paused:
             isBuffering = false

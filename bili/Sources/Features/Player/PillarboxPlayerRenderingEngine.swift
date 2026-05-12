@@ -24,6 +24,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private var systemItemObservationTask: Task<Void, Never>?
     private var foregroundObserver: Any?
     private var backgroundObserver: Any?
+    private var visualOutputProbeTask: Task<Void, Never>?
     private var currentRate: Float = 1
     private var wantsPlayback = false
     private var didReportFirstFrame = false
@@ -87,6 +88,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             NotificationCenter.default.removeObserver(itemFailedObserver)
         }
         systemItemObservationTask?.cancel()
+        visualOutputProbeTask?.cancel()
         systemItemObservers.removeAll()
         if let foregroundObserver = foregroundObserver {
             NotificationCenter.default.removeObserver(foregroundObserver)
@@ -116,6 +118,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         hostingController?.view.frame = surfaceView.bounds
+        hostingController?.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hostingController?.view.setNeedsLayout()
         hostingController?.view.layoutIfNeeded()
         CATransaction.commit()
@@ -207,6 +210,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         onLoadingProgressChange?(0.98)
         publishPlaybackState(.playing)
         reportFirstFrameIfPossible()
+        schedulePlaybackSurfaceReadyFallback()
+        scheduleVisualOutputProbe()
     }
 
     func pause() {
@@ -223,6 +228,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         player.resignActive()
         removeCurrentItemObservers()
         systemItemObservationTask?.cancel()
+        visualOutputProbeTask?.cancel()
         systemItemObservers.removeAll()
         currentItem = nil
         source = nil
@@ -331,38 +337,38 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     func invalidatePictureInPicturePlaybackState() {}
 
     private func installPillarboxSurfaceIfNeeded(in surface: UIView) {
-        if let hostingController = hostingController {
-            if hostingController.view.superview !== surface {
-                hostingController.view.removeFromSuperview()
-                surface.addSubview(hostingController.view)
-                surface.sendSubviewToBack(hostingController.view)
-            }
-            return
-        }
-
-        let controller = UIHostingController(
-            rootView: PillarboxVideoSurface(
-                player: player,
-                gravity: videoGravity,
-                persistable: self
-            )
-        )
-        controller.view.backgroundColor = .black
-        controller.view.isOpaque = true
-        controller.view.clipsToBounds = true
-        controller.view.frame = surface.bounds
-        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        hostingController = controller
-
-        if let parent = surface.enclosingViewControllerForBili {
-            parent.addChild(controller)
-            surface.addSubview(controller.view)
-            surface.sendSubviewToBack(controller.view)
-            controller.didMove(toParent: parent)
+        let controller: UIHostingController<PillarboxVideoSurface>
+        if let hostingController {
+            controller = hostingController
+            controller.rootView = makePillarboxSurface()
         } else {
-            surface.addSubview(controller.view)
-            surface.sendSubviewToBack(controller.view)
+            controller = UIHostingController(rootView: makePillarboxSurface())
+            hostingController = controller
         }
+
+        var addedParent: UIViewController?
+        if let parent = surface.enclosingViewControllerForBili {
+            if controller.parent !== parent {
+                controller.willMove(toParent: nil)
+                controller.removeFromParent()
+                parent.addChild(controller)
+                addedParent = parent
+            }
+        } else if controller.parent != nil {
+            controller.willMove(toParent: nil)
+            controller.removeFromParent()
+        }
+
+        configureHostingView(controller.view, in: surface)
+        if controller.view.superview !== surface {
+            controller.view.removeFromSuperview()
+            surface.addSubview(controller.view)
+        }
+        surface.sendSubviewToBack(controller.view)
+        if let addedParent {
+            controller.didMove(toParent: addedParent)
+        }
+        refreshSurfaceLayout()
     }
 
     private func uninstallPillarboxSurface() {
@@ -375,12 +381,25 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
 
     private func rebuildPillarboxSurface() {
         guard hostingController != nil else { return }
-        hostingController?.rootView = PillarboxVideoSurface(
+        hostingController?.rootView = makePillarboxSurface()
+        refreshSurfaceLayout()
+    }
+
+    private func makePillarboxSurface() -> PillarboxVideoSurface {
+        PillarboxVideoSurface(
             player: player,
             gravity: videoGravity,
             persistable: self
         )
-        refreshSurfaceLayout()
+    }
+
+    private func configureHostingView(_ view: UIView, in surface: UIView) {
+        view.backgroundColor = .black
+        view.isOpaque = true
+        view.clipsToBounds = true
+        view.isHidden = false
+        view.frame = surface.bounds
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     }
 
     private func configureAudioSession() {
@@ -661,6 +680,41 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)
     }
 
+    private func schedulePlaybackSurfaceReadyFallback() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard let self, self.wantsPlayback, self.player.systemPlayer.rate > 0 else { return }
+            self.reportFirstFrameIfPossible(
+                currentTime: self.displayTime(fromPlayerTime: self.player.systemPlayer.currentTime().seconds)
+            )
+        }
+    }
+
+    private func scheduleVisualOutputProbe() {
+        visualOutputProbeTask?.cancel()
+        guard source?.audioURL != nil else { return }
+        visualOutputProbeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard let self,
+                  !Task.isCancelled,
+                  self.wantsPlayback,
+                  self.player.systemPlayer.rate > 0,
+                  let item = self.player.systemPlayer.currentItem,
+                  item.status == .readyToPlay
+            else { return }
+
+            let presentationSize = item.presentationSize
+            let hasVideoTrack = item.tracks.contains { track in
+                track.isEnabled && track.assetTrack?.mediaType == .video
+            }
+            let hasPresentationSize = presentationSize.width > 2 && presentationSize.height > 2
+            let playbackTime = self.displayTime(fromPlayerTime: self.player.systemPlayer.currentTime().seconds)
+            guard playbackTime > 0.8, !hasVideoTrack, !hasPresentationSize else { return }
+
+            self.handlePlaybackFailure("No video output was detected. Trying a more compatible stream.")
+        }
+    }
+
     private func publishPlaybackState(_ state: PlayerEnginePlaybackState) {
         guard state != lastPlaybackState else { return }
         lastPlaybackState = state
@@ -754,6 +808,7 @@ private struct PillarboxVideoSurface: View {
             .gravity(gravity)
             .supportsPictureInPicture(true)
             .enabledForInAppPictureInPicture(persisting: persistable)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .background(Color.black)
             .clipped()
     }
