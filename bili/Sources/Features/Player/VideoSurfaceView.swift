@@ -877,7 +877,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 
     deinit {
-        restoreLongPressPlaybackRateIfNeeded()
         refreshTimer?.invalidate()
         autoHideControlsTask?.cancel()
         feedbackTask?.cancel()
