@@ -38,77 +38,46 @@ struct VideoFeedStoryCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: showsHeader ? 12 : 0) {
+        VStack(alignment: .leading, spacing: showsHeader ? 8 : 0) {
             if showsHeader {
                 header
-                coverContainer
-            } else {
-                mediaContainer
             }
+            mediaContainer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            avatar(size: 50, targetPixelSize: 72, placeholderSize: 32)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(display.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 10) {
-                    Text(display.authorName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 8)
-
-                    Text(display.publishTimeText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
+        HStack(spacing: 9) {
+            CachedRemoteImage(
+                url: display.avatarURL,
+                targetPixelSize: 64
+            ) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 32, height: 32)
+            .clipShape(Circle())
+
+            Text(display.authorName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 10)
+
+            Text(display.publishTimeText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 2)
-    }
-
-    private func avatar(size: CGFloat, targetPixelSize: Int, placeholderSize: CGFloat) -> some View {
-        CachedRemoteImage(
-            url: display.avatarURL,
-            targetPixelSize: targetPixelSize
-        ) { image in
-            image
-                .resizable()
-                .scaledToFill()
-        } placeholder: {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: placeholderSize, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-    }
-
-    private var coverContainer: some View {
-        cover
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
-            }
-            .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     private var mediaContainer: some View {
