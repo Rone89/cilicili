@@ -30,7 +30,7 @@ struct PlaybackEnvironment: Sendable {
         case .wifi, .unknown:
             isConstrainedNetwork = false
         }
-        isLowPowerModeEnabled
+        return isLowPowerModeEnabled
             || isThermallyConstrained
             || isConstrainedNetwork
     }
