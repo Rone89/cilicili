@@ -25,6 +25,9 @@ final class VideoDetailViewModel: ObservableObject {
     @Published private(set) var stablePlayerViewModel: PlayerStateViewModel?
     @Published var selectedCommentSort: CommentSort = .hot
     @Published var playbackFallbackMessage: String?
+    @Published private(set) var danmakuItems: [DanmakuItem] = []
+    @Published private(set) var danmakuState: LoadingState = .idle
+    @Published var isDanmakuEnabled = true
     @Published private var replyThreads: [Int: [Comment]] = [:]
     @Published private var replyThreadStates: [Int: LoadingState] = [:]
     @Published private var replyThreadPages: [Int: Int] = [:]
@@ -50,6 +53,7 @@ final class VideoDetailViewModel: ObservableObject {
     private var filterCancellable: AnyCancellable?
     private var sponsorBlockCancellable: AnyCancellable?
     private var sponsorBlockTask: Task<Void, Never>?
+    private var danmakuTask: Task<Void, Never>?
     private var sponsorBlockSegments: [SponsorBlockSegment] = []
     private var sponsorBlockIdentity: String?
     private var stablePlayerIdentity: String?
@@ -99,6 +103,7 @@ final class VideoDetailViewModel: ObservableObject {
         self.api = api
         self.libraryStore = libraryStore
         self.sponsorBlockService = sponsorBlockService
+        self.isDanmakuEnabled = libraryStore.danmakuEnabled
         filterCancellable = libraryStore.$blocksGoodsComments
             .removeDuplicates()
             .dropFirst()
@@ -128,6 +133,7 @@ final class VideoDetailViewModel: ObservableObject {
         startupPlayURLTask?.cancel()
         relatedPreloadTask?.cancel()
         sponsorBlockTask?.cancel()
+        danmakuTask?.cancel()
     }
 
     func load() async {
@@ -136,6 +142,7 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         if state == .loaded {
+            scheduleDanmakuLoadIfNeeded()
             if stablePlayerViewModel == nil {
                 if selectedPlayVariant?.isPlayable == true {
                     updateStablePlayerViewModelIfNeeded()
@@ -148,6 +155,7 @@ final class VideoDetailViewModel: ObservableObject {
         PlayerMetricsLog.record(.detailLoadStart, metricsID: detail.bvid, title: detail.title)
 
         if canBootstrapPlaybackFromSeed {
+            scheduleDanmakuLoadIfNeeded()
             state = .loading
             detailLoadingTask?.cancel()
             cancelSupplementalWork()
@@ -179,6 +187,10 @@ final class VideoDetailViewModel: ObservableObject {
         commentsLoadingTask?.cancel()
         commentsLoadingTask = nil
         commentsLoadingToken = nil
+        danmakuTask?.cancel()
+        danmakuTask = nil
+        danmakuItems = []
+        danmakuState = .idle
         detailLoadingTask?.cancel()
         detailLoadingTask = nil
         sponsorBlockTask?.cancel()
@@ -234,6 +246,7 @@ final class VideoDetailViewModel: ObservableObject {
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
             detail = detail.mergingFilledValues(from: fullDetail)
             selectedCID = selectedCID ?? fullDetail.pages?.first?.cid ?? fullDetail.cid
+            scheduleDanmakuLoadIfNeeded()
 
             state = .loaded
             PlayerMetricsLog.record(.detailLoaded, metricsID: detail.bvid, title: detail.title)
@@ -259,6 +272,7 @@ final class VideoDetailViewModel: ObservableObject {
     func selectPage(_ page: VideoPage) {
         isPlaybackInvalidatedForNavigation = false
         selectedCID = page.cid
+        scheduleDanmakuLoadIfNeeded(force: true)
         playVariants = []
         selectedPlayVariant = nil
         didSelectPlayVariantManually = false
@@ -402,6 +416,18 @@ final class VideoDetailViewModel: ObservableObject {
     func retryPlayURL() async {
         isPlaybackInvalidatedForNavigation = false
         await loadPlayURL()
+    }
+
+    func toggleDanmaku() {
+        isDanmakuEnabled.toggle()
+        libraryStore.setDanmakuEnabled(isDanmakuEnabled)
+        if isDanmakuEnabled, danmakuItems.isEmpty {
+            scheduleDanmakuLoadIfNeeded()
+        } else if !isDanmakuEnabled {
+            danmakuTask?.cancel()
+            danmakuTask = nil
+            danmakuState = .idle
+        }
     }
 
     func selectPlayVariant(_ variant: PlayVariant) {
@@ -1211,6 +1237,62 @@ final class VideoDetailViewModel: ObservableObject {
         try? await Task.sleep(nanoseconds: 900_000_000)
         guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
         await loadRelated()
+    }
+
+    private func scheduleDanmakuLoadIfNeeded(force: Bool = false) {
+        guard !isPlaybackInvalidatedForNavigation else { return }
+        guard let cid = selectedCID else {
+            danmakuTask?.cancel()
+            danmakuTask = nil
+            danmakuItems = []
+            danmakuState = .idle
+            return
+        }
+        guard isDanmakuEnabled else {
+            danmakuTask?.cancel()
+            danmakuTask = nil
+            danmakuItems = []
+            danmakuState = .idle
+            return
+        }
+        if !force, danmakuState.isLoading {
+            return
+        }
+        if !force, danmakuState == .loaded {
+            return
+        }
+        if !force, !danmakuItems.isEmpty {
+            return
+        }
+
+        danmakuTask?.cancel()
+        danmakuItems = []
+        danmakuState = .loading
+        danmakuTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let items = try await self.api.fetchDanmaku(cid: cid)
+                guard !Task.isCancelled,
+                      !self.isPlaybackInvalidatedForNavigation,
+                      self.selectedCID == cid
+                else { return }
+                self.danmakuItems = items.sorted { lhs, rhs in
+                    if lhs.time != rhs.time {
+                        return lhs.time < rhs.time
+                    }
+                    return lhs.id < rhs.id
+                }
+                self.danmakuState = .loaded
+            } catch {
+                guard !Task.isCancelled,
+                      !self.isPlaybackInvalidatedForNavigation,
+                      self.selectedCID == cid
+                else { return }
+                self.danmakuItems = []
+                self.danmakuState = .failed(error.localizedDescription)
+            }
+            self.danmakuTask = nil
+        }
     }
 
     @discardableResult

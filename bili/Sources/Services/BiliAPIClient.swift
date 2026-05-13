@@ -221,6 +221,37 @@ nonisolated final class BiliAPIClient {
         return response.payload ?? []
     }
 
+    func fetchDanmaku(cid: Int) async throws -> [DanmakuItem] {
+        if let cached = await state.cachedDanmaku(for: cid) {
+            return cached
+        }
+
+        var request = try await makeRequest(
+            base: commentURL,
+            path: "/\(cid).xml",
+            query: [:],
+            referer: "https://www.bilibili.com",
+            userAgent: Self.webUserAgent,
+            cookieHeader: await guestModeCookieHeader(),
+            cachePolicy: .returnCacheDataElseLoad
+        )
+        request.networkServiceType = .responsiveData
+        request.timeoutInterval = 8
+        request.setValue("application/xml,text/xml,*/*", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await data(for: request, priority: .utility)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode)
+        else {
+            throw BiliAPIError.emptyData
+        }
+        guard !data.isEmpty else { throw BiliAPIError.emptyData }
+
+        let items = try DanmakuXMLParser(cid: cid).parse(data: data)
+        await state.storeDanmaku(items, for: cid)
+        return items
+    }
+
     func fetchUploaderProfile(mid: Int) async throws -> UploaderProfile {
         let response: BiliResponse<UploaderProfile> = try await get(
             base: baseURL,
@@ -2309,6 +2340,11 @@ private struct CachedPlayURLFailure {
     let expiresAt: CFTimeInterval
 }
 
+private struct CachedDanmaku {
+    let items: [DanmakuItem]
+    let storedAt: CFTimeInterval
+}
+
 private actor BiliAPIClientState {
     private struct PersistedWBIKeys: Codable {
         let keys: WBIKeys
@@ -2317,12 +2353,15 @@ private actor BiliAPIClientState {
 
     private static let persistedWBIKeysKey = "cc.bili.persisted-wbi-keys.v1"
     private let playURLFailureCacheLimit = 96
+    private let danmakuCacheLimit = 12
+    private let danmakuCacheTTL: CFTimeInterval = 30 * 60
     private var cachedWBIKeys: WBIKeys?
     private var cachedWBIKeysDate: Date?
     private var wbiKeysTask: Task<WBIKeys, Error>?
     private var startupWBISuppressedUntil: CFTimeInterval = 0
     private var playURLFailureCache: [String: CachedPlayURLFailure] = [:]
     private var playURLStageTasks: [String: Task<PlayURLData, Error>] = [:]
+    private var danmakuCache: [Int: CachedDanmaku] = [:]
 
     func freshCachedWBIKeys() -> WBIKeys? {
         guard let keys = cachedWBIKeys,
@@ -2392,6 +2431,21 @@ private actor BiliAPIClientState {
         playURLStageTasks[key] = nil
     }
 
+    func cachedDanmaku(for cid: Int) -> [DanmakuItem]? {
+        let now = CACurrentMediaTime()
+        guard let cached = danmakuCache[cid] else { return nil }
+        guard now - cached.storedAt < danmakuCacheTTL else {
+            danmakuCache[cid] = nil
+            return nil
+        }
+        return cached.items
+    }
+
+    func storeDanmaku(_ items: [DanmakuItem], for cid: Int) {
+        danmakuCache[cid] = CachedDanmaku(items: items, storedAt: CACurrentMediaTime())
+        trimDanmakuCacheIfNeeded()
+    }
+
     func cancelPlayURLStage(_ key: String) {
         playURLStageTasks[key]?.cancel()
         playURLStageTasks[key] = nil
@@ -2432,6 +2486,17 @@ private actor BiliAPIClientState {
             .prefix(overflow)
             .map(\.key)
         expiredKeys.forEach { playURLFailureCache[$0] = nil }
+    }
+
+    private func trimDanmakuCacheIfNeeded(now: CFTimeInterval = CACurrentMediaTime()) {
+        danmakuCache = danmakuCache.filter { now - $0.value.storedAt < danmakuCacheTTL }
+        guard danmakuCache.count > danmakuCacheLimit else { return }
+        let overflow = danmakuCache.count - danmakuCacheLimit
+        let oldestKeys = danmakuCache
+            .sorted { $0.value.storedAt < $1.value.storedAt }
+            .prefix(overflow)
+            .map(\.key)
+        oldestKeys.forEach { danmakuCache[$0] = nil }
     }
 }
 

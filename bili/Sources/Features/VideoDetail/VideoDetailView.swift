@@ -909,6 +909,8 @@ private struct VideoDetailPlayerSurface: View {
             showsNavigationChrome: false,
             showsStartupLoadingIndicator: false,
             pausesOnDisappear: false,
+            surfaceOverlay: AnyView(danmakuOverlay),
+            controlsAccessory: AnyView(danmakuControl),
             embeddedAspectRatio: 16 / 9,
             keepsPlayerSurfaceStable: true,
             prefersNativePlaybackControls: false,
@@ -928,6 +930,52 @@ private struct VideoDetailPlayerSurface: View {
             )
         }
         .background(Color.black)
+    }
+
+    private var danmakuOverlay: some View {
+        DanmakuOverlayView(
+            items: viewModel.danmakuItems,
+            currentTime: playerViewModel.currentTime,
+            isPlaying: playerViewModel.isPlaying,
+            playbackRate: playerViewModel.playbackRate.rawValue,
+            isEnabled: viewModel.isDanmakuEnabled,
+            hasPresentedPlayback: playerViewModel.hasPresentedPlayback,
+            topInset: isLandscape ? 28 : 8,
+            bottomInset: isLandscape ? 84 : 54
+        )
+        .padding(.horizontal, isLandscape ? 18 : 4)
+    }
+
+    private var danmakuControl: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            Button {
+                viewModel.toggleDanmaku()
+            } label: {
+                Label(
+                    viewModel.isDanmakuEnabled ? "弹幕开" : "弹幕关",
+                    systemImage: viewModel.isDanmakuEnabled ? "text.bubble.fill" : "text.bubble"
+                )
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .glassEffect(
+                    .regular
+                        .tint(.black.opacity(viewModel.isDanmakuEnabled ? 0.18 : 0.10))
+                        .interactive(true),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(.white.opacity(0.18), lineWidth: 0.8)
+                )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(viewModel.isDanmakuEnabled ? .white : .white.opacity(0.62))
+            .accessibilityLabel(viewModel.isDanmakuEnabled ? "关闭弹幕" : "开启弹幕")
+        }
     }
 }
 

@@ -49,6 +49,7 @@ struct BiliPlayerView: View {
     private let showsPlaybackControls: Bool
     private let showsStartupLoadingIndicator: Bool
     private let pausesOnDisappear: Bool
+    private let surfaceOverlay: AnyView?
     private let controlsAccessory: AnyView?
     private let controlsBottomLift: CGFloat
     private let durationHint: TimeInterval?
@@ -88,6 +89,7 @@ struct BiliPlayerView: View {
         showsPlaybackControls: Bool = true,
         showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
+        surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
@@ -106,6 +108,7 @@ struct BiliPlayerView: View {
         self.showsPlaybackControls = showsPlaybackControls
         self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
+        self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
@@ -131,6 +134,7 @@ struct BiliPlayerView: View {
         showsPlaybackControls: Bool = true,
         showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
+        surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
@@ -149,6 +153,7 @@ struct BiliPlayerView: View {
         self.showsPlaybackControls = showsPlaybackControls
         self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
+        self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
@@ -187,6 +192,7 @@ struct BiliPlayerView: View {
         showsPlaybackControls: Bool = true,
         showsStartupLoadingIndicator: Bool = true,
         pausesOnDisappear: Bool = true,
+        surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
         embeddedAspectRatio: CGFloat = 16 / 9,
@@ -205,6 +211,7 @@ struct BiliPlayerView: View {
         self.showsPlaybackControls = showsPlaybackControls
         self.showsStartupLoadingIndicator = showsStartupLoadingIndicator
         self.pausesOnDisappear = pausesOnDisappear
+        self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
         self.durationHint = duration
@@ -397,6 +404,12 @@ struct BiliPlayerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .background(.black)
                 .zIndex(0)
+
+            if let surfaceOverlay {
+                surfaceOverlay
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(1)
+            }
 
             if showsPlayerLoadingChrome {
                 VStack(spacing: 7) {
