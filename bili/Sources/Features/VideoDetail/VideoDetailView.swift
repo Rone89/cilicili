@@ -1340,12 +1340,17 @@ private struct InlineMetadataButtonLabel: View {
         .frame(height: 28)
         .padding(.horizontal, 8)
         .foregroundStyle(.primary)
-        .background(.regularMaterial)
+        .glassEffect(
+            .regular
+                .tint(Color(.systemBackground).opacity(0.08))
+                .interactive(true),
+            in: Capsule(style: .continuous)
+        )
         .overlay {
             Capsule(style: .continuous)
-                .stroke(Color(.separator).opacity(0.18), lineWidth: 0.7)
+                .stroke(Color(.separator).opacity(0.14), lineWidth: 0.7)
         }
-        .clipShape(Capsule(style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
     }
 }
 

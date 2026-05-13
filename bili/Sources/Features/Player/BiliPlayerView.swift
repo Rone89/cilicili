@@ -563,8 +563,9 @@ struct BiliPlayerView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .frame(width: 48, height: 48)
             }
-            .biliGlassButtonStyle()
-            .tint(.black.opacity(0.34))
+            .buttonStyle(.plain)
+            .liquidPlayerGlass(in: Circle(), tint: .black.opacity(0.14), stroke: .white.opacity(0.22))
+            .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
             .accessibilityLabel("解锁播放控件")
 
             Spacer(minLength: 0)
@@ -669,7 +670,8 @@ struct BiliPlayerView: View {
         }
         .padding(.horizontal, isCompact ? 10 : 12)
         .padding(.vertical, isCompact ? 6 : 8)
-        .liquidPlayerGlassCapsule(tint: .black.opacity(0.38))
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.16), stroke: .white.opacity(0.22))
+        .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
     }
 
     private var speedMenu: some View {
@@ -697,8 +699,10 @@ struct BiliPlayerView: View {
                     .padding(.horizontal, 2)
             }
         }
-        .biliGlassButtonStyle()
-        .tint(.black.opacity(0.32))
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.12), stroke: .white.opacity(0.24), interactive: true)
+        .shadow(color: .black.opacity(0.24), radius: 10, y: 4)
     }
 
     private var compactPlaybackRateTitle: String {
@@ -723,8 +727,14 @@ struct BiliPlayerView: View {
         }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
-        .biliGlassButtonStyle(prominent: isPrimary)
-        .tint(.black.opacity(isPrimary ? 0.36 : 0.30))
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .liquidPlayerGlass(
+            in: Circle(),
+            tint: .black.opacity(isPrimary ? 0.18 : 0.12),
+            stroke: .white.opacity(isPrimary ? 0.24 : 0.22)
+        )
+        .shadow(color: .black.opacity(isPrimary ? 0.3 : 0.22), radius: isPrimary ? 12 : 9, y: isPrimary ? 5 : 4)
     }
 
     private func telegramTransportButton(
@@ -748,11 +758,15 @@ struct BiliPlayerView: View {
         .foregroundStyle(.white)
         .glassEffect(
             .regular
-                .tint(.black.opacity(isPrimary ? 0.46 : 0.40))
+                .tint(.black.opacity(isPrimary ? 0.24 : 0.18))
                 .interactive(true),
             in: Circle()
         )
-        .shadow(color: .black.opacity(isPrimary ? 0.42 : 0.3), radius: isPrimary ? 20 : 14, y: isPrimary ? 9 : 6)
+        .overlay(
+            Circle()
+                .stroke(.white.opacity(isPrimary ? 0.18 : 0.16), lineWidth: 0.8)
+        )
+        .shadow(color: .black.opacity(isPrimary ? 0.34 : 0.24), radius: isPrimary ? 18 : 12, y: isPrimary ? 8 : 5)
     }
 
     private func handlePlayerTap() {
@@ -1192,12 +1206,34 @@ private extension View {
         }
     }
 
-    func liquidPlayerGlassCapsule(tint: Color) -> some View {
+    func liquidPlayerGlass<S: Shape>(
+        in shape: S,
+        tint: Color,
+        stroke: Color = .white.opacity(0.2),
+        interactive: Bool = true
+    ) -> some View {
         glassEffect(
             .regular
                 .tint(tint)
-                .interactive(false),
-            in: Capsule()
+                .interactive(interactive),
+            in: shape
+        )
+        .overlay(
+            shape
+                .stroke(stroke, lineWidth: 0.8)
+        )
+    }
+
+    func liquidPlayerGlassCapsule(
+        tint: Color,
+        stroke: Color = .white.opacity(0.2),
+        interactive: Bool = false
+    ) -> some View {
+        liquidPlayerGlass(
+            in: Capsule(),
+            tint: tint,
+            stroke: stroke,
+            interactive: interactive
         )
     }
 }

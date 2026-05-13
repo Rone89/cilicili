@@ -1054,7 +1054,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         feedbackView.layer.cornerRadius = 39
         feedbackView.layer.cornerCurve = .continuous
         let feedbackGlass = UIGlassEffect(style: .regular)
-        feedbackGlass.tintColor = UIColor.black.withAlphaComponent(0.42)
+        feedbackGlass.tintColor = UIColor.black.withAlphaComponent(0.18)
         feedbackGlass.isInteractive = false
         let feedbackGlassView = UIVisualEffectView(effect: feedbackGlass)
         feedbackGlassView.translatesAutoresizingMaskIntoConstraints = false
@@ -1096,7 +1096,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         configuration.baseForegroundColor = .white
-        configuration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.38)
+        configuration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.10)
         configuration.cornerStyle = .capsule
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
         button.configuration = configuration
@@ -1104,10 +1104,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.tintColor = .white
         button.overrideUserInterfaceStyle = .dark
         button.layer.cornerRadius = 18
+        button.layer.borderWidth = 0.7
+        button.layer.borderColor = UIColor.white.withAlphaComponent(0.22).cgColor
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
-        button.layer.shadowOpacity = 0.55
-        button.layer.shadowRadius = 6
-        button.layer.shadowOffset = CGSize(width: 0, height: 3)
+        button.layer.shadowOpacity = 0.42
+        button.layer.shadowRadius = 8
+        button.layer.shadowOffset = CGSize(width: 0, height: 4)
         button.clipsToBounds = false
         button.widthAnchor.constraint(equalToConstant: 36).isActive = true
         button.heightAnchor.constraint(equalToConstant: 36).isActive = true
@@ -1128,8 +1130,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         )
         configuration.baseForegroundColor = .white
         configuration.baseBackgroundColor = isPrimary
-            ? UIColor.black.withAlphaComponent(0.48)
-            : UIColor.black.withAlphaComponent(0.42)
+            ? UIColor.black.withAlphaComponent(0.22)
+            : UIColor.black.withAlphaComponent(0.14)
         configuration.cornerStyle = .capsule
         let leadingInset: CGFloat = systemName == "play.fill" ? 4 : 0
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: leadingInset, bottom: 0, trailing: 0)
@@ -1139,11 +1141,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.tintColor = .white
         button.overrideUserInterfaceStyle = .dark
         button.layer.cornerRadius = size / 2
-        button.layer.borderWidth = 0
-        button.layer.shadowColor = UIColor.black.withAlphaComponent(0.34).cgColor
-        button.layer.shadowOpacity = isPrimary ? 0.9 : 0.62
-        button.layer.shadowRadius = isPrimary ? 20 : 14
-        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 9 : 6)
+        button.layer.borderWidth = 0.8
+        button.layer.borderColor = UIColor.white.withAlphaComponent(isPrimary ? 0.18 : 0.16).cgColor
+        button.layer.shadowColor = UIColor.black.withAlphaComponent(0.30).cgColor
+        button.layer.shadowOpacity = isPrimary ? 0.72 : 0.48
+        button.layer.shadowRadius = isPrimary ? 18 : 12
+        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 8 : 5)
         button.clipsToBounds = false
         button.widthAnchor.constraint(equalToConstant: size).isActive = true
         button.heightAnchor.constraint(equalToConstant: size).isActive = true
@@ -1529,7 +1532,7 @@ private final class FullscreenControlsGlassView: UIVisualEffectView {
 
     init(direction: Direction) {
         let glass = UIGlassEffect(style: .regular)
-        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.34 : 0.38)
+        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.14 : 0.16)
         glass.isInteractive = false
         super.init(effect: glass)
         isUserInteractionEnabled = false
@@ -1538,6 +1541,8 @@ private final class FullscreenControlsGlassView: UIVisualEffectView {
         clipsToBounds = true
         layer.cornerCurve = .continuous
         layer.cornerRadius = direction == .top ? 29 : 26
+        layer.borderWidth = 0.7
+        layer.borderColor = UIColor.white.withAlphaComponent(0.18).cgColor
     }
 
     required init?(coder: NSCoder) {
