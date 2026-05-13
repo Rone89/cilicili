@@ -1401,6 +1401,7 @@ private struct PortraitCommentsSheet: View {
     @ObservedObject var viewModel: VideoDetailViewModel
     @State private var replySheetComment: Comment?
     @State private var imageSelection: CommentImageSelection?
+    @Namespace private var imageTransitionNamespace
 
     var body: some View {
         NavigationStack {
@@ -1425,7 +1426,12 @@ private struct PortraitCommentsSheet: View {
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $imageSelection) { selection in
-            CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
+            NativeImageViewer(
+                images: selection.images,
+                initialIndex: selection.initialIndex,
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
+            )
         }
         .sheet(item: $replySheetComment) { comment in
             CommentRepliesSheet(rootComment: comment, viewModel: viewModel)
@@ -1467,11 +1473,20 @@ private struct PortraitCommentsSheet: View {
                 CommentRow(
                     comment: comment,
                     style: .plain,
+                    transitionNamespace: imageTransitionNamespace,
                     showReplies: {
                         replySheetComment = comment
                     },
                     showImages: { images, initialIndex in
-                        presentImages(images, initialIndex: initialIndex)
+                        presentImages(
+                            images,
+                            initialIndex: initialIndex,
+                            transitionID: NativeImageViewerTransitionID.image(
+                                images[min(max(initialIndex, 0), max(images.count - 1, 0))],
+                                index: min(max(initialIndex, 0), max(images.count - 1, 0)),
+                                scope: comment.id.description
+                            )
+                        )
                     }
                 )
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
@@ -1554,12 +1569,14 @@ private struct PortraitCommentsSheet: View {
         }
     }
 
-    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0) {
+    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0, transitionID: String? = nil) {
         let visibleImages = images.filter { $0.normalizedURL != nil }
         guard !visibleImages.isEmpty else { return }
+        let safeIndex = min(max(initialIndex, 0), visibleImages.count - 1)
         imageSelection = CommentImageSelection(
             images: visibleImages,
-            initialIndex: min(max(initialIndex, 0), visibleImages.count - 1)
+            initialIndex: safeIndex,
+            transitionID: transitionID ?? NativeImageViewerTransitionID.image(visibleImages[safeIndex], index: safeIndex, scope: "portrait-comments")
         )
     }
 }
@@ -1572,6 +1589,7 @@ private struct CommentsSectionView: View {
     var showAllComments: (() -> Void)?
     let showReplies: (Comment) -> Void
     @State private var imageSelection: CommentImageSelection?
+    @Namespace private var imageTransitionNamespace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1581,7 +1599,12 @@ private struct CommentsSectionView: View {
         .padding(.vertical, 14)
         .background(style == .grouped ? Color.videoDetailSurface : Color.clear)
         .fullScreenCover(item: $imageSelection) { selection in
-            CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
+            NativeImageViewer(
+                images: selection.images,
+                initialIndex: selection.initialIndex,
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
+            )
         }
         .task {
             guard autoLoads else { return }
@@ -1589,12 +1612,14 @@ private struct CommentsSectionView: View {
         }
     }
 
-    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0) {
+    private func presentImages(_ images: [DynamicImageItem], initialIndex: Int = 0, transitionID: String? = nil) {
         let visibleImages = images.filter { $0.normalizedURL != nil }
         guard !visibleImages.isEmpty else { return }
+        let safeIndex = min(max(initialIndex, 0), visibleImages.count - 1)
         imageSelection = CommentImageSelection(
             images: visibleImages,
-            initialIndex: min(max(initialIndex, 0), visibleImages.count - 1)
+            initialIndex: safeIndex,
+            transitionID: transitionID ?? NativeImageViewerTransitionID.image(visibleImages[safeIndex], index: safeIndex, scope: "comments-section")
         )
     }
 
@@ -1664,11 +1689,20 @@ private struct CommentsSectionView: View {
                     CommentRow(
                         comment: comment,
                         style: style,
+                        transitionNamespace: imageTransitionNamespace,
                         showReplies: {
                             showReplies(comment)
                         },
                         showImages: { images, initialIndex in
-                            presentImages(images, initialIndex: initialIndex)
+                            presentImages(
+                                images,
+                                initialIndex: initialIndex,
+                                transitionID: NativeImageViewerTransitionID.image(
+                                    images[min(max(initialIndex, 0), max(images.count - 1, 0))],
+                                    index: min(max(initialIndex, 0), max(images.count - 1, 0)),
+                                    scope: comment.id.description
+                                )
+                            )
                         }
                     )
                     .padding(.horizontal, style.horizontalPadding)
@@ -1783,6 +1817,7 @@ private struct CommentsSectionView: View {
 private struct CommentRow: View {
     let comment: Comment
     let style: CommentSectionStyle
+    let transitionNamespace: Namespace.ID
     let showReplies: () -> Void
     let showImages: ([DynamicImageItem], Int) -> Void
 
@@ -1797,7 +1832,12 @@ private struct CommentRow: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageThumbnailGrid(images: comment.content?.pictures ?? [], showImage: showImages)
+                CommentImageThumbnailGrid(
+                    images: comment.content?.pictures ?? [],
+                    transitionScope: comment.id.description,
+                    transitionNamespace: transitionNamespace,
+                    showImage: showImages
+                )
 
                 if !replyPreviews.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -1894,7 +1934,9 @@ private struct ReplyPreviewRow: View {
 
 private struct CommentImageButton: View {
     let images: [DynamicImageItem]
-    let showImages: ([DynamicImageItem]) -> Void
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
+    let showImages: ([DynamicImageItem], String) -> Void
 
     private var visibleImages: [DynamicImageItem] {
         images.filter { $0.normalizedURL != nil }
@@ -1903,7 +1945,7 @@ private struct CommentImageButton: View {
     var body: some View {
         if !visibleImages.isEmpty {
             Button {
-                showImages(visibleImages)
+                showImages(visibleImages, transitionID)
             } label: {
                 Label(title, systemImage: "photo.on.rectangle.angled")
                     .font(.caption.weight(.semibold))
@@ -1912,6 +1954,7 @@ private struct CommentImageButton: View {
                     .background(Color.videoDetailSecondarySurface)
                     .foregroundStyle(.pink)
                     .clipShape(Capsule())
+                    .matchedTransitionSource(id: transitionID, in: transitionNamespace)
             }
             .buttonStyle(.plain)
             .padding(.top, 2)
@@ -1921,10 +1964,17 @@ private struct CommentImageButton: View {
     private var title: String {
         visibleImages.count > 1 ? "点击查看图片 \(visibleImages.count) 张" : "点击查看图片"
     }
+
+    private var transitionID: String {
+        guard let firstImage = visibleImages.first else { return "\(transitionScope)|empty" }
+        return NativeImageViewerTransitionID.image(firstImage, index: 0, scope: transitionScope)
+    }
 }
 
 private struct CommentImageThumbnailGrid: View {
     let images: [DynamicImageItem]
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
     let showImage: ([DynamicImageItem], Int) -> Void
 
     private var visibleImages: [DynamicImageItem] {
@@ -1939,6 +1989,10 @@ private struct CommentImageThumbnailGrid: View {
                         showImage(visibleImages, index)
                     } label: {
                         CommentImageThumbnail(image: image, imageCount: visibleImages.count)
+                            .matchedTransitionSource(
+                                id: NativeImageViewerTransitionID.image(image, index: index, scope: transitionScope),
+                                in: transitionNamespace
+                            )
                     }
                     .buttonStyle(.plain)
                 }
@@ -2015,171 +2069,7 @@ private struct CommentImageSelection: Identifiable {
     let id = UUID()
     let images: [DynamicImageItem]
     let initialIndex: Int
-}
-
-private struct CommentImageViewer: View {
-    let images: [DynamicImageItem]
-    let initialIndex: Int
-    @Environment(\.dismiss) private var dismiss
-    @State private var selection: Int
-    @State private var dragOffset: CGSize = .zero
-    @State private var isPresented = false
-    @State private var isClosing = false
-
-    init(images: [DynamicImageItem], initialIndex: Int) {
-        self.images = images
-        self.initialIndex = initialIndex
-        _selection = State(initialValue: initialIndex)
-    }
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Color.black
-                .opacity(backgroundOpacity)
-                .ignoresSafeArea()
-
-            TabView(selection: $selection) {
-                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
-                    CommentViewerImage(image: image) {
-                        close()
-                    }
-                    .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
-            .offset(y: dragOffset.height)
-            .scaleEffect(viewerScale * presentationScale)
-            .opacity(presentationOpacity)
-
-            if images.count > 1 {
-                Text("\(selection + 1) / \(images.count)")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.44))
-                    .clipShape(Capsule())
-                    .padding(.bottom, 22)
-                    .opacity(1 - dismissProgress)
-            }
-        }
-        .contentShape(Rectangle())
-        .simultaneousGesture(dragToDismissGesture)
-        .animation(.smooth(duration: 0.2), value: isPresented)
-        .animation(.smooth(duration: 0.16), value: isClosing)
-        .animation(.interactiveSpring(duration: 0.24, extraBounce: 0.08), value: dragOffset)
-        .onAppear {
-            isPresented = true
-        }
-        .preferredColorScheme(.dark)
-    }
-
-    private var dismissProgress: CGFloat {
-        min(abs(dragOffset.height) / 260, 1)
-    }
-
-    private var backgroundOpacity: Double {
-        Double(presentationOpacity) * Double(1 - dismissProgress * 0.72)
-    }
-
-    private var viewerScale: CGFloat {
-        1 - dismissProgress * 0.08
-    }
-
-    private var presentationOpacity: CGFloat {
-        isClosing ? 0 : (isPresented ? 1 : 0)
-    }
-
-    private var presentationScale: CGFloat {
-        isClosing ? 0.96 : (isPresented ? 1 : 0.96)
-    }
-
-    private func close() {
-        guard !isClosing else { return }
-        withAnimation(.smooth(duration: 0.16)) {
-            isClosing = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            dismiss()
-        }
-    }
-
-    private var dragToDismissGesture: some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
-            .onChanged { value in
-                let vertical = abs(value.translation.height)
-                let horizontal = abs(value.translation.width)
-                guard vertical > horizontal * 1.1 else {
-                    if dragOffset != .zero {
-                        dragOffset = .zero
-                    }
-                    return
-                }
-                dragOffset = value.translation
-            }
-            .onEnded { value in
-                let vertical = abs(value.translation.height)
-                let horizontal = abs(value.translation.width)
-                let predictedVertical = abs(value.predictedEndTranslation.height)
-                let shouldDismiss = vertical > horizontal * 1.1
-                    && (vertical > 150 || predictedVertical > 260)
-
-                if shouldDismiss {
-                    close()
-                } else {
-                    withAnimation(.interactiveSpring(duration: 0.26, extraBounce: 0.1)) {
-                        dragOffset = .zero
-                    }
-                }
-            }
-    }
-}
-
-private struct CommentViewerImage: View {
-    let image: DynamicImageItem
-    let close: () -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            let imageWidth = proxy.size.width
-            let imageHeight = max(imageWidth / CGFloat(max(image.aspectRatio, 0.1)), 1)
-            let verticalInset = max((proxy.size.height - imageHeight) / 2, 0)
-
-            ScrollView(.vertical) {
-                imageContent(width: imageWidth, height: imageHeight)
-                    .padding(.top, verticalInset)
-                    .padding(.bottom, verticalInset)
-            }
-            .scrollIndicators(.hidden)
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-    }
-
-    @ViewBuilder
-    private func imageContent(width: CGFloat, height: CGFloat) -> some View {
-        CachedRemoteImage(
-            url: image.normalizedURL
-                .map { $0.biliImageThumbnailURL(maxSide: 2400) }
-                .flatMap(URL.init(string:)),
-            targetPixelSize: 2400
-        ) { loadedImage in
-            loadedImage
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: close)
-        } placeholder: {
-            ProgressView()
-                .tint(.white)
-                .frame(width: width, height: max(height, 220))
-        }
-    }
+    let transitionID: String
 }
 
 private enum CommentTextBuilder {
@@ -2281,12 +2171,17 @@ private struct CommentRepliesSheet: View {
     @ObservedObject var viewModel: VideoDetailViewModel
     @State private var dialogReply: Comment?
     @State private var imageSelection: CommentImageSelection?
+    @Namespace private var imageTransitionNamespace
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    CommentReplyRootView(comment: rootComment, showImages: presentImages)
+                    CommentReplyRootView(
+                        comment: rootComment,
+                        transitionNamespace: imageTransitionNamespace,
+                        showImages: presentImages
+                    )
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
 
@@ -2307,14 +2202,23 @@ private struct CommentRepliesSheet: View {
             CommentDialogSheet(rootComment: rootComment, focusReply: reply, viewModel: viewModel)
         }
         .fullScreenCover(item: $imageSelection) { selection in
-            CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
+            NativeImageViewer(
+                images: selection.images,
+                initialIndex: selection.initialIndex,
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
+            )
         }
     }
 
-    private func presentImages(_ images: [DynamicImageItem]) {
+    private func presentImages(_ images: [DynamicImageItem], transitionID: String) {
         let visibleImages = images.filter { $0.normalizedURL != nil }
         guard !visibleImages.isEmpty else { return }
-        imageSelection = CommentImageSelection(images: visibleImages, initialIndex: 0)
+        imageSelection = CommentImageSelection(
+            images: visibleImages,
+            initialIndex: 0,
+            transitionID: transitionID
+        )
     }
 
     @ViewBuilder
@@ -2344,6 +2248,7 @@ private struct CommentRepliesSheet: View {
                 ForEach(replies) { reply in
                     CommentReplyDetailRow(
                         reply: reply,
+                        transitionNamespace: imageTransitionNamespace,
                         showDialog: canShowDialog(for: reply) ? {
                             dialogReply = reply
                         } : nil,
@@ -2403,7 +2308,8 @@ private struct CommentRepliesSheet: View {
 
 private struct CommentReplyRootView: View {
     let comment: Comment
-    let showImages: ([DynamicImageItem]) -> Void
+    let transitionNamespace: Namespace.ID
+    let showImages: ([DynamicImageItem], String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -2426,7 +2332,12 @@ private struct CommentReplyRootView: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(images: comment.content?.pictures ?? [], showImages: showImages)
+                CommentImageButton(
+                    images: comment.content?.pictures ?? [],
+                    transitionScope: comment.id.description,
+                    transitionNamespace: transitionNamespace,
+                    showImages: showImages
+                )
             }
         }
     }
@@ -2434,8 +2345,9 @@ private struct CommentReplyRootView: View {
 
 private struct CommentReplyDetailRow: View {
     let reply: Comment
+    let transitionNamespace: Namespace.ID
     let showDialog: (() -> Void)?
-    let showImages: ([DynamicImageItem]) -> Void
+    let showImages: ([DynamicImageItem], String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -2465,7 +2377,12 @@ private struct CommentReplyDetailRow: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(images: reply.content?.pictures ?? [], showImages: showImages)
+                CommentImageButton(
+                    images: reply.content?.pictures ?? [],
+                    transitionScope: reply.id.description,
+                    transitionNamespace: transitionNamespace,
+                    showImages: showImages
+                )
 
                 if let showDialog {
                     Button(action: showDialog) {
@@ -2487,12 +2404,17 @@ private struct CommentDialogSheet: View {
     let focusReply: Comment
     @ObservedObject var viewModel: VideoDetailViewModel
     @State private var imageSelection: CommentImageSelection?
+    @Namespace private var imageTransitionNamespace
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    CommentReplyRootView(comment: rootComment, showImages: presentImages)
+                    CommentReplyRootView(
+                        comment: rootComment,
+                        transitionNamespace: imageTransitionNamespace,
+                        showImages: presentImages
+                    )
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
 
@@ -2510,14 +2432,23 @@ private struct CommentDialogSheet: View {
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $imageSelection) { selection in
-            CommentImageViewer(images: selection.images, initialIndex: selection.initialIndex)
+            NativeImageViewer(
+                images: selection.images,
+                initialIndex: selection.initialIndex,
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
+            )
         }
     }
 
-    private func presentImages(_ images: [DynamicImageItem]) {
+    private func presentImages(_ images: [DynamicImageItem], transitionID: String) {
         let visibleImages = images.filter { $0.normalizedURL != nil }
         guard !visibleImages.isEmpty else { return }
-        imageSelection = CommentImageSelection(images: visibleImages, initialIndex: 0)
+        imageSelection = CommentImageSelection(
+            images: visibleImages,
+            initialIndex: 0,
+            transitionID: transitionID
+        )
     }
 
     @ViewBuilder
@@ -2548,6 +2479,7 @@ private struct CommentDialogSheet: View {
                     CommentDialogRow(
                         reply: reply,
                         isFocused: reply.id == focusReply.id,
+                        transitionNamespace: imageTransitionNamespace,
                         showImages: presentImages
                     )
                         .padding(.horizontal, 16)
@@ -2569,7 +2501,8 @@ private struct CommentDialogSheet: View {
 private struct CommentDialogRow: View {
     let reply: Comment
     let isFocused: Bool
-    let showImages: ([DynamicImageItem]) -> Void
+    let transitionNamespace: Namespace.ID
+    let showImages: ([DynamicImageItem], String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -2599,7 +2532,12 @@ private struct CommentDialogRow: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(images: reply.content?.pictures ?? [], showImages: showImages)
+                CommentImageButton(
+                    images: reply.content?.pictures ?? [],
+                    transitionScope: reply.id.description,
+                    transitionNamespace: transitionNamespace,
+                    showImages: showImages
+                )
             }
         }
         .padding(.vertical, 12)

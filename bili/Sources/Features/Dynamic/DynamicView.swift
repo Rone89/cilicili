@@ -118,6 +118,7 @@ private struct DynamicFeedCard: View {
     let api: BiliAPIClient
     @State private var imageSelection: DynamicImageSelection?
     @State private var commentsTarget: DynamicFeedItem?
+    @Namespace private var imageTransitionNamespace
     @State private var isTextExpanded = false
     @State private var isLiked: Bool
     @State private var likeCount: Int
@@ -164,10 +165,11 @@ private struct DynamicFeedCard: View {
             }
         }
         .fullScreenCover(item: $imageSelection) { selection in
-            DynamicImageViewer(
+            NativeImageViewer(
                 images: imageItems,
                 initialIndex: selection.index,
-                sourceFrame: selection.sourceFrame
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
             )
         }
         .sheet(item: $commentsTarget) { target in
@@ -219,8 +221,12 @@ private struct DynamicFeedCard: View {
             }
 
             if !imageItems.isEmpty {
-                DynamicImageGrid(images: imageItems) { index, sourceFrame in
-                    presentImage(index: index, sourceFrame: sourceFrame)
+                DynamicImageGrid(
+                    images: imageItems,
+                    transitionScope: item.id,
+                    transitionNamespace: imageTransitionNamespace
+                ) { index, transitionID in
+                    presentImage(index: index, transitionID: transitionID)
                 }
             }
 
@@ -252,8 +258,12 @@ private struct DynamicFeedCard: View {
             topLevelText
 
             if !imageItems.isEmpty {
-                DynamicImageGrid(images: imageItems) { index, sourceFrame in
-                    presentImage(index: index, sourceFrame: sourceFrame)
+                DynamicImageGrid(
+                    images: imageItems,
+                    transitionScope: item.id,
+                    transitionNamespace: imageTransitionNamespace
+                ) { index, transitionID in
+                    presentImage(index: index, transitionID: transitionID)
                 }
             }
 
@@ -411,12 +421,8 @@ private struct DynamicFeedCard: View {
         }
     }
 
-    private func presentImage(index: Int, sourceFrame: CGRect?) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            imageSelection = DynamicImageSelection(index: index, sourceFrame: sourceFrame)
-        }
+    private func presentImage(index: Int, transitionID: String) {
+        imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
     }
 }
 
@@ -1659,6 +1665,7 @@ private struct DynamicCommentErrorView: View {
 private struct DynamicOriginalPreview: View {
     let item: DynamicOriginalItem
     @State private var imageSelection: DynamicImageSelection?
+    @Namespace private var imageTransitionNamespace
 
     private var video: VideoItem? {
         item.archive?.asVideoItem(author: item.author)
@@ -1715,10 +1722,11 @@ private struct DynamicOriginalPreview: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .fullScreenCover(item: $imageSelection) { selection in
-            DynamicImageViewer(
+            NativeImageViewer(
                 images: imageItems,
                 initialIndex: selection.index,
-                sourceFrame: selection.sourceFrame
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace
             )
         }
     }
@@ -1766,8 +1774,12 @@ private struct DynamicOriginalPreview: View {
                 }
 
                 if !imageItems.isEmpty {
-                    DynamicImageGrid(images: imageItems) { index, sourceFrame in
-                        presentImage(index: index, sourceFrame: sourceFrame)
+                    DynamicImageGrid(
+                        images: imageItems,
+                        transitionScope: item.id,
+                        transitionNamespace: imageTransitionNamespace
+                    ) { index, transitionID in
+                        presentImage(index: index, transitionID: transitionID)
                     }
                 }
             }
@@ -1793,12 +1805,8 @@ private struct DynamicOriginalPreview: View {
         .contentShape(Rectangle())
     }
 
-    private func presentImage(index: Int, sourceFrame: CGRect?) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            imageSelection = DynamicImageSelection(index: index, sourceFrame: sourceFrame)
-        }
+    private func presentImage(index: Int, transitionID: String) {
+        imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
     }
 }
 
@@ -1820,14 +1828,16 @@ private struct DynamicForwardUnavailableView: View {
 
 private struct DynamicImageSelection: Identifiable {
     let index: Int
-    let sourceFrame: CGRect?
+    let transitionID: String
 
     var id: Int { index }
 }
 
 private struct DynamicImageGrid: View {
     let images: [DynamicImageItem]
-    let openImage: (Int, CGRect?) -> Void
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
+    let openImage: (Int, String) -> Void
     private static let spacing: CGFloat = 4
 
     private var displayedImages: Array<(offset: Int, element: DynamicImageItem)> {
@@ -1853,6 +1863,8 @@ private struct DynamicImageGrid: View {
                     image: image.element,
                     index: image.offset,
                     displayMode: .single,
+                    transitionScope: transitionScope,
+                    transitionNamespace: transitionNamespace,
                     openImage: openImage
                 )
                 .frame(width: imageWidth, height: imageHeight)
@@ -1871,6 +1883,8 @@ private struct DynamicImageGrid: View {
                         image: image,
                         index: index,
                         displayMode: .square,
+                        transitionScope: transitionScope,
+                        transitionNamespace: transitionNamespace,
                         openImage: openImage
                     ) {
                         if index == 8, images.count > 9 {
@@ -1905,44 +1919,39 @@ private struct DynamicImageButton<Overlay: View>: View {
     let image: DynamicImageItem
     let index: Int
     let displayMode: DynamicImageCell.DisplayMode
-    let openImage: (Int, CGRect?) -> Void
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
+    let openImage: (Int, String) -> Void
     @ViewBuilder let overlay: () -> Overlay
-    @State private var sourceFrame: CGRect = .zero
     @State private var isPressed = false
 
     init(
         image: DynamicImageItem,
         index: Int,
         displayMode: DynamicImageCell.DisplayMode,
-        openImage: @escaping (Int, CGRect?) -> Void,
+        transitionScope: String,
+        transitionNamespace: Namespace.ID,
+        openImage: @escaping (Int, String) -> Void,
         @ViewBuilder overlay: @escaping () -> Overlay
     ) {
         self.image = image
         self.index = index
         self.displayMode = displayMode
+        self.transitionScope = transitionScope
+        self.transitionNamespace = transitionNamespace
         self.openImage = openImage
         self.overlay = overlay
     }
 
     var body: some View {
         Button {
-            openImage(index, sourceFrame == .zero ? nil : sourceFrame)
+            openImage(index, transitionID)
         } label: {
             DynamicImageCell(image: image, displayMode: displayMode)
                 .overlay(overlay())
                 .scaleEffect(isPressed ? 0.985 : 1)
                 .opacity(isPressed ? 0.86 : 1)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onAppear {
-                                sourceFrame = proxy.frame(in: .global)
-                            }
-                            .onChange(of: proxy.frame(in: .global)) { _, frame in
-                                sourceFrame = frame
-                            }
-                    }
-                )
+                .matchedTransitionSource(id: transitionID, in: transitionNamespace)
         }
         .buttonStyle(.plain)
         .simultaneousGesture(
@@ -1961,6 +1970,10 @@ private struct DynamicImageButton<Overlay: View>: View {
                 }
         )
     }
+
+    private var transitionID: String {
+        NativeImageViewerTransitionID.image(image, index: index, scope: transitionScope)
+    }
 }
 
 private extension DynamicImageButton where Overlay == EmptyView {
@@ -1968,12 +1981,16 @@ private extension DynamicImageButton where Overlay == EmptyView {
         image: DynamicImageItem,
         index: Int,
         displayMode: DynamicImageCell.DisplayMode,
-        openImage: @escaping (Int, CGRect?) -> Void
+        transitionScope: String,
+        transitionNamespace: Namespace.ID,
+        openImage: @escaping (Int, String) -> Void
     ) {
         self.init(
             image: image,
             index: index,
             displayMode: displayMode,
+            transitionScope: transitionScope,
+            transitionNamespace: transitionNamespace,
             openImage: openImage
         ) {
             EmptyView()
@@ -2038,245 +2055,6 @@ private struct DynamicImageCell: View {
             return CGFloat(max(image.aspectRatio, 0.1))
         case .square:
             return 1
-        }
-    }
-}
-
-private struct DynamicImageViewer: View {
-    let images: [DynamicImageItem]
-    let initialIndex: Int
-    let sourceFrame: CGRect?
-    @Environment(\.dismiss) private var dismiss
-    @State private var selection: Int
-    @State private var dragOffset: CGSize = .zero
-    @State private var isPresented = false
-    @State private var isClosing = false
-    @State private var didStartPresentation = false
-
-    init(images: [DynamicImageItem], initialIndex: Int, sourceFrame: CGRect?) {
-        self.images = images
-        self.initialIndex = initialIndex
-        self.sourceFrame = sourceFrame
-        _selection = State(initialValue: initialIndex)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                Color.black
-                    .opacity(backgroundOpacity)
-                    .ignoresSafeArea()
-
-                TabView(selection: $selection) {
-                    ForEach(Array(images.enumerated()), id: \.offset) { index, image in
-                        DynamicViewerImage(image: image) {
-                            close()
-                        }
-                        .tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
-                .modifier(
-                    DynamicImageViewerPresentationModifier(
-                        sourceFrame: sourceFrame,
-                        containerSize: proxy.size,
-                        progress: presentationProgress,
-                        dismissProgress: dismissProgress,
-                        dragOffset: dragOffset
-                    )
-                )
-                .opacity(presentationOpacity)
-
-                if images.count > 1 {
-                    Text("\(selection + 1) / \(images.count)")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.92))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.44))
-                        .clipShape(Capsule())
-                        .padding(.bottom, 22)
-                        .opacity(indicatorOpacity)
-                }
-            }
-            .contentShape(Rectangle())
-            .simultaneousGesture(dragToDismissGesture)
-        }
-        .background(Color.black.opacity(backgroundOpacity).ignoresSafeArea())
-        .animation(.smooth(duration: 0.28), value: isPresented)
-        .animation(.smooth(duration: 0.2), value: isClosing)
-        .onAppear {
-            beginPresentation()
-        }
-        .preferredColorScheme(.dark)
-    }
-
-    private var dismissProgress: CGFloat {
-        min(abs(dragOffset.height) / 260, 1)
-    }
-
-    private var backgroundOpacity: Double {
-        Double(presentationProgress) * Double(1 - dismissProgress * 0.78)
-    }
-
-    private var presentationProgress: CGFloat {
-        isClosing ? 0 : (isPresented ? 1 : 0)
-    }
-
-    private var presentationOpacity: CGFloat {
-        guard didStartPresentation else { return 0 }
-        return max(presentationProgress, 0.01)
-    }
-
-    private var indicatorOpacity: CGFloat {
-        presentationProgress * (1 - dismissProgress)
-    }
-
-    private func beginPresentation() {
-        didStartPresentation = true
-        withAnimation(.smooth(duration: 0.30)) {
-            isPresented = true
-        }
-    }
-
-    private func close() {
-        guard !isClosing else { return }
-        withAnimation(.smooth(duration: 0.22)) {
-            isClosing = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 210_000_000)
-            dismiss()
-        }
-    }
-
-    private var dragToDismissGesture: some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
-            .onChanged { value in
-                let vertical = abs(value.translation.height)
-                let horizontal = abs(value.translation.width)
-                guard vertical > horizontal * 1.1 else {
-                    if dragOffset != .zero {
-                        withAnimation(.interactiveSpring(duration: 0.22, extraBounce: 0.06)) {
-                            dragOffset = .zero
-                        }
-                    }
-                    return
-                }
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    dragOffset = value.translation
-                }
-            }
-            .onEnded { value in
-                let vertical = abs(value.translation.height)
-                let horizontal = abs(value.translation.width)
-                let predictedVertical = abs(value.predictedEndTranslation.height)
-                let shouldDismiss = vertical > horizontal * 1.1
-                    && (vertical > 150 || predictedVertical > 260)
-
-                if shouldDismiss {
-                    close()
-                } else {
-                    withAnimation(.interactiveSpring(duration: 0.28, extraBounce: 0.12)) {
-                        dragOffset = .zero
-                    }
-                }
-            }
-    }
-}
-
-private struct DynamicImageViewerPresentationModifier: ViewModifier {
-    let sourceFrame: CGRect?
-    let containerSize: CGSize
-    let progress: CGFloat
-    let dismissProgress: CGFloat
-    let dragOffset: CGSize
-
-    func body(content: Content) -> some View {
-        let resolved = resolvedTransform
-        content
-            .scaleEffect(resolved.scale)
-            .offset(x: resolved.offset.width, y: resolved.offset.height)
-    }
-
-    private var resolvedTransform: (scale: CGFloat, offset: CGSize) {
-        let startScale = sourceScale
-        let startOffset = sourceOffset
-        let easedProgress = progress
-        let dragScale = 1 - dismissProgress * 0.10
-        let scale = (startScale + (1 - startScale) * easedProgress) * dragScale
-        let openingOffset = CGSize(
-            width: startOffset.width * (1 - easedProgress),
-            height: startOffset.height * (1 - easedProgress)
-        )
-        return (
-            scale: scale,
-            offset: CGSize(
-                width: openingOffset.width + dragOffset.width * (1 - dismissProgress * 0.18),
-                height: openingOffset.height + dragOffset.height
-            )
-        )
-    }
-
-    private var sourceScale: CGFloat {
-        guard let sourceFrame else { return 0.96 }
-        let widthScale = sourceFrame.width / max(containerSize.width, 1)
-        let heightScale = sourceFrame.height / max(containerSize.height, 1)
-        return min(max(max(widthScale, heightScale), 0.18), 0.96)
-    }
-
-    private var sourceOffset: CGSize {
-        guard let sourceFrame else { return .zero }
-        let sourceCenter = CGPoint(x: sourceFrame.midX, y: sourceFrame.midY)
-        let targetCenter = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
-        return CGSize(width: sourceCenter.x - targetCenter.x, height: sourceCenter.y - targetCenter.y)
-    }
-}
-
-private struct DynamicViewerImage: View {
-    let image: DynamicImageItem
-    let close: () -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            let imageWidth = proxy.size.width
-            let imageHeight = max(imageWidth / CGFloat(max(image.aspectRatio, 0.1)), 1)
-            let verticalInset = max((proxy.size.height - imageHeight) / 2, 0)
-
-            ScrollView(.vertical) {
-                imageContent(width: imageWidth, height: imageHeight)
-                    .padding(.top, verticalInset)
-                    .padding(.bottom, verticalInset)
-            }
-            .scrollIndicators(.hidden)
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-    }
-
-    @ViewBuilder
-    private func imageContent(width: CGFloat, height: CGFloat) -> some View {
-        CachedRemoteImage(
-            url: image.normalizedURL
-                .map { $0.biliImageThumbnailURL(maxSide: 2400) }
-                .flatMap(URL.init(string:)),
-            targetPixelSize: 2400
-        ) { loadedImage in
-            loadedImage
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: close)
-        } placeholder: {
-            ProgressView()
-                .tint(.white)
-                .frame(width: width, height: max(height, 220))
         }
     }
 }
