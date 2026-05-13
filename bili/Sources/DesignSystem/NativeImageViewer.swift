@@ -9,6 +9,7 @@ struct NativeImageViewer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
     @State private var isClosing = false
+    @State private var keepChromeLocked = true
 
     init(
         images: [DynamicImageItem],
@@ -59,12 +60,14 @@ struct NativeImageViewer: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .navigationTransition(.zoom(sourceID: transitionID, in: transitionNamespace))
-        .background(NativeImageViewerChromeLock())
+        .background(NativeImageViewerChromeLock(isActive: keepChromeLocked))
     }
 
     private func closeViewer() {
         guard !isClosing else { return }
         isClosing = true
+        keepChromeLocked = true
+        NativeImageViewerChromeLockStore.shared.extendLock()
         dismiss()
     }
 }
@@ -204,19 +207,31 @@ private struct ZoomableUIImageView: UIViewRepresentable {
 }
 
 private struct NativeImageViewerChromeLock: UIViewControllerRepresentable {
+    let isActive: Bool
+
     func makeUIViewController(context _: Context) -> Controller {
         Controller()
     }
 
     func updateUIViewController(_ uiViewController: Controller, context _: Context) {
-        uiViewController.lockChrome()
+        uiViewController.update(isActive: isActive)
     }
 
     final class Controller: UIViewController {
         private var didLockChrome = false
+        private var isActive = true
+        private var refreshWorkItem: DispatchWorkItem?
+        private var restoreObserver: NSObjectProtocol?
 
         override func loadView() {
             view = PassthroughView()
+        }
+
+        deinit {
+            if let restoreObserver {
+                NotificationCenter.default.removeObserver(restoreObserver)
+            }
+            refreshWorkItem?.cancel()
         }
 
         override func viewWillAppear(_ animated: Bool) {
@@ -234,20 +249,58 @@ private struct NativeImageViewerChromeLock: UIViewControllerRepresentable {
             unlockChromeAfterDismissal()
         }
 
+        func update(isActive: Bool) {
+            self.isActive = isActive
+            if isActive {
+                lockChrome()
+            } else {
+                unlockChromeAfterDismissal()
+            }
+        }
+
         func lockChrome() {
+            guard isActive else { return }
             if didLockChrome {
                 NativeImageViewerChromeLockStore.shared.hideCapturedChrome()
+                scheduleRefresh()
                 return
             }
 
             didLockChrome = true
             NativeImageViewerChromeLockStore.shared.lock(from: self)
+            observeRestoreIfNeeded()
+            scheduleRefresh()
         }
 
         private func unlockChromeAfterDismissal() {
             guard didLockChrome else { return }
-            didLockChrome = false
+            NativeImageViewerChromeLockStore.shared.extendLock()
             NativeImageViewerChromeLockStore.shared.unlockAfterDismissal()
+            scheduleRefresh()
+        }
+
+        private func scheduleRefresh() {
+            refreshWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.didLockChrome else { return }
+                NativeImageViewerChromeLockStore.shared.hideCapturedChrome()
+                self.scheduleRefresh()
+            }
+            refreshWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: workItem)
+        }
+
+        private func observeRestoreIfNeeded() {
+            guard restoreObserver == nil else { return }
+            restoreObserver = NotificationCenter.default.addObserver(
+                forName: NativeImageViewerChromeLockStore.didRestoreNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.didLockChrome = false
+                self?.refreshWorkItem?.cancel()
+                self?.refreshWorkItem = nil
+            }
         }
     }
 
@@ -267,29 +320,40 @@ private struct NativeImageViewerChromeLock: UIViewControllerRepresentable {
 @MainActor
 private final class NativeImageViewerChromeLockStore {
     static let shared = NativeImageViewerChromeLockStore()
+    nonisolated static let didRestoreNotification = Notification.Name("NativeImageViewerChromeLockStore.didRestore")
 
     private var navigationStates: [ObjectIdentifier: NavigationState] = [:]
     private var tabStates: [ObjectIdentifier: TabState] = [:]
     private var unlockWorkItem: DispatchWorkItem?
+    private weak var sourceController: UIViewController?
 
     func lock(from controller: UIViewController) {
         unlockWorkItem?.cancel()
         unlockWorkItem = nil
+        sourceController = controller
 
-        if navigationStates.isEmpty && tabStates.isEmpty {
-            captureChrome(from: controller)
-        }
+        captureChrome(from: controller)
 
         hideCapturedChrome()
     }
 
     func hideCapturedChrome() {
+        if let sourceController {
+            captureChrome(from: sourceController)
+        }
+
         navigationStates.values.forEach { state in
             state.controller?.navigationBar.alpha = 0
         }
         tabStates.values.forEach { state in
             state.controller?.tabBar.alpha = 0
         }
+    }
+
+    func extendLock() {
+        unlockWorkItem?.cancel()
+        unlockWorkItem = nil
+        hideCapturedChrome()
     }
 
     func unlockAfterDismissal() {
@@ -326,18 +390,22 @@ private final class NativeImageViewerChromeLockStore {
 
         for navigationController in navigationControllers {
             let id = ObjectIdentifier(navigationController)
-            navigationStates[id] = NavigationState(
-                controller: navigationController,
-                navigationBarAlpha: navigationController.navigationBar.alpha
-            )
+            if navigationStates[id] == nil {
+                navigationStates[id] = NavigationState(
+                    controller: navigationController,
+                    navigationBarAlpha: navigationController.navigationBar.alpha
+                )
+            }
         }
 
         for tabController in tabControllers {
             let id = ObjectIdentifier(tabController)
-            tabStates[id] = TabState(
-                controller: tabController,
-                tabBarAlpha: tabController.tabBar.alpha
-            )
+            if tabStates[id] == nil {
+                tabStates[id] = TabState(
+                    controller: tabController,
+                    tabBarAlpha: tabController.tabBar.alpha
+                )
+            }
         }
     }
 
@@ -383,6 +451,8 @@ private final class NativeImageViewerChromeLockStore {
         navigationStates.removeAll()
         tabStates.removeAll()
         unlockWorkItem = nil
+        sourceController = nil
+        NotificationCenter.default.post(name: Self.didRestoreNotification, object: nil)
     }
 
     private final class NavigationState {

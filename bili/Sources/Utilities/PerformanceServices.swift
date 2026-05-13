@@ -1666,12 +1666,13 @@ final class CachedRemoteImageLoader: ObservableObject {
             image = nil
             return
         }
-        image = nil
 
         if let cachedImage = await RemoteImageCache.shared.image(for: url, targetPixelSize: targetPixelSize) {
             image = cachedImage
             return
         }
+
+        image = nil
 
         task = Task(priority: .utility) { [weak self] in
             guard let loadedImage = await RemoteImageCache.shared.load(url: url, scale: scale, targetPixelSize: targetPixelSize),

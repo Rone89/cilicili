@@ -1757,12 +1757,6 @@ private struct DynamicOriginalPreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.tertiarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color(.separator).opacity(0.42))
-                .frame(width: 3)
-                .padding(.vertical, 12)
-        }
         .fullScreenCover(item: $imageSelection) { selection in
             NativeImageViewer(
                 images: imageItems,
@@ -1830,18 +1824,14 @@ private struct DynamicOriginalPreview: View {
 
     private func originalAuthorIdentity(_ author: DynamicAuthor) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: "arrowshape.turn.up.right.fill")
-                .font(.caption2.weight(.bold))
+            Text("转发动态")
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             Text("@\(author.name ?? "Unknown")")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Text("转发了动态")
-                .font(.caption)
-                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .contentShape(Rectangle())
@@ -2086,7 +2076,6 @@ private struct DynamicImageButton<Overlay: View>: View {
     let transitionNamespace: Namespace.ID
     let openImage: (Int, String) -> Void
     @ViewBuilder let overlay: () -> Overlay
-    @State private var isPressed = false
 
     init(
         image: DynamicImageItem,
@@ -2112,26 +2101,9 @@ private struct DynamicImageButton<Overlay: View>: View {
         } label: {
             DynamicImageCell(image: image, displayMode: displayMode)
                 .overlay(overlay())
-                .scaleEffect(isPressed ? 0.985 : 1)
-                .opacity(isPressed ? 0.86 : 1)
                 .matchedTransitionSource(id: transitionID, in: transitionNamespace)
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !isPressed {
-                        withAnimation(.smooth(duration: 0.12)) {
-                            isPressed = true
-                        }
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.smooth(duration: 0.16)) {
-                        isPressed = false
-                    }
-                }
-        )
     }
 
     private var transitionID: String {
@@ -2235,7 +2207,7 @@ private struct DynamicImageCell: View {
         case .single, .hero(_, _):
             return 1280
         case .square(_):
-            return 720
+            return 1280
         }
     }
 }
