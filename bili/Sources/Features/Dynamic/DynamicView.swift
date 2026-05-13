@@ -264,14 +264,14 @@ private struct DynamicFeedCard: View {
 
     private var separatedStoryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if shouldLeadWithImageHero {
-                imageHeroPreview
+            if shouldLeadWithImageGrid {
+                imageSquareGrid
             }
 
             topLevelText
 
-            if !shouldLeadWithImageHero, !imageItems.isEmpty {
-                imageHeroPreview
+            if !shouldLeadWithImageGrid, !imageItems.isEmpty {
+                imageSquareGrid
             }
 
             if let original = item.original {
@@ -293,7 +293,7 @@ private struct DynamicFeedCard: View {
         .shadow(color: .black.opacity(0.045), radius: 14, y: 5)
     }
 
-    private var shouldLeadWithImageHero: Bool {
+    private var shouldLeadWithImageGrid: Bool {
         !imageItems.isEmpty
             && video == nil
             && live == nil
@@ -301,12 +301,11 @@ private struct DynamicFeedCard: View {
             && !item.isForward
     }
 
-    private var imageHeroPreview: some View {
-        DynamicImageHeroPreview(
+    private var imageSquareGrid: some View {
+        DynamicImageSquareGrid(
             images: imageItems,
             transitionScope: item.id,
-            transitionNamespace: imageTransitionNamespace,
-            cornerRadius: 22
+            transitionNamespace: imageTransitionNamespace
         ) { index, transitionID in
             presentImage(index: index, transitionID: transitionID)
         }
@@ -1817,12 +1816,10 @@ private struct DynamicOriginalPreview: View {
                 }
 
                 if !imageItems.isEmpty {
-                    DynamicImageHeroPreview(
+                    DynamicImageSquareGrid(
                         images: imageItems,
                         transitionScope: item.id,
-                        transitionNamespace: imageTransitionNamespace,
-                        cornerRadius: 12,
-                        aspectRatio: 16 / 9
+                        transitionNamespace: imageTransitionNamespace
                     ) { index, transitionID in
                         presentImage(index: index, transitionID: transitionID)
                     }
@@ -1950,6 +1947,55 @@ private struct DynamicImageHeroPreview: View {
     }
 }
 
+private struct DynamicImageSquareGrid: View {
+    let images: [DynamicImageItem]
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
+    let openImage: (Int, String) -> Void
+    private static let spacing: CGFloat = 5
+
+    private var displayedImages: Array<(offset: Int, element: DynamicImageItem)> {
+        Array(images.prefix(9).enumerated())
+    }
+
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: Self.spacing),
+            count: 3
+        )
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
+            ForEach(displayedImages, id: \.offset) { index, image in
+                DynamicImageButton(
+                    image: image,
+                    index: index,
+                    displayMode: .square(cornerRadius: 12),
+                    transitionScope: transitionScope,
+                    transitionNamespace: transitionNamespace,
+                    openImage: openImage
+                ) {
+                    if index == 8, images.count > 9 {
+                        ZStack {
+                            Color.black.opacity(0.46)
+                            Text("+\(images.count - 8)")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .accessibilityLabel(accessibilityTitle(for: index))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func accessibilityTitle(for index: Int) -> String {
+        images.count > 1 ? "查看第 \(index + 1) 张图片，共 \(images.count) 张" : "查看图片"
+    }
+}
+
 private struct DynamicImageGrid: View {
     let images: [DynamicImageItem]
     let transitionScope: String
@@ -1999,7 +2045,7 @@ private struct DynamicImageGrid: View {
                     DynamicImageButton(
                         image: image,
                         index: index,
-                        displayMode: .square,
+                        displayMode: .square(cornerRadius: 8),
                         transitionScope: transitionScope,
                         transitionNamespace: transitionNamespace,
                         openImage: openImage
@@ -2118,7 +2164,7 @@ private extension DynamicImageButton where Overlay == EmptyView {
 private struct DynamicImageCell: View {
     enum DisplayMode {
         case single
-        case square
+        case square(cornerRadius: CGFloat)
         case hero(aspectRatio: CGFloat, cornerRadius: CGFloat)
     }
 
@@ -2133,7 +2179,7 @@ private struct DynamicImageCell: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        case .square:
+        case .square(let cornerRadius):
             GeometryReader { proxy in
                 let side = proxy.size.width
                 imageContent
@@ -2141,7 +2187,7 @@ private struct DynamicImageCell: View {
             }
             .aspectRatio(1, contentMode: .fit)
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         case .hero(let aspectRatio, let cornerRadius):
             imageContent
                 .aspectRatio(aspectRatio, contentMode: .fit)
@@ -2177,7 +2223,7 @@ private struct DynamicImageCell: View {
         switch displayMode {
         case .single:
             return CGFloat(max(image.aspectRatio, 0.1))
-        case .square:
+        case .square(_):
             return 1
         case .hero(let aspectRatio, _):
             return aspectRatio
@@ -2188,7 +2234,7 @@ private struct DynamicImageCell: View {
         switch displayMode {
         case .single, .hero(_, _):
             return 1280
-        case .square:
+        case .square(_):
             return 720
         }
     }

@@ -8,6 +8,7 @@ struct NativeImageViewer: View {
     let transitionNamespace: Namespace.ID
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
+    @State private var isClosing = false
 
     init(
         images: [DynamicImageItem],
@@ -30,7 +31,7 @@ struct NativeImageViewer: View {
             TabView(selection: $selection) {
                 ForEach(Array(images.enumerated()), id: \.offset) { index, image in
                     RemoteZoomableImage(image: image) {
-                        dismiss()
+                        closeViewer()
                     }
                     .tag(index)
                 }
@@ -58,6 +59,13 @@ struct NativeImageViewer: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .navigationTransition(.zoom(sourceID: transitionID, in: transitionNamespace))
+        .background(NativeImageViewerChromeLock())
+    }
+
+    private func closeViewer() {
+        guard !isClosing else { return }
+        isClosing = true
+        dismiss()
     }
 }
 
@@ -191,6 +199,209 @@ private struct ZoomableUIImageView: UIViewRepresentable {
                 height: height
             )
             scrollView.zoom(to: rect, animated: true)
+        }
+    }
+}
+
+private struct NativeImageViewerChromeLock: UIViewControllerRepresentable {
+    func makeUIViewController(context _: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.lockChrome()
+    }
+
+    final class Controller: UIViewController {
+        private var didLockChrome = false
+
+        override func loadView() {
+            view = PassthroughView()
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            lockChrome()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            lockChrome()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            unlockChromeAfterDismissal()
+        }
+
+        func lockChrome() {
+            if didLockChrome {
+                NativeImageViewerChromeLockStore.shared.hideCapturedChrome()
+                return
+            }
+
+            didLockChrome = true
+            NativeImageViewerChromeLockStore.shared.lock(from: self)
+        }
+
+        private func unlockChromeAfterDismissal() {
+            guard didLockChrome else { return }
+            didLockChrome = false
+            NativeImageViewerChromeLockStore.shared.unlockAfterDismissal()
+        }
+    }
+
+    private final class PassthroughView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+}
+
+@MainActor
+private final class NativeImageViewerChromeLockStore {
+    static let shared = NativeImageViewerChromeLockStore()
+
+    private var navigationStates: [ObjectIdentifier: NavigationState] = [:]
+    private var tabStates: [ObjectIdentifier: TabState] = [:]
+    private var unlockWorkItem: DispatchWorkItem?
+
+    func lock(from controller: UIViewController) {
+        unlockWorkItem?.cancel()
+        unlockWorkItem = nil
+
+        if navigationStates.isEmpty && tabStates.isEmpty {
+            captureChrome(from: controller)
+        }
+
+        hideCapturedChrome()
+    }
+
+    func hideCapturedChrome() {
+        navigationStates.values.forEach { state in
+            state.controller?.navigationBar.alpha = 0
+        }
+        tabStates.values.forEach { state in
+            state.controller?.tabBar.alpha = 0
+        }
+    }
+
+    func unlockAfterDismissal() {
+        unlockWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.restoreChrome()
+        }
+        unlockWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42, execute: workItem)
+    }
+
+    private func captureChrome(from controller: UIViewController) {
+        var roots = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter { $0.isKeyWindow || !$0.isHidden }
+            .compactMap(\.rootViewController)
+
+        if let presenting = controller.presentingViewController {
+            roots.append(presenting)
+        }
+        roots.append(controller)
+
+        var navigationControllers: [UINavigationController] = []
+        var tabControllers: [UITabBarController] = []
+
+        for root in roots {
+            collectChromeControllers(
+                from: root,
+                navigationControllers: &navigationControllers,
+                tabControllers: &tabControllers
+            )
+        }
+
+        for navigationController in navigationControllers {
+            let id = ObjectIdentifier(navigationController)
+            navigationStates[id] = NavigationState(
+                controller: navigationController,
+                navigationBarAlpha: navigationController.navigationBar.alpha
+            )
+        }
+
+        for tabController in tabControllers {
+            let id = ObjectIdentifier(tabController)
+            tabStates[id] = TabState(
+                controller: tabController,
+                tabBarAlpha: tabController.tabBar.alpha
+            )
+        }
+    }
+
+    private func collectChromeControllers(
+        from controller: UIViewController,
+        navigationControllers: inout [UINavigationController],
+        tabControllers: inout [UITabBarController]
+    ) {
+        if let navigationController = controller as? UINavigationController {
+            navigationControllers.append(navigationController)
+        }
+
+        if let tabController = controller as? UITabBarController {
+            tabControllers.append(tabController)
+        }
+
+        for child in controller.children {
+            collectChromeControllers(
+                from: child,
+                navigationControllers: &navigationControllers,
+                tabControllers: &tabControllers
+            )
+        }
+
+        if let presented = controller.presentedViewController {
+            collectChromeControllers(
+                from: presented,
+                navigationControllers: &navigationControllers,
+                tabControllers: &tabControllers
+            )
+        }
+    }
+
+    private func restoreChrome() {
+        navigationStates.values.forEach { state in
+            state.controller?.navigationBar.alpha = state.navigationBarAlpha
+        }
+
+        tabStates.values.forEach { state in
+            state.controller?.tabBar.alpha = state.tabBarAlpha
+        }
+
+        navigationStates.removeAll()
+        tabStates.removeAll()
+        unlockWorkItem = nil
+    }
+
+    private final class NavigationState {
+        weak var controller: UINavigationController?
+        let navigationBarAlpha: CGFloat
+
+        init(controller: UINavigationController, navigationBarAlpha: CGFloat) {
+            self.controller = controller
+            self.navigationBarAlpha = navigationBarAlpha
+        }
+    }
+
+    private final class TabState {
+        weak var controller: UITabBarController?
+        let tabBarAlpha: CGFloat
+
+        init(controller: UITabBarController, tabBarAlpha: CGFloat) {
+            self.controller = controller
+            self.tabBarAlpha = tabBarAlpha
         }
     }
 }
