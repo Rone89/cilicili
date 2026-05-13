@@ -7,6 +7,7 @@ struct DanmakuOverlayView: View {
     let playbackRate: Double
     let isEnabled: Bool
     let hasPresentedPlayback: Bool
+    let settings: DanmakuSettings
     let topInset: CGFloat
     let bottomInset: CGFloat
 
@@ -20,7 +21,12 @@ struct DanmakuOverlayView: View {
                     let playbackTime = effectivePlaybackTime(at: timeline.date)
                     ZStack {
                         ForEach(visibleItems(at: playbackTime, in: geometry.size)) { item in
-                            DanmakuText(item: item, size: fontSize(for: item, in: geometry.size))
+                            DanmakuText(
+                                item: item,
+                                size: fontSize(for: item, in: geometry.size),
+                                opacity: settings.opacity,
+                                weight: settings.fontWeight.swiftUIFontWeight
+                            )
                                 .opacity(opacity(for: item, at: playbackTime, in: geometry.size))
                                 .position(position(for: item, at: playbackTime, in: geometry.size))
                         }
@@ -102,7 +108,8 @@ struct DanmakuOverlayView: View {
         let age = max(0, playbackTime - item.time)
         let fontSize = fontSize(for: item, in: size)
         let laneHeight = fontSize + 10
-        let laneCount = max(1, Int(max(1, size.height - topInset - bottomInset) / laneHeight))
+        let band = displayBand(in: size)
+        let laneCount = max(1, Int(max(1, band.height) / laneHeight))
         let lane = stableLane(for: item.id, laneCount: laneCount)
 
         if item.isTopAnchored || item.isBottomAnchored {
@@ -110,9 +117,9 @@ struct DanmakuOverlayView: View {
             let anchoredLane = stableLane(for: item.id, laneCount: max(1, anchoredLaneCount))
             let y: CGFloat
             if item.isBottomAnchored {
-                y = size.height - bottomInset - laneHeight * (CGFloat(anchoredLane) + 0.5)
+                y = band.maxY - laneHeight * (CGFloat(anchoredLane) + 0.5)
             } else {
-                y = topInset + laneHeight * (CGFloat(anchoredLane) + 0.5)
+                y = band.minY + laneHeight * (CGFloat(anchoredLane) + 0.5)
             }
             return CGPoint(x: size.width / 2, y: min(max(y, fontSize), size.height - fontSize))
         }
@@ -122,8 +129,23 @@ struct DanmakuOverlayView: View {
         let textWidth = estimatedWidth(for: item, fontSize: fontSize, in: size)
         let travelDistance = size.width + textWidth
         let x = size.width + textWidth / 2 - travelDistance * progress
-        let y = topInset + laneHeight * (CGFloat(lane) + 0.5)
+        let y = band.minY + laneHeight * (CGFloat(lane) + 0.5)
         return CGPoint(x: x, y: min(max(y, fontSize), size.height - fontSize))
+    }
+
+    private func displayBand(in size: CGSize) -> CGRect {
+        let usableMinY = max(0, topInset)
+        let usableMaxY = max(usableMinY + 1, size.height - max(0, bottomInset))
+        let usableHeight = max(1, usableMaxY - usableMinY)
+        switch settings.displayArea {
+        case .topHalf:
+            return CGRect(x: 0, y: usableMinY, width: size.width, height: usableHeight * 0.52)
+        case .center:
+            let height = usableHeight * 0.46
+            return CGRect(x: 0, y: usableMinY + (usableHeight - height) / 2, width: size.width, height: height)
+        case .full:
+            return CGRect(x: 0, y: usableMinY, width: size.width, height: usableHeight)
+        }
     }
 
     private func opacity(for item: DanmakuItem, at playbackTime: TimeInterval, in size: CGSize) -> Double {
@@ -151,7 +173,8 @@ struct DanmakuOverlayView: View {
         let compactScale = size.width > 640 ? 0.88 : 0.72
         let maximumSize: CGFloat = size.width > 640 ? 25 : 19
         let minimumSize: CGFloat = size.width > 640 ? 15 : 13
-        return min(max(CGFloat(item.fontSize) * compactScale, minimumSize), maximumSize)
+        let scaledSize = CGFloat(item.fontSize) * compactScale * CGFloat(settings.fontScale)
+        return min(max(scaledSize, minimumSize * 0.9), maximumSize * 1.45)
     }
 
     private func estimatedWidth(for item: DanmakuItem, fontSize: CGFloat, in size: CGSize) -> CGFloat {
@@ -173,11 +196,13 @@ struct DanmakuOverlayView: View {
 private struct DanmakuText: View {
     let item: DanmakuItem
     let size: CGFloat
+    let opacity: Double
+    let weight: Font.Weight
 
     var body: some View {
         Text(item.text)
-            .font(.system(size: size, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.danmakuRGB(item.color))
+            .font(.system(size: size, weight: weight, design: .rounded))
+            .foregroundStyle(Color.danmakuRGB(item.color).opacity(opacity))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .shadow(color: .black.opacity(0.95), radius: 1.2)
@@ -191,5 +216,18 @@ private extension Color {
         let green = Double((rgb >> 8) & 0xFF) / 255
         let blue = Double(rgb & 0xFF) / 255
         return Color(red: red, green: green, blue: blue)
+    }
+}
+
+private extension DanmakuFontWeightOption {
+    var swiftUIFontWeight: Font.Weight {
+        switch self {
+        case .regular:
+            return .regular
+        case .semibold:
+            return .semibold
+        case .bold:
+            return .bold
+        }
     }
 }

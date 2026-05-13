@@ -21,6 +21,7 @@ struct VideoDetailView: View {
     @State private var lastManualLandscapeRequestTime: Date?
     @State private var hidesPlayerSystemChrome = false
     @State private var preloadedRelatedVideos = Set<String>()
+    @State private var isShowingDanmakuSettings = false
 
     init(
         seedVideo: VideoItem,
@@ -169,6 +170,10 @@ struct VideoDetailView: View {
             .sheet(item: $replySheetComment) { comment in
                 CommentRepliesSheet(rootComment: comment, viewModel: viewModel)
             }
+            .sheet(isPresented: $isShowingDanmakuSettings) {
+                DanmakuSettingsSheet(viewModel: viewModel)
+                    .presentationDetents([.medium])
+            }
         }
         .ignoresSafeArea(.container, edges: manualFullscreenMode != nil ? .all : [])
     }
@@ -222,13 +227,8 @@ struct VideoDetailView: View {
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
         let activeManualFullscreenMode: ManualVideoFullscreenMode?
         let exitHandler: (() -> Void)?
-        if isLandscape {
-            activeManualFullscreenMode = nil
-            exitHandler = nil
-        } else {
-            activeManualFullscreenMode = manualFullscreenMode
-            exitHandler = { exitManualLandscapePlayback() }
-        }
+        activeManualFullscreenMode = manualFullscreenMode
+        exitHandler = manualFullscreenMode == nil ? nil : { exitManualLandscapePlayback() }
 
         return VideoDetailStandardPlaybackPage.Config(
             screenSize: screenSize,
@@ -240,7 +240,10 @@ struct VideoDetailView: View {
             playerHeight: playerHeight,
             manualFullscreenMode: activeManualFullscreenMode,
             onRequestManualFullscreen: { enterManualLandscapePlayback() },
-            onExitManualFullscreen: exitHandler
+            onExitManualFullscreen: exitHandler,
+            onShowDanmakuSettings: {
+                isShowingDanmakuSettings = true
+            }
         )
     }
 
@@ -257,10 +260,18 @@ struct VideoDetailView: View {
         isRestoringPortraitFromManualLandscape = false
 
         let deviceOrientation = UIDevice.current.orientation
+        let targetMode: ManualVideoFullscreenMode
         if shouldUsePortraitFullscreen {
-            manualFullscreenMode = .portrait
+            targetMode = .portrait
         } else {
-            manualFullscreenMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
+            targetMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
+        }
+        manualFullscreenMode = targetMode
+        if let windowScene = UIApplication.shared.videoDetailKeyWindow?.windowScene {
+            AppOrientationLock.update(to: targetMode.videoDetailInterfaceOrientationMask, in: windowScene)
+            windowScene.requestGeometryUpdate(
+                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: targetMode.videoDetailInterfaceOrientationMask)
+            ) { _ in }
         }
     }
 
@@ -796,6 +807,33 @@ private extension View {
     }
 }
 
+private extension UIApplication {
+    var videoDetailKeyWindow: UIWindow? {
+        connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+    }
+}
+
+private extension ManualVideoFullscreenMode {
+    var videoDetailInterfaceOrientationMask: UIInterfaceOrientationMask {
+        switch self {
+        case .portrait:
+            return .portrait
+        case .landscape(let orientation):
+            switch orientation {
+            case .landscapeLeft:
+                return .landscapeRight
+            case .landscapeRight:
+                return .landscapeLeft
+            default:
+                return .landscapeRight
+            }
+        }
+    }
+}
+
 private struct VideoDetailStandardPlaybackPage: View {
     struct Config {
         let screenSize: CGSize
@@ -808,6 +846,7 @@ private struct VideoDetailStandardPlaybackPage: View {
         let manualFullscreenMode: ManualVideoFullscreenMode?
         let onRequestManualFullscreen: (() -> Void)?
         let onExitManualFullscreen: (() -> Void)?
+        let onShowDanmakuSettings: () -> Void
     }
 
     let config: Config
@@ -844,7 +883,8 @@ private struct VideoDetailStandardPlaybackPage: View {
                 playerHeight: config.playerHeight,
                 manualFullscreenMode: config.manualFullscreenMode,
                 onRequestManualFullscreen: config.onRequestManualFullscreen,
-                onExitManualFullscreen: config.onExitManualFullscreen
+                onExitManualFullscreen: config.onExitManualFullscreen,
+                onShowDanmakuSettings: config.onShowDanmakuSettings
             )
         }
         .frame(width: config.screenSize.width, height: config.screenSize.height)
@@ -859,6 +899,7 @@ private struct VideoDetailPlayerHero: View {
     let manualFullscreenMode: ManualVideoFullscreenMode?
     let onRequestManualFullscreen: (() -> Void)?
     let onExitManualFullscreen: (() -> Void)?
+    let onShowDanmakuSettings: () -> Void
 
     var body: some View {
         Group {
@@ -871,7 +912,8 @@ private struct VideoDetailPlayerHero: View {
                     playerHeight: playerHeight,
                     manualFullscreenMode: manualFullscreenMode,
                     onRequestManualFullscreen: onRequestManualFullscreen,
-                    onExitManualFullscreen: onExitManualFullscreen
+                    onExitManualFullscreen: onExitManualFullscreen,
+                    onShowDanmakuSettings: onShowDanmakuSettings
                 )
             } else {
                 VideoDetailPlayerPlaceholder(
@@ -898,6 +940,10 @@ private struct VideoDetailPlayerSurface: View {
     let manualFullscreenMode: ManualVideoFullscreenMode?
     let onRequestManualFullscreen: (() -> Void)?
     let onExitManualFullscreen: (() -> Void)?
+    let onShowDanmakuSettings: () -> Void
+    private var usesLandscapePlaybackChrome: Bool {
+        isLandscape || manualFullscreenMode?.isLandscape == true
+    }
 
     var body: some View {
         BiliPlayerView(
@@ -905,12 +951,17 @@ private struct VideoDetailPlayerSurface: View {
             historyVideo: viewModel.detail,
             historyCID: viewModel.selectedCID,
             duration: viewModel.detail.duration.map(TimeInterval.init),
-            presentation: isLandscape ? .fullScreen : .embedded,
+            presentation: usesLandscapePlaybackChrome ? .fullScreen : .embedded,
             showsNavigationChrome: false,
             showsStartupLoadingIndicator: false,
             pausesOnDisappear: false,
             surfaceOverlay: AnyView(danmakuOverlay),
             controlsAccessory: AnyView(danmakuControl),
+            isDanmakuEnabled: viewModel.isDanmakuEnabled,
+            onToggleDanmaku: {
+                viewModel.toggleDanmaku()
+            },
+            onShowDanmakuSettings: onShowDanmakuSettings,
             embeddedAspectRatio: 16 / 9,
             keepsPlayerSurfaceStable: true,
             prefersNativePlaybackControls: false,
@@ -940,10 +991,11 @@ private struct VideoDetailPlayerSurface: View {
             playbackRate: playerViewModel.playbackRate.rawValue,
             isEnabled: viewModel.isDanmakuEnabled,
             hasPresentedPlayback: playerViewModel.hasPresentedPlayback,
-            topInset: isLandscape ? 28 : 8,
-            bottomInset: isLandscape ? 84 : 54
+            settings: viewModel.danmakuSettings,
+            topInset: usesLandscapePlaybackChrome ? 28 : 8,
+            bottomInset: usesLandscapePlaybackChrome ? 84 : 54
         )
-        .padding(.horizontal, isLandscape ? 18 : 4)
+        .padding(.horizontal, usesLandscapePlaybackChrome ? 18 : 4)
     }
 
     private var danmakuControl: some View {
@@ -975,6 +1027,27 @@ private struct VideoDetailPlayerSurface: View {
             .buttonStyle(.plain)
             .foregroundStyle(viewModel.isDanmakuEnabled ? .white : .white.opacity(0.62))
             .accessibilityLabel(viewModel.isDanmakuEnabled ? "关闭弹幕" : "开启弹幕")
+
+            Button {
+                onShowDanmakuSettings()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30)
+                    .glassEffect(
+                        .regular
+                            .tint(.black.opacity(0.12))
+                            .interactive(true),
+                        in: Circle()
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(.white.opacity(0.18), lineWidth: 0.8)
+                    )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .accessibilityLabel("弹幕设置")
         }
     }
 }
@@ -1007,6 +1080,138 @@ private struct VideoDetailPlayerPlaceholder: View {
         .frame(width: playerWidth)
         .frame(height: playerHeight)
         .background(Color.black)
+    }
+}
+
+private struct DanmakuSettingsSheet: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle(
+                        "启用弹幕",
+                        isOn: Binding(
+                            get: { viewModel.isDanmakuEnabled },
+                            set: { isEnabled in
+                                if viewModel.isDanmakuEnabled != isEnabled {
+                                    viewModel.toggleDanmaku()
+                                }
+                            }
+                        )
+                    )
+                }
+
+                Section("显示区域") {
+                    Picker("显示位置", selection: displayAreaBinding) {
+                        ForEach(DanmakuDisplayArea.allCases) { area in
+                            Text(area.title).tag(area)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("文字") {
+                    settingSlider(
+                        title: "字体大小",
+                        value: fontScaleBinding,
+                        range: 0.7...1.45,
+                        step: 0.05,
+                        valueText: "\(Int((viewModel.danmakuSettings.fontScale * 100).rounded()))%"
+                    )
+
+                    Picker("字体粗细", selection: fontWeightBinding) {
+                        ForEach(DanmakuFontWeightOption.allCases) { weight in
+                            Text(weight.title).tag(weight)
+                        }
+                    }
+                }
+
+                Section("透明度") {
+                    settingSlider(
+                        title: "不透明度",
+                        value: opacityBinding,
+                        range: 0.25...1.0,
+                        step: 0.05,
+                        valueText: "\(Int((viewModel.danmakuSettings.opacity * 100).rounded()))%"
+                    )
+                }
+            }
+            .navigationTitle("弹幕设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var fontScaleBinding: Binding<Double> {
+        Binding(
+            get: { viewModel.danmakuSettings.fontScale },
+            set: { newValue in
+                var settings = viewModel.danmakuSettings
+                settings.fontScale = newValue
+                viewModel.updateDanmakuSettings(settings)
+            }
+        )
+    }
+
+    private var opacityBinding: Binding<Double> {
+        Binding(
+            get: { viewModel.danmakuSettings.opacity },
+            set: { newValue in
+                var settings = viewModel.danmakuSettings
+                settings.opacity = newValue
+                viewModel.updateDanmakuSettings(settings)
+            }
+        )
+    }
+
+    private var displayAreaBinding: Binding<DanmakuDisplayArea> {
+        Binding(
+            get: { viewModel.danmakuSettings.displayArea },
+            set: { newValue in
+                var settings = viewModel.danmakuSettings
+                settings.displayArea = newValue
+                viewModel.updateDanmakuSettings(settings)
+            }
+        )
+    }
+
+    private var fontWeightBinding: Binding<DanmakuFontWeightOption> {
+        Binding(
+            get: { viewModel.danmakuSettings.fontWeight },
+            set: { newValue in
+                var settings = viewModel.danmakuSettings
+                settings.fontWeight = newValue
+                viewModel.updateDanmakuSettings(settings)
+            }
+        )
+    }
+
+    private func settingSlider(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        valueText: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(valueText)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range, step: step)
+        }
     }
 }
 

@@ -112,6 +112,10 @@ struct VideoSurfaceView: UIViewRepresentable {
     let prefersNativePlaybackControls: Bool
     let manualFullscreenMode: ManualVideoFullscreenMode?
     let onExitManualFullscreen: (() -> Void)?
+    let manualFullscreenOverlay: AnyView?
+    let isDanmakuEnabled: Bool
+    let onToggleDanmaku: (() -> Void)?
+    let onShowDanmakuSettings: (() -> Void)?
 
     func makeUIView(context _: Context) -> VideoSurfaceContainerView {
         let view = VideoSurfaceContainerView()
@@ -123,6 +127,12 @@ struct VideoSurfaceView: UIViewRepresentable {
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
         view.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        view.setManualFullscreenOverlay(manualFullscreenOverlay)
+        view.setManualFullscreenDanmakuControls(
+            isEnabled: isDanmakuEnabled,
+            onToggle: onToggleDanmaku,
+            onShowSettings: onShowDanmakuSettings
+        )
         viewModel.attachSurface(view, prefersNativePlaybackControls: prefersNativePlaybackControls)
         view.setManualFullscreenMode(
             manualFullscreenMode,
@@ -140,6 +150,12 @@ struct VideoSurfaceView: UIViewRepresentable {
             viewModel?.recoverSurfaceAfterHostFullscreenTransition()
         }
         uiView.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        uiView.setManualFullscreenOverlay(manualFullscreenOverlay)
+        uiView.setManualFullscreenDanmakuControls(
+            isEnabled: isDanmakuEnabled,
+            onToggle: onToggleDanmaku,
+            onShowSettings: onShowDanmakuSettings
+        )
         viewModel.attachSurface(uiView, prefersNativePlaybackControls: prefersNativePlaybackControls)
         uiView.setManualFullscreenMode(
             manualFullscreenMode,
@@ -182,6 +198,10 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     private var fullscreenState: FullscreenState?
     private var pendingFullscreenMode: ManualVideoFullscreenMode?
     private var onExitFullscreen: (() -> Void)?
+    private var manualFullscreenOverlay: AnyView?
+    private var manualFullscreenIsDanmakuEnabled = true
+    private var onToggleManualFullscreenDanmaku: (() -> Void)?
+    private var onShowManualFullscreenDanmakuSettings: (() -> Void)?
     private weak var playerViewModel: PlayerStateViewModel?
     private var lastRequestedOrientationMask: UIInterfaceOrientationMask?
 
@@ -193,6 +213,26 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         if !prefersNativePlaybackControls {
             setNativePlaybackControllerEnabled(false)
         }
+    }
+
+    func setManualFullscreenOverlay(_ overlay: AnyView?) {
+        manualFullscreenOverlay = overlay
+        fullscreenState?.fullscreenController.setContentOverlay(overlay)
+    }
+
+    func setManualFullscreenDanmakuControls(
+        isEnabled: Bool,
+        onToggle: (() -> Void)?,
+        onShowSettings: (() -> Void)?
+    ) {
+        manualFullscreenIsDanmakuEnabled = isEnabled
+        onToggleManualFullscreenDanmaku = onToggle
+        onShowManualFullscreenDanmakuSettings = onShowSettings
+        fullscreenState?.fullscreenController.setDanmakuControls(
+            isEnabled: isEnabled,
+            onToggle: onToggle,
+            onShowSettings: onShowSettings
+        )
     }
 
     func detachPlayerSurface() {
@@ -321,6 +361,12 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             fullscreenController.viewModel = playerViewModel
             fullscreenController.usesNativePlaybackControls = isNativePlaybackControllerEnabled
             fullscreenController.mode = mode
+            fullscreenController.setContentOverlay(manualFullscreenOverlay)
+            fullscreenController.setDanmakuControls(
+                isEnabled: manualFullscreenIsDanmakuEnabled,
+                onToggle: onToggleManualFullscreenDanmaku,
+                onShowSettings: onShowManualFullscreenDanmakuSettings
+            )
 
             let fullscreenSuperview = sourceWindow.rootViewController?.view ?? sourceWindow
             fullscreenController.view.frame = fullscreenSuperview.bounds
@@ -641,6 +687,8 @@ private final class ManualVideoFullscreenViewController: UIViewController {
         }
     }
     private let controlsOverlay = ManualFullscreenPlaybackControlsView()
+    private var contentOverlayHostingController: UIHostingController<AnyView>?
+    private var pendingContentOverlay: AnyView?
     private var isFlushingLayout = false
 
     override func loadView() {
@@ -664,6 +712,7 @@ private final class ManualVideoFullscreenViewController: UIViewController {
             controlsOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         refreshControlsOverlayVisibility()
+        installPendingContentOverlayIfNeeded()
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -751,11 +800,68 @@ private final class ManualVideoFullscreenViewController: UIViewController {
         refreshControlsOverlayVisibility()
     }
 
+    func setContentOverlay(_ overlay: AnyView?) {
+        pendingContentOverlay = overlay
+        guard isViewLoaded else { return }
+
+        guard let overlay else {
+            if let contentOverlayHostingController {
+                contentOverlayHostingController.willMove(toParent: nil)
+                contentOverlayHostingController.view.removeFromSuperview()
+                contentOverlayHostingController.removeFromParent()
+                self.contentOverlayHostingController = nil
+            }
+            refreshControlsOverlayVisibility()
+            return
+        }
+
+        if let contentOverlayHostingController {
+            contentOverlayHostingController.rootView = overlay
+        } else {
+            let hostingController = UIHostingController(rootView: overlay)
+            hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+            hostingController.view.backgroundColor = .clear
+            hostingController.view.isOpaque = false
+            hostingController.view.isUserInteractionEnabled = false
+            addChild(hostingController)
+            view.addSubview(hostingController.view)
+            NSLayoutConstraint.activate([
+                hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+                hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+            hostingController.didMove(toParent: self)
+            contentOverlayHostingController = hostingController
+        }
+        refreshControlsOverlayVisibility()
+    }
+
+    func setDanmakuControls(
+        isEnabled: Bool,
+        onToggle: (() -> Void)?,
+        onShowSettings: (() -> Void)?
+    ) {
+        controlsOverlay.setDanmakuControls(
+            isEnabled: isEnabled,
+            onToggle: onToggle,
+            onShowSettings: onShowSettings
+        )
+    }
+
     private func refreshControlsOverlayVisibility() {
         controlsOverlay.isHidden = false
         controlsOverlay.suppressesPlaybackChrome = usesNativePlaybackControls
         controlsOverlay.isUserInteractionEnabled = !usesNativePlaybackControls
+        if let overlayView = contentOverlayHostingController?.view {
+            view.bringSubviewToFront(overlayView)
+        }
         view.bringSubviewToFront(controlsOverlay)
+    }
+
+    private func installPendingContentOverlayIfNeeded() {
+        guard let pendingContentOverlay else { return }
+        setContentOverlay(pendingContentOverlay)
     }
 }
 
@@ -812,12 +918,15 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private let topChrome = FullscreenControlsGlassView(direction: .top)
     private let bottomChrome = FullscreenControlsGlassView(direction: .bottom)
     private let exitButton = UIButton(type: .system)
+    private let danmakuButton = UIButton(type: .system)
+    private let danmakuSettingsButton = UIButton(type: .system)
     private let rewindButton = UIButton(type: .system)
     private let playPauseButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
     private let currentTimeLabel = UILabel()
     private let durationLabel = UILabel()
     private let progressSlider = UISlider()
+    private let topActionsStack = UIStackView()
     private let transportStack = UIStackView()
     private let controlsStack = UIStackView()
     private let feedbackView = UIView()
@@ -831,6 +940,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var refreshTimer: Timer?
     private var autoHideControlsTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
+    private var isDanmakuEnabled = true
+    private var onToggleDanmaku: (() -> Void)?
+    private var onShowDanmakuSettings: (() -> Void)?
     private var lastFullscreenLayoutSize: CGSize = .zero
     private var exitButtonTopConstraint: NSLayoutConstraint?
     private var transportCenterYConstraint: NSLayoutConstraint?
@@ -902,7 +1014,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         isOpaque = false
         isUserInteractionEnabled = true
 
-        [topChrome, bottomChrome, controlsStack, transportStack, exitButton, feedbackView].forEach {
+        [topChrome, bottomChrome, controlsStack, transportStack, exitButton, topActionsStack, feedbackView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
         }
@@ -924,7 +1036,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             topChrome.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
             topChrome.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
             topChrome.topAnchor.constraint(equalTo: exitButton.topAnchor, constant: -8),
-            topChrome.widthAnchor.constraint(equalToConstant: 58),
+            topChrome.widthAnchor.constraint(equalToConstant: 64),
             topChromeHeightConstraint,
 
             bottomChrome.leadingAnchor.constraint(equalTo: controlsStack.leadingAnchor, constant: -12),
@@ -934,6 +1046,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
             exitButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
             exitButtonTopConstraint,
+
+            topActionsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
+            topActionsStack.centerYAnchor.constraint(equalTo: exitButton.centerYAnchor),
 
             controlsStack.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
             controlsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
@@ -963,14 +1078,14 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let isPortraitFullscreen = mode.isPortrait || (bounds.height > bounds.width * 1.08 && !mode.isLandscape)
         let minimumTopInset: CGFloat = isPortraitFullscreen ? 54 : 0
         let minimumBottomInset: CGFloat = isPortraitFullscreen ? 20 : 0
-        let topInset = isPortraitFullscreen ? max(safeAreaInsets.top, minimumTopInset) : min(max(safeAreaInsets.top, 0), 18)
+        let topInset = isPortraitFullscreen ? max(safeAreaInsets.top, minimumTopInset) : max(min(max(safeAreaInsets.top, 0), 18), 10)
         let bottomInset = isPortraitFullscreen ? max(safeAreaInsets.bottom, minimumBottomInset) : min(max(safeAreaInsets.bottom, 0), 18)
-        exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 6)
+        exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 10)
         controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
         transportCenterYConstraint?.constant = isPortraitFullscreen ? -12 : 0
         topChromeHeightConstraint?.constant = isPortraitFullscreen
-            ? 58
-            : 54
+            ? 60
+            : 56
         bottomChromeHeightConstraint?.constant = isPortraitFullscreen
             ? 70
             : 62
@@ -993,15 +1108,21 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
     private func configureControls() {
         configureTopButton(exitButton, systemName: "xmark")
+        configureTopButton(danmakuButton, systemName: "text.bubble.fill", pointSize: 14)
+        configureTopButton(danmakuSettingsButton, systemName: "slider.horizontal.3", pointSize: 14)
         configureTransportButton(rewindButton, systemName: "gobackward.10", size: 54)
         configureTransportButton(playPauseButton, systemName: "play.fill", size: 78, pointSize: 28, isPrimary: true)
         configureTransportButton(forwardButton, systemName: "goforward.10", size: 54)
         exitButton.accessibilityLabel = "退出全屏"
+        danmakuButton.accessibilityLabel = "弹幕"
+        danmakuSettingsButton.accessibilityLabel = "弹幕设置"
         rewindButton.accessibilityLabel = "后退 10 秒"
         playPauseButton.accessibilityLabel = "播放"
         forwardButton.accessibilityLabel = "前进 10 秒"
 
         exitButton.addTarget(self, action: #selector(handleExitButton), for: .touchUpInside)
+        danmakuButton.addTarget(self, action: #selector(handleDanmakuButton), for: .touchUpInside)
+        danmakuSettingsButton.addTarget(self, action: #selector(handleDanmakuSettingsButton), for: .touchUpInside)
         rewindButton.addTarget(self, action: #selector(handleRewindButton), for: .touchUpInside)
         playPauseButton.addTarget(self, action: #selector(handlePlayPauseButton), for: .touchUpInside)
         forwardButton.addTarget(self, action: #selector(handleForwardButton), for: .touchUpInside)
@@ -1033,6 +1154,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         transportStack.addArrangedSubview(rewindButton)
         transportStack.addArrangedSubview(playPauseButton)
         transportStack.addArrangedSubview(forwardButton)
+
+        topActionsStack.axis = .horizontal
+        topActionsStack.alignment = .center
+        topActionsStack.spacing = 8
+        topActionsStack.addArrangedSubview(danmakuButton)
+        topActionsStack.addArrangedSubview(danmakuSettingsButton)
 
         let progressRow = UIStackView(arrangedSubviews: [
             currentTimeLabel,
@@ -1089,6 +1216,28 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             feedbackLabel.leadingAnchor.constraint(equalTo: feedbackView.leadingAnchor, constant: 8),
             feedbackLabel.trailingAnchor.constraint(equalTo: feedbackView.trailingAnchor, constant: -8)
         ])
+        refreshDanmakuControls()
+    }
+
+    func setDanmakuControls(
+        isEnabled: Bool,
+        onToggle: (() -> Void)?,
+        onShowSettings: (() -> Void)?
+    ) {
+        isDanmakuEnabled = isEnabled
+        onToggleDanmaku = onToggle
+        onShowDanmakuSettings = onShowSettings
+        refreshDanmakuControls()
+    }
+
+    private func refreshDanmakuControls() {
+        let hasDanmakuActions = onToggleDanmaku != nil || onShowDanmakuSettings != nil
+        topActionsStack.isHidden = !hasDanmakuActions
+        danmakuButton.isHidden = onToggleDanmaku == nil
+        danmakuSettingsButton.isHidden = onShowDanmakuSettings == nil
+        danmakuButton.configuration?.image = UIImage(systemName: isDanmakuEnabled ? "text.bubble.fill" : "text.bubble")
+        danmakuButton.alpha = isDanmakuEnabled ? 1 : 0.62
+        danmakuButton.accessibilityLabel = isDanmakuEnabled ? "关闭弹幕" : "开启弹幕"
     }
 
     private func configureTopButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 15) {
@@ -1103,7 +1252,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.backgroundColor = .clear
         button.tintColor = .white
         button.overrideUserInterfaceStyle = .dark
-        button.layer.cornerRadius = 18
+        button.layer.cornerRadius = 20
         button.layer.borderWidth = 0.7
         button.layer.borderColor = UIColor.white.withAlphaComponent(0.22).cgColor
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
@@ -1111,8 +1260,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.layer.shadowRadius = 8
         button.layer.shadowOffset = CGSize(width: 0, height: 4)
         button.clipsToBounds = false
-        button.widthAnchor.constraint(equalToConstant: 36).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        button.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
     }
 
     private func configureTransportButton(
@@ -1224,6 +1373,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             self.topChrome.alpha = alpha
             self.bottomChrome.alpha = alpha
             self.exitButton.alpha = alpha
+            self.topActionsStack.alpha = alpha
             self.transportStack.alpha = alpha
             self.controlsStack.alpha = alpha
             self.transportStack.transform = chromeVisible
@@ -1232,12 +1382,14 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
         let completion = {
             self.exitButton.isUserInteractionEnabled = chromeVisible
+            self.topActionsStack.isUserInteractionEnabled = chromeVisible
             self.transportStack.isUserInteractionEnabled = chromeVisible
             self.controlsStack.isUserInteractionEnabled = chromeVisible
         }
 
         if chromeVisible {
             exitButton.isUserInteractionEnabled = true
+            topActionsStack.isUserInteractionEnabled = true
             transportStack.isUserInteractionEnabled = true
             controlsStack.isUserInteractionEnabled = true
             if animated {
@@ -1330,6 +1482,20 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     @objc private func handleExitButton() {
         Haptics.light()
         onExit?()
+    }
+
+    @objc private func handleDanmakuButton() {
+        Haptics.light()
+        onToggleDanmaku?()
+        isDanmakuEnabled.toggle()
+        refreshDanmakuControls()
+        setControlsVisible(true, animated: true)
+    }
+
+    @objc private func handleDanmakuSettingsButton() {
+        Haptics.light()
+        onShowDanmakuSettings?()
+        setControlsVisible(true, animated: true)
     }
 
     @objc private func handleRewindButton() {
@@ -1485,7 +1651,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let touchedView = touch.view else { return true }
-        if touchedView.isDescendant(of: controlsStack) || touchedView.isDescendant(of: exitButton) {
+        if touchedView.isDescendant(of: controlsStack)
+            || touchedView.isDescendant(of: exitButton)
+            || touchedView.isDescendant(of: topActionsStack) {
             return false
         }
         if touchedView.isDescendant(of: transportStack) {

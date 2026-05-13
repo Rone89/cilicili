@@ -1,5 +1,66 @@
 import Foundation
 
+struct DanmakuSettings: Codable, Equatable, Sendable {
+    var fontScale: Double
+    var opacity: Double
+    var displayArea: DanmakuDisplayArea
+    var fontWeight: DanmakuFontWeightOption
+
+    static let `default` = DanmakuSettings(
+        fontScale: 1.0,
+        opacity: 0.92,
+        displayArea: .topHalf,
+        fontWeight: .semibold
+    )
+
+    var normalized: DanmakuSettings {
+        DanmakuSettings(
+            fontScale: min(max(fontScale, 0.7), 1.45),
+            opacity: min(max(opacity, 0.25), 1.0),
+            displayArea: displayArea,
+            fontWeight: fontWeight
+        )
+    }
+}
+
+enum DanmakuDisplayArea: String, Codable, CaseIterable, Identifiable, Sendable {
+    case topHalf
+    case center
+    case full
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .topHalf:
+            return "上半屏"
+        case .center:
+            return "居中"
+        case .full:
+            return "全屏"
+        }
+    }
+}
+
+enum DanmakuFontWeightOption: String, Codable, CaseIterable, Identifiable, Sendable {
+    case regular
+    case semibold
+    case bold
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .regular:
+            return "常规"
+        case .semibold:
+            return "中粗"
+        case .bold:
+            return "粗体"
+        }
+    }
+}
+
 struct DanmakuItem: Identifiable, Hashable, Sendable {
     let id: String
     let time: TimeInterval

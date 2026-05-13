@@ -91,6 +91,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
     @Published private(set) var danmakuEnabled: Bool
+    @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var incognitoModeEnabled: Bool
@@ -105,6 +106,7 @@ final class LibraryStore: ObservableObject {
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
+    private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
@@ -131,6 +133,12 @@ final class LibraryStore: ObservableObject {
         self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? true
         self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? true
         self.danmakuEnabled = userDefaults.object(forKey: Self.danmakuEnabledKey) as? Bool ?? true
+        if let settingsData = userDefaults.data(forKey: Self.danmakuSettingsKey),
+           let settings = try? JSONDecoder().decode(DanmakuSettings.self, from: settingsData) {
+            self.danmakuSettings = settings.normalized
+        } else {
+            self.danmakuSettings = .default
+        }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
@@ -177,6 +185,13 @@ final class LibraryStore: ObservableObject {
     func setDanmakuEnabled(_ isEnabled: Bool) {
         danmakuEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.danmakuEnabledKey)
+    }
+
+    func setDanmakuSettings(_ settings: DanmakuSettings) {
+        let normalizedSettings = settings.normalized
+        danmakuSettings = normalizedSettings
+        guard let data = try? JSONEncoder().encode(normalizedSettings) else { return }
+        userDefaults.set(data, forKey: Self.danmakuSettingsKey)
     }
 
     func setSponsorBlockEnabled(_ isEnabled: Bool) {

@@ -28,6 +28,7 @@ final class VideoDetailViewModel: ObservableObject {
     @Published private(set) var danmakuItems: [DanmakuItem] = []
     @Published private(set) var danmakuState: LoadingState = .idle
     @Published var isDanmakuEnabled = true
+    @Published var danmakuSettings: DanmakuSettings = .default
     @Published private var replyThreads: [Int: [Comment]] = [:]
     @Published private var replyThreadStates: [Int: LoadingState] = [:]
     @Published private var replyThreadPages: [Int: Int] = [:]
@@ -104,6 +105,7 @@ final class VideoDetailViewModel: ObservableObject {
         self.libraryStore = libraryStore
         self.sponsorBlockService = sponsorBlockService
         self.isDanmakuEnabled = libraryStore.danmakuEnabled
+        self.danmakuSettings = libraryStore.danmakuSettings
         filterCancellable = libraryStore.$blocksGoodsComments
             .removeDuplicates()
             .dropFirst()
@@ -428,6 +430,12 @@ final class VideoDetailViewModel: ObservableObject {
             danmakuTask = nil
             danmakuState = .idle
         }
+    }
+
+    func updateDanmakuSettings(_ settings: DanmakuSettings) {
+        let normalizedSettings = settings.normalized
+        danmakuSettings = normalizedSettings
+        libraryStore.setDanmakuSettings(normalizedSettings)
     }
 
     func selectPlayVariant(_ variant: PlayVariant) {

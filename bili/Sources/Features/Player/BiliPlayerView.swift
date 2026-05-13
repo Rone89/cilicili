@@ -52,6 +52,9 @@ struct BiliPlayerView: View {
     private let surfaceOverlay: AnyView?
     private let controlsAccessory: AnyView?
     private let controlsBottomLift: CGFloat
+    private let isDanmakuEnabled: Bool
+    private let onToggleDanmaku: (() -> Void)?
+    private let onShowDanmakuSettings: (() -> Void)?
     private let durationHint: TimeInterval?
     private let embeddedAspectRatio: CGFloat
     private let ignoresContainerSafeArea: Bool
@@ -92,6 +95,9 @@ struct BiliPlayerView: View {
         surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
+        isDanmakuEnabled: Bool = true,
+        onToggleDanmaku: (() -> Void)? = nil,
+        onShowDanmakuSettings: (() -> Void)? = nil,
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
@@ -111,6 +117,9 @@ struct BiliPlayerView: View {
         self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
+        self.isDanmakuEnabled = isDanmakuEnabled
+        self.onToggleDanmaku = onToggleDanmaku
+        self.onShowDanmakuSettings = onShowDanmakuSettings
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
@@ -137,6 +146,9 @@ struct BiliPlayerView: View {
         surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
+        isDanmakuEnabled: Bool = true,
+        onToggleDanmaku: (() -> Void)? = nil,
+        onShowDanmakuSettings: (() -> Void)? = nil,
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
@@ -156,6 +168,9 @@ struct BiliPlayerView: View {
         self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
+        self.isDanmakuEnabled = isDanmakuEnabled
+        self.onToggleDanmaku = onToggleDanmaku
+        self.onShowDanmakuSettings = onShowDanmakuSettings
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
@@ -195,6 +210,9 @@ struct BiliPlayerView: View {
         surfaceOverlay: AnyView? = nil,
         controlsAccessory: AnyView? = nil,
         controlsBottomLift: CGFloat = 0,
+        isDanmakuEnabled: Bool = true,
+        onToggleDanmaku: (() -> Void)? = nil,
+        onShowDanmakuSettings: (() -> Void)? = nil,
         embeddedAspectRatio: CGFloat = 16 / 9,
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
@@ -214,6 +232,9 @@ struct BiliPlayerView: View {
         self.surfaceOverlay = surfaceOverlay
         self.controlsAccessory = controlsAccessory
         self.controlsBottomLift = controlsBottomLift
+        self.isDanmakuEnabled = isDanmakuEnabled
+        self.onToggleDanmaku = onToggleDanmaku
+        self.onShowDanmakuSettings = onShowDanmakuSettings
         self.durationHint = duration
         self.embeddedAspectRatio = embeddedAspectRatio
         self.ignoresContainerSafeArea = ignoresContainerSafeArea
@@ -498,7 +519,11 @@ struct BiliPlayerView: View {
                 viewModel: viewModel,
                 prefersNativePlaybackControls: usesNativePlaybackControls,
                 manualFullscreenMode: manualFullscreenMode,
-                onExitManualFullscreen: onExitManualFullscreen
+                onExitManualFullscreen: onExitManualFullscreen,
+                manualFullscreenOverlay: surfaceOverlay,
+                isDanmakuEnabled: isDanmakuEnabled,
+                onToggleDanmaku: onToggleDanmaku,
+                onShowDanmakuSettings: onShowDanmakuSettings
             )
         }
     }
@@ -653,7 +678,7 @@ struct BiliPlayerView: View {
             if canRequestManualFullscreen {
                 playerControlButton(systemName: "arrow.up.left.and.arrow.down.right", isCompact: isCompact) {
                     Haptics.light()
-                    _ = viewModel.requestHostFullscreen()
+                    onRequestManualFullscreen?()
                     handlePlayerInteraction()
                 }
             }
