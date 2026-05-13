@@ -1366,7 +1366,12 @@ nonisolated final class BiliAPIClient {
         }
 
         let missingQualities = preferredQualities.filter { quality in
-            !merged.playVariants.contains(where: { $0.quality == quality && $0.isPlayable })
+            !merged.playVariants.contains(where: { variant in
+                variant.quality == quality
+                    && variant.isPlayable
+                    && !variant.isProgressiveFastStart
+                    && !Self.playVariantNeedsFrameRateSupplement(variant)
+            })
         }
 
         for batchStart in stride(from: 0, to: missingQualities.count, by: 2) {
@@ -1388,6 +1393,14 @@ nonisolated final class BiliAPIClient {
 
         logPlayURLStage("supplementComplete", bvid: bvid, cid: cid, start: supplementStart, data: merged)
         return merged
+    }
+
+    private nonisolated static func playVariantNeedsFrameRateSupplement(_ variant: PlayVariant) -> Bool {
+        guard [116, 74].contains(variant.quality) else { return false }
+        if let frameRate = DASHStream.numericFrameRate(from: variant.frameRate) {
+            return frameRate < 50
+        }
+        return true
     }
 
     private func fetchSupplementalQualityBatch(

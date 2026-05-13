@@ -696,17 +696,30 @@ final class VideoDetailViewModel: ObservableObject {
         if playableQualities.count < 3 {
             return true
         }
+        if let preferredQuality = libraryStore.preferredVideoQuality,
+           !playableQualities.contains(preferredQuality) {
+            return true
+        }
+        if playVariantsNeedSupplementalFrameRateUpgrade(variants) {
+            return true
+        }
         if playableQualities.contains(112),
            playableQualities.contains(80),
            playableQualities.contains(64),
            playableQualities.count >= 5 {
             return false
         }
-        if let preferredQuality = libraryStore.preferredVideoQuality,
-           !playableQualities.contains(preferredQuality) {
-            return true
-        }
         return !playableQualities.contains(112) && !playableQualities.contains(80)
+    }
+
+    private func playVariantsNeedSupplementalFrameRateUpgrade(_ variants: [PlayVariant]) -> Bool {
+        let playableVariants = variants.filter(\.isPlayable)
+        guard !playableVariants.isEmpty else { return false }
+        guard let preferredQuality = libraryStore.preferredVideoQuality else { return false }
+        guard [116, 74].contains(preferredQuality) else { return false }
+        return !playableVariants.contains {
+            $0.quality == preferredQuality && variantFrameRate($0) >= 50
+        }
     }
 
     private func scheduleSupplementalPlayURLLoad(
@@ -757,19 +770,28 @@ final class VideoDetailViewModel: ObservableObject {
                 let variants = data.playVariants
                 guard !variants.isEmpty else { return }
                 let currentVariant = self.selectedPlayVariant
-                let currentID = currentVariant?.id
                 self.playVariants = self.mergedSupplementalVariants(
                     variants,
                     preserving: currentVariant
                 )
-                if let currentID,
-                   let matchingVariant = self.playVariants.first(where: { $0.id == currentID }) {
+                if self.shouldAutoUpgradeSupplementalVariant(from: currentVariant),
+                   let preferredVariant = self.preferredDefaultVariant(in: self.playVariants),
+                   preferredVariant.id != currentVariant?.id {
+                    let resumeTime = self.currentPlaybackResumeTime()
+                    let shouldResumePlayback = self.currentPlaybackIntent()
+                    let playbackRate = self.stablePlayerViewModel?.playbackRate ?? .x10
+                    self.selectedPlayVariant = preferredVariant
+                    self.playbackFallbackMessage = nil
+                    self.logSelectedPlayVariant(preferredVariant, availableVariants: self.playVariants, source: "supplementAutoUpgrade")
+                    self.updateStablePlayerViewModelIfNeeded(
+                        resumeTimeOverride: resumeTime,
+                        shouldResumePlayback: shouldResumePlayback,
+                        playbackRateOverride: playbackRate
+                    )
+                } else if let currentVariant,
+                          let matchingVariant = self.playVariants.first(where: { $0.id == currentVariant.id }) {
                     self.selectedPlayVariant = matchingVariant
-                } else if self.stablePlayerViewModel != nil,
-                          let currentVariant,
-                          currentVariant.isPlayable {
-                    self.selectedPlayVariant = currentVariant
-                } else if self.selectedPlayVariant == nil {
+                } else {
                     self.selectedPlayVariant = self.preferredDefaultVariant(in: self.playVariants)
                     self.updateStablePlayerViewModelIfNeeded()
                 }
@@ -793,6 +815,47 @@ final class VideoDetailViewModel: ObservableObject {
             return sortedVariants
         }
         return [currentVariant] + sortedVariants
+    }
+
+    private func shouldAutoUpgradeSupplementalVariant(from currentVariant: PlayVariant?) -> Bool {
+        guard !didSelectPlayVariantManually else { return false }
+        guard let currentVariant, currentVariant.isPlayable else { return selectedPlayVariant == nil }
+        guard let preferredVariant = preferredDefaultVariant(in: playVariants),
+              preferredVariant.isPlayable,
+              preferredVariant.id != currentVariant.id
+        else { return false }
+        return variant(preferredVariant, isBetterThan: currentVariant)
+    }
+
+    private func variant(_ candidate: PlayVariant, isBetterThan current: PlayVariant) -> Bool {
+        if candidate.isProgressiveFastStart != current.isProgressiveFastStart {
+            return !candidate.isProgressiveFastStart && current.isProgressiveFastStart
+        }
+        if candidate.quality != current.quality {
+            return candidate.quality > current.quality
+        }
+        let candidateFPS = variantFrameRate(candidate)
+        let currentFPS = variantFrameRate(current)
+        if candidateFPS != currentFPS {
+            return candidateFPS > currentFPS
+        }
+        return (candidate.bandwidth ?? 0) > (current.bandwidth ?? 0)
+    }
+
+    private func variantFrameRate(_ variant: PlayVariant) -> Double {
+        if let frameRate = DASHStream.numericFrameRate(from: variant.frameRate) {
+            return frameRate
+        }
+        if [116, 74].contains(variant.quality) {
+            return 60
+        }
+        if variant.title.contains("高帧")
+            || variant.title.contains("60")
+            || variant.badge?.contains("高帧") == true
+            || variant.badge?.contains("60") == true {
+            return 60
+        }
+        return 0
     }
 
     func updateStablePlayerViewModelIfNeeded(
@@ -1003,6 +1066,11 @@ final class VideoDetailViewModel: ObservableObject {
             }
             if lhs.quality != rhs.quality {
                 return lhs.quality > rhs.quality
+            }
+            let lhsFPS = variantFrameRate(lhs)
+            let rhsFPS = variantFrameRate(rhs)
+            if lhsFPS != rhsFPS {
+                return lhsFPS > rhsFPS
             }
             return (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
         }

@@ -39,6 +39,7 @@ struct BiliPlayerView: View {
     @State private var gestureFeedback: PlayerGestureFeedback?
     @State private var gestureFeedbackTask: Task<Void, Never>?
     @State private var longPressRateRestoreValue: BiliPlaybackRate?
+    @State private var playPauseIconScale: CGFloat = 1
     private let usesOwnedViewModel: Bool
     private let historyVideo: VideoItem?
     private let historyCID: Int?
@@ -441,22 +442,28 @@ struct BiliPlayerView: View {
                 .zIndex(5)
             }
 
+            if usesCustomPlaybackControls, controlsVisible, !controlsLocked {
+                telegramCenterTransportControls
+                    .transition(.opacity.combined(with: .scale(scale: 0.88)))
+                    .zIndex(6)
+            }
+
             if let gestureFeedback {
                 playerGestureFeedbackView(gestureFeedback)
                     .transition(.scale(scale: 0.82).combined(with: .opacity))
-                    .zIndex(6)
+                    .zIndex(7)
             }
 
             if usesCustomPlaybackControls, isManualFullscreenActive, controlsLocked, lockAffordanceVisible {
                 lockedControlsAffordance
                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                    .zIndex(7)
+                    .zIndex(8)
             }
 
             if usesCustomPlaybackControls, controlsVisible {
                 playerControls
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(8)
+                    .transition(.opacity)
+                    .zIndex(9)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -495,7 +502,7 @@ struct BiliPlayerView: View {
 
     private var playerControls: some View {
         GlassEffectContainer(spacing: presentation == .embedded ? 6 : 10) {
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 if let controlsAccessory {
                     controlsAccessory
                         .padding(.horizontal, presentation == .embedded ? 10 : 16)
@@ -513,159 +520,28 @@ struct BiliPlayerView: View {
     }
 
     private var embeddedPlayerControls: some View {
-        HStack(spacing: 7) {
-            HStack(spacing: 6) {
-                playerControlButton(
-                    systemName: viewModel.isPlaying ? "pause.fill" : "play.fill",
-                    isPrimary: true,
-                    isCompact: true
-                ) {
-                    Haptics.light()
-                    viewModel.togglePlayback()
-                    handlePlayerInteraction()
-                }
-
-                inlineProgressBar
-                    .layoutPriority(1)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
-            .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
-
-            HStack(spacing: 6) {
-                if viewModel.isPictureInPictureSupported {
-                    playerControlButton(
-                        systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter",
-                        isCompact: true
-                    ) {
-                        viewModel.togglePictureInPicture()
-                        handlePlayerInteraction()
-                    }
-                }
-
-                if canRequestManualFullscreen {
-                    playerControlButton(systemName: "arrow.up.left.and.arrow.down.right", isCompact: true) {
-                        Haptics.light()
-                        _ = viewModel.requestHostFullscreen()
-                        handlePlayerInteraction()
-                    }
-                }
-
-                speedMenu
-            }
+        VStack(spacing: 8) {
+            topToolRow(isCompact: true)
+            bottomTimeline(isCompact: true)
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6 + controlsBottomLift)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .padding(.bottom, controlsBottomLift)
     }
 
     private var fullscreenPlayerControls: some View {
-        VStack(spacing: 9) {
-            HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    playerControlButton(systemName: "gobackward.10", isEnabled: viewModel.canSeek) {
-                        Haptics.light()
-                        viewModel.seek(by: -10)
-                        handlePlayerInteraction()
-                    }
+        VStack(spacing: 0) {
+            topToolRow(isCompact: false)
+                .padding(.top, isManualFullscreenActive ? 12 : 18)
+                .padding(.horizontal, 16)
 
-                    playerControlButton(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", isPrimary: true) {
-                        Haptics.light()
-                        viewModel.togglePlayback()
-                        handlePlayerInteraction()
-                    }
+            Spacer(minLength: 0)
 
-                    playerControlButton(systemName: "goforward.10", isEnabled: viewModel.canSeek) {
-                        Haptics.light()
-                        viewModel.seek(by: 10)
-                        handlePlayerInteraction()
-                    }
-                }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 5)
-                .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
-
-                Spacer(minLength: 8)
-
-                HStack(spacing: 8) {
-                    if isManualFullscreenActive {
-                        playerControlButton(systemName: "arrow.down.right.and.arrow.up.left") {
-                            exitManualFullscreen()
-                        }
-
-                        playerControlButton(systemName: controlsLocked ? "lock.fill" : "lock.open") {
-                            toggleControlsLock()
-                        }
-                    }
-
-                    if viewModel.isPictureInPictureSupported {
-                        playerControlButton(systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter") {
-                            viewModel.togglePictureInPicture()
-                            handlePlayerInteraction()
-                        }
-                    }
-
-                    if canRequestManualFullscreen {
-                        playerControlButton(systemName: "arrow.up.left.and.arrow.down.right") {
-                            Haptics.light()
-                            _ = viewModel.requestHostFullscreen()
-                            handlePlayerInteraction()
-                        }
-                    }
-
-                    speedMenu
-                }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 5)
-                .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
-            }
-
-            progressRow
-                .padding(.horizontal, 11)
-                .padding(.vertical, 8)
-                .liquidPlayerGlassCapsule(tint: .black.opacity(0.16))
+            bottomTimeline(isCompact: false)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18 + controlsBottomLift)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 18 + controlsBottomLift)
-    }
-
-    private var inlineProgressBar: some View {
-        HStack(spacing: 5) {
-            Text(BiliFormatters.duration(Int(viewModel.currentTime.rounded())))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.86))
-                .frame(width: 36, alignment: .leading)
-
-            compactProgressSlider
-                .frame(height: 18)
-                .layoutPriority(1)
-        }
-        .frame(minWidth: 0)
-    }
-
-    private var progressRow: some View {
-        HStack(spacing: 10) {
-            if let duration = displayDuration, duration > 0 {
-                Text(BiliFormatters.duration(Int(viewModel.currentTime.rounded())))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 44, alignment: .leading)
-
-                compactProgressSlider
-                    .frame(height: 22)
-
-                Text(BiliFormatters.duration(Int(duration.rounded())))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 44, alignment: .trailing)
-            } else {
-                Spacer(minLength: 8)
-                Text(BiliFormatters.duration(Int(viewModel.currentTime.rounded())))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.92))
-                Spacer(minLength: 8)
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var compactProgressSlider: some View {
@@ -698,6 +574,102 @@ struct BiliPlayerView: View {
         .padding(.trailing, 22)
         .padding(.bottom, 18 + controlsBottomLift)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var telegramCenterTransportControls: some View {
+        HStack(spacing: presentation == .embedded ? 18 : 26) {
+            telegramTransportButton(systemName: "gobackward.10", size: presentation == .embedded ? 46 : 54, isEnabled: viewModel.canSeek) {
+                seekByGesture(-10)
+            }
+
+            telegramTransportButton(
+                systemName: viewModel.isPlaying ? "pause.fill" : "play.fill",
+                size: presentation == .embedded ? 64 : 78,
+                isPrimary: true,
+                iconOffsetX: viewModel.isPlaying ? 0 : 3,
+                isEnabled: true
+            ) {
+                Haptics.medium()
+                withAnimation(.bouncy(duration: 0.22, extraBounce: 0.16)) {
+                    playPauseIconScale = 0.9
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                    withAnimation(.bouncy(duration: 0.26, extraBounce: 0.18)) {
+                        playPauseIconScale = 1
+                    }
+                }
+                viewModel.togglePlayback()
+                handlePlayerInteraction()
+            }
+            .scaleEffect(playPauseIconScale)
+
+            telegramTransportButton(systemName: "goforward.10", size: presentation == .embedded ? 46 : 54, isEnabled: viewModel.canSeek) {
+                seekByGesture(10)
+            }
+        }
+        .padding(.horizontal, presentation == .embedded ? 18 : 26)
+        .padding(.vertical, presentation == .embedded ? 10 : 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .allowsHitTesting(true)
+    }
+
+    private func topToolRow(isCompact: Bool) -> some View {
+        HStack(spacing: isCompact ? 7 : 9) {
+            if isManualFullscreenActive {
+                playerControlButton(systemName: "xmark", isCompact: isCompact) {
+                    exitManualFullscreen()
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if isManualFullscreenActive {
+                playerControlButton(systemName: controlsLocked ? "lock.fill" : "lock.open", isCompact: isCompact) {
+                    toggleControlsLock()
+                }
+            }
+
+            if viewModel.isPictureInPictureSupported {
+                playerControlButton(systemName: viewModel.isPictureInPictureActive ? "pip.exit" : "pip.enter", isCompact: isCompact) {
+                    viewModel.togglePictureInPicture()
+                    handlePlayerInteraction()
+                }
+            }
+
+            if canRequestManualFullscreen {
+                playerControlButton(systemName: "arrow.up.left.and.arrow.down.right", isCompact: isCompact) {
+                    Haptics.light()
+                    _ = viewModel.requestHostFullscreen()
+                    handlePlayerInteraction()
+                }
+            }
+
+            speedMenu
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func bottomTimeline(isCompact: Bool) -> some View {
+        HStack(spacing: isCompact ? 7 : 10) {
+            Text(BiliFormatters.duration(Int(viewModel.currentTime.rounded())))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: isCompact ? 38 : 46, alignment: .leading)
+
+            compactProgressSlider
+                .frame(height: isCompact ? 18 : 24)
+                .layoutPriority(1)
+
+            if let duration = displayDuration, duration > 0 {
+                Text(BiliFormatters.duration(Int(duration.rounded())))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .frame(width: isCompact ? 38 : 46, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, isCompact ? 10 : 12)
+        .padding(.vertical, isCompact ? 6 : 8)
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
     }
 
     private var speedMenu: some View {
@@ -755,6 +727,34 @@ struct BiliPlayerView: View {
         .tint(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50) : .white.opacity(0.10))
     }
 
+    private func telegramTransportButton(
+        systemName: String,
+        size: CGFloat,
+        isPrimary: Bool = false,
+        iconOffsetX: CGFloat = 0,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: isPrimary ? size * 0.36 : size * 0.29, weight: .bold))
+                .offset(x: iconOffsetX)
+                .frame(width: size, height: size)
+                .contentShape(Circle())
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.38)
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(
+            .regular
+                .tint(.black.opacity(isPrimary ? 0.26 : 0.20))
+                .interactive(true),
+            in: Circle()
+        )
+        .shadow(color: .black.opacity(isPrimary ? 0.42 : 0.3), radius: isPrimary ? 20 : 14, y: isPrimary ? 9 : 6)
+    }
+
     private func handlePlayerTap() {
         guard usesCustomPlaybackControls else { return }
         if controlsLocked {
@@ -781,24 +781,26 @@ struct BiliPlayerView: View {
         switch region {
         case .leading:
             guard viewModel.canSeek else { return }
-            viewModel.seek(by: -10)
-            if controlsVisible {
-                scheduleControlsAutoHideIfNeeded()
-            }
-            showGestureFeedback(.seekBackward(seconds: 10))
+            seekByGesture(-10)
         case .trailing:
             guard viewModel.canSeek else { return }
-            viewModel.seek(by: 10)
-            if controlsVisible {
-                scheduleControlsAutoHideIfNeeded()
-            }
-            showGestureFeedback(.seekForward(seconds: 10))
+            seekByGesture(10)
         case .center:
             viewModel.togglePlayback()
             controlsVisible = true
             scheduleControlsAutoHideIfNeeded()
             showGestureFeedback(viewModel.isPlaying ? .pause : .play)
         }
+    }
+
+    private func seekByGesture(_ seconds: TimeInterval) {
+        guard viewModel.canSeek else { return }
+        Haptics.light()
+        viewModel.seek(by: seconds)
+        if controlsVisible {
+            scheduleControlsAutoHideIfNeeded()
+        }
+        showGestureFeedback(seconds < 0 ? .seekBackward(seconds: Int(abs(seconds))) : .seekForward(seconds: Int(seconds)))
     }
 
     private func handlePlayerLongPressStart() {

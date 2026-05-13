@@ -930,12 +930,22 @@ struct DASHStream: Decodable, Hashable, Sendable {
     }
 
     nonisolated static func displayFrameRate(from rawValue: String?) -> String? {
+        guard let value = numericFrameRate(from: rawValue) else {
+            guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty
+            else { return nil }
+            return trimmed
+        }
+        return formatFrameRate(value)
+    }
+
+    nonisolated static func numericFrameRate(from rawValue: String?) -> Double? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if let value = Double(trimmed) {
-            return formatFrameRate(value)
+            return value
         }
 
         let parts = trimmed.split(separator: "/", omittingEmptySubsequences: false)
@@ -943,10 +953,10 @@ struct DASHStream: Decodable, Hashable, Sendable {
            let numerator = Double(parts[0]),
            let denominator = Double(parts[1]),
            denominator != 0 {
-            return formatFrameRate(numerator / denominator)
+            return numerator / denominator
         }
 
-        return trimmed
+        return nil
     }
 
     nonisolated static func preferPlayable(_ lhs: DASHStream, _ rhs: DASHStream) -> Bool {

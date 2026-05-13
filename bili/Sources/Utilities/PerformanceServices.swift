@@ -1262,6 +1262,11 @@ actor VideoPreloadCenter {
                 if lhs.quality != rhs.quality {
                     return lhs.quality > rhs.quality
                 }
+                let lhsFPS = playbackFrameRate(lhs)
+                let rhsFPS = playbackFrameRate(rhs)
+                if lhsFPS != rhsFPS {
+                    return lhsFPS > rhsFPS
+                }
                 return (lhs.bandwidth ?? 0) > (rhs.bandwidth ?? 0)
             }
 
@@ -1284,6 +1289,22 @@ actor VideoPreloadCenter {
             }
         }
         return playableVariants.first
+    }
+
+    private nonisolated static func playbackFrameRate(_ variant: PlayVariant) -> Double {
+        if let frameRate = DASHStream.numericFrameRate(from: variant.frameRate) {
+            return frameRate
+        }
+        if [116, 74].contains(variant.quality) {
+            return 60
+        }
+        if variant.title.contains("高帧")
+            || variant.title.contains("60")
+            || variant.badge?.contains("高帧") == true
+            || variant.badge?.contains("60") == true {
+            return 60
+        }
+        return 0
     }
 
     private nonisolated static func qualitySummary(_ variants: [PlayVariant]) -> String {

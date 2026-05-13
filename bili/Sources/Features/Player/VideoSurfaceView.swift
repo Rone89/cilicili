@@ -813,6 +813,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private let currentTimeLabel = UILabel()
     private let durationLabel = UILabel()
     private let progressSlider = UISlider()
+    private let transportStack = UIStackView()
     private let controlsStack = UIStackView()
     private let feedbackView = UIView()
     private let feedbackImageView = UIImageView()
@@ -826,6 +827,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var feedbackTask: Task<Void, Never>?
     private var lastFullscreenLayoutSize: CGSize = .zero
     private var exitButtonTopConstraint: NSLayoutConstraint?
+    private var transportCenterYConstraint: NSLayoutConstraint?
     private var controlsStackBottomConstraint: NSLayoutConstraint?
     private var topChromeHeightConstraint: NSLayoutConstraint?
     private var bottomChromeHeightConstraint: NSLayoutConstraint?
@@ -885,17 +887,19 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         isOpaque = false
         isUserInteractionEnabled = true
 
-        [topChrome, bottomChrome, controlsStack, exitButton, feedbackView].forEach {
+        [topChrome, bottomChrome, controlsStack, transportStack, exitButton, feedbackView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
         }
 
         let exitButtonTopConstraint = exitButton.topAnchor.constraint(equalTo: topAnchor, constant: 10)
+        let transportCenterYConstraint = transportStack.centerYAnchor.constraint(equalTo: centerYAnchor)
         let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 58)
-        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 96)
+        let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 62)
         let feedbackCenterXConstraint = feedbackView.centerXAnchor.constraint(equalTo: centerXAnchor)
         self.exitButtonTopConstraint = exitButtonTopConstraint
+        self.transportCenterYConstraint = transportCenterYConstraint
         self.controlsStackBottomConstraint = controlsStackBottomConstraint
         self.topChromeHeightConstraint = topChromeHeightConstraint
         self.bottomChromeHeightConstraint = bottomChromeHeightConstraint
@@ -919,6 +923,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             controlsStack.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 14),
             controlsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
             controlsStackBottomConstraint,
+
+            transportStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            transportCenterYConstraint,
 
             feedbackCenterXConstraint,
             feedbackView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -945,12 +952,13 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let bottomInset = isPortraitFullscreen ? max(safeAreaInsets.bottom, minimumBottomInset) : min(max(safeAreaInsets.bottom, 0), 18)
         exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 6)
         controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
+        transportCenterYConstraint?.constant = isPortraitFullscreen ? -12 : 0
         topChromeHeightConstraint?.constant = isPortraitFullscreen
             ? 58
             : 54
         bottomChromeHeightConstraint?.constant = isPortraitFullscreen
-            ? 118
-            : min(102, max(bounds.height * 0.22, 78))
+            ? 70
+            : 62
         bottomChrome.setNeedsLayout()
         topChrome.setNeedsLayout()
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())
@@ -968,10 +976,14 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 
     private func configureControls() {
-        configureIconButton(exitButton, systemName: "xmark")
-        configureIconButton(rewindButton, systemName: "gobackward.10")
-        configureIconButton(playPauseButton, systemName: "play.fill", pointSize: 18, isPrimary: true)
-        configureIconButton(forwardButton, systemName: "goforward.10")
+        configureTopButton(exitButton, systemName: "xmark")
+        configureTransportButton(rewindButton, systemName: "gobackward.10", size: 54)
+        configureTransportButton(playPauseButton, systemName: "play.fill", size: 78, pointSize: 28, isPrimary: true)
+        configureTransportButton(forwardButton, systemName: "goforward.10", size: 54)
+        exitButton.accessibilityLabel = "退出全屏"
+        rewindButton.accessibilityLabel = "后退 10 秒"
+        playPauseButton.accessibilityLabel = "播放"
+        forwardButton.accessibilityLabel = "前进 10 秒"
 
         exitButton.addTarget(self, action: #selector(handleExitButton), for: .touchUpInside)
         rewindButton.addTarget(self, action: #selector(handleRewindButton), for: .touchUpInside)
@@ -999,15 +1011,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         progressSlider.addTarget(self, action: #selector(handleSliderValueChanged), for: .valueChanged)
         progressSlider.addTarget(self, action: #selector(handleSliderTouchUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
-        let buttonRow = UIStackView(arrangedSubviews: [
-            rewindButton,
-            playPauseButton,
-            forwardButton,
-            UIView()
-        ])
-        buttonRow.axis = .horizontal
-        buttonRow.alignment = .center
-        buttonRow.spacing = 8
+        transportStack.axis = .horizontal
+        transportStack.alignment = .center
+        transportStack.spacing = 26
+        transportStack.addArrangedSubview(rewindButton)
+        transportStack.addArrangedSubview(playPauseButton)
+        transportStack.addArrangedSubview(forwardButton)
 
         let progressRow = UIStackView(arrangedSubviews: [
             currentTimeLabel,
@@ -1020,10 +1029,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
         controlsStack.axis = .vertical
         controlsStack.alignment = .fill
-        controlsStack.spacing = 10
-        controlsStack.addArrangedSubview(buttonRow)
+        controlsStack.spacing = 0
         controlsStack.addArrangedSubview(progressRow)
-        controlsStack.layoutMargins = UIEdgeInsets(top: 6, left: 0, bottom: 0, right: 0)
+        controlsStack.layoutMargins = UIEdgeInsets(top: 7, left: 0, bottom: 7, right: 0)
         controlsStack.isLayoutMarginsRelativeArrangement = true
 
         feedbackView.backgroundColor = .clear
@@ -1067,29 +1075,60 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         ])
     }
 
-    private func configureIconButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 15, isPrimary: Bool = false) {
-        var configuration = isPrimary ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
+    private func configureTopButton(_ button: UIButton, systemName: String, pointSize: CGFloat = 15) {
+        var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         configuration.baseForegroundColor = .white
-        configuration.baseBackgroundColor = isPrimary
-            ? UIColor(red: 1.0, green: 0.25, blue: 0.50, alpha: 1)
-            : UIColor.white.withAlphaComponent(0.16)
+        configuration.baseBackgroundColor = UIColor.white.withAlphaComponent(0.16)
         configuration.cornerStyle = .capsule
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
         button.configuration = configuration
         button.backgroundColor = .clear
         button.tintColor = .white
-        let buttonSize: CGFloat = isPrimary ? 40 : 36
-        button.layer.cornerRadius = buttonSize / 2
-        button.layer.borderWidth = 0
+        button.layer.cornerRadius = 18
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
-        button.layer.shadowOpacity = isPrimary ? 0.9 : 0.55
-        button.layer.shadowRadius = isPrimary ? 10 : 6
-        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 5 : 3)
+        button.layer.shadowOpacity = 0.55
+        button.layer.shadowRadius = 6
+        button.layer.shadowOffset = CGSize(width: 0, height: 3)
         button.clipsToBounds = false
-        button.widthAnchor.constraint(equalToConstant: buttonSize).isActive = true
-        button.heightAnchor.constraint(equalToConstant: buttonSize).isActive = true
+        button.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+    }
+
+    private func configureTransportButton(
+        _ button: UIButton,
+        systemName: String,
+        size: CGFloat,
+        pointSize: CGFloat? = nil,
+        isPrimary: Bool = false
+    ) {
+        var configuration = isPrimary ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
+        configuration.image = UIImage(systemName: systemName)
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: pointSize ?? (size * 0.29),
+            weight: .bold
+        )
+        configuration.baseForegroundColor = .white
+        configuration.baseBackgroundColor = isPrimary
+            ? UIColor.black.withAlphaComponent(0.30)
+            : UIColor.black.withAlphaComponent(0.20)
+        configuration.cornerStyle = .capsule
+        let leadingInset: CGFloat = systemName == "play.fill" ? 4 : 0
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: leadingInset, bottom: 0, trailing: 0)
+        configuration.imagePadding = 0
+        button.configuration = configuration
+        button.backgroundColor = .clear
+        button.tintColor = .white
+        button.layer.cornerRadius = size / 2
+        button.layer.borderWidth = 0
+        button.layer.shadowColor = UIColor.black.withAlphaComponent(0.34).cgColor
+        button.layer.shadowOpacity = isPrimary ? 0.9 : 0.62
+        button.layer.shadowRadius = isPrimary ? 20 : 14
+        button.layer.shadowOffset = CGSize(width: 0, height: isPrimary ? 9 : 6)
+        button.clipsToBounds = false
+        button.widthAnchor.constraint(equalToConstant: size).isActive = true
+        button.heightAnchor.constraint(equalToConstant: size).isActive = true
     }
 
     private func startRefreshTimerIfNeeded() {
@@ -1126,6 +1165,13 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         setTransportEnabled(canSeek)
         let playSymbol = viewModel.isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.configuration?.image = UIImage(systemName: playSymbol)
+        playPauseButton.configuration?.contentInsets = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: viewModel.isPlaying ? 0 : 4,
+            bottom: 0,
+            trailing: 0
+        )
+        playPauseButton.accessibilityLabel = viewModel.isPlaying ? "暂停" : "播放"
 
         if lastKnownPlayingState != viewModel.isPlaying {
             lastKnownPlayingState = viewModel.isPlaying
@@ -1140,10 +1186,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private func setTransportEnabled(_ isEnabled: Bool) {
         rewindButton.isEnabled = isEnabled
         forwardButton.isEnabled = isEnabled
+        playPauseButton.isEnabled = viewModel != nil
         progressSlider.isEnabled = isEnabled
         let alpha: CGFloat = isEnabled ? 1 : 0.45
         rewindButton.alpha = alpha
         forwardButton.alpha = alpha
+        playPauseButton.alpha = viewModel == nil ? 0.45 : 1
         progressSlider.alpha = alpha
     }
 
@@ -1155,16 +1203,25 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             self.topChrome.alpha = alpha
             self.bottomChrome.alpha = alpha
             self.exitButton.alpha = alpha
+            self.transportStack.alpha = alpha
             self.controlsStack.alpha = alpha
+            self.transportStack.transform = chromeVisible
+                ? .identity
+                : CGAffineTransform(scaleX: 0.88, y: 0.88)
         }
         let completion = {
             self.exitButton.isUserInteractionEnabled = chromeVisible
+            self.transportStack.isUserInteractionEnabled = chromeVisible
             self.controlsStack.isUserInteractionEnabled = chromeVisible
         }
 
         if chromeVisible {
             exitButton.isUserInteractionEnabled = true
+            transportStack.isUserInteractionEnabled = true
             controlsStack.isUserInteractionEnabled = true
+            if animated {
+                transportStack.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            }
         }
 
         if animated {
@@ -1218,6 +1275,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             if isControlsVisible {
                 scheduleAutoHideIfNeeded()
             }
+            animateTransportButton(rewindButton)
             showFeedback(systemName: "gobackward.10", title: "-10s", region: .leading)
         case .trailing:
             guard viewModel.canSeek else { return }
@@ -1226,11 +1284,13 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             if isControlsVisible {
                 scheduleAutoHideIfNeeded()
             }
+            animateTransportButton(forwardButton)
             showFeedback(systemName: "goforward.10", title: "+10s", region: .trailing)
         case .center:
             viewModel.togglePlayback()
             refreshFromViewModel()
             setControlsVisible(true, animated: true)
+            animateTransportButton(playPauseButton)
             showFeedback(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", region: .center)
         }
     }
@@ -1245,6 +1305,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         viewModel?.seek(by: -10)
         refreshFromViewModel()
         setControlsVisible(true, animated: true)
+        animateTransportButton(rewindButton)
         showFeedback(systemName: "gobackward.10", title: "-10s", region: .center)
     }
 
@@ -1253,6 +1314,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         viewModel?.togglePlayback()
         refreshFromViewModel()
         setControlsVisible(true, animated: true)
+        animateTransportButton(playPauseButton)
     }
 
     @objc private func handleForwardButton() {
@@ -1260,7 +1322,29 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         viewModel?.seek(by: 10)
         refreshFromViewModel()
         setControlsVisible(true, animated: true)
+        animateTransportButton(forwardButton)
         showFeedback(systemName: "goforward.10", title: "+10s", region: .center)
+    }
+
+    private func animateTransportButton(_ button: UIButton) {
+        guard isControlsVisible else { return }
+        UIView.animate(
+            withDuration: 0.09,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            button.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        } completion: { _ in
+            UIView.animate(
+                withDuration: 0.22,
+                delay: 0,
+                usingSpringWithDamping: 0.58,
+                initialSpringVelocity: 0.7,
+                options: [.beginFromCurrentState]
+            ) {
+                button.transform = .identity
+            }
+        }
     }
 
     @objc private func handleSliderTouchDown() {
@@ -1331,6 +1415,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let touchedView = touch.view else { return true }
         if touchedView.isDescendant(of: controlsStack) || touchedView.isDescendant(of: exitButton) {
+            return false
+        }
+        if touchedView.isDescendant(of: transportStack) {
             return false
         }
         return true
