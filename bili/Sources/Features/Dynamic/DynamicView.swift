@@ -1860,7 +1860,7 @@ private struct DynamicForwardUnavailableView: View {
     }
 }
 
-private struct DynamicImageSelection: Identifiable {
+private struct DynamicImageSelection: Identifiable, Hashable {
     let index: Int
     let transitionID: String
 
