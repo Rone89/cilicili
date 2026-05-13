@@ -771,17 +771,34 @@ struct BiliPlayerView: View {
         }
     }
 
-    private func handlePlayerDoubleTap() {
+    private func handlePlayerDoubleTap(_ region: PlayerGestureRegion) {
         guard usesCustomPlaybackControls else { return }
         if controlsLocked {
             showLockAffordance()
             return
         }
         Haptics.medium()
-        viewModel.togglePlayback()
-        controlsVisible = true
-        scheduleControlsAutoHideIfNeeded()
-        showGestureFeedback(viewModel.isPlaying ? .pause : .play)
+        switch region {
+        case .leading:
+            guard viewModel.canSeek else { return }
+            viewModel.seek(by: -10)
+            if controlsVisible {
+                scheduleControlsAutoHideIfNeeded()
+            }
+            showGestureFeedback(.seekBackward(seconds: 10))
+        case .trailing:
+            guard viewModel.canSeek else { return }
+            viewModel.seek(by: 10)
+            if controlsVisible {
+                scheduleControlsAutoHideIfNeeded()
+            }
+            showGestureFeedback(.seekForward(seconds: 10))
+        case .center:
+            viewModel.togglePlayback()
+            controlsVisible = true
+            scheduleControlsAutoHideIfNeeded()
+            showGestureFeedback(viewModel.isPlaying ? .pause : .play)
+        }
     }
 
     private func handlePlayerLongPressStart() {
@@ -927,7 +944,9 @@ struct BiliPlayerView: View {
     }
 
     private func playerGestureFeedbackView(_ feedback: PlayerGestureFeedback) -> some View {
-        VStack(spacing: 5) {
+        let horizontalPadding: CGFloat = presentation == .embedded ? 26 : 62
+
+        return VStack(spacing: 5) {
             Image(systemName: feedback.systemName)
                 .font(.system(size: feedback.title == nil ? 34 : 24, weight: .bold))
 
@@ -938,7 +957,7 @@ struct BiliPlayerView: View {
             }
         }
             .foregroundStyle(.white)
-            .frame(width: 86, height: 78)
+            .frame(width: feedback.width, height: 78)
             .background(.black.opacity(0.44))
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay {
@@ -946,13 +965,38 @@ struct BiliPlayerView: View {
                     .stroke(.white.opacity(0.08), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.42), radius: 18, y: 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: feedback.alignment)
+            .padding(.horizontal, horizontalPadding)
             .allowsHitTesting(false)
+    }
+}
+
+private enum PlayerGestureRegion: Equatable {
+    case leading
+    case center
+    case trailing
+
+    init(locationX: CGFloat, width: CGFloat) {
+        guard width > 0 else {
+            self = .center
+            return
+        }
+        let ratio = locationX / width
+        if ratio < 0.38 {
+            self = .leading
+        } else if ratio > 0.62 {
+            self = .trailing
+        } else {
+            self = .center
+        }
     }
 }
 
 private enum PlayerGestureFeedback: Equatable {
     case play
     case pause
+    case seekBackward(seconds: Int)
+    case seekForward(seconds: Int)
     case speed(String)
 
     var systemName: String {
@@ -961,6 +1005,10 @@ private enum PlayerGestureFeedback: Equatable {
             return "play.fill"
         case .pause:
             return "pause.fill"
+        case .seekBackward(let seconds):
+            return "gobackward.\(seconds)"
+        case .seekForward(let seconds):
+            return "goforward.\(seconds)"
         case .speed:
             return "forward.fill"
         }
@@ -970,9 +1018,28 @@ private enum PlayerGestureFeedback: Equatable {
         switch self {
         case .speed(let title):
             return title
+        case .seekBackward(let seconds):
+            return "-\(seconds)s"
+        case .seekForward(let seconds):
+            return "+\(seconds)s"
         case .play, .pause:
             return nil
         }
+    }
+
+    var alignment: Alignment {
+        switch self {
+        case .seekBackward:
+            return .leading
+        case .seekForward:
+            return .trailing
+        case .play, .pause, .speed:
+            return .center
+        }
+    }
+
+    var width: CGFloat {
+        title == nil ? 86 : 96
     }
 
     var isSpeedFeedback: Bool {
@@ -985,7 +1052,7 @@ private enum PlayerGestureFeedback: Equatable {
 
 private struct PlayerGestureOverlay: UIViewRepresentable {
     let onSingleTap: () -> Void
-    let onDoubleTap: () -> Void
+    let onDoubleTap: (PlayerGestureRegion) -> Void
     let onLongPressStart: () -> Void
     let onLongPressEnd: () -> Void
 
@@ -1008,7 +1075,7 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
 
     final class GestureOverlayView: UIView, UIGestureRecognizerDelegate {
         var onSingleTap: (() -> Void)?
-        var onDoubleTap: (() -> Void)?
+        var onDoubleTap: ((PlayerGestureRegion) -> Void)?
         var onLongPressStart: (() -> Void)?
         var onLongPressEnd: (() -> Void)?
 
@@ -1023,7 +1090,7 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
             return gesture
         }()
         private lazy var doubleTapGesture: UITapGestureRecognizer = {
-            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
+            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
             gesture.numberOfTapsRequired = 2
             gesture.cancelsTouchesInView = false
             gesture.delegate = self
@@ -1061,8 +1128,9 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
             onSingleTap?()
         }
 
-        @objc private func handleDoubleTap() {
-            onDoubleTap?()
+        @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+            let location = recognizer.location(in: self)
+            onDoubleTap?(PlayerGestureRegion(locationX: location.x, width: bounds.width))
         }
 
         @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {

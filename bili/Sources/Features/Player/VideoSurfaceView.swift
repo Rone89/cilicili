@@ -760,6 +760,28 @@ private final class ManualVideoFullscreenViewController: UIViewController {
 }
 
 @MainActor
+private enum ManualFullscreenTapRegion {
+    case leading
+    case center
+    case trailing
+
+    init(locationX: CGFloat, width: CGFloat) {
+        guard width > 0 else {
+            self = .center
+            return
+        }
+        let ratio = locationX / width
+        if ratio < 0.38 {
+            self = .leading
+        } else if ratio > 0.62 {
+            self = .trailing
+        } else {
+            self = .center
+        }
+    }
+}
+
+@MainActor
 private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecognizerDelegate {
     weak var viewModel: PlayerStateViewModel? {
         didSet {
@@ -794,9 +816,11 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private let controlsStack = UIStackView()
     private let feedbackView = UIView()
     private let feedbackImageView = UIImageView()
+    private let feedbackLabel = UILabel()
     private var isControlsVisible = true
     private var isScrubbing = false
     private var lastKnownPlayingState = false
+    private var lastFeedbackRegion: ManualFullscreenTapRegion = .center
     private var refreshTimer: Timer?
     private var autoHideControlsTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
@@ -805,6 +829,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var controlsStackBottomConstraint: NSLayoutConstraint?
     private var topChromeHeightConstraint: NSLayoutConstraint?
     private var bottomChromeHeightConstraint: NSLayoutConstraint?
+    private var feedbackCenterXConstraint: NSLayoutConstraint?
+    private var feedbackImageCenterYConstraint: NSLayoutConstraint?
 
     private lazy var singleTapGesture: UITapGestureRecognizer = {
         let gesture = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
@@ -815,7 +841,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }()
 
     private lazy var doubleTapGesture: UITapGestureRecognizer = {
-        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         gesture.numberOfTapsRequired = 2
         gesture.cancelsTouchesInView = false
         gesture.delegate = self
@@ -868,10 +894,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 58)
         let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 96)
+        let feedbackCenterXConstraint = feedbackView.centerXAnchor.constraint(equalTo: centerXAnchor)
         self.exitButtonTopConstraint = exitButtonTopConstraint
         self.controlsStackBottomConstraint = controlsStackBottomConstraint
         self.topChromeHeightConstraint = topChromeHeightConstraint
         self.bottomChromeHeightConstraint = bottomChromeHeightConstraint
+        self.feedbackCenterXConstraint = feedbackCenterXConstraint
 
         NSLayoutConstraint.activate([
             topChrome.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
@@ -892,9 +920,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             controlsStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
             controlsStackBottomConstraint,
 
-            feedbackView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            feedbackCenterXConstraint,
             feedbackView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            feedbackView.widthAnchor.constraint(equalToConstant: 78),
+            feedbackView.widthAnchor.constraint(equalToConstant: 92),
             feedbackView.heightAnchor.constraint(equalToConstant: 78)
         ])
     }
@@ -928,6 +956,9 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())
         guard roundedSize != lastFullscreenLayoutSize else { return }
         lastFullscreenLayoutSize = roundedSize
+        if feedbackView.alpha > 0 {
+            positionFeedbackView(for: lastFeedbackRegion)
+        }
     }
 
     private func configureGestures() {
@@ -1011,17 +1042,28 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         feedbackImageView.translatesAutoresizingMaskIntoConstraints = false
         feedbackImageView.tintColor = .white
         feedbackImageView.contentMode = .scaleAspectFit
+        feedbackLabel.translatesAutoresizingMaskIntoConstraints = false
+        feedbackLabel.textColor = .white
+        feedbackLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .bold)
+        feedbackLabel.textAlignment = .center
+        feedbackLabel.isHidden = true
         feedbackView.addSubview(feedbackGlassView)
         feedbackView.addSubview(feedbackImageView)
+        feedbackView.addSubview(feedbackLabel)
+        let feedbackImageCenterYConstraint = feedbackImageView.centerYAnchor.constraint(equalTo: feedbackView.centerYAnchor)
+        self.feedbackImageCenterYConstraint = feedbackImageCenterYConstraint
         NSLayoutConstraint.activate([
             feedbackGlassView.leadingAnchor.constraint(equalTo: feedbackView.leadingAnchor),
             feedbackGlassView.trailingAnchor.constraint(equalTo: feedbackView.trailingAnchor),
             feedbackGlassView.topAnchor.constraint(equalTo: feedbackView.topAnchor),
             feedbackGlassView.bottomAnchor.constraint(equalTo: feedbackView.bottomAnchor),
             feedbackImageView.centerXAnchor.constraint(equalTo: feedbackView.centerXAnchor),
-            feedbackImageView.centerYAnchor.constraint(equalTo: feedbackView.centerYAnchor),
-            feedbackImageView.widthAnchor.constraint(equalToConstant: 34),
-            feedbackImageView.heightAnchor.constraint(equalToConstant: 34)
+            feedbackImageCenterYConstraint,
+            feedbackImageView.widthAnchor.constraint(equalToConstant: 32),
+            feedbackImageView.heightAnchor.constraint(equalToConstant: 32),
+            feedbackLabel.topAnchor.constraint(equalTo: feedbackImageView.bottomAnchor, constant: 3),
+            feedbackLabel.leadingAnchor.constraint(equalTo: feedbackView.leadingAnchor, constant: 8),
+            feedbackLabel.trailingAnchor.constraint(equalTo: feedbackView.trailingAnchor, constant: -8)
         ])
     }
 
@@ -1164,13 +1206,33 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         setControlsVisible(!isControlsVisible, animated: true)
     }
 
-    @objc private func handleDoubleTap() {
+    @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
         guard let viewModel else { return }
         Haptics.medium()
-        viewModel.togglePlayback()
-        refreshFromViewModel()
-        setControlsVisible(true, animated: true)
-        showFeedback(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+        let region = ManualFullscreenTapRegion(locationX: recognizer.location(in: self).x, width: bounds.width)
+        switch region {
+        case .leading:
+            guard viewModel.canSeek else { return }
+            viewModel.seek(by: -10)
+            refreshFromViewModel()
+            if isControlsVisible {
+                scheduleAutoHideIfNeeded()
+            }
+            showFeedback(systemName: "gobackward.10", title: "-10s", region: .leading)
+        case .trailing:
+            guard viewModel.canSeek else { return }
+            viewModel.seek(by: 10)
+            refreshFromViewModel()
+            if isControlsVisible {
+                scheduleAutoHideIfNeeded()
+            }
+            showFeedback(systemName: "goforward.10", title: "+10s", region: .trailing)
+        case .center:
+            viewModel.togglePlayback()
+            refreshFromViewModel()
+            setControlsVisible(true, animated: true)
+            showFeedback(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill", region: .center)
+        }
     }
 
     @objc private func handleExitButton() {
@@ -1183,7 +1245,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         viewModel?.seek(by: -10)
         refreshFromViewModel()
         setControlsVisible(true, animated: true)
-        showFeedback(systemName: "gobackward.10")
+        showFeedback(systemName: "gobackward.10", title: "-10s", region: .center)
     }
 
     @objc private func handlePlayPauseButton() {
@@ -1198,7 +1260,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         viewModel?.seek(by: 10)
         refreshFromViewModel()
         setControlsVisible(true, animated: true)
-        showFeedback(systemName: "goforward.10")
+        showFeedback(systemName: "goforward.10", title: "+10s", region: .center)
     }
 
     @objc private func handleSliderTouchDown() {
@@ -1221,9 +1283,14 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         scheduleAutoHideIfNeeded()
     }
 
-    private func showFeedback(systemName: String) {
+    private func showFeedback(systemName: String, title: String? = nil, region: ManualFullscreenTapRegion) {
         feedbackTask?.cancel()
+        lastFeedbackRegion = region
         feedbackImageView.image = UIImage(systemName: systemName)
+        feedbackLabel.text = title
+        feedbackLabel.isHidden = title == nil
+        feedbackImageCenterYConstraint?.constant = title == nil ? 0 : -7
+        positionFeedbackView(for: region)
         feedbackView.transform = CGAffineTransform(scaleX: 0.82, y: 0.82)
         UIView.animate(
             withDuration: 0.16,
@@ -1244,6 +1311,21 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
                 self.feedbackView.alpha = 0
             }
         }
+    }
+
+    private func positionFeedbackView(for region: ManualFullscreenTapRegion) {
+        let horizontalInset = max(safeAreaInsets.left, safeAreaInsets.right) + 74
+        let centerX: CGFloat
+        switch region {
+        case .leading:
+            centerX = min(max(horizontalInset, bounds.minX + 46), bounds.midX)
+        case .trailing:
+            centerX = max(min(bounds.width - horizontalInset, bounds.maxX - 46), bounds.midX)
+        case .center:
+            centerX = bounds.midX
+        }
+        feedbackCenterXConstraint?.constant = centerX - bounds.midX
+        layoutIfNeeded()
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

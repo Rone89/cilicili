@@ -328,7 +328,12 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         if wantsPlayback {
             publishPlaybackState(.buffering)
         }
-        player.seek(to: CMTime(seconds: playerTarget, preferredTimescale: 600))
+        let targetTime = CMTime(seconds: playerTarget, preferredTimescale: 600)
+        player.systemPlayer.seek(
+            to: targetTime,
+            toleranceBefore: CMTime(seconds: 0.35, preferredTimescale: 600),
+            toleranceAfter: CMTime(seconds: 0.35, preferredTimescale: 600)
+        )
         return displayTime(fromPlayerTime: playerTarget)
     }
 
