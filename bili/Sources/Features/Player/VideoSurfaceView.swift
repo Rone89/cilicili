@@ -784,6 +784,11 @@ private enum ManualFullscreenTapRegion {
 @MainActor
 private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecognizerDelegate {
     weak var viewModel: PlayerStateViewModel? {
+        willSet {
+            if viewModel !== newValue {
+                restoreLongPressPlaybackRateIfNeeded()
+            }
+        }
         didSet {
             lastKnownPlayingState = viewModel?.isPlaying ?? false
             refreshFromViewModel()
@@ -820,6 +825,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private let feedbackLabel = UILabel()
     private var isControlsVisible = true
     private var isScrubbing = false
+    private var longPressRateRestoreValue: BiliPlaybackRate?
     private var lastKnownPlayingState = false
     private var lastFeedbackRegion: ManualFullscreenTapRegion = .center
     private var refreshTimer: Timer?
@@ -850,6 +856,14 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         return gesture
     }()
 
+    private lazy var longPressGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        gesture.minimumPressDuration = 0.28
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         configureView()
@@ -863,6 +877,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 
     deinit {
+        restoreLongPressPlaybackRateIfNeeded()
         refreshTimer?.invalidate()
         autoHideControlsTask?.cancel()
         feedbackTask?.cancel()
@@ -875,6 +890,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             refreshTimer = nil
             autoHideControlsTask?.cancel()
             feedbackTask?.cancel()
+            restoreLongPressPlaybackRateIfNeeded()
         } else {
             startRefreshTimerIfNeeded()
             setControlsVisible(true, animated: false)
@@ -973,6 +989,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         singleTapGesture.require(toFail: doubleTapGesture)
         addGestureRecognizer(singleTapGesture)
         addGestureRecognizer(doubleTapGesture)
+        addGestureRecognizer(longPressGesture)
     }
 
     private func configureControls() {
@@ -1038,7 +1055,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         feedbackView.layer.cornerRadius = 39
         feedbackView.layer.cornerCurve = .continuous
         let feedbackGlass = UIGlassEffect(style: .regular)
-        feedbackGlass.tintColor = UIColor.black.withAlphaComponent(0.18)
+        feedbackGlass.tintColor = UIColor.black.withAlphaComponent(0.42)
         feedbackGlass.isInteractive = false
         let feedbackGlassView = UIVisualEffectView(effect: feedbackGlass)
         feedbackGlassView.translatesAutoresizingMaskIntoConstraints = false
@@ -1080,12 +1097,13 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         configuration.baseForegroundColor = .white
-        configuration.baseBackgroundColor = UIColor.white.withAlphaComponent(0.16)
+        configuration.baseBackgroundColor = UIColor.black.withAlphaComponent(0.38)
         configuration.cornerStyle = .capsule
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
         button.configuration = configuration
         button.backgroundColor = .clear
         button.tintColor = .white
+        button.overrideUserInterfaceStyle = .dark
         button.layer.cornerRadius = 18
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.24).cgColor
         button.layer.shadowOpacity = 0.55
@@ -1103,7 +1121,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         pointSize: CGFloat? = nil,
         isPrimary: Bool = false
     ) {
-        var configuration = isPrimary ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
+        var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: systemName)
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
             pointSize: pointSize ?? (size * 0.29),
@@ -1111,8 +1129,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         )
         configuration.baseForegroundColor = .white
         configuration.baseBackgroundColor = isPrimary
-            ? UIColor.black.withAlphaComponent(0.30)
-            : UIColor.black.withAlphaComponent(0.20)
+            ? UIColor.black.withAlphaComponent(0.48)
+            : UIColor.black.withAlphaComponent(0.42)
         configuration.cornerStyle = .capsule
         let leadingInset: CGFloat = systemName == "play.fill" ? 4 : 0
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: leadingInset, bottom: 0, trailing: 0)
@@ -1120,6 +1138,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.configuration = configuration
         button.backgroundColor = .clear
         button.tintColor = .white
+        button.overrideUserInterfaceStyle = .dark
         button.layer.cornerRadius = size / 2
         button.layer.borderWidth = 0
         button.layer.shadowColor = UIColor.black.withAlphaComponent(0.34).cgColor
@@ -1295,6 +1314,17 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
     }
 
+    @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            beginLongPressSpeedBoost()
+        case .ended, .cancelled, .failed:
+            endLongPressSpeedBoost()
+        default:
+            break
+        }
+    }
+
     @objc private func handleExitButton() {
         Haptics.light()
         onExit?()
@@ -1326,6 +1356,38 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         showFeedback(systemName: "goforward.10", title: "+10s", region: .center)
     }
 
+    private func beginLongPressSpeedBoost() {
+        guard let viewModel, viewModel.isPlaying, longPressRateRestoreValue == nil else { return }
+        longPressRateRestoreValue = viewModel.playbackRate
+        Haptics.medium()
+        viewModel.setPlaybackRate(.x20)
+        autoHideControlsTask?.cancel()
+        autoHideControlsTask = nil
+        setControlsVisible(false, animated: true)
+        showFeedback(systemName: "forward.fill", title: "2.0x", region: .center, persists: true)
+    }
+
+    private func endLongPressSpeedBoost() {
+        restoreLongPressPlaybackRateIfNeeded()
+        scheduleAutoHideIfNeeded()
+    }
+
+    private func restoreLongPressPlaybackRateIfNeeded() {
+        guard let restoreRate = longPressRateRestoreValue else { return }
+        longPressRateRestoreValue = nil
+        viewModel?.setPlaybackRate(restoreRate)
+        if feedbackLabel.text == "2.0x" {
+            feedbackTask?.cancel()
+            UIView.animate(
+                withDuration: 0.16,
+                delay: 0,
+                options: [.curveEaseInOut, .beginFromCurrentState]
+            ) {
+                self.feedbackView.alpha = 0
+            }
+        }
+    }
+
     private func animateTransportButton(_ button: UIButton) {
         guard isControlsVisible else { return }
         UIView.animate(
@@ -1349,6 +1411,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
     @objc private func handleSliderTouchDown() {
         isScrubbing = true
+        restoreLongPressPlaybackRateIfNeeded()
         autoHideControlsTask?.cancel()
     }
 
@@ -1367,7 +1430,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         scheduleAutoHideIfNeeded()
     }
 
-    private func showFeedback(systemName: String, title: String? = nil, region: ManualFullscreenTapRegion) {
+    private func showFeedback(
+        systemName: String,
+        title: String? = nil,
+        region: ManualFullscreenTapRegion,
+        persists: Bool = false
+    ) {
         feedbackTask?.cancel()
         lastFeedbackRegion = region
         feedbackImageView.image = UIImage(systemName: systemName)
@@ -1384,6 +1452,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             self.feedbackView.alpha = 1
             self.feedbackView.transform = .identity
         }
+        guard !persists else { return }
         feedbackTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 620_000_000)
             guard let self, !Task.isCancelled else { return }
@@ -1461,10 +1530,11 @@ private final class FullscreenControlsGlassView: UIVisualEffectView {
 
     init(direction: Direction) {
         let glass = UIGlassEffect(style: .regular)
-        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.12 : 0.18)
+        glass.tintColor = UIColor.black.withAlphaComponent(direction == .top ? 0.34 : 0.38)
         glass.isInteractive = false
         super.init(effect: glass)
         isUserInteractionEnabled = false
+        overrideUserInterfaceStyle = .dark
         backgroundColor = .clear
         clipsToBounds = true
         layer.cornerCurve = .continuous

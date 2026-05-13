@@ -564,7 +564,7 @@ struct BiliPlayerView: View {
                     .frame(width: 48, height: 48)
             }
             .biliGlassButtonStyle()
-            .tint(.white.opacity(0.18))
+            .tint(.black.opacity(0.34))
             .accessibilityLabel("解锁播放控件")
 
             Spacer(minLength: 0)
@@ -669,7 +669,7 @@ struct BiliPlayerView: View {
         }
         .padding(.horizontal, isCompact ? 10 : 12)
         .padding(.vertical, isCompact ? 6 : 8)
-        .liquidPlayerGlassCapsule(tint: .black.opacity(0.18))
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.38))
     }
 
     private var speedMenu: some View {
@@ -698,7 +698,7 @@ struct BiliPlayerView: View {
             }
         }
         .biliGlassButtonStyle()
-        .tint(.white.opacity(0.18))
+        .tint(.black.opacity(0.32))
     }
 
     private var compactPlaybackRateTitle: String {
@@ -724,7 +724,7 @@ struct BiliPlayerView: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
         .biliGlassButtonStyle(prominent: isPrimary)
-        .tint(isPrimary ? Color(red: 1.0, green: 0.25, blue: 0.50) : .white.opacity(0.10))
+        .tint(.black.opacity(isPrimary ? 0.36 : 0.30))
     }
 
     private func telegramTransportButton(
@@ -748,7 +748,7 @@ struct BiliPlayerView: View {
         .foregroundStyle(.white)
         .glassEffect(
             .regular
-                .tint(.black.opacity(isPrimary ? 0.26 : 0.20))
+                .tint(.black.opacity(isPrimary ? 0.46 : 0.40))
                 .interactive(true),
             in: Circle()
         )
