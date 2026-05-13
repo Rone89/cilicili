@@ -224,6 +224,17 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engine.refreshSurfaceLayout()
     }
 
+    @discardableResult
+    func enterManualFullscreen(
+        mode: ManualVideoFullscreenMode,
+        onExit: (() -> Void)?,
+        animated: Bool
+    ) -> Bool {
+        guard let surfaceView else { return false }
+        surfaceView.setManualFullscreenMode(mode, onExit: onExit, animated: animated)
+        return surfaceView.isInManualFullscreen
+    }
+
     func playbackSnapshot() -> PlayerPlaybackSnapshot {
         engine.snapshot(durationHint: duration ?? durationHint)
     }

@@ -112,8 +112,11 @@ struct VideoDetailView: View {
             let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
             let isLandscape = sceneIsLandscape && !isManualFullscreen
             let shouldHideSystemChrome = isLandscape || isManualFullscreen
+            let isManualLandscapeFullscreen = manualFullscreenMode?.isLandscape == true
             let layoutSize = isManualFullscreen
-                ? CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height))
+                ? (isManualLandscapeFullscreen
+                    ? CGSize(width: max(proxy.size.width, proxy.size.height), height: min(proxy.size.width, proxy.size.height))
+                    : CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height)))
                 : proxy.size
 
             standardPlaybackPage(
@@ -239,7 +242,9 @@ struct VideoDetailView: View {
             playerWidth: playerWidth,
             playerHeight: playerHeight,
             manualFullscreenMode: activeManualFullscreenMode,
-            onRequestManualFullscreen: { enterManualLandscapePlayback() },
+            onRequestManualFullscreen: { playerViewModel in
+                enterManualLandscapePlayback(playerViewModel: playerViewModel)
+            },
             onExitManualFullscreen: exitHandler,
             onShowDanmakuSettings: {
                 isShowingDanmakuSettings = true
@@ -253,8 +258,14 @@ struct VideoDetailView: View {
         beginRestoringPortraitFromManualLandscape()
     }
 
-    private func enterManualLandscapePlayback() {
-        guard manualFullscreenMode == nil else { return }
+    private func enterManualLandscapePlayback(playerViewModel: PlayerStateViewModel? = nil) {
+        if let manualFullscreenMode {
+            requestManualFullscreenSurfaceEntry(
+                mode: manualFullscreenMode,
+                playerViewModel: playerViewModel
+            )
+            return
+        }
         pendingManualLandscapeExitTask?.cancel()
         pendingManualLandscapeEnterTask?.cancel()
         isRestoringPortraitFromManualLandscape = false
@@ -267,11 +278,40 @@ struct VideoDetailView: View {
             targetMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
         }
         manualFullscreenMode = targetMode
+        requestManualFullscreenSurfaceEntry(
+            mode: targetMode,
+            playerViewModel: playerViewModel
+        )
         if let windowScene = UIApplication.shared.videoDetailKeyWindow?.windowScene {
             AppOrientationLock.update(to: targetMode.videoDetailInterfaceOrientationMask, in: windowScene)
             windowScene.requestGeometryUpdate(
                 UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: targetMode.videoDetailInterfaceOrientationMask)
             ) { _ in }
+        }
+    }
+
+    private func requestManualFullscreenSurfaceEntry(
+        mode: ManualVideoFullscreenMode,
+        playerViewModel: PlayerStateViewModel?
+    ) {
+        guard let playerViewModel else { return }
+        let didEnter = playerViewModel.enterManualFullscreen(
+            mode: mode,
+            onExit: { exitManualLandscapePlayback() },
+            animated: true
+        )
+        guard !didEnter else { return }
+
+        pendingManualLandscapeEnterTask?.cancel()
+        pendingManualLandscapeEnterTask = Task { @MainActor in
+            await Task.yield()
+            guard manualFullscreenMode == mode else { return }
+            _ = playerViewModel.enterManualFullscreen(
+                mode: mode,
+                onExit: { exitManualLandscapePlayback() },
+                animated: true
+            )
+            pendingManualLandscapeEnterTask = nil
         }
     }
 
@@ -844,7 +884,7 @@ private struct VideoDetailStandardPlaybackPage: View {
         let playerWidth: CGFloat?
         let playerHeight: CGFloat
         let manualFullscreenMode: ManualVideoFullscreenMode?
-        let onRequestManualFullscreen: (() -> Void)?
+        let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
         let onExitManualFullscreen: (() -> Void)?
         let onShowDanmakuSettings: () -> Void
     }
@@ -897,7 +937,7 @@ private struct VideoDetailPlayerHero: View {
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
     let manualFullscreenMode: ManualVideoFullscreenMode?
-    let onRequestManualFullscreen: (() -> Void)?
+    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
     let onExitManualFullscreen: (() -> Void)?
     let onShowDanmakuSettings: () -> Void
 
@@ -938,7 +978,7 @@ private struct VideoDetailPlayerSurface: View {
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
     let manualFullscreenMode: ManualVideoFullscreenMode?
-    let onRequestManualFullscreen: (() -> Void)?
+    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
     let onExitManualFullscreen: (() -> Void)?
     let onShowDanmakuSettings: () -> Void
     private var usesLandscapePlaybackChrome: Bool {
@@ -966,7 +1006,9 @@ private struct VideoDetailPlayerSurface: View {
             keepsPlayerSurfaceStable: true,
             prefersNativePlaybackControls: false,
             manualFullscreenMode: manualFullscreenMode,
-            onRequestManualFullscreen: onRequestManualFullscreen,
+            onRequestManualFullscreen: {
+                onRequestManualFullscreen(playerViewModel)
+            },
             onExitManualFullscreen: onExitManualFullscreen
         )
         .id(ObjectIdentifier(playerViewModel))
