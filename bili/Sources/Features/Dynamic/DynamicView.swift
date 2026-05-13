@@ -164,13 +164,14 @@ private struct DynamicFeedCard: View {
                 dynamicCardContent
             }
         }
-        .fullScreenCover(item: $imageSelection) { selection in
+        .navigationDestination(item: $imageSelection) { selection in
             NativeImageViewer(
                 images: imageItems,
                 initialIndex: selection.index,
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace
             )
+            .hidesRootTabBarOnPush()
         }
         .sheet(item: $commentsTarget) { target in
             DynamicCommentsSheet(item: target, api: api)
@@ -1757,13 +1758,14 @@ private struct DynamicOriginalPreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.tertiarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .fullScreenCover(item: $imageSelection) { selection in
+        .navigationDestination(item: $imageSelection) { selection in
             NativeImageViewer(
                 images: imageItems,
                 initialIndex: selection.index,
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace
             )
+            .hidesRootTabBarOnPush()
         }
     }
 
