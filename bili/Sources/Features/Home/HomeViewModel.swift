@@ -257,6 +257,9 @@ final class HomeViewModel: ObservableObject {
         var seenAvatars = Set<URL>()
         var coverURLs = [URL]()
         var avatarURLs = [URL]()
+        let usesSingleColumnArtwork = libraryStore.homeFeedLayout == .singleColumn
+        let coverTargetPixelSize = usesSingleColumnArtwork ? 760 : 540
+        let avatarTargetPixelSize = usesSingleColumnArtwork ? 64 : 48
 
         for video in videos.prefix(10) {
             if let url = video.pic.flatMap({ URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }),
@@ -271,9 +274,17 @@ final class HomeViewModel: ObservableObject {
 
         guard !coverURLs.isEmpty || !avatarURLs.isEmpty else { return }
         imagePrefetchTask = Task(priority: .utility) {
-            await RemoteImageCache.shared.prefetch(coverURLs, targetPixelSize: 540, maximumConcurrentLoads: 2)
-            guard !Task.isCancelled else { return }
-            await RemoteImageCache.shared.prefetch(avatarURLs, targetPixelSize: 48, maximumConcurrentLoads: 1)
+            async let coverPrefetch: Void = RemoteImageCache.shared.prefetch(
+                coverURLs,
+                targetPixelSize: coverTargetPixelSize,
+                maximumConcurrentLoads: 2
+            )
+            async let avatarPrefetch: Void = RemoteImageCache.shared.prefetch(
+                avatarURLs,
+                targetPixelSize: avatarTargetPixelSize,
+                maximumConcurrentLoads: 1
+            )
+            _ = await (coverPrefetch, avatarPrefetch)
         }
     }
 

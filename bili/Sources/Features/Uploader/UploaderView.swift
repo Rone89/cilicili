@@ -94,7 +94,10 @@ struct UploaderView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 14) {
-                CachedRemoteImage(url: (card?.face ?? owner.face).flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 160)) }) { image in
+                CachedRemoteImage(
+                    url: (card?.face ?? owner.face).flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 160)) },
+                    targetPixelSize: 160
+                ) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "person.crop.circle.fill")

@@ -215,7 +215,10 @@ private struct SearchVideoResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 225)) }) { image in
+            CachedRemoteImage(
+                url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 225)) },
+                targetPixelSize: 360
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -247,7 +250,10 @@ private struct SearchUserResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: user.face.flatMap { URL(string: $0.normalizedBiliURL().biliAvatarThumbnailURL(size: 112)) }) { image in
+            CachedRemoteImage(
+                url: user.face.flatMap { URL(string: $0.normalizedBiliURL().biliAvatarThumbnailURL(size: 112)) },
+                targetPixelSize: 112
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -299,7 +305,10 @@ private struct SearchMediaResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: media.cover.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 216, height: 288)) }) { image in
+            CachedRemoteImage(
+                url: media.cover.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 216, height: 288)) },
+                targetPixelSize: 288
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)
@@ -354,7 +363,10 @@ private struct SearchArticleResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: article.imageURLs.first.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 228, height: 228)) }) { image in
+            CachedRemoteImage(
+                url: article.imageURLs.first.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 228, height: 228)) },
+                targetPixelSize: 228
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)

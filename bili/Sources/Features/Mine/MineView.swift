@@ -241,7 +241,10 @@ struct MineView: View {
 
     private var loggedInHeader: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: sessionStore.user?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 128)) }) { image in
+            CachedRemoteImage(
+                url: sessionStore.user?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 128)) },
+                targetPixelSize: 128
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -303,7 +306,10 @@ private struct LibraryVideoRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedRemoteImage(url: item.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 320, height: 200)) }) { image in
+            CachedRemoteImage(
+                url: item.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 320, height: 200)) },
+                targetPixelSize: 320
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)

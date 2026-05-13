@@ -671,7 +671,10 @@ struct VideoDetailView: View {
     }
 
     private func cover(_ video: VideoItem) -> some View {
-        CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 960, height: 540)) }) { image in
+        CachedRemoteImage(
+            url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 960, height: 540)) },
+            targetPixelSize: 960
+        ) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Color.gray.opacity(0.14)
@@ -1653,7 +1656,10 @@ private struct ToolbarAvatar: View {
     let urlString: String?
 
     var body: some View {
-        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 72)) }) { image in
+        CachedRemoteImage(
+            url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 72)) },
+            targetPixelSize: 72
+        ) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -2159,7 +2165,10 @@ private struct CommentRow: View {
     }
 
     private var avatar: some View {
-        CachedRemoteImage(url: comment.member?.avatar.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
+        CachedRemoteImage(
+            url: comment.member?.avatar.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) },
+            targetPixelSize: 96
+        ) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -2847,7 +2856,11 @@ private struct CommentAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: Int(size * 3))) }) { image in
+        let pixelSize = Int(size * 3)
+        CachedRemoteImage(
+            url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: pixelSize)) },
+            targetPixelSize: pixelSize
+        ) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -2933,7 +2946,10 @@ private struct VideoDescriptionOwnerRow: View {
 
     private func ownerIdentity(owner: VideoOwner?, fanCount: Int?, showsChevron: Bool) -> some View {
         HStack(spacing: 10) {
-            CachedRemoteImage(url: owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
+            CachedRemoteImage(
+                url: owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) },
+                targetPixelSize: 96
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -2966,7 +2982,10 @@ private struct RelatedVideoCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            CachedRemoteImage(url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 228)) }) { image in
+            CachedRemoteImage(
+                url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 228)) },
+                targetPixelSize: 360
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.gray.opacity(0.14)

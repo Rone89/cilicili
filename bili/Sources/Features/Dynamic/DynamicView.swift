@@ -339,7 +339,10 @@ private struct DynamicFeedCard: View {
 
     private var authorIdentity: some View {
         HStack(spacing: 10) {
-            CachedRemoteImage(url: item.author?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }) { image in
+            CachedRemoteImage(
+                url: item.author?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) },
+                targetPixelSize: 96
+            ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill")
@@ -1680,7 +1683,11 @@ private struct DynamicCommentAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: Int(size * 3))) }) { image in
+        let pixelSize = Int(size * 3)
+        CachedRemoteImage(
+            url: urlString.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: pixelSize)) },
+            targetPixelSize: pixelSize
+        ) { image in
             image.resizable().scaledToFill()
         } placeholder: {
             Image(systemName: "person.crop.circle.fill")
@@ -2209,7 +2216,7 @@ private struct DynamicImageCell: View {
         case .single, .hero(_, _):
             return 1280
         case .square(_):
-            return 1280
+            return 420
         }
     }
 }
@@ -2479,6 +2486,8 @@ final class DynamicViewModel: ObservableObject {
     private var offset = ""
     private var hasMore = true
     private var filterCancellable: AnyCancellable?
+    private var imagePrefetchTask: Task<Void, Never>?
+    private var playbackPreloadTask: Task<Void, Never>?
 
     var hasMoreItems: Bool {
         hasMore
@@ -2495,6 +2504,11 @@ final class DynamicViewModel: ObservableObject {
             }
     }
 
+    deinit {
+        imagePrefetchTask?.cancel()
+        playbackPreloadTask?.cancel()
+    }
+
     func loadInitial() async {
         guard items.isEmpty else { return }
         await refresh()
@@ -2508,6 +2522,7 @@ final class DynamicViewModel: ObservableObject {
             let page = try await api.fetchDynamicFeed()
             rawItems = displayable(page.items)
             applyCurrentFilter()
+            scheduleResourcePrefetch(for: items, initialDelay: 0.35)
             offset = page.offset ?? ""
             hasMore = page.hasMore ?? false
             state = .loaded
@@ -2526,8 +2541,10 @@ final class DynamicViewModel: ObservableObject {
         state = .loading
         do {
             let page = try await api.fetchDynamicFeed(offset: offset)
-            appendUniqueRaw(displayable(page.items))
+            let moreItems = displayable(page.items)
+            appendUniqueRaw(moreItems)
             applyCurrentFilter()
+            scheduleResourcePrefetch(for: moreItems, initialDelay: 0.75)
             offset = page.offset ?? offset
             hasMore = page.hasMore ?? false
             state = .loaded
@@ -2557,6 +2574,102 @@ final class DynamicViewModel: ObservableObject {
     private func appendUniqueRaw(_ more: [DynamicFeedItem]) {
         let existing = Set(rawItems.map(\.id))
         rawItems.append(contentsOf: more.filter { !existing.contains($0.id) })
+    }
+
+    private func scheduleResourcePrefetch(for items: [DynamicFeedItem], initialDelay: TimeInterval) {
+        scheduleImagePrefetch(for: items, initialDelay: initialDelay)
+        schedulePlaybackPreload(for: items, initialDelay: initialDelay + 0.35)
+    }
+
+    private func scheduleImagePrefetch(for items: [DynamicFeedItem], initialDelay: TimeInterval) {
+        imagePrefetchTask?.cancel()
+        var avatarURLs = [URL]()
+        var imageURLs = [URL]()
+        var coverURLs = [URL]()
+        var seenURLs = Set<URL>()
+
+        for item in items.prefix(8) {
+            if let avatarURL = item.author?.face.flatMap({ URL(string: $0.biliAvatarThumbnailURL(size: 96)) }),
+               seenURLs.insert(avatarURL).inserted {
+                avatarURLs.append(avatarURL)
+            }
+
+            for image in item.imageItems.prefix(4) {
+                guard let url = image.normalizedURL
+                    .map({ $0.biliImageThumbnailURL(maxSide: 420) })
+                    .flatMap(URL.init(string:)),
+                    seenURLs.insert(url).inserted
+                else { continue }
+                imageURLs.append(url)
+            }
+
+            if let video = item.archive?.asVideoItem(author: item.author),
+               let coverURL = video.pic.flatMap({ URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }),
+               seenURLs.insert(coverURL).inserted {
+                coverURLs.append(coverURL)
+            }
+        }
+
+        guard !avatarURLs.isEmpty || !imageURLs.isEmpty || !coverURLs.isEmpty else { return }
+        imagePrefetchTask = Task(priority: .utility) {
+            if initialDelay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            async let avatars: Void = RemoteImageCache.shared.prefetch(
+                avatarURLs,
+                targetPixelSize: 96,
+                maximumConcurrentLoads: 1
+            )
+            async let images: Void = RemoteImageCache.shared.prefetch(
+                imageURLs,
+                targetPixelSize: 420,
+                maximumConcurrentLoads: 2
+            )
+            async let covers: Void = RemoteImageCache.shared.prefetch(
+                coverURLs,
+                targetPixelSize: 760,
+                maximumConcurrentLoads: 1
+            )
+            _ = await (avatars, images, covers)
+        }
+    }
+
+    private func schedulePlaybackPreload(for items: [DynamicFeedItem], initialDelay: TimeInterval) {
+        playbackPreloadTask?.cancel()
+        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
+            playbackPreloadTask = nil
+            return
+        }
+
+        let videos = items
+            .compactMap { $0.archive?.asVideoItem(author: $0.author) }
+            .filter { !$0.bvid.isEmpty }
+        let candidates = Array(videos.prefix(2))
+        guard !candidates.isEmpty else {
+            playbackPreloadTask = nil
+            return
+        }
+
+        let preferredQuality = libraryStore.preferredVideoQuality
+        playbackPreloadTask = Task(priority: .background) { [api] in
+            if initialDelay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+            }
+            await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: preferredQuality)
+            for (index, video) in candidates.enumerated() {
+                guard !Task.isCancelled else { return }
+                await VideoPreloadCenter.shared.preloadPlayInfo(
+                    video,
+                    api: api,
+                    preferredQuality: preferredQuality,
+                    priority: .background
+                )
+                if index < candidates.count - 1 {
+                    try? await Task.sleep(nanoseconds: 650_000_000)
+                }
+            }
+        }
     }
 }
 
