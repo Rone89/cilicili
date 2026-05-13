@@ -15,7 +15,7 @@ struct PlaybackEnvironment: Sendable {
 
     nonisolated static var current: PlaybackEnvironment {
         let thermalState = ProcessInfo.processInfo.thermalState
-        PlaybackEnvironment(
+        return PlaybackEnvironment(
             networkClass: NetworkPathSnapshot.shared.currentNetworkClass,
             isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
             isThermallyConstrained: thermalState == .serious || thermalState == .critical
@@ -23,10 +23,16 @@ struct PlaybackEnvironment: Sendable {
     }
 
     nonisolated var shouldPreferConservativePlayback: Bool {
+        let isConstrainedNetwork: Bool
+        switch networkClass {
+        case .cellular, .constrained:
+            isConstrainedNetwork = true
+        case .wifi, .unknown:
+            isConstrainedNetwork = false
+        }
         isLowPowerModeEnabled
             || isThermallyConstrained
-            || networkClass == .cellular
-            || networkClass == .constrained
+            || isConstrainedNetwork
     }
 
     nonisolated var fastStartQuality: Int {
@@ -65,7 +71,7 @@ struct PlaybackEnvironment: Sendable {
 }
 
 final class NetworkPathSnapshot: @unchecked Sendable {
-    static let shared = NetworkPathSnapshot()
+    nonisolated static let shared = NetworkPathSnapshot()
 
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "cc.bili.network-path")
@@ -79,7 +85,7 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         monitor.start(queue: queue)
     }
 
-    var currentNetworkClass: PlaybackEnvironment.NetworkClass {
+    nonisolated var currentNetworkClass: PlaybackEnvironment.NetworkClass {
         lock.withLock { cachedClass }
     }
 
