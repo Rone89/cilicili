@@ -253,18 +253,25 @@ private struct DynamicFeedCard: View {
     }
 
     private var separatedDynamicContent: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 10) {
             authorHeader
+                .padding(.horizontal, 2)
+
+            separatedStoryCard
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var separatedStoryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if shouldLeadWithImageHero {
+                imageHeroPreview
+            }
+
             topLevelText
 
-            if !imageItems.isEmpty {
-                DynamicImageGrid(
-                    images: imageItems,
-                    transitionScope: item.id,
-                    transitionNamespace: imageTransitionNamespace
-                ) { index, transitionID in
-                    presentImage(index: index, transitionID: transitionID)
-                }
+            if !shouldLeadWithImageHero, !imageItems.isEmpty {
+                imageHeroPreview
             }
 
             if let original = item.original {
@@ -273,9 +280,36 @@ private struct DynamicFeedCard: View {
                 DynamicForwardUnavailableView()
             }
 
-            actionBar
+            compactActionBar
         }
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(Color(.separator).opacity(0.08), lineWidth: 0.6)
+        }
+        .shadow(color: .black.opacity(0.045), radius: 14, y: 5)
+    }
+
+    private var shouldLeadWithImageHero: Bool {
+        !imageItems.isEmpty
+            && video == nil
+            && live == nil
+            && item.original == nil
+            && !item.isForward
+    }
+
+    private var imageHeroPreview: some View {
+        DynamicImageHeroPreview(
+            images: imageItems,
+            transitionScope: item.id,
+            transitionNamespace: imageTransitionNamespace,
+            cornerRadius: 22
+        ) { index, transitionID in
+            presentImage(index: index, transitionID: transitionID)
+        }
     }
 
     private var authorHeader: some View {
@@ -396,6 +430,33 @@ private struct DynamicFeedCard: View {
                 ) {
                     toggleLocalLike()
                 }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var compactActionBar: some View {
+        HStack(spacing: 0) {
+            DynamicActionButton(
+                title: statTitle(count: item.repostCount, fallback: "转发"),
+                systemImage: "arrowshape.turn.up.right",
+                isSelected: false
+            ) {}
+
+            DynamicActionButton(
+                title: commentTitle,
+                systemImage: "bubble.left",
+                isSelected: false
+            ) {
+                commentsTarget = item
+            }
+
+            DynamicActionButton(
+                title: statTitle(count: likeCount, fallback: "点赞"),
+                systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
+                isSelected: isLiked
+            ) {
+                toggleLocalLike()
             }
         }
         .padding(.top, 2)
@@ -1692,35 +1753,17 @@ private struct DynamicOriginalPreview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrowshape.turn.up.left.fill")
-                    .font(.caption2.weight(.bold))
-                Text("原动态")
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(.pink)
-
-            originalContent
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.systemBackground).opacity(0.92))
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        }
+        originalContent
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemGray6))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.pink.opacity(0.18), lineWidth: 0.8)
-        }
+        .background(Color(.tertiarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.pink.opacity(0.62))
+                .fill(Color(.separator).opacity(0.42))
                 .frame(width: 3)
                 .padding(.vertical, 12)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .fullScreenCover(item: $imageSelection) { selection in
             NativeImageViewer(
                 images: imageItems,
@@ -1736,7 +1779,7 @@ private struct DynamicOriginalPreview: View {
         if item.visible == false || !item.hasDisplayableContent {
             DynamicForwardUnavailableView()
         } else {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 10) {
                 if let author = item.author {
                     if let authorOwner, authorOwner.mid > 0 {
                         NavigationLink {
@@ -1774,10 +1817,12 @@ private struct DynamicOriginalPreview: View {
                 }
 
                 if !imageItems.isEmpty {
-                    DynamicImageGrid(
+                    DynamicImageHeroPreview(
                         images: imageItems,
                         transitionScope: item.id,
-                        transitionNamespace: imageTransitionNamespace
+                        transitionNamespace: imageTransitionNamespace,
+                        cornerRadius: 12,
+                        aspectRatio: 16 / 9
                     ) { index, transitionID in
                         presentImage(index: index, transitionID: transitionID)
                     }
@@ -1787,18 +1832,18 @@ private struct DynamicOriginalPreview: View {
     }
 
     private func originalAuthorIdentity(_ author: DynamicAuthor) -> some View {
-        HStack(spacing: 8) {
-            CachedRemoteImage(url: author.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 72)) }) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 24, height: 24)
-            .clipShape(Circle())
+        HStack(spacing: 7) {
+            Image(systemName: "arrowshape.turn.up.right.fill")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
 
             Text("@\(author.name ?? "Unknown")")
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Text("转发了动态")
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -1831,6 +1876,78 @@ private struct DynamicImageSelection: Identifiable {
     let transitionID: String
 
     var id: Int { index }
+}
+
+private struct DynamicImageHeroPreview: View {
+    let images: [DynamicImageItem]
+    let transitionScope: String
+    let transitionNamespace: Namespace.ID
+    var cornerRadius: CGFloat = 18
+    var aspectRatio: CGFloat = 16 / 9
+    let openImage: (Int, String) -> Void
+
+    private var firstImage: DynamicImageItem? {
+        images.first
+    }
+
+    var body: some View {
+        if let firstImage {
+            DynamicImageButton(
+                image: firstImage,
+                index: 0,
+                displayMode: .hero(aspectRatio: aspectRatio, cornerRadius: cornerRadius),
+                transitionScope: transitionScope,
+                transitionNamespace: transitionNamespace,
+                openImage: openImage
+            ) {
+                heroOverlay
+            }
+            .accessibilityLabel(accessibilityTitle)
+        }
+    }
+
+    @ViewBuilder
+    private var heroOverlay: some View {
+        if images.count > 1 {
+            ZStack(alignment: .bottom) {
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        .black.opacity(0.46)
+                    ],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+
+                HStack(alignment: .bottom) {
+                    Label("\(min(images.count, 9))图", systemImage: "photo.on.rectangle.angled")
+                        .font(.caption.weight(.semibold))
+                        .labelStyle(.titleAndIcon)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.48))
+                        .clipShape(Capsule())
+
+                    Spacer(minLength: 8)
+
+                    Text("1/\(images.count)")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.48))
+                        .clipShape(Capsule())
+                }
+                .foregroundStyle(.white)
+                .padding(10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
+    private var accessibilityTitle: String {
+        images.count > 1 ? "查看 \(images.count) 张图片" : "查看图片"
+    }
 }
 
 private struct DynamicImageGrid: View {
@@ -2002,6 +2119,7 @@ private struct DynamicImageCell: View {
     enum DisplayMode {
         case single
         case square
+        case hero(aspectRatio: CGFloat, cornerRadius: CGFloat)
     }
 
     let image: DynamicImageItem
@@ -2024,6 +2142,12 @@ private struct DynamicImageCell: View {
             .aspectRatio(1, contentMode: .fit)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        case .hero(let aspectRatio, let cornerRadius):
+            imageContent
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
     }
 
@@ -2033,9 +2157,9 @@ private struct DynamicImageCell: View {
 
             CachedRemoteImage(
                 url: image.normalizedURL
-                    .map { $0.biliImageThumbnailURL(maxSide: displayMode == .single ? 1280 : 720) }
+                    .map { $0.biliImageThumbnailURL(maxSide: thumbnailMaxSide) }
                     .flatMap(URL.init(string:)),
-                targetPixelSize: displayMode == .single ? 1280 : 720
+                targetPixelSize: thumbnailMaxSide
             ) { loadedImage in
                 loadedImage
                     .resizable()
@@ -2055,6 +2179,17 @@ private struct DynamicImageCell: View {
             return CGFloat(max(image.aspectRatio, 0.1))
         case .square:
             return 1
+        case .hero(let aspectRatio, _):
+            return aspectRatio
+        }
+    }
+
+    private var thumbnailMaxSide: Int {
+        switch displayMode {
+        case .single, .hero(_, _):
+            return 1280
+        case .square:
+            return 720
         }
     }
 }
