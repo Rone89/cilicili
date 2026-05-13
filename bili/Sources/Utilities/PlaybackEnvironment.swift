@@ -11,16 +11,22 @@ struct PlaybackEnvironment: Sendable {
 
     let networkClass: NetworkClass
     let isLowPowerModeEnabled: Bool
+    let isThermallyConstrained: Bool
 
     nonisolated static var current: PlaybackEnvironment {
+        let thermalState = ProcessInfo.processInfo.thermalState
         PlaybackEnvironment(
             networkClass: NetworkPathSnapshot.shared.currentNetworkClass,
-            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
+            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            isThermallyConstrained: thermalState == .serious || thermalState == .critical
         )
     }
 
     nonisolated var shouldPreferConservativePlayback: Bool {
-        isLowPowerModeEnabled || networkClass == .cellular || networkClass == .constrained
+        isLowPowerModeEnabled
+            || isThermallyConstrained
+            || networkClass == .cellular
+            || networkClass == .constrained
     }
 
     nonisolated var fastStartQuality: Int {

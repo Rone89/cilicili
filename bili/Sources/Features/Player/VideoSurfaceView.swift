@@ -915,7 +915,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
     }
 
-    private let topChrome = FullscreenControlsGlassView(direction: .top)
     private let bottomChrome = FullscreenControlsGlassView(direction: .bottom)
     private let exitButton = UIButton(type: .system)
     private let danmakuButton = UIButton(type: .system)
@@ -947,7 +946,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var exitButtonTopConstraint: NSLayoutConstraint?
     private var transportCenterYConstraint: NSLayoutConstraint?
     private var controlsStackBottomConstraint: NSLayoutConstraint?
-    private var topChromeHeightConstraint: NSLayoutConstraint?
     private var bottomChromeHeightConstraint: NSLayoutConstraint?
     private var feedbackCenterXConstraint: NSLayoutConstraint?
     private var feedbackImageCenterYConstraint: NSLayoutConstraint?
@@ -1014,7 +1012,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         isOpaque = false
         isUserInteractionEnabled = true
 
-        [topChrome, bottomChrome, controlsStack, transportStack, exitButton, topActionsStack, feedbackView].forEach {
+        [bottomChrome, controlsStack, transportStack, exitButton, topActionsStack, feedbackView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
         }
@@ -1022,23 +1020,15 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let exitButtonTopConstraint = exitButton.topAnchor.constraint(equalTo: topAnchor, constant: 10)
         let transportCenterYConstraint = transportStack.centerYAnchor.constraint(equalTo: centerYAnchor)
         let controlsStackBottomConstraint = controlsStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
-        let topChromeHeightConstraint = topChrome.heightAnchor.constraint(equalToConstant: 58)
         let bottomChromeHeightConstraint = bottomChrome.heightAnchor.constraint(equalToConstant: 62)
         let feedbackCenterXConstraint = feedbackView.centerXAnchor.constraint(equalTo: centerXAnchor)
         self.exitButtonTopConstraint = exitButtonTopConstraint
         self.transportCenterYConstraint = transportCenterYConstraint
         self.controlsStackBottomConstraint = controlsStackBottomConstraint
-        self.topChromeHeightConstraint = topChromeHeightConstraint
         self.bottomChromeHeightConstraint = bottomChromeHeightConstraint
         self.feedbackCenterXConstraint = feedbackCenterXConstraint
 
         NSLayoutConstraint.activate([
-            topChrome.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            topChrome.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            topChrome.topAnchor.constraint(equalTo: exitButton.topAnchor, constant: -8),
-            topChrome.widthAnchor.constraint(equalToConstant: 64),
-            topChromeHeightConstraint,
-
             bottomChrome.leadingAnchor.constraint(equalTo: controlsStack.leadingAnchor, constant: -12),
             bottomChrome.trailingAnchor.constraint(equalTo: controlsStack.trailingAnchor, constant: 12),
             bottomChrome.bottomAnchor.constraint(equalTo: controlsStack.bottomAnchor, constant: 12),
@@ -1083,14 +1073,10 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         exitButtonTopConstraint?.constant = topInset + (isPortraitFullscreen ? 8 : 10)
         controlsStackBottomConstraint?.constant = -(bottomInset + (isPortraitFullscreen ? 14 : 12))
         transportCenterYConstraint?.constant = isPortraitFullscreen ? -12 : 0
-        topChromeHeightConstraint?.constant = isPortraitFullscreen
-            ? 60
-            : 56
         bottomChromeHeightConstraint?.constant = isPortraitFullscreen
             ? 70
             : 62
         bottomChrome.setNeedsLayout()
-        topChrome.setNeedsLayout()
         let roundedSize = CGSize(width: bounds.width.rounded(), height: bounds.height.rounded())
         guard roundedSize != lastFullscreenLayoutSize else { return }
         lastFullscreenLayoutSize = roundedSize
@@ -1303,7 +1289,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
 
     private func startRefreshTimerIfNeeded() {
         guard refreshTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshFromViewModel()
             }
@@ -1370,7 +1356,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         let chromeVisible = visible && !suppressesPlaybackChrome
         let alpha: CGFloat = chromeVisible ? 1 : 0
         let changes = {
-            self.topChrome.alpha = alpha
             self.bottomChrome.alpha = alpha
             self.exitButton.alpha = alpha
             self.topActionsStack.alpha = alpha

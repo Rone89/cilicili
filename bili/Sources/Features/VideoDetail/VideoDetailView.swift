@@ -996,7 +996,7 @@ private struct VideoDetailPlayerSurface: View {
             showsStartupLoadingIndicator: false,
             pausesOnDisappear: false,
             surfaceOverlay: AnyView(danmakuOverlay),
-            controlsAccessory: AnyView(danmakuControl),
+            controlsAccessory: usesLandscapePlaybackChrome ? AnyView(danmakuControl) : nil,
             isDanmakuEnabled: viewModel.isDanmakuEnabled,
             onToggleDanmaku: {
                 viewModel.toggleDanmaku()

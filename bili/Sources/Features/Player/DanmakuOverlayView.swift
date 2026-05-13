@@ -17,22 +17,15 @@ struct DanmakuOverlayView: View {
     var body: some View {
         GeometryReader { geometry in
             if isEnabled, hasPresentedPlayback, !items.isEmpty {
-                TimelineView(.animation) { timeline in
-                    let playbackTime = effectivePlaybackTime(at: timeline.date)
-                    ZStack {
-                        ForEach(visibleItems(at: playbackTime, in: geometry.size)) { item in
-                            DanmakuText(
-                                item: item,
-                                size: fontSize(for: item, in: geometry.size),
-                                opacity: settings.opacity,
-                                weight: settings.fontWeight.swiftUIFontWeight
-                            )
-                                .opacity(opacity(for: item, at: playbackTime, in: geometry.size))
-                                .position(position(for: item, at: playbackTime, in: geometry.size))
-                        }
+                if isPlaying {
+                    TimelineView(.periodic(from: .now, by: timelineInterval)) { timeline in
+                        danmakuLayer(
+                            at: effectivePlaybackTime(at: timeline.date),
+                            in: geometry.size
+                        )
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
+                } else {
+                    danmakuLayer(at: max(0, currentTime), in: geometry.size)
                 }
             }
         }
@@ -59,6 +52,23 @@ struct DanmakuOverlayView: View {
     private func syncPlaybackAnchor() {
         anchorPlaybackTime = max(0, currentTime)
         anchorDate = Date()
+    }
+
+    private func danmakuLayer(at playbackTime: TimeInterval, in size: CGSize) -> some View {
+        ZStack {
+            ForEach(visibleItems(at: playbackTime, in: size)) { item in
+                DanmakuText(
+                    item: item,
+                    size: fontSize(for: item, in: size),
+                    opacity: settings.opacity,
+                    weight: settings.fontWeight.swiftUIFontWeight
+                )
+                .opacity(opacity(for: item, at: playbackTime, in: size))
+                .position(position(for: item, at: playbackTime, in: size))
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     private func visibleItems(at playbackTime: TimeInterval, in size: CGSize) -> [DanmakuItem] {
@@ -162,11 +172,15 @@ struct DanmakuOverlayView: View {
     }
 
     private func scrollDuration(in size: CGSize) -> TimeInterval {
-        size.width > 640 ? 8.4 : 7.2
+        size.width > 640 ? 8.8 : 7.6
     }
 
     private func maxVisibleItems(in size: CGSize) -> Int {
-        size.width > 640 ? 110 : 72
+        size.width > 640 ? 72 : 42
+    }
+
+    private var timelineInterval: TimeInterval {
+        playbackRate > 1.6 ? 1.0 / 20.0 : 1.0 / 24.0
     }
 
     private func fontSize(for item: DanmakuItem, in size: CGSize) -> CGFloat {

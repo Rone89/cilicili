@@ -829,7 +829,9 @@ final class VideoDetailViewModel: ObservableObject {
                     self.selectedPlayVariant = self.preferredDefaultVariant(in: self.playVariants)
                     self.updateStablePlayerViewModelIfNeeded()
                 }
-                self.warmLikelySupplementalVariantAfterFirstFrame(cid: cid, page: page)
+        if !PlaybackEnvironment.current.shouldPreferConservativePlayback {
+            self.warmLikelySupplementalVariantAfterFirstFrame(cid: cid, page: page)
+        }
             } catch {
                 guard !Task.isCancelled else { return }
             }
@@ -1112,6 +1114,7 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func warmPlayVariantForStartupIfNeeded(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback,
               let cid,
               let variant,
               !variant.isProgressiveFastStart
@@ -1128,7 +1131,9 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func warmLikelySupplementalVariantAfterFirstFrame(cid: Int, page: Int?) {
-        guard !isPlaybackInvalidatedForNavigation else { return }
+        guard !isPlaybackInvalidatedForNavigation,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+        else { return }
         let variants = supplementalWarmupVariants()
         guard !variants.isEmpty else { return }
         Task(priority: .utility) { [weak self] in
@@ -1136,7 +1141,7 @@ final class VideoDetailViewModel: ObservableObject {
             let didPresentPlayback = await self.waitForFirstFrameOrFailure()
             guard !self.isPlaybackInvalidatedForNavigation else { return }
             guard didPresentPlayback else { return }
-            for (index, variant) in variants.enumerated() {
+            for (index, variant) in variants.prefix(1).enumerated() {
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
                 await VideoPreloadCenter.shared.warmVariant(
                     variant,

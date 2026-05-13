@@ -58,7 +58,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var hostFullscreenRequestHandler: (() -> Void)?
     private var isTerminated = false
     private var isStopping = false
-    private let playbackStateRefreshInterval: TimeInterval = 0.75
+    private let playbackStateRefreshInterval: TimeInterval = 1.0
     private let sponsorBlockPrerollTolerance: TimeInterval = 0.35
     private let sponsorBlockTailTolerance: TimeInterval = 0.12
     private let forcedPlaybackTimeGuardDuration: TimeInterval = 3.5
