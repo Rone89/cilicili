@@ -51,7 +51,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var skippedSponsorBlockIDs = Set<String>()
     private var sponsorBlockReportedIDs = Set<String>()
     private var ignoredStartupPlaybackTimeOutliers = 0
-    private var didLogFirstNaturalPlaybackTime = false
+    private var didRecordFirstFrameEvent = false
     private var forcedPlaybackTimeGuard: ForcedPlaybackTimeGuard?
     private var sponsorBlockEnabled = false
     private var onSponsorBlockSegmentSkipped: (@Sendable (SponsorBlockSkipEvent) async -> Void)?
@@ -394,7 +394,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         hasPresentedPlayback = false
         isPlaybackSurfaceReady = false
         forcedPlaybackTimeGuard = nil
-        didLogFirstNaturalPlaybackTime = false
+        didRecordFirstFrameEvent = false
         invalidatePictureInPicturePlaybackState()
         isStopping = false
     }
@@ -724,12 +724,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard force || !shouldIgnoreStartupPlaybackTimeOutlier(normalizedTime) else {
             return false
         }
-        if countsAsNaturalPlayback, !didLogFirstNaturalPlaybackTime, normalizedTime > 0 {
-            didLogFirstNaturalPlaybackTime = true
-            PlayerMetricsLog.logger.info(
-                "firstPlaybackTime id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) current=\(normalizedTime, format: .fixed(precision: 2), privacy: .public)"
-            )
-            PlayerMetricsLog.record(.firstFrame, metricsID: metricsID, title: title, message: "\(elapsedMessage()) time=\(String(format: "%.2f", normalizedTime))s")
+        if countsAsNaturalPlayback, normalizedTime > 0 {
+            recordFirstFrameIfNeeded(currentTime: normalizedTime, source: "playbackTime")
         }
         if countsAsNaturalPlayback, normalizedTime > 0 {
             hasPresentedPlayback = true
@@ -751,9 +747,25 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private func handleEngineFirstFrame(_ time: TimeInterval) {
         guard !isTerminated else { return }
         markPlaybackSurfaceReady()
+        recordFirstFrameIfNeeded(currentTime: time, source: "engine")
         if time > 0 {
             _ = updatePlaybackTime(time, force: currentTime <= 0, countsAsNaturalPlayback: false)
         }
+    }
+
+    private func recordFirstFrameIfNeeded(currentTime: TimeInterval, source: String) {
+        guard !didRecordFirstFrameEvent else { return }
+        didRecordFirstFrameEvent = true
+        let normalizedTime = max(currentTime, 0)
+        PlayerMetricsLog.logger.info(
+            "firstFrame id=\(self.metricsID, privacy: .public) source=\(source, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) current=\(normalizedTime, format: .fixed(precision: 2), privacy: .public)"
+        )
+        PlayerMetricsLog.record(
+            .firstFrame,
+            metricsID: metricsID,
+            title: title,
+            message: "\(elapsedMessage()) source=\(source) time=\(String(format: "%.2f", normalizedTime))s"
+        )
     }
 
     private func markPlaybackSurfaceReady() {

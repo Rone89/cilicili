@@ -2127,20 +2127,38 @@ private enum HLSRemoteRangeStreamer {
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let delegate = HLSRemoteRangeStreamDelegate()
+        let delegateQueue = OperationQueue()
+        delegateQueue.maxConcurrentOperationCount = 1
+        delegateQueue.qualityOfService = .userInitiated
+        let session = URLSession(
+            configuration: .ephemeral,
+            delegate: delegate,
+            delegateQueue: delegateQueue
+        )
+        let task = session.dataTask(with: request)
+        var didInvalidateSession = false
+        defer {
+            if !didInvalidateSession {
+                session.invalidateAndCancel()
+            }
+        }
+        task.resume()
+
+        let response = try await delegate.response()
         try LocalHLSProxyServer.validateRemoteRangeResponse(response, requestedRange: range)
         try await send(responseHeader, to: connection)
 
         let cacheCollector = VideoRangeStreamCacheCollector(range: range, cacheLimit: cacheLimit)
         do {
-            var chunk = Data()
             let chunkSize = min(max(startupChunkSize, 8 * 1024), 32 * 1024)
+            var chunk = Data()
             var didNotifyFirstChunk = false
             var didApplyTransform = false
             chunk.reserveCapacity(chunkSize)
-            for try await byte in bytes {
+            for try await data in delegate.chunks {
                 try Task.checkCancellation()
-                chunk.append(byte)
+                chunk.append(data)
                 if chunk.count >= chunkSize {
                     try cacheCollector?.append(chunk)
                     let outboundChunk: Data
@@ -2173,10 +2191,15 @@ private enum HLSRemoteRangeStreamer {
                 }
             }
         } catch {
+            task.cancel()
+            session.invalidateAndCancel()
+            didInvalidateSession = true
             connection.cancel()
             cacheCollector?.cancel()
             throw HLSRangeStreamError.responseAlreadyStarted(error)
         }
+        session.finishTasksAndInvalidate()
+        didInvalidateSession = true
         connection.cancel()
         return try cacheCollector?.finish()
     }
@@ -2192,6 +2215,82 @@ private enum HLSRemoteRangeStreamer {
                 }
             })
         }
+    }
+}
+
+private final class HLSRemoteRangeStreamDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    let chunks: AsyncThrowingStream<Data, Error>
+
+    private let lock = NSLock()
+    private let chunkContinuation: AsyncThrowingStream<Data, Error>.Continuation
+    private var responseContinuation: CheckedContinuation<URLResponse, Error>?
+    private var responseResult: Result<URLResponse, Error>?
+
+    override init() {
+        var continuation: AsyncThrowingStream<Data, Error>.Continuation?
+        self.chunks = AsyncThrowingStream(Data.self, bufferingPolicy: .unbounded) { streamContinuation in
+            continuation = streamContinuation
+        }
+        self.chunkContinuation = continuation!
+        super.init()
+    }
+
+    func response() async throws -> URLResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            if let responseResult {
+                lock.unlock()
+                continuation.resume(with: responseResult)
+                return
+            }
+            responseContinuation = continuation
+            lock.unlock()
+        }
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        completeResponse(.success(response))
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask _: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        chunkContinuation.yield(data)
+    }
+
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            completeResponse(.failure(error))
+            chunkContinuation.finish(throwing: error)
+        } else {
+            completeResponse(.failure(PlayerEngineError.unsupportedMedia))
+            chunkContinuation.finish()
+        }
+    }
+
+    private func completeResponse(_ result: Result<URLResponse, Error>) {
+        lock.lock()
+        guard responseResult == nil else {
+            lock.unlock()
+            return
+        }
+        responseResult = result
+        let continuation = responseContinuation
+        responseContinuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
     }
 }
 
@@ -2438,6 +2537,95 @@ private actor HLSProxyStartupMetrics {
                 self = .audioSegment0
             default:
                 return nil
+            }
+        }
+    }
+}
+
+private actor HLSProxyCacheMetrics {
+    static let shared = HLSProxyCacheMetrics()
+
+    private let maxSessionCount = 36
+    private var sessions: [String: Session] = [:]
+    private var order: [String] = []
+    private var updateCounts: [String: Int] = [:]
+
+    func record(
+        metricsID: String?,
+        path: String,
+        source: String,
+        bytes: Int,
+        elapsedMilliseconds: Double
+    ) async {
+        guard let metricsID, !metricsID.isEmpty else { return }
+        var session = sessions[metricsID] ?? Session()
+        if sessions[metricsID] == nil {
+            order.append(metricsID)
+        }
+        session.record(source: source, bytes: bytes, elapsedMilliseconds: elapsedMilliseconds)
+        sessions[metricsID] = session
+        trimIfNeeded()
+
+        let message = session.summary
+        PlayerMetricsLog.logger.info(
+            "hlsProxyCache id=\(metricsID, privacy: .public) path=\(path, privacy: .public) source=\(source, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public) bytes=\(bytes, privacy: .public) summary=\(message, privacy: .public)"
+        )
+        guard shouldPublish(metricsID: metricsID, source: source) else { return }
+        await PlayerMetricsLog.record(.mediaCache, metricsID: metricsID, message: message)
+    }
+
+    private func shouldPublish(metricsID: String, source: String) -> Bool {
+        var count = updateCounts[metricsID] ?? 0
+        count += 1
+        updateCounts[metricsID] = count
+        return count <= 3 || source.contains("Cache") || source == "streamJoin" || count.isMultiple(of: 6)
+    }
+
+    private func trimIfNeeded() {
+        guard order.count > maxSessionCount else { return }
+        let overflow = order.count - maxSessionCount
+        for key in order.prefix(overflow) {
+            sessions[key] = nil
+            updateCounts[key] = nil
+        }
+        order.removeFirst(overflow)
+    }
+
+    private struct Session: Sendable {
+        private var cacheHits = 0
+        private var remoteFetches = 0
+        private var streamedRanges = 0
+        private var joinedRanges = 0
+        private var totalBytes = 0
+        private var bestElapsedMilliseconds: Int?
+
+        var summary: String {
+            let best = bestElapsedMilliseconds.map { "\($0)ms" } ?? "-"
+            return [
+                "Cache",
+                "hit:\(cacheHits)",
+                "fetch:\(remoteFetches)",
+                "stream:\(streamedRanges)",
+                "join:\(joinedRanges)",
+                "bytes:\(totalBytes / 1024)KB",
+                "best:\(best)"
+            ].joined(separator: " ")
+        }
+
+        mutating func record(source: String, bytes: Int, elapsedMilliseconds: Double) {
+            if source.contains("Cache") || source == "cache" {
+                cacheHits += 1
+            } else if source == "streamJoin" {
+                joinedRanges += 1
+            } else if source == "stream" {
+                streamedRanges += 1
+            } else {
+                remoteFetches += 1
+            }
+            totalBytes += max(bytes, 0)
+            let roundedElapsed = max(0, Int(elapsedMilliseconds.rounded()))
+            if roundedElapsed > 0, bestElapsedMilliseconds.map({ roundedElapsed < $0 }) ?? true {
+                bestElapsedMilliseconds = roundedElapsed
             }
         }
     }
@@ -2903,6 +3091,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
             PlayerMetricsLog.logger.info(
                 "hlsProxyRangeCacheHit path=\(request.path, privacy: .public) bytes=\(responseData.count, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
             )
+            await HLSProxyCacheMetrics.shared.record(
+                metricsID: metricsID,
+                path: request.path,
+                source: "cache",
+                bytes: responseData.count,
+                elapsedMilliseconds: elapsedMilliseconds
+            )
             await HLSProxyStartupMetrics.shared.record(
                 metricsID: metricsID,
                 path: request.path,
@@ -2956,6 +3151,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
             let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
             PlayerMetricsLog.logger.info(
                 "hlsProxyRangeFetched path=\(request.path, privacy: .public) bytes=\(data.count, privacy: .public) fetchMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
+            )
+            await HLSProxyCacheMetrics.shared.record(
+                metricsID: metricsID,
+                path: request.path,
+                source: "fetch",
+                bytes: data.count,
+                elapsedMilliseconds: elapsedMilliseconds
             )
             await HLSProxyStartupMetrics.shared.record(
                 metricsID: metricsID,
@@ -3092,6 +3294,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 PlayerMetricsLog.logger.info(
                     "hlsProxyRangeStreamCacheHit path=\(request.path, privacy: .public) bytes=\(responseData.count, privacy: .public)"
                 )
+                await HLSProxyCacheMetrics.shared.record(
+                    metricsID: metricsID,
+                    path: request.path,
+                    source: "streamCache",
+                    bytes: responseData.count,
+                    elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: cachedStart)
+                )
                 await HLSProxyStartupMetrics.shared.record(
                     metricsID: metricsID,
                     path: request.path,
@@ -3126,6 +3335,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     )
                     PlayerMetricsLog.logger.info(
                         "hlsProxyRangeStreamJoined path=\(request.path, privacy: .public) bytes=\(responseData.count, privacy: .public)"
+                    )
+                    await HLSProxyCacheMetrics.shared.record(
+                        metricsID: metricsID,
+                        path: request.path,
+                        source: "streamJoin",
+                        bytes: responseData.count,
+                        elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: joinedStart)
                     )
                     await HLSProxyStartupMetrics.shared.record(
                         metricsID: metricsID,
@@ -3185,6 +3401,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     .network,
                     metricsID: metricsID ?? request.path,
                     message: "host=\(url.host ?? "-") \(Int(streamElapsed.rounded()))ms \(streamedBytes / 1024)KB"
+                )
+                await HLSProxyCacheMetrics.shared.record(
+                    metricsID: metricsID,
+                    path: request.path,
+                    source: "stream",
+                    bytes: streamedBytes,
+                    elapsedMilliseconds: streamElapsed
                 )
                 await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs)
                 if case let .reserved(token) = reservation {

@@ -134,6 +134,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case buffering
         case failed
         case network
+        case mediaCache
 
         var title: String {
             switch self {
@@ -151,6 +152,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
             case .buffering: return "缓冲"
             case .failed: return "失败"
             case .network: return "网络"
+            case .mediaCache: return "媒体缓存"
             }
         }
     }
@@ -182,6 +184,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var bufferCount = 0
     var lastBufferMessage: String?
     var networkMessage: String?
+    var mediaCacheMessage: String?
     var cdnHostMessage: String?
     var selectedQualityMessage: String?
     var failureMessage: String?
@@ -280,6 +283,8 @@ final class PlayerPerformanceStore: ObservableObject {
             if let message = event.message, let host = Self.host(in: message) {
                 session.cdnHostMessage = host
             }
+        case .mediaCache:
+            session.mediaCacheMessage = event.message ?? session.mediaCacheMessage
         case .failed:
             session.failureMessage = event.message
         }

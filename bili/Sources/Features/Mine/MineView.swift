@@ -662,6 +662,7 @@ private struct PlayerPerformanceLogView: View {
         case .firstFrame: return "bolt.fill"
         case .buffering: return "hourglass"
         case .network: return "network"
+        case .mediaCache: return "externaldrive.fill.badge.checkmark"
         case .failed: return "exclamationmark.triangle"
         }
     }
@@ -717,6 +718,13 @@ private struct PlayerPerformanceSessionRow: View {
 
             if let networkMessage = session.networkMessage {
                 Text(networkMessage)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let mediaCacheMessage = session.mediaCacheMessage {
+                Text(mediaCacheMessage)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
