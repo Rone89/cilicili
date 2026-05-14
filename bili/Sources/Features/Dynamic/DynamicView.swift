@@ -7,7 +7,6 @@ struct DynamicView: View {
     @StateObject private var holder = DynamicViewModelHolder()
     @State private var isImageViewerTransitionLocked = false
     @State private var imageSelection: DynamicImageSelection?
-    @State private var imageViewerUnlockTask: Task<Void, Never>?
     @Namespace private var imageTransitionNamespace
 
     var body: some View {
@@ -86,9 +85,6 @@ struct DynamicView: View {
             .onAppear {
                 handleDynamicImageViewerActivity(true)
             }
-            .onDisappear {
-                handleDynamicImageViewerActivity(false)
-            }
         }
         .background(Color(.systemGroupedBackground))
         .refreshable {
@@ -113,27 +109,11 @@ struct DynamicView: View {
     }
 
     private func handleDynamicImageViewerActivity(_ isActive: Bool) {
-        imageViewerUnlockTask?.cancel()
-        imageViewerUnlockTask = nil
-
-        if isActive {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                isImageViewerTransitionLocked = true
-            }
-            return
-        }
-
-        imageViewerUnlockTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 650_000_000)
-            guard !Task.isCancelled else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                isImageViewerTransitionLocked = false
-            }
-            imageViewerUnlockTask = nil
+        guard isImageViewerTransitionLocked != isActive else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isImageViewerTransitionLocked = isActive
         }
     }
 
