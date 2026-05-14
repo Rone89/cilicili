@@ -223,7 +223,7 @@ struct VideoDetailView: View {
     private func makeStandardPlaybackPageConfig(
         screenSize: CGSize,
         isLandscape: Bool
-    ) -> VideoDetailStandardPlaybackPage.Config {
+    ) -> VideoDetailStandardPlaybackPageConfig {
         let standardHeight: CGFloat = screenSize.width * 9 / 16
         let isManualFullscreen: Bool = manualFullscreenMode != nil
         let expandsToFullscreen: Bool = isManualFullscreen || isLandscape
@@ -234,7 +234,7 @@ struct VideoDetailView: View {
         activeManualFullscreenMode = manualFullscreenMode
         exitHandler = manualFullscreenMode == nil ? nil : { exitManualLandscapePlayback() }
 
-        return VideoDetailStandardPlaybackPage.Config(
+        return VideoDetailStandardPlaybackPageConfig(
             screenSize: screenSize,
             standardHeight: standardHeight,
             isLandscape: isLandscape,
@@ -877,22 +877,22 @@ private extension ManualVideoFullscreenMode {
     }
 }
 
-private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
-    struct Config {
-        let screenSize: CGSize
-        let standardHeight: CGFloat
-        let isLandscape: Bool
-        let isManualFullscreen: Bool
-        let expandsToFullscreen: Bool
-        let playerWidth: CGFloat?
-        let playerHeight: CGFloat
-        let manualFullscreenMode: ManualVideoFullscreenMode?
-        let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
-        let onExitManualFullscreen: (() -> Void)?
-        let onShowDanmakuSettings: () -> Void
-    }
+private struct VideoDetailStandardPlaybackPageConfig {
+    let screenSize: CGSize
+    let standardHeight: CGFloat
+    let isLandscape: Bool
+    let isManualFullscreen: Bool
+    let expandsToFullscreen: Bool
+    let playerWidth: CGFloat?
+    let playerHeight: CGFloat
+    let manualFullscreenMode: ManualVideoFullscreenMode?
+    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
+    let onExitManualFullscreen: (() -> Void)?
+    let onShowDanmakuSettings: () -> Void
+}
 
-    let config: Config
+private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
+    let config: VideoDetailStandardPlaybackPageConfig
     @ObservedObject var viewModel: VideoDetailViewModel
     let detailContent: () -> DetailContent
 
