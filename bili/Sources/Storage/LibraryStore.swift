@@ -123,6 +123,19 @@ final class LibraryStore: ObservableObject {
     static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
     static let defaultHomeRefreshTriggerDistance = 110.0
 
+    var effectivePlaybackCDNPreference: PlaybackCDNPreference {
+        effectivePlaybackCDNPreference(for: playbackCDNPreference)
+    }
+
+    var automaticPlaybackCDNRecommendation: PlaybackCDNPreference? {
+        guard let snapshot = playbackCDNProbeSnapshot,
+              !snapshot.isExpired(),
+              let preference = snapshot.recommendedPreference,
+              snapshot.result(for: preference)?.didSucceed == true
+        else { return nil }
+        return preference
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.appearanceMode = AppAppearanceMode(
@@ -188,6 +201,13 @@ final class LibraryStore: ObservableObject {
     func setPlaybackCDNPreference(_ preference: PlaybackCDNPreference) {
         playbackCDNPreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.playbackCDNPreferenceKey)
+    }
+
+    func effectivePlaybackCDNPreference(for preference: PlaybackCDNPreference) -> PlaybackCDNPreference {
+        guard preference == .automatic,
+              let recommendedPreference = automaticPlaybackCDNRecommendation
+        else { return preference }
+        return recommendedPreference
     }
 
     func setPlaybackCDNProbeSnapshot(_ snapshot: PlaybackCDNProbeSnapshot?) {

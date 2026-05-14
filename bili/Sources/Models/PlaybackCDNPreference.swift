@@ -78,7 +78,7 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
     var detail: String {
         switch self {
         case .automatic:
-            return "保留接口返回顺序，失败时使用备用地址"
+            return "优先使用最近测速推荐，缺失或过期时保留接口返回顺序"
         case .baseURL:
             return "优先使用接口返回的原始地址"
         case .backupURL:

@@ -2720,7 +2720,7 @@ final class DynamicViewModel: ObservableObject {
         }
 
         let preferredQuality = libraryStore.preferredVideoQuality
-        let cdnPreference = libraryStore.playbackCDNPreference
+        let cdnPreference = libraryStore.effectivePlaybackCDNPreference
         playbackPreloadTask = Task(priority: .background) { [api, cdnPreference] in
             if initialDelay > 0 {
                 try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))

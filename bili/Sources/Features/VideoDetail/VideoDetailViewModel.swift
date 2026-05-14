@@ -163,7 +163,7 @@ final class VideoDetailViewModel: ObservableObject {
             detail,
             api: api,
             preferredQuality: libraryStore.preferredVideoQuality,
-            cdnPreference: libraryStore.playbackCDNPreference,
+            cdnPreference: libraryStore.effectivePlaybackCDNPreference,
             warmsMedia: false,
             mediaWarmupDelay: 0,
             priority: .userInitiated
@@ -471,7 +471,7 @@ final class VideoDetailViewModel: ObservableObject {
         let token = UUID()
         didSelectPlayVariantManually = true
         libraryStore.setPreferredVideoQuality(variant.quality)
-        Task { [quality = variant.quality, cdnPreference = libraryStore.playbackCDNPreference] in
+        Task { [quality = variant.quality, cdnPreference = libraryStore.effectivePlaybackCDNPreference] in
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: quality,
                 cdnPreference: cdnPreference
@@ -594,7 +594,7 @@ final class VideoDetailViewModel: ObservableObject {
         do {
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: libraryStore.preferredVideoQuality,
-                cdnPreference: libraryStore.playbackCDNPreference
+                cdnPreference: libraryStore.effectivePlaybackCDNPreference
             )
             let pageNumber = selectedPageNumber
             if let cachedPlayableData = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
@@ -660,7 +660,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 preferredQuality: libraryStore.preferredVideoQuality,
-                cdnPreference: libraryStore.playbackCDNPreference,
+                cdnPreference: libraryStore.effectivePlaybackCDNPreference,
                 warmsMedia: false,
                 mediaWarmupDelay: 0
             )
@@ -759,7 +759,7 @@ final class VideoDetailViewModel: ObservableObject {
         if let cid {
             guard selectedCID == cid else { return }
         }
-        let variants = sortedPlayVariants(data.playVariants(cdnPreference: libraryStore.playbackCDNPreference))
+        let variants = sortedPlayVariants(data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference))
         playVariants = variants
         let preferredVariant = preferredDefaultVariant(in: variants)
         selectedPlayVariant = preferredVariant
@@ -853,11 +853,11 @@ final class VideoDetailViewModel: ObservableObject {
                     cid: cid,
                     page: page,
                     preferredQuality: self.libraryStore.preferredVideoQuality,
-                    cdnPreference: self.libraryStore.playbackCDNPreference,
+                    cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
                     warmsMedia: false
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
-                let variants = data.playVariants(cdnPreference: self.libraryStore.playbackCDNPreference)
+                let variants = data.playVariants(cdnPreference: self.libraryStore.effectivePlaybackCDNPreference)
                 guard !variants.isEmpty else { return }
                 let currentVariant = self.selectedPlayVariant
                 self.playVariants = self.mergedSupplementalVariants(
@@ -985,13 +985,13 @@ final class VideoDetailViewModel: ObservableObject {
             resumeTime: resumeTime,
             startupResumePolicy: resumeTimeOverride == nil ? .deferred : .immediate,
             dynamicRange: variant.dynamicRange,
-            cdnPreference: libraryStore.playbackCDNPreference,
+            cdnPreference: libraryStore.effectivePlaybackCDNPreference,
             metricsID: detail.bvid
         )
         playerViewModel.setPlaybackRate(playbackRate)
         playerViewModel.setPlaybackIntent(shouldAutoplay)
         stablePlayerViewModel = playerViewModel
-        let cdnPreference = libraryStore.playbackCDNPreference
+        let cdnPreference = libraryStore.effectivePlaybackCDNPreference
         PlayerMetricsLog.record(
             .playerCreated,
             metricsID: detail.bvid,
@@ -1437,7 +1437,7 @@ final class VideoDetailViewModel: ObservableObject {
                     video,
                     api: api,
                     preferredQuality: self.libraryStore.preferredVideoQuality,
-                    cdnPreference: self.libraryStore.playbackCDNPreference
+                    cdnPreference: self.libraryStore.effectivePlaybackCDNPreference
                 )
             }
         }
