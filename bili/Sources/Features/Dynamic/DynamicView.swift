@@ -158,6 +158,12 @@ private extension EnvironmentValues {
 private struct DynamicFeedCard: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
+    private let video: VideoItem?
+    private let live: DynamicLive?
+    private let liveRoom: LiveRoom?
+    private let authorOwner: VideoOwner?
+    private let imageItems: [DynamicImageItem]
+    private let textSegments: [DynamicTextSegment]
     @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
     @State private var imageSelection: DynamicImageSelection?
     @State private var commentsTarget: DynamicFeedItem?
@@ -169,32 +175,14 @@ private struct DynamicFeedCard: View {
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
         self.api = api
+        self.video = item.archive?.asVideoItem(author: item.author)
+        self.live = item.live
+        self.liveRoom = item.live?.asLiveRoom(author: item.author)
+        self.authorOwner = item.author?.owner
+        self.imageItems = item.imageItems.filter { $0.normalizedURL != nil }
+        self.textSegments = item.textSegments
         _isLiked = State(initialValue: item.isLiked)
         _likeCount = State(initialValue: item.likeCount ?? 0)
-    }
-
-    private var video: VideoItem? {
-        item.archive?.asVideoItem(author: item.author)
-    }
-
-    private var live: DynamicLive? {
-        item.live
-    }
-
-    private var liveRoom: LiveRoom? {
-        live?.asLiveRoom(author: item.author)
-    }
-
-    private var authorOwner: VideoOwner? {
-        item.author?.owner
-    }
-
-    private var imageItems: [DynamicImageItem] {
-        item.imageItems.filter { $0.normalizedURL != nil }
-    }
-
-    private var textSegments: [DynamicTextSegment] {
-        item.textSegments
     }
 
     var body: some View {
@@ -515,7 +503,18 @@ private struct DynamicFeedCard: View {
     }
 
     private func shouldShowExpandButton(for text: String) -> Bool {
-        text.count > 120 || text.filter(\.isNewline).count >= 4
+        if text.count > 120 {
+            return true
+        }
+
+        var newlineCount = 0
+        for character in text where character.isNewline {
+            newlineCount += 1
+            if newlineCount >= 4 {
+                return true
+            }
+        }
+        return false
     }
 
     private func statTitle(count: Int?, fallback: String) -> String {
@@ -1782,32 +1781,24 @@ private struct DynamicCommentErrorView: View {
 
 private struct DynamicOriginalPreview: View {
     let item: DynamicOriginalItem
+    private let video: VideoItem?
+    private let live: DynamicLive?
+    private let liveRoom: LiveRoom?
+    private let authorOwner: VideoOwner?
+    private let imageItems: [DynamicImageItem]
+    private let textSegments: [DynamicTextSegment]
     @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
     @State private var imageSelection: DynamicImageSelection?
     @Namespace private var imageTransitionNamespace
 
-    private var video: VideoItem? {
-        item.archive?.asVideoItem(author: item.author)
-    }
-
-    private var live: DynamicLive? {
-        item.live
-    }
-
-    private var liveRoom: LiveRoom? {
-        live?.asLiveRoom(author: item.author)
-    }
-
-    private var authorOwner: VideoOwner? {
-        item.author?.owner
-    }
-
-    private var imageItems: [DynamicImageItem] {
-        item.imageItems.filter { $0.normalizedURL != nil }
-    }
-
-    private var textSegments: [DynamicTextSegment] {
-        item.textSegments
+    init(item: DynamicOriginalItem) {
+        self.item = item
+        self.video = item.archive?.asVideoItem(author: item.author)
+        self.live = item.live
+        self.liveRoom = item.live?.asLiveRoom(author: item.author)
+        self.authorOwner = item.author?.owner
+        self.imageItems = item.imageItems.filter { $0.normalizedURL != nil }
+        self.textSegments = item.textSegments
     }
 
     var body: some View {

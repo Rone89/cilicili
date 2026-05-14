@@ -209,14 +209,15 @@ struct VideoDetailView: View {
         _ viewModel: VideoDetailViewModel,
         screenSize: CGSize,
         isLandscape: Bool = false
-    ) -> AnyView {
+    ) -> some View {
         let config = makeStandardPlaybackPageConfig(screenSize: screenSize, isLandscape: isLandscape)
-        let detailContent = AnyView(detailScrollPage(viewModel))
-        return AnyView(VideoDetailStandardPlaybackPage(
+        return VideoDetailStandardPlaybackPage(
             config: config,
             viewModel: viewModel,
-            detailContent: detailContent
-        ))
+            detailContent: {
+                detailScrollPage(viewModel)
+            }
+        )
     }
 
     private func makeStandardPlaybackPageConfig(
@@ -876,7 +877,7 @@ private extension ManualVideoFullscreenMode {
     }
 }
 
-private struct VideoDetailStandardPlaybackPage: View {
+private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
     struct Config {
         let screenSize: CGSize
         let standardHeight: CGFloat
@@ -893,7 +894,7 @@ private struct VideoDetailStandardPlaybackPage: View {
 
     let config: Config
     @ObservedObject var viewModel: VideoDetailViewModel
-    let detailContent: AnyView
+    let detailContent: () -> DetailContent
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -906,7 +907,7 @@ private struct VideoDetailStandardPlaybackPage: View {
                     Color.clear
                         .frame(height: config.standardHeight)
 
-                    detailContent
+                    detailContent()
                         .opacity(config.isManualFullscreen ? 0 : 1)
                         .allowsHitTesting(!config.isManualFullscreen)
                 }
@@ -3044,13 +3045,14 @@ private struct RelatedVideoPlaceholderCard: View {
         .frame(width: 168, height: 145, alignment: .topLeading)
         .padding(.bottom, 2)
         .overlay(alignment: .center) {
-            ProgressView()
-                .opacity(isLoading ? 1 : 0)
-                .controlSize(.regular)
-                .tint(.secondary)
-                .padding(10)
-                .background(.thinMaterial, in: Circle())
-                .accessibilityLabel("姝ｅ湪鍔犺浇鐩稿叧鎺ㄨ崘")
+            if isLoading {
+                ProgressView()
+                    .controlSize(.regular)
+                    .tint(.secondary)
+                    .padding(10)
+                    .background(.thinMaterial, in: Circle())
+                    .accessibilityLabel("正在加载相关推荐")
+            }
             }
     }
 }
