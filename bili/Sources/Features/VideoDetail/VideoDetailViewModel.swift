@@ -1345,7 +1345,7 @@ final class VideoDetailViewModel: ObservableObject {
             }
         }
         do {
-            let videos = try await withThrowingTaskGroup(of: [VideoItem].self, returning: [VideoItem].self) { group in
+            let videos: [VideoItem] = try await withThrowingTaskGroup(of: [VideoItem].self) { group -> [VideoItem] in
                 group.addTask(priority: .utility) { [api, bvid] in
                     Array(try await api.fetchVideoRelated(bvid: bvid).prefix(5))
                 }
@@ -1356,7 +1356,7 @@ final class VideoDetailViewModel: ObservableObject {
                 guard let result = try await group.next() else { return [] }
                 group.cancelAll()
                 return result
-            })
+            }
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
             related = videos
             relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
