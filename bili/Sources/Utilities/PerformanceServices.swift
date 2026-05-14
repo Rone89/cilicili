@@ -32,9 +32,11 @@ actor VideoPreloadCenter {
     private var mediaWarmupCache: [String: Date] = [:]
     private var focusedPlaybackBVID: String?
     private var focusedPlaybackUntil: Date?
+    private var defaultCDNPreference: PlaybackCDNPreference = .automatic
 
-    func updatePlaybackPreferences(preferredQuality: Int?) {
+    func updatePlaybackPreferences(preferredQuality: Int?, cdnPreference: PlaybackCDNPreference = .automatic) {
         defaultPreferredQuality = preferredQuality
+        defaultCDNPreference = cdnPreference
     }
 
     func cachedPlayURLMissingPreferredQuality(for bvid: String, cid: Int, page: Int?, preferredQuality: Int?) -> Bool {
@@ -79,6 +81,7 @@ actor VideoPreloadCenter {
         _ video: VideoItem,
         api: BiliAPIClient,
         preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference = .automatic,
         priority: TaskPriority = .utility,
         warmsMedia: Bool = false,
         mediaWarmupDelay: TimeInterval = 0
@@ -90,6 +93,7 @@ actor VideoPreloadCenter {
             return
         }
         defaultPreferredQuality = preferredQuality
+        defaultCDNPreference = cdnPreference
         guard let cid = video.cid else {
             PlayerMetricsLog.logger.info(
                 "playInfoPreloadDetailStart bvid=\(video.bvid, privacy: .public) preferred=\(preferredQuality ?? 0, privacy: .public) priority=\(String(describing: priority), privacy: .public)"
@@ -104,6 +108,7 @@ actor VideoPreloadCenter {
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 warmsMedia: warmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority
@@ -115,6 +120,7 @@ actor VideoPreloadCenter {
             cid: cid,
             page: nil,
             preferredQuality: preferredQuality,
+            cdnPreference: cdnPreference,
             api: api,
             warmsMedia: warmsMedia,
             mediaWarmupDelay: mediaWarmupDelay,
@@ -127,12 +133,14 @@ actor VideoPreloadCenter {
         cid: Int,
         page: Int?,
         preferredQuality: Int? = nil,
+        cdnPreference: PlaybackCDNPreference? = nil,
         api: BiliAPIClient,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval,
         priority: TaskPriority
     ) {
         let effectivePreferredQuality = preferredQuality ?? defaultPreferredQuality
+        let effectiveCDNPreference = cdnPreference ?? defaultCDNPreference
         guard shouldAllowPreload(bvid: bvid, priority: priority) else {
             PlayerMetricsLog.logger.info(
                 "playInfoPreloadSkipped reason=focusedPlayback bvid=\(bvid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public)"
@@ -178,6 +186,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: page,
                     preferredQuality: effectivePreferredQuality,
+                    cdnPreference: effectiveCDNPreference,
                     warmsMedia: true,
                     mediaWarmupDelay: mediaWarmupDelay
                 )
@@ -210,6 +219,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: page,
                     preferredQuality: effectivePreferredQuality,
+                    cdnPreference: effectiveCDNPreference,
                     warmsMedia: warmsMedia,
                     mediaWarmupDelay: mediaWarmupDelay
                 )
@@ -233,6 +243,7 @@ actor VideoPreloadCenter {
         _ video: VideoItem,
         api: BiliAPIClient,
         preferredQuality: Int? = nil,
+        cdnPreference: PlaybackCDNPreference? = nil,
         warmsMedia: Bool = true,
         mediaWarmupDelay: TimeInterval = 1.25,
         priority: TaskPriority = .utility
@@ -244,6 +255,7 @@ actor VideoPreloadCenter {
                 cid: cid,
                 page: nil,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 api: api,
                 warmsMedia: warmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
@@ -259,6 +271,7 @@ actor VideoPreloadCenter {
                 cid: cid,
                 page: nil,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 api: api,
                 warmsMedia: warmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
@@ -283,6 +296,7 @@ actor VideoPreloadCenter {
                 detailTask,
                 api: api,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 warmsMedia: warmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority
@@ -305,6 +319,7 @@ actor VideoPreloadCenter {
                         cid: cid,
                         page: nil,
                         preferredQuality: preferredQuality,
+                        cdnPreference: cdnPreference,
                         warmsMedia: warmsMedia,
                         mediaWarmupDelay: mediaWarmupDelay
                     ) {
@@ -316,6 +331,7 @@ actor VideoPreloadCenter {
                         cid: cid,
                         page: nil,
                         preferredQuality: preferredQuality,
+                        cdnPreference: cdnPreference,
                         api: api,
                         warmsMedia: warmsMedia,
                         mediaWarmupDelay: mediaWarmupDelay,
@@ -335,6 +351,7 @@ actor VideoPreloadCenter {
         _ detailTask: Task<VideoItem, Error>,
         api: BiliAPIClient,
         preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference?,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval,
         priority: TaskPriority
@@ -350,6 +367,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: nil,
                     preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
                     warmsMedia: warmsMedia,
                     mediaWarmupDelay: mediaWarmupDelay
                 ) {
@@ -360,6 +378,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: nil,
                     preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
                     api: api,
                     warmsMedia: warmsMedia,
                     mediaWarmupDelay: mediaWarmupDelay,
@@ -437,10 +456,12 @@ actor VideoPreloadCenter {
         cid: Int,
         page: Int?,
         preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference?,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval
     ) async -> Bool {
         let effectivePreferredQuality = preferredQuality ?? defaultPreferredQuality
+        let effectiveCDNPreference = cdnPreference ?? defaultCDNPreference
         if let cached = cachedPlayURL(
             for: bvid,
             cid: cid,
@@ -458,6 +479,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: page,
                     preferredQuality: effectivePreferredQuality,
+                    cdnPreference: effectiveCDNPreference,
                     warmsMedia: warmsMedia,
                     mediaWarmupDelay: mediaWarmupDelay,
                     source: "cache"
@@ -471,6 +493,7 @@ actor VideoPreloadCenter {
                         cid: cid,
                         page: page,
                         preferredQuality: effectivePreferredQuality,
+                        cdnPreference: effectiveCDNPreference,
                         warmsMedia: warmsMedia,
                         mediaWarmupDelay: mediaWarmupDelay,
                         source: "pending"
@@ -487,6 +510,7 @@ actor VideoPreloadCenter {
         cid: Int,
         page: Int?,
         preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference?,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval,
         source: String
@@ -516,6 +540,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: effectivePage,
                     preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
                     warmsMedia: true,
                     mediaWarmupDelay: mediaWarmupDelay
                 )
@@ -528,6 +553,7 @@ actor VideoPreloadCenter {
             cid: cid,
             page: effectivePage,
             preferredQuality: preferredQuality,
+            cdnPreference: cdnPreference,
             warmsMedia: warmsMedia,
             mediaWarmupDelay: mediaWarmupDelay
         )
@@ -716,6 +742,7 @@ actor VideoPreloadCenter {
                     cid: cid,
                     page: page,
                     preferredQuality: preferredQuality,
+                    cdnPreference: defaultCDNPreference,
                     warmsMedia: false,
                     mediaWarmupDelay: 0,
                     source: "detailWait"
@@ -747,11 +774,13 @@ actor VideoPreloadCenter {
         cid: Int,
         page: Int?,
         preferredQuality: Int? = nil,
+        cdnPreference: PlaybackCDNPreference? = nil,
         warmsMedia: Bool = true,
         mediaWarmupDelay: TimeInterval = 0
     ) {
         guard data.hasPlayableStreamPayload else { return }
         let effectivePage = normalizedPage(page)
+        let effectiveCDNPreference = cdnPreference ?? defaultCDNPreference
         playURLCache[cacheKey(bvid: bvid, cid: cid, page: effectivePage)] = CachedPlayURL(
             data: data,
             date: Date()
@@ -774,6 +803,7 @@ actor VideoPreloadCenter {
                 cid: cid,
                 preferredQuality: preferredQuality,
                 page: effectivePage,
+                cdnPreference: effectiveCDNPreference,
                 delay: mediaWarmupDelay
             )
         }
@@ -1048,9 +1078,14 @@ actor VideoPreloadCenter {
         cid: Int,
         preferredQuality: Int?,
         page: Int?,
+        cdnPreference: PlaybackCDNPreference,
         delay: TimeInterval = 0
     ) {
-        let key = cacheKey(bvid: bvid, cid: cid, page: page)
+        let key = [
+            cacheKey(bvid: bvid, cid: cid, page: page, preferredQuality: preferredQuality),
+            "cdn",
+            cdnPreference.rawValue
+        ].joined(separator: "|")
         trimExpiredMediaWarmups()
         guard mediaWarmupTasks[key] == nil, mediaWarmupCache[key] == nil else { return }
 
@@ -1066,7 +1101,8 @@ actor VideoPreloadCenter {
             let didWarm = await Self.warmPlayableMedia(
                 data,
                 bvid: bvid,
-                preferredQuality: preferredQuality
+                preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference
             )
             self.finishMediaWarmup(key, didWarm: didWarm)
         }
@@ -1184,7 +1220,8 @@ actor VideoPreloadCenter {
     private nonisolated static func warmPlayableMedia(
         _ data: PlayURLData,
         bvid: String,
-        preferredQuality: Int?
+        preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference
     ) async -> Bool {
         let media: (
             videoURL: URL,
@@ -1194,7 +1231,7 @@ actor VideoPreloadCenter {
             dynamicRange: BiliVideoDynamicRange
         )? = await MainActor.run {
             guard let variant = preferredPlayableVariant(
-                in: data.playVariants,
+                in: data.playVariants(cdnPreference: cdnPreference),
                 preferredQuality: preferredQuality
             ),
                   let videoURL = variant.videoURL

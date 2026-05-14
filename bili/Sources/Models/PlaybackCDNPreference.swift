@@ -143,6 +143,10 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
         host != nil
     }
 
+    static var manualProbeCandidates: [PlaybackCDNPreference] {
+        allCases.filter(\.isManualHost)
+    }
+
     func preferredURLs(primary: URL?, backups: [URL]) -> (primary: URL?, backups: [URL]) {
         let candidates = ([primary].compactMap { $0 } + backups).removingDuplicateURLs()
         guard !candidates.isEmpty else { return (primary, backups) }

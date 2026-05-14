@@ -783,11 +783,13 @@ struct VideoDetailView: View {
         preloadedRelatedVideos.insert(video.bvid)
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
+        let cdnPreference = libraryStore.playbackCDNPreference
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 priority: .utility
             )
         }

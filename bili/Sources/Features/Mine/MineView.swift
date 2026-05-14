@@ -8,6 +8,10 @@ struct MineView: View {
     @StateObject private var holder = MineViewModelHolder()
     @State private var isShowingWebLogin = false
     @State private var isShowingQRCodeLogin = false
+    @State private var isProbingPlaybackCDN = false
+    @State private var playbackCDNProbeResults: [PlaybackCDNProbeResult] = []
+    @State private var playbackCDNProbeMessage: String?
+    @State private var playbackCDNProbeTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -36,6 +40,37 @@ struct MineView: View {
         .sheet(isPresented: $isShowingQRCodeLogin) {
             if let viewModel = holder.viewModel {
                 QRCodeLoginView(viewModel: viewModel)
+            }
+        }
+        .onDisappear {
+            playbackCDNProbeTask?.cancel()
+            playbackCDNProbeTask = nil
+            isProbingPlaybackCDN = false
+        }
+    }
+
+    private func probePlaybackCDN() {
+        guard !isProbingPlaybackCDN else { return }
+        isProbingPlaybackCDN = true
+        playbackCDNProbeMessage = "正在测试 CDN 线路..."
+        playbackCDNProbeResults = []
+
+        playbackCDNProbeTask?.cancel()
+        playbackCDNProbeTask = Task {
+            let recommendation = await PlaybackCDNProbeService.recommendedPreference()
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                playbackCDNProbeResults = recommendation.results
+                if let preference = recommendation.preference,
+                   let elapsed = recommendation.results.first(where: { $0.preference == preference })?.elapsedMilliseconds {
+                    libraryStore.setPlaybackCDNPreference(preference)
+                    playbackCDNProbeMessage = "已推荐 \(preference.title)，\(elapsed) ms"
+                } else {
+                    playbackCDNProbeMessage = "未找到可用 CDN，已保留当前设置"
+                }
+                isProbingPlaybackCDN = false
+                playbackCDNProbeTask = nil
             }
         }
     }
@@ -137,6 +172,34 @@ struct MineView: View {
                 Text("如果视频加载慢或容易缓冲，可以切换 CDN 线路。默认自动会保留接口返回顺序；手动选择后会优先使用对应 CDN，并保留原始/备用地址作为回退。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                Button {
+                    probePlaybackCDN()
+                } label: {
+                    Label(isProbingPlaybackCDN ? "测速中" : "测速并推荐 CDN", systemImage: "speedometer")
+                }
+                .disabled(isProbingPlaybackCDN)
+
+                if let playbackCDNProbeMessage {
+                    Text(playbackCDNProbeMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(playbackCDNProbeResults.prefix(3)) { result in
+                    HStack {
+                        Text(result.preference.title)
+                        Spacer()
+                        if let elapsed = result.elapsedMilliseconds {
+                            Text("\(elapsed) ms")
+                                .monospacedDigit()
+                        } else {
+                            Text(result.errorDescription ?? "失败")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(result.didSucceed ? .secondary : .tertiary)
+                }
 
                 Picker(selection: Binding(
                     get: { libraryStore.defaultPlaybackRate },

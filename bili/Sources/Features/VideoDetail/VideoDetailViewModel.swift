@@ -163,6 +163,7 @@ final class VideoDetailViewModel: ObservableObject {
             detail,
             api: api,
             preferredQuality: libraryStore.preferredVideoQuality,
+            cdnPreference: libraryStore.playbackCDNPreference,
             warmsMedia: false,
             mediaWarmupDelay: 0,
             priority: .userInitiated
@@ -470,8 +471,11 @@ final class VideoDetailViewModel: ObservableObject {
         let token = UUID()
         didSelectPlayVariantManually = true
         libraryStore.setPreferredVideoQuality(variant.quality)
-        Task { [quality = variant.quality] in
-            await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: quality)
+        Task { [quality = variant.quality, cdnPreference = libraryStore.playbackCDNPreference] in
+            await VideoPreloadCenter.shared.updatePlaybackPreferences(
+                preferredQuality: quality,
+                cdnPreference: cdnPreference
+            )
         }
         playVariantSwitchTask?.cancel()
         playVariantSwitchToken = token
@@ -588,6 +592,10 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         do {
+            await VideoPreloadCenter.shared.updatePlaybackPreferences(
+                preferredQuality: libraryStore.preferredVideoQuality,
+                cdnPreference: libraryStore.playbackCDNPreference
+            )
             let pageNumber = selectedPageNumber
             if let cachedPlayableData = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
                 for: detail.bvid,
@@ -652,6 +660,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 preferredQuality: libraryStore.preferredVideoQuality,
+                cdnPreference: libraryStore.playbackCDNPreference,
                 warmsMedia: false,
                 mediaWarmupDelay: 0
             )
@@ -844,6 +853,7 @@ final class VideoDetailViewModel: ObservableObject {
                     cid: cid,
                     page: page,
                     preferredQuality: self.libraryStore.preferredVideoQuality,
+                    cdnPreference: self.libraryStore.playbackCDNPreference,
                     warmsMedia: false
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
@@ -981,7 +991,21 @@ final class VideoDetailViewModel: ObservableObject {
         playerViewModel.setPlaybackRate(playbackRate)
         playerViewModel.setPlaybackIntent(shouldAutoplay)
         stablePlayerViewModel = playerViewModel
-        PlayerMetricsLog.record(.playerCreated, metricsID: detail.bvid, title: detail.title, message: variant.title)
+        let cdnPreference = libraryStore.playbackCDNPreference
+        PlayerMetricsLog.record(
+            .playerCreated,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "\(variant.title) · CDN \(cdnPreference.title)"
+        )
+        if let host = variant.videoURL?.host ?? variant.audioURL?.host {
+            PlayerMetricsLog.record(
+                .network,
+                metricsID: detail.bvid,
+                title: detail.title,
+                message: "host=\(host) cdn=\(cdnPreference.rawValue) quality=\(variant.quality)"
+            )
+        }
         observePlaybackErrors(playerViewModel, variant: variant)
         applySponsorBlockSegmentsToPlayer()
         scheduleSponsorBlockSegmentsAfterFirstFrame()
@@ -1412,7 +1436,8 @@ final class VideoDetailViewModel: ObservableObject {
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
-                    preferredQuality: self.libraryStore.preferredVideoQuality
+                    preferredQuality: self.libraryStore.preferredVideoQuality,
+                    cdnPreference: self.libraryStore.playbackCDNPreference
                 )
             }
         }

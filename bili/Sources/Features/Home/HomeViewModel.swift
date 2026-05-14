@@ -303,15 +303,20 @@ final class HomeViewModel: ObservableObject {
         }
 
         let preferredQuality = libraryStore.preferredVideoQuality
-        playbackPreloadTask = Task(priority: .background) { [api] in
+        let cdnPreference = libraryStore.playbackCDNPreference
+        playbackPreloadTask = Task(priority: .background) { [api, cdnPreference] in
             try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
             for (index, video) in candidates.enumerated() {
                 guard !Task.isCancelled else { return }
-                await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: preferredQuality)
+                await VideoPreloadCenter.shared.updatePlaybackPreferences(
+                    preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference
+                )
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
                     preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
                     priority: .background
                 )
                 if index < candidates.count - 1 {

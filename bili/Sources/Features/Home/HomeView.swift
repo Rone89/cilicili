@@ -263,16 +263,21 @@ struct HomeView: View {
         guard !pressedPreloadVideos.contains(bvid) else { return }
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
+        let cdnPreference = libraryStore.playbackCDNPreference
         DispatchQueue.main.async {
             guard !pressedPreloadVideos.contains(bvid) else { return }
             pressedPreloadVideos.insert(bvid)
             Task {
-                await VideoPreloadCenter.shared.updatePlaybackPreferences(preferredQuality: preferredQuality)
+                await VideoPreloadCenter.shared.updatePlaybackPreferences(
+                    preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference
+                )
                 await VideoPreloadCenter.shared.prioritizePlayback(for: video)
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
                     preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
                     priority: .userInitiated,
                     warmsMedia: true
                 )
@@ -288,12 +293,14 @@ struct HomeView: View {
         else { return }
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
+        let cdnPreference = libraryStore.playbackCDNPreference
         visiblePreloadVideos.insert(bvid)
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
                 priority: .utility
             )
         }
