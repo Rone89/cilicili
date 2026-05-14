@@ -29,6 +29,11 @@ final class VideoDetailViewModel: ObservableObject {
     @Published private(set) var danmakuState: LoadingState = .idle
     @Published var isDanmakuEnabled = true
     @Published var danmakuSettings: DanmakuSettings = .default
+    @Published private(set) var detailLoadElapsedMilliseconds: Int?
+    @Published private(set) var playURLElapsedMilliseconds: Int?
+    @Published private(set) var relatedElapsedMilliseconds: Int?
+    @Published private(set) var lastPlayURLSource: String?
+    @Published private(set) var lastRelatedLoadTimedOut = false
     @Published private var replyThreads: [Int: [Comment]] = [:]
     @Published private var replyThreadStates: [Int: LoadingState] = [:]
     @Published private var replyThreadPages: [Int: Int] = [:]
@@ -63,6 +68,10 @@ final class VideoDetailViewModel: ObservableObject {
     private var didSelectPlayVariantManually = false
     private var isPlaybackInvalidatedForNavigation = false
     private var playVariantSwitchToken: UUID?
+    private var detailLoadStartTime: CFTimeInterval?
+    private var playURLLoadStartTime: CFTimeInterval?
+    private var relatedLoadStartTime: CFTimeInterval?
+    private let relatedLoadTimeoutNanoseconds: UInt64 = 5_000_000_000
 
     var hasMoreComments: Bool {
         !commentsEnd
@@ -260,6 +269,8 @@ final class VideoDetailViewModel: ObservableObject {
         let isCurrentDetailTask = detailLoadingTask != nil
         if state != .loaded {
             state = .loading
+            detailLoadStartTime = CACurrentMediaTime()
+            detailLoadElapsedMilliseconds = nil
         }
         do {
             let fullDetail = try await VideoPreloadCenter.shared.detail(
@@ -274,6 +285,7 @@ final class VideoDetailViewModel: ObservableObject {
             warmCachedPlayInfoIfAvailable()
 
             state = .loaded
+            detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime)
             PlayerMetricsLog.record(.detailLoaded, metricsID: detail.bvid, title: detail.title)
             if isCurrentDetailTask {
                 detailLoadingTask = nil
@@ -290,6 +302,7 @@ final class VideoDetailViewModel: ObservableObject {
             if isCurrentDetailTask {
                 detailLoadingTask = nil
             }
+            detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime)
             state = .failed(error.localizedDescription)
         }
     }
@@ -300,6 +313,8 @@ final class VideoDetailViewModel: ObservableObject {
         scheduleDanmakuLoadIfNeeded(force: true)
         playVariants = []
         selectedPlayVariant = nil
+        playURLElapsedMilliseconds = nil
+        lastPlayURLSource = nil
         didSelectPlayVariantManually = false
         stablePlayerViewModel?.stop()
         stablePlayerViewModel = nil
@@ -347,6 +362,15 @@ final class VideoDetailViewModel: ObservableObject {
         commentsLoadingTask = nil
         commentsLoadingToken = nil
         await loadInitialComments()
+    }
+
+    func retryRelated() async {
+        relatedLoadingTask?.cancel()
+        relatedLoadingTask = nil
+        related = []
+        relatedState = .idle
+        lastRelatedLoadTimedOut = false
+        await loadRelated()
     }
 
     func replies(for comment: Comment) -> [Comment] {
@@ -583,11 +607,15 @@ final class VideoDetailViewModel: ObservableObject {
     private func loadPlayURL() async {
         guard !isPlaybackInvalidatedForNavigation else { return }
         playURLState = .loading
+        playURLLoadStartTime = CACurrentMediaTime()
+        playURLElapsedMilliseconds = nil
+        lastPlayURLSource = nil
         isSupplementingPlayQualities = false
         PlayerMetricsLog.record(.playURLStart, metricsID: detail.bvid, title: detail.title)
         guard let cid = selectedCID else {
             playVariants = []
             selectedPlayVariant = nil
+            playURLElapsedMilliseconds = elapsedMilliseconds(since: playURLLoadStartTime)
             playURLState = .failed("没有找到视频 CID，无法请求播放地址")
             return
         }
@@ -673,6 +701,7 @@ final class VideoDetailViewModel: ObservableObject {
             playVariants = []
             selectedPlayVariant = nil
             isSupplementingPlayQualities = false
+            playURLElapsedMilliseconds = elapsedMilliseconds(since: playURLLoadStartTime)
             playURLState = .failed(error.localizedDescription)
         }
     }
@@ -760,6 +789,8 @@ final class VideoDetailViewModel: ObservableObject {
             guard selectedCID == cid else { return }
         }
         let variants = sortedPlayVariants(data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference))
+        lastPlayURLSource = source
+        playURLElapsedMilliseconds = elapsedMilliseconds(since: playURLLoadStartTime)
         playVariants = variants
         let preferredVariant = preferredDefaultVariant(in: variants)
         selectedPlayVariant = preferredVariant
@@ -1301,21 +1332,45 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func loadRelated() async {
         guard related.isEmpty, !relatedState.isLoading else { return }
+        let bvid = detail.bvid
+        let timeout = relatedLoadTimeoutNanoseconds
         relatedState = .loading
+        lastRelatedLoadTimedOut = false
+        relatedLoadStartTime = CACurrentMediaTime()
+        relatedElapsedMilliseconds = nil
         defer {
             if related.isEmpty, relatedState.isLoading {
                 relatedState = .idle
             }
         }
         do {
-            let videos = Array(try await api.fetchVideoRelated(bvid: detail.bvid).prefix(5))
+            let videos = Array(try await withThrowingTaskGroup(of: [VideoItem].self) { group in
+                group.addTask(priority: .utility) { [api, bvid] in
+                    Array(try await api.fetchVideoRelated(bvid: bvid).prefix(5))
+                }
+                group.addTask(priority: .utility) {
+                    try await Task.sleep(nanoseconds: timeout)
+                    throw VideoDetailLoadTimeoutError.related
+                }
+                guard let result = try await group.next() else { return [] }
+                group.cancelAll()
+                return result
+            })
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
             related = videos
+            relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
             relatedState = .loaded
             scheduleRelatedPlaybackPreloadAfterFirstFrame(for: videos)
+        } catch VideoDetailLoadTimeoutError.related {
+            guard !Task.isCancelled else { return }
+            related = []
+            lastRelatedLoadTimedOut = true
+            relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
+            relatedState = .failed("相关推荐加载超时")
         } catch {
             guard !Task.isCancelled else { return }
             related = []
+            relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
             relatedState = .failed(error.localizedDescription)
         }
     }
@@ -1724,4 +1779,13 @@ final class VideoDetailViewModel: ObservableObject {
         }
         return error.localizedDescription
     }
+
+    private func elapsedMilliseconds(since startTime: CFTimeInterval?) -> Int? {
+        guard let startTime else { return nil }
+        return Int(((CACurrentMediaTime() - startTime) * 1000).rounded())
+    }
+}
+
+private enum VideoDetailLoadTimeoutError: Error {
+    case related
 }

@@ -818,10 +818,16 @@ struct VideoDetailView: View {
 
     @ViewBuilder
     private func relatedPlaceholderContent(_ viewModel: VideoDetailViewModel) -> some View {
-        if case .failed = viewModel.relatedState {
-            EmptyStateView(title: "暂无相关推荐", systemImage: "rectangle.stack", message: "稍后再试试。")
-                .padding(.horizontal, 14)
-                .frame(height: 146)
+        if case .failed(let message) = viewModel.relatedState {
+            RelatedVideoRetryState(
+                message: viewModel.lastRelatedLoadTimedOut ? "相关推荐加载超时，可以稍后重试。" : message
+            ) {
+                Task {
+                    await viewModel.retryRelated()
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 146)
         } else {
             HStack(spacing: 12) {
                 ForEach(0..<3, id: \.self) { _ in
@@ -1154,8 +1160,8 @@ private struct VideoDetailPlayerPlaceholder: View {
     var body: some View {
         ZStack {
             PlayerLoadingPlaceholder(
-                progress: viewModel.playURLState.isLoading ? 0.08 : 0,
-                message: viewModel.playURLState.isLoading ? "正在获取播放地址" : "准备播放",
+                progress: loadingProgress,
+                message: loadingMessage,
                 isFinishing: false
             )
             .frame(width: playerWidth)
@@ -1174,6 +1180,32 @@ private struct VideoDetailPlayerPlaceholder: View {
         .frame(width: playerWidth)
         .frame(height: playerHeight)
         .background(Color.black)
+    }
+
+    private var loadingProgress: Double {
+        if viewModel.playURLState.isLoading {
+            return 0.18
+        }
+        if viewModel.state.isLoading {
+            return 0.08
+        }
+        if viewModel.relatedState.isLoading {
+            return 0.05
+        }
+        return 0
+    }
+
+    private var loadingMessage: String {
+        if viewModel.playURLState.isLoading {
+            return "正在获取播放地址"
+        }
+        if viewModel.state.isLoading {
+            return "正在获取视频详情"
+        }
+        if viewModel.relatedState.isLoading {
+            return "正在加载相关推荐"
+        }
+        return "准备播放"
     }
 }
 
@@ -1313,6 +1345,9 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var libraryStore: LibraryStore
     @Environment(\.dismiss) private var dismiss
+    @State private var isProbingPlaybackCDN = false
+    @State private var probeMessage: String?
+    @State private var copiedMessage: String?
 
     private var variant: PlayVariant? {
         viewModel.selectedPlayVariant
@@ -1329,7 +1364,9 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                actionsSection
                 cdnSection
+                loadingMetricsSection
                 streamSection
                 playerSection
                 environmentSection
@@ -1343,6 +1380,29 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
                         dismiss()
                     }
                 }
+            }
+        }
+    }
+
+    private var actionsSection: some View {
+        Section {
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label(copiedMessage ?? "复制诊断信息", systemImage: "doc.on.doc")
+            }
+
+            Button {
+                probePlaybackCDN()
+            } label: {
+                Label(isProbingPlaybackCDN ? "CDN 测速中" : "重新测速 CDN", systemImage: "speedometer")
+            }
+            .disabled(isProbingPlaybackCDN)
+
+            if let probeMessage {
+                Text(probeMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1363,6 +1423,21 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
 
             if let audioURL = variant?.audioURL {
                 diagnosticRow("音频 Host", audioURL.host ?? "未知")
+            }
+        }
+    }
+
+    private var loadingMetricsSection: some View {
+        Section("加载耗时") {
+            diagnosticRow("视频详情", formattedMilliseconds(viewModel.detailLoadElapsedMilliseconds))
+            diagnosticRow("播放地址", formattedMilliseconds(viewModel.playURLElapsedMilliseconds))
+            diagnosticRow("相关推荐", formattedMilliseconds(viewModel.relatedElapsedMilliseconds))
+            diagnosticRow("取流来源", playURLSourceTitle)
+
+            if viewModel.lastRelatedLoadTimedOut {
+                Label("相关推荐最近一次加载超时，已停止等待并保留主播放优先。", systemImage: "clock.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
     }
@@ -1388,6 +1463,10 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
             diagnosticRow("首帧", playerViewModel?.hasPresentedPlayback == true ? "已显示" : "等待中")
             diagnosticRow("缓冲", playerViewModel?.isBuffering == true ? "缓冲中" : "未缓冲")
             diagnosticRow("可拖动", playerViewModel?.canSeek == true ? "可用" : "等待就绪")
+            diagnosticRow("准备耗时", formattedMilliseconds(playerViewModel?.prepareElapsedMilliseconds))
+            diagnosticRow("首帧耗时", formattedMilliseconds(playerViewModel?.firstFrameElapsedMilliseconds))
+            diagnosticRow("缓冲次数", "\(playerViewModel?.bufferingCount ?? 0)")
+            diagnosticRow("最近缓冲", formattedMilliseconds(playerViewModel?.lastBufferingElapsedMilliseconds))
 
             if let loadingProgress = playerViewModel?.loadingProgress {
                 diagnosticRow("加载进度", "\(Int((loadingProgress * 100).rounded()))%")
@@ -1489,6 +1568,29 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
         return "暂停/待播"
     }
 
+    private var playURLSourceTitle: String {
+        switch viewModel.lastPlayURLSource {
+        case "playableCache":
+            return "可播放缓存"
+        case "playableCacheStaleWhileRefresh":
+            return "可播放缓存，后台刷新"
+        case "cache":
+            return "缓存"
+        case "pendingCache":
+            return "预加载结果"
+        case "pendingCacheStaleWhileRefresh":
+            return "预加载结果，后台刷新"
+        case "detailWarmCache":
+            return "详情预热缓存"
+        case "network":
+            return "网络请求"
+        case let source?:
+            return source
+        case nil:
+            return "未获取"
+        }
+    }
+
     private func diagnosticRow(_ title: String, _ value: String) -> some View {
         LabeledContent {
             Text(value)
@@ -1523,6 +1625,85 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+
+    private func formattedMilliseconds(_ value: Int?) -> String {
+        guard let value else { return "未记录" }
+        if value >= 1000 {
+            return String(format: "%.2f s", Double(value) / 1000)
+        }
+        return "\(value) ms"
+    }
+
+    private func copyDiagnostics() {
+        UIPasteboard.general.string = diagnosticsText
+        copiedMessage = "已复制诊断信息"
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            copiedMessage = nil
+        }
+    }
+
+    private func probePlaybackCDN() {
+        guard !isProbingPlaybackCDN else { return }
+        isProbingPlaybackCDN = true
+        probeMessage = "正在测试 CDN 线路..."
+        Task {
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
+                if let preference = snapshot.recommendedPreference,
+                   let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
+                    libraryStore.setPlaybackCDNPreference(preference)
+                    probeMessage = "已推荐 \(preference.title)，\(elapsed) ms"
+                } else {
+                    probeMessage = "未找到可用 CDN，已保留当前设置"
+                }
+                isProbingPlaybackCDN = false
+            }
+        }
+    }
+
+    private var diagnosticsText: String {
+        var lines = [String]()
+        lines.append("播放器网络诊断")
+        lines.append("视频：\(viewModel.detail.title)")
+        lines.append("BVID：\(viewModel.detail.bvid)")
+        lines.append("当前 CDN：\(libraryStore.effectivePlaybackCDNPreference.title)")
+        lines.append("CDN 设置：\(libraryStore.playbackCDNPreference.title)")
+        lines.append("视频 Host：\(variant?.videoURL?.host ?? "未获取")")
+        lines.append("音频 Host：\(variant?.audioURL?.host ?? "未获取")")
+        lines.append("清晰度：\(variant?.title ?? "未选择")")
+        lines.append("封装模式：\(streamModeTitle)")
+        lines.append("编码：\(variant?.codec?.nilIfEmpty ?? "未知")")
+        lines.append("分辨率：\(variant?.resolution?.nilIfEmpty ?? "未知")")
+        lines.append("帧率：\(frameRateTitle)")
+        lines.append("带宽：\(bandwidthTitle)")
+        lines.append("视频详情耗时：\(formattedMilliseconds(viewModel.detailLoadElapsedMilliseconds))")
+        lines.append("播放地址耗时：\(formattedMilliseconds(viewModel.playURLElapsedMilliseconds))")
+        lines.append("相关推荐耗时：\(formattedMilliseconds(viewModel.relatedElapsedMilliseconds))")
+        lines.append("取流来源：\(playURLSourceTitle)")
+        lines.append("播放器状态：\(playerStateTitle)")
+        lines.append("准备耗时：\(formattedMilliseconds(playerViewModel?.prepareElapsedMilliseconds))")
+        lines.append("首帧耗时：\(formattedMilliseconds(playerViewModel?.firstFrameElapsedMilliseconds))")
+        lines.append("缓冲次数：\(playerViewModel?.bufferingCount ?? 0)")
+        lines.append("最近缓冲：\(formattedMilliseconds(playerViewModel?.lastBufferingElapsedMilliseconds))")
+        lines.append("网络类型：\(playbackEnvironment.networkClass.diagnosticTitle)")
+        lines.append("省电模式：\(playbackEnvironment.isLowPowerModeEnabled ? "开启" : "关闭")")
+        lines.append("温控限制：\(playbackEnvironment.isThermallyConstrained ? "已触发" : "未触发")")
+        if let snapshot = libraryStore.playbackCDNProbeSnapshot {
+            lines.append("测速时间：\(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
+            lines.append("测速推荐：\(snapshot.recommendedPreference?.title ?? "暂无推荐")")
+            lines.append("测速是否过期：\(snapshot.isExpired() ? "是" : "否")")
+        }
+        if let errorMessage = playerViewModel?.errorMessage, !errorMessage.isEmpty {
+            lines.append("播放器错误：\(errorMessage)")
+        }
+        if let fallbackMessage = viewModel.playbackFallbackMessage, !fallbackMessage.isEmpty {
+            lines.append("降级信息：\(fallbackMessage)")
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -3340,6 +3521,35 @@ private struct RelatedVideoPlaceholderCard: View {
                     .accessibilityLabel("正在加载相关推荐")
             }
             }
+    }
+}
+
+private struct RelatedVideoRetryState: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Label("相关推荐加载失败", systemImage: "rectangle.stack.badge.exclamationmark")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+
+            Button {
+                retry()
+            } label: {
+                Label("重新加载", systemImage: "arrow.clockwise")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

@@ -29,6 +29,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     @Published private(set) var hasPresentedPlayback = false
     @Published private(set) var isPlaybackSurfaceReady = false
     @Published private(set) var activeSponsorBlockSegment: SponsorBlockSegment?
+    @Published private(set) var prepareElapsedMilliseconds: Int?
+    @Published private(set) var firstFrameElapsedMilliseconds: Int?
+    @Published private(set) var bufferingCount = 0
+    @Published private(set) var lastBufferingElapsedMilliseconds: Int?
 
     private(set) var wantsAutoplay = true
     private let metricsID: String
@@ -533,6 +537,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     "prepareReturned id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
                 )
                 PlayerMetricsLog.record(.prepareReturned, metricsID: self.metricsID, title: self.title, message: self.elapsedMessage())
+                self.prepareElapsedMilliseconds = self.elapsedMilliseconds()
                 self.mediaPreparationTask = nil
                 self.loadingProgress = max(self.loadingProgress, 0.72)
                 if self.startupResumePolicy == .immediate {
@@ -550,6 +555,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     "prepareFailed id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
                 PlayerMetricsLog.record(.failed, metricsID: self.metricsID, title: self.title, message: "\(self.elapsedMessage()) \(error.localizedDescription)")
+                self.prepareElapsedMilliseconds = self.elapsedMilliseconds()
                 self.mediaPreparationTask = nil
                 self.errorMessage = error.localizedDescription
                 self.isPreparing = false
@@ -768,6 +774,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             title: title,
             message: "\(elapsedMessage()) source=\(source) time=\(String(format: "%.2f", normalizedTime))s"
         )
+        firstFrameElapsedMilliseconds = elapsedMilliseconds()
     }
 
     private func markPlaybackSurfaceReady() {
@@ -858,6 +865,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             errorMessage = nil
         case .buffering:
             isPreparing = false
+            if !isBuffering {
+                bufferingCount += 1
+                lastBufferingElapsedMilliseconds = elapsedMilliseconds()
+            }
             isBuffering = true
             loadingProgress = max(loadingProgress, 0.72)
             PlayerMetricsLog.record(.buffering, metricsID: metricsID, title: title, message: elapsedMessage())
@@ -974,7 +985,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func elapsedMessage() -> String {
-        "\(Int(PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime).rounded()))ms"
+        "\(elapsedMilliseconds())ms"
+    }
+
+    private func elapsedMilliseconds() -> Int {
+        Int(PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime).rounded())
     }
 }
 
