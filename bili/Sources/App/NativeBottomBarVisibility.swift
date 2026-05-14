@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 extension View {
-    func hidesRootTabBarOnPush() -> some View {
-        background(NativeBottomBarOnPushHider())
+    func hidesRootTabBarOnPush(restoreDelay: UInt64 = 0) -> some View {
+        background(NativeBottomBarOnPushHider(restoreDelay: restoreDelay))
     }
 
     func keepsRootTabBarHiddenDuringPresentation() -> some View {
@@ -11,9 +11,60 @@ extension View {
     }
 }
 
+@MainActor
+private enum NativeBottomBarVisibilityCoordinator {
+    private static var restoreTask: Task<Void, Never>?
+    private static let imageViewerReturnDelay: UInt64 = 520_000_000
+
+    static func hide(tabBarController: UITabBarController?, fallbackTabBar: UITabBar?, animated: Bool) {
+        restoreTask?.cancel()
+        restoreTask = nil
+        setHidden(true, tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: animated)
+    }
+
+    static func restoreAfterImageViewerReturn(
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?,
+        animated: Bool = false
+    ) {
+        restore(tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: animated, delay: imageViewerReturnDelay)
+    }
+
+    static func restore(
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?,
+        animated: Bool,
+        delay: UInt64
+    ) {
+        restoreTask?.cancel()
+        guard tabBarController != nil || fallbackTabBar != nil else { return }
+        restoreTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            setHidden(false, tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: animated)
+        }
+    }
+
+    private static func setHidden(
+        _ hidden: Bool,
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?,
+        animated: Bool
+    ) {
+        if let tabBarController {
+            guard tabBarController.isTabBarHidden != hidden else { return }
+            tabBarController.setTabBarHidden(hidden, animated: animated)
+        } else {
+            fallbackTabBar?.isHidden = hidden
+        }
+    }
+}
+
 private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
+    let restoreDelay: UInt64
+
     func makeUIViewController(context _: Context) -> Controller {
-        Controller()
+        Controller(restoreDelay: restoreDelay)
     }
 
     func updateUIViewController(_ uiViewController: Controller, context _: Context) {
@@ -21,6 +72,18 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
     }
 
     final class Controller: UIViewController {
+        private let restoreDelay: UInt64
+
+        init(restoreDelay: UInt64) {
+            self.restoreDelay = restoreDelay
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
         override func loadView() {
             view = PassthroughView()
         }
@@ -116,17 +179,60 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
                 hideRootTabBar(animated: animated)
                 return
             }
-            setRootTabBarHidden(false, animated: animated)
-        }
 
-        private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
-            guard let tabBarController = rootTabBarController() else {
-                rootTabBar()?.isHidden = hidden
+            let tabBarController = rootTabBarController()
+            let fallbackTabBar = rootTabBar()
+            NativeBottomBarVisibilityCoordinator.hide(
+                tabBarController: tabBarController,
+                fallbackTabBar: fallbackTabBar,
+                animated: false
+            )
+
+            guard let coordinator = enclosingNavigationController()?.transitionCoordinator else {
+                NativeBottomBarVisibilityCoordinator.restore(
+                    tabBarController: tabBarController,
+                    fallbackTabBar: fallbackTabBar,
+                    animated: false,
+                    delay: restoreDelay
+                )
                 return
             }
 
-            guard tabBarController.isTabBarHidden != hidden else { return }
-            tabBarController.setTabBarHidden(hidden, animated: animated)
+            coordinator.animate(alongsideTransition: nil) { context in
+                Task { @MainActor in
+                    if context.isCancelled {
+                        NativeBottomBarVisibilityCoordinator.hide(
+                            tabBarController: tabBarController,
+                            fallbackTabBar: fallbackTabBar,
+                            animated: false
+                        )
+                    } else {
+                        NativeBottomBarVisibilityCoordinator.restore(
+                            tabBarController: tabBarController,
+                            fallbackTabBar: fallbackTabBar,
+                            animated: false,
+                            delay: self.restoreDelay
+                        )
+                    }
+                }
+            }
+        }
+
+        private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
+            if hidden {
+                NativeBottomBarVisibilityCoordinator.hide(
+                    tabBarController: rootTabBarController(),
+                    fallbackTabBar: rootTabBar(),
+                    animated: animated
+                )
+            } else {
+                NativeBottomBarVisibilityCoordinator.restore(
+                    tabBarController: rootTabBarController(),
+                    fallbackTabBar: rootTabBar(),
+                    animated: animated,
+                    delay: 0
+                )
+            }
         }
 
         private func shouldRevealRootTabBarOnDisappear() -> Bool {
@@ -184,15 +290,12 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
     }
 
     final class Controller: UIViewController {
-        private var restoreTask: Task<Void, Never>?
-
         override func loadView() {
             view = PassthroughView()
         }
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
-            restoreTask?.cancel()
             hideRootTabBar(animated: animated)
         }
 
@@ -216,21 +319,27 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
         }
 
         private func scheduleRestoreRootTabBar(animated: Bool) {
-            restoreTask?.cancel()
-            restoreTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 260_000_000)
-                self?.setRootTabBarHidden(false, animated: animated)
-            }
+            NativeBottomBarVisibilityCoordinator.restoreAfterImageViewerReturn(
+                tabBarController: rootTabBarController(),
+                fallbackTabBar: rootTabBar(),
+                animated: false
+            )
         }
 
         private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
-            guard let tabBarController = rootTabBarController() else {
-                rootTabBar()?.isHidden = hidden
-                return
+            if hidden {
+                NativeBottomBarVisibilityCoordinator.hide(
+                    tabBarController: rootTabBarController(),
+                    fallbackTabBar: rootTabBar(),
+                    animated: animated
+                )
+            } else {
+                NativeBottomBarVisibilityCoordinator.restoreAfterImageViewerReturn(
+                    tabBarController: rootTabBarController(),
+                    fallbackTabBar: rootTabBar(),
+                    animated: false
+                )
             }
-
-            guard tabBarController.isTabBarHidden != hidden else { return }
-            tabBarController.setTabBarHidden(hidden, animated: animated)
         }
 
         private func rootTabBar() -> UITabBar? {
@@ -247,10 +356,6 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
                 responder = current.next
             }
             return view.window?.rootViewController?.descendantTabBarController()
-        }
-
-        deinit {
-            restoreTask?.cancel()
         }
     }
 

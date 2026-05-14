@@ -5,6 +5,8 @@ struct DynamicView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var holder = DynamicViewModelHolder()
+    @State private var isImageViewerTransitionLocked = false
+    @State private var imageViewerUnlockTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -59,6 +61,10 @@ struct DynamicView: View {
             .padding(.vertical, 8)
         }
         .nativeTopScrollEdgeEffect()
+        .scrollDisabled(isImageViewerTransitionLocked)
+        .environment(\.dynamicImageViewerActivityChanged) { isActive in
+            handleDynamicImageViewerActivity(isActive)
+        }
         .background(Color(.systemGroupedBackground))
         .refreshable {
             await viewModel.refresh()
@@ -73,6 +79,31 @@ struct DynamicView: View {
                 }
                 .background(.background.opacity(0.96))
             }
+        }
+    }
+
+    private func handleDynamicImageViewerActivity(_ isActive: Bool) {
+        imageViewerUnlockTask?.cancel()
+        imageViewerUnlockTask = nil
+
+        if isActive {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isImageViewerTransitionLocked = true
+            }
+            return
+        }
+
+        imageViewerUnlockTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isImageViewerTransitionLocked = false
+            }
+            imageViewerUnlockTask = nil
         }
     }
 
@@ -113,9 +144,21 @@ struct DynamicView: View {
     }
 }
 
+private struct DynamicImageViewerActivityKey: EnvironmentKey {
+    static let defaultValue: (Bool) -> Void = { _ in }
+}
+
+private extension EnvironmentValues {
+    var dynamicImageViewerActivityChanged: (Bool) -> Void {
+        get { self[DynamicImageViewerActivityKey.self] }
+        set { self[DynamicImageViewerActivityKey.self] = newValue }
+    }
+}
+
 private struct DynamicFeedCard: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
+    @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
     @State private var imageSelection: DynamicImageSelection?
     @State private var commentsTarget: DynamicFeedItem?
     @Namespace private var imageTransitionNamespace
@@ -171,7 +214,13 @@ private struct DynamicFeedCard: View {
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace
             )
-            .hidesRootTabBarOnPush()
+            .onAppear {
+                imageViewerActivityChanged(true)
+            }
+            .onDisappear {
+                imageViewerActivityChanged(false)
+            }
+            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
         }
         .sheet(item: $commentsTarget) { target in
             DynamicCommentsSheet(item: target, api: api)
@@ -486,6 +535,7 @@ private struct DynamicFeedCard: View {
     }
 
     private func presentImage(index: Int, transitionID: String) {
+        imageViewerActivityChanged(true)
         imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
     }
 }
@@ -1732,6 +1782,7 @@ private struct DynamicCommentErrorView: View {
 
 private struct DynamicOriginalPreview: View {
     let item: DynamicOriginalItem
+    @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
     @State private var imageSelection: DynamicImageSelection?
     @Namespace private var imageTransitionNamespace
 
@@ -1772,7 +1823,13 @@ private struct DynamicOriginalPreview: View {
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace
             )
-            .hidesRootTabBarOnPush()
+            .onAppear {
+                imageViewerActivityChanged(true)
+            }
+            .onDisappear {
+                imageViewerActivityChanged(false)
+            }
+            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
         }
     }
 
@@ -1847,6 +1904,7 @@ private struct DynamicOriginalPreview: View {
     }
 
     private func presentImage(index: Int, transitionID: String) {
+        imageViewerActivityChanged(true)
         imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
     }
 }
