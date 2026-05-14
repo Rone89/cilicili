@@ -72,13 +72,15 @@ struct DynamicView: View {
         .environment(\.dynamicImageViewerActivityChanged) { isActive in
             handleDynamicImageViewerActivity(isActive)
         }
-        .navigationDestination(item: $imageSelection) { selection in
+        .fullScreenCover(item: $imageSelection, onDismiss: {
+            handleDynamicImageViewerActivity(false)
+        }) { selection in
             NativeImageViewer(
                 images: selection.images,
                 initialIndex: selection.index,
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace,
-                hidesRootTabBarDuringPresentation: false,
+                hidesRootTabBarDuringPresentation: true,
                 usesZoomTransition: false
             )
             .onAppear {
@@ -87,7 +89,6 @@ struct DynamicView: View {
             .onDisappear {
                 handleDynamicImageViewerActivity(false)
             }
-            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
         }
         .background(Color(.systemGroupedBackground))
         .refreshable {

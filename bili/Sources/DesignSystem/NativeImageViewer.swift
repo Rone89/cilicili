@@ -178,9 +178,6 @@ private struct RemoteZoomableImage: View {
         }
         .onDisappear {
             loader.cancel()
-            if loader.image == nil {
-                loader.reset()
-            }
         }
     }
 }
