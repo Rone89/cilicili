@@ -80,7 +80,7 @@ struct DynamicView: View {
                 initialIndex: selection.index,
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace,
-                hidesRootTabBarDuringPresentation: true,
+                hidesRootTabBarDuringPresentation: false,
                 usesZoomTransition: false
             )
             .onAppear {

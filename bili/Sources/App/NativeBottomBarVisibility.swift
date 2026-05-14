@@ -30,6 +30,18 @@ private enum NativeBottomBarVisibilityCoordinator {
         restore(tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: animated, delay: imageViewerReturnDelay)
     }
 
+    static func keepHiddenAfterImageViewerReturn(
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?
+    ) {
+        restoreTask?.cancel()
+        restoreTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: imageViewerReturnDelay)
+            guard !Task.isCancelled else { return }
+            setHidden(true, tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: false)
+        }
+    }
+
     static func restore(
         tabBarController: UITabBarController?,
         fallbackTabBar: UITabBar?,
@@ -57,6 +69,16 @@ private enum NativeBottomBarVisibilityCoordinator {
         } else {
             fallbackTabBar?.isHidden = hidden
         }
+    }
+
+    static func isActuallyVisible(tabBarController: UITabBarController?, fallbackTabBar: UITabBar?) -> Bool {
+        guard let tabBar = tabBarController?.tabBar ?? fallbackTabBar else { return true }
+        guard !tabBar.isHidden, tabBar.alpha > 0.01, let superview = tabBar.superview else {
+            return false
+        }
+        let frameInSuperview = tabBar.layer.presentation()?.frame ?? tabBar.frame
+        let visibleHeight = frameInSuperview.intersection(superview.bounds).height
+        return visibleHeight > 8
     }
 }
 
@@ -290,12 +312,15 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
     }
 
     final class Controller: UIViewController {
+        private var capturedInitialVisibility: Bool?
+
         override func loadView() {
             view = PassthroughView()
         }
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
+            captureInitialVisibilityIfNeeded()
             hideRootTabBar(animated: animated)
         }
 
@@ -319,11 +344,21 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
         }
 
         private func scheduleRestoreRootTabBar(animated: Bool) {
-            NativeBottomBarVisibilityCoordinator.restoreAfterImageViewerReturn(
-                tabBarController: rootTabBarController(),
-                fallbackTabBar: rootTabBar(),
-                animated: false
-            )
+            let tabBarController = rootTabBarController()
+            let fallbackTabBar = rootTabBar()
+            if capturedInitialVisibility == false {
+                NativeBottomBarVisibilityCoordinator.keepHiddenAfterImageViewerReturn(
+                    tabBarController: tabBarController,
+                    fallbackTabBar: fallbackTabBar
+                )
+            } else {
+                NativeBottomBarVisibilityCoordinator.restoreAfterImageViewerReturn(
+                    tabBarController: tabBarController,
+                    fallbackTabBar: fallbackTabBar,
+                    animated: true
+                )
+            }
+            capturedInitialVisibility = nil
         }
 
         private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
@@ -344,6 +379,14 @@ private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
 
         private func rootTabBar() -> UITabBar? {
             rootTabBarController()?.tabBar
+        }
+
+        private func captureInitialVisibilityIfNeeded() {
+            guard capturedInitialVisibility == nil else { return }
+            capturedInitialVisibility = NativeBottomBarVisibilityCoordinator.isActuallyVisible(
+                tabBarController: rootTabBarController(),
+                fallbackTabBar: rootTabBar()
+            )
         }
 
         private func rootTabBarController() -> UITabBarController? {

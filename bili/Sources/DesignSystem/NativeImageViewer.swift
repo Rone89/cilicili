@@ -67,7 +67,7 @@ struct NativeImageViewer: View {
         .presentationCornerRadius(0)
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
+        .nativeImageViewerTabBarToolbarHidden(hidesRootTabBarDuringPresentation)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .nativeImageViewerNavigationTransition(
@@ -138,6 +138,15 @@ private extension View {
     func nativeImageViewerPresentationTabBarHider(_ isEnabled: Bool) -> some View {
         if isEnabled {
             keepsRootTabBarHiddenDuringPresentation()
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func nativeImageViewerTabBarToolbarHidden(_ isEnabled: Bool) -> some View {
+        if isEnabled {
+            toolbar(.hidden, for: .tabBar)
         } else {
             self
         }
