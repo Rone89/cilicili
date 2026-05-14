@@ -198,6 +198,7 @@ final class VideoDetailViewModel: ObservableObject {
     func stopPlaybackForNavigation() {
         isPlaybackInvalidatedForNavigation = true
         cancelSupplementalWork()
+        cancelRelatedLoad()
         commentsLoadingTask?.cancel()
         commentsLoadingTask = nil
         commentsLoadingToken = nil
@@ -233,14 +234,20 @@ final class VideoDetailViewModel: ObservableObject {
         startupPlayURLTask?.cancel()
         startupPlayURLTask = nil
         startupPlayURLTaskKey = nil
-        relatedLoadingTask?.cancel()
-        relatedLoadingTask = nil
         isSupplementingPlayQualities = false
         isSwitchingPlayQuality = false
         pendingPlayVariantID = nil
         playVariantSwitchToken = nil
         relatedPreloadTask?.cancel()
         relatedPreloadTask = nil
+    }
+
+    private func cancelRelatedLoad() {
+        relatedLoadingTask?.cancel()
+        relatedLoadingTask = nil
+        if related.isEmpty, relatedState.isLoading {
+            relatedState = .idle
+        }
     }
 
     private var canBootstrapPlaybackFromSeed: Bool {
@@ -1270,6 +1277,11 @@ final class VideoDetailViewModel: ObservableObject {
     private func loadRelated() async {
         guard related.isEmpty, !relatedState.isLoading else { return }
         relatedState = .loading
+        defer {
+            if related.isEmpty, relatedState.isLoading {
+                relatedState = .idle
+            }
+        }
         do {
             let videos = Array(try await api.fetchVideoRelated(bvid: detail.bvid).prefix(5))
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
@@ -1287,8 +1299,10 @@ final class VideoDetailViewModel: ObservableObject {
         guard related.isEmpty, !relatedState.isLoading, relatedLoadingTask == nil else { return }
         relatedLoadingTask = Task(priority: .utility) { [weak self] in
             guard let self else { return }
+            defer {
+                self.relatedLoadingTask = nil
+            }
             await self.loadRelated()
-            self.relatedLoadingTask = nil
         }
     }
 

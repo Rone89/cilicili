@@ -801,7 +801,7 @@ struct VideoDetailView: View {
         } else {
             HStack(spacing: 12) {
                 ForEach(0..<3, id: \.self) { _ in
-                    RelatedVideoPlaceholderCard()
+                    RelatedVideoPlaceholderCard(isLoading: viewModel.relatedState.isLoading)
                 }
             }
             .padding(.horizontal, 14)
@@ -3021,6 +3021,8 @@ private struct RelatedVideoCard: View {
 }
 
 private struct RelatedVideoPlaceholderCard: View {
+    let isLoading: Bool
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -3043,6 +3045,7 @@ private struct RelatedVideoPlaceholderCard: View {
         .padding(.bottom, 2)
         .overlay(alignment: .center) {
             ProgressView()
+                .opacity(isLoading ? 1 : 0)
                 .controlSize(.regular)
                 .tint(.secondary)
                 .padding(10)
