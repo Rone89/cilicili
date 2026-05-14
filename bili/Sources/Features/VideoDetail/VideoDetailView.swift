@@ -22,6 +22,7 @@ struct VideoDetailView: View {
     @State private var hidesPlayerSystemChrome = false
     @State private var preloadedRelatedVideos = Set<String>()
     @State private var isShowingDanmakuSettings = false
+    @State private var isShowingNetworkDiagnostics = false
 
     init(
         seedVideo: VideoItem,
@@ -177,6 +178,13 @@ struct VideoDetailView: View {
                 DanmakuSettingsSheet(viewModel: viewModel)
                     .presentationDetents([.medium])
             }
+            .sheet(isPresented: $isShowingNetworkDiagnostics) {
+                PlaybackNetworkDiagnosticsSheet(
+                    viewModel: viewModel,
+                    libraryStore: libraryStore
+                )
+                .presentationDetents([.medium, .large])
+            }
         }
         .ignoresSafeArea(.container, edges: manualFullscreenMode != nil ? .all : [])
     }
@@ -249,6 +257,9 @@ struct VideoDetailView: View {
             onExitManualFullscreen: exitHandler,
             onShowDanmakuSettings: {
                 isShowingDanmakuSettings = true
+            },
+            onShowNetworkDiagnostics: {
+                isShowingNetworkDiagnostics = true
             }
         )
     }
@@ -383,6 +394,7 @@ struct VideoDetailView: View {
             Spacer(minLength: 2)
 
             descriptionInlineButton()
+            networkDiagnosticsInlineButton()
             qualityInlineButton(viewModel)
         }
         .font(.caption)
@@ -484,6 +496,15 @@ struct VideoDetailView: View {
             isShowingDescription = true
         } label: {
             InlineMetadataButtonLabel(title: "简介", systemImage: "text.alignleft")
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func networkDiagnosticsInlineButton() -> some View {
+        Button {
+            isShowingNetworkDiagnostics = true
+        } label: {
+            InlineMetadataButtonLabel(title: "诊断", systemImage: "network")
         }
         .buttonStyle(.plain)
     }
@@ -891,6 +912,7 @@ private struct VideoDetailStandardPlaybackPageConfig {
     let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
     let onExitManualFullscreen: (() -> Void)?
     let onShowDanmakuSettings: () -> Void
+    let onShowNetworkDiagnostics: () -> Void
 }
 
 private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
@@ -929,7 +951,8 @@ private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
                 manualFullscreenMode: config.manualFullscreenMode,
                 onRequestManualFullscreen: config.onRequestManualFullscreen,
                 onExitManualFullscreen: config.onExitManualFullscreen,
-                onShowDanmakuSettings: config.onShowDanmakuSettings
+                onShowDanmakuSettings: config.onShowDanmakuSettings,
+                onShowNetworkDiagnostics: config.onShowNetworkDiagnostics
             )
         }
         .frame(width: config.screenSize.width, height: config.screenSize.height)
@@ -945,6 +968,7 @@ private struct VideoDetailPlayerHero: View {
     let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
     let onExitManualFullscreen: (() -> Void)?
     let onShowDanmakuSettings: () -> Void
+    let onShowNetworkDiagnostics: () -> Void
 
     var body: some View {
         Group {
@@ -958,7 +982,8 @@ private struct VideoDetailPlayerHero: View {
                     manualFullscreenMode: manualFullscreenMode,
                     onRequestManualFullscreen: onRequestManualFullscreen,
                     onExitManualFullscreen: onExitManualFullscreen,
-                    onShowDanmakuSettings: onShowDanmakuSettings
+                    onShowDanmakuSettings: onShowDanmakuSettings,
+                    onShowNetworkDiagnostics: onShowNetworkDiagnostics
                 )
             } else {
                 VideoDetailPlayerPlaceholder(
@@ -986,6 +1011,7 @@ private struct VideoDetailPlayerSurface: View {
     let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
     let onExitManualFullscreen: (() -> Void)?
     let onShowDanmakuSettings: () -> Void
+    let onShowNetworkDiagnostics: () -> Void
     private var usesLandscapePlaybackChrome: Bool {
         isLandscape || manualFullscreenMode?.isLandscape == true
     }
@@ -1074,6 +1100,27 @@ private struct VideoDetailPlayerSurface: View {
             .buttonStyle(.plain)
             .foregroundStyle(viewModel.isDanmakuEnabled ? .white : .white.opacity(0.62))
             .accessibilityLabel(viewModel.isDanmakuEnabled ? "关闭弹幕" : "开启弹幕")
+
+            Button {
+                onShowNetworkDiagnostics()
+            } label: {
+                Image(systemName: "waveform.path.ecg.rectangle")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 30, height: 30)
+                    .glassEffect(
+                        .regular
+                            .tint(.black.opacity(0.12))
+                            .interactive(true),
+                        in: Circle()
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(.white.opacity(0.18), lineWidth: 0.8)
+                    )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .accessibilityLabel("播放网络诊断")
 
             Button {
                 onShowDanmakuSettings()
@@ -1258,6 +1305,238 @@ private struct DanmakuSettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
             Slider(value: value, in: range, step: step)
+        }
+    }
+}
+
+private struct PlaybackNetworkDiagnosticsSheet: View {
+    @ObservedObject var viewModel: VideoDetailViewModel
+    @ObservedObject var libraryStore: LibraryStore
+    @Environment(\.dismiss) private var dismiss
+
+    private var variant: PlayVariant? {
+        viewModel.selectedPlayVariant
+    }
+
+    private var playerViewModel: PlayerStateViewModel? {
+        viewModel.stablePlayerViewModel
+    }
+
+    private var playbackEnvironment: PlaybackEnvironment {
+        PlaybackEnvironment.current
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                cdnSection
+                streamSection
+                playerSection
+                environmentSection
+                probeSection
+            }
+            .navigationTitle("网络诊断")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var cdnSection: some View {
+        Section("CDN") {
+            diagnosticRow("当前使用", libraryStore.effectivePlaybackCDNPreference.title)
+            diagnosticRow("设置模式", libraryStore.playbackCDNPreference.title)
+
+            if libraryStore.playbackCDNPreference == .automatic {
+                diagnosticRow(
+                    "自动推荐",
+                    libraryStore.automaticPlaybackCDNRecommendation?.title ?? "暂无可用推荐"
+                )
+            }
+
+            diagnosticRow("视频 Host", variant?.videoURL?.host ?? "未获取")
+
+            if let audioURL = variant?.audioURL {
+                diagnosticRow("音频 Host", audioURL.host ?? "未知")
+            }
+        }
+    }
+
+    private var streamSection: some View {
+        Section("当前流") {
+            diagnosticRow("清晰度", variant?.title ?? "未选择")
+            diagnosticRow("封装模式", streamModeTitle)
+            diagnosticRow("编码", variant?.codec?.nilIfEmpty ?? "未知")
+            diagnosticRow("分辨率", variant?.resolution?.nilIfEmpty ?? "未知")
+            diagnosticRow("帧率", frameRateTitle)
+            diagnosticRow("带宽", bandwidthTitle)
+
+            if let subtitle = variant?.subtitle, !subtitle.isEmpty {
+                diagnosticMultilineRow("档位信息", subtitle)
+            }
+        }
+    }
+
+    private var playerSection: some View {
+        Section("播放器") {
+            diagnosticRow("状态", playerStateTitle)
+            diagnosticRow("首帧", playerViewModel?.hasPresentedPlayback == true ? "已显示" : "等待中")
+            diagnosticRow("缓冲", playerViewModel?.isBuffering == true ? "缓冲中" : "未缓冲")
+            diagnosticRow("可拖动", playerViewModel?.canSeek == true ? "可用" : "等待就绪")
+
+            if let loadingProgress = playerViewModel?.loadingProgress {
+                diagnosticRow("加载进度", "\(Int((loadingProgress * 100).rounded()))%")
+            }
+
+            if let errorMessage = playerViewModel?.errorMessage, !errorMessage.isEmpty {
+                diagnosticMultilineRow("错误", errorMessage)
+            }
+
+            if let fallbackMessage = viewModel.playbackFallbackMessage, !fallbackMessage.isEmpty {
+                diagnosticMultilineRow("降级信息", fallbackMessage)
+            }
+        }
+    }
+
+    private var environmentSection: some View {
+        Section("设备网络") {
+            diagnosticRow("网络类型", playbackEnvironment.networkClass.diagnosticTitle)
+            diagnosticRow("省电模式", playbackEnvironment.isLowPowerModeEnabled ? "开启" : "关闭")
+            diagnosticRow("温控限制", playbackEnvironment.isThermallyConstrained ? "已触发" : "未触发")
+            diagnosticRow("保守播放策略", playbackEnvironment.shouldPreferConservativePlayback ? "启用" : "未启用")
+        }
+    }
+
+    @ViewBuilder
+    private var probeSection: some View {
+        Section("最近测速") {
+            if let snapshot = libraryStore.playbackCDNProbeSnapshot {
+                diagnosticRow(
+                    "测速时间",
+                    snapshot.probedAt.formatted(date: .abbreviated, time: .shortened)
+                )
+                diagnosticRow("有效状态", snapshot.isExpired() ? "已过期" : "有效")
+                diagnosticRow("推荐 CDN", snapshot.recommendedPreference?.title ?? "暂无推荐")
+
+                if let recommendation = snapshot.recommendedPreference,
+                   let result = snapshot.result(for: recommendation) {
+                    diagnosticRow("推荐延迟", result.elapsedMilliseconds.map { "\($0) ms" } ?? "失败")
+                }
+
+                if !snapshot.successfulResults.isEmpty {
+                    DisclosureGroup {
+                        ForEach(snapshot.results.prefix(8)) { result in
+                            diagnosticProbeResultRow(result)
+                        }
+                    } label: {
+                        Label("测速排行", systemImage: "list.number")
+                    }
+                }
+
+                if snapshot.isExpired() {
+                    Label("测速结果超过 24 小时，自动 CDN 可能需要重新测速。", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } else {
+                ContentUnavailableView(
+                    "暂无 CDN 测速结果",
+                    systemImage: "network.slash",
+                    description: Text("进入我的页面执行一次 CDN 测速后，这里会显示推荐节点和延迟。")
+                )
+            }
+        }
+    }
+
+    private var streamModeTitle: String {
+        guard let variant else { return "未获取" }
+        if variant.videoStream != nil || variant.audioStream != nil {
+            return variant.audioURL == nil ? "DASH 视频流" : "DASH 音视频分离"
+        }
+        return "Progressive 单流"
+    }
+
+    private var frameRateTitle: String {
+        guard let frameRate = variant?.frameRate?.nilIfEmpty else { return "未知" }
+        return frameRate.localizedCaseInsensitiveContains("fps") ? frameRate : "\(frameRate) fps"
+    }
+
+    private var bandwidthTitle: String {
+        guard let bandwidth = variant?.bandwidth, bandwidth > 0 else { return "未知" }
+        let mbps = Double(bandwidth) / 1_000_000
+        return "\(String(format: "%.2f", mbps)) Mbps"
+    }
+
+    private var playerStateTitle: String {
+        guard let playerViewModel else { return "等待播放器" }
+        if playerViewModel.errorMessage?.isEmpty == false {
+            return "播放错误"
+        }
+        if playerViewModel.isPreparing {
+            return "准备中"
+        }
+        if playerViewModel.isBuffering {
+            return "缓冲中"
+        }
+        if playerViewModel.isPlaying {
+            return "播放中"
+        }
+        return "暂停/待播"
+    }
+
+    private func diagnosticRow(_ title: String, _ value: String) -> some View {
+        LabeledContent {
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        } label: {
+            Text(title)
+        }
+    }
+
+    private func diagnosticMultilineRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func diagnosticProbeResultRow(_ result: PlaybackCDNProbeResult) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: result.didSucceed ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(result.didSucceed ? .green : .secondary)
+            Text(result.preference.title)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(result.elapsedMilliseconds.map { "\($0) ms" } ?? result.errorDescription ?? "失败")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+}
+
+private extension PlaybackEnvironment.NetworkClass {
+    var diagnosticTitle: String {
+        switch self {
+        case .wifi:
+            return "Wi-Fi"
+        case .cellular:
+            return "蜂窝网络"
+        case .constrained:
+            return "受限网络"
+        case .unknown:
+            return "未知"
         }
     }
 }
@@ -1610,6 +1889,11 @@ private struct PlayerPerformanceOverlay: View {
 }
 
 private extension String {
+    var nilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     var normalizedDetailTitle: String {
         var text = self
         ["\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}"].forEach {
