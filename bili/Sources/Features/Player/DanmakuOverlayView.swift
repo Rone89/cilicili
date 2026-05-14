@@ -220,7 +220,7 @@ final class DanmakuAnimationOverlayView: UIView {
         }
         if displayLink == nil {
             let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 12, maximum: 24, preferred: 20)
             link.add(to: .main, forMode: .common)
             displayLink = link
         }
@@ -534,11 +534,11 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private var maxActiveCount: Int {
-        bounds.width > 640 ? 56 : 32
+        bounds.width > 640 ? 44 : 24
     }
 
     private var maxSpawnPerTick: Int {
-        bounds.width > 640 ? 8 : 5
+        bounds.width > 640 ? 6 : 4
     }
 
     private func fontSize(for item: DanmakuItem) -> CGFloat {

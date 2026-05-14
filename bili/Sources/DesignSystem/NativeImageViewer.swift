@@ -9,6 +9,7 @@ struct NativeImageViewer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
     @State private var isClosing = false
+    @State private var dragOffset: CGSize = .zero
 
     init(
         images: [DynamicImageItem],
@@ -26,6 +27,7 @@ struct NativeImageViewer: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black
+                .opacity(backgroundOpacity)
                 .ignoresSafeArea()
 
             TabView(selection: $selection) {
@@ -38,8 +40,10 @@ struct NativeImageViewer: View {
             }
             .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
             .ignoresSafeArea()
+            .offset(dragOffset)
+            .scaleEffect(dragScale)
 
-            if images.count > 1 {
+            if images.count > 1 && !isClosing {
                 Text("\(selection + 1) / \(images.count)")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
@@ -50,6 +54,8 @@ struct NativeImageViewer: View {
                     .padding(.bottom, 22)
             }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(dismissDragGesture)
         .background(Color.black.ignoresSafeArea())
         .presentationBackground(.black)
         .presentationCornerRadius(0)
@@ -59,6 +65,42 @@ struct NativeImageViewer: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .navigationTransition(.zoom(sourceID: transitionID, in: transitionNamespace))
+        .keepsRootTabBarHiddenDuringPresentation()
+    }
+
+    private var backgroundOpacity: Double {
+        let progress = min(max(abs(dragOffset.height) / 320, 0), 0.82)
+        return 1 - progress
+    }
+
+    private var dragScale: CGFloat {
+        let progress = min(max(abs(dragOffset.height) / 520, 0), 0.16)
+        return 1 - progress
+    }
+
+    private var dismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .onChanged { value in
+                guard !isClosing else { return }
+                let translation = value.translation
+                guard abs(translation.height) > abs(translation.width) * 1.12 else { return }
+                dragOffset = CGSize(
+                    width: translation.width * 0.22,
+                    height: translation.height
+                )
+            }
+            .onEnded { value in
+                guard !isClosing else { return }
+                let predicted = value.predictedEndTranslation.height
+                let shouldClose = abs(value.translation.height) > 118 || abs(predicted) > 210
+                if shouldClose {
+                    closeViewer()
+                } else {
+                    withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.82)) {
+                        dragOffset = .zero
+                    }
+                }
+            }
     }
 
     private func closeViewer() {

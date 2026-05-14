@@ -5,6 +5,10 @@ extension View {
     func hidesRootTabBarOnPush() -> some View {
         background(NativeBottomBarOnPushHider())
     }
+
+    func keepsRootTabBarHiddenDuringPresentation() -> some View {
+        background(NativeBottomBarPresentationHider())
+    }
 }
 
 private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
@@ -168,4 +172,115 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
         }
     }
 
+}
+
+private struct NativeBottomBarPresentationHider: UIViewControllerRepresentable {
+    func makeUIViewController(context _: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.hideRootTabBar(animated: false)
+    }
+
+    final class Controller: UIViewController {
+        private var restoreTask: Task<Void, Never>?
+
+        override func loadView() {
+            view = PassthroughView()
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            restoreTask?.cancel()
+            hideRootTabBar(animated: animated)
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            hideRootTabBar(animated: false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            hideRootTabBar(animated: false)
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            scheduleRestoreRootTabBar(animated: animated)
+        }
+
+        func hideRootTabBar(animated: Bool) {
+            setRootTabBarHidden(true, animated: animated)
+        }
+
+        private func scheduleRestoreRootTabBar(animated: Bool) {
+            restoreTask?.cancel()
+            restoreTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 260_000_000)
+                self?.setRootTabBarHidden(false, animated: animated)
+            }
+        }
+
+        private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {
+            guard let tabBarController = rootTabBarController() else {
+                rootTabBar()?.isHidden = hidden
+                return
+            }
+
+            guard tabBarController.isTabBarHidden != hidden else { return }
+            tabBarController.setTabBarHidden(hidden, animated: animated)
+        }
+
+        private func rootTabBar() -> UITabBar? {
+            rootTabBarController()?.tabBar
+        }
+
+        private func rootTabBarController() -> UITabBarController? {
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let viewController = current as? UIViewController,
+                   let tabBarController = viewController.tabBarController {
+                    return tabBarController
+                }
+                responder = current.next
+            }
+            return view.window?.rootViewController?.descendantTabBarController()
+        }
+
+        deinit {
+            restoreTask?.cancel()
+        }
+    }
+
+    private final class PassthroughView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+    }
+}
+
+private extension UIViewController {
+    func descendantTabBarController() -> UITabBarController? {
+        if let tabBarController = self as? UITabBarController {
+            return tabBarController
+        }
+        for child in children {
+            if let tabBarController = child.descendantTabBarController() {
+                return tabBarController
+            }
+        }
+        if let presentedViewController,
+           let tabBarController = presentedViewController.descendantTabBarController() {
+            return tabBarController
+        }
+        return nil
+    }
 }

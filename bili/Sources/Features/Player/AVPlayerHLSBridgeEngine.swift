@@ -2151,7 +2151,7 @@ private enum HLSRemoteRangeStreamer {
 
         let cacheCollector = VideoRangeStreamCacheCollector(range: range, cacheLimit: cacheLimit)
         do {
-            let chunkSize = min(max(startupChunkSize, 8 * 1024), 32 * 1024)
+            let chunkSize = min(max(startupChunkSize, 24 * 1024), 96 * 1024)
             var chunk = Data()
             var didNotifyFirstChunk = false
             var didApplyTransform = false
@@ -2578,7 +2578,7 @@ private actor HLSProxyCacheMetrics {
         var count = updateCounts[metricsID] ?? 0
         count += 1
         updateCounts[metricsID] = count
-        return count <= 3 || source.contains("Cache") || source == "streamJoin" || count.isMultiple(of: 6)
+        return count <= 2 || count.isMultiple(of: 12)
     }
 
     private func trimIfNeeded() {
@@ -3397,11 +3397,13 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     bytes: Int64(streamedBytes),
                     succeeded: true
                 )
-                await PlayerMetricsLog.record(
-                    .network,
-                    metricsID: metricsID ?? request.path,
-                    message: "host=\(url.host ?? "-") \(Int(streamElapsed.rounded()))ms \(streamedBytes / 1024)KB"
-                )
+                if request.path.contains("/segment-0.m4s") || request.path.contains("/init.mp4") {
+                    await PlayerMetricsLog.record(
+                        .network,
+                        metricsID: metricsID ?? request.path,
+                        message: "host=\(url.host ?? "-") \(Int(streamElapsed.rounded()))ms \(streamedBytes / 1024)KB"
+                    )
+                }
                 await HLSProxyCacheMetrics.shared.record(
                     metricsID: metricsID,
                     path: request.path,
