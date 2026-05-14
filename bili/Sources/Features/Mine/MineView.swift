@@ -126,7 +126,7 @@ struct MineView: View {
 
                 Text("上次测速 \(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
-                    .foregroundStyle(snapshot.isExpired() ? .orange : .tertiary)
+                    .foregroundStyle(snapshot.isExpired() ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
 
                 if snapshot.isExpired() {
                     Label("CDN 测速结果已超过 24 小时，建议重新测速", systemImage: "clock.badge.exclamationmark")
