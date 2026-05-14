@@ -6,6 +6,8 @@ struct NativeImageViewer: View {
     let initialIndex: Int
     let transitionID: String
     let transitionNamespace: Namespace.ID
+    let hidesRootTabBarDuringPresentation: Bool
+    let usesZoomTransition: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
     @State private var isClosing = false
@@ -15,12 +17,16 @@ struct NativeImageViewer: View {
         images: [DynamicImageItem],
         initialIndex: Int,
         transitionID: String,
-        transitionNamespace: Namespace.ID
+        transitionNamespace: Namespace.ID,
+        hidesRootTabBarDuringPresentation: Bool = true,
+        usesZoomTransition: Bool = false
     ) {
         self.images = images
         self.initialIndex = initialIndex
         self.transitionID = transitionID
         self.transitionNamespace = transitionNamespace
+        self.hidesRootTabBarDuringPresentation = hidesRootTabBarDuringPresentation
+        self.usesZoomTransition = usesZoomTransition
         _selection = State(initialValue: initialIndex)
     }
 
@@ -64,8 +70,12 @@ struct NativeImageViewer: View {
         .toolbar(.hidden, for: .tabBar)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .navigationTransition(.zoom(sourceID: transitionID, in: transitionNamespace))
-        .keepsRootTabBarHiddenDuringPresentation()
+        .nativeImageViewerNavigationTransition(
+            usesZoomTransition,
+            sourceID: transitionID,
+            namespace: transitionNamespace
+        )
+        .nativeImageViewerPresentationTabBarHider(hidesRootTabBarDuringPresentation)
     }
 
     private var backgroundOpacity: Double {
@@ -107,6 +117,30 @@ struct NativeImageViewer: View {
         guard !isClosing else { return }
         isClosing = true
         dismiss()
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func nativeImageViewerNavigationTransition(
+        _ isEnabled: Bool,
+        sourceID: String,
+        namespace: Namespace.ID
+    ) -> some View {
+        if isEnabled {
+            navigationTransition(.zoom(sourceID: sourceID, in: namespace))
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func nativeImageViewerPresentationTabBarHider(_ isEnabled: Bool) -> some View {
+        if isEnabled {
+            keepsRootTabBarHiddenDuringPresentation()
+        } else {
+            self
+        }
     }
 }
 

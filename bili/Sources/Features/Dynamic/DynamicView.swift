@@ -6,7 +6,9 @@ struct DynamicView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var holder = DynamicViewModelHolder()
     @State private var isImageViewerTransitionLocked = false
+    @State private var imageSelection: DynamicImageSelection?
     @State private var imageViewerUnlockTask: Task<Void, Never>?
+    @Namespace private var imageTransitionNamespace
 
     var body: some View {
         Group {
@@ -47,7 +49,12 @@ struct DynamicView: View {
                     .padding(.top, 110)
                 } else {
                     ForEach(viewModel.items) { item in
-                        DynamicFeedCard(item: item, api: dependencies.api)
+                        DynamicFeedCard(
+                            item: item,
+                            api: dependencies.api,
+                            transitionNamespace: imageTransitionNamespace,
+                            openImage: presentImage
+                        )
                             .frame(maxWidth: 420)
                             .padding(.horizontal, 20)
                             .task {
@@ -65,6 +72,23 @@ struct DynamicView: View {
         .environment(\.dynamicImageViewerActivityChanged) { isActive in
             handleDynamicImageViewerActivity(isActive)
         }
+        .navigationDestination(item: $imageSelection) { selection in
+            NativeImageViewer(
+                images: selection.images,
+                initialIndex: selection.index,
+                transitionID: selection.transitionID,
+                transitionNamespace: imageTransitionNamespace,
+                hidesRootTabBarDuringPresentation: false,
+                usesZoomTransition: false
+            )
+            .onAppear {
+                handleDynamicImageViewerActivity(true)
+            }
+            .onDisappear {
+                handleDynamicImageViewerActivity(false)
+            }
+            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
+        }
         .background(Color(.systemGroupedBackground))
         .refreshable {
             await viewModel.refresh()
@@ -80,6 +104,11 @@ struct DynamicView: View {
                 .background(.background.opacity(0.96))
             }
         }
+    }
+
+    private func presentImage(_ selection: DynamicImageSelection) {
+        handleDynamicImageViewerActivity(true)
+        imageSelection = selection
     }
 
     private func handleDynamicImageViewerActivity(_ isActive: Bool) {
@@ -158,23 +187,29 @@ private extension EnvironmentValues {
 private struct DynamicFeedCard: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
+    let transitionNamespace: Namespace.ID
+    let openImage: (DynamicImageSelection) -> Void
     private let video: VideoItem?
     private let live: DynamicLive?
     private let liveRoom: LiveRoom?
     private let authorOwner: VideoOwner?
     private let imageItems: [DynamicImageItem]
     private let textSegments: [DynamicTextSegment]
-    @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
-    @State private var imageSelection: DynamicImageSelection?
     @State private var commentsTarget: DynamicFeedItem?
-    @Namespace private var imageTransitionNamespace
     @State private var isTextExpanded = false
     @State private var isLiked: Bool
     @State private var likeCount: Int
 
-    init(item: DynamicFeedItem, api: BiliAPIClient) {
+    init(
+        item: DynamicFeedItem,
+        api: BiliAPIClient,
+        transitionNamespace: Namespace.ID,
+        openImage: @escaping (DynamicImageSelection) -> Void
+    ) {
         self.item = item
         self.api = api
+        self.transitionNamespace = transitionNamespace
+        self.openImage = openImage
         self.video = item.archive?.asVideoItem(author: item.author)
         self.live = item.live
         self.liveRoom = item.live?.asLiveRoom(author: item.author)
@@ -194,21 +229,6 @@ private struct DynamicFeedCard: View {
             } else {
                 dynamicCardContent
             }
-        }
-        .navigationDestination(item: $imageSelection) { selection in
-            NativeImageViewer(
-                images: imageItems,
-                initialIndex: selection.index,
-                transitionID: selection.transitionID,
-                transitionNamespace: imageTransitionNamespace
-            )
-            .onAppear {
-                imageViewerActivityChanged(true)
-            }
-            .onDisappear {
-                imageViewerActivityChanged(false)
-            }
-            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
         }
         .sheet(item: $commentsTarget) { target in
             DynamicCommentsSheet(item: target, api: api)
@@ -262,14 +282,19 @@ private struct DynamicFeedCard: View {
                 DynamicImageGrid(
                     images: imageItems,
                     transitionScope: item.id,
-                    transitionNamespace: imageTransitionNamespace
+                    transitionNamespace: transitionNamespace
                 ) { index, transitionID in
                     presentImage(index: index, transitionID: transitionID)
                 }
             }
 
             if let original = item.original {
-                DynamicOriginalPreview(item: original)
+                DynamicOriginalPreview(
+                    item: original,
+                    parentID: item.id,
+                    transitionNamespace: transitionNamespace,
+                    openImage: openImage
+                )
             } else if item.isForward {
                 DynamicForwardUnavailableView()
             }
@@ -313,7 +338,12 @@ private struct DynamicFeedCard: View {
             }
 
             if let original = item.original {
-                DynamicOriginalPreview(item: original)
+                DynamicOriginalPreview(
+                    item: original,
+                    parentID: item.id,
+                    transitionNamespace: transitionNamespace,
+                    openImage: openImage
+                )
             } else if item.isForward {
                 DynamicForwardUnavailableView()
             }
@@ -343,7 +373,7 @@ private struct DynamicFeedCard: View {
         DynamicImageSquareGrid(
             images: imageItems,
             transitionScope: item.id,
-            transitionNamespace: imageTransitionNamespace
+            transitionNamespace: transitionNamespace
         ) { index, transitionID in
             presentImage(index: index, transitionID: transitionID)
         }
@@ -534,8 +564,13 @@ private struct DynamicFeedCard: View {
     }
 
     private func presentImage(index: Int, transitionID: String) {
-        imageViewerActivityChanged(true)
-        imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
+        openImage(
+            DynamicImageSelection(
+                images: imageItems,
+                index: index,
+                transitionID: transitionID
+            )
+        )
     }
 }
 
@@ -1781,18 +1816,26 @@ private struct DynamicCommentErrorView: View {
 
 private struct DynamicOriginalPreview: View {
     let item: DynamicOriginalItem
+    let parentID: String
+    let transitionNamespace: Namespace.ID
+    let openImage: (DynamicImageSelection) -> Void
     private let video: VideoItem?
     private let live: DynamicLive?
     private let liveRoom: LiveRoom?
     private let authorOwner: VideoOwner?
     private let imageItems: [DynamicImageItem]
     private let textSegments: [DynamicTextSegment]
-    @Environment(\.dynamicImageViewerActivityChanged) private var imageViewerActivityChanged
-    @State private var imageSelection: DynamicImageSelection?
-    @Namespace private var imageTransitionNamespace
 
-    init(item: DynamicOriginalItem) {
+    init(
+        item: DynamicOriginalItem,
+        parentID: String,
+        transitionNamespace: Namespace.ID,
+        openImage: @escaping (DynamicImageSelection) -> Void
+    ) {
         self.item = item
+        self.parentID = parentID
+        self.transitionNamespace = transitionNamespace
+        self.openImage = openImage
         self.video = item.archive?.asVideoItem(author: item.author)
         self.live = item.live
         self.liveRoom = item.live?.asLiveRoom(author: item.author)
@@ -1807,21 +1850,6 @@ private struct DynamicOriginalPreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.tertiarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .navigationDestination(item: $imageSelection) { selection in
-            NativeImageViewer(
-                images: imageItems,
-                initialIndex: selection.index,
-                transitionID: selection.transitionID,
-                transitionNamespace: imageTransitionNamespace
-            )
-            .onAppear {
-                imageViewerActivityChanged(true)
-            }
-            .onDisappear {
-                imageViewerActivityChanged(false)
-            }
-            .hidesRootTabBarOnPush(restoreDelay: 520_000_000)
-        }
     }
 
     @ViewBuilder
@@ -1869,8 +1897,8 @@ private struct DynamicOriginalPreview: View {
                 if !imageItems.isEmpty {
                     DynamicImageSquareGrid(
                         images: imageItems,
-                        transitionScope: item.id,
-                        transitionNamespace: imageTransitionNamespace
+                        transitionScope: transitionScope,
+                        transitionNamespace: transitionNamespace
                     ) { index, transitionID in
                         presentImage(index: index, transitionID: transitionID)
                     }
@@ -1894,9 +1922,18 @@ private struct DynamicOriginalPreview: View {
         .contentShape(Rectangle())
     }
 
+    private var transitionScope: String {
+        "\(parentID)|original|\(item.id)"
+    }
+
     private func presentImage(index: Int, transitionID: String) {
-        imageViewerActivityChanged(true)
-        imageSelection = DynamicImageSelection(index: index, transitionID: transitionID)
+        openImage(
+            DynamicImageSelection(
+                images: imageItems,
+                index: index,
+                transitionID: transitionID
+            )
+        )
     }
 }
 
@@ -1917,10 +1954,11 @@ private struct DynamicForwardUnavailableView: View {
 }
 
 private struct DynamicImageSelection: Identifiable, Hashable {
+    let images: [DynamicImageItem]
     let index: Int
     let transitionID: String
 
-    var id: Int { index }
+    var id: String { transitionID }
 }
 
 private struct DynamicImageHeroPreview: View {
