@@ -10,6 +10,8 @@ struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
 }
 
 struct PlaybackCDNProbeSnapshot: Codable, Equatable, Sendable {
+    static let defaultFreshnessInterval: TimeInterval = 24 * 60 * 60
+
     let probedAt: Date
     let recommendedPreference: PlaybackCDNPreference?
     let results: [PlaybackCDNProbeResult]
@@ -20,6 +22,10 @@ struct PlaybackCDNProbeSnapshot: Codable, Equatable, Sendable {
 
     func result(for preference: PlaybackCDNPreference) -> PlaybackCDNProbeResult? {
         results.first { $0.preference == preference }
+    }
+
+    func isExpired(now: Date = Date(), freshnessInterval: TimeInterval = Self.defaultFreshnessInterval) -> Bool {
+        now.timeIntervalSince(probedAt) >= freshnessInterval
     }
 }
 

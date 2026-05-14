@@ -48,13 +48,28 @@ struct MineView: View {
             playbackCDNProbeTask = nil
             isProbingPlaybackCDN = false
         }
+        .task {
+            refreshPlaybackCDNProbeIfNeeded()
+        }
     }
 
     private func probePlaybackCDN() {
+        startPlaybackCDNProbe(isAutomatic: false)
+    }
+
+    private func refreshPlaybackCDNProbeIfNeeded() {
+        guard playbackCDNProbeTask == nil else { return }
+        guard libraryStore.playbackCDNProbeSnapshot?.isExpired() ?? true else { return }
+        startPlaybackCDNProbe(isAutomatic: true)
+    }
+
+    private func startPlaybackCDNProbe(isAutomatic: Bool) {
         guard !isProbingPlaybackCDN else { return }
         isProbingPlaybackCDN = true
-        playbackCDNProbeMessage = "正在测试 CDN 线路..."
-        playbackCDNProbeResults = []
+        playbackCDNProbeMessage = isAutomatic ? "CDN 测速已过期，正在自动刷新..." : "正在测试 CDN 线路..."
+        if !isAutomatic {
+            playbackCDNProbeResults = []
+        }
 
         playbackCDNProbeTask?.cancel()
         playbackCDNProbeTask = Task {
@@ -67,7 +82,9 @@ struct MineView: View {
                 if let preference = snapshot.recommendedPreference,
                    let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
                     libraryStore.setPlaybackCDNPreference(preference)
-                    playbackCDNProbeMessage = "已推荐 \(preference.title)，\(elapsed) ms"
+                    playbackCDNProbeMessage = isAutomatic
+                        ? "已自动刷新 CDN：\(preference.title)，\(elapsed) ms"
+                        : "已推荐 \(preference.title)，\(elapsed) ms"
                 } else {
                     playbackCDNProbeMessage = "未找到可用 CDN，已保留当前设置"
                 }
@@ -109,7 +126,13 @@ struct MineView: View {
 
                 Text("上次测速 \(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(snapshot.isExpired() ? .orange : .tertiary)
+
+                if snapshot.isExpired() {
+                    Label("CDN 测速结果已超过 24 小时，建议重新测速", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
 
                 DisclosureGroup(isExpanded: $isShowingPlaybackCDNProbeDetails) {
                     VStack(alignment: .leading, spacing: 6) {
