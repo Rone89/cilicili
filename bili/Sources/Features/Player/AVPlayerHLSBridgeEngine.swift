@@ -671,12 +671,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     url: videoURL,
                     stream: source.videoStream,
                     mediaType: .video,
-                    dynamicRange: source.dynamicRange
+                    dynamicRange: source.dynamicRange,
+                    cdnPreference: source.cdnPreference
                 ),
                 audioTrack: Self.hlsBridgeTrack(
                     url: audioURL,
                     stream: source.audioStream,
-                    mediaType: .audio
+                    mediaType: .audio,
+                    cdnPreference: source.cdnPreference
                 ),
                 durationHint: source.durationHint,
                 headers: headers,
@@ -780,11 +782,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         url: URL,
         stream: DASHStream?,
         mediaType: HLSBridgeTrack.MediaType,
-        dynamicRange: BiliVideoDynamicRange = .sdr
+        dynamicRange: BiliVideoDynamicRange = .sdr,
+        cdnPreference: PlaybackCDNPreference = .automatic
     ) -> HLSBridgeTrack {
         HLSBridgeTrack(
             url: url,
-            fallbackURLs: stream?.backupPlayURLs ?? [],
+            fallbackURLs: stream?.backupPlayURLs(cdnPreference: cdnPreference) ?? [],
             stream: stream,
             mediaType: mediaType,
             dynamicRange: dynamicRange
@@ -1569,14 +1572,15 @@ struct HLSBridgeTrack: Sendable {
     nonisolated init(
         stream: DASHStream,
         mediaType: MediaType,
-        dynamicRange: BiliVideoDynamicRange = .sdr
+        dynamicRange: BiliVideoDynamicRange = .sdr,
+        cdnPreference: PlaybackCDNPreference = .automatic
     ) throws {
-        guard let url = stream.playURL else {
+        guard let url = stream.playURL(cdnPreference: cdnPreference) else {
             throw PlayerEngineError.missingVideoURL
         }
         self.init(
             url: url,
-            fallbackURLs: stream.backupPlayURLs,
+            fallbackURLs: stream.backupPlayURLs(cdnPreference: cdnPreference),
             stream: stream,
             mediaType: mediaType,
             dynamicRange: dynamicRange

@@ -217,6 +217,7 @@ struct BiliPlayerView: View {
         ignoresContainerSafeArea: Bool = true,
         keepsPlayerSurfaceStable: Bool = false,
         prefersNativePlaybackControls: Bool = true,
+        cdnPreference: PlaybackCDNPreference = .automatic,
         manualFullscreenMode: ManualVideoFullscreenMode? = nil,
         onRequestManualFullscreen: (() -> Void)? = nil,
         onExitManualFullscreen: (() -> Void)? = nil
@@ -254,6 +255,7 @@ struct BiliPlayerView: View {
             durationHint: duration,
             resumeTime: resumeTime ?? 0,
             dynamicRange: playVariant.dynamicRange,
+            cdnPreference: cdnPreference,
             metricsID: historyVideo?.bvid
         )
         _observedViewModel = ObservedObject(wrappedValue: playerViewModel)

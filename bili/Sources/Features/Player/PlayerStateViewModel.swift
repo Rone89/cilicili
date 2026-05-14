@@ -75,6 +75,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         resumeTime: TimeInterval = 0,
         startupResumePolicy: PlayerStartupResumePolicy = .deferred,
         dynamicRange: BiliVideoDynamicRange = .sdr,
+        cdnPreference: PlaybackCDNPreference = .automatic,
         metricsID: String? = nil,
         engine: PlayerRenderingEngine? = nil
     ) {
@@ -92,7 +93,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             title: title,
             durationHint: durationHint,
             resumeTime: resumeTime,
-            dynamicRange: dynamicRange
+            dynamicRange: dynamicRange,
+            cdnPreference: cdnPreference
         )
         self.durationHint = durationHint
         self.duration = durationHint

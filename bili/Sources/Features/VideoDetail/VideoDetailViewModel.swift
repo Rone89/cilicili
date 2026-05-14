@@ -750,7 +750,7 @@ final class VideoDetailViewModel: ObservableObject {
         if let cid {
             guard selectedCID == cid else { return }
         }
-        let variants = sortedPlayVariants(data.playVariants)
+        let variants = sortedPlayVariants(data.playVariants(cdnPreference: libraryStore.playbackCDNPreference))
         playVariants = variants
         let preferredVariant = preferredDefaultVariant(in: variants)
         selectedPlayVariant = preferredVariant
@@ -847,7 +847,7 @@ final class VideoDetailViewModel: ObservableObject {
                     warmsMedia: false
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
-                let variants = data.playVariants
+                let variants = data.playVariants(cdnPreference: self.libraryStore.playbackCDNPreference)
                 guard !variants.isEmpty else { return }
                 let currentVariant = self.selectedPlayVariant
                 self.playVariants = self.mergedSupplementalVariants(
@@ -975,6 +975,7 @@ final class VideoDetailViewModel: ObservableObject {
             resumeTime: resumeTime,
             startupResumePolicy: resumeTimeOverride == nil ? .deferred : .immediate,
             dynamicRange: variant.dynamicRange,
+            cdnPreference: libraryStore.playbackCDNPreference,
             metricsID: detail.bvid
         )
         playerViewModel.setPlaybackRate(playbackRate)

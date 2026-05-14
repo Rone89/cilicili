@@ -88,6 +88,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appearanceMode: AppAppearanceMode
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var preferredVideoQuality: Int?
+    @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
     @Published private(set) var danmakuEnabled: Bool
@@ -103,6 +104,7 @@ final class LibraryStore: ObservableObject {
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
     private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
+    private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
@@ -130,6 +132,9 @@ final class LibraryStore: ObservableObject {
         } else {
             self.preferredVideoQuality = Self.defaultPreferredVideoQuality
         }
+        self.playbackCDNPreference = PlaybackCDNPreference(
+            rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
+        ) ?? .automatic
         self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? true
         self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? true
         self.danmakuEnabled = userDefaults.object(forKey: Self.danmakuEnabledKey) as? Bool ?? true
@@ -170,6 +175,11 @@ final class LibraryStore: ObservableObject {
         } else {
             userDefaults.set(0, forKey: Self.preferredVideoQualityKey)
         }
+    }
+
+    func setPlaybackCDNPreference(_ preference: PlaybackCDNPreference) {
+        playbackCDNPreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.playbackCDNPreferenceKey)
     }
 
     func setBlocksGoodsDynamics(_ isEnabled: Bool) {

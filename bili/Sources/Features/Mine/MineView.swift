@@ -124,6 +124,21 @@ struct MineView: View {
                 }
 
                 Picker(selection: Binding(
+                    get: { libraryStore.playbackCDNPreference },
+                    set: { libraryStore.setPlaybackCDNPreference($0) }
+                )) {
+                    ForEach(PlaybackCDNPreference.allCases) { preference in
+                        Text(preference.title).tag(preference)
+                    }
+                } label: {
+                    Label("CDN 线路", systemImage: "network")
+                }
+
+                Text("如果视频加载慢或容易缓冲，可以切换 CDN 线路。默认自动会保留接口返回顺序；手动选择后会优先使用对应 CDN，并保留原始/备用地址作为回退。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Picker(selection: Binding(
                     get: { libraryStore.defaultPlaybackRate },
                     set: { libraryStore.setDefaultPlaybackRate($0) }
                 )) {

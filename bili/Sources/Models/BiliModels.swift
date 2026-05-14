@@ -399,6 +399,10 @@ struct PlayURLData: Decodable, Sendable {
     }
 
     nonisolated var playVariants: [PlayVariant] {
+        playVariants(cdnPreference: .automatic)
+    }
+
+    nonisolated func playVariants(cdnPreference: PlaybackCDNPreference) -> [PlayVariant] {
         let bestAudio = dash?.bestAudioStream
         let videosByQuality = Dictionary(grouping: dash?.video ?? [], by: { $0.id ?? 0 })
         let descriptions = Dictionary(uniqueKeysWithValues: zip(acceptQuality ?? [], acceptDescription ?? []))
@@ -407,7 +411,7 @@ struct PlayURLData: Decodable, Sendable {
             result[quality] = format
         }
         let durlQuality = quality ?? acceptQuality?.first
-        let durlURL = durl?.first?.playURL
+        let durlURL = durl?.first?.playURL(cdnPreference: cdnPreference)
         var orderedQualities = [Int]()
         var variants: [PlayVariant] = []
 
@@ -426,10 +430,10 @@ struct PlayURLData: Decodable, Sendable {
         for quality in orderedQualities {
             let support = supportByQuality[quality]
             let stream = videosByQuality[quality]?.sorted(by: DASHStream.preferPlayable).first
-            let streamURL = stream?.playURL
+            let streamURL = stream?.playURL(cdnPreference: cdnPreference)
             let progressiveURL = quality == durlQuality ? durlURL : nil
             let usesProgressiveStream = progressiveURL != nil
-                && Self.prefersProgressiveFastStart(quality: quality, hasAudioStream: bestAudio?.playURL != nil)
+                && Self.prefersProgressiveFastStart(quality: quality, hasAudioStream: bestAudio?.playURL(cdnPreference: cdnPreference) != nil)
             let selectedStream = usesProgressiveStream ? nil : stream
             let hasSelectedStream: Bool
             if case .some = selectedStream {
@@ -441,7 +445,7 @@ struct PlayURLData: Decodable, Sendable {
                 quality: quality,
                 title: support?.title ?? descriptions[quality] ?? Self.qualityTitle(quality),
                 videoURL: usesProgressiveStream ? progressiveURL : (streamURL ?? progressiveURL),
-                audioURL: hasSelectedStream ? bestAudio?.playURL : nil,
+                audioURL: hasSelectedStream ? bestAudio?.playURL(cdnPreference: cdnPreference) : nil,
                 videoStream: selectedStream,
                 audioStream: hasSelectedStream ? bestAudio : nil,
                 codec: stream?.codecLabel ?? support?.codecLabel,
@@ -459,8 +463,8 @@ struct PlayURLData: Decodable, Sendable {
             variants.append(PlayVariant(
                 quality: quality,
                 title: support?.title ?? descriptions[quality] ?? Self.qualityTitle(quality),
-                videoURL: stream.playURL,
-                audioURL: bestAudio?.playURL,
+                videoURL: stream.playURL(cdnPreference: cdnPreference),
+                audioURL: bestAudio?.playURL(cdnPreference: cdnPreference),
                 videoStream: stream,
                 audioStream: bestAudio,
                 codec: stream.codecLabel ?? support?.codecLabel,
@@ -472,7 +476,7 @@ struct PlayURLData: Decodable, Sendable {
             ))
         }
 
-        if variants.isEmpty, let url = durl?.first?.playURL {
+        if variants.isEmpty, let url = durl?.first?.playURL(cdnPreference: cdnPreference) {
             variants.append(PlayVariant(
                 quality: quality ?? 0,
                 title: descriptions[quality ?? 0] ?? Self.qualityTitle(quality ?? 0),
@@ -752,7 +756,13 @@ struct PlayDURL: Decodable, Sendable {
     }
 
     nonisolated var playURL: URL? {
-        URL(string: url) ?? backupURL?.compactMap(URL.init(string:)).first
+        playURL(cdnPreference: .automatic)
+    }
+
+    nonisolated func playURL(cdnPreference: PlaybackCDNPreference) -> URL? {
+        let primary = URL(string: url)
+        let backups = backupURL?.compactMap(URL.init(string:)) ?? []
+        return cdnPreference.preferredURLs(primary: primary, backups: backups).primary
     }
 }
 
@@ -848,11 +858,21 @@ struct DASHStream: Decodable, Hashable, Sendable {
     }
 
     nonisolated var playURL: URL? {
-        URL(string: baseURL)
+        playURL(cdnPreference: .automatic)
+    }
+
+    nonisolated func playURL(cdnPreference: PlaybackCDNPreference) -> URL? {
+        let primary = URL(string: baseURL)
+        return cdnPreference.preferredURLs(primary: primary, backups: backupPlayURLs).primary
     }
 
     nonisolated var backupPlayURLs: [URL] {
         backupURL?.compactMap(URL.init(string:)) ?? []
+    }
+
+    nonisolated func backupPlayURLs(cdnPreference: PlaybackCDNPreference) -> [URL] {
+        let primary = URL(string: baseURL)
+        return cdnPreference.preferredURLs(primary: primary, backups: backupPlayURLs).backups
     }
 
     nonisolated var codecLabel: String? {

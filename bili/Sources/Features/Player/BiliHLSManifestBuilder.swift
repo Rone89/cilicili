@@ -46,14 +46,14 @@ enum BiliHLSManifestBuilder {
             bridge = try await LocalHLSBridge.make(
                 videoTrack: HLSBridgeTrack(
                     url: videoURL,
-                    fallbackURLs: source.videoStream?.backupPlayURLs ?? [],
+                    fallbackURLs: source.videoStream?.backupPlayURLs(cdnPreference: source.cdnPreference) ?? [],
                     stream: source.videoStream,
                     mediaType: .video,
                     dynamicRange: source.dynamicRange
                 ),
                 audioTrack: HLSBridgeTrack(
                     url: audioURL,
-                    fallbackURLs: source.audioStream?.backupPlayURLs ?? [],
+                    fallbackURLs: source.audioStream?.backupPlayURLs(cdnPreference: source.cdnPreference) ?? [],
                     stream: source.audioStream,
                     mediaType: .audio
                 ),

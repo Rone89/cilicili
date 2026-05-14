@@ -17,6 +17,7 @@ struct PlayerStreamSource: Equatable, Sendable {
     let durationHint: TimeInterval?
     let resumeTime: TimeInterval
     let dynamicRange: BiliVideoDynamicRange
+    let cdnPreference: PlaybackCDNPreference
 }
 
 struct PlayerPlaybackSnapshot: Equatable, Sendable {
