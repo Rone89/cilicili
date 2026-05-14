@@ -1,12 +1,26 @@
 import Foundation
 
-struct PlaybackCDNProbeResult: Identifiable, Sendable {
+struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
     let preference: PlaybackCDNPreference
     let elapsedMilliseconds: Int?
     let didSucceed: Bool
     let errorDescription: String?
 
     var id: PlaybackCDNPreference { preference }
+}
+
+struct PlaybackCDNProbeSnapshot: Codable, Equatable, Sendable {
+    let probedAt: Date
+    let recommendedPreference: PlaybackCDNPreference?
+    let results: [PlaybackCDNProbeResult]
+
+    var successfulResults: [PlaybackCDNProbeResult] {
+        results.filter { $0.didSucceed && $0.elapsedMilliseconds != nil }
+    }
+
+    func result(for preference: PlaybackCDNPreference) -> PlaybackCDNProbeResult? {
+        results.first { $0.preference == preference }
+    }
 }
 
 enum PlaybackCDNProbeService {
@@ -47,6 +61,15 @@ enum PlaybackCDNProbeService {
             $0.didSucceed && $0.elapsedMilliseconds != nil
         }?.preference
         return (recommendation, results)
+    }
+
+    static func recommendedSnapshot() async -> PlaybackCDNProbeSnapshot {
+        let recommendation = await recommendedPreference()
+        return PlaybackCDNProbeSnapshot(
+            probedAt: Date(),
+            recommendedPreference: recommendation.preference,
+            results: recommendation.results
+        )
     }
 
     private static func probe(_ preference: PlaybackCDNPreference) async -> PlaybackCDNProbeResult {

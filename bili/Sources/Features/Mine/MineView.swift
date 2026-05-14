@@ -12,6 +12,7 @@ struct MineView: View {
     @State private var playbackCDNProbeResults: [PlaybackCDNProbeResult] = []
     @State private var playbackCDNProbeMessage: String?
     @State private var playbackCDNProbeTask: Task<Void, Never>?
+    @State private var isShowingPlaybackCDNProbeDetails = false
 
     var body: some View {
         Group {
@@ -57,13 +58,14 @@ struct MineView: View {
 
         playbackCDNProbeTask?.cancel()
         playbackCDNProbeTask = Task {
-            let recommendation = await PlaybackCDNProbeService.recommendedPreference()
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard !Task.isCancelled else { return }
-                playbackCDNProbeResults = recommendation.results
-                if let preference = recommendation.preference,
-                   let elapsed = recommendation.results.first(where: { $0.preference == preference })?.elapsedMilliseconds {
+                playbackCDNProbeResults = snapshot.results
+                libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
+                if let preference = snapshot.recommendedPreference,
+                   let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
                     libraryStore.setPlaybackCDNPreference(preference)
                     playbackCDNProbeMessage = "已推荐 \(preference.title)，\(elapsed) ms"
                 } else {
@@ -73,6 +75,73 @@ struct MineView: View {
                 playbackCDNProbeTask = nil
             }
         }
+    }
+
+    private var activePlaybackCDNProbeSnapshot: PlaybackCDNProbeSnapshot? {
+        if !playbackCDNProbeResults.isEmpty {
+            return PlaybackCDNProbeSnapshot(
+                probedAt: Date(),
+                recommendedPreference: playbackCDNProbeResults.first {
+                    $0.didSucceed && $0.elapsedMilliseconds != nil
+                }?.preference,
+                results: playbackCDNProbeResults
+            )
+        }
+        return libraryStore.playbackCDNProbeSnapshot
+    }
+
+    @ViewBuilder
+    private var playbackCDNProbeSummary: some View {
+        if let snapshot = activePlaybackCDNProbeSnapshot {
+            VStack(alignment: .leading, spacing: 8) {
+                if let recommendation = snapshot.recommendedPreference,
+                   let result = snapshot.result(for: recommendation),
+                   let elapsed = result.elapsedMilliseconds {
+                    HStack {
+                        Label(recommendation.title, systemImage: "checkmark.seal")
+                        Spacer()
+                        Text("\(elapsed) ms")
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                Text("上次测速 \(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                DisclosureGroup(isExpanded: $isShowingPlaybackCDNProbeDetails) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(snapshot.results) { result in
+                            playbackCDNProbeResultRow(result)
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Label("CDN 测速排行", systemImage: "list.number")
+                        .font(.caption)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func playbackCDNProbeResultRow(_ result: PlaybackCDNProbeResult) -> some View {
+        HStack {
+            Text(result.preference.title)
+                .lineLimit(1)
+            Spacer()
+            if let elapsed = result.elapsedMilliseconds {
+                Text("\(elapsed) ms")
+                    .monospacedDigit()
+            } else {
+                Text(result.errorDescription ?? "失败")
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(result.didSucceed ? .secondary : .tertiary)
     }
 
     @ViewBuilder
@@ -186,20 +255,7 @@ struct MineView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(playbackCDNProbeResults.prefix(3)) { result in
-                    HStack {
-                        Text(result.preference.title)
-                        Spacer()
-                        if let elapsed = result.elapsedMilliseconds {
-                            Text("\(elapsed) ms")
-                                .monospacedDigit()
-                        } else {
-                            Text(result.errorDescription ?? "失败")
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(result.didSucceed ? .secondary : .tertiary)
-                }
+                playbackCDNProbeSummary
 
                 Picker(selection: Binding(
                     get: { libraryStore.defaultPlaybackRate },
