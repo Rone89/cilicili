@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import OSLog
+import QuartzCore
 
 @MainActor
 final class VideoDetailViewModel: ObservableObject {
@@ -1344,11 +1345,11 @@ final class VideoDetailViewModel: ObservableObject {
             }
         }
         do {
-            let videos = Array(try await withThrowingTaskGroup(of: [VideoItem].self) { group in
+            let videos = try await withThrowingTaskGroup(of: [VideoItem].self, returning: [VideoItem].self) { group in
                 group.addTask(priority: .utility) { [api, bvid] in
                     Array(try await api.fetchVideoRelated(bvid: bvid).prefix(5))
                 }
-                group.addTask(priority: .utility) {
+                group.addTask(priority: .utility) { () -> [VideoItem] in
                     try await Task.sleep(nanoseconds: timeout)
                     throw VideoDetailLoadTimeoutError.related
                 }
