@@ -136,6 +136,11 @@ final class LibraryStore: ObservableObject {
         return preference
     }
 
+    var needsPlaybackCDNProbeRefresh: Bool {
+        guard playbackCDNPreference == .automatic else { return false }
+        return playbackCDNProbeSnapshot?.isExpired() ?? true
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.appearanceMode = AppAppearanceMode(

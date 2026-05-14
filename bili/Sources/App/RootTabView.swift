@@ -71,6 +71,7 @@ struct RootTabView: View {
         .preferredColorScheme(libraryStore.appearanceMode.preferredColorScheme)
         .task {
             openStartupVideoIfNeeded()
+            dependencies.refreshPlaybackCDNProbeIfNeeded()
             await dependencies.api.prewarmPlaybackSigningKeys()
         }
     }
@@ -194,6 +195,7 @@ struct RootTabView: View {
 
     private func beginPlaybackPreload(for video: VideoItem) {
         Task {
+            dependencies.refreshPlaybackCDNProbeIfNeeded()
             let preferredQuality = libraryStore.preferredVideoQuality
             let cdnPreference = libraryStore.effectivePlaybackCDNPreference
             let api = dependencies.api

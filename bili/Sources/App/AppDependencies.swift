@@ -8,6 +8,7 @@ final class AppDependencies: ObservableObject {
     let api: BiliAPIClient
     let sponsorBlockService: SponsorBlockService
     private let networkMetricsRecorder: BiliNetworkMetricsRecorder
+    private var playbackCDNProbeRefreshTask: Task<Void, Never>?
 
     init() {
         let sessionStore = SessionStore()
@@ -33,5 +34,19 @@ final class AppDependencies: ObservableObject {
             libraryStore: libraryStore
         )
         self.sponsorBlockService = SponsorBlockService()
+    }
+
+    func refreshPlaybackCDNProbeIfNeeded() {
+        guard playbackCDNProbeRefreshTask == nil else { return }
+        guard libraryStore.needsPlaybackCDNProbeRefresh else { return }
+        playbackCDNProbeRefreshTask = Task {
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
+            await MainActor.run {
+                if !Task.isCancelled {
+                    self.libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
+                }
+                self.playbackCDNProbeRefreshTask = nil
+            }
+        }
     }
 }

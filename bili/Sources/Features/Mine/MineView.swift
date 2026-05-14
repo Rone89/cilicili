@@ -59,7 +59,7 @@ struct MineView: View {
 
     private func refreshPlaybackCDNProbeIfNeeded() {
         guard playbackCDNProbeTask == nil else { return }
-        guard libraryStore.playbackCDNProbeSnapshot?.isExpired() ?? true else { return }
+        guard libraryStore.needsPlaybackCDNProbeRefresh else { return }
         startPlaybackCDNProbe(isAutomatic: true)
     }
 
