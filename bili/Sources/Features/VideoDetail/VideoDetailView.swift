@@ -2996,7 +2996,11 @@ private struct RelatedVideoCard: View {
             } placeholder: {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.videoDetailSecondarySurface)
-                    .relatedSkeletonShimmer()
+                    .overlay {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.secondary)
+                    }
             }
             .frame(width: 168, height: 96)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -3037,45 +3041,13 @@ private struct RelatedVideoPlaceholderCard: View {
         }
         .frame(width: 168, height: 145, alignment: .topLeading)
         .padding(.bottom, 2)
-        .relatedSkeletonShimmer()
-    }
-}
-
-private extension View {
-    func relatedSkeletonShimmer() -> some View {
-        modifier(RelatedSkeletonShimmer())
-    }
-}
-
-private struct RelatedSkeletonShimmer: ViewModifier {
-    @State private var phase: CGFloat = -1.2
-
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                GeometryReader { proxy in
-                    LinearGradient(
-                        colors: [
-                            .clear,
-                            Color.white.opacity(0.28),
-                            .clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(width: max(proxy.size.width * 0.56, 44), height: proxy.size.height * 1.8)
-                    .rotationEffect(.degrees(10))
-                    .offset(x: proxy.size.width * phase, y: -proxy.size.height * 0.32)
-                }
-                .clipped()
-                .blendMode(.plusLighter)
-                .mask(content)
-            }
-            .onAppear {
-                guard phase < 1.2 else { return }
-                withAnimation(.linear(duration: 1.15).repeatForever(autoreverses: false)) {
-                    phase = 1.75
-                }
+        .overlay(alignment: .center) {
+            ProgressView()
+                .controlSize(.regular)
+                .tint(.secondary)
+                .padding(10)
+                .background(.thinMaterial, in: Circle())
+                .accessibilityLabel("姝ｅ湪鍔犺浇鐩稿叧鎺ㄨ崘")
             }
     }
 }

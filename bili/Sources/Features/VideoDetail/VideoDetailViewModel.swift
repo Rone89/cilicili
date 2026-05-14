@@ -50,6 +50,7 @@ final class VideoDetailViewModel: ObservableObject {
     private var commentsLoadingToken: UUID?
     private var startupPlayURLTask: Task<PlayURLData, Error>?
     private var startupPlayURLTaskKey: String?
+    private var relatedLoadingTask: Task<Void, Never>?
     private var relatedPreloadTask: Task<Void, Never>?
     private var filterCancellable: AnyCancellable?
     private var sponsorBlockCancellable: AnyCancellable?
@@ -133,6 +134,7 @@ final class VideoDetailViewModel: ObservableObject {
         commentsLoadingTask?.cancel()
         commentsLoadingToken = nil
         startupPlayURLTask?.cancel()
+        relatedLoadingTask?.cancel()
         relatedPreloadTask?.cancel()
         sponsorBlockTask?.cancel()
         danmakuTask?.cancel()
@@ -145,6 +147,7 @@ final class VideoDetailViewModel: ObservableObject {
         }
         if state == .loaded {
             scheduleDanmakuLoadIfNeeded()
+            scheduleRelatedLoadIfNeeded()
             if stablePlayerViewModel == nil {
                 if selectedPlayVariant?.isPlayable == true {
                     updateStablePlayerViewModelIfNeeded()
@@ -155,6 +158,15 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         PlayerMetricsLog.record(.detailLoadStart, metricsID: detail.bvid, title: detail.title)
+        scheduleRelatedLoadIfNeeded()
+        await VideoPreloadCenter.shared.preloadDetailAndPlayback(
+            detail,
+            api: api,
+            preferredQuality: libraryStore.preferredVideoQuality,
+            warmsMedia: false,
+            mediaWarmupDelay: 0,
+            priority: .userInitiated
+        )
 
         if canBootstrapPlaybackFromSeed {
             scheduleDanmakuLoadIfNeeded()
@@ -221,6 +233,8 @@ final class VideoDetailViewModel: ObservableObject {
         startupPlayURLTask?.cancel()
         startupPlayURLTask = nil
         startupPlayURLTaskKey = nil
+        relatedLoadingTask?.cancel()
+        relatedLoadingTask = nil
         isSupplementingPlayQualities = false
         isSwitchingPlayQuality = false
         pendingPlayVariantID = nil
@@ -249,6 +263,7 @@ final class VideoDetailViewModel: ObservableObject {
             detail = detail.mergingFilledValues(from: fullDetail)
             selectedCID = selectedCID ?? fullDetail.pages?.first?.cid ?? fullDetail.cid
             scheduleDanmakuLoadIfNeeded()
+            warmCachedPlayInfoIfAvailable()
 
             state = .loaded
             PlayerMetricsLog.record(.detailLoaded, metricsID: detail.bvid, title: detail.title)
@@ -256,10 +271,10 @@ final class VideoDetailViewModel: ObservableObject {
                 detailLoadingTask = nil
             }
 
+            scheduleRelatedLoadIfNeeded()
             backgroundTasks += [
                 Task(priority: .userInitiated) { [weak self] in await self?.loadPlayURLIfNeeded() },
-                Task(priority: .utility) { [weak self] in await self?.loadUploaderAndInteractionAfterFirstFrame() },
-                Task(priority: .utility) { [weak self] in await self?.loadRelatedAfterFirstFrame() }
+                Task(priority: .utility) { [weak self] in await self?.loadUploaderAndInteractionAfterFirstFrame() }
             ]
         } catch {
             guard !Task.isCancelled else { return }
@@ -691,6 +706,30 @@ final class VideoDetailViewModel: ObservableObject {
         }
 
         return try await task.value
+    }
+
+    private func warmCachedPlayInfoIfAvailable() {
+        guard let cid = selectedCID, selectedPlayVariant == nil else { return }
+        let page = selectedPageNumber
+        Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            if let data = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
+                for: self.detail.bvid,
+                cid: cid,
+                page: page,
+                waitsForPending: false,
+                preferredQuality: self.libraryStore.preferredVideoQuality
+            ) {
+                guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
+                self.applyPlayURLData(
+                    data,
+                    cid: cid,
+                    page: page,
+                    source: "detailWarmCache",
+                    schedulesSupplementalLoad: false
+                )
+            }
+        }
     }
 
     private func applyPlayURLData(
@@ -1233,9 +1272,10 @@ final class VideoDetailViewModel: ObservableObject {
         relatedState = .loading
         do {
             let videos = Array(try await api.fetchVideoRelated(bvid: detail.bvid).prefix(5))
+            guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
             related = videos
             relatedState = .loaded
-            scheduleRelatedPlaybackPreload(for: videos)
+            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: videos)
         } catch {
             guard !Task.isCancelled else { return }
             related = []
@@ -1243,13 +1283,13 @@ final class VideoDetailViewModel: ObservableObject {
         }
     }
 
-    private func loadRelatedAfterFirstFrame() async {
-        let didPresentPlayback = await waitForFirstFrameOrFailure()
-        guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
-        guard didPresentPlayback else { return }
-        try? await Task.sleep(nanoseconds: 900_000_000)
-        guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
-        await loadRelated()
+    private func scheduleRelatedLoadIfNeeded() {
+        guard related.isEmpty, !relatedState.isLoading, relatedLoadingTask == nil else { return }
+        relatedLoadingTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.loadRelated()
+            self.relatedLoadingTask = nil
+        }
     }
 
     private func scheduleDanmakuLoadIfNeeded(force: Bool = false) {
@@ -1332,7 +1372,7 @@ final class VideoDetailViewModel: ObservableObject {
         return true
     }
 
-    private func scheduleRelatedPlaybackPreload(for videos: [VideoItem]) {
+    private func scheduleRelatedPlaybackPreloadAfterFirstFrame(for videos: [VideoItem]) {
         relatedPreloadTask?.cancel()
         guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
             relatedPreloadTask = nil
@@ -1346,7 +1386,12 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         relatedPreloadTask = Task(priority: .utility) { [api] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            let didPresentPlayback = await self.waitForFirstFrameOrFailure()
+            guard didPresentPlayback else {
+                self.relatedPreloadTask = nil
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
             for video in candidates {
                 guard !Task.isCancelled else { return }
                 await VideoPreloadCenter.shared.preloadPlayInfo(

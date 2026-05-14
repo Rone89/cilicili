@@ -583,13 +583,12 @@ struct BiliPlayerView: View {
     }
 
     private var compactProgressSlider: some View {
-        Slider(
+        LiquidPlayerProgressSlider(
             value: progressBinding,
             in: 0...1,
+            tint: Color(red: 1.0, green: 0.25, blue: 0.50),
             onEditingChanged: handleScrubbingChanged
         )
-        .tint(Color(red: 1.0, green: 0.25, blue: 0.50))
-        .controlSize(.mini)
     }
 
     private var lockedControlsAffordance: some View {
@@ -602,7 +601,7 @@ struct BiliPlayerView: View {
                     .frame(width: 48, height: 48)
             }
             .buttonStyle(.plain)
-            .liquidPlayerGlass(in: Circle(), tint: .black.opacity(0.14), stroke: .white.opacity(0.22))
+            .liquidPlayerGlass(in: Circle(), tint: .black.opacity(0.035), stroke: .white.opacity(0.30))
             .shadow(color: .black.opacity(0.28), radius: 12, y: 5)
             .accessibilityLabel("解锁播放控件")
 
@@ -708,8 +707,8 @@ struct BiliPlayerView: View {
         }
         .padding(.horizontal, isCompact ? 10 : 12)
         .padding(.vertical, isCompact ? 6 : 8)
-        .liquidPlayerGlassCapsule(tint: .black.opacity(0.16), stroke: .white.opacity(0.22))
-        .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.035), stroke: .white.opacity(0.34))
+        .shadow(color: .black.opacity(0.20), radius: 12, y: 5)
     }
 
     private var speedMenu: some View {
@@ -739,8 +738,8 @@ struct BiliPlayerView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .liquidPlayerGlassCapsule(tint: .black.opacity(0.12), stroke: .white.opacity(0.24), interactive: true)
-        .shadow(color: .black.opacity(0.24), radius: 10, y: 4)
+        .liquidPlayerGlassCapsule(tint: .black.opacity(0.03), stroke: .white.opacity(0.32), interactive: true)
+        .shadow(color: .black.opacity(0.20), radius: 10, y: 4)
     }
 
     private var compactPlaybackRateTitle: String {
@@ -769,10 +768,10 @@ struct BiliPlayerView: View {
         .foregroundStyle(.white)
         .liquidPlayerGlass(
             in: Circle(),
-            tint: .black.opacity(isPrimary ? 0.18 : 0.12),
-            stroke: .white.opacity(isPrimary ? 0.24 : 0.22)
+            tint: .black.opacity(isPrimary ? 0.045 : 0.03),
+            stroke: .white.opacity(isPrimary ? 0.34 : 0.30)
         )
-        .shadow(color: .black.opacity(isPrimary ? 0.3 : 0.22), radius: isPrimary ? 12 : 9, y: isPrimary ? 5 : 4)
+        .shadow(color: .black.opacity(isPrimary ? 0.26 : 0.18), radius: isPrimary ? 12 : 9, y: isPrimary ? 5 : 4)
     }
 
     private func telegramTransportButton(
@@ -796,15 +795,15 @@ struct BiliPlayerView: View {
         .foregroundStyle(.white)
         .glassEffect(
             .regular
-                .tint(.black.opacity(isPrimary ? 0.24 : 0.18))
+                .tint(.black.opacity(isPrimary ? 0.055 : 0.035))
                 .interactive(true),
             in: Circle()
         )
         .overlay(
             Circle()
-                .stroke(.white.opacity(isPrimary ? 0.18 : 0.16), lineWidth: 0.8)
+                .stroke(.white.opacity(isPrimary ? 0.34 : 0.30), lineWidth: 0.8)
         )
-        .shadow(color: .black.opacity(isPrimary ? 0.34 : 0.24), radius: isPrimary ? 18 : 12, y: isPrimary ? 8 : 5)
+        .shadow(color: .black.opacity(isPrimary ? 0.28 : 0.20), radius: isPrimary ? 18 : 12, y: isPrimary ? 8 : 5)
     }
 
     private func handlePlayerTap() {
@@ -1104,6 +1103,126 @@ private enum PlayerGestureFeedback: Equatable {
     }
 }
 
+private struct LiquidPlayerProgressSlider: UIViewRepresentable {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let tint: Color
+    let onEditingChanged: (Bool) -> Void
+
+    init(
+        value: Binding<Double>,
+        in range: ClosedRange<Double>,
+        tint: Color,
+        onEditingChanged: @escaping (Bool) -> Void
+    ) {
+        _value = value
+        self.range = range
+        self.tint = tint
+        self.onEditingChanged = onEditingChanged
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(value: $value, onEditingChanged: onEditingChanged)
+    }
+
+    func makeUIView(context: Context) -> UISlider {
+        let slider = UISlider()
+        slider.minimumValue = Float(range.lowerBound)
+        slider.maximumValue = Float(range.upperBound)
+        slider.value = Float(value)
+        slider.minimumTrackTintColor = UIColor(tint)
+        slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.20)
+        slider.setMinimumTrackImage(Self.trackImage(height: 4, color: UIColor(tint)), for: .normal)
+        slider.setMaximumTrackImage(Self.trackImage(height: 4, color: UIColor.white.withAlphaComponent(0.20)), for: .normal)
+        slider.setThumbImage(Self.thumbImage(visualDiameter: 9, canvasDiameter: 30, color: .white), for: .normal)
+        slider.setThumbImage(Self.thumbImage(visualDiameter: 13, canvasDiameter: 34, color: .white), for: .highlighted)
+        slider.addTarget(context.coordinator, action: #selector(Coordinator.touchDown(_:)), for: .touchDown)
+        slider.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged(_:)), for: .valueChanged)
+        slider.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.touchUp(_:)),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
+        return slider
+    }
+
+    func updateUIView(_ slider: UISlider, context: Context) {
+        context.coordinator.value = $value
+        context.coordinator.onEditingChanged = onEditingChanged
+        let lower = Float(range.lowerBound)
+        let upper = Float(range.upperBound)
+        if slider.minimumValue != lower {
+            slider.minimumValue = lower
+        }
+        if slider.maximumValue != upper {
+            slider.maximumValue = upper
+        }
+        let newValue = Float(value)
+        if !context.coordinator.isEditing, abs(slider.value - newValue) > 0.001 {
+            slider.setValue(newValue, animated: false)
+        }
+    }
+
+    private static func trackImage(height: CGFloat, color: UIColor) -> UIImage {
+        let size = CGSize(width: 12, height: height)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            color.setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: height / 2).fill()
+        }
+        let cap = max(1, height / 2)
+        return image.resizableImage(
+            withCapInsets: UIEdgeInsets(top: 0, left: cap, bottom: 0, right: cap),
+            resizingMode: .stretch
+        )
+    }
+
+    private static func thumbImage(visualDiameter: CGFloat, canvasDiameter: CGFloat, color: UIColor) -> UIImage {
+        let size = CGSize(width: canvasDiameter, height: canvasDiameter)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let rect = CGRect(
+                x: (canvasDiameter - visualDiameter) / 2,
+                y: (canvasDiameter - visualDiameter) / 2,
+                width: visualDiameter,
+                height: visualDiameter
+            )
+            context.cgContext.setShadow(
+                offset: CGSize(width: 0, height: 1.5),
+                blur: 5,
+                color: UIColor.black.withAlphaComponent(0.22).cgColor
+            )
+            color.setFill()
+            context.cgContext.fillEllipse(in: rect)
+        }
+    }
+
+    final class Coordinator: NSObject {
+        var value: Binding<Double>
+        var onEditingChanged: (Bool) -> Void
+        var isEditing = false
+
+        init(value: Binding<Double>, onEditingChanged: @escaping (Bool) -> Void) {
+            self.value = value
+            self.onEditingChanged = onEditingChanged
+        }
+
+        @objc func touchDown(_ slider: UISlider) {
+            isEditing = true
+            onEditingChanged(true)
+            value.wrappedValue = Double(slider.value)
+        }
+
+        @objc func valueChanged(_ slider: UISlider) {
+            value.wrappedValue = Double(slider.value)
+        }
+
+        @objc func touchUp(_ slider: UISlider) {
+            value.wrappedValue = Double(slider.value)
+            isEditing = false
+            onEditingChanged(false)
+        }
+    }
+}
+
 private struct PlayerGestureOverlay: UIViewRepresentable {
     let onSingleTap: () -> Void
     let onDoubleTap: (PlayerGestureRegion) -> Void
@@ -1259,6 +1378,12 @@ private extension View {
         .overlay(
             shape
                 .stroke(stroke, lineWidth: 0.8)
+        )
+        .overlay(
+            shape
+                .stroke(.white.opacity(0.12), lineWidth: 0.35)
+                .blur(radius: 0.6)
+                .offset(y: -0.5)
         )
     }
 
