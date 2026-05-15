@@ -801,11 +801,14 @@ struct VideoDetailView: View {
               preloadedRelatedVideos.count < 3,
               !PlaybackEnvironment.current.shouldPreferConservativePlayback
         else { return }
-        preloadedRelatedVideos.insert(video.bvid)
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
-        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        guard preloadedRelatedVideos.count < playbackAdaptationProfile.backgroundPreloadLimit else { return }
+        preloadedRelatedVideos.insert(video.bvid)
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
@@ -1072,7 +1075,7 @@ private struct VideoDetailPlayerSurface: View {
             playbackRate: playerViewModel.playbackRate.rawValue,
             isEnabled: viewModel.isDanmakuEnabled,
             hasPresentedPlayback: playerViewModel.hasPresentedPlayback,
-            settings: viewModel.danmakuSettings,
+            settings: viewModel.effectiveDanmakuSettings,
             topInset: usesLandscapePlaybackChrome ? 28 : 8,
             bottomInset: usesLandscapePlaybackChrome ? 84 : 54
         )
@@ -1413,6 +1416,7 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
         Section("CDN") {
             diagnosticRow("当前使用", libraryStore.effectivePlaybackCDNPreference.title)
             diagnosticRow("设置模式", libraryStore.playbackCDNPreference.title)
+            diagnosticRow("网络协议", libraryStore.playbackNetworkAddressFamilyPreference.title)
 
             if libraryStore.playbackCDNPreference == .automatic {
                 diagnosticRow(
@@ -1486,6 +1490,7 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
 
     private var environmentSection: some View {
         Section("设备网络") {
+            diagnosticRow("播放自动优化", libraryStore.playbackAutoOptimizationMode.title)
             diagnosticRow("网络类型", playbackEnvironment.networkClass.diagnosticTitle)
             diagnosticRow("省电模式", playbackEnvironment.isLowPowerModeEnabled ? "开启" : "关闭")
             diagnosticRow("温控限制", playbackEnvironment.isThermallyConstrained ? "已触发" : "未触发")
@@ -1622,6 +1627,11 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
             Text(result.preference.title)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if let addressFamily = result.addressFamily {
+                Text(addressFamily.title)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+            }
             Text(result.elapsedMilliseconds.map { "\($0) ms" } ?? result.errorDescription ?? "失败")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -1651,7 +1661,12 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
         isProbingPlaybackCDN = true
         probeMessage = "正在测试 CDN 线路..."
         Task {
-            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
+            let addressFamilyPreference = await MainActor.run {
+                libraryStore.playbackNetworkAddressFamilyPreference
+            }
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot(
+                addressFamilyPreference: addressFamilyPreference
+            )
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
@@ -1674,6 +1689,8 @@ private struct PlaybackNetworkDiagnosticsSheet: View {
         lines.append("BVID：\(viewModel.detail.bvid)")
         lines.append("当前 CDN：\(libraryStore.effectivePlaybackCDNPreference.title)")
         lines.append("CDN 设置：\(libraryStore.playbackCDNPreference.title)")
+        lines.append("网络协议：\(libraryStore.playbackNetworkAddressFamilyPreference.title)")
+        lines.append("播放自动优化：\(libraryStore.playbackAutoOptimizationMode.title)")
         lines.append("视频 Host：\(variant?.videoURL?.host ?? "未获取")")
         lines.append("音频 Host：\(variant?.audioURL?.host ?? "未获取")")
         lines.append("清晰度：\(variant?.title ?? "未选择")")

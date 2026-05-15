@@ -196,7 +196,10 @@ struct RootTabView: View {
     private func beginPlaybackPreload(for video: VideoItem) {
         Task {
             dependencies.refreshPlaybackCDNProbeIfNeeded()
-            let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(for: video.bvid)
+            let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+                for: video.bvid,
+                isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+            )
             let preferredQuality = libraryStore.preferredVideoQuality
             let cdnPreference = libraryStore.effectivePlaybackCDNPreference
             let api = dependencies.api

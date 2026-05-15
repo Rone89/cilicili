@@ -5,12 +5,45 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
     var opacity: Double
     var displayArea: DanmakuDisplayArea
     var fontWeight: DanmakuFontWeightOption
+    var loadFactor: Double
+
+    init(
+        fontScale: Double,
+        opacity: Double,
+        displayArea: DanmakuDisplayArea,
+        fontWeight: DanmakuFontWeightOption,
+        loadFactor: Double = 1.0
+    ) {
+        self.fontScale = fontScale
+        self.opacity = opacity
+        self.displayArea = displayArea
+        self.fontWeight = fontWeight
+        self.loadFactor = loadFactor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fontScale
+        case opacity
+        case displayArea
+        case fontWeight
+        case loadFactor
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.fontScale = try container.decode(Double.self, forKey: .fontScale)
+        self.opacity = try container.decode(Double.self, forKey: .opacity)
+        self.displayArea = try container.decode(DanmakuDisplayArea.self, forKey: .displayArea)
+        self.fontWeight = try container.decode(DanmakuFontWeightOption.self, forKey: .fontWeight)
+        self.loadFactor = try container.decodeIfPresent(Double.self, forKey: .loadFactor) ?? 1.0
+    }
 
     static let `default` = DanmakuSettings(
         fontScale: 1.0,
         opacity: 0.92,
         displayArea: .topHalf,
-        fontWeight: .semibold
+        fontWeight: .semibold,
+        loadFactor: 1.0
     )
 
     var normalized: DanmakuSettings {
@@ -18,7 +51,8 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
             fontScale: min(max(fontScale, 0.7), 1.45),
             opacity: min(max(opacity, 0.25), 1.0),
             displayArea: displayArea,
-            fontWeight: fontWeight
+            fontWeight: fontWeight,
+            loadFactor: min(max(loadFactor, 0.35), 1.0)
         )
     }
 }

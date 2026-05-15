@@ -2713,7 +2713,15 @@ final class DynamicViewModel: ObservableObject {
         let videos = items
             .compactMap { $0.archive?.asVideoItem(author: $0.author) }
             .filter { !$0.bvid.isEmpty }
-        let candidates = Array(videos.prefix(2))
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        let candidateLimit = max(0, min(2, playbackAdaptationProfile.backgroundPreloadLimit))
+        guard candidateLimit > 0 else {
+            playbackPreloadTask = nil
+            return
+        }
+        let candidates = Array(videos.prefix(candidateLimit))
         guard !candidates.isEmpty else {
             playbackPreloadTask = nil
             return
@@ -2721,7 +2729,6 @@ final class DynamicViewModel: ObservableObject {
 
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
-        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
         playbackPreloadTask = Task(priority: .background) { [api, cdnPreference] in
             if initialDelay > 0 {
                 try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))

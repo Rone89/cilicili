@@ -1,5 +1,91 @@
 import Foundation
 
+enum PlaybackAutoOptimizationMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic
+    case off
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic:
+            return "自动优化"
+        case .off:
+            return "关闭"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .automatic:
+            return "根据首帧、缓冲、取流耗时和设备状态自动调整开播画质、预加载强度与 CDN 复测。"
+        case .off:
+            return "始终按你的默认画质和手动 CDN 设置播放，不根据历史表现自动降载。"
+        }
+    }
+
+    var isEnabled: Bool {
+        self == .automatic
+    }
+}
+
+enum PlaybackNetworkAddressFamily: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
+    case ipv4
+    case ipv6
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ipv4:
+            return "IPv4"
+        case .ipv6:
+            return "IPv6"
+        }
+    }
+}
+
+enum PlaybackNetworkAddressFamilyPreference: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic
+    case ipv4Only
+    case ipv6Only
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic:
+            return "自动"
+        case .ipv4Only:
+            return "仅 IPv4"
+        case .ipv6Only:
+            return "仅 IPv6"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .automatic:
+            return "由系统网络栈自动选择可用协议族。"
+        case .ipv4Only:
+            return "CDN 自动推荐只选择支持 IPv4 的线路，适合 IPv4-only 设备。"
+        case .ipv6Only:
+            return "CDN 自动推荐只选择支持 IPv6 的线路，适合 IPv6 网络环境。"
+        }
+    }
+
+    var requiredFamily: PlaybackNetworkAddressFamily? {
+        switch self {
+        case .automatic:
+            return nil
+        case .ipv4Only:
+            return .ipv4
+        case .ipv6Only:
+            return .ipv6
+        }
+    }
+}
+
 enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendable {
     case automatic
     case baseURL

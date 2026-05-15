@@ -487,6 +487,14 @@ final class VideoDetailViewModel: ObservableObject {
         libraryStore.setDanmakuSettings(normalizedSettings)
     }
 
+    var effectiveDanmakuSettings: DanmakuSettings {
+        var settings = danmakuSettings
+        settings.loadFactor = libraryStore.isPlaybackAutoOptimizationEnabled
+            ? playbackAdaptationProfile.danmakuLoadFactor
+            : 1.0
+        return settings.normalized
+    }
+
     func selectPlayVariant(_ variant: PlayVariant) {
         guard !isPlaybackInvalidatedForNavigation, variant.isPlayable else { return }
         guard selectedPlayVariant?.id != variant.id else { return }
@@ -1147,13 +1155,17 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     var playbackAdaptationProfile: PlayerPlaybackAdaptationProfile {
-        PlayerPerformanceStore.shared.playbackAdaptationProfile(for: detail.bvid)
+        PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            for: detail.bvid,
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
     }
 
     var adaptiveStartupPreferredQuality: Int? {
         PlayerPerformanceStore.shared.adaptivePreferredQuality(
             for: libraryStore.preferredVideoQuality,
-            metricsID: detail.bvid
+            metricsID: detail.bvid,
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
         )
     }
 

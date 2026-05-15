@@ -41,7 +41,12 @@ final class AppDependencies: ObservableObject {
         guard playbackCDNProbeRefreshTask == nil else { return }
         guard shouldRefreshPlaybackCDNProbe else { return }
         playbackCDNProbeRefreshTask = Task {
-            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
+            let addressFamilyPreference = await MainActor.run {
+                self.libraryStore.playbackNetworkAddressFamilyPreference
+            }
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot(
+                addressFamilyPreference: addressFamilyPreference
+            )
             await MainActor.run {
                 if !Task.isCancelled {
                     self.libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
@@ -59,7 +64,9 @@ final class AppDependencies: ObservableObject {
         if libraryStore.needsPlaybackCDNProbeRefresh {
             return true
         }
-        guard PlayerPerformanceStore.shared.shouldRefreshPlaybackCDNProbe() else {
+        guard PlayerPerformanceStore.shared.shouldRefreshPlaybackCDNProbe(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        ) else {
             return false
         }
         guard let snapshot = libraryStore.playbackCDNProbeSnapshot else {

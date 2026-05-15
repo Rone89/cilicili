@@ -88,7 +88,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appearanceMode: AppAppearanceMode
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var preferredVideoQuality: Int?
+    @Published private(set) var playbackAutoOptimizationMode: PlaybackAutoOptimizationMode
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
+    @Published private(set) var playbackNetworkAddressFamilyPreference: PlaybackNetworkAddressFamilyPreference
     @Published private(set) var playbackCDNProbeSnapshot: PlaybackCDNProbeSnapshot?
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
@@ -105,7 +107,9 @@ final class LibraryStore: ObservableObject {
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
     private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
+    private static let playbackAutoOptimizationModeKey = "cc.bili.playback.autoOptimizationMode.v1"
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
+    private static let playbackNetworkAddressFamilyPreferenceKey = "cc.bili.playback.networkAddressFamilyPreference.v1"
     private static let playbackCDNProbeSnapshotKey = "cc.bili.playback.cdnProbeSnapshot.v1"
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
@@ -125,6 +129,10 @@ final class LibraryStore: ObservableObject {
 
     var effectivePlaybackCDNPreference: PlaybackCDNPreference {
         effectivePlaybackCDNPreference(for: playbackCDNPreference)
+    }
+
+    var isPlaybackAutoOptimizationEnabled: Bool {
+        playbackAutoOptimizationMode.isEnabled
     }
 
     var automaticPlaybackCDNRecommendation: PlaybackCDNPreference? {
@@ -152,8 +160,14 @@ final class LibraryStore: ObservableObject {
         } else {
             self.preferredVideoQuality = Self.defaultPreferredVideoQuality
         }
+        self.playbackAutoOptimizationMode = PlaybackAutoOptimizationMode(
+            rawValue: userDefaults.string(forKey: Self.playbackAutoOptimizationModeKey) ?? ""
+        ) ?? .automatic
         self.playbackCDNPreference = PlaybackCDNPreference(
             rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
+        ) ?? .automatic
+        self.playbackNetworkAddressFamilyPreference = PlaybackNetworkAddressFamilyPreference(
+            rawValue: userDefaults.string(forKey: Self.playbackNetworkAddressFamilyPreferenceKey) ?? ""
         ) ?? .automatic
         if let probeSnapshotData = userDefaults.data(forKey: Self.playbackCDNProbeSnapshotKey),
            let probeSnapshot = try? JSONDecoder().decode(PlaybackCDNProbeSnapshot.self, from: probeSnapshotData) {
@@ -203,9 +217,20 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    func setPlaybackAutoOptimizationMode(_ mode: PlaybackAutoOptimizationMode) {
+        playbackAutoOptimizationMode = mode
+        userDefaults.set(mode.rawValue, forKey: Self.playbackAutoOptimizationModeKey)
+    }
+
     func setPlaybackCDNPreference(_ preference: PlaybackCDNPreference) {
         playbackCDNPreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.playbackCDNPreferenceKey)
+    }
+
+    func setPlaybackNetworkAddressFamilyPreference(_ preference: PlaybackNetworkAddressFamilyPreference) {
+        playbackNetworkAddressFamilyPreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.playbackNetworkAddressFamilyPreferenceKey)
+        setPlaybackCDNProbeSnapshot(nil)
     }
 
     func effectivePlaybackCDNPreference(for preference: PlaybackCDNPreference) -> PlaybackCDNPreference {

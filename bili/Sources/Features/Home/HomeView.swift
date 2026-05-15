@@ -264,7 +264,10 @@ struct HomeView: View {
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
-        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(for: video.bvid)
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            for: video.bvid,
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
         DispatchQueue.main.async {
             guard !pressedPreloadVideos.contains(bvid) else { return }
             pressedPreloadVideos.insert(bvid)
@@ -297,7 +300,9 @@ struct HomeView: View {
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
-        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
         visiblePreloadVideos.insert(bvid)
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(

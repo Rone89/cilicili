@@ -73,7 +73,12 @@ struct MineView: View {
 
         playbackCDNProbeTask?.cancel()
         playbackCDNProbeTask = Task {
-            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
+            let addressFamilyPreference = await MainActor.run {
+                libraryStore.playbackNetworkAddressFamilyPreference
+            }
+            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot(
+                addressFamilyPreference: addressFamilyPreference
+            )
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard !Task.isCancelled else { return }
@@ -133,6 +138,12 @@ struct MineView: View {
                 if libraryStore.playbackCDNPreference == .automatic,
                    let activeRecommendation = libraryStore.automaticPlaybackCDNRecommendation {
                     Label("自动选择当前使用 \(activeRecommendation.title)", systemImage: "bolt.horizontal")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if libraryStore.playbackNetworkAddressFamilyPreference != .automatic {
+                    Label("协议偏好 \(libraryStore.playbackNetworkAddressFamilyPreference.title)", systemImage: "point.3.connected.trianglepath.dotted")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -247,6 +258,21 @@ struct MineView: View {
             }
 
             Section("播放偏好") {
+                Picker(selection: Binding(
+                    get: { libraryStore.playbackAutoOptimizationMode },
+                    set: { libraryStore.setPlaybackAutoOptimizationMode($0) }
+                )) {
+                    ForEach(PlaybackAutoOptimizationMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                } label: {
+                    Label("播放自动优化", systemImage: "wand.and.stars")
+                }
+
+                Text(libraryStore.playbackAutoOptimizationMode.detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 Picker(selection: Binding<Int>(
                     get: { libraryStore.preferredVideoQuality ?? 0 },
                     set: { libraryStore.setPreferredVideoQuality($0 == 0 ? nil : $0) }
@@ -270,9 +296,31 @@ struct MineView: View {
                     Label("CDN 线路", systemImage: "network")
                 }
 
+                Picker(selection: Binding(
+                    get: { libraryStore.playbackNetworkAddressFamilyPreference },
+                    set: { libraryStore.setPlaybackNetworkAddressFamilyPreference($0) }
+                )) {
+                    ForEach(PlaybackNetworkAddressFamilyPreference.allCases) { preference in
+                        Text(preference.title).tag(preference)
+                    }
+                } label: {
+                    Label("网络协议", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+
+                Text(libraryStore.playbackNetworkAddressFamilyPreference.detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 Text("如果视频加载慢或容易缓冲，可以切换 CDN 线路。默认自动会优先使用 24 小时内测速推荐的线路；没有新鲜测速结果时保留接口返回顺序。手动选择后会优先使用对应 CDN，并保留原始/备用地址作为回退。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if libraryStore.playbackNetworkAddressFamilyPreference != .automatic,
+                   libraryStore.playbackCDNProbeSnapshot == nil {
+                    Label("网络协议已切换，请重新测速 CDN 以生成匹配的新推荐。", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
 
                 Button {
                     probePlaybackCDN()
@@ -746,17 +794,26 @@ private struct LibraryErrorRow: View {
 }
 
 private struct PlayerPerformanceLogView: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var store = PlayerPerformanceStore.shared
 
     var body: some View {
         List {
             if store.events.isEmpty {
                 ContentUnavailableView(
-                    "暂无播放日志",
+                    "暂无播放记录",
                     systemImage: "speedometer",
-                    description: Text("打开一个视频后，这里会显示首帧、缓冲和接口耗时。")
+                    description: Text("播放自动优化会在后台使用这些记录调整开播画质、预加载和 CDN 复测。")
                 )
             } else {
+                Section("自动优化") {
+                    PlayerAutoOptimizationSummaryRow(
+                        profile: store.playbackAdaptationProfile(
+                            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+                        )
+                    )
+                }
+
                 if !store.sessions.isEmpty {
                     Section("最近视频") {
                         ForEach(store.sessions) { session in
@@ -830,6 +887,71 @@ private struct PlayerPerformanceLogView: View {
         case .network: return "network"
         case .mediaCache: return "externaldrive.fill.badge.checkmark"
         case .failed: return "exclamationmark.triangle"
+        }
+    }
+}
+
+private struct PlayerAutoOptimizationSummaryRow: View {
+    let profile: PlayerPlaybackAdaptationProfile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(profileTitle, systemImage: "wand.and.stars")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(profileColor)
+
+            Text(profileMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var profileTitle: String {
+        guard profile.isEnabled else {
+            return "当前策略：已关闭"
+        }
+        switch profile.level {
+        case .normal:
+            return "当前策略：正常"
+        case .fallback:
+            return "当前策略：快速回退"
+        case .cautious:
+            return "当前策略：谨慎加载"
+        case .slow:
+            return "当前策略：慢网保护"
+        }
+    }
+
+    private var profileMessage: String {
+        guard profile.isEnabled else {
+            return "不会根据历史表现自动调整画质、预加载或 CDN 复测。"
+        }
+        switch profile.level {
+        case .normal:
+            return "保持默认画质和正常预加载。"
+        case .fallback:
+            return "优先使用缓存回退，减少首屏等待。"
+        case .cautious:
+            return "降低开播画质上限并减少后台预加载。"
+        case .slow:
+            return "强制轻量开播，暂停非必要预热，并触发 CDN 复测。"
+        }
+    }
+
+    private var profileColor: Color {
+        guard profile.isEnabled else {
+            return .secondary
+        }
+        switch profile.level {
+        case .normal:
+            return .green
+        case .fallback:
+            return .blue
+        case .cautious:
+            return .orange
+        case .slow:
+            return .red
         }
     }
 }

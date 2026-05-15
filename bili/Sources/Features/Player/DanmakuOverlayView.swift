@@ -534,11 +534,24 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private var maxActiveCount: Int {
-        bounds.width > 640 ? 44 : 24
+        let baseCount = bounds.width > 640 ? 44 : 24
+        return max(8, Int(Double(baseCount) * adaptiveDanmakuLoadFactor))
     }
 
     private var maxSpawnPerTick: Int {
-        bounds.width > 640 ? 6 : 4
+        let baseCount = bounds.width > 640 ? 6 : 4
+        return max(1, Int(Double(baseCount) * adaptiveDanmakuLoadFactor))
+    }
+
+    private var adaptiveDanmakuLoadFactor: Double {
+        let environment = PlaybackEnvironment.current
+        if environment.isThermallyConstrained || environment.isLowPowerModeEnabled {
+            return min(settings.loadFactor, 0.55)
+        }
+        if environment.shouldPreferConservativePlayback {
+            return min(settings.loadFactor, 0.72)
+        }
+        return settings.loadFactor
     }
 
     private func fontSize(for item: DanmakuItem) -> CGFloat {

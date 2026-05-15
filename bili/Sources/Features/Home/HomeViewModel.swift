@@ -294,9 +294,17 @@ final class HomeViewModel: ObservableObject {
             playbackPreloadTask = nil
             return
         }
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        let candidateLimit = max(0, min(mode == .recommend ? 2 : 1, playbackAdaptationProfile.backgroundPreloadLimit))
+        guard candidateLimit > 0 else {
+            playbackPreloadTask = nil
+            return
+        }
         let candidates = Array(videos
             .filter { $0.cid != nil && !$0.bvid.isEmpty }
-            .prefix(mode == .recommend ? 2 : 1))
+            .prefix(candidateLimit))
         guard !candidates.isEmpty else {
             playbackPreloadTask = nil
             return
@@ -304,7 +312,6 @@ final class HomeViewModel: ObservableObject {
 
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
-        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
         playbackPreloadTask = Task(priority: .background) { [api, cdnPreference] in
             try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
             for (index, video) in candidates.enumerated() {

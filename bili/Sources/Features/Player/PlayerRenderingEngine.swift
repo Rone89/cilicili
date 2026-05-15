@@ -220,24 +220,65 @@ struct PlayerPlaybackAdaptationProfile: Equatable, Sendable {
         var shouldRefreshPlaybackCDNProbe: Bool {
             self.rawValue >= Level.cautious.rawValue
         }
+
+        var danmakuLoadFactor: Double {
+            switch self {
+            case .normal:
+                return 1.0
+            case .fallback:
+                return 0.86
+            case .cautious:
+                return 0.68
+            case .slow:
+                return 0.5
+            }
+        }
     }
 
     let level: Level
+    let isEnabled: Bool
+
+    init(level: Level, isEnabled: Bool = true) {
+        self.level = isEnabled ? level : .normal
+        self.isEnabled = isEnabled
+    }
 
     var startupQualityCeiling: Int? {
-        level.startupQualityCeiling
+        isEnabled ? level.startupQualityCeiling : nil
     }
 
     var shouldAllowStartupCacheFallback: Bool {
-        level.shouldAllowStartupCacheFallback
+        isEnabled && level.shouldAllowStartupCacheFallback
     }
 
     var shouldWarmSupplementalVariants: Bool {
-        level.shouldWarmSupplementalVariants
+        !isEnabled || level.shouldWarmSupplementalVariants
     }
 
     var shouldRefreshPlaybackCDNProbe: Bool {
-        level.shouldRefreshPlaybackCDNProbe
+        isEnabled && level.shouldRefreshPlaybackCDNProbe
+    }
+
+    var danmakuLoadFactor: Double {
+        isEnabled ? level.danmakuLoadFactor : 1.0
+    }
+
+    var shouldThrottleBackgroundPreload: Bool {
+        isEnabled && level.rawValue >= Level.cautious.rawValue
+    }
+
+    var backgroundPreloadLimit: Int {
+        guard isEnabled else { return 3 }
+        switch level {
+        case .normal:
+            return 3
+        case .fallback:
+            return 2
+        case .cautious:
+            return 1
+        case .slow:
+            return 0
+        }
     }
 }
 
@@ -282,16 +323,39 @@ final class PlayerPerformanceStore: ObservableObject {
         return min(preferredQuality, ceiling)
     }
 
+    func adaptivePreferredQuality(
+        for preferredQuality: Int?,
+        metricsID: String? = nil,
+        isEnabled: Bool
+    ) -> Int? {
+        guard isEnabled else { return preferredQuality }
+        return adaptivePreferredQuality(for: preferredQuality, metricsID: metricsID)
+    }
+
     func playbackAdaptationProfile(for metricsID: String? = nil) -> PlayerPlaybackAdaptationProfile {
+        playbackAdaptationProfile(for: metricsID, isEnabled: true)
+    }
+
+    func playbackAdaptationProfile(
+        for metricsID: String? = nil,
+        isEnabled: Bool
+    ) -> PlayerPlaybackAdaptationProfile {
+        guard isEnabled else {
+            return PlayerPlaybackAdaptationProfile(level: .normal, isEnabled: false)
+        }
         let relevantSessions = relevantPlaybackSessions(for: metricsID)
         let worstLevel = relevantSessions
             .map(Self.adaptationLevel(for:))
             .max { $0.rawValue < $1.rawValue } ?? .normal
-        return PlayerPlaybackAdaptationProfile(level: worstLevel)
+        return PlayerPlaybackAdaptationProfile(level: worstLevel, isEnabled: true)
     }
 
     func shouldRefreshPlaybackCDNProbe(for metricsID: String? = nil) -> Bool {
         playbackAdaptationProfile(for: metricsID).shouldRefreshPlaybackCDNProbe
+    }
+
+    func shouldRefreshPlaybackCDNProbe(metricsID: String? = nil, isEnabled: Bool) -> Bool {
+        playbackAdaptationProfile(for: metricsID, isEnabled: isEnabled).shouldRefreshPlaybackCDNProbe
     }
 
     func clear() {
