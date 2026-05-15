@@ -177,7 +177,12 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var openedAt: Date?
     var detailStartedAt: Date?
     var playURLStartedAt: Date?
+    var playURLLoadedAt: Date?
+    var playerCreatedAt: Date?
     var prepareStartedAt: Date?
+    var prepareReturnedAt: Date?
+    var playRequestedAt: Date?
+    var firstFrameAt: Date?
     var lastUpdatedAt = Date()
     var eventCount = 0
     var detailLoadMilliseconds: Int?
@@ -196,6 +201,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var selectedQualityMessage: String?
     var detailSourceMessage: String?
     var prepareStageMessage: String?
+    var startupGapMessage: String?
     var failureMessage: String?
 }
 
@@ -416,12 +422,17 @@ final class PlayerPerformanceStore: ObservableObject {
         if let title = event.title, !title.isEmpty {
             session.title = title
         }
+
+        if shouldResetPlaybackAttempt(for: event.kind, session: session) {
+            resetPlaybackAttempt(&session)
+        }
+
         session.lastUpdatedAt = event.date
         session.eventCount += 1
 
         switch event.kind {
         case .routeOpen:
-            session.openedAt = session.openedAt ?? event.date
+            session.openedAt = event.date
         case .detailLoadStart:
             session.openedAt = session.openedAt ?? event.date
             session.detailStartedAt = event.date
@@ -433,37 +444,49 @@ final class PlayerPerformanceStore: ObservableObject {
         case .playURLStart:
             session.playURLStartedAt = event.date
         case .playURLLoaded:
+            session.playURLLoadedAt = event.date
             if let start = session.playURLStartedAt {
                 session.playURLMilliseconds = Self.milliseconds(from: start, to: event.date)
             }
             session.selectedQualityMessage = event.message ?? session.selectedQualityMessage
         case .playerCreated:
+            if session.firstFrameTotalMilliseconds == nil {
+                session.playerCreatedAt = session.playerCreatedAt ?? event.date
+            }
             if let message = event.message, !message.isEmpty {
                 session.selectedQualityMessage = message
             }
         case .prepareRequested:
-            session.prepareStartedAt = event.date
+            guard session.firstFrameTotalMilliseconds == nil else { break }
+            session.prepareStartedAt = session.prepareStartedAt ?? event.date
         case .mediaPrepared:
-            session.mediaPreparedMilliseconds = Self.firstMilliseconds(in: event.message)
-            session.prepareStageMessage = event.message ?? session.prepareStageMessage
+            if session.firstFrameTotalMilliseconds == nil {
+                session.mediaPreparedMilliseconds = Self.firstMilliseconds(in: event.message)
+                session.prepareStageMessage = event.message ?? session.prepareStageMessage
+            }
         case .prepareReturned:
+            guard session.firstFrameTotalMilliseconds == nil else { break }
+            session.prepareReturnedAt = event.date
             if let start = session.prepareStartedAt {
                 session.prepareMilliseconds = Self.milliseconds(from: start, to: event.date)
             } else {
                 session.prepareMilliseconds = Self.firstMilliseconds(in: event.message)
             }
         case .playRequested:
-            break
+            guard session.firstFrameTotalMilliseconds == nil else { break }
+            session.playRequestedAt = session.playRequestedAt ?? event.date
         case .firstFrame:
-            let openedAt = session.openedAt ?? session.detailStartedAt ?? session.prepareStartedAt
+            guard session.firstFrameTotalMilliseconds == nil else { break }
+            session.firstFrameAt = event.date
+            let openedAt = session.openedAt
+                ?? session.detailStartedAt
+                ?? session.playURLStartedAt
+                ?? session.playerCreatedAt
+                ?? session.prepareStartedAt
             if let openedAt {
-                let total = Self.milliseconds(from: openedAt, to: event.date)
-                if session.firstFrameTotalMilliseconds.map({ total < $0 }) ?? true {
-                    session.firstFrameTotalMilliseconds = total
-                }
+                session.firstFrameTotalMilliseconds = Self.milliseconds(from: openedAt, to: event.date)
             }
-            if let playerMilliseconds = Self.firstMilliseconds(in: event.message),
-               session.firstFramePlayerMilliseconds.map({ playerMilliseconds < $0 }) ?? true {
+            if let playerMilliseconds = Self.firstMilliseconds(in: event.message) {
                 session.firstFramePlayerMilliseconds = playerMilliseconds
             }
         case .buffering:
@@ -488,6 +511,8 @@ final class PlayerPerformanceStore: ObservableObject {
             session.failureMessage = event.message
         }
 
+        session.startupGapMessage = Self.startupGapMessage(for: session)
+
         sessionsByID[event.metricsID] = session
         sessions = sessionsByID.values
             .sorted { $0.lastUpdatedAt > $1.lastUpdatedAt }
@@ -499,6 +524,117 @@ final class PlayerPerformanceStore: ObservableObject {
 
     private static func milliseconds(from start: Date, to end: Date) -> Int {
         Int((end.timeIntervalSince(start) * 1000).rounded())
+    }
+
+    private func shouldResetPlaybackAttempt(
+        for kind: PlayerPerformanceEvent.Kind,
+        session: PlayerPerformanceSession
+    ) -> Bool {
+        switch kind {
+        case .routeOpen:
+            return true
+        case .detailLoadStart:
+            return session.detailStartedAt != nil
+                || session.playURLStartedAt != nil
+                || session.playerCreatedAt != nil
+                || session.prepareStartedAt != nil
+                || session.playRequestedAt != nil
+                || session.firstFrameTotalMilliseconds != nil
+                || session.failureMessage != nil
+        case .playURLStart:
+            return session.playURLStartedAt != nil
+                || session.playerCreatedAt != nil
+                || session.prepareStartedAt != nil
+                || session.playRequestedAt != nil
+                || session.firstFrameTotalMilliseconds != nil
+                || session.failureMessage != nil
+        default:
+            return false
+        }
+    }
+
+    private func resetPlaybackAttempt(_ session: inout PlayerPerformanceSession) {
+        session.openedAt = nil
+        session.detailStartedAt = nil
+        session.playURLStartedAt = nil
+        session.playURLLoadedAt = nil
+        session.playerCreatedAt = nil
+        session.prepareStartedAt = nil
+        session.prepareReturnedAt = nil
+        session.playRequestedAt = nil
+        session.firstFrameAt = nil
+        session.eventCount = 0
+        session.detailLoadMilliseconds = nil
+        session.playURLMilliseconds = nil
+        session.mediaPreparedMilliseconds = nil
+        session.prepareMilliseconds = nil
+        session.firstFrameTotalMilliseconds = nil
+        session.firstFramePlayerMilliseconds = nil
+        session.bufferCount = 0
+        session.lastBufferMessage = nil
+        session.networkMessage = nil
+        session.mediaCacheMessage = nil
+        session.manifestStageMessage = nil
+        session.qualitySupplementMessage = nil
+        session.cdnHostMessage = nil
+        session.selectedQualityMessage = nil
+        session.detailSourceMessage = nil
+        session.prepareStageMessage = nil
+        session.startupGapMessage = nil
+        session.failureMessage = nil
+    }
+
+    private static func startupGapMessage(for session: PlayerPerformanceSession) -> String? {
+        var parts: [String] = []
+        appendGap(
+            &parts,
+            label: "open>detail",
+            start: session.openedAt,
+            end: session.detailStartedAt
+        )
+        appendGap(
+            &parts,
+            label: "detail>url",
+            start: session.detailStartedAt,
+            end: session.playURLStartedAt
+        )
+        appendGap(
+            &parts,
+            label: "url>player",
+            start: session.playURLLoadedAt,
+            end: session.playerCreatedAt
+        )
+        appendGap(
+            &parts,
+            label: "player>prepare",
+            start: session.playerCreatedAt,
+            end: session.prepareStartedAt
+        )
+        appendGap(
+            &parts,
+            label: "prepare>play",
+            start: session.prepareReturnedAt,
+            end: session.playRequestedAt
+        )
+        appendGap(
+            &parts,
+            label: "play>frame",
+            start: session.playRequestedAt,
+            end: session.firstFrameAt
+        )
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " | ")
+    }
+
+    private static func appendGap(
+        _ parts: inout [String],
+        label: String,
+        start: Date?,
+        end: Date?
+    ) {
+        guard let start, let end else { return }
+        let milliseconds = max(Self.milliseconds(from: start, to: end), 0)
+        parts.append("\(label) \(milliseconds)ms")
     }
 
     private static func firstMilliseconds(in message: String?) -> Int? {

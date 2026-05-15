@@ -2057,6 +2057,23 @@ private struct PlayerPerformanceOverlay: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
 
+                if let startupGapMessage = session.startupGapMessage {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Startup gaps")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(startupGapMessage)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+
                 HStack(spacing: 8) {
                     Text("缓冲 \(session.bufferCount)")
                     if let quality = session.selectedQualityMessage {
