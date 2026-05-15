@@ -763,7 +763,7 @@ struct VideoDetailView: View {
         let relatedVideos = Array(viewModel.related.prefix(5))
         let usesCompactRelatedArtwork = viewModel.shouldUseCompactRelatedArtwork
 
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             if !relatedVideos.isEmpty {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 12) {
