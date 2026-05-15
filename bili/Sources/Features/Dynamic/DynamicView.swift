@@ -2679,24 +2679,27 @@ final class DynamicViewModel: ObservableObject {
         }
 
         guard !avatarURLs.isEmpty || !imageURLs.isEmpty || !coverURLs.isEmpty else { return }
+        let avatarPrefetchURLs = avatarURLs
+        let imagePrefetchURLs = imageURLs
+        let coverPrefetchURLs = coverURLs
         imagePrefetchTask = Task(priority: .utility) {
             if initialDelay > 0 {
                 try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
             }
             guard !Task.isCancelled else { return }
             async let avatars: Void = RemoteImageCache.shared.prefetch(
-                avatarURLs,
+                avatarPrefetchURLs,
                 targetPixelSize: 96,
                 maximumConcurrentLoads: 1
             )
             async let images: Void = RemoteImageCache.shared.prefetch(
-                imageURLs,
+                imagePrefetchURLs,
                 targetPixelSize: 420,
                 maximumConcurrentLoads: 2
             )
             async let covers: Void = RemoteImageCache.shared.prefetch(
-                coverURLs,
-                targetPixelSize: 760,
+                coverPrefetchURLs,
+                targetPixelSize: 540,
                 maximumConcurrentLoads: 1
             )
             _ = await (avatars, images, covers)
@@ -2760,14 +2763,62 @@ final class DynamicViewModel: ObservableObject {
 final class DynamicViewModelHolder: ObservableObject {
     @Published var viewModel: DynamicViewModel?
     private var cancellable: AnyCancellable?
+    private var lastSnapshot: DynamicRenderSnapshot?
 
     func configure(api: BiliAPIClient, libraryStore: LibraryStore) {
         if viewModel == nil {
             let viewModel = DynamicViewModel(api: api, libraryStore: libraryStore)
             self.viewModel = viewModel
+            lastSnapshot = DynamicRenderSnapshot(viewModel)
             cancellable = viewModel.objectWillChange.sink { [weak self] _ in
-                self?.objectWillChange.send()
+                Task { @MainActor [weak self, weak viewModel] in
+                    guard let self, let viewModel else { return }
+                    let snapshot = DynamicRenderSnapshot(viewModel)
+                    guard snapshot != self.lastSnapshot else { return }
+                    self.lastSnapshot = snapshot
+                    self.objectWillChange.send()
+                }
             }
         }
+    }
+}
+
+private struct DynamicRenderSnapshot: Equatable {
+    let state: LoadingState
+    let hasMoreItems: Bool
+    let itemCount: Int
+    let itemsSignature: String
+
+    init(_ viewModel: DynamicViewModel) {
+        state = viewModel.state
+        hasMoreItems = viewModel.hasMoreItems
+        itemCount = viewModel.items.count
+        itemsSignature = viewModel.items.renderSignature
+    }
+}
+
+private extension Array where Element == DynamicFeedItem {
+    var renderSignature: String {
+        map(Self.signature(for:))
+            .joined(separator: "||")
+    }
+
+    nonisolated private static func signature(for item: DynamicFeedItem) -> String {
+        [
+            item.id,
+            item.author?.name ?? "",
+            item.author?.face ?? "",
+            item.author?.pubTime ?? "",
+            String(item.author?.pubTS ?? 0),
+            item.displayText ?? "",
+            item.archive?.bvid ?? "",
+            String(item.imageItems.count),
+            item.original?.id ?? "",
+            item.isForward ? "1" : "0",
+            item.containsGoodsPromotion ? "1" : "0",
+            String(item.replyCount ?? 0),
+            String(item.likeCount ?? 0),
+            item.isLiked ? "1" : "0"
+        ].joined(separator: "^")
     }
 }
