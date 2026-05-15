@@ -136,9 +136,13 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case failed
         case network
         case mediaCache
+        case manifestStage
+        case qualitySupplement
 
         var title: String {
             switch self {
+            case .manifestStage: return "Manifest"
+            case .qualitySupplement: return "Supplement"
             case .routeOpen: return "打开视频"
             case .detailLoadStart: return "详情开始"
             case .detailLoaded: return "详情完成"
@@ -186,6 +190,8 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var lastBufferMessage: String?
     var networkMessage: String?
     var mediaCacheMessage: String?
+    var manifestStageMessage: String?
+    var qualitySupplementMessage: String?
     var cdnHostMessage: String?
     var selectedQualityMessage: String?
     var detailSourceMessage: String?
@@ -470,6 +476,14 @@ final class PlayerPerformanceStore: ObservableObject {
             }
         case .mediaCache:
             session.mediaCacheMessage = event.message ?? session.mediaCacheMessage
+        case .manifestStage:
+            session.manifestStageMessage = Self.appendDiagnosticMessage(
+                session.manifestStageMessage,
+                event.message,
+                maxParts: 4
+            )
+        case .qualitySupplement:
+            session.qualitySupplementMessage = event.message ?? session.qualitySupplementMessage
         case .failed:
             session.failureMessage = event.message
         }
@@ -511,5 +525,16 @@ final class PlayerPerformanceStore: ObservableObject {
               let range = Range(match.range(at: 1), in: message)
         else { return nil }
         return String(message[range])
+    }
+
+    private static func appendDiagnosticMessage(_ current: String?, _ next: String?, maxParts: Int) -> String? {
+        guard let next, !next.isEmpty else { return current }
+        var parts = current?.components(separatedBy: " | ") ?? []
+        parts.removeAll { $0 == next }
+        parts.append(next)
+        if parts.count > maxParts {
+            parts.removeFirst(parts.count - maxParts)
+        }
+        return parts.joined(separator: " | ")
     }
 }

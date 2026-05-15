@@ -2026,6 +2026,13 @@ private struct PlayerPerformanceOverlay: View {
                         .lineLimit(1)
                 }
 
+                if let manifestStageMessage = session.manifestStageMessage {
+                    Text(manifestStageMessage)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
                 if let prepareStageMessage = session.prepareStageMessage {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Prepare stages")
@@ -2059,6 +2066,13 @@ private struct PlayerPerformanceOverlay: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(session.bufferCount > 0 ? .orange : .secondary)
+
+                if let qualitySupplementMessage = session.qualitySupplementMessage {
+                    Text(qualitySupplementMessage)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                }
 
                 if let failure = session.failureMessage {
                     Text(failure)

@@ -1014,6 +1014,14 @@ final class VideoDetailViewModel: ObservableObject {
                 }
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
                 self.isSupplementingPlayQualities = true
+                let supplementStart = CACurrentMediaTime()
+                PlayerMetricsLog.record(
+                    .qualitySupplement,
+                    metricsID: self.detail.bvid,
+                    title: self.detail.title,
+                    message: "start preferred=\(self.libraryStore.preferredVideoQuality ?? 0)"
+                )
+
                 let data = try await self.api.fetchPlayURL(
                     bvid: self.detail.bvid,
                     cid: cid,
@@ -1032,8 +1040,19 @@ final class VideoDetailViewModel: ObservableObject {
                     warmsMedia: false
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
+
                 let variants = data.playVariants(cdnPreference: self.libraryStore.effectivePlaybackCDNPreference)
-                guard !variants.isEmpty else { return }
+                let supplementMilliseconds = self.formatMilliseconds(self.elapsedMilliseconds(since: supplementStart))
+                guard !variants.isEmpty else {
+                    PlayerMetricsLog.record(
+                        .qualitySupplement,
+                        metricsID: self.detail.bvid,
+                        title: self.detail.title,
+                        message: "empty \(supplementMilliseconds)"
+                    )
+                    return
+                }
+
                 let currentVariant = self.selectedPlayVariant
                 self.playVariants = self.mergedSupplementalVariants(
                     variants,
@@ -1048,6 +1067,12 @@ final class VideoDetailViewModel: ObservableObject {
                     self.selectedPlayVariant = preferredVariant
                     self.playbackFallbackMessage = nil
                     self.logSelectedPlayVariant(preferredVariant, availableVariants: self.playVariants, source: "supplementAutoUpgrade")
+                    PlayerMetricsLog.record(
+                        .qualitySupplement,
+                        metricsID: self.detail.bvid,
+                        title: self.detail.title,
+                        message: "success \(supplementMilliseconds) auto \(currentVariant?.quality ?? 0)->\(preferredVariant.quality) variants=\(variants.filter(\.isPlayable).count)"
+                    )
                     self.updateStablePlayerViewModelIfNeeded(
                         resumeTimeOverride: resumeTime,
                         shouldResumePlayback: shouldResumePlayback,
@@ -1056,8 +1081,20 @@ final class VideoDetailViewModel: ObservableObject {
                 } else if let currentVariant,
                           let matchingVariant = self.playVariants.first(where: { $0.id == currentVariant.id }) {
                     self.selectedPlayVariant = matchingVariant
+                    PlayerMetricsLog.record(
+                        .qualitySupplement,
+                        metricsID: self.detail.bvid,
+                        title: self.detail.title,
+                        message: "success \(supplementMilliseconds) keep q\(matchingVariant.quality) variants=\(variants.filter(\.isPlayable).count)"
+                    )
                 } else {
                     self.selectedPlayVariant = self.preferredDefaultVariant(in: self.playVariants)
+                    PlayerMetricsLog.record(
+                        .qualitySupplement,
+                        metricsID: self.detail.bvid,
+                        title: self.detail.title,
+                        message: "success \(supplementMilliseconds) selected q\(self.selectedPlayVariant?.quality ?? 0) variants=\(variants.filter(\.isPlayable).count)"
+                    )
                     self.updateStablePlayerViewModelIfNeeded()
                 }
                 if self.playbackAdaptationProfile.shouldWarmSupplementalVariants,
@@ -1066,6 +1103,12 @@ final class VideoDetailViewModel: ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                PlayerMetricsLog.record(
+                    .qualitySupplement,
+                    metricsID: self.detail.bvid,
+                    title: self.detail.title,
+                    message: "failed \(error.localizedDescription)"
+                )
             }
             self.playURLSupplementTask = nil
         }
@@ -2089,6 +2132,17 @@ final class VideoDetailViewModel: ObservableObject {
     private func elapsedMilliseconds(since startTime: CFTimeInterval?) -> Int? {
         guard let startTime else { return nil }
         return Int(((CACurrentMediaTime() - startTime) * 1000).rounded())
+    }
+
+    private func elapsedMilliseconds(since startTime: CFTimeInterval) -> Int {
+        Int(((CACurrentMediaTime() - startTime) * 1000).rounded())
+    }
+
+    private func formatMilliseconds(_ value: Int) -> String {
+        if value >= 1000 {
+            return String(format: "%.2fs", Double(value) / 1000)
+        }
+        return "\(value)ms"
     }
 }
 

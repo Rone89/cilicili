@@ -840,7 +840,7 @@ struct LocalHLSBridge: Sendable {
             return bridge
         }
 
-        let bridge = try await LocalHLSBridgeInstanceCache.shared.cachedOrBuild(for: cacheKey) {
+        let bridgeResult = try await LocalHLSBridgeInstanceCache.shared.cachedOrBuild(for: cacheKey) {
             try await build(
                 videoTrack: videoTrack,
                 audioTrack: audioTrack,
@@ -849,9 +849,15 @@ struct LocalHLSBridge: Sendable {
                 metricsID: metricsID
             )
         }
+        let bridge = bridgeResult.bridge
         bridge.updateMetricsID(metricsID)
+        let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeMakeReady cacheable=true elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public)"
+            "hlsBridgeMakeReady cacheable=true state=\(bridgeResult.state.rawValue, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
+        )
+        await recordManifestStage(
+            metricsID: metricsID,
+            "bridge=\(bridgeResult.state.rawValue) total=\(formatMilliseconds(elapsedMilliseconds))"
         )
         return bridge
     }
@@ -865,11 +871,16 @@ struct LocalHLSBridge: Sendable {
     ) async throws -> LocalHLSBridge {
         let start = CACurrentMediaTime()
         PlayerMetricsLog.logger.info("hlsBridgeBuildStart")
-        async let videoRenditionTask = makeRendition(for: videoTrack, durationHint: durationHint, headers: headers)
-        async let audioRenditionTask = makeRendition(for: audioTrack, durationHint: durationHint, headers: headers)
+        async let videoRenditionTask = makeRendition(for: videoTrack, durationHint: durationHint, headers: headers, metricsID: metricsID)
+        async let audioRenditionTask = makeRendition(for: audioTrack, durationHint: durationHint, headers: headers, metricsID: metricsID)
         let (videoRendition, audioRendition) = try await (videoRenditionTask, audioRenditionTask)
+        let renditionMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeRenditionsReady elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) videoRefs=\(videoRendition.references.count, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public)"
+            "hlsBridgeRenditionsReady elapsedMs=\(renditionMilliseconds, format: .fixed(precision: 1), privacy: .public) videoRefs=\(videoRendition.references.count, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public)"
+        )
+        await recordManifestStage(
+            metricsID: metricsID,
+            "renditions=\(formatMilliseconds(renditionMilliseconds)) videoRefs=\(videoRendition.references.count) audioRefs=\(audioRendition.references.count)"
         )
 
         let server = try LocalHLSProxyServer.make(headers: headers, metricsID: metricsID)
@@ -914,8 +925,13 @@ struct LocalHLSBridge: Sendable {
             audioRendition: audioRendition,
             headers: headers
         )
+        let serverMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeServerReady elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) dynamicRange=\(videoRendition.dynamicRange.rawValue, privacy: .public) codec=\(videoRendition.codec, privacy: .public) version=\(masterPlaylistVersion, privacy: .public) routes=\(routes.count, privacy: .public) supplemental=\((!supplementalCodecAttribute.isEmpty), privacy: .public)"
+            "hlsBridgeServerReady elapsedMs=\(serverMilliseconds, format: .fixed(precision: 1), privacy: .public) dynamicRange=\(videoRendition.dynamicRange.rawValue, privacy: .public) codec=\(videoRendition.codec, privacy: .public) version=\(masterPlaylistVersion, privacy: .public) routes=\(routes.count, privacy: .public) supplemental=\((!supplementalCodecAttribute.isEmpty), privacy: .public)"
+        )
+        await recordManifestStage(
+            metricsID: metricsID,
+            "server=\(formatMilliseconds(serverMilliseconds)) routes=\(routes.count) codec=\(videoRendition.codec)"
         )
 
         let originalMediaTimeOffset = [videoRendition.mediaTimeOffset, audioRendition.mediaTimeOffset]
@@ -944,6 +960,19 @@ struct LocalHLSBridge: Sendable {
         let delay = audioStart - videoStart
         guard delay.isFinite, abs(delay) <= 60 else { return 0 }
         return abs(delay) < 0.001 ? 0 : delay
+    }
+
+    private nonisolated static func recordManifestStage(metricsID: String?, _ message: String) async {
+        guard let metricsID, !metricsID.isEmpty else { return }
+        await PlayerMetricsLog.record(.manifestStage, metricsID: metricsID, message: message)
+    }
+
+    private nonisolated static func formatMilliseconds(_ value: Double) -> String {
+        let rounded = Int(value.rounded())
+        if rounded >= 1000 {
+            return String(format: "%.2fs", Double(rounded) / 1000)
+        }
+        return "\(rounded)ms"
     }
 
     private nonisolated static func warmStartupRanges(
@@ -1002,7 +1031,8 @@ struct LocalHLSBridge: Sendable {
     private nonisolated static func makeRendition(
         for track: HLSBridgeTrack,
         durationHint: TimeInterval?,
-        headers: [String: String]
+        headers: [String: String],
+        metricsID: String?
     ) async throws -> HLSRendition {
         guard let segmentBase = track.stream?.segmentBase,
               let initialization = segmentBase.initializationByteRange,
@@ -1016,7 +1046,7 @@ struct LocalHLSBridge: Sendable {
         PlayerMetricsLog.logger.info(
             "hlsBridgeRenditionStart media=\(mediaType, privacy: .public) quality=\(track.stream?.id ?? -1, privacy: .public) index=\(indexRange.start, privacy: .public)-\(indexRange.endInclusive, privacy: .public)"
         )
-        let rendition = try await HLSRenditionCache.shared.cachedOrBuild(
+        let renditionResult = try await HLSRenditionCache.shared.cachedOrBuild(
             for: renditionCacheKey(for: track, initialization: initialization, indexRange: indexRange)
         ) {
             let fetchStart = CACurrentMediaTime()
@@ -1052,8 +1082,14 @@ struct LocalHLSBridge: Sendable {
                 timelineOffsetOverride: resolvedTimelineOffset
             )
         }
+        let rendition = renditionResult.rendition
+        let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeRenditionReady media=\(mediaType, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public)"
+            "hlsBridgeRenditionReady media=\(mediaType, privacy: .public) state=\(renditionResult.state.rawValue, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
+        )
+        await recordManifestStage(
+            metricsID: metricsID,
+            "\(mediaType)=\(renditionResult.state.rawValue) \(formatMilliseconds(elapsedMilliseconds)) refs=\(rendition.references.count)"
         )
         return rendition
     }
@@ -1352,7 +1388,7 @@ struct LocalHLSBridge: Sendable {
         do {
             let sourceURLs = [track.url] + track.fallbackURLs
             async let initializationData: Data = fetchByteRange(initialization, from: sourceURLs, headers: headers, strategy: .fastFallback)
-            let rendition = try await HLSRenditionCache.shared.cachedOrBuild(
+            let renditionResult = try await HLSRenditionCache.shared.cachedOrBuild(
                 for: renditionCacheKey(for: track, initialization: initialization, indexRange: indexRange)
             ) {
                 async let indexDataTask: Data = fetchByteRange(indexRange, from: sourceURLs, headers: headers, strategy: .fastFallback)
@@ -1377,7 +1413,7 @@ struct LocalHLSBridge: Sendable {
                 )
             }
             _ = try await initializationData
-            if let firstReference = rendition.references.first {
+            if let firstReference = renditionResult.rendition.references.first {
                 _ = try? await fetchByteRange(
                     startupProbeRange(for: firstReference.range),
                     from: [track.url] + track.fallbackURLs,
@@ -1693,6 +1729,12 @@ private struct HLSRendition: Sendable {
 private actor HLSRenditionCache {
     static let shared = HLSRenditionCache()
 
+    enum State: String, Sendable {
+        case hit
+        case pending
+        case miss
+    }
+
     private let ttl: TimeInterval = 180
     private let maxCount = 24
     private var cache: [String: Entry] = [:]
@@ -1701,13 +1743,15 @@ private actor HLSRenditionCache {
     func cachedOrBuild(
         for key: String,
         builder: @escaping @Sendable () async throws -> HLSRendition
-    ) async throws -> HLSRendition {
+    ) async throws -> (rendition: HLSRendition, state: State) {
         trimExpired()
         if let entry = cache[key] {
-            return entry.rendition
+            cache[key] = Entry(rendition: entry.rendition, date: Date())
+            return (entry.rendition, .hit)
         }
         if let pendingBuild = pendingBuilds[key] {
-            return try await pendingBuild.value
+            let rendition = try await pendingBuild.value
+            return (rendition, .pending)
         }
 
         let pendingBuild = Task.detached(priority: .userInitiated) {
@@ -1719,7 +1763,7 @@ private actor HLSRenditionCache {
             pendingBuilds[key] = nil
             cache[key] = Entry(rendition: rendition, date: Date())
             trimIfNeeded()
-            return rendition
+            return (rendition, .miss)
         } catch {
             pendingBuilds[key] = nil
             throw error
@@ -1752,6 +1796,12 @@ private actor HLSRenditionCache {
 private actor LocalHLSBridgeInstanceCache {
     static let shared = LocalHLSBridgeInstanceCache()
 
+    enum State: String, Sendable {
+        case hit
+        case pending
+        case miss
+    }
+
     private let logger = Logger(subsystem: "cc.bili", category: "PlayerMetrics")
     private let ttl: TimeInterval = 90
     private let maxCount = 8
@@ -1761,16 +1811,17 @@ private actor LocalHLSBridgeInstanceCache {
     func cachedOrBuild(
         for key: String,
         builder: @escaping @Sendable () async throws -> LocalHLSBridge
-    ) async throws -> LocalHLSBridge {
+    ) async throws -> (bridge: LocalHLSBridge, state: State) {
         trimExpired()
         if let entry = cache[key] {
             cache[key] = Entry(bridge: entry.bridge, date: Date())
             logger.info("hlsBridgeCache hit")
-            return entry.bridge
+            return (entry.bridge, .hit)
         }
         if let pendingBuild = pendingBuilds[key] {
             logger.info("hlsBridgeCache pending")
-            return try await pendingBuild.value
+            let bridge = try await pendingBuild.value
+            return (bridge, .pending)
         }
 
         logger.info("hlsBridgeCache miss")
@@ -1783,7 +1834,7 @@ private actor LocalHLSBridgeInstanceCache {
             pendingBuilds[key] = nil
             cache[key] = Entry(bridge: bridge, date: Date())
             trimIfNeeded()
-            return bridge
+            return (bridge, .miss)
         } catch {
             pendingBuilds[key] = nil
             throw error

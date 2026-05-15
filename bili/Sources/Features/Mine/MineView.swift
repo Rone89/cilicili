@@ -886,6 +886,8 @@ private struct PlayerPerformanceLogView: View {
         case .buffering: return "hourglass"
         case .network: return "network"
         case .mediaCache: return "externaldrive.fill.badge.checkmark"
+        case .manifestStage: return "waveform.path.ecg.rectangle"
+        case .qualitySupplement: return "arrow.triangle.2.circlepath"
         case .failed: return "exclamationmark.triangle"
         }
     }
@@ -1023,11 +1025,25 @@ private struct PlayerPerformanceSessionRow: View {
                     .lineLimit(2)
             }
 
+            if let manifestStageMessage = session.manifestStageMessage {
+                Text(manifestStageMessage)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+
             if let prepareStageMessage = session.prepareStageMessage {
                 Text(prepareStageMessage)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+
+            if let qualitySupplementMessage = session.qualitySupplementMessage {
+                Text(qualitySupplementMessage)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
             }
 
             if let failureMessage = session.failureMessage {
