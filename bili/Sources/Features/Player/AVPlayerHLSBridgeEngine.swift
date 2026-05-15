@@ -979,7 +979,8 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String],
         waitBudget: TimeInterval
     ) async {
-        let warmupTask = Task.detached(priority: .userInitiated) {
+        // Fire-and-forget: startup warmup must never extend manifest generation.
+        Task.detached(priority: .userInitiated) {
             let strategy = bootstrapFetchStrategy()
             async let videoStartup: Void = warmRanges(
                 startupWarmRanges(
@@ -1009,16 +1010,7 @@ struct LocalHLSBridge: Sendable {
             )
         }
         guard waitBudget > 0 else { return }
-        let timeoutTask = Task(priority: .utility) {
-            try? await Task.sleep(nanoseconds: UInt64(waitBudget * 1_000_000_000))
-        }
-        _ = await withTaskGroup(of: Void.self, returning: Void.self) { group in
-            group.addTask { _ = await warmupTask.result }
-            group.addTask { _ = await timeoutTask.result }
-            _ = await group.next()
-            group.cancelAll()
-        }
-        timeoutTask.cancel()
+        try? await Task.sleep(nanoseconds: UInt64(waitBudget * 1_000_000_000))
     }
 
     private nonisolated static func startupWarmRanges(
