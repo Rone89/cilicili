@@ -14,6 +14,8 @@ actor VideoPreloadCenter {
     private let maxCachedPlayURLCount = 32
     private let cachedDetailTTL: TimeInterval = 180
     private let maxCachedDetailCount = 24
+    private let cachedRelatedTTL: TimeInterval = 8 * 60
+    private let maxCachedRelatedCount = 32
     private let mediaWarmupTTL: TimeInterval = 120
     private let maxMediaWarmupCount = 32
     private var defaultPreferredQuality: Int?
@@ -22,6 +24,7 @@ actor VideoPreloadCenter {
     private var taskPreferredQualities: [String: Int?] = [:]
     private var detailTasks: [String: Task<VideoItem, Error>] = [:]
     private var detailTaskUserInitiatedFlags: [String: Bool] = [:]
+    private var relatedTasks: [String: Task<[VideoItem], Error>] = [:]
     private var bvidPlayInfoTasks: [String: Task<PlayURLData?, Never>] = [:]
     private var bvidPlayInfoTaskPreferredQualities: [String: Int?] = [:]
     private var bvidPlayInfoCache: [String: CachedPlayURL] = [:]
@@ -29,6 +32,8 @@ actor VideoPreloadCenter {
     private var activeOrder: [String] = []
     private var playURLCache: [String: CachedPlayURL] = [:]
     private var detailCache: [String: CachedVideoDetail] = [:]
+    private var relatedCache: [String: CachedRelatedVideos] = [:]
+    private var recentRelatedCandidates: [VideoItem] = []
     private var mediaWarmupCache: [String: Date] = [:]
     private var focusedPlaybackBVID: String?
     private var focusedPlaybackUntil: Date?
@@ -697,6 +702,71 @@ actor VideoPreloadCenter {
         trimDetailCacheIfNeeded()
     }
 
+    func cachedRelatedVideos(for bvid: String, limit: Int = 5) -> [VideoItem]? {
+        trimExpiredRelated()
+        guard let cached = relatedCache[bvid]?.videos, !cached.isEmpty else { return nil }
+        return Array(cached.prefix(limit))
+    }
+
+    func fallbackRelatedVideos(excluding bvid: String, limit: Int = 5) -> [VideoItem] {
+        trimExpiredRelated()
+        let candidates = recentRelatedCandidates.filter { !$0.bvid.isEmpty && $0.bvid != bvid }
+        return Array(candidates.prefix(limit))
+    }
+
+    func relatedVideos(
+        for bvid: String,
+        api: BiliAPIClient,
+        priority: TaskPriority = .utility,
+        limit: Int = 5
+    ) async throws -> [VideoItem] {
+        if let cached = cachedRelatedVideos(for: bvid, limit: limit) {
+            return cached
+        }
+        return try await refreshRelatedVideos(
+            for: bvid,
+            api: api,
+            priority: priority,
+            limit: limit
+        )
+    }
+
+    func refreshRelatedVideos(
+        for bvid: String,
+        api: BiliAPIClient,
+        priority: TaskPriority = .utility,
+        limit: Int = 5
+    ) async throws -> [VideoItem] {
+        if let task = relatedTasks[bvid] {
+            return try await task.value
+        }
+
+        let task = Task(priority: priority) { [bvid, limit] in
+            do {
+                let videos = Array(try await api.fetchVideoRelated(bvid: bvid).prefix(limit))
+                guard !Task.isCancelled else {
+                    self.finishRelated(bvid)
+                    throw CancellationError()
+                }
+                self.storeRelatedVideos(videos, for: bvid)
+                self.finishRelated(bvid)
+                return videos
+            } catch {
+                self.finishRelated(bvid)
+                throw error
+            }
+        }
+        relatedTasks[bvid] = task
+        return try await task.value
+    }
+
+    func storeRelatedVideos(_ videos: [VideoItem], for bvid: String) {
+        guard !bvid.isEmpty, !videos.isEmpty else { return }
+        relatedCache[bvid] = CachedRelatedVideos(videos: videos, date: Date())
+        rememberRelatedCandidates(videos, excluding: bvid)
+        trimRelatedCacheIfNeeded()
+    }
+
     func cachedPlayURL(
         for bvid: String,
         cid: Int,
@@ -1244,6 +1314,40 @@ actor VideoPreloadCenter {
         detailCache = detailCache.filter { keptKeys.contains($0.key) }
     }
 
+    private func finishRelated(_ bvid: String) {
+        relatedTasks[bvid] = nil
+    }
+
+    private func rememberRelatedCandidates(_ videos: [VideoItem], excluding bvid: String) {
+        var merged = videos.filter { !$0.bvid.isEmpty && $0.bvid != bvid } + recentRelatedCandidates
+        var seen = Set<String>()
+        merged = merged.filter { video in
+            seen.insert(video.bvid).inserted
+        }
+        recentRelatedCandidates = Array(merged.prefix(24))
+    }
+
+    private func trimExpiredRelated() {
+        let expiry = Date().addingTimeInterval(-cachedRelatedTTL)
+        relatedCache = relatedCache.filter { $0.value.date >= expiry }
+        let cachedBVIDs = Set(relatedCache.values.flatMap { $0.videos.map(\.bvid) })
+        recentRelatedCandidates = recentRelatedCandidates.filter { cachedBVIDs.contains($0.bvid) }
+    }
+
+    private func trimRelatedCacheIfNeeded() {
+        trimExpiredRelated()
+        guard relatedCache.count > maxCachedRelatedCount else { return }
+        let keptKeys = Set(
+            relatedCache
+                .sorted { $0.value.date > $1.value.date }
+                .prefix(maxCachedRelatedCount)
+                .map(\.key)
+        )
+        relatedCache = relatedCache.filter { keptKeys.contains($0.key) }
+        let cachedBVIDs = Set(relatedCache.values.flatMap { $0.videos.map(\.bvid) })
+        recentRelatedCandidates = recentRelatedCandidates.filter { cachedBVIDs.contains($0.bvid) }
+    }
+
     private func trimExpiredMediaWarmups() {
         let expiry = Date().addingTimeInterval(-mediaWarmupTTL)
         mediaWarmupCache = mediaWarmupCache.filter { $0.value >= expiry }
@@ -1263,6 +1367,11 @@ actor VideoPreloadCenter {
 
     private struct CachedVideoDetail {
         let detail: VideoItem
+        let date: Date
+    }
+
+    private struct CachedRelatedVideos {
+        let videos: [VideoItem]
         let date: Date
     }
 

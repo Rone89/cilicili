@@ -57,6 +57,7 @@ final class VideoDetailViewModel: ObservableObject {
     private var startupPlayURLTask: Task<PlayURLData, Error>?
     private var startupPlayURLTaskKey: String?
     private var relatedLoadingTask: Task<Void, Never>?
+    private var relatedRefreshTask: Task<Void, Never>?
     private var relatedPreloadTask: Task<Void, Never>?
     private var filterCancellable: AnyCancellable?
     private var sponsorBlockCancellable: AnyCancellable?
@@ -145,6 +146,7 @@ final class VideoDetailViewModel: ObservableObject {
         commentsLoadingToken = nil
         startupPlayURLTask?.cancel()
         relatedLoadingTask?.cancel()
+        relatedRefreshTask?.cancel()
         relatedPreloadTask?.cancel()
         sponsorBlockTask?.cancel()
         danmakuTask?.cancel()
@@ -252,11 +254,15 @@ final class VideoDetailViewModel: ObservableObject {
         playVariantSwitchToken = nil
         relatedPreloadTask?.cancel()
         relatedPreloadTask = nil
+        relatedRefreshTask?.cancel()
+        relatedRefreshTask = nil
     }
 
     private func cancelRelatedLoad() {
         relatedLoadingTask?.cancel()
         relatedLoadingTask = nil
+        relatedRefreshTask?.cancel()
+        relatedRefreshTask = nil
         if related.isEmpty, relatedState.isLoading {
             relatedState = .idle
         }
@@ -369,10 +375,12 @@ final class VideoDetailViewModel: ObservableObject {
     func retryRelated() async {
         relatedLoadingTask?.cancel()
         relatedLoadingTask = nil
+        relatedRefreshTask?.cancel()
+        relatedRefreshTask = nil
         related = []
         relatedState = .idle
         lastRelatedLoadTimedOut = false
-        await loadRelated()
+        await loadRelated(forceRefresh: true)
     }
 
     func replies(for comment: Comment) -> [Comment] {
@@ -1376,10 +1384,25 @@ final class VideoDetailViewModel: ObservableObject {
         }
     }
 
-    private func loadRelated() async {
-        guard related.isEmpty, !relatedState.isLoading else { return }
+    private func loadRelated(forceRefresh: Bool = false) async {
+        guard !relatedState.isLoading else { return }
+        guard related.isEmpty || forceRefresh else {
+            await refreshRelatedInBackgroundIfNeeded()
+            return
+        }
         let bvid = detail.bvid
         let timeout = relatedLoadTimeoutNanoseconds
+        if !forceRefresh,
+           let cached = await VideoPreloadCenter.shared.cachedRelatedVideos(for: bvid) {
+            related = cached
+            relatedState = .loaded
+            relatedElapsedMilliseconds = 0
+            lastRelatedLoadTimedOut = false
+            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: cached)
+            await refreshRelatedInBackgroundIfNeeded()
+            return
+        }
+
         relatedState = .loading
         lastRelatedLoadTimedOut = false
         relatedLoadStartTime = CACurrentMediaTime()
@@ -1390,34 +1413,130 @@ final class VideoDetailViewModel: ObservableObject {
             }
         }
         do {
-            let videos: [VideoItem] = try await withThrowingTaskGroup(of: [VideoItem].self) { group -> [VideoItem] in
-                group.addTask(priority: .utility) { [api, bvid] in
-                    Array(try await api.fetchVideoRelated(bvid: bvid).prefix(5))
-                }
-                group.addTask(priority: .utility) { () -> [VideoItem] in
-                    try await Task.sleep(nanoseconds: timeout)
-                    throw VideoDetailLoadTimeoutError.related
-                }
-                guard let result = try await group.next() else { return [] }
-                group.cancelAll()
-                return result
-            }
+            let videos = try await fetchRelatedWithTimeout(
+                bvid: bvid,
+                timeout: timeout,
+                forceRefresh: forceRefresh
+            )
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
-            related = videos
+            applyLoadedRelatedVideos(videos)
             relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
-            relatedState = .loaded
-            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: videos)
         } catch VideoDetailLoadTimeoutError.related {
             guard !Task.isCancelled else { return }
-            related = []
+            if await applyRelatedFallbackIfAvailable(reason: "相关推荐加载超时") {
+                relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
+                return
+            }
             lastRelatedLoadTimedOut = true
             relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
             relatedState = .failed("相关推荐加载超时")
         } catch {
             guard !Task.isCancelled else { return }
-            related = []
+            if await applyRelatedFallbackIfAvailable(reason: error.localizedDescription) {
+                relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
+                return
+            }
             relatedElapsedMilliseconds = elapsedMilliseconds(since: relatedLoadStartTime)
             relatedState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func refreshRelatedInBackgroundIfNeeded() async {
+        guard relatedRefreshTask == nil, !isPlaybackInvalidatedForNavigation else { return }
+        let bvid = detail.bvid
+        relatedRefreshTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            defer {
+                self.relatedRefreshTask = nil
+            }
+            do {
+                let videos = try await VideoPreloadCenter.shared.refreshRelatedVideos(
+                    for: bvid,
+                    api: self.api,
+                    priority: .utility
+                )
+                guard !Task.isCancelled,
+                      !self.isPlaybackInvalidatedForNavigation,
+                      self.detail.bvid == bvid
+                else { return }
+                if !videos.isEmpty {
+                    self.applyLoadedRelatedVideos(videos)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                if self.related.isEmpty {
+                    _ = await self.applyRelatedFallbackIfAvailable(reason: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func fetchRelatedWithTimeout(
+        bvid: String,
+        timeout: UInt64,
+        forceRefresh: Bool = false
+    ) async throws -> [VideoItem] {
+        try await withThrowingTaskGroup(of: [VideoItem].self) { group -> [VideoItem] in
+            group.addTask(priority: .utility) { [api] in
+                if forceRefresh {
+                    return try await VideoPreloadCenter.shared.refreshRelatedVideos(
+                        for: bvid,
+                        api: api,
+                        priority: .utility
+                    )
+                }
+                return try await VideoPreloadCenter.shared.relatedVideos(
+                    for: bvid,
+                    api: api,
+                    priority: .utility
+                )
+            }
+            group.addTask(priority: .utility) { () -> [VideoItem] in
+                try await Task.sleep(nanoseconds: timeout)
+                throw VideoDetailLoadTimeoutError.related
+            }
+            guard let result = try await group.next() else { return [] }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func applyLoadedRelatedVideos(_ videos: [VideoItem]) {
+        let filtered = Array(videos.filter { $0.bvid != detail.bvid }.prefix(5))
+        guard !filtered.isEmpty || related.isEmpty else { return }
+        related = filtered
+        lastRelatedLoadTimedOut = false
+        relatedState = filtered.isEmpty ? .failed("暂无相关推荐") : .loaded
+        if !filtered.isEmpty {
+            prefetchRelatedArtwork(filtered)
+            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: filtered)
+        }
+    }
+
+    @discardableResult
+    private func applyRelatedFallbackIfAvailable(reason: String) async -> Bool {
+        let fallback = await VideoPreloadCenter.shared.fallbackRelatedVideos(excluding: detail.bvid)
+        guard !fallback.isEmpty else { return false }
+        related = fallback
+        lastRelatedLoadTimedOut = reason.localizedCaseInsensitiveContains("超时")
+        relatedState = .loaded
+        prefetchRelatedArtwork(fallback)
+        scheduleRelatedPlaybackPreloadAfterFirstFrame(for: fallback)
+        return true
+    }
+
+    private func prefetchRelatedArtwork(_ videos: [VideoItem]) {
+        let urls = videos.prefix(5).compactMap { video -> URL? in
+            guard let pic = video.pic else { return nil }
+            return URL(string: pic.biliCoverThumbnailURL(width: 480, height: 270))
+        }
+        guard !urls.isEmpty else { return }
+        Task(priority: .utility) {
+            await RemoteImageCache.shared.prefetch(
+                urls,
+                targetPixelSize: 540,
+                maximumConcurrentLoads: 2
+            )
         }
     }
 
