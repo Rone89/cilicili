@@ -936,8 +936,21 @@ final class VideoDetailViewModel: ObservableObject {
         let preferredVariant = preferredDefaultVariant(in: variants)
         selectedPlayVariant = preferredVariant
         logSelectedPlayVariant(preferredVariant, availableVariants: variants, source: source)
-        warmPlayVariantForStartupIfNeeded(preferredVariant, cid: cid, page: page)
-        updateStablePlayerViewModelIfNeeded()
+        if shouldAwaitStartupWarmup(for: preferredVariant, source: source), let cid {
+            let expectedIdentity = preferredVariant?.id
+            Task(priority: .userInitiated) { [weak self] in
+                guard let self else { return }
+                await self.warmAndActivateStartupVariant(
+                    preferredVariant,
+                    cid: cid,
+                    page: page,
+                    expectedIdentity: expectedIdentity
+                )
+            }
+        } else {
+            warmPlayVariantForStartupIfNeeded(preferredVariant, cid: cid, page: page)
+            updateStablePlayerViewModelIfNeeded()
+        }
         playURLState = variants.isEmpty ? .failed("播放接口没有返回清晰度或播放地址") : .loaded
         if schedulesSupplementalLoad,
            shouldSupplementPlayQualities(for: variants),
@@ -949,6 +962,40 @@ final class VideoDetailViewModel: ObservableObject {
                 startDelay: 1.2
             )
         }
+    }
+
+    private func shouldAwaitStartupWarmup(for variant: PlayVariant?, source: String) -> Bool {
+        guard let variant,
+              !variant.isProgressiveFastStart,
+              variant.videoStream != nil,
+              source == "network" || source == "pendingCache" || source == "detailWarmCache"
+        else { return false }
+        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else { return false }
+        return playbackAdaptationProfile.shouldWarmSupplementalVariants
+            || libraryStore.preferredVideoQuality != nil
+    }
+
+    private func warmAndActivateStartupVariant(
+        _ variant: PlayVariant?,
+        cid: Int,
+        page: Int?,
+        expectedIdentity: String?
+    ) async {
+        if let variant {
+            _ = await VideoPreloadCenter.shared.warmVariantAndWaitCached(
+                variant,
+                bvid: detail.bvid,
+                cid: cid,
+                page: page,
+                delay: 0,
+                timeout: 0.22
+            )
+        }
+        guard !isPlaybackInvalidatedForNavigation,
+              selectedCID == cid,
+              selectedPlayVariant?.id == expectedIdentity
+        else { return }
+        updateStablePlayerViewModelIfNeeded()
     }
 
     private func shouldSupplementPlayQualities(for variants: [PlayVariant]) -> Bool {
