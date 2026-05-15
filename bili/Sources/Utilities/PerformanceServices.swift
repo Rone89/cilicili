@@ -966,6 +966,66 @@ actor VideoPreloadCenter {
         return didWarm
     }
 
+    @discardableResult
+    func warmVariantAndWaitCached(
+        _ variant: PlayVariant,
+        bvid: String,
+        cid: Int,
+        page: Int?,
+        delay: TimeInterval = 0,
+        timeout: TimeInterval = 1.2
+    ) async -> Bool {
+        guard let source = PlayableMediaWarmupSource(variant: variant) else { return false }
+        let key = [
+            cacheKey(bvid: bvid, cid: cid, page: page),
+            "variant",
+            String(variant.quality),
+            source.identity
+        ].joined(separator: "|")
+
+        trimExpiredMediaWarmups()
+        if mediaWarmupCache[key] != nil {
+            return true
+        }
+        if let existingTask = mediaWarmupTasks[key] {
+            let timeoutTask = Task(priority: .utility) {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+            let didWarm = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+                group.addTask {
+                    _ = await existingTask.value
+                    return await self.mediaWarmupCache[key] != nil
+                }
+                group.addTask { await timeoutTask.value }
+                let result = await group.next() ?? false
+                group.cancelAll()
+                timeoutTask.cancel()
+                return result
+            }
+            return didWarm
+        }
+
+        scheduleMediaWarmup(source, bvid: bvid, key: key, delay: delay)
+        guard let scheduledTask = mediaWarmupTasks[key] else { return false }
+        let timeoutTask = Task(priority: .utility) {
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            return false
+        }
+        let didWarm = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+            group.addTask {
+                _ = await scheduledTask.value
+                return await self.mediaWarmupCache[key] != nil
+            }
+            group.addTask { await timeoutTask.value }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            timeoutTask.cancel()
+            return result
+        }
+        return didWarm
+    }
+
     func warmVariant(
         _ variant: PlayVariant,
         bvid: String,
