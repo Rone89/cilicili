@@ -803,7 +803,6 @@ private struct PreparedPlayerItem {
 
 struct LocalHLSBridge: Sendable {
     private nonisolated static let timelineProbeLength: Int64 = 128 * 1024
-    private nonisolated static let maxCombinedBootstrapRangeLength: Int64 = 512 * 1024
 
     let masterPlaylistURL: URL
     let mediaTimeOffset: TimeInterval
@@ -981,17 +980,18 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String]
     ) {
         Task.detached(priority: .userInitiated) {
+            let strategy = bootstrapFetchStrategy()
             async let videoStartup: Void = warmRanges(
-                videoRendition.references.prefix(2).map(\.range),
+                videoRendition.references.prefix(strategy.isFastFallback ? 2 : 1).map(\.range),
                 from: [videoRendition.sourceURL] + videoRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: .fastFallback
+                strategy: strategy
             )
             async let audioStartup: Void = warmRanges(
                 audioRendition.references.prefix(1).map(\.range),
                 from: [audioRendition.sourceURL] + audioRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: .fastFallback
+                strategy: strategy
             )
             _ = await (videoStartup, audioStartup)
             PlayerMetricsLog.logger.info(
@@ -1051,14 +1051,17 @@ struct LocalHLSBridge: Sendable {
         ) {
             let fetchStart = CACurrentMediaTime()
             let sourceURLs = [track.url] + track.fallbackURLs
-            let (indexData, initializationData, fetchMode) = try await fetchBootstrapRanges(
-                initialization: initialization,
+            let (indexData, fetchMode) = try await fetchIndexRange(
                 indexRange: indexRange,
                 from: sourceURLs,
                 headers: headers
             )
+            await recordManifestStage(
+                metricsID: metricsID,
+                "\(mediaType)Boot=\(fetchMode) \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)))"
+            )
             PlayerMetricsLog.logger.info(
-                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(fetchMode, privacy: .public) bytes=\(indexData.count, privacy: .public) initBytes=\(initializationData.count, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
+                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(fetchMode, privacy: .public) bytes=\(indexData.count, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
             )
             let parseStart = CACurrentMediaTime()
             let references = try SIDXParser.parseReferences(from: indexData, sidxStartOffset: indexRange.start)
@@ -1077,7 +1080,7 @@ struct LocalHLSBridge: Sendable {
             return makeRendition(
                 for: track,
                 initialization: initialization,
-                initializationData: initializationData,
+                initializationData: nil,
                 references: references,
                 durationHint: durationHint,
                 timelineOffsetOverride: resolvedTimelineOffset
@@ -1095,65 +1098,23 @@ struct LocalHLSBridge: Sendable {
         return rendition
     }
 
-    private nonisolated static func fetchBootstrapRanges(
-        initialization: HTTPByteRange,
+    private nonisolated static func fetchIndexRange(
         indexRange: HTTPByteRange,
         from urls: [URL],
         headers: [String: String]
-    ) async throws -> (indexData: Data, initializationData: Data, mode: String) {
-        if let combinedRange = combinedBootstrapRange(initialization: initialization, indexRange: indexRange) {
-            do {
-                let combinedData = try await fetchByteRange(
-                    combinedRange,
-                    from: urls,
-                    headers: headers,
-                    strategy: .fastFallback
-                )
-                let initializationData = try sliceData(combinedData, sourceRange: combinedRange, subrange: initialization)
-                let indexData = try sliceData(combinedData, sourceRange: combinedRange, subrange: indexRange)
-                return (indexData, initializationData, "combined")
-            } catch {
-                PlayerMetricsLog.logger.info(
-                    "hlsBridgeBootstrapCombinedFallback range=\(combinedRange.start, privacy: .public)-\(combinedRange.endInclusive, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-
-        async let indexDataTask: Data = fetchByteRange(indexRange, from: urls, headers: headers, strategy: .fastFallback)
-        async let initializationDataTask: Data = fetchByteRange(initialization, from: urls, headers: headers, strategy: .fastFallback)
-        let (indexData, initializationData) = try await (indexDataTask, initializationDataTask)
-        return (indexData, initializationData, "split")
+    ) async throws -> (indexData: Data, mode: String) {
+        let strategy = bootstrapFetchStrategy()
+        let indexData = try await fetchByteRange(
+            indexRange,
+            from: urls,
+            headers: headers,
+            strategy: strategy
+        )
+        return (indexData, strategy.logLabel)
     }
 
-    private nonisolated static func combinedBootstrapRange(
-        initialization: HTTPByteRange,
-        indexRange: HTTPByteRange
-    ) -> HTTPByteRange? {
-        let lowerBound = min(initialization.start, indexRange.start)
-        let upperBound = max(initialization.endInclusive, indexRange.endInclusive)
-        let combined = HTTPByteRange(start: lowerBound, endInclusive: upperBound)
-        guard combined.length <= maxCombinedBootstrapRangeLength else { return nil }
-        let rangesTouchOrOverlap = initialization.endInclusive + 1 >= indexRange.start
-            && indexRange.endInclusive + 1 >= initialization.start
-        return rangesTouchOrOverlap ? combined : nil
-    }
-
-    private nonisolated static func sliceData(
-        _ data: Data,
-        sourceRange: HTTPByteRange,
-        subrange: HTTPByteRange
-    ) throws -> Data {
-        let lowerOffset = subrange.start - sourceRange.start
-        let upperOffset = subrange.endInclusive - sourceRange.start
-        guard lowerOffset >= 0,
-              upperOffset >= lowerOffset,
-              let lowerBound = Int(exactly: lowerOffset),
-              let upperBoundInclusive = Int(exactly: upperOffset),
-              upperBoundInclusive < data.count
-        else {
-            throw PlayerEngineError.unsupportedMedia
-        }
-        return data.subdata(in: lowerBound..<(upperBoundInclusive + 1))
+    private nonisolated static func bootstrapFetchStrategy() -> HLSByteRangeFetchStrategy {
+        PlaybackEnvironment.current.shouldPreferConservativePlayback ? .sequential : .fastFallback
     }
 
     fileprivate nonisolated static func fetchByteRange(
@@ -1388,13 +1349,14 @@ struct LocalHLSBridge: Sendable {
 
         do {
             let sourceURLs = [track.url] + track.fallbackURLs
-            async let initializationData: Data = fetchByteRange(initialization, from: sourceURLs, headers: headers, strategy: .fastFallback)
             let renditionResult = try await HLSRenditionCache.shared.cachedOrBuild(
                 for: renditionCacheKey(for: track, initialization: initialization, indexRange: indexRange)
             ) {
-                async let indexDataTask: Data = fetchByteRange(indexRange, from: sourceURLs, headers: headers, strategy: .fastFallback)
-                async let initializationDataTask: Data = fetchByteRange(initialization, from: sourceURLs, headers: headers, strategy: .fastFallback)
-                let (indexData, initializationData) = try await (indexDataTask, initializationDataTask)
+                let (indexData, _) = try await fetchIndexRange(
+                    indexRange: indexRange,
+                    from: sourceURLs,
+                    headers: headers
+                )
                 let references = try SIDXParser.parseReferences(from: indexData, sidxStartOffset: indexRange.start)
                 guard !references.isEmpty else {
                     throw PlayerEngineError.unsupportedMedia
@@ -1408,13 +1370,18 @@ struct LocalHLSBridge: Sendable {
                 return makeRendition(
                     for: track,
                     initialization: initialization,
-                    initializationData: initializationData,
+                    initializationData: nil,
                     references: references,
                     durationHint: nil,
                     timelineOffsetOverride: resolvedTimelineOffset
                 )
             }
-            _ = try await initializationData
+            await warmRange(
+                initialization,
+                from: sourceURLs,
+                headers: headers,
+                strategy: bootstrapFetchStrategy()
+            )
             if let firstReference = renditionResult.rendition.references.first {
                 _ = try? await fetchByteRange(
                     startupProbeRange(for: firstReference.range),
@@ -2731,6 +2698,15 @@ fileprivate enum HLSByteRangeFetchStrategy: Sendable {
             return false
         }
     }
+
+    nonisolated var logLabel: String {
+        switch self {
+        case .sequential:
+            return "sequential"
+        case .fastFallback:
+            return "fastFallback"
+        }
+    }
 }
 
 private extension VideoRangeExternalFetchReservation {
@@ -3302,6 +3278,9 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
     }
 
     nonisolated private func startupFetchStrategy(for path: String) -> HLSByteRangeFetchStrategy {
+        if PlaybackEnvironment.current.shouldPreferConservativePlayback {
+            return .sequential
+        }
         if path.hasSuffix("/init.mp4") {
             return .fastFallback
         }

@@ -480,7 +480,7 @@ final class PlayerPerformanceStore: ObservableObject {
             session.manifestStageMessage = Self.appendDiagnosticMessage(
                 session.manifestStageMessage,
                 event.message,
-                maxParts: 4
+                maxParts: 6
             )
         case .qualitySupplement:
             session.qualitySupplementMessage = event.message ?? session.qualitySupplementMessage
