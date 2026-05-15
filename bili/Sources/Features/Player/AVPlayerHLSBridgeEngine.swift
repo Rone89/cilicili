@@ -981,16 +981,20 @@ struct LocalHLSBridge: Sendable {
     ) async {
         // Fire-and-forget: startup warmup must never extend manifest generation.
         Task.detached(priority: .userInitiated) {
-            let strategy = bootstrapFetchStrategy()
+            let sourceURLCount = max(
+                ([videoRendition.sourceURL] + videoRendition.fallbackSourceURLs).removingDuplicates().count,
+                ([audioRendition.sourceURL] + audioRendition.fallbackSourceURLs).removingDuplicates().count
+            )
+            let strategy = bootstrapFetchStrategy(urlCount: sourceURLCount)
             async let videoStartup: Void = warmRanges(
                 startupWarmRanges(
                     initialization: videoRendition.initialization,
                     references: videoRendition.references,
-                    includeExtraVideoSegment: strategy.isFastFallback
+                    includeExtraVideoSegment: strategy.fetchStrategy.isFastFallback
                 ),
                 from: [videoRendition.sourceURL] + videoRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: strategy,
+                strategy: strategy.fetchStrategy,
                 delayStepNanoseconds: 45_000_000
             )
             async let audioStartup: Void = warmRanges(
@@ -1001,7 +1005,7 @@ struct LocalHLSBridge: Sendable {
                 ),
                 from: [audioRendition.sourceURL] + audioRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: strategy,
+                strategy: strategy.fetchStrategy,
                 delayStepNanoseconds: 45_000_000
             )
             _ = await (videoStartup, audioStartup)
@@ -1466,18 +1470,19 @@ struct LocalHLSBridge: Sendable {
                     timelineOffsetOverride: resolvedTimelineOffset
                 )
             }
+            let strategy = bootstrapFetchStrategy(urlCount: sourceURLs.count)
             await warmRange(
                 initialization,
                 from: sourceURLs,
                 headers: headers,
-                strategy: bootstrapFetchStrategy()
+                strategy: strategy.fetchStrategy
             )
             if let firstReference = renditionResult.rendition.references.first {
                 _ = try? await fetchByteRange(
                     firstReference.range,
                     from: [track.url] + track.fallbackURLs,
                     headers: headers,
-                    strategy: bootstrapFetchStrategy()
+                    policy: strategy
                 )
             }
             return true
