@@ -643,12 +643,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
         hasAttemptedEngineFallback = true
         PlayerMetricsLog.logger.info(
-            "playerEngineFallback id=\(metricsID, privacy: .public) from=pillarbox to=avplayer error=\(error.localizedDescription, privacy: .public)"
+            "playerEngineFallback id=\(self.metricsID, privacy: .public) from=pillarbox to=avplayer error=\(error.localizedDescription, privacy: .public)"
         )
         PlayerMetricsLog.record(
             .mediaPrepared,
-            metricsID: metricsID,
-            title: title,
+            metricsID: self.metricsID,
+            title: self.title,
             message: "fallback avplayer after pillarbox failure"
         )
 
@@ -660,13 +660,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             try await engine.prepare(source: streamSource)
             guard !Task.isCancelled, !isTerminated else { return true }
             PlayerMetricsLog.logger.info(
-                "playerEngineFallbackPrepared id=\(metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
+                "playerEngineFallbackPrepared id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
             )
             PlayerMetricsLog.record(
                 .prepareReturned,
-                metricsID: metricsID,
-                title: title,
-                message: "\(elapsedMessage()) fallback=avplayer"
+                metricsID: self.metricsID,
+                title: self.title,
+                message: "\(self.elapsedMessage()) fallback=avplayer"
             )
             prepareElapsedMilliseconds = elapsedMilliseconds()
             mediaPreparationTask = nil
@@ -687,7 +687,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return true
         } catch {
             PlayerMetricsLog.logger.error(
-                "playerEngineFallbackFailed id=\(metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "playerEngineFallbackFailed id=\(self.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
             return false
         }
