@@ -917,10 +917,11 @@ struct LocalHLSBridge: Sendable {
         audioRendition.registerRoutes(routePrefix: "audio", into: &routes)
         server.updateRoutes(routes)
         try await server.start()
-        warmStartupRanges(
+        await warmStartupRanges(
             videoRendition: videoRendition,
             audioRendition: audioRendition,
-            headers: headers
+            headers: headers,
+            waitBudget: PlaybackEnvironment.current.startupWarmupPrepareBudget
         )
         let serverMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
@@ -975,40 +976,73 @@ struct LocalHLSBridge: Sendable {
     private nonisolated static func warmStartupRanges(
         videoRendition: HLSRendition,
         audioRendition: HLSRendition,
-        headers: [String: String]
-    ) {
-        Task.detached(priority: .userInitiated) {
+        headers: [String: String],
+        waitBudget: TimeInterval
+    ) async {
+        let warmupTask = Task.detached(priority: .userInitiated) {
             let strategy = bootstrapFetchStrategy()
             async let videoStartup: Void = warmRanges(
-                videoRendition.references.prefix(strategy.isFastFallback ? 2 : 1).map(\.range),
+                startupWarmRanges(
+                    initialization: videoRendition.initialization,
+                    references: videoRendition.references,
+                    includeExtraVideoSegment: strategy.isFastFallback
+                ),
                 from: [videoRendition.sourceURL] + videoRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: strategy
+                strategy: strategy,
+                delayStepNanoseconds: 45_000_000
             )
             async let audioStartup: Void = warmRanges(
-                audioRendition.references.prefix(1).map(\.range),
+                startupWarmRanges(
+                    initialization: audioRendition.initialization,
+                    references: audioRendition.references,
+                    includeExtraVideoSegment: false
+                ),
                 from: [audioRendition.sourceURL] + audioRendition.fallbackSourceURLs,
                 headers: headers,
-                strategy: strategy
+                strategy: strategy,
+                delayStepNanoseconds: 45_000_000
             )
             _ = await (videoStartup, audioStartup)
             PlayerMetricsLog.logger.info(
                 "hlsBridgeWarmupStartup videoRefs=\(videoRendition.references.count, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public)"
             )
         }
+        guard waitBudget > 0 else { return }
+        let timeoutTask = Task(priority: .utility) {
+            try? await Task.sleep(nanoseconds: UInt64(waitBudget * 1_000_000_000))
+        }
+        _ = await withTaskGroup(of: Void.self, returning: Void.self) { group in
+            group.addTask { _ = await warmupTask.result }
+            group.addTask { _ = await timeoutTask.result }
+            _ = await group.next()
+            group.cancelAll()
+        }
+        timeoutTask.cancel()
+    }
+
+    private nonisolated static func startupWarmRanges(
+        initialization: HTTPByteRange,
+        references: [SIDXParser.Reference],
+        includeExtraVideoSegment: Bool
+    ) -> [HTTPByteRange] {
+        var ranges = [initialization]
+        ranges += references.prefix(includeExtraVideoSegment ? 2 : 1).map(\.range)
+        return ranges
     }
 
     private nonisolated static func warmRanges(
         _ ranges: [HTTPByteRange],
         from urls: [URL],
         headers: [String: String],
-        strategy: HLSByteRangeFetchStrategy
+        strategy: HLSByteRangeFetchStrategy,
+        delayStepNanoseconds: UInt64 = 180_000_000
     ) async {
         await withTaskGroup(of: Void.self) { group in
             for (index, range) in ranges.enumerated() {
                 group.addTask {
                     if index > 0 {
-                        try? await Task.sleep(nanoseconds: UInt64(index) * 180_000_000)
+                        try? await Task.sleep(nanoseconds: UInt64(index) * delayStepNanoseconds)
                     }
                     await warmRange(range, from: urls, headers: headers, strategy: strategy)
                 }

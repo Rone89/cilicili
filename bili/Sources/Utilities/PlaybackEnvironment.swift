@@ -68,6 +68,17 @@ struct PlaybackEnvironment: Sendable {
             return 90_000_000
         }
     }
+
+    nonisolated var startupWarmupPrepareBudget: TimeInterval {
+        switch networkClass {
+        case .wifi:
+            return 0.14
+        case .unknown:
+            return 0.11
+        case .cellular, .constrained:
+            return 0.08
+        }
+    }
 }
 
 final class NetworkPathSnapshot: @unchecked Sendable {
