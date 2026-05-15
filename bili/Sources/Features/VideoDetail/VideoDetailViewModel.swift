@@ -1290,7 +1290,7 @@ final class VideoDetailViewModel: ObservableObject {
         if let preferredQuality = libraryStore.preferredVideoQuality {
             return preferredQuality
         }
-        PlayerPerformanceStore.shared.adaptivePreferredQuality(
+        return PlayerPerformanceStore.shared.adaptivePreferredQuality(
             for: libraryStore.preferredVideoQuality,
             metricsID: detail.bvid,
             isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
