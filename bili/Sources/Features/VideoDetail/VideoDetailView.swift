@@ -2027,10 +2027,27 @@ private struct PlayerPerformanceOverlay: View {
                 }
 
                 if let prepareStageMessage = session.prepareStageMessage {
-                    Text(prepareStageMessage)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Prepare stages")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 6),
+                                GridItem(.flexible(), spacing: 6)
+                            ],
+                            alignment: .leading,
+                            spacing: 4
+                        ) {
+                            ForEach(prepareStageMetrics(from: prepareStageMessage), id: \.name) { stage in
+                                prepareStageMetric(stage)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
 
                 HStack(spacing: 8) {
@@ -2057,7 +2074,7 @@ private struct PlayerPerformanceOverlay: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .frame(width: 178, alignment: .leading)
+        .frame(width: 226, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -2083,6 +2100,40 @@ private struct PlayerPerformanceOverlay: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func prepareStageMetric(_ stage: PrepareStageMetric) -> some View {
+        HStack(spacing: 3) {
+            Text(stage.name)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Spacer(minLength: 2)
+
+            Text(stage.value)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(metricColor(stage.milliseconds))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+
+    private func prepareStageMetrics(from message: String) -> [PrepareStageMetric] {
+        let metrics = message
+            .split(separator: " ")
+            .compactMap { token -> PrepareStageMetric? in
+                let parts = token.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { return nil }
+                return PrepareStageMetric(
+                    name: String(parts[0]),
+                    value: String(parts[1])
+                )
+            }
+        return metrics.isEmpty
+            ? [PrepareStageMetric(name: "prepare", value: message)]
+            : metrics
+    }
+
     private func millisecondsText(_ value: Int?) -> String {
         guard let value else { return "-" }
         if value >= 1000 {
@@ -2100,6 +2151,21 @@ private struct PlayerPerformanceOverlay: View {
             return .orange
         }
         return .green
+    }
+}
+
+private struct PrepareStageMetric: Hashable {
+    let name: String
+    let value: String
+
+    var milliseconds: Int? {
+        let numericText = value
+            .replacingOccurrences(of: "ms", with: "")
+            .replacingOccurrences(of: "s", with: "")
+        guard let number = Double(numericText) else { return nil }
+        return value.hasSuffix("s")
+            ? Int((number * 1000).rounded())
+            : Int(number.rounded())
     }
 }
 
