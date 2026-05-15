@@ -41,9 +41,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let durationHint: TimeInterval?
     private let resumeTime: TimeInterval
     private let startupResumePolicy: PlayerStartupResumePolicy
-    private let engine: PlayerRenderingEngine
+    private var engine: PlayerRenderingEngine
     private weak var surfaceView: VideoSurfaceContainerView?
     private weak var nativePlaybackController: AVPlayerViewController?
+    private var prefersNativePlaybackControls = true
     private var timeObserver: Timer?
     private var didApplyResumeTime = false
     private var mediaPreparationTask: Task<Void, Never>?
@@ -62,6 +63,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var hostFullscreenRequestHandler: (() -> Void)?
     private var isTerminated = false
     private var isStopping = false
+    private var hasAttemptedEngineFallback = false
     private let playbackStateRefreshInterval: TimeInterval = 1.0
     private let sponsorBlockPrerollTolerance: TimeInterval = 0.35
     private let sponsorBlockTailTolerance: TimeInterval = 0.12
@@ -106,21 +108,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         self.startupResumePolicy = startupResumePolicy
         self.engine = engine ?? PillarboxPlayerRenderingEngine()
         super.init()
-        self.volume = self.engine.volume
-        self.isMuted = self.engine.isMuted
-        self.engine.onPlaybackStateChange = { [weak self] state in
-            self?.handleEnginePlaybackState(state)
-        }
-        self.engine.onPlaybackIntentChange = { [weak self] wantsPlayback in
-            self?.handleEnginePlaybackIntentChange(wantsPlayback)
-        }
-        self.engine.onLoadingProgressChange = { [weak self] progress in
-            self?.handleEngineLoadingProgress(progress)
-        }
-        self.engine.onFirstFrame = { [weak self] currentTime in
-            self?.handleEngineFirstFrame(currentTime)
-        }
-        self.engine.setViewModel(self)
+        bindEngine(self.engine, restoreVolumeState: false)
         PlayerMetricsLog.logger.info(
             "created id=\(self.metricsID, privacy: .public) title=\(PlayerMetricsLog.shortTitle(title), privacy: .public) hasAudio=\((audioURL != nil), privacy: .public) resume=\(resumeTime, privacy: .public)"
         )
@@ -164,6 +152,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func attachSurface(_ view: VideoSurfaceContainerView, prefersNativePlaybackControls: Bool = true) {
+        self.prefersNativePlaybackControls = prefersNativePlaybackControls
         if ManualVideoFullscreenSession.isActive,
            let currentSurface = surfaceView,
            currentSurface !== view,
@@ -300,6 +289,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard mediaPreparationTask == nil else { return }
         let restoreTime = currentTime
         isPreparing = false
+        hasAttemptedEngineFallback = false
         mediaPreparationTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
@@ -316,6 +306,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled, !self.isTerminated else { return }
+                if await self.attemptEngineFallbackIfNeeded(after: error, restoreTime: restoreTime) {
+                    return
+                }
                 self.mediaPreparationTask = nil
                 self.errorMessage = error.localizedDescription
                 self.isPreparing = false
@@ -524,6 +517,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard mediaPreparationTask == nil else { return }
         isPreparing = true
         loadingProgress = max(loadingProgress, 0.12)
+        hasAttemptedEngineFallback = false
         PlayerMetricsLog.logger.info(
             "prepareRequested id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
         )
@@ -551,6 +545,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled, !self.isTerminated else { return }
+                if await self.attemptEngineFallbackIfNeeded(after: error) {
+                    return
+                }
                 PlayerMetricsLog.logger.error(
                     "prepareFailed id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
@@ -585,6 +582,115 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         refreshPlaybackState()
         invalidatePictureInPicturePlaybackState()
+    }
+
+    private func bindEngine(_ engine: PlayerRenderingEngine, restoreVolumeState: Bool) {
+        if restoreVolumeState {
+            engine.setVolume(volume)
+            engine.setMuted(isMuted)
+            engine.setPlaybackRate(playbackRate.rawValue)
+        } else {
+            volume = engine.volume
+            isMuted = engine.isMuted
+        }
+        engine.onPlaybackStateChange = { [weak self] state in
+            self?.handleEnginePlaybackState(state)
+        }
+        engine.onPlaybackIntentChange = { [weak self] wantsPlayback in
+            self?.handleEnginePlaybackIntentChange(wantsPlayback)
+        }
+        engine.onLoadingProgressChange = { [weak self] progress in
+            self?.handleEngineLoadingProgress(progress)
+        }
+        engine.onFirstFrame = { [weak self] currentTime in
+            self?.handleEngineFirstFrame(currentTime)
+        }
+        engine.setViewModel(self)
+    }
+
+    private func switchEngine(to replacement: PlayerRenderingEngine) {
+        let previousEngine = engine
+        previousEngine.onPlaybackStateChange = nil
+        previousEngine.onPlaybackIntentChange = nil
+        previousEngine.onLoadingProgressChange = nil
+        previousEngine.onFirstFrame = nil
+        previousEngine.setViewModel(nil)
+        previousEngine.stop()
+
+        engine = replacement
+        didConfigurePictureInPicture = false
+        pictureInPictureController = nil
+        bindEngine(replacement, restoreVolumeState: true)
+
+        if let nativePlaybackController {
+            replacement.attachNativePlaybackController(nativePlaybackController)
+        }
+        if let surfaceView {
+            surfaceView.setNativePlaybackControllerEnabled(replacement.usesNativePlaybackControls && prefersNativePlaybackControls)
+            replacement.attachSurface(surfaceView.drawableView)
+        }
+        configurePictureInPictureIfNeeded()
+        refreshSurfaceLayout()
+    }
+
+    private func attemptEngineFallbackIfNeeded(
+        after error: Error,
+        restoreTime: TimeInterval? = nil
+    ) async -> Bool {
+        guard !hasAttemptedEngineFallback else { return false }
+        guard streamSource.audioURL != nil else { return false }
+        guard engine is PillarboxPlayerRenderingEngine else { return false }
+
+        hasAttemptedEngineFallback = true
+        PlayerMetricsLog.logger.info(
+            "playerEngineFallback id=\(metricsID, privacy: .public) from=pillarbox to=avplayer error=\(error.localizedDescription, privacy: .public)"
+        )
+        PlayerMetricsLog.record(
+            .mediaPrepared,
+            metricsID: metricsID,
+            title: title,
+            message: "fallback avplayer after pillarbox failure"
+        )
+
+        await MainActor.run {
+            self.switchEngine(to: AVPlayerHLSBridgeEngine())
+        }
+
+        do {
+            try await engine.prepare(source: streamSource)
+            guard !Task.isCancelled, !isTerminated else { return true }
+            PlayerMetricsLog.logger.info(
+                "playerEngineFallbackPrepared id=\(metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
+            )
+            PlayerMetricsLog.record(
+                .prepareReturned,
+                metricsID: metricsID,
+                title: title,
+                message: "\(elapsedMessage()) fallback=avplayer"
+            )
+            prepareElapsedMilliseconds = elapsedMilliseconds()
+            mediaPreparationTask = nil
+            loadingProgress = max(loadingProgress, 0.72)
+            if let restoreTime, restoreTime > 0,
+               let restoredTime = engine.seek(toTime: restoreTime) {
+                updatePlaybackTime(restoredTime, force: true, countsAsNaturalPlayback: false)
+            }
+            if startupResumePolicy == .immediate {
+                applyImmediateResumeTimeIfNeeded()
+            }
+            if wantsAutoplay {
+                startPreparedPlayback()
+            } else {
+                isPreparing = false
+                refreshPlaybackState()
+            }
+            return true
+        } catch {
+            PlayerMetricsLog.logger.error(
+                "playerEngineFallbackFailed id=\(metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
     }
 
     private func startTimeObserver() {
