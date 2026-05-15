@@ -68,8 +68,11 @@ final class VideoDetailViewModel: ObservableObject {
     private var stablePlayerIdentity: String?
     private var stablePlayerErrorCancellable: AnyCancellable?
     private var didSelectPlayVariantManually = false
+    private var didRecordDetailLoadedEvent = false
     private var isPlaybackInvalidatedForNavigation = false
     private var playVariantSwitchToken: UUID?
+    private var uploaderInteractionTask: Task<Void, Never>?
+    private var uploaderInteractionLoadIdentity: String?
     private var detailLoadStartTime: CFTimeInterval?
     private var playURLLoadStartTime: CFTimeInterval?
     private var relatedLoadStartTime: CFTimeInterval?
@@ -148,6 +151,8 @@ final class VideoDetailViewModel: ObservableObject {
         relatedLoadingTask?.cancel()
         relatedRefreshTask?.cancel()
         relatedPreloadTask?.cancel()
+        uploaderInteractionTask?.cancel()
+        uploaderInteractionLoadIdentity = nil
         sponsorBlockTask?.cancel()
         danmakuTask?.cancel()
     }
@@ -160,6 +165,7 @@ final class VideoDetailViewModel: ObservableObject {
         if state == .loaded {
             scheduleDanmakuLoadIfNeeded()
             scheduleRelatedLoadIfNeeded()
+            scheduleUploaderAndInteractionLoadIfNeeded()
             if stablePlayerViewModel == nil {
                 if selectedPlayVariant?.isPlayable == true {
                     updateStablePlayerViewModelIfNeeded()
@@ -169,7 +175,7 @@ final class VideoDetailViewModel: ObservableObject {
             }
             return
         }
-        PlayerMetricsLog.record(.detailLoadStart, metricsID: detail.bvid, title: detail.title)
+        beginDetailLoadTracking()
         scheduleRelatedLoadIfNeeded()
         await VideoPreloadCenter.shared.preloadDetailAndPlayback(
             detail,
@@ -182,21 +188,27 @@ final class VideoDetailViewModel: ObservableObject {
             playbackAdaptationProfile: playbackAdaptationProfile
         )
 
-        if canBootstrapPlaybackFromSeed {
-            scheduleDanmakuLoadIfNeeded()
-            state = .loading
+        if await applyCachedDetailForFastStartIfAvailable() {
             detailLoadingTask?.cancel()
+            detailLoadingTask = nil
             cancelSupplementalWork()
-            backgroundTasks = [
-                Task(priority: .userInitiated) { [weak self] in await self?.loadPlayURL() }
-            ]
-            detailLoadingTask = Task(priority: .utility) { [weak self] in
-                await self?.loadFullDetailAndMetadata()
-            }
+            schedulePlayURLLoadIfNeeded()
+            scheduleUploaderAndInteractionLoadIfNeeded()
+            scheduleFullDetailLoadIfNeeded(priority: .utility)
             return
         }
 
-        await loadFullDetailAndMetadata()
+        if activateCurrentDetailForFastStart(source: "seed") {
+            detailLoadingTask?.cancel()
+            detailLoadingTask = nil
+            cancelSupplementalWork()
+            schedulePlayURLLoadIfNeeded()
+            scheduleUploaderAndInteractionLoadIfNeeded()
+            scheduleFullDetailLoadIfNeeded(priority: .utility)
+            return
+        }
+
+        await loadFullDetailAndMetadata(priority: .userInitiated)
     }
 
     func cancelBackgroundWork() {
@@ -256,6 +268,9 @@ final class VideoDetailViewModel: ObservableObject {
         relatedPreloadTask = nil
         relatedRefreshTask?.cancel()
         relatedRefreshTask = nil
+        uploaderInteractionTask?.cancel()
+        uploaderInteractionTask = nil
+        uploaderInteractionLoadIdentity = nil
     }
 
     private func cancelRelatedLoad() {
@@ -268,42 +283,130 @@ final class VideoDetailViewModel: ObservableObject {
         }
     }
 
-    private var canBootstrapPlaybackFromSeed: Bool {
-        selectedCID != nil && selectedPlayVariant == nil && !playURLState.isLoading
+    private func beginDetailLoadTracking() {
+        if detailLoadStartTime == nil {
+            detailLoadStartTime = CACurrentMediaTime()
+            detailLoadElapsedMilliseconds = nil
+        }
+        didRecordDetailLoadedEvent = false
+        PlayerMetricsLog.record(.detailLoadStart, metricsID: detail.bvid, title: detail.title)
     }
 
-    private func loadFullDetailAndMetadata() async {
+    private func applyCachedDetailForFastStartIfAvailable() async -> Bool {
+        guard !isPlaybackInvalidatedForNavigation else { return false }
+        guard let cached = await VideoPreloadCenter.shared.cachedDetail(for: detail.bvid) else {
+            return false
+        }
+        detail = detail.mergingFilledValues(from: cached)
+        selectedCID = selectedCID ?? cached.pages?.first?.cid ?? cached.cid
+        return activateCurrentDetailForFastStart(source: "cache")
+    }
+
+    @discardableResult
+    private func activateCurrentDetailForFastStart(source: String) -> Bool {
+        guard !isPlaybackInvalidatedForNavigation else { return false }
+        selectedCID = selectedCID ?? detail.pages?.first?.cid ?? detail.cid
+        guard canActivateDetailFromCurrentData else { return false }
+
+        scheduleDanmakuLoadIfNeeded()
+        warmCachedPlayInfoIfAvailable()
+        state = .loaded
+        detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime) ?? 0
+        recordDetailLoadedIfNeeded(source: source)
+        scheduleRelatedLoadIfNeeded()
+        return true
+    }
+
+    private var canActivateDetailFromCurrentData: Bool {
+        !detail.bvid.isEmpty
+            && selectedCID != nil
+            && !detail.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func recordDetailLoadedIfNeeded(source: String) {
+        guard !didRecordDetailLoadedEvent else { return }
+        didRecordDetailLoadedEvent = true
+        PlayerMetricsLog.record(
+            .detailLoaded,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: source
+        )
+    }
+
+    private func scheduleFullDetailLoadIfNeeded(priority: TaskPriority = .utility) {
+        guard !isPlaybackInvalidatedForNavigation, detailLoadingTask == nil else { return }
+        detailLoadingTask = Task(priority: priority) { [weak self] in
+            guard let self else { return }
+            await self.loadFullDetailAndMetadata(priority: priority)
+        }
+    }
+
+    private func schedulePlayURLLoadIfNeeded() {
+        guard !isPlaybackInvalidatedForNavigation,
+              selectedPlayVariant == nil,
+              !playURLState.isLoading
+        else { return }
+        backgroundTasks.append(
+            Task(priority: .userInitiated) { [weak self] in
+                await self?.loadPlayURLIfNeeded()
+            }
+        )
+    }
+
+    private func scheduleUploaderAndInteractionLoadIfNeeded() {
+        guard !isPlaybackInvalidatedForNavigation, uploaderInteractionTask == nil else { return }
+        guard let identity = currentUploaderInteractionIdentity,
+              uploaderInteractionLoadIdentity != identity,
+              (uploaderProfile == nil || interactionState == VideoInteractionState())
+        else { return }
+        uploaderInteractionLoadIdentity = identity
+        uploaderInteractionTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            defer {
+                self.uploaderInteractionTask = nil
+            }
+            await self.loadUploaderAndInteractionAfterFirstFrame()
+        }
+    }
+
+    private var currentUploaderInteractionIdentity: String? {
+        let mid = detail.owner?.mid ?? 0
+        let aid = detail.aid ?? 0
+        guard mid > 0 || aid > 0 else { return nil }
+        return "\(mid)-\(aid)"
+    }
+
+    private func loadFullDetailAndMetadata(priority: TaskPriority = .userInitiated) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
         let isCurrentDetailTask = detailLoadingTask != nil
         if state != .loaded {
             state = .loading
-            detailLoadStartTime = CACurrentMediaTime()
-            detailLoadElapsedMilliseconds = nil
+            if detailLoadStartTime == nil {
+                detailLoadStartTime = CACurrentMediaTime()
+                detailLoadElapsedMilliseconds = nil
+            }
         }
         do {
             let fullDetail = try await VideoPreloadCenter.shared.detail(
                 for: detail.bvid,
                 api: api,
-                priority: .userInitiated
+                priority: priority
             )
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return }
             detail = detail.mergingFilledValues(from: fullDetail)
             selectedCID = selectedCID ?? fullDetail.pages?.first?.cid ?? fullDetail.cid
-            scheduleDanmakuLoadIfNeeded()
-            warmCachedPlayInfoIfAvailable()
-
-            state = .loaded
-            detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime)
-            PlayerMetricsLog.record(.detailLoaded, metricsID: detail.bvid, title: detail.title)
+            if !activateCurrentDetailForFastStart(source: "network") {
+                state = .loaded
+                detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime) ?? 0
+                recordDetailLoadedIfNeeded(source: "network")
+                scheduleRelatedLoadIfNeeded()
+            }
+            schedulePlayURLLoadIfNeeded()
+            scheduleUploaderAndInteractionLoadIfNeeded()
             if isCurrentDetailTask {
                 detailLoadingTask = nil
             }
-
-            scheduleRelatedLoadIfNeeded()
-            backgroundTasks += [
-                Task(priority: .userInitiated) { [weak self] in await self?.loadPlayURLIfNeeded() },
-                Task(priority: .utility) { [weak self] in await self?.loadUploaderAndInteractionAfterFirstFrame() }
-            ]
         } catch {
             guard !Task.isCancelled else { return }
             guard !isPlaybackInvalidatedForNavigation else { return }
@@ -311,7 +414,9 @@ final class VideoDetailViewModel: ObservableObject {
                 detailLoadingTask = nil
             }
             detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime)
-            state = .failed(error.localizedDescription)
+            if state != .loaded {
+                state = .failed(error.localizedDescription)
+            }
         }
     }
 
