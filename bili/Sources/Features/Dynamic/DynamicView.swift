@@ -20,7 +20,7 @@ struct DynamicView: View {
                     }
             }
         }
-        .navigationTitle("鍔ㄦ€?)
+        .navigationTitle("动态")
         .navigationBarTitleDisplayMode(.large)
         .nativeTopNavigationChrome()
     }
@@ -32,7 +32,7 @@ struct DynamicView: View {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text("姝ｅ湪鍔犺浇鍔ㄦ€?)
+                        Text("正在加载动态")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -40,9 +40,9 @@ struct DynamicView: View {
                     .padding(.top, 120)
                 } else if viewModel.items.isEmpty {
                     EmptyStateView(
-                        title: "鏆傛棤鍔ㄦ€?,
+                        title: "暂无动态",
                         systemImage: "sparkles",
-                        message: "鐧诲綍鍚庝細鏄剧ず浣犲叧娉?UP 鐨勫姩鎬併€?
+                        message: "登录后会显示你关注 UP 的动态。"
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
@@ -95,7 +95,7 @@ struct DynamicView: View {
         }
         .overlay {
             if case .failed(let message) = viewModel.state, viewModel.items.isEmpty {
-                ErrorStateView(title: "鍔ㄦ€佸姞杞藉け璐?, message: message) {
+                ErrorStateView(title: "动态加载失败", message: message) {
                     Task { await viewModel.refresh() }
                 }
                 .background(.background.opacity(0.96))
@@ -123,7 +123,7 @@ struct DynamicView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村鍔ㄦ€?)
+                Text("加载更多动态")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -926,7 +926,7 @@ private struct DynamicCommentsSheet: View {
     @ViewBuilder
     private var commentsContent: some View {
         if !viewModel.canLoadComments {
-            EmptyStateView(title: "鏆備笉鏀寔璇勮", systemImage: "bubble.left", message: "杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙ｃ€?)
+            EmptyStateView(title: "暂不支持评论", systemImage: "bubble.left", message: "这条动态没有返回评论入口。")
                 .padding(16)
         } else if viewModel.comments.isEmpty && viewModel.state.isLoading {
             VStack(spacing: 10) {
@@ -943,7 +943,7 @@ private struct DynamicCommentsSheet: View {
             }
             .padding(16)
         } else if viewModel.comments.isEmpty {
-            EmptyStateView(title: "鏆傛棤璇勮", systemImage: "bubble.left", message: "杩欓噷杩樻病鏈夊彲灞曠ず鐨勮瘎璁恒€?)
+            EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "这里还没有可展示的评论。")
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -996,7 +996,7 @@ private struct DynamicCommentsSheet: View {
             .controlSize(.small)
             .tint(.pink)
         } else {
-            Text("娌℃湁鏇村璇勮浜?)
+            Text("没有更多评论了")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -1152,7 +1152,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadPage() async {
         guard let oid = commentOID, let type = commentType else {
-            state = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
+            state = .failed("这条动态没有返回评论入口")
             commentsEnd = true
             return
         }
@@ -1174,7 +1174,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadReplyPage(for comment: Comment, reset: Bool) async {
         guard let oid = commentOID, let type = commentType else {
-            replyStates[comment.id] = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
+            replyStates[comment.id] = .failed("这条动态没有返回评论入口")
             return
         }
 
@@ -1202,7 +1202,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadDialogPage(for root: Comment, reply: Comment) async {
         guard let oid = commentOID, let type = commentType else {
-            dialogStates[dialogKey(root: root, reply: reply)] = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
+            dialogStates[dialogKey(root: root, reply: reply)] = .failed("这条动态没有返回评论入口")
             return
         }
 
@@ -1317,7 +1317,7 @@ private struct DynamicCommentRow: View {
 
                 if visibleReplyCount > 0 {
                     Button(action: showReplies) {
-                        Label("\(visibleReplyCount) 鏉″洖澶?, systemImage: "bubble.left.and.bubble.right")
+                        Label("\(visibleReplyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -1437,7 +1437,7 @@ private struct DynamicCommentRepliesSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "鏆傛棤鍥炲", systemImage: "bubble.left.and.bubble.right", message: "杩欐潯璇勮杩樻病鏈夊彲灞曠ず鐨勫洖澶嶃€?)
+            EmptyStateView(title: "暂无回复", systemImage: "bubble.left.and.bubble.right", message: "这条评论还没有可展示的回复。")
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -1625,7 +1625,7 @@ private struct DynamicCommentDialogSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "鏆傛棤瀵硅瘽", systemImage: "text.bubble", message: "鏆傛椂娌℃湁鎵惧埌杩欐潯鍥炲鐨勪笂涓嬫枃銆?)
+            EmptyStateView(title: "暂无对话", systemImage: "text.bubble", message: "暂时没有找到这条回复的上下文。")
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -1690,7 +1690,7 @@ private struct DynamicCommentDialogRow: View {
 
 private enum DynamicCommentTextBuilder {
     static func nameAndMessage(name: String, message: String, font: Font, contentColor: Color) -> AttributedString {
-        var user = AttributedString("\(name)锛?)
+        var user = AttributedString("\(name)：")
         user.font = font.weight(.semibold)
         user.foregroundColor = .secondary
 
@@ -1740,7 +1740,7 @@ private enum DynamicCommentTextBuilder {
         }
 
         guard cursor < message.endIndex, message[cursor] == "@" else { return nil }
-        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "锛? }) else { return nil }
+        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "：" }) else { return nil }
 
         let prefixEnd = message.index(after: colon)
         let target = String(message[cursor..<colon]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1898,7 +1898,7 @@ private struct DynamicOriginalPreview: View {
 
     private func originalAuthorIdentity(_ author: DynamicAuthor) -> some View {
         HStack(spacing: 7) {
-            Text("杞彂鍔ㄦ€?)
+            Text("转发动态")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1992,7 +1992,7 @@ private struct DynamicImageHeroPreview: View {
                 )
 
                 HStack(alignment: .bottom) {
-                    Label("\(min(images.count, 9))鍥?, systemImage: "photo.on.rectangle.angled")
+                    Label("\(min(images.count, 9))图", systemImage: "photo.on.rectangle.angled")
                         .font(.caption.weight(.semibold))
                         .labelStyle(.titleAndIcon)
                         .padding(.horizontal, 9)
@@ -2018,7 +2018,7 @@ private struct DynamicImageHeroPreview: View {
     }
 
     private var accessibilityTitle: String {
-        images.count > 1 ? "鏌ョ湅 \(images.count) 寮犲浘鐗? : "鏌ョ湅鍥剧墖"
+        images.count > 1 ? "查看 \(images.count) 张图片" : "查看图片"
     }
 }
 
@@ -2067,7 +2067,7 @@ private struct DynamicImageSquareGrid: View {
     }
 
     private func accessibilityTitle(for index: Int) -> String {
-        images.count > 1 ? "鏌ョ湅绗?\(index + 1) 寮犲浘鐗囷紝鍏?\(images.count) 寮? : "鏌ョ湅鍥剧墖"
+        images.count > 1 ? "查看第 \(index + 1) 张图片，共 \(images.count) 张" : "查看图片"
     }
 }
 
@@ -2491,7 +2491,7 @@ private struct DynamicLivePreview: View {
             .clipped()
 
             if showsCenterBadge {
-                Label("鐩存挱涓?, systemImage: "dot.radiowaves.left.and.right")
+                Label("直播中", systemImage: "dot.radiowaves.left.and.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
