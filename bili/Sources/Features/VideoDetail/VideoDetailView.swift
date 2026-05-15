@@ -3875,8 +3875,7 @@ private struct VideoDetailSnapshotSignature: Equatable {
             String(stat?.reply ?? 0),
             String(stat?.like ?? 0),
             String(stat?.coin ?? 0),
-            String(stat?.favorite ?? 0),
-            String(stat?.danmaku ?? 0)
+            String(stat?.favorite ?? 0)
         ].joined(separator: "|")
         pageSignature = pages.map(Self.pageSignature(for:)).joined(separator: "|")
         aspectRatioBits = (video.dimension?.aspectRatio ?? 0).bitPattern
@@ -3884,10 +3883,10 @@ private struct VideoDetailSnapshotSignature: Equatable {
         duration = video.duration ?? 0
     }
 
-    private static func pageSignature(for page: VideoPage) -> String {
+    nonisolated private static func pageSignature(for page: VideoPage) -> String {
         [
             String(page.cid),
-            page.part,
+            page.part ?? "",
             String(page.dimension?.width ?? 0),
             String(page.dimension?.height ?? 0)
         ].joined(separator: ":")
@@ -3900,7 +3899,7 @@ private extension Array where Element == PlayVariant {
         .joined(separator: "||")
     }
 
-    private static func signature(for variant: PlayVariant) -> String {
+    nonisolated private static func signature(for variant: PlayVariant) -> String {
         let components = [
             variant.id,
             String(variant.quality),
@@ -3925,7 +3924,7 @@ private extension Array where Element == VideoItem {
         .joined(separator: "||")
     }
 
-    private static func signature(for video: VideoItem) -> String {
+    nonisolated private static func signature(for video: VideoItem) -> String {
         [
             video.bvid,
             video.title,
