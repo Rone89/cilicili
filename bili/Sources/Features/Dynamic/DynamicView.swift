@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import Combine
 
 struct DynamicView: View {
@@ -20,7 +20,7 @@ struct DynamicView: View {
                     }
             }
         }
-        .navigationTitle("动态")
+        .navigationTitle("鍔ㄦ€?)
         .navigationBarTitleDisplayMode(.large)
         .nativeTopNavigationChrome()
     }
@@ -32,7 +32,7 @@ struct DynamicView: View {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text("正在加载动态")
+                        Text("姝ｅ湪鍔犺浇鍔ㄦ€?)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -40,9 +40,9 @@ struct DynamicView: View {
                     .padding(.top, 120)
                 } else if viewModel.items.isEmpty {
                     EmptyStateView(
-                        title: "暂无动态",
+                        title: "鏆傛棤鍔ㄦ€?,
                         systemImage: "sparkles",
-                        message: "登录后会显示你关注 UP 的动态。"
+                        message: "鐧诲綍鍚庝細鏄剧ず浣犲叧娉?UP 鐨勫姩鎬併€?
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
@@ -95,7 +95,7 @@ struct DynamicView: View {
         }
         .overlay {
             if case .failed(let message) = viewModel.state, viewModel.items.isEmpty {
-                ErrorStateView(title: "动态加载失败", message: message) {
+                ErrorStateView(title: "鍔ㄦ€佸姞杞藉け璐?, message: message) {
                     Task { await viewModel.refresh() }
                 }
                 .background(.background.opacity(0.96))
@@ -123,7 +123,7 @@ struct DynamicView: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("加载更多动态")
+                Text("鍔犺浇鏇村鍔ㄦ€?)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -133,7 +133,7 @@ struct DynamicView: View {
             Button {
                 Task { await viewModel.loadMore() }
             } label: {
-                Label("加载更多", systemImage: "arrow.down.circle")
+                Label("鍔犺浇鏇村", systemImage: "arrow.down.circle")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -145,7 +145,7 @@ struct DynamicView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
         } else {
-            Text("没有更多动态了")
+            Text("娌℃湁鏇村鍔ㄦ€佷簡")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -174,8 +174,16 @@ private struct DynamicFeedCard: View {
     private let live: DynamicLive?
     private let liveRoom: LiveRoom?
     private let authorOwner: VideoOwner?
+    private let authorAvatarURL: URL?
+    private let authorName: String
     private let imageItems: [DynamicImageItem]
     private let textSegments: [DynamicTextSegment]
+    private let topLevelDisplayText: String?
+    private let publishTimeText: String
+    private let usesHomeVideoCardStyle: Bool
+    private let usesSeparatedDynamicLayout: Bool
+    private let leadsWithImageGrid: Bool
+    private let showsExpandButton: Bool
     @State private var commentsTarget: DynamicFeedItem?
     @State private var isTextExpanded = false
     @State private var isLiked: Bool
@@ -195,17 +203,29 @@ private struct DynamicFeedCard: View {
         self.live = item.live
         self.liveRoom = item.live?.asLiveRoom(author: item.author)
         self.authorOwner = item.author?.owner
+        self.authorAvatarURL = item.author?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) }
+        self.authorName = item.author?.name ?? "Unknown"
         self.imageItems = item.imageItems.filter { $0.normalizedURL != nil }
         self.textSegments = item.textSegments
+        self.topLevelDisplayText = DynamicTextSegment.displayText(from: self.textSegments)
+        self.publishTimeText = Self.publishTime(for: item.author)
+        self.usesHomeVideoCardStyle = self.video != nil && item.original == nil && !item.isForward
+        self.usesSeparatedDynamicLayout = item.original != nil || item.isForward || (!self.imageItems.isEmpty && self.video == nil)
+        self.leadsWithImageGrid = !self.imageItems.isEmpty
+            && self.video == nil
+            && self.live == nil
+            && item.original == nil
+            && !item.isForward
+        self.showsExpandButton = Self.shouldShowExpandButton(for: self.topLevelDisplayText ?? "")
         _isLiked = State(initialValue: item.isLiked)
         _likeCount = State(initialValue: item.likeCount ?? 0)
     }
 
     var body: some View {
         Group {
-            if let video, shouldUseHomeVideoCardStyle {
+            if let video, usesHomeVideoCardStyle {
                 homeVideoCard(video)
-            } else if shouldUseSeparatedDynamicLayout {
+            } else if usesSeparatedDynamicLayout {
                 separatedDynamicContent
             } else {
                 dynamicCardContent
@@ -216,29 +236,12 @@ private struct DynamicFeedCard: View {
         }
     }
 
-    private var shouldUseHomeVideoCardStyle: Bool {
-        guard video != nil,
-              item.original == nil,
-              !item.isForward
-        else {
-            return false
-        }
-
-        return true
-    }
-
-    private var shouldUseSeparatedDynamicLayout: Bool {
-        item.original != nil
-            || item.isForward
-            || (!imageItems.isEmpty && video == nil)
-    }
-
     private func homeVideoCard(_ video: VideoItem) -> some View {
         VideoRouteLink(video) {
             VideoFeedStoryCardView(video: video)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("瑙嗛 \(video.title)")
+        .accessibilityLabel("鐟欏棝顣?\(video.title)")
     }
 
     private var dynamicCardContent: some View {
@@ -308,13 +311,13 @@ private struct DynamicFeedCard: View {
 
     private var separatedStoryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if shouldLeadWithImageGrid {
+            if leadsWithImageGrid {
                 imageSquareGrid
             }
 
             topLevelText
 
-            if !shouldLeadWithImageGrid, !imageItems.isEmpty {
+            if !leadsWithImageGrid, !imageItems.isEmpty {
                 imageSquareGrid
             }
 
@@ -342,14 +345,6 @@ private struct DynamicFeedCard: View {
         .shadow(color: .black.opacity(0.045), radius: 14, y: 5)
     }
 
-    private var shouldLeadWithImageGrid: Bool {
-        !imageItems.isEmpty
-            && video == nil
-            && live == nil
-            && item.original == nil
-            && !item.isForward
-    }
-
     private var imageSquareGrid: some View {
         DynamicImageSquareGrid(
             images: imageItems,
@@ -375,8 +370,8 @@ private struct DynamicFeedCard: View {
 
             Spacer(minLength: 10)
 
-            if !publishTime.isEmpty {
-                Text(publishTime)
+            if !publishTimeText.isEmpty {
+                Text(publishTimeText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -388,7 +383,7 @@ private struct DynamicFeedCard: View {
     private var authorIdentity: some View {
         HStack(spacing: 10) {
             CachedRemoteImage(
-                url: item.author?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 96)) },
+                url: authorAvatarURL,
                 targetPixelSize: 96
             ) { image in
                 image.resizable().scaledToFill()
@@ -399,7 +394,7 @@ private struct DynamicFeedCard: View {
             .frame(width: 38, height: 38)
             .clipShape(Circle())
 
-            Text(item.author?.name ?? "Unknown")
+            Text(authorName)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -407,16 +402,9 @@ private struct DynamicFeedCard: View {
         .contentShape(Rectangle())
     }
 
-    private var publishTime: String {
-        if let timestamp = item.author?.pubTS, timestamp > 0 {
-            return BiliFormatters.relativeTime(timestamp)
-        }
-        return item.author?.pubTime ?? ""
-    }
-
     @ViewBuilder
     private var topLevelText: some View {
-        if let text = DynamicTextSegment.displayText(from: textSegments), !text.isEmpty {
+        if let text = topLevelDisplayText, !text.isEmpty {
             dynamicText(segments: textSegments, displayText: text)
         }
     }
@@ -433,14 +421,14 @@ private struct DynamicFeedCard: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if shouldShowExpandButton(for: displayText) {
+            if showsExpandButton {
                 Button {
                     withAnimation(.snappy(duration: 0.22)) {
                         isTextExpanded.toggle()
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(isTextExpanded ? "收起" : "展开")
+                        Text(isTextExpanded ? "鏀惰捣" : "灞曞紑")
                         Image(systemName: isTextExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2.weight(.bold))
                     }
@@ -513,7 +501,7 @@ private struct DynamicFeedCard: View {
         .padding(.top, 2)
     }
 
-    private func shouldShowExpandButton(for text: String) -> Bool {
+    private static func shouldShowExpandButton(for text: String) -> Bool {
         if text.count > 120 {
             return true
         }
@@ -553,6 +541,13 @@ private struct DynamicFeedCard: View {
             )
         )
     }
+
+    private static func publishTime(for author: DynamicAuthor?) -> String {
+        if let timestamp = author?.pubTS, timestamp > 0 {
+            return BiliFormatters.relativeTime(timestamp)
+        }
+        return author?.pubTime ?? ""
+    }
 }
 
 private struct DynamicActionButton: View {
@@ -581,24 +576,63 @@ private struct DynamicRichTextView: View {
     let textColor: Color
     let emoteSize: CGFloat
     let maxLines: Int?
+    private let textInput: DynamicAttributedTextInput
+    private let linkURLs: [URL]
+
+    init(
+        segments: [DynamicTextSegment],
+        font: Font,
+        textColor: Color,
+        emoteSize: CGFloat,
+        maxLines: Int?
+    ) {
+        self.segments = segments
+        self.font = font
+        self.textColor = textColor
+        self.emoteSize = emoteSize
+        self.maxLines = maxLines
+
+        var preparedSegments = [DynamicTextSegment]()
+        var preparedLinks = [URL]()
+        var seenLinks = Set<String>()
+        for segment in segments {
+            switch segment {
+            case .link(_, let rawURL):
+                guard let url = URL(string: rawURL) else { continue }
+                if seenLinks.insert(url.absoluteString).inserted {
+                    preparedLinks.append(url)
+                }
+            default:
+                preparedSegments.append(segment)
+            }
+        }
+
+        let textStyle: UIFont.TextStyle = emoteSize >= 24 ? .headline : (emoteSize <= 20 ? .footnote : .subheadline)
+        let pointSize = UIFont.preferredFont(forTextStyle: textStyle).pointSize
+        let weight: UIFont.Weight = emoteSize >= 24 ? .semibold : .regular
+        let resolvedUIFont = UIFontMetrics(forTextStyle: textStyle).scaledFont(
+            for: UIFont.systemFont(ofSize: pointSize, weight: weight)
+        )
+
+        self.linkURLs = preparedLinks
+        self.textInput = DynamicAttributedTextInput(
+            segments: preparedSegments.isEmpty ? [.text(" ")] : preparedSegments,
+            baseFont: resolvedUIFont,
+            textColor: UIColor(textColor),
+            emoteSize: emoteSize,
+            maxLines: maxLines
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            DynamicAttributedTextLabel(
-                input: DynamicAttributedTextInput(
-                    segments: textAndEmojiSegments,
-                    baseFont: resolvedUIFont,
-                    textColor: UIColor(textColor),
-                    emoteSize: emoteSize,
-                    maxLines: maxLines
-                )
-            )
+            DynamicAttributedTextLabel(input: textInput)
 
             if !linkURLs.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(linkURLs.prefix(3), id: \.self) { url in
                         Link(destination: url) {
-                            Label("查看链接", systemImage: "link")
+                            Label("鏌ョ湅閾炬帴", systemImage: "link")
                                 .font(.caption.weight(.semibold))
                                 .labelStyle(.titleAndIcon)
                                 .padding(.horizontal, 9)
@@ -612,32 +646,6 @@ private struct DynamicRichTextView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var textAndEmojiSegments: [DynamicTextSegment] {
-        let filtered = segments.filter { segment in
-            if case .link = segment {
-                return false
-            }
-            return true
-        }
-        return filtered.isEmpty ? [.text(" ")] : filtered
-    }
-
-    private var linkURLs: [URL] {
-        segments.compactMap { segment in
-            guard case .link(_, let rawURL) = segment else { return nil }
-            return URL(string: rawURL)
-        }
-    }
-
-    private var resolvedUIFont: UIFont {
-        let textStyle: UIFont.TextStyle = emoteSize >= 24 ? .headline : (emoteSize <= 20 ? .footnote : .subheadline)
-        let pointSize = UIFont.preferredFont(forTextStyle: textStyle).pointSize
-        let weight: UIFont.Weight = emoteSize >= 24 ? .semibold : .regular
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(
-            for: UIFont.systemFont(ofSize: pointSize, weight: weight)
-        )
     }
 }
 
@@ -865,7 +873,7 @@ private struct DynamicCommentsSheet: View {
                     commentsContent
                 }
             }
-            .navigationTitle("评论")
+            .navigationTitle("璇勮")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadInitial()
@@ -886,7 +894,7 @@ private struct DynamicCommentsSheet: View {
 
     private var commentsHeader: some View {
         HStack(spacing: 8) {
-            Text("全部评论")
+            Text("鍏ㄩ儴璇勮")
                 .font(.headline)
 
             if let count = item.replyCount, count > 0 {
@@ -918,12 +926,12 @@ private struct DynamicCommentsSheet: View {
     @ViewBuilder
     private var commentsContent: some View {
         if !viewModel.canLoadComments {
-            EmptyStateView(title: "暂不支持评论", systemImage: "bubble.left", message: "这条动态没有返回评论入口。")
+            EmptyStateView(title: "鏆備笉鏀寔璇勮", systemImage: "bubble.left", message: "杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙ｃ€?)
                 .padding(16)
         } else if viewModel.comments.isEmpty && viewModel.state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("正在加载评论")
+                Text("姝ｅ湪鍔犺浇璇勮")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -935,7 +943,7 @@ private struct DynamicCommentsSheet: View {
             }
             .padding(16)
         } else if viewModel.comments.isEmpty {
-            EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "这里还没有可展示的评论。")
+            EmptyStateView(title: "鏆傛棤璇勮", systemImage: "bubble.left", message: "杩欓噷杩樻病鏈夊彲灞曠ず鐨勮瘎璁恒€?)
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -965,7 +973,7 @@ private struct DynamicCommentsSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("加载更多评论")
+                Text("鍔犺浇鏇村璇勮")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -979,7 +987,7 @@ private struct DynamicCommentsSheet: View {
             Button {
                 Task { await viewModel.loadMore() }
             } label: {
-                Label("加载更多评论", systemImage: "chevron.down")
+                Label("鍔犺浇鏇村璇勮", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -988,7 +996,7 @@ private struct DynamicCommentsSheet: View {
             .controlSize(.small)
             .tint(.pink)
         } else {
-            Text("没有更多评论了")
+            Text("娌℃湁鏇村璇勮浜?)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -1144,7 +1152,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadPage() async {
         guard let oid = commentOID, let type = commentType else {
-            state = .failed("这条动态没有返回评论入口")
+            state = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
             commentsEnd = true
             return
         }
@@ -1166,7 +1174,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadReplyPage(for comment: Comment, reset: Bool) async {
         guard let oid = commentOID, let type = commentType else {
-            replyStates[comment.id] = .failed("这条动态没有返回评论入口")
+            replyStates[comment.id] = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
             return
         }
 
@@ -1194,7 +1202,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
 
     private func loadDialogPage(for root: Comment, reply: Comment) async {
         guard let oid = commentOID, let type = commentType else {
-            dialogStates[dialogKey(root: root, reply: reply)] = .failed("这条动态没有返回评论入口")
+            dialogStates[dialogKey(root: root, reply: reply)] = .failed("杩欐潯鍔ㄦ€佹病鏈夎繑鍥炶瘎璁哄叆鍙?)
             return
         }
 
@@ -1309,7 +1317,7 @@ private struct DynamicCommentRow: View {
 
                 if visibleReplyCount > 0 {
                     Button(action: showReplies) {
-                        Label("\(visibleReplyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
+                        Label("\(visibleReplyCount) 鏉″洖澶?, systemImage: "bubble.left.and.bubble.right")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -1396,7 +1404,7 @@ private struct DynamicCommentRepliesSheet: View {
                     repliesContent
                 }
             }
-            .navigationTitle("评论回复")
+            .navigationTitle("璇勮鍥炲")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadReplies(for: rootComment)
@@ -1417,7 +1425,7 @@ private struct DynamicCommentRepliesSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("正在加载回复")
+                Text("姝ｅ湪鍔犺浇鍥炲")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1429,7 +1437,7 @@ private struct DynamicCommentRepliesSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "暂无回复", systemImage: "bubble.left.and.bubble.right", message: "这条评论还没有可展示的回复。")
+            EmptyStateView(title: "鏆傛棤鍥炲", systemImage: "bubble.left.and.bubble.right", message: "杩欐潯璇勮杩樻病鏈夊彲灞曠ず鐨勫洖澶嶃€?)
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -1459,7 +1467,7 @@ private struct DynamicCommentRepliesSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("加载更多回复")
+                Text("鍔犺浇鏇村鍥炲")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1472,7 +1480,7 @@ private struct DynamicCommentRepliesSheet: View {
             Button {
                 Task { await viewModel.loadMoreReplies(for: rootComment) }
             } label: {
-                Label("查看更多回复", systemImage: "chevron.down")
+                Label("鏌ョ湅鏇村鍥炲", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
@@ -1556,7 +1564,7 @@ private struct DynamicCommentReplyDetailRow: View {
 
                 if let showDialog {
                     Button(action: showDialog) {
-                        Label("查看对话", systemImage: "text.bubble")
+                        Label("鏌ョ湅瀵硅瘽", systemImage: "text.bubble")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -1587,7 +1595,7 @@ private struct DynamicCommentDialogSheet: View {
                     dialogContent
                 }
             }
-            .navigationTitle("查看对话")
+            .navigationTitle("鏌ョ湅瀵硅瘽")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadDialog(for: rootComment, reply: focusReply)
@@ -1605,7 +1613,7 @@ private struct DynamicCommentDialogSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("正在加载对话")
+                Text("姝ｅ湪鍔犺浇瀵硅瘽")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1617,7 +1625,7 @@ private struct DynamicCommentDialogSheet: View {
             }
             .padding(16)
         } else if replies.isEmpty {
-            EmptyStateView(title: "暂无对话", systemImage: "text.bubble", message: "暂时没有找到这条回复的上下文。")
+            EmptyStateView(title: "鏆傛棤瀵硅瘽", systemImage: "text.bubble", message: "鏆傛椂娌℃湁鎵惧埌杩欐潯鍥炲鐨勪笂涓嬫枃銆?)
                 .padding(16)
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -1682,7 +1690,7 @@ private struct DynamicCommentDialogRow: View {
 
 private enum DynamicCommentTextBuilder {
     static func nameAndMessage(name: String, message: String, font: Font, contentColor: Color) -> AttributedString {
-        var user = AttributedString("\(name)：")
+        var user = AttributedString("\(name)锛?)
         user.font = font.weight(.semibold)
         user.foregroundColor = .secondary
 
@@ -1698,7 +1706,7 @@ private enum DynamicCommentTextBuilder {
             return content
         }
 
-        var verb = AttributedString("回复 ")
+        var verb = AttributedString("鍥炲 ")
         verb.font = font
         verb.foregroundColor = contentColor
 
@@ -1723,7 +1731,7 @@ private enum DynamicCommentTextBuilder {
     }
 
     private static func replyPrefixSplit(in message: String) -> (target: String, separator: String, content: String)? {
-        let supportedVerbs = ["回复", "回覆", "回復"]
+        let supportedVerbs = ["鍥炲", "鍥炶", "鍥炲京"]
         guard let verb = supportedVerbs.first(where: { message.hasPrefix($0) }) else { return nil }
 
         var cursor = message.index(message.startIndex, offsetBy: verb.count)
@@ -1732,7 +1740,7 @@ private enum DynamicCommentTextBuilder {
         }
 
         guard cursor < message.endIndex, message[cursor] == "@" else { return nil }
-        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "：" }) else { return nil }
+        guard let colon = message[cursor...].firstIndex(where: { $0 == ":" || $0 == "锛? }) else { return nil }
 
         let prefixEnd = message.index(after: colon)
         let target = String(message[cursor..<colon]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1773,7 +1781,7 @@ private struct DynamicCommentErrorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundStyle(.orange)
-                Text("评论加载失败")
+                Text("璇勮鍔犺浇澶辫触")
                     .font(.subheadline.weight(.semibold))
             }
 
@@ -1783,7 +1791,7 @@ private struct DynamicCommentErrorView: View {
                 .lineLimit(2)
 
             Button(action: retry) {
-                Label("重试", systemImage: "arrow.clockwise")
+                Label("閲嶈瘯", systemImage: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
             }
             .dynamicCommentGlassButtonStyle()
@@ -1890,7 +1898,7 @@ private struct DynamicOriginalPreview: View {
 
     private func originalAuthorIdentity(_ author: DynamicAuthor) -> some View {
         HStack(spacing: 7) {
-            Text("转发动态")
+            Text("杞彂鍔ㄦ€?)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1923,7 +1931,7 @@ private struct DynamicForwardUnavailableView: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
                 .font(.caption.weight(.semibold))
-            Text("原动态不可见或已删除")
+            Text("鍘熷姩鎬佷笉鍙鎴栧凡鍒犻櫎")
                 .font(.footnote)
         }
         .foregroundStyle(.secondary)
@@ -1984,7 +1992,7 @@ private struct DynamicImageHeroPreview: View {
                 )
 
                 HStack(alignment: .bottom) {
-                    Label("\(min(images.count, 9))图", systemImage: "photo.on.rectangle.angled")
+                    Label("\(min(images.count, 9))鍥?, systemImage: "photo.on.rectangle.angled")
                         .font(.caption.weight(.semibold))
                         .labelStyle(.titleAndIcon)
                         .padding(.horizontal, 9)
@@ -2010,7 +2018,7 @@ private struct DynamicImageHeroPreview: View {
     }
 
     private var accessibilityTitle: String {
-        images.count > 1 ? "查看 \(images.count) 张图片" : "查看图片"
+        images.count > 1 ? "鏌ョ湅 \(images.count) 寮犲浘鐗? : "鏌ョ湅鍥剧墖"
     }
 }
 
@@ -2059,7 +2067,7 @@ private struct DynamicImageSquareGrid: View {
     }
 
     private func accessibilityTitle(for index: Int) -> String {
-        images.count > 1 ? "查看第 \(index + 1) 张图片，共 \(images.count) 张" : "查看图片"
+        images.count > 1 ? "鏌ョ湅绗?\(index + 1) 寮犲浘鐗囷紝鍏?\(images.count) 寮? : "鏌ョ湅鍥剧墖"
     }
 }
 
@@ -2311,7 +2319,7 @@ private struct DynamicArchivePreview: View {
     private var largeContent: some View {
         VideoFeedStoryCardView(video: video, showsHeader: showsHeader)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("视频 \(video.title)")
+        .accessibilityLabel("瑙嗛 \(video.title)")
     }
 
     private var compactContent: some View {
@@ -2339,8 +2347,8 @@ private struct DynamicArchivePreview: View {
         FixedAspectPreview(aspectRatio: aspectRatio) {
             ZStack(alignment: .bottomTrailing) {
                 CachedRemoteImage(
-                    url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 720, height: 405)) },
-                    targetPixelSize: 720
+                    url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) },
+                    targetPixelSize: 480
                 ) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
@@ -2420,11 +2428,11 @@ private struct DynamicLivePreview: View {
         case .large:
             largeContent
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("直播 \(live.displayTitle)")
+                .accessibilityLabel("鐩存挱 \(live.displayTitle)")
         case .compact:
             compactContent
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("直播 \(live.displayTitle)")
+                .accessibilityLabel("鐩存挱 \(live.displayTitle)")
         }
     }
 
@@ -2467,8 +2475,8 @@ private struct DynamicLivePreview: View {
     private func cover(showsCenterBadge: Bool) -> some View {
         ZStack(alignment: .topLeading) {
             CachedRemoteImage(
-                url: live.normalizedCoverURL.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 720, height: 405)) },
-                targetPixelSize: 720
+                url: live.normalizedCoverURL.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) },
+                targetPixelSize: 480
             ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -2483,7 +2491,7 @@ private struct DynamicLivePreview: View {
             .clipped()
 
             if showsCenterBadge {
-                Label("直播中", systemImage: "dot.radiowaves.left.and.right")
+                Label("鐩存挱涓?, systemImage: "dot.radiowaves.left.and.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
@@ -2822,3 +2830,4 @@ private extension Array where Element == DynamicFeedItem {
         ].joined(separator: "^")
     }
 }
+
