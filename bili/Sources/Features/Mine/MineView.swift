@@ -983,12 +983,17 @@ private struct PlayerPerformanceSessionRow: View {
             ) {
                 metric("总首帧", milliseconds: session.firstFrameTotalMilliseconds, icon: "bolt.fill")
                 metric("播放器首帧", milliseconds: session.firstFramePlayerMilliseconds, icon: "play.rectangle")
+                metric("详情", milliseconds: session.detailLoadMilliseconds, icon: "doc.text.magnifyingglass")
                 metric("播放地址", milliseconds: session.playURLMilliseconds, icon: "link")
                 metric("Prepare", milliseconds: session.prepareMilliseconds, icon: "gearshape")
             }
 
             HStack(spacing: 8) {
                 Label("\(session.bufferCount) 次缓冲", systemImage: "hourglass")
+                if let detailSourceMessage = session.detailSourceMessage {
+                    Text(detailSourceMessage)
+                        .lineLimit(1)
+                }
                 if let selectedQualityMessage = session.selectedQualityMessage {
                     Text(selectedQualityMessage)
                         .lineLimit(1)

@@ -188,6 +188,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var mediaCacheMessage: String?
     var cdnHostMessage: String?
     var selectedQualityMessage: String?
+    var detailSourceMessage: String?
     var failureMessage: String?
 }
 
@@ -421,6 +422,7 @@ final class PlayerPerformanceStore: ObservableObject {
             if let start = session.detailStartedAt {
                 session.detailLoadMilliseconds = Self.milliseconds(from: start, to: event.date)
             }
+            session.detailSourceMessage = event.message ?? session.detailSourceMessage
         case .playURLStart:
             session.playURLStartedAt = event.date
         case .playURLLoaded:

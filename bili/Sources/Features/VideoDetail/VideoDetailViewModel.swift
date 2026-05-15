@@ -176,32 +176,17 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         beginDetailLoadTracking()
-        scheduleRelatedLoadIfNeeded()
-        await VideoPreloadCenter.shared.preloadDetailAndPlayback(
-            detail,
-            api: api,
-            preferredQuality: adaptiveStartupPreferredQuality,
-            cdnPreference: libraryStore.effectivePlaybackCDNPreference,
-            warmsMedia: false,
-            mediaWarmupDelay: 0,
-            priority: .userInitiated,
-            playbackAdaptationProfile: playbackAdaptationProfile
-        )
 
-        if await applyCachedDetailForFastStartIfAvailable() {
-            detailLoadingTask?.cancel()
-            detailLoadingTask = nil
-            cancelSupplementalWork()
+        if activateCurrentDetailForFastStart(source: "seed") {
             schedulePlayURLLoadIfNeeded()
             scheduleUploaderAndInteractionLoadIfNeeded()
             scheduleFullDetailLoadIfNeeded(priority: .utility)
             return
         }
 
-        if activateCurrentDetailForFastStart(source: "seed") {
-            detailLoadingTask?.cancel()
-            detailLoadingTask = nil
-            cancelSupplementalWork()
+        scheduleDetailAndPlaybackPreloadIfMissingCID(priority: .userInitiated)
+
+        if await applyCachedDetailForFastStartIfAvailable() {
             schedulePlayURLLoadIfNeeded()
             scheduleUploaderAndInteractionLoadIfNeeded()
             scheduleFullDetailLoadIfNeeded(priority: .utility)
@@ -313,7 +298,7 @@ final class VideoDetailViewModel: ObservableObject {
         state = .loaded
         detailLoadElapsedMilliseconds = elapsedMilliseconds(since: detailLoadStartTime) ?? 0
         recordDetailLoadedIfNeeded(source: source)
-        scheduleRelatedLoadIfNeeded()
+        scheduleRelatedLoadAfterPlaybackStartIfNeeded()
         return true
     }
 
@@ -340,6 +325,28 @@ final class VideoDetailViewModel: ObservableObject {
             guard let self else { return }
             await self.loadFullDetailAndMetadata(priority: priority)
         }
+    }
+
+    private func scheduleDetailAndPlaybackPreloadIfMissingCID(priority: TaskPriority = .utility) {
+        guard selectedCID == nil, !detail.bvid.isEmpty else { return }
+        let seedDetail = detail
+        let preferredQuality = adaptiveStartupPreferredQuality
+        let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        let adaptationProfile = playbackAdaptationProfile
+        backgroundTasks.append(
+            Task(priority: priority) { [api] in
+                await VideoPreloadCenter.shared.preloadDetailAndPlayback(
+                    seedDetail,
+                    api: api,
+                    preferredQuality: preferredQuality,
+                    cdnPreference: cdnPreference,
+                    warmsMedia: false,
+                    mediaWarmupDelay: 0,
+                    priority: priority,
+                    playbackAdaptationProfile: adaptationProfile
+                )
+            }
+        )
     }
 
     private func schedulePlayURLLoadIfNeeded() {
@@ -1652,6 +1659,19 @@ final class VideoDetailViewModel: ObservableObject {
             defer {
                 self.relatedLoadingTask = nil
             }
+            await self.loadRelated()
+        }
+    }
+
+    private func scheduleRelatedLoadAfterPlaybackStartIfNeeded() {
+        guard related.isEmpty, !relatedState.isLoading, relatedLoadingTask == nil else { return }
+        relatedLoadingTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            defer {
+                self.relatedLoadingTask = nil
+            }
+            _ = await self.waitForFirstFrameOrTimeout(2.4)
+            guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
             await self.loadRelated()
         }
     }

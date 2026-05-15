@@ -1993,8 +1993,16 @@ private struct PlayerPerformanceOverlay: View {
                 ) {
                     metric("总首帧", session.firstFrameTotalMilliseconds)
                     metric("播放器", session.firstFramePlayerMilliseconds)
+                    metric("Detail", session.detailLoadMilliseconds)
                     metric("取流", session.playURLMilliseconds)
                     metric("Prepare", session.prepareMilliseconds)
+                }
+
+                if let detailSource = session.detailSourceMessage {
+                    Label(detailSource, systemImage: "doc.text.magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 if let cdnHost = session.cdnHostMessage {
