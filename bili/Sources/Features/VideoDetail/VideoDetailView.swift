@@ -760,13 +760,19 @@ struct VideoDetailView: View {
     }
 
     private func relatedSection(_ viewModel: VideoDetailViewModel) -> some View {
+        let relatedVideos = Array(viewModel.related.prefix(5))
+        let usesCompactRelatedArtwork = viewModel.shouldUseCompactRelatedArtwork
+
         VStack(alignment: .leading, spacing: 10) {
-            if !viewModel.related.isEmpty {
+            if !relatedVideos.isEmpty {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 12) {
-                        ForEach(viewModel.related.prefix(5)) { video in
+                        ForEach(relatedVideos) { video in
                             VideoRouteLink(video) {
-                                RelatedVideoCard(video: video)
+                                RelatedVideoCard(
+                                    video: video,
+                                    usesCompactArtwork: usesCompactRelatedArtwork
+                                )
                             }
                             .onAppear {
                                 beginRelatedPreloadIfNeeded(video)
@@ -778,7 +784,7 @@ struct VideoDetailView: View {
                 .scrollIndicators(.hidden)
                 .overlay(alignment: .topTrailing) {
                     if viewModel.relatedState.isLoading {
-                        ProgressView()
+                        NativeLoadingIndicator()
                             .controlSize(.small)
                             .padding(.trailing, 14)
                     }
@@ -798,7 +804,7 @@ struct VideoDetailView: View {
     private func beginRelatedPreloadIfNeeded(_ video: VideoItem) {
         guard !video.bvid.isEmpty,
               !preloadedRelatedVideos.contains(video.bvid),
-              preloadedRelatedVideos.count < 3,
+              preloadedRelatedVideos.count < 1,
               !PlaybackEnvironment.current.shouldPreferConservativePlayback
         else { return }
         let api = dependencies.api
@@ -807,15 +813,17 @@ struct VideoDetailView: View {
         let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
             isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
         )
-        guard preloadedRelatedVideos.count < playbackAdaptationProfile.backgroundPreloadLimit else { return }
+        guard playbackAdaptationProfile.backgroundPreloadLimit > 1 else { return }
         preloadedRelatedVideos.insert(video.bvid)
-        Task(priority: .utility) {
+        Task(priority: .background) {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
-                priority: .utility,
+                priority: .background,
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
@@ -3584,19 +3592,32 @@ private struct VideoDescriptionOwnerRow: View {
 
 private struct RelatedVideoCard: View {
     let video: VideoItem
+    let usesCompactArtwork: Bool
+
+    private var coverWidth: Int {
+        usesCompactArtwork ? 300 : 360
+    }
+
+    private var coverHeight: Int {
+        usesCompactArtwork ? 190 : 228
+    }
+
+    private var targetPixelSize: Int {
+        usesCompactArtwork ? 300 : 360
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             CachedRemoteImage(
-                url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 360, height: 228)) },
-                targetPixelSize: 360
+                url: video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: coverWidth, height: coverHeight)) },
+                targetPixelSize: targetPixelSize
             ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.videoDetailSecondarySurface)
                     .overlay {
-                        ProgressView()
+                        NativeLoadingIndicator()
                             .controlSize(.small)
                             .tint(.secondary)
                     }
@@ -3616,6 +3637,13 @@ private struct RelatedVideoCard: View {
         }
         .frame(width: 168, alignment: .topLeading)
         .padding(.bottom, 2)
+    }
+}
+
+private struct NativeLoadingIndicator: View {
+    var body: some View {
+        ProgressView()
+            .progressViewStyle(.circular)
     }
 }
 
@@ -3644,7 +3672,7 @@ private struct RelatedVideoPlaceholderCard: View {
         .padding(.bottom, 2)
         .overlay(alignment: .center) {
             if isLoading {
-                ProgressView()
+                NativeLoadingIndicator()
                     .controlSize(.regular)
                     .tint(.secondary)
                     .padding(10)

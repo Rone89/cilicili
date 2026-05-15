@@ -80,7 +80,10 @@ struct DynamicView: View {
                 transitionID: selection.transitionID,
                 transitionNamespace: imageTransitionNamespace,
                 hidesRootTabBarDuringPresentation: false,
-                usesZoomTransition: false
+                usesZoomTransition: false,
+                onWillClose: {
+                    handleDynamicImageViewerActivity(false)
+                }
             )
             .onAppear {
                 handleDynamicImageViewerActivity(true)

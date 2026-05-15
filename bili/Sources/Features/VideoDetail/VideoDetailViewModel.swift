@@ -86,6 +86,12 @@ final class VideoDetailViewModel: ObservableObject {
         state != .idle || playURLState != .idle || relatedState != .idle || !related.isEmpty
     }
 
+    var shouldUseCompactRelatedArtwork: Bool {
+        let environment = PlaybackEnvironment.current
+        return environment.shouldPreferConservativePlayback
+            || playbackAdaptationProfile.shouldThrottleBackgroundPreload
+    }
+
     var shouldShowEmptyCommentsState: Bool {
         guard didCompleteInitialCommentLoad,
               comments.isEmpty,
@@ -1608,14 +1614,14 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         let bvid = detail.bvid
-        let timeout = relatedLoadTimeoutNanoseconds
+        let timeout = adaptiveRelatedLoadTimeoutNanoseconds
         if !forceRefresh,
            let cached = await VideoPreloadCenter.shared.cachedRelatedVideos(for: bvid) {
             related = cached
             relatedState = .loaded
             relatedElapsedMilliseconds = 0
             lastRelatedLoadTimedOut = false
-            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: cached)
+            scheduleRelatedPlaybackPreloadIfAppropriate(for: cached)
             await refreshRelatedInBackgroundIfNeeded()
             return
         }
@@ -1659,18 +1665,23 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func refreshRelatedInBackgroundIfNeeded() async {
-        guard relatedRefreshTask == nil, !isPlaybackInvalidatedForNavigation else { return }
+        guard relatedRefreshTask == nil,
+              !isPlaybackInvalidatedForNavigation,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+        else { return }
         let bvid = detail.bvid
-        relatedRefreshTask = Task(priority: .utility) { [weak self] in
+        relatedRefreshTask = Task(priority: .background) { [weak self] in
             guard let self else { return }
             defer {
                 self.relatedRefreshTask = nil
             }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
             do {
                 let videos = try await VideoPreloadCenter.shared.refreshRelatedVideos(
                     for: bvid,
                     api: self.api,
-                    priority: .utility
+                    priority: .background
                 )
                 guard !Task.isCancelled,
                       !self.isPlaybackInvalidatedForNavigation,
@@ -1694,7 +1705,7 @@ final class VideoDetailViewModel: ObservableObject {
         forceRefresh: Bool = false
     ) async throws -> [VideoItem] {
         try await withThrowingTaskGroup(of: [VideoItem].self) { group -> [VideoItem] in
-            group.addTask(priority: .utility) { [api] in
+            group.addTask(priority: forceRefresh ? .utility : .background) { [api] in
                 if forceRefresh {
                     return try await VideoPreloadCenter.shared.refreshRelatedVideos(
                         for: bvid,
@@ -1705,10 +1716,10 @@ final class VideoDetailViewModel: ObservableObject {
                 return try await VideoPreloadCenter.shared.relatedVideos(
                     for: bvid,
                     api: api,
-                    priority: .utility
+                    priority: .background
                 )
             }
-            group.addTask(priority: .utility) { () -> [VideoItem] in
+            group.addTask(priority: .background) { () -> [VideoItem] in
                 try await Task.sleep(nanoseconds: timeout)
                 throw VideoDetailLoadTimeoutError.related
             }
@@ -1726,7 +1737,7 @@ final class VideoDetailViewModel: ObservableObject {
         relatedState = filtered.isEmpty ? .failed("暂无相关推荐") : .loaded
         if !filtered.isEmpty {
             prefetchRelatedArtwork(filtered)
-            scheduleRelatedPlaybackPreloadAfterFirstFrame(for: filtered)
+            scheduleRelatedPlaybackPreloadIfAppropriate(for: filtered)
         }
     }
 
@@ -1738,21 +1749,28 @@ final class VideoDetailViewModel: ObservableObject {
         lastRelatedLoadTimedOut = reason.localizedCaseInsensitiveContains("超时")
         relatedState = .loaded
         prefetchRelatedArtwork(fallback)
-        scheduleRelatedPlaybackPreloadAfterFirstFrame(for: fallback)
+        scheduleRelatedPlaybackPreloadIfAppropriate(for: fallback)
         return true
     }
 
     private func prefetchRelatedArtwork(_ videos: [VideoItem]) {
-        let urls = videos.prefix(4).compactMap { video -> URL? in
+        let usesCompactArtwork = shouldUseCompactRelatedArtwork
+        let prefetchLimit = usesCompactArtwork ? 2 : 3
+        let width = usesCompactArtwork ? 300 : 360
+        let height = usesCompactArtwork ? 190 : 228
+        let targetPixelSize = usesCompactArtwork ? 300 : 360
+        let urls = videos.prefix(prefetchLimit).compactMap { video -> URL? in
             guard let pic = video.pic else { return nil }
-            return URL(string: pic.biliCoverThumbnailURL(width: 360, height: 228))
+            return URL(string: pic.biliCoverThumbnailURL(width: width, height: height))
         }
         guard !urls.isEmpty else { return }
-        Task(priority: .utility) {
+        Task(priority: .background) {
+            try? await Task.sleep(nanoseconds: 550_000_000)
+            guard !Task.isCancelled else { return }
             await RemoteImageCache.shared.prefetch(
                 urls,
-                targetPixelSize: 360,
-                maximumConcurrentLoads: 2
+                targetPixelSize: targetPixelSize,
+                maximumConcurrentLoads: usesCompactArtwork ? 1 : 2
             )
         }
     }
@@ -1777,6 +1795,10 @@ final class VideoDetailViewModel: ObservableObject {
             }
             _ = await self.waitForFirstFrameOrTimeout(2.4)
             guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
+            if self.playbackAdaptationProfile.shouldThrottleBackgroundPreload {
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
+            }
             await self.loadRelated()
         }
     }
@@ -1861,6 +1883,32 @@ final class VideoDetailViewModel: ObservableObject {
         return true
     }
 
+    private var adaptiveRelatedLoadTimeoutNanoseconds: UInt64 {
+        let environment = PlaybackEnvironment.current
+        if environment.isLowPowerModeEnabled || environment.isThermallyConstrained {
+            return 2_200_000_000
+        }
+        switch environment.networkClass {
+        case .wifi, .unknown:
+            return min(relatedLoadTimeoutNanoseconds, 3_200_000_000)
+        case .cellular, .constrained:
+            return 2_400_000_000
+        }
+    }
+
+    private func scheduleRelatedPlaybackPreloadIfAppropriate(for videos: [VideoItem]) {
+        guard playbackAdaptationProfile.backgroundPreloadLimit >= 3,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback,
+              stablePlayerViewModel?.isPlaying == true,
+              stablePlayerViewModel?.isBuffering == false
+        else {
+            relatedPreloadTask?.cancel()
+            relatedPreloadTask = nil
+            return
+        }
+        scheduleRelatedPlaybackPreloadAfterFirstFrame(for: videos)
+    }
+
     private func scheduleRelatedPlaybackPreloadAfterFirstFrame(for videos: [VideoItem]) {
         relatedPreloadTask?.cancel()
         guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
@@ -1874,21 +1922,26 @@ final class VideoDetailViewModel: ObservableObject {
             relatedPreloadTask = nil
             return
         }
-        relatedPreloadTask = Task(priority: .utility) { [api] in
+        relatedPreloadTask = Task(priority: .background) { [weak self, api] in
+            guard let self else { return }
             let didPresentPlayback = await self.waitForFirstFrameOrFailure()
             guard didPresentPlayback else {
                 self.relatedPreloadTask = nil
                 return
             }
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
             for video in candidates {
                 guard !Task.isCancelled else { return }
+                guard self.stablePlayerViewModel?.isPlaying == true,
+                      self.stablePlayerViewModel?.isBuffering == false
+                else { return }
                 let playbackAdaptationProfile = self.playbackAdaptationProfile
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
                     preferredQuality: self.libraryStore.preferredVideoQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
+                    priority: .background,
                     playbackAdaptationProfile: playbackAdaptationProfile
                 )
             }

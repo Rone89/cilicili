@@ -2007,17 +2007,19 @@ actor RemoteImageCache {
         targetPixelSize: Int? = 760,
         maximumConcurrentLoads: Int = 3
     ) async {
+        let imageBudget = RemoteImagePrefetchBudget.current
         let uniqueURLs = urls.reduce(into: [URL]()) { partialResult, url in
             guard !partialResult.contains(url) else { return }
             partialResult.append(url)
         }
-        let candidates = uniqueURLs.filter { url in
+        let budgetedURLs = Array(uniqueURLs.prefix(imageBudget.maximumURLs))
+        let candidates = budgetedURLs.filter { url in
             let key = cacheKey(for: url, targetPixelSize: targetPixelSize)
             return image(for: url, targetPixelSize: targetPixelSize) == nil && inFlight[key] == nil
         }
         guard !candidates.isEmpty else { return }
 
-        let concurrentLoads = min(max(maximumConcurrentLoads, 1), 4)
+        let concurrentLoads = min(max(maximumConcurrentLoads, 1), imageBudget.maximumConcurrentLoads)
         await withTaskGroup(of: Void.self) { group in
             var iterator = candidates.makeIterator()
 
@@ -2108,6 +2110,24 @@ actor RemoteImageCache {
 
     private func cacheKey(for url: URL, targetPixelSize: Int?) -> ImageCacheKey {
         ImageCacheKey(url: url, targetPixelSize: targetPixelSize)
+    }
+}
+
+private struct RemoteImagePrefetchBudget {
+    let maximumURLs: Int
+    let maximumConcurrentLoads: Int
+
+    static var current: RemoteImagePrefetchBudget {
+        let environment = PlaybackEnvironment.current
+        if environment.isLowPowerModeEnabled || environment.isThermallyConstrained {
+            return RemoteImagePrefetchBudget(maximumURLs: 4, maximumConcurrentLoads: 1)
+        }
+        switch environment.networkClass {
+        case .wifi, .unknown:
+            return RemoteImagePrefetchBudget(maximumURLs: 10, maximumConcurrentLoads: 3)
+        case .cellular, .constrained:
+            return RemoteImagePrefetchBudget(maximumURLs: 6, maximumConcurrentLoads: 2)
+        }
     }
 }
 

@@ -8,6 +8,7 @@ struct NativeImageViewer: View {
     let transitionNamespace: Namespace.ID
     let hidesRootTabBarDuringPresentation: Bool
     let usesZoomTransition: Bool
+    let onWillClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Int
     @State private var isClosing = false
@@ -19,7 +20,8 @@ struct NativeImageViewer: View {
         transitionID: String,
         transitionNamespace: Namespace.ID,
         hidesRootTabBarDuringPresentation: Bool = true,
-        usesZoomTransition: Bool = false
+        usesZoomTransition: Bool = false,
+        onWillClose: (() -> Void)? = nil
     ) {
         self.images = images
         self.initialIndex = initialIndex
@@ -27,6 +29,7 @@ struct NativeImageViewer: View {
         self.transitionNamespace = transitionNamespace
         self.hidesRootTabBarDuringPresentation = hidesRootTabBarDuringPresentation
         self.usesZoomTransition = usesZoomTransition
+        self.onWillClose = onWillClose
         _selection = State(initialValue: initialIndex)
     }
 
@@ -116,6 +119,7 @@ struct NativeImageViewer: View {
     private func closeViewer() {
         guard !isClosing else { return }
         isClosing = true
+        onWillClose?()
         dismiss()
     }
 }
@@ -165,9 +169,24 @@ private struct RemoteZoomableImage: View {
     let close: () -> Void
     @StateObject private var loader = CachedRemoteImageLoader()
 
+    private var targetPixelSize: Int {
+        let screen = UIScreen.main.bounds
+        let screenMaxSide = max(screen.width, screen.height) * UIScreen.main.scale
+        let environment = PlaybackEnvironment.current
+        if environment.isLowPowerModeEnabled || environment.isThermallyConstrained {
+            return min(max(Int(screenMaxSide * 1.05), 1400), 1800)
+        }
+        switch environment.networkClass {
+        case .cellular, .constrained:
+            return min(max(Int(screenMaxSide * 1.12), 1500), 2200)
+        case .wifi, .unknown:
+            return min(max(Int(screenMaxSide * 1.18), 1800), 2600)
+        }
+    }
+
     private var imageURL: URL? {
         image.normalizedURL
-            .map { $0.biliImageThumbnailURL(maxSide: 2600) }
+            .map { $0.biliImageThumbnailURL(maxSide: targetPixelSize) }
             .flatMap(URL.init(string:))
     }
 
@@ -183,7 +202,7 @@ private struct RemoteZoomableImage: View {
             }
         }
         .task(id: imageURL?.absoluteString ?? "") {
-            await loader.load(url: imageURL, scale: UIScreen.main.scale, targetPixelSize: 2600)
+            await loader.load(url: imageURL, scale: UIScreen.main.scale, targetPixelSize: targetPixelSize)
         }
         .onDisappear {
             loader.cancel()
