@@ -802,8 +802,6 @@ private struct PreparedPlayerItem {
 }
 
 struct LocalHLSBridge: Sendable {
-    private nonisolated static let timelineProbeLength: Int64 = 128 * 1024
-
     let masterPlaylistURL: URL
     let mediaTimeOffset: TimeInterval
     let videoClockDelay: TimeInterval
@@ -1384,10 +1382,10 @@ struct LocalHLSBridge: Sendable {
             )
             if let firstReference = renditionResult.rendition.references.first {
                 _ = try? await fetchByteRange(
-                    startupProbeRange(for: firstReference.range),
+                    firstReference.range,
                     from: [track.url] + track.fallbackURLs,
                     headers: headers,
-                    strategy: .fastFallback
+                    strategy: bootstrapFetchStrategy()
                 )
             }
             return true
@@ -1429,77 +1427,20 @@ struct LocalHLSBridge: Sendable {
         )
     }
 
-    private nonisolated static func resolvedTimelineOffset(
-        for track: HLSBridgeTrack,
-        references: [SIDXParser.Reference],
-        headers: [String: String]
-    ) async -> HLSRenditionTimelineOffset? {
-        guard let firstReference = references.first else { return nil }
-        let sourceURLs = [track.url] + track.fallbackURLs
-        do {
-            let probeRange = startupProbeRange(for: firstReference.range)
-            let firstSegmentData = try await fetchByteRange(
-                probeRange,
-                from: sourceURLs,
-                headers: headers,
-                strategy: .fastFallback
-            )
-            guard let timing = FMP4TimelineNormalizer.initialTiming(in: firstSegmentData) else {
-                return nil
-            }
-            if timing.baseMediaDecodeTimeTicks != firstReference.startTimeTicks {
-                PlayerMetricsLog.logger.info(
-                    "hlsBridgeTimelineOffset media=\(track.mediaType.logLabel, privacy: .public) sidxPts=\(firstReference.startTimeTicks, privacy: .public) tfdt=\(timing.baseMediaDecodeTimeTicks, privacy: .public)"
-                )
-            }
-            return HLSRenditionTimelineOffset(
-                baseMediaDecodeTimeTicks: timing.baseMediaDecodeTimeTicks
-            )
-        } catch {
-            PlayerMetricsLog.logger.info(
-                "hlsBridgeTFDTOffsetFallback media=\(track.mediaType.logLabel, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
-            return nil
-        }
-    }
-
     private nonisolated static func startupTimelineOffset(
         for track: HLSBridgeTrack,
         references: [SIDXParser.Reference],
-        headers: [String: String],
+        headers _: [String: String],
         metricsID: String?
     ) async -> HLSRenditionTimelineOffset? {
         guard let firstReference = references.first else { return nil }
-        switch track.mediaType {
-        case .audio:
-            await recordManifestStage(
-                metricsID: metricsID,
-                "audioProbe=sidx"
-            )
-            return HLSRenditionTimelineOffset(
-                baseMediaDecodeTimeTicks: firstReference.startTimeTicks
-            )
-        case .video:
-            let start = CACurrentMediaTime()
-            let offset = await resolvedTimelineOffset(
-                for: track,
-                references: references,
-                headers: headers
-            )
-            await recordManifestStage(
-                metricsID: metricsID,
-                "videoProbe=\(offset == nil ? "fallback" : "tfdt") \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: start)))"
-            )
-            return offset
-        }
-    }
-
-    private nonisolated static func startupProbeRange(for range: HTTPByteRange) -> HTTPByteRange {
-        let endInclusive = min(
-            range.endInclusive,
-            range.start + max(Self.timelineProbeLength, 1) - 1
+        await recordManifestStage(
+            metricsID: metricsID,
+            "\(track.mediaType.logLabel)Probe=sidx"
         )
-        return HTTPByteRange(start: range.start, endInclusive: endInclusive)
+        return HLSRenditionTimelineOffset(
+            baseMediaDecodeTimeTicks: firstReference.startTimeTicks
+        )
     }
 
     private nonisolated static func renditionCacheKey(
@@ -1514,7 +1455,7 @@ struct LocalHLSBridge: Sendable {
             "video"
         }
         return [
-            "timeline-v7-audio-sidx",
+            "timeline-v8-sidx-only",
             mediaType,
             track.cacheIdentity,
             "\(initialization.start)-\(initialization.endInclusive)",
