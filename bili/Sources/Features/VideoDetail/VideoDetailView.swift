@@ -3857,73 +3857,83 @@ private struct VideoDetailSnapshotSignature: Equatable {
     let duration: Int
 
     init(_ video: VideoItem) {
+        let owner = video.owner
+        let stat = video.stat
+        let pages = video.pages ?? []
         bvid = video.bvid
         aid = video.aid ?? 0
         cid = video.cid ?? 0
         title = video.title
         description = video.desc ?? ""
         ownerSignature = [
-            String(video.owner?.mid ?? 0),
-            video.owner?.name ?? "",
-            video.owner?.face ?? ""
+            String(owner?.mid ?? 0),
+            owner?.name ?? "",
+            owner?.face ?? ""
         ].joined(separator: "|")
         statSignature = [
-            String(video.stat?.view ?? 0),
-            String(video.stat?.reply ?? 0),
-            String(video.stat?.like ?? 0),
-            String(video.stat?.coin ?? 0),
-            String(video.stat?.favorite ?? 0),
-            String(video.stat?.share ?? 0)
+            String(stat?.view ?? 0),
+            String(stat?.reply ?? 0),
+            String(stat?.like ?? 0),
+            String(stat?.coin ?? 0),
+            String(stat?.favorite ?? 0),
+            String(stat?.danmaku ?? 0)
         ].joined(separator: "|")
-        pageSignature = (video.pages ?? []).map {
-            [
-                String($0.cid),
-                $0.part,
-                String($0.dimension?.width ?? 0),
-                String($0.dimension?.height ?? 0)
-            ].joined(separator: ":")
-        }.joined(separator: "|")
+        pageSignature = pages.map(Self.pageSignature(for:)).joined(separator: "|")
         aspectRatioBits = (video.dimension?.aspectRatio ?? 0).bitPattern
-        pubdate = video.pubdate
+        pubdate = video.pubdate ?? 0
         duration = video.duration ?? 0
+    }
+
+    private static func pageSignature(for page: VideoPage) -> String {
+        [
+            String(page.cid),
+            page.part,
+            String(page.dimension?.width ?? 0),
+            String(page.dimension?.height ?? 0)
+        ].joined(separator: ":")
     }
 }
 
 private extension Array where Element == PlayVariant {
     var snapshotSignature: String {
-        map {
-            [
-                $0.id,
-                String($0.quality),
-                $0.title,
-                $0.subtitle,
-                $0.badge ?? "",
-                $0.codec ?? "",
-                String($0.bandwidth ?? 0),
-                $0.frameRate ?? "",
-                $0.videoURL?.absoluteString ?? "",
-                $0.audioURL?.absoluteString ?? "",
-                $0.isPlayable ? "1" : "0",
-                $0.isProgressiveFastStart ? "1" : "0"
-            ].joined(separator: "^")
-        }
+        map(Self.signature(for:))
         .joined(separator: "||")
+    }
+
+    private static func signature(for variant: PlayVariant) -> String {
+        let components = [
+            variant.id,
+            String(variant.quality),
+            variant.title,
+            variant.subtitle,
+            variant.badge ?? "",
+            variant.codec ?? "",
+            String(variant.bandwidth ?? 0),
+            variant.frameRate ?? "",
+            variant.videoURL?.absoluteString ?? "",
+            variant.audioURL?.absoluteString ?? "",
+            variant.isPlayable ? "1" : "0",
+            variant.isProgressiveFastStart ? "1" : "0"
+        ]
+        return components.joined(separator: "^")
     }
 }
 
 private extension Array where Element == VideoItem {
     var snapshotSignature: String {
-        map {
-            [
-                $0.bvid,
-                $0.title,
-                $0.pic ?? "",
-                $0.owner?.name ?? "",
-                String($0.owner?.mid ?? 0),
-                String($0.duration ?? 0),
-                String($0.pubdate)
-            ].joined(separator: "^")
-        }
+        map(Self.signature(for:))
         .joined(separator: "||")
+    }
+
+    private static func signature(for video: VideoItem) -> String {
+        [
+            video.bvid,
+            video.title,
+            video.pic ?? "",
+            video.owner?.name ?? "",
+            String(video.owner?.mid ?? 0),
+            String(video.duration ?? 0),
+            String(video.pubdate ?? 0)
+        ].joined(separator: "^")
     }
 }
