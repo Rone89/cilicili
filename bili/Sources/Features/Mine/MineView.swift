@@ -1023,6 +1023,13 @@ private struct PlayerPerformanceSessionRow: View {
                     .lineLimit(2)
             }
 
+            if let prepareStageMessage = session.prepareStageMessage {
+                Text(prepareStageMessage)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
             if let failureMessage = session.failureMessage {
                 Label(failureMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)

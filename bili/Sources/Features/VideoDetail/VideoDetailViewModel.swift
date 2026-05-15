@@ -856,7 +856,7 @@ final class VideoDetailViewModel: ObservableObject {
             cid: cid,
             page: page,
             preferredQuality: adaptiveStartupPreferredQuality,
-            startupQualityCeiling: playbackAdaptationProfile.startupQualityCeiling
+            startupQualityCeiling: adaptiveStartupQualityCeiling
         )
     }
 
@@ -866,7 +866,7 @@ final class VideoDetailViewModel: ObservableObject {
         page: Int?
     ) async throws -> PlayURLData {
         let adaptiveQuality = adaptiveStartupPreferredQuality
-        let adaptiveCeiling = playbackAdaptationProfile.startupQualityCeiling
+        let adaptiveCeiling = adaptiveStartupQualityCeiling
         let key = [
             bvid,
             String(cid),
@@ -952,17 +952,19 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldSupplementPlayQualities(for variants: [PlayVariant]) -> Bool {
-        guard playbackAdaptationProfile.shouldWarmSupplementalVariants else { return false }
         let playableQualities = Set(variants.filter(\.isPlayable).map(\.quality))
         guard !playableQualities.isEmpty else { return false }
-        if playableQualities.count < 3 {
+        let missesPreferredQuality = libraryStore.preferredVideoQuality.map {
+            !playableQualities.contains($0)
+        } ?? false
+        let needsPreferredFrameRate = playVariantsNeedSupplementalFrameRateUpgrade(variants)
+        if missesPreferredQuality || needsPreferredFrameRate {
             return true
         }
+        guard playbackAdaptationProfile.shouldWarmSupplementalVariants else { return false }
+        if playableQualities.count < 3 { return true }
         if let preferredQuality = libraryStore.preferredVideoQuality,
            !playableQualities.contains(preferredQuality) {
-            return true
-        }
-        if playVariantsNeedSupplementalFrameRateUpgrade(variants) {
             return true
         }
         if playableQualities.contains(112),
@@ -1084,7 +1086,10 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldAutoUpgradeSupplementalVariant(from currentVariant: PlayVariant?) -> Bool {
-        guard playbackAdaptationProfile.level.rawValue <= PlayerPlaybackAdaptationProfile.Level.fallback.rawValue else {
+        let hasConfiguredPreferredQuality = libraryStore.preferredVideoQuality != nil
+        guard hasConfiguredPreferredQuality
+                || playbackAdaptationProfile.level.rawValue <= PlayerPlaybackAdaptationProfile.Level.fallback.rawValue
+        else {
             return false
         }
         guard !didSelectPlayVariantManually else { return false }
@@ -1282,11 +1287,19 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     var adaptiveStartupPreferredQuality: Int? {
+        if let preferredQuality = libraryStore.preferredVideoQuality {
+            return preferredQuality
+        }
         PlayerPerformanceStore.shared.adaptivePreferredQuality(
             for: libraryStore.preferredVideoQuality,
             metricsID: detail.bvid,
             isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
         )
+    }
+
+    var adaptiveStartupQualityCeiling: Int? {
+        guard libraryStore.preferredVideoQuality == nil else { return nil }
+        return playbackAdaptationProfile.startupQualityCeiling
     }
 
     private func preferredDefaultVariant(in variants: [PlayVariant]) -> PlayVariant? {
@@ -1380,12 +1393,13 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func warmPlayVariantForStartupIfNeeded(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
-              playbackAdaptationProfile.shouldWarmSupplementalVariants,
-              !PlaybackEnvironment.current.shouldPreferConservativePlayback,
               let cid,
               let variant,
               !variant.isProgressiveFastStart
         else { return }
+        let canWarmDuringStartup = playbackAdaptationProfile.shouldWarmSupplementalVariants
+            || libraryStore.preferredVideoQuality != nil
+        guard canWarmDuringStartup else { return }
         Task(priority: .userInitiated) { [detailBVID = detail.bvid, variant] in
             await VideoPreloadCenter.shared.warmVariant(
                 variant,

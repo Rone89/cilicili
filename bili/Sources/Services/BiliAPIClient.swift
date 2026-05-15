@@ -889,15 +889,19 @@ nonisolated final class BiliAPIClient {
         }
 
         if honorsConfiguredQuality || !environment.shouldPreferConservativePlayback {
-            let requestedQuality = min(configuredQuality ?? qualityCeiling, qualityCeiling)
+            let requestedQuality = configuredQuality ?? qualityCeiling
+            let allowsUsableFallback = environment.shouldPreferConservativePlayback || startupQualityCeiling != nil
             var bestStartupData: PlayURLData?
             if let racedStartupData = try await fetchRacedStartupPlayURL(
                 bvid: bvid,
                 cid: cid,
                 page: page,
-                requestedQuality: requestedQuality
+                requestedQuality: requestedQuality,
+                allowsUsableFallback: allowsUsableFallback
             ) {
-                if !honorsConfiguredQuality || racedStartupData.hasPlayableQuality(requestedQuality) {
+                if !honorsConfiguredQuality
+                    || racedStartupData.hasPlayableQuality(requestedQuality)
+                    || (allowsUsableFallback && racedStartupData.hasPlayableStreamPayload) {
                     return racedStartupData
                 }
                 bestStartupData = preferredStartupCandidate(bestStartupData, racedStartupData)
@@ -947,7 +951,8 @@ nonisolated final class BiliAPIClient {
         bvid: String,
         cid: Int,
         page: Int?,
-        requestedQuality: Int
+        requestedQuality: Int,
+        allowsUsableFallback: Bool
     ) async throws -> PlayURLData? {
         let raceStart = CACurrentMediaTime()
         let shouldRaceWBI = await shouldAttemptStartupWBI()
@@ -1024,7 +1029,7 @@ nonisolated final class BiliAPIClient {
                 }
 
                 if attempt.stage == "startupRaceTimeout" {
-                    if let bestStartupData {
+                    if let bestStartupData, allowsUsableFallback {
                         logPlayURLStage(
                             "startupRaceGraceFallback",
                             bvid: bvid,
@@ -1065,7 +1070,8 @@ nonisolated final class BiliAPIClient {
                         requestedQuality: requestedQuality,
                         data: data
                     )
-                    if data.highestPlayableQuality >= usableStartupQuality || data.hasPlayableStreamPayload {
+                    if allowsUsableFallback,
+                       data.highestPlayableQuality >= usableStartupQuality || data.hasPlayableStreamPayload {
                         logPlayURLStage(
                             "startupRaceUsableFallback.\(attempt.stage)",
                             bvid: bvid,

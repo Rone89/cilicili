@@ -3,6 +3,7 @@ import AVKit
 import Combine
 import OSLog
 import PillarboxPlayer
+import QuartzCore
 import SwiftUI
 import UIKit
 
@@ -192,6 +193,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     func prepare(source: PlayerStreamSource) async throws {
+        let prepareStart = CACurrentMediaTime()
         configureAudioSession()
         player.becomeActive()
         self.source = source
@@ -201,10 +203,19 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         onLoadingProgressChange?(0.18)
         publishPlaybackState(.preparing)
 
+        let manifestStart = CACurrentMediaTime()
         let manifest = try await BiliHLSManifestBuilder.make(source: source)
         guard !Task.isCancelled else { return }
+        let manifestMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: manifestStart)
+        PlayerMetricsLog.record(
+            .mediaPrepared,
+            metricsID: source.metricsID,
+            title: source.title,
+            message: "manifest=\(Self.formatMilliseconds(manifestMilliseconds))"
+        )
         onLoadingProgressChange?(0.58)
 
+        let itemStart = CACurrentMediaTime()
         currentItem = nil
         hlsBridge = manifest.bridge
         progressiveLoader = manifest.progressiveLoader
@@ -215,6 +226,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             preferredForwardBufferDuration: preferredForwardBufferDuration(for: source)
         )
         let item = makePlayerItem(from: manifest, configuration: playbackConfiguration)
+        let itemMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: itemStart)
         let previousVolume = player.systemPlayer.volume
         let previousMuted = player.isMuted
         player.pause()
@@ -226,6 +238,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         player.becomeActive()
         cancellables.removeAll()
         observePlayer()
+        let surfaceStart = CACurrentMediaTime()
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
         }
@@ -237,6 +250,19 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         onLoadingProgressChange?(0.86)
         publishPlaybackState(.ready)
         refreshSurfaceLayout()
+        let surfaceMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: surfaceStart)
+        let totalMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: prepareStart)
+        PlayerMetricsLog.record(
+            .mediaPrepared,
+            metricsID: source.metricsID,
+            title: source.title,
+            message: [
+                "total=\(Self.formatMilliseconds(totalMilliseconds))",
+                "manifest=\(Self.formatMilliseconds(manifestMilliseconds))",
+                "item=\(Self.formatMilliseconds(itemMilliseconds))",
+                "surface=\(Self.formatMilliseconds(surfaceMilliseconds))"
+            ].joined(separator: " ")
+        )
     }
 
     func play() {
@@ -529,6 +555,10 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         player.actionAtItemEnd = .pause
         player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
         return player
+    }
+
+    private nonisolated static func formatMilliseconds(_ value: Double) -> String {
+        "\(Int(value.rounded()))ms"
     }
 
     private func makePlayerItem(

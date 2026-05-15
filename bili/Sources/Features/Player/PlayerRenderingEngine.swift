@@ -189,6 +189,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var cdnHostMessage: String?
     var selectedQualityMessage: String?
     var detailSourceMessage: String?
+    var prepareStageMessage: String?
     var failureMessage: String?
 }
 
@@ -438,6 +439,7 @@ final class PlayerPerformanceStore: ObservableObject {
             session.prepareStartedAt = event.date
         case .mediaPrepared:
             session.mediaPreparedMilliseconds = Self.firstMilliseconds(in: event.message)
+            session.prepareStageMessage = event.message ?? session.prepareStageMessage
         case .prepareReturned:
             if let start = session.prepareStartedAt {
                 session.prepareMilliseconds = Self.milliseconds(from: start, to: event.date)

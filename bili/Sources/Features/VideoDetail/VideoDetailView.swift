@@ -2026,6 +2026,13 @@ private struct PlayerPerformanceOverlay: View {
                         .lineLimit(1)
                 }
 
+                if let prepareStageMessage = session.prepareStageMessage {
+                    Text(prepareStageMessage)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 HStack(spacing: 8) {
                     Text("缓冲 \(session.bufferCount)")
                     if let quality = session.selectedQualityMessage {
