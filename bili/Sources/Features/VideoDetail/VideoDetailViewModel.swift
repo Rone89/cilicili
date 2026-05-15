@@ -340,8 +340,8 @@ final class VideoDetailViewModel: ObservableObject {
                     api: api,
                     preferredQuality: preferredQuality,
                     cdnPreference: cdnPreference,
-                    warmsMedia: false,
-                    mediaWarmupDelay: 0,
+                    warmsMedia: true,
+                    mediaWarmupDelay: 0.15,
                     priority: priority,
                     playbackAdaptationProfile: adaptationProfile
                 )
@@ -821,8 +821,8 @@ final class VideoDetailViewModel: ObservableObject {
                 page: pageNumber,
                 preferredQuality: adaptiveStartupPreferredQuality,
                 cdnPreference: libraryStore.effectivePlaybackCDNPreference,
-                warmsMedia: false,
-                mediaWarmupDelay: 0
+                warmsMedia: true,
+                mediaWarmupDelay: 0.05
             )
             guard !isPlaybackInvalidatedForNavigation else { return }
             applyPlayURLData(data, cid: cid, page: pageNumber, source: "network")
@@ -1037,7 +1037,8 @@ final class VideoDetailViewModel: ObservableObject {
                     page: page,
                     preferredQuality: self.adaptiveStartupPreferredQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
-                    warmsMedia: false
+                    warmsMedia: true,
+                    mediaWarmupDelay: 0.2
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
 
