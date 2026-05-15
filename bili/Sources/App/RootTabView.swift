@@ -196,12 +196,14 @@ struct RootTabView: View {
     private func beginPlaybackPreload(for video: VideoItem) {
         Task {
             dependencies.refreshPlaybackCDNProbeIfNeeded()
+            let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(for: video.bvid)
             let preferredQuality = libraryStore.preferredVideoQuality
             let cdnPreference = libraryStore.effectivePlaybackCDNPreference
             let api = dependencies.api
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: preferredQuality,
-                cdnPreference: cdnPreference
+                cdnPreference: cdnPreference,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             await VideoPreloadCenter.shared.prioritizePlayback(for: video)
             await VideoPreloadCenter.shared.preloadPlayInfo(
@@ -210,7 +212,8 @@ struct RootTabView: View {
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
                 priority: .userInitiated,
-                warmsMedia: true
+                warmsMedia: true,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
     }

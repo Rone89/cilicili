@@ -191,6 +191,56 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var failureMessage: String?
 }
 
+struct PlayerPlaybackAdaptationProfile: Equatable, Sendable {
+    enum Level: Int, Sendable {
+        case normal = 0
+        case fallback = 1
+        case cautious = 2
+        case slow = 3
+
+        var startupQualityCeiling: Int? {
+            switch self {
+            case .normal, .fallback:
+                return nil
+            case .cautious:
+                return 80
+            case .slow:
+                return 64
+            }
+        }
+
+        var shouldAllowStartupCacheFallback: Bool {
+            self != .normal
+        }
+
+        var shouldWarmSupplementalVariants: Bool {
+            self == .normal
+        }
+
+        var shouldRefreshPlaybackCDNProbe: Bool {
+            self.rawValue >= Level.cautious.rawValue
+        }
+    }
+
+    let level: Level
+
+    var startupQualityCeiling: Int? {
+        level.startupQualityCeiling
+    }
+
+    var shouldAllowStartupCacheFallback: Bool {
+        level.shouldAllowStartupCacheFallback
+    }
+
+    var shouldWarmSupplementalVariants: Bool {
+        level.shouldWarmSupplementalVariants
+    }
+
+    var shouldRefreshPlaybackCDNProbe: Bool {
+        level.shouldRefreshPlaybackCDNProbe
+    }
+}
+
 @MainActor
 final class PlayerPerformanceStore: ObservableObject {
     static let shared = PlayerPerformanceStore()
@@ -217,10 +267,76 @@ final class PlayerPerformanceStore: ObservableObject {
         updateSession(with: event)
     }
 
+    func session(for metricsID: String) -> PlayerPerformanceSession? {
+        sessionsByID[metricsID]
+    }
+
+    func mostRecentSession() -> PlayerPerformanceSession? {
+        sessions.first
+    }
+
+    func adaptivePreferredQuality(for preferredQuality: Int?, metricsID: String? = nil) -> Int? {
+        let ceiling = playbackAdaptationProfile(for: metricsID).startupQualityCeiling
+        guard let ceiling else { return preferredQuality }
+        guard let preferredQuality else { return ceiling }
+        return min(preferredQuality, ceiling)
+    }
+
+    func playbackAdaptationProfile(for metricsID: String? = nil) -> PlayerPlaybackAdaptationProfile {
+        let relevantSessions = relevantPlaybackSessions(for: metricsID)
+        let worstLevel = relevantSessions
+            .map(Self.adaptationLevel(for:))
+            .max { $0.rawValue < $1.rawValue } ?? .normal
+        return PlayerPlaybackAdaptationProfile(level: worstLevel)
+    }
+
+    func shouldRefreshPlaybackCDNProbe(for metricsID: String? = nil) -> Bool {
+        playbackAdaptationProfile(for: metricsID).shouldRefreshPlaybackCDNProbe
+    }
+
     func clear() {
         events.removeAll()
         sessions.removeAll()
         sessionsByID.removeAll()
+    }
+
+    private func relevantPlaybackSessions(for metricsID: String?) -> [PlayerPerformanceSession] {
+        var candidates = Array(sessions.prefix(3))
+        if let metricsID,
+           let session = sessionsByID[metricsID],
+           !candidates.contains(session) {
+            candidates.insert(session, at: 0)
+        }
+        return candidates
+    }
+
+    private nonisolated static func adaptationLevel(for session: PlayerPerformanceSession) -> PlayerPlaybackAdaptationProfile.Level {
+        let startupMilliseconds = session.firstFrameTotalMilliseconds
+            ?? session.prepareMilliseconds
+            ?? session.playURLMilliseconds
+            ?? session.detailLoadMilliseconds
+            ?? 0
+        let playerMilliseconds = session.firstFramePlayerMilliseconds ?? 0
+
+        if startupMilliseconds >= 2_600 || playerMilliseconds >= 2_000 || session.bufferCount >= 2 {
+            return .slow
+        }
+        if startupMilliseconds >= 1_600
+            || playerMilliseconds >= 1_400
+            || session.bufferCount >= 1
+            || session.playURLMilliseconds.map({ $0 >= 1_000 }) == true
+            || session.prepareMilliseconds.map({ $0 >= 1_400 }) == true
+        {
+            return .cautious
+        }
+        if startupMilliseconds >= 1_100
+            || session.playURLMilliseconds.map({ $0 >= 700 }) == true
+            || session.prepareMilliseconds.map({ $0 >= 1_000 }) == true
+            || session.detailLoadMilliseconds.map({ $0 >= 1_200 }) == true
+        {
+            return .fallback
+        }
+        return .normal
     }
 
     private func updateSession(with event: PlayerPerformanceEvent) {

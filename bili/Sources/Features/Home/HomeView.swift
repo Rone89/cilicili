@@ -264,13 +264,15 @@ struct HomeView: View {
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(for: video.bvid)
         DispatchQueue.main.async {
             guard !pressedPreloadVideos.contains(bvid) else { return }
             pressedPreloadVideos.insert(bvid)
             Task {
                 await VideoPreloadCenter.shared.updatePlaybackPreferences(
                     preferredQuality: preferredQuality,
-                    cdnPreference: cdnPreference
+                    cdnPreference: cdnPreference,
+                    playbackAdaptationProfile: playbackAdaptationProfile
                 )
                 await VideoPreloadCenter.shared.prioritizePlayback(for: video)
                 await VideoPreloadCenter.shared.preloadPlayInfo(
@@ -279,7 +281,8 @@ struct HomeView: View {
                     preferredQuality: preferredQuality,
                     cdnPreference: cdnPreference,
                     priority: .userInitiated,
-                    warmsMedia: true
+                    warmsMedia: true,
+                    playbackAdaptationProfile: playbackAdaptationProfile
                 )
             }
         }
@@ -294,6 +297,7 @@ struct HomeView: View {
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
         visiblePreloadVideos.insert(bvid)
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
@@ -301,7 +305,8 @@ struct HomeView: View {
                 api: api,
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
-                priority: .utility
+                priority: .utility,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
     }

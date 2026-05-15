@@ -172,11 +172,12 @@ final class VideoDetailViewModel: ObservableObject {
         await VideoPreloadCenter.shared.preloadDetailAndPlayback(
             detail,
             api: api,
-            preferredQuality: libraryStore.preferredVideoQuality,
+            preferredQuality: adaptiveStartupPreferredQuality,
             cdnPreference: libraryStore.effectivePlaybackCDNPreference,
             warmsMedia: false,
             mediaWarmupDelay: 0,
-            priority: .userInitiated
+            priority: .userInitiated,
+            playbackAdaptationProfile: playbackAdaptationProfile
         )
 
         if canBootstrapPlaybackFromSeed {
@@ -499,7 +500,8 @@ final class VideoDetailViewModel: ObservableObject {
         Task { [quality = variant.quality, cdnPreference = libraryStore.effectivePlaybackCDNPreference] in
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: quality,
-                cdnPreference: cdnPreference
+                cdnPreference: cdnPreference,
+                playbackAdaptationProfile: PlayerPlaybackAdaptationProfile(level: .normal)
             )
         }
         playVariantSwitchTask?.cancel()
@@ -622,15 +624,16 @@ final class VideoDetailViewModel: ObservableObject {
         }
         do {
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
-                preferredQuality: libraryStore.preferredVideoQuality,
-                cdnPreference: libraryStore.effectivePlaybackCDNPreference
+                preferredQuality: adaptiveStartupPreferredQuality,
+                cdnPreference: libraryStore.effectivePlaybackCDNPreference,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             let pageNumber = selectedPageNumber
             if let cachedPlayableData = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
-                preferredQuality: libraryStore.preferredVideoQuality
+                preferredQuality: adaptiveStartupPreferredQuality
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
                 applyPlayURLData(
@@ -647,7 +650,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 waitsForPending: false,
-                preferredQuality: libraryStore.preferredVideoQuality
+                preferredQuality: adaptiveStartupPreferredQuality
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
                 if !shouldRefetchForPreferredQuality(cachedData) {
@@ -664,7 +667,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 waitsForPending: true,
-                preferredQuality: libraryStore.preferredVideoQuality,
+                preferredQuality: adaptiveStartupPreferredQuality,
                 maximumPendingWait: PlaybackEnvironment.current.preferredPlayURLStartupGrace
             ) {
                 guard !isPlaybackInvalidatedForNavigation else { return }
@@ -688,7 +691,7 @@ final class VideoDetailViewModel: ObservableObject {
                 bvid: detail.bvid,
                 cid: cid,
                 page: pageNumber,
-                preferredQuality: libraryStore.preferredVideoQuality,
+                preferredQuality: adaptiveStartupPreferredQuality,
                 cdnPreference: libraryStore.effectivePlaybackCDNPreference,
                 warmsMedia: false,
                 mediaWarmupDelay: 0
@@ -724,7 +727,8 @@ final class VideoDetailViewModel: ObservableObject {
             bvid: bvid,
             cid: cid,
             page: page,
-            preferredQuality: libraryStore.preferredVideoQuality
+            preferredQuality: adaptiveStartupPreferredQuality,
+            startupQualityCeiling: playbackAdaptationProfile.startupQualityCeiling
         )
     }
 
@@ -733,7 +737,15 @@ final class VideoDetailViewModel: ObservableObject {
         cid: Int,
         page: Int?
     ) async throws -> PlayURLData {
-        let key = [bvid, String(cid), page.map(String.init) ?? "-"].joined(separator: "|")
+        let adaptiveQuality = adaptiveStartupPreferredQuality
+        let adaptiveCeiling = playbackAdaptationProfile.startupQualityCeiling
+        let key = [
+            bvid,
+            String(cid),
+            page.map(String.init) ?? "-",
+            "q\(adaptiveQuality ?? 0)",
+            "ceiling\(adaptiveCeiling ?? 0)"
+        ].joined(separator: "|")
         if startupPlayURLTaskKey == key, let startupPlayURLTask {
             return try await startupPlayURLTask.value
         }
@@ -764,7 +776,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: page,
                 waitsForPending: false,
-                preferredQuality: self.libraryStore.preferredVideoQuality
+                preferredQuality: self.adaptiveStartupPreferredQuality
             ) {
                 guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation else { return }
                 self.applyPlayURLData(
@@ -812,6 +824,7 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldSupplementPlayQualities(for variants: [PlayVariant]) -> Bool {
+        guard playbackAdaptationProfile.shouldWarmSupplementalVariants else { return false }
         let playableQualities = Set(variants.filter(\.isPlayable).map(\.quality))
         guard !playableQualities.isEmpty else { return false }
         if playableQualities.count < 3 {
@@ -884,7 +897,7 @@ final class VideoDetailViewModel: ObservableObject {
                     bvid: self.detail.bvid,
                     cid: cid,
                     page: page,
-                    preferredQuality: self.libraryStore.preferredVideoQuality,
+                    preferredQuality: self.adaptiveStartupPreferredQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
                     warmsMedia: false
                 )
@@ -917,9 +930,10 @@ final class VideoDetailViewModel: ObservableObject {
                     self.selectedPlayVariant = self.preferredDefaultVariant(in: self.playVariants)
                     self.updateStablePlayerViewModelIfNeeded()
                 }
-        if !PlaybackEnvironment.current.shouldPreferConservativePlayback {
-            self.warmLikelySupplementalVariantAfterFirstFrame(cid: cid, page: page)
-        }
+                if self.playbackAdaptationProfile.shouldWarmSupplementalVariants,
+                   !PlaybackEnvironment.current.shouldPreferConservativePlayback {
+                    self.warmLikelySupplementalVariantAfterFirstFrame(cid: cid, page: page)
+                }
             } catch {
                 guard !Task.isCancelled else { return }
             }
@@ -942,6 +956,9 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldAutoUpgradeSupplementalVariant(from currentVariant: PlayVariant?) -> Bool {
+        guard playbackAdaptationProfile.level.rawValue <= PlayerPlaybackAdaptationProfile.Level.fallback.rawValue else {
+            return false
+        }
         guard !didSelectPlayVariantManually else { return false }
         guard let currentVariant, currentVariant.isPlayable else { return selectedPlayVariant == nil }
         guard let preferredVariant = preferredDefaultVariant(in: playVariants),
@@ -1129,6 +1146,17 @@ final class VideoDetailViewModel: ObservableObject {
         return detail.pages?.first(where: { $0.cid == selectedCID }) ?? detail.pages?.first
     }
 
+    var playbackAdaptationProfile: PlayerPlaybackAdaptationProfile {
+        PlayerPerformanceStore.shared.playbackAdaptationProfile(for: detail.bvid)
+    }
+
+    var adaptiveStartupPreferredQuality: Int? {
+        PlayerPerformanceStore.shared.adaptivePreferredQuality(
+            for: libraryStore.preferredVideoQuality,
+            metricsID: detail.bvid
+        )
+    }
+
     private func preferredDefaultVariant(in variants: [PlayVariant]) -> PlayVariant? {
         let playableVariants = sortedPlayVariants(variants).filter(\.isPlayable)
         let playbackEnvironment = PlaybackEnvironment.current
@@ -1149,7 +1177,7 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldRefetchForPreferredQuality(_ data: PlayURLData) -> Bool {
-        guard let preferredQuality = libraryStore.preferredVideoQuality else { return false }
+        guard let preferredQuality = adaptiveStartupPreferredQuality else { return false }
         return data.shouldRefetchForPreferredQuality(preferredQuality)
     }
 
@@ -1177,7 +1205,10 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func storedPreferredVariant(in playableVariants: [PlayVariant]) -> PlayVariant? {
-        guard let preferredQuality = libraryStore.preferredVideoQuality else { return nil }
+        guard let preferredQuality = didSelectPlayVariantManually
+                ? libraryStore.preferredVideoQuality
+                : adaptiveStartupPreferredQuality
+        else { return nil }
         let sortedVariants = sortedPlayVariants(playableVariants)
         if let exactVariant = sortedVariants.first(where: { $0.quality == preferredQuality }) {
             return exactVariant
@@ -1217,6 +1248,7 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func warmPlayVariantForStartupIfNeeded(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
+              playbackAdaptationProfile.shouldWarmSupplementalVariants,
               !PlaybackEnvironment.current.shouldPreferConservativePlayback,
               let cid,
               let variant,
@@ -1235,6 +1267,7 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func warmLikelySupplementalVariantAfterFirstFrame(cid: Int, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
+              playbackAdaptationProfile.shouldWarmSupplementalVariants,
               !PlaybackEnvironment.current.shouldPreferConservativePlayback
         else { return }
         let variants = supplementalWarmupVariants()
@@ -1489,11 +1522,13 @@ final class VideoDetailViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             for video in candidates {
                 guard !Task.isCancelled else { return }
+                let playbackAdaptationProfile = self.playbackAdaptationProfile
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
                     preferredQuality: self.libraryStore.preferredVideoQuality,
-                    cdnPreference: self.libraryStore.effectivePlaybackCDNPreference
+                    cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
+                    playbackAdaptationProfile: playbackAdaptationProfile
                 )
             }
         }

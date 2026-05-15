@@ -34,8 +34,15 @@ actor VideoPreloadCenter {
     private var focusedPlaybackUntil: Date?
     private var defaultCDNPreference: PlaybackCDNPreference = .automatic
 
-    func updatePlaybackPreferences(preferredQuality: Int?, cdnPreference: PlaybackCDNPreference = .automatic) {
-        defaultPreferredQuality = preferredQuality
+    func updatePlaybackPreferences(
+        preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference = .automatic,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = PlayerPlaybackAdaptationProfile(level: .normal)
+    ) {
+        defaultPreferredQuality = Self.effectiveStartupQuality(
+            preferredQuality,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
         defaultCDNPreference = cdnPreference
     }
 
@@ -53,7 +60,8 @@ actor VideoPreloadCenter {
         api: BiliAPIClient,
         warmsMedia: Bool = true,
         mediaWarmupDelay: TimeInterval = 1.25,
-        priority: TaskPriority = .utility
+        priority: TaskPriority = .utility,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = PlayerPlaybackAdaptationProfile(level: .normal)
     ) {
         guard shouldAllowPreload(bvid: video.bvid, priority: priority) else { return }
         guard let cid = video.cid else {
@@ -62,7 +70,8 @@ actor VideoPreloadCenter {
                 api: api,
                 warmsMedia: warmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
-                priority: priority
+                priority: priority,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             return
         }
@@ -73,7 +82,8 @@ actor VideoPreloadCenter {
             api: api,
             warmsMedia: warmsMedia,
             mediaWarmupDelay: mediaWarmupDelay,
-            priority: priority
+            priority: priority,
+            playbackAdaptationProfile: playbackAdaptationProfile
         )
     }
 
@@ -84,34 +94,49 @@ actor VideoPreloadCenter {
         cdnPreference: PlaybackCDNPreference = .automatic,
         priority: TaskPriority = .utility,
         warmsMedia: Bool = false,
-        mediaWarmupDelay: TimeInterval = 0
+        mediaWarmupDelay: TimeInterval = 0,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = PlayerPlaybackAdaptationProfile(level: .normal)
     ) {
+        guard playbackAdaptationProfile.level.rawValue < PlayerPlaybackAdaptationProfile.Level.slow.rawValue
+                || priority == .userInitiated
+        else {
+            PlayerMetricsLog.logger.info(
+                "playInfoPreloadSkipped reason=adaptiveSlow bvid=\(video.bvid, privacy: .public) preferred=\(preferredQuality ?? 0, privacy: .public)"
+            )
+            return
+        }
         guard !PlaybackEnvironment.current.shouldPreferConservativePlayback || priority == .userInitiated else {
             PlayerMetricsLog.logger.info(
                 "playInfoPreloadSkipped reason=conservative bvid=\(video.bvid, privacy: .public) preferred=\(preferredQuality ?? 0, privacy: .public)"
             )
             return
         }
-        defaultPreferredQuality = preferredQuality
+        let effectivePreferredQuality = Self.effectiveStartupQuality(
+            preferredQuality,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
+        defaultPreferredQuality = effectivePreferredQuality
         defaultCDNPreference = cdnPreference
+        let effectiveWarmsMedia = warmsMedia && playbackAdaptationProfile.shouldWarmSupplementalVariants
         guard let cid = video.cid else {
             PlayerMetricsLog.logger.info(
-                "playInfoPreloadDetailStart bvid=\(video.bvid, privacy: .public) preferred=\(preferredQuality ?? 0, privacy: .public) priority=\(String(describing: priority), privacy: .public)"
+                "playInfoPreloadDetailStart bvid=\(video.bvid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) priority=\(String(describing: priority), privacy: .public)"
             )
             preloadWebPagePlayInfo(
                 bvid: video.bvid,
                 api: api,
-                preferredQuality: preferredQuality,
+                preferredQuality: effectivePreferredQuality,
                 priority: priority
             )
             preloadDetailAndPlayback(
                 video,
                 api: api,
-                preferredQuality: preferredQuality,
+                preferredQuality: effectivePreferredQuality,
                 cdnPreference: cdnPreference,
-                warmsMedia: warmsMedia,
+                warmsMedia: effectiveWarmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
-                priority: priority
+                priority: priority,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             return
         }
@@ -119,12 +144,13 @@ actor VideoPreloadCenter {
             bvid: video.bvid,
             cid: cid,
             page: nil,
-            preferredQuality: preferredQuality,
+            preferredQuality: effectivePreferredQuality,
             cdnPreference: cdnPreference,
             api: api,
-            warmsMedia: warmsMedia,
+            warmsMedia: effectiveWarmsMedia,
             mediaWarmupDelay: mediaWarmupDelay,
-            priority: priority
+            priority: priority,
+            playbackAdaptationProfile: playbackAdaptationProfile
         )
     }
 
@@ -137,9 +163,13 @@ actor VideoPreloadCenter {
         api: BiliAPIClient,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval,
-        priority: TaskPriority
+        priority: TaskPriority,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
     ) {
-        let effectivePreferredQuality = preferredQuality ?? defaultPreferredQuality
+        let effectivePreferredQuality = Self.effectiveStartupQuality(
+            preferredQuality ?? defaultPreferredQuality,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
         let effectiveCDNPreference = cdnPreference ?? defaultCDNPreference
         guard shouldAllowPreload(bvid: bvid, priority: priority) else {
             PlayerMetricsLog.logger.info(
@@ -207,7 +237,8 @@ actor VideoPreloadCenter {
                     bvid: bvid,
                     cid: cid,
                     page: page,
-                    preferredQuality: effectivePreferredQuality
+                    preferredQuality: effectivePreferredQuality,
+                    startupQualityCeiling: playbackAdaptationProfile.startupQualityCeiling
                 )
                 guard !Task.isCancelled else {
                     self.finish(key)
@@ -246,20 +277,27 @@ actor VideoPreloadCenter {
         cdnPreference: PlaybackCDNPreference? = nil,
         warmsMedia: Bool = true,
         mediaWarmupDelay: TimeInterval = 1.25,
-        priority: TaskPriority = .utility
+        priority: TaskPriority = .utility,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = PlayerPlaybackAdaptationProfile(level: .normal)
     ) {
         guard shouldAllowPreload(bvid: video.bvid, priority: priority) else { return }
+        let effectivePreferredQuality = Self.effectiveStartupQuality(
+            preferredQuality ?? defaultPreferredQuality,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
+        let effectiveWarmsMedia = warmsMedia && playbackAdaptationProfile.shouldWarmSupplementalVariants
         if let cid = video.cid {
             preloadPlayURL(
                 bvid: video.bvid,
                 cid: cid,
                 page: nil,
-                preferredQuality: preferredQuality,
+                preferredQuality: effectivePreferredQuality,
                 cdnPreference: cdnPreference,
                 api: api,
-                warmsMedia: warmsMedia,
+                warmsMedia: effectiveWarmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
-                priority: priority
+                priority: priority,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             return
         }
@@ -270,19 +308,20 @@ actor VideoPreloadCenter {
                 bvid: cached.bvid,
                 cid: cid,
                 page: nil,
-                preferredQuality: preferredQuality,
+                preferredQuality: effectivePreferredQuality,
                 cdnPreference: cdnPreference,
                 api: api,
-                warmsMedia: warmsMedia,
+                warmsMedia: effectiveWarmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
-                priority: priority
+                priority: priority,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             return
         }
         preloadWebPagePlayInfo(
             bvid: video.bvid,
             api: api,
-            preferredQuality: preferredQuality,
+            preferredQuality: effectivePreferredQuality,
             priority: priority
         )
         if let detailTask = detailTasks[video.bvid] {
@@ -295,11 +334,12 @@ actor VideoPreloadCenter {
             preloadPlayURLAfterDetail(
                 detailTask,
                 api: api,
-                preferredQuality: preferredQuality,
+                preferredQuality: effectivePreferredQuality,
                 cdnPreference: cdnPreference,
-                warmsMedia: warmsMedia,
+                warmsMedia: effectiveWarmsMedia,
                 mediaWarmupDelay: mediaWarmupDelay,
-                priority: priority
+                priority: priority,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
             return
         }
@@ -318,9 +358,9 @@ actor VideoPreloadCenter {
                         bvid: detail.bvid,
                         cid: cid,
                         page: nil,
-                        preferredQuality: preferredQuality,
+                        preferredQuality: effectivePreferredQuality,
                         cdnPreference: cdnPreference,
-                        warmsMedia: warmsMedia,
+                        warmsMedia: effectiveWarmsMedia,
                         mediaWarmupDelay: mediaWarmupDelay
                     ) {
                         self.finishDetail(bvid)
@@ -330,12 +370,13 @@ actor VideoPreloadCenter {
                         bvid: detail.bvid,
                         cid: cid,
                         page: nil,
-                        preferredQuality: preferredQuality,
+                        preferredQuality: effectivePreferredQuality,
                         cdnPreference: cdnPreference,
                         api: api,
-                        warmsMedia: warmsMedia,
+                        warmsMedia: effectiveWarmsMedia,
                         mediaWarmupDelay: mediaWarmupDelay,
-                        priority: priority
+                        priority: priority,
+                        playbackAdaptationProfile: playbackAdaptationProfile
                     )
                 }
                 self.finishDetail(bvid)
@@ -354,7 +395,8 @@ actor VideoPreloadCenter {
         cdnPreference: PlaybackCDNPreference?,
         warmsMedia: Bool,
         mediaWarmupDelay: TimeInterval,
-        priority: TaskPriority
+        priority: TaskPriority,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
     ) {
         Task(priority: priority) {
             do {
@@ -382,7 +424,8 @@ actor VideoPreloadCenter {
                     api: api,
                     warmsMedia: warmsMedia,
                     mediaWarmupDelay: mediaWarmupDelay,
-                    priority: priority
+                    priority: priority,
+                    playbackAdaptationProfile: playbackAdaptationProfile
                 )
             } catch {
                 guard !Task.isCancelled else { return }
@@ -502,6 +545,19 @@ actor VideoPreloadCenter {
             }
         }
         return false
+    }
+
+    private nonisolated static func effectiveStartupQuality(
+        _ preferredQuality: Int?,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
+    ) -> Int? {
+        guard let ceiling = playbackAdaptationProfile.startupQualityCeiling else {
+            return preferredQuality
+        }
+        guard let preferredQuality else {
+            return ceiling
+        }
+        return min(preferredQuality, ceiling)
     }
 
     private func storeBVIDPlayInfoDataIfNeeded(

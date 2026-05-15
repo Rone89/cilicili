@@ -805,13 +805,15 @@ struct VideoDetailView: View {
         let api = dependencies.api
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile()
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,
                 api: api,
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
-                priority: .utility
+                priority: .utility,
+                playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
     }

@@ -857,11 +857,13 @@ nonisolated final class BiliAPIClient {
         bvid: String,
         cid: Int,
         page: Int? = nil,
-        preferredQuality: Int? = nil
+        preferredQuality: Int? = nil,
+        startupQualityCeiling: Int? = nil
     ) async throws -> PlayURLData {
         let environment = PlaybackEnvironment.current
         let storedPreferredQuality = await preferredVideoQuality()
         let configuredQuality = preferredQuality ?? storedPreferredQuality
+        let qualityCeiling = startupQualityCeiling ?? environment.startupPreferredQualityCeiling
         let honorsConfiguredQuality = configuredQuality != nil
         if environment.shouldPreferConservativePlayback && !honorsConfiguredQuality {
             do {
@@ -887,7 +889,7 @@ nonisolated final class BiliAPIClient {
         }
 
         if honorsConfiguredQuality || !environment.shouldPreferConservativePlayback {
-            let requestedQuality = min(configuredQuality ?? environment.startupPreferredQualityCeiling, environment.startupPreferredQualityCeiling)
+            let requestedQuality = min(configuredQuality ?? qualityCeiling, qualityCeiling)
             var bestStartupData: PlayURLData?
             if let racedStartupData = try await fetchRacedStartupPlayURL(
                 bvid: bvid,

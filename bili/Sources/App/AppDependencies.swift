@@ -9,6 +9,7 @@ final class AppDependencies: ObservableObject {
     let sponsorBlockService: SponsorBlockService
     private let networkMetricsRecorder: BiliNetworkMetricsRecorder
     private var playbackCDNProbeRefreshTask: Task<Void, Never>?
+    private var lastPlaybackCDNAdaptiveRefreshAt: Date?
 
     init() {
         let sessionStore = SessionStore()
@@ -38,15 +39,38 @@ final class AppDependencies: ObservableObject {
 
     func refreshPlaybackCDNProbeIfNeeded() {
         guard playbackCDNProbeRefreshTask == nil else { return }
-        guard libraryStore.needsPlaybackCDNProbeRefresh else { return }
+        guard shouldRefreshPlaybackCDNProbe else { return }
         playbackCDNProbeRefreshTask = Task {
             let snapshot = await PlaybackCDNProbeService.recommendedSnapshot()
             await MainActor.run {
                 if !Task.isCancelled {
                     self.libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
+                    if !self.libraryStore.needsPlaybackCDNProbeRefresh {
+                        self.lastPlaybackCDNAdaptiveRefreshAt = Date()
+                    }
                 }
                 self.playbackCDNProbeRefreshTask = nil
             }
         }
+    }
+
+    private var shouldRefreshPlaybackCDNProbe: Bool {
+        guard libraryStore.playbackCDNPreference == .automatic else { return false }
+        if libraryStore.needsPlaybackCDNProbeRefresh {
+            return true
+        }
+        guard PlayerPerformanceStore.shared.shouldRefreshPlaybackCDNProbe() else {
+            return false
+        }
+        guard let snapshot = libraryStore.playbackCDNProbeSnapshot else {
+            return true
+        }
+        if snapshot.isExpired(freshnessInterval: 2 * 60 * 60) {
+            return true
+        }
+        guard let lastPlaybackCDNAdaptiveRefreshAt else {
+            return true
+        }
+        return Date().timeIntervalSince(lastPlaybackCDNAdaptiveRefreshAt) >= 2 * 60 * 60
     }
 }
