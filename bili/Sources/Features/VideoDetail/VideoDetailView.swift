@@ -3806,12 +3806,12 @@ final class VideoDetailViewModelHolder: ObservableObject {
 }
 
 private struct VideoDetailRenderSnapshot: Equatable {
-    let detail: VideoItem
+    let detailSignature: VideoDetailSnapshotSignature
     let selectedCID: Int?
     let state: LoadingState
     let playURLState: LoadingState
-    let playVariants: [PlayVariant]
-    let selectedPlayVariant: PlayVariant?
+    let playVariantSignature: String
+    let selectedPlayVariantID: String?
     let isSupplementingPlayQualities: Bool
     let isSwitchingPlayQuality: Bool
     let pendingPlayVariantID: String?
@@ -3819,17 +3819,17 @@ private struct VideoDetailRenderSnapshot: Equatable {
     let interactionMessage: String?
     let isMutatingInteraction: Bool
     let playbackFallbackMessage: String?
-    let related: [VideoItem]
+    let relatedSignature: String
     let relatedState: LoadingState
     let stablePlayerID: ObjectIdentifier?
 
     init(_ viewModel: VideoDetailViewModel) {
-        detail = viewModel.detail
+        detailSignature = VideoDetailSnapshotSignature(viewModel.detail)
         selectedCID = viewModel.selectedCID
         state = viewModel.state
         playURLState = viewModel.playURLState
-        playVariants = viewModel.playVariants
-        selectedPlayVariant = viewModel.selectedPlayVariant
+        playVariantSignature = viewModel.playVariants.snapshotSignature
+        selectedPlayVariantID = viewModel.selectedPlayVariant?.id
         isSupplementingPlayQualities = viewModel.isSupplementingPlayQualities
         isSwitchingPlayQuality = viewModel.isSwitchingPlayQuality
         pendingPlayVariantID = viewModel.pendingPlayVariantID
@@ -3837,8 +3837,93 @@ private struct VideoDetailRenderSnapshot: Equatable {
         interactionMessage = viewModel.interactionMessage
         isMutatingInteraction = viewModel.isMutatingInteraction
         playbackFallbackMessage = viewModel.playbackFallbackMessage
-        related = viewModel.related
+        relatedSignature = viewModel.related.snapshotSignature
         relatedState = viewModel.relatedState
         stablePlayerID = viewModel.stablePlayerViewModel.map(ObjectIdentifier.init)
+    }
+}
+
+private struct VideoDetailSnapshotSignature: Equatable {
+    let bvid: String
+    let aid: Int
+    let cid: Int
+    let title: String
+    let description: String
+    let ownerSignature: String
+    let statSignature: String
+    let pageSignature: String
+    let aspectRatioBits: UInt64
+    let pubdate: Int
+    let duration: Int
+
+    init(_ video: VideoItem) {
+        bvid = video.bvid
+        aid = video.aid ?? 0
+        cid = video.cid ?? 0
+        title = video.title
+        description = video.desc ?? ""
+        ownerSignature = [
+            String(video.owner?.mid ?? 0),
+            video.owner?.name ?? "",
+            video.owner?.face ?? ""
+        ].joined(separator: "|")
+        statSignature = [
+            String(video.stat?.view ?? 0),
+            String(video.stat?.reply ?? 0),
+            String(video.stat?.like ?? 0),
+            String(video.stat?.coin ?? 0),
+            String(video.stat?.favorite ?? 0),
+            String(video.stat?.share ?? 0)
+        ].joined(separator: "|")
+        pageSignature = (video.pages ?? []).map {
+            [
+                String($0.cid),
+                $0.part,
+                String($0.dimension?.width ?? 0),
+                String($0.dimension?.height ?? 0)
+            ].joined(separator: ":")
+        }.joined(separator: "|")
+        aspectRatioBits = (video.dimension?.aspectRatio ?? 0).bitPattern
+        pubdate = video.pubdate
+        duration = video.duration ?? 0
+    }
+}
+
+private extension Array where Element == PlayVariant {
+    var snapshotSignature: String {
+        map {
+            [
+                $0.id,
+                String($0.quality),
+                $0.title,
+                $0.subtitle,
+                $0.badge ?? "",
+                $0.codec ?? "",
+                String($0.bandwidth ?? 0),
+                $0.frameRate ?? "",
+                $0.videoURL?.absoluteString ?? "",
+                $0.audioURL?.absoluteString ?? "",
+                $0.isPlayable ? "1" : "0",
+                $0.isProgressiveFastStart ? "1" : "0"
+            ].joined(separator: "^")
+        }
+        .joined(separator: "||")
+    }
+}
+
+private extension Array where Element == VideoItem {
+    var snapshotSignature: String {
+        map {
+            [
+                $0.bvid,
+                $0.title,
+                $0.pic ?? "",
+                $0.owner?.name ?? "",
+                String($0.owner?.mid ?? 0),
+                String($0.duration ?? 0),
+                String($0.pubdate)
+            ].joined(separator: "^")
+        }
+        .joined(separator: "||")
     }
 }

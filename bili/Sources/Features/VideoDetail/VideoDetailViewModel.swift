@@ -1743,15 +1743,15 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func prefetchRelatedArtwork(_ videos: [VideoItem]) {
-        let urls = videos.prefix(5).compactMap { video -> URL? in
+        let urls = videos.prefix(4).compactMap { video -> URL? in
             guard let pic = video.pic else { return nil }
-            return URL(string: pic.biliCoverThumbnailURL(width: 480, height: 270))
+            return URL(string: pic.biliCoverThumbnailURL(width: 360, height: 228))
         }
         guard !urls.isEmpty else { return }
         Task(priority: .utility) {
             await RemoteImageCache.shared.prefetch(
                 urls,
-                targetPixelSize: 540,
+                targetPixelSize: 360,
                 maximumConcurrentLoads: 2
             )
         }
