@@ -1127,18 +1127,24 @@ struct LocalHLSBridge: Sendable {
         from urls: [URL],
         headers: [String: String]
     ) async throws -> (indexData: Data, mode: String) {
-        let strategy = bootstrapFetchStrategy()
+        let strategy = bootstrapFetchStrategy(urlCount: urls.count)
         let indexData = try await fetchByteRange(
             indexRange,
             from: urls,
             headers: headers,
-            strategy: strategy
+            policy: strategy
         )
-        return (indexData, strategy.logLabel)
+        return (indexData, strategy.fetchStrategy.logLabel)
     }
 
-    private nonisolated static func bootstrapFetchStrategy() -> HLSByteRangeFetchStrategy {
-        PlaybackEnvironment.current.shouldPreferConservativePlayback ? .sequential : .fastFallback
+    private nonisolated static func bootstrapFetchStrategy(urlCount: Int) -> HLSBootstrapFetchPolicy {
+        let strategy: HLSByteRangeFetchStrategy = PlaybackEnvironment.current.shouldPreferConservativePlayback
+            ? .sequential
+            : .fastFallback
+        return HLSBootstrapFetchPolicy(
+            fetchStrategy: strategy,
+            remoteRequestPolicy: .startupIndex(urlCount: urlCount)
+        )
     }
 
     fileprivate nonisolated static func fetchByteRange(
@@ -1147,7 +1153,12 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String]
     ) async throws -> Data {
         try await VideoRangeCache.shared.cachedOrFetch(url: url, range: range) {
-            try await fetchRemoteByteRangeWithRetry(range, from: url, headers: headers)
+            try await fetchRemoteByteRangeWithRetry(
+                range,
+                from: url,
+                headers: headers,
+                policy: .default(for: range)
+            )
         }
     }
 
@@ -1157,17 +1168,35 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String],
         strategy: HLSByteRangeFetchStrategy = .sequential
     ) async throws -> Data {
+        try await fetchByteRange(
+            range,
+            from: urls,
+            headers: headers,
+            policy: HLSBootstrapFetchPolicy(
+                fetchStrategy: strategy,
+                remoteRequestPolicy: .default(for: range)
+            )
+        )
+    }
+
+    fileprivate nonisolated static func fetchByteRange(
+        _ range: HTTPByteRange,
+        from urls: [URL],
+        headers: [String: String],
+        policy: HLSBootstrapFetchPolicy
+    ) async throws -> Data {
         let canonicalSourceURLs = urls.removingDuplicates()
         guard let primaryURL = canonicalSourceURLs.first else {
             throw PlayerEngineError.unsupportedMedia
         }
         let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalSourceURLs)
-        guard strategy.isFastFallback, sourceURLs.count > 1 else {
+        guard policy.fetchStrategy.isFastFallback, sourceURLs.count > 1 else {
             return try await fetchByteRangeSequential(
                 range,
                 from: sourceURLs,
                 primaryURL: primaryURL,
-                headers: headers
+                headers: headers,
+                remoteRequestPolicy: policy.remoteRequestPolicy
             )
         }
 
@@ -1175,7 +1204,8 @@ struct LocalHLSBridge: Sendable {
             range,
             from: sourceURLs,
             primaryURL: primaryURL,
-            headers: headers
+            headers: headers,
+            remoteRequestPolicy: policy.remoteRequestPolicy
         )
     }
 
@@ -1183,7 +1213,8 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from sourceURLs: [URL],
         primaryURL: URL,
-        headers: [String: String]
+        headers: [String: String],
+        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
     ) async throws -> Data {
         guard !sourceURLs.isEmpty else {
             throw PlayerEngineError.unsupportedMedia
@@ -1192,7 +1223,14 @@ struct LocalHLSBridge: Sendable {
         for (index, url) in sourceURLs.enumerated() {
             let fetchStart = CACurrentMediaTime()
             do {
-                let data = try await fetchByteRange(range, from: url, headers: headers)
+                let data = try await VideoRangeCache.shared.cachedOrFetch(url: url, range: range) {
+                    try await fetchRemoteByteRangeWithRetry(
+                        range,
+                        from: url,
+                        headers: headers,
+                        policy: remoteRequestPolicy
+                    )
+                }
                 await HLSSourcePreferenceCache.shared.recordResult(
                     url: url,
                     for: sourceURLs,
@@ -1230,7 +1268,8 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from sourceURLs: [URL],
         primaryURL: URL,
-        headers: [String: String]
+        headers: [String: String],
+        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
     ) async throws -> Data {
         let result: Result<(index: Int, data: Data), Error> = await withTaskGroup(of: Result<(index: Int, data: Data), Error>.self) { group in
             for (index, url) in sourceURLs.enumerated() {
@@ -1241,7 +1280,14 @@ struct LocalHLSBridge: Sendable {
                             let delay = UInt64(55_000_000 + max(index - 1, 0) * 45_000_000)
                             try await Task.sleep(nanoseconds: delay)
                         }
-                        let data = try await fetchByteRange(range, from: url, headers: headers)
+                        let data = try await VideoRangeCache.shared.cachedOrFetch(url: url, range: range) {
+                            try await fetchRemoteByteRangeWithRetry(
+                                range,
+                                from: url,
+                                headers: headers,
+                                policy: remoteRequestPolicy
+                            )
+                        }
                         await HLSSourcePreferenceCache.shared.recordResult(
                             url: url,
                             for: sourceURLs,
@@ -1296,19 +1342,25 @@ struct LocalHLSBridge: Sendable {
     private nonisolated static func fetchRemoteByteRangeWithRetry(
         _ range: HTTPByteRange,
         from url: URL,
-        headers: [String: String]
+        headers: [String: String],
+        policy: HLSRemoteByteRangeRequestPolicy
     ) async throws -> Data {
         var lastError: Error?
-        for attempt in 0..<2 {
+        for attempt in 0..<policy.attempts {
             do {
-                return try await fetchRemoteByteRange(range, from: url, headers: headers)
+                return try await fetchRemoteByteRange(
+                    range,
+                    from: url,
+                    headers: headers,
+                    timeoutInterval: policy.timeoutInterval(for: range)
+                )
             } catch {
                 lastError = error
-                guard attempt < 1, !Task.isCancelled else { break }
+                guard attempt < policy.attempts - 1, !Task.isCancelled else { break }
                 PlayerMetricsLog.logger.info(
                     "hlsBridgeByteRangeRetry attempt=\(attempt + 1, privacy: .public) range=\(range.start, privacy: .public)-\(range.endInclusive, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
-                try? await Task.sleep(nanoseconds: 90_000_000)
+                try? await Task.sleep(nanoseconds: policy.retryDelayNanoseconds)
             }
         }
         throw lastError ?? PlayerEngineError.unsupportedMedia
@@ -1319,9 +1371,23 @@ struct LocalHLSBridge: Sendable {
         from url: URL,
         headers: [String: String]
     ) async throws -> Data {
+        try await fetchRemoteByteRange(
+            range,
+            from: url,
+            headers: headers,
+            timeoutInterval: HLSRemoteByteRangeRequestPolicy.default(for: range).timeoutInterval(for: range)
+        )
+    }
+
+    fileprivate nonisolated static func fetchRemoteByteRange(
+        _ range: HTTPByteRange,
+        from url: URL,
+        headers: [String: String],
+        timeoutInterval: TimeInterval
+    ) async throws -> Data {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = range.length > 1_500_000 ? 2.4 : 1.6
+        request.timeoutInterval = timeoutInterval
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
 
@@ -2673,6 +2739,49 @@ fileprivate enum HLSByteRangeFetchStrategy: Sendable {
         case .fastFallback:
             return "fastFallback"
         }
+    }
+}
+
+private struct HLSBootstrapFetchPolicy: Sendable {
+    let fetchStrategy: HLSByteRangeFetchStrategy
+    let remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
+}
+
+private struct HLSRemoteByteRangeRequestPolicy: Sendable {
+    let attempts: Int
+    let smallRangeTimeout: TimeInterval
+    let largeRangeTimeout: TimeInterval
+    let retryDelayNanoseconds: UInt64
+
+    nonisolated static func `default`(for range: HTTPByteRange) -> HLSRemoteByteRangeRequestPolicy {
+        HLSRemoteByteRangeRequestPolicy(
+            attempts: 2,
+            smallRangeTimeout: 1.6,
+            largeRangeTimeout: 2.4,
+            retryDelayNanoseconds: 90_000_000
+        )
+    }
+
+    nonisolated static func startupIndex(urlCount: Int) -> HLSRemoteByteRangeRequestPolicy {
+        if urlCount > 1 {
+            return HLSRemoteByteRangeRequestPolicy(
+                attempts: 1,
+                smallRangeTimeout: 0.95,
+                largeRangeTimeout: 1.2,
+                retryDelayNanoseconds: 0
+            )
+        } else {
+            return HLSRemoteByteRangeRequestPolicy(
+                attempts: 2,
+                smallRangeTimeout: 0.95,
+                largeRangeTimeout: 1.2,
+                retryDelayNanoseconds: 50_000_000
+            )
+        }
+    }
+
+    nonisolated func timeoutInterval(for range: HTTPByteRange) -> TimeInterval {
+        range.length > 1_500_000 ? largeRangeTimeout : smallRangeTimeout
     }
 }
 
