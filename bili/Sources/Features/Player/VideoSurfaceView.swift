@@ -1753,7 +1753,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         return true
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === dismissPanGesture else { return true }
         guard !isScrubbing else { return false }
         let velocity = dismissPanGesture.velocity(in: self)
