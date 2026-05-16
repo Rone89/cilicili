@@ -136,7 +136,7 @@ struct DynamicView: View {
             Button {
                 Task { await viewModel.loadMore() }
             } label: {
-                Label("鍔犺浇鏇村", systemImage: "arrow.down.circle")
+                Label("加载更多", systemImage: "arrow.down.circle")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -148,7 +148,7 @@ struct DynamicView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
         } else {
-            Text("娌℃湁鏇村鍔ㄦ€佷簡")
+            Text("没有更多动态了")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -431,7 +431,7 @@ private struct DynamicFeedCard: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(isTextExpanded ? "鏀惰捣" : "灞曞紑")
+                        Text(isTextExpanded ? "收起" : "展开")
                         Image(systemName: isTextExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2.weight(.bold))
                     }
@@ -635,7 +635,7 @@ private struct DynamicRichTextView: View {
                 HStack(spacing: 6) {
                     ForEach(linkURLs.prefix(3), id: \.self) { url in
                         Link(destination: url) {
-                            Label("鏌ョ湅閾炬帴", systemImage: "link")
+                            Label("查看链接", systemImage: "link")
                                 .font(.caption.weight(.semibold))
                                 .labelStyle(.titleAndIcon)
                                 .padding(.horizontal, 9)
@@ -876,7 +876,7 @@ private struct DynamicCommentsSheet: View {
                     commentsContent
                 }
             }
-            .navigationTitle("璇勮")
+            .navigationTitle("评论")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadInitial()
@@ -897,7 +897,7 @@ private struct DynamicCommentsSheet: View {
 
     private var commentsHeader: some View {
         HStack(spacing: 8) {
-            Text("鍏ㄩ儴璇勮")
+            Text("全部评论")
                 .font(.headline)
 
             if let count = item.replyCount, count > 0 {
@@ -934,7 +934,7 @@ private struct DynamicCommentsSheet: View {
         } else if viewModel.comments.isEmpty && viewModel.state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇璇勮")
+                Text("正在加载评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -976,7 +976,7 @@ private struct DynamicCommentsSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村璇勮")
+                Text("加载更多评论")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -990,7 +990,7 @@ private struct DynamicCommentsSheet: View {
             Button {
                 Task { await viewModel.loadMore() }
             } label: {
-                Label("鍔犺浇鏇村璇勮", systemImage: "chevron.down")
+                Label("加载更多评论", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -1407,7 +1407,7 @@ private struct DynamicCommentRepliesSheet: View {
                     repliesContent
                 }
             }
-            .navigationTitle("璇勮鍥炲")
+            .navigationTitle("评论回复")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadReplies(for: rootComment)
@@ -1428,7 +1428,7 @@ private struct DynamicCommentRepliesSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇鍥炲")
+                Text("正在加载回复")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1470,7 +1470,7 @@ private struct DynamicCommentRepliesSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("鍔犺浇鏇村鍥炲")
+                Text("加载更多回复")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1483,7 +1483,7 @@ private struct DynamicCommentRepliesSheet: View {
             Button {
                 Task { await viewModel.loadMoreReplies(for: rootComment) }
             } label: {
-                Label("鏌ョ湅鏇村鍥炲", systemImage: "chevron.down")
+                Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
@@ -1567,7 +1567,7 @@ private struct DynamicCommentReplyDetailRow: View {
 
                 if let showDialog {
                     Button(action: showDialog) {
-                        Label("鏌ョ湅瀵硅瘽", systemImage: "text.bubble")
+                        Label("查看对话", systemImage: "text.bubble")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
@@ -1598,7 +1598,7 @@ private struct DynamicCommentDialogSheet: View {
                     dialogContent
                 }
             }
-            .navigationTitle("鏌ョ湅瀵硅瘽")
+            .navigationTitle("查看对话")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadDialog(for: rootComment, reply: focusReply)
@@ -1616,7 +1616,7 @@ private struct DynamicCommentDialogSheet: View {
         if replies.isEmpty && state.isLoading {
             VStack(spacing: 10) {
                 ProgressView()
-                Text("姝ｅ湪鍔犺浇瀵硅瘽")
+                Text("正在加载对话")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1709,7 +1709,7 @@ private enum DynamicCommentTextBuilder {
             return content
         }
 
-        var verb = AttributedString("鍥炲 ")
+        var verb = AttributedString("回复 ")
         verb.font = font
         verb.foregroundColor = contentColor
 
@@ -1734,7 +1734,7 @@ private enum DynamicCommentTextBuilder {
     }
 
     private static func replyPrefixSplit(in message: String) -> (target: String, separator: String, content: String)? {
-        let supportedVerbs = ["鍥炲", "鍥炶", "鍥炲京"]
+        let supportedVerbs = ["回复", "回覆", "回復"]
         guard let verb = supportedVerbs.first(where: { message.hasPrefix($0) }) else { return nil }
 
         var cursor = message.index(message.startIndex, offsetBy: verb.count)
@@ -1784,7 +1784,7 @@ private struct DynamicCommentErrorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.circle")
                     .foregroundStyle(.orange)
-                Text("璇勮鍔犺浇澶辫触")
+                Text("评论加载失败")
                     .font(.subheadline.weight(.semibold))
             }
 
@@ -1794,7 +1794,7 @@ private struct DynamicCommentErrorView: View {
                 .lineLimit(2)
 
             Button(action: retry) {
-                Label("閲嶈瘯", systemImage: "arrow.clockwise")
+                Label("重试", systemImage: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
             }
             .dynamicCommentGlassButtonStyle()
@@ -1934,7 +1934,7 @@ private struct DynamicForwardUnavailableView: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
                 .font(.caption.weight(.semibold))
-            Text("鍘熷姩鎬佷笉鍙鎴栧凡鍒犻櫎")
+            Text("原动态不可见或已删除")
                 .font(.footnote)
         }
         .foregroundStyle(.secondary)

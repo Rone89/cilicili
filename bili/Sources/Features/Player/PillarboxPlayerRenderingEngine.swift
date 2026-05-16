@@ -11,6 +11,7 @@ import UIKit
 final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private var player: Player
     private var cancellables = Set<AnyCancellable>()
+    private var periodicTimeCancellable: AnyCancellable?
     private var currentItem: PlayerItem?
     private var source: PlayerStreamSource?
     private var hlsBridge: LocalHLSBridge?
@@ -91,6 +92,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         }
         systemItemObservationTask?.cancel()
         visualOutputProbeTask?.cancel()
+        periodicTimeCancellable?.cancel()
         systemItemObservers.removeAll()
         if let foregroundObserver = foregroundObserver {
             NotificationCenter.default.removeObserver(foregroundObserver)
@@ -237,6 +239,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         player.playbackSpeed = currentRate
         player.becomeActive()
         cancellables.removeAll()
+        periodicTimeCancellable?.cancel()
+        periodicTimeCancellable = nil
         observePlayer()
         let surfaceStart = CACurrentMediaTime()
         if let playerViewController {
@@ -295,6 +299,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         removeCurrentItemObservers()
         systemItemObservationTask?.cancel()
         visualOutputProbeTask?.cancel()
+        periodicTimeCancellable?.cancel()
+        periodicTimeCancellable = nil
         systemItemObservers.removeAll()
         currentItem = nil
         source = nil
@@ -596,7 +602,7 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         let environment = PlaybackEnvironment.current
         return source.audioURL == nil
             ? environment.preferredForwardBufferDuration
-            : min(environment.preferredForwardBufferDuration, 0.02)
+            : min(environment.preferredForwardBufferDuration, 0.08)
     }
 
     private func observePlayer() {
@@ -609,14 +615,14 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             }
             .store(in: &cancellables)
 
-        player.periodicTimePublisher(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600))
+        periodicTimeCancellable = player.periodicTimePublisher(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600))
             .receive(on: DispatchQueue.main)
             .sink { [weak self] time in
                 Task { @MainActor [weak self] in
-                    self?.reportFirstFrameIfPossible(currentTime: self?.displayTime(fromPlayerTime: time.seconds))
+                    guard let self, !self.didReportFirstFrame else { return }
+                    self.reportFirstFrameIfPossible(currentTime: self.displayTime(fromPlayerTime: time.seconds))
                 }
             }
-            .store(in: &cancellables)
 
         player.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -736,10 +742,12 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
 
     private func configureStartupBuffering(for item: AVPlayerItem) {
         guard let source = source else { return }
+        let environment = PlaybackEnvironment.current
         item.preferredForwardBufferDuration = preferredForwardBufferDuration(for: source)
-        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
         if let bandwidth = source.videoStream?.bandwidth, bandwidth > 0 {
-            item.preferredPeakBitRate = Double(bandwidth) * 1.18
+            let peakBitRateMultiplier = environment.shouldPreferConservativePlayback ? 0.92 : 1.05
+            item.preferredPeakBitRate = Double(bandwidth) * peakBitRateMultiplier
         } else if source.audioURL == nil {
             item.preferredPeakBitRate = 0
         }
@@ -829,6 +837,8 @@ final class PillarboxPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             guard current > 0 || player.systemPlayer.rate > 0 else { return }
         }
         didReportFirstFrame = true
+        periodicTimeCancellable?.cancel()
+        periodicTimeCancellable = nil
         let resolvedTime = currentTime ?? displayTime(fromPlayerTime: player.systemPlayer.currentTime().seconds)
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)
     }

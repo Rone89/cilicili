@@ -400,13 +400,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let environment = PlaybackEnvironment.current
         let bufferDuration = source.audioURL == nil
             ? environment.preferredForwardBufferDuration
-            : min(environment.preferredForwardBufferDuration, 0.02)
+            : min(environment.preferredForwardBufferDuration, 0.08)
         item.preferredForwardBufferDuration = bufferDuration
-        item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
         if let bandwidth = source.videoStream?.bandwidth, bandwidth > 0 {
-            item.preferredPeakBitRate = Double(bandwidth) * 1.18
-        }
-        if source.audioURL == nil {
+            let peakBitRateMultiplier = environment.shouldPreferConservativePlayback ? 0.92 : 1.05
+            item.preferredPeakBitRate = Double(bandwidth) * peakBitRateMultiplier
+        } else if source.audioURL == nil {
             item.preferredPeakBitRate = 0
         }
     }
@@ -617,6 +617,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             || player.rate > 0
         else { return }
         didReportFirstFrame = true
+        removePeriodicTimeObserver()
         let resolvedTime = currentTime ?? displayTime(fromPlayerTime: player.currentTime().seconds)
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)
     }

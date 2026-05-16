@@ -51,11 +51,11 @@ struct PlaybackEnvironment: Sendable {
     }
 
     nonisolated var preferredForwardBufferDuration: TimeInterval {
-        shouldPreferConservativePlayback ? 0.01 : 0.03
+        shouldPreferConservativePlayback ? 0.08 : 0.16
     }
 
     nonisolated var maxBufferDuration: TimeInterval {
-        shouldPreferConservativePlayback ? 0.75 : 1.4
+        shouldPreferConservativePlayback ? 1.2 : 2.0
     }
 
     nonisolated var preferredPlayURLStartupGrace: UInt64 {
