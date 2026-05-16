@@ -224,7 +224,6 @@ struct YouTubeStyleVideoFeedCardView: View {
                 }
             }
             .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .aspectRatio(sanitizedCoverAspectRatio, contentMode: .fit)
         .frame(maxWidth: .infinity)

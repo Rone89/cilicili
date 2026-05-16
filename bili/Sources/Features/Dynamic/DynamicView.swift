@@ -257,10 +257,12 @@ private struct DynamicFeedCard: View {
     }
 
     private var dynamicCardContent: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 12) {
             authorHeader
+                .padding(.horizontal, 12)
 
             topLevelText
+                .padding(.horizontal, 12)
 
             if let video {
                 VideoRouteLink(video) {
@@ -282,6 +284,7 @@ private struct DynamicFeedCard: View {
                 ) { index, transitionID in
                     presentImage(index: index, transitionID: transitionID)
                 }
+                .padding(.horizontal, 12)
             }
 
             if let original = item.original {
@@ -291,24 +294,18 @@ private struct DynamicFeedCard: View {
                     transitionNamespace: transitionNamespace,
                     openImage: openImage
                 )
+                .padding(.horizontal, 12)
             } else if item.isForward {
                 DynamicForwardUnavailableView()
+                    .padding(.horizontal, 12)
             }
 
             actionBar
+                .padding(.horizontal, 12)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
-        }
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     private var separatedDynamicContent: some View {
@@ -449,46 +446,14 @@ private struct DynamicFeedCard: View {
     }
 
     private var actionBar: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .padding(.top, 2)
-
-            HStack(spacing: 0) {
-                DynamicActionButton(
-                    title: statTitle(count: item.repostCount, fallback: "转发"),
-                    systemImage: "arrowshape.turn.up.right",
-                    isSelected: false
-                ) {}
-
-                DynamicActionButton(
-                    title: commentTitle,
-                    systemImage: "bubble.left",
-                    isSelected: false
-                ) {
-                    commentsTarget = item
-                }
-
-                DynamicActionButton(
-                    title: statTitle(count: likeCount, fallback: "点赞"),
-                    systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                    isSelected: isLiked
-                ) {
-                    toggleLocalLike()
-                }
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    private var compactActionBar: some View {
-        HStack(spacing: 0) {
-            DynamicActionButton(
+        HStack(spacing: 18) {
+            DynamicActionPill(
                 title: statTitle(count: item.repostCount, fallback: "转发"),
                 systemImage: "arrowshape.turn.up.right",
                 isSelected: false
             ) {}
 
-            DynamicActionButton(
+            DynamicActionPill(
                 title: commentTitle,
                 systemImage: "bubble.left",
                 isSelected: false
@@ -496,7 +461,7 @@ private struct DynamicFeedCard: View {
                 commentsTarget = item
             }
 
-            DynamicActionButton(
+            DynamicActionPill(
                 title: statTitle(count: likeCount, fallback: "点赞"),
                 systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
                 isSelected: isLiked
@@ -504,6 +469,35 @@ private struct DynamicFeedCard: View {
                 toggleLocalLike()
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 2)
+    }
+
+    private var compactActionBar: some View {
+        HStack(spacing: 18) {
+            DynamicActionPill(
+                title: statTitle(count: item.repostCount, fallback: "转发"),
+                systemImage: "arrowshape.turn.up.right",
+                isSelected: false
+            ) {}
+
+            DynamicActionPill(
+                title: commentTitle,
+                systemImage: "bubble.left",
+                isSelected: false
+            ) {
+                commentsTarget = item
+            }
+
+            DynamicActionPill(
+                title: statTitle(count: likeCount, fallback: "点赞"),
+                systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
+                isSelected: isLiked
+            ) {
+                toggleLocalLike()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 2)
     }
 
@@ -570,6 +564,24 @@ private struct DynamicActionButton: View {
                 .foregroundStyle(isSelected ? .pink : .secondary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct DynamicActionPill: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(isSelected ? .pink : .secondary)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2324,7 +2336,7 @@ private struct DynamicArchivePreview: View {
     }
 
     private var largeContent: some View {
-        VideoFeedStoryCardView(video: video, showsHeader: showsHeader)
+        YouTubeStyleVideoFeedCardView(video: video)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("瑙嗛 \(video.title)")
     }
@@ -2453,8 +2465,10 @@ private struct DynamicLivePreview: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
 
             metadata
+                .padding(.horizontal, 12)
         }
     }
 
@@ -2518,7 +2532,6 @@ private struct DynamicLivePreview: View {
                 .padding(6)
         }
         .background(Color.gray.opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var metadata: some View {
