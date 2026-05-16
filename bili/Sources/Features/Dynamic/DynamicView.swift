@@ -213,7 +213,16 @@ private struct DynamicFeedCard: View {
         self.topLevelDisplayText = DynamicTextSegment.displayText(from: self.textSegments)
         self.publishTimeText = Self.publishTime(for: item.author)
         self.usesHomeVideoCardStyle = self.video != nil && item.original == nil && !item.isForward
-        self.usesSeparatedDynamicLayout = item.original != nil || item.isForward || (!self.imageItems.isEmpty && self.video == nil)
+        let isPureTextDynamic = self.video == nil
+            && self.live == nil
+            && self.imageItems.isEmpty
+            && item.original == nil
+            && !item.isForward
+            && !(self.topLevelDisplayText?.isEmpty ?? true)
+        self.usesSeparatedDynamicLayout = item.original != nil
+            || item.isForward
+            || (!self.imageItems.isEmpty && self.video == nil)
+            || isPureTextDynamic
         self.leadsWithImageGrid = !self.imageItems.isEmpty
             && self.video == nil
             && self.live == nil
