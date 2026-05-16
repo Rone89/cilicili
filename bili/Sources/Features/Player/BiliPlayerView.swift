@@ -468,6 +468,7 @@ struct BiliPlayerView: View {
 
             if usesCustomPlaybackControls {
                 PlayerGestureOverlay(
+                    isEnabled: gestureOverlayAllowsHitTesting,
                     onSingleTap: handlePlayerTap,
                     onDoubleTap: handlePlayerDoubleTap,
                     onLongPressStart: handlePlayerLongPressStart,
@@ -538,6 +539,14 @@ struct BiliPlayerView: View {
         guard !usesNativePlaybackControls else { return false }
         guard viewModel.isPreparing || viewModel.isBuffering else { return false }
         return viewModel.hasPresentedPlayback || showsStartupLoadingIndicator
+    }
+
+    private var gestureOverlayAllowsHitTesting: Bool {
+        guard usesCustomPlaybackControls else { return false }
+        if controlsLocked {
+            return true
+        }
+        return !controlsVisible
     }
 
     private var playerControls: some View {
@@ -650,7 +659,6 @@ struct BiliPlayerView: View {
         .padding(.horizontal, presentation == .embedded ? 18 : 26)
         .padding(.vertical, presentation == .embedded ? 10 : 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .allowsHitTesting(true)
     }
 
     private func topToolRow(isCompact: Bool) -> some View {
@@ -1226,6 +1234,7 @@ private struct LiquidPlayerProgressSlider: UIViewRepresentable {
 }
 
 private struct PlayerGestureOverlay: UIViewRepresentable {
+    let isEnabled: Bool
     let onSingleTap: () -> Void
     let onDoubleTap: (PlayerGestureRegion) -> Void
     let onLongPressStart: () -> Void
@@ -1233,6 +1242,7 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
 
     func makeUIView(context: Context) -> GestureOverlayView {
         let view = GestureOverlayView()
+        view.isGestureOverlayEnabled = isEnabled
         view.onSingleTap = onSingleTap
         view.onDoubleTap = onDoubleTap
         view.onLongPressStart = onLongPressStart
@@ -1241,6 +1251,7 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: GestureOverlayView, context: Context) {
+        uiView.isGestureOverlayEnabled = isEnabled
         uiView.onSingleTap = onSingleTap
         uiView.onDoubleTap = onDoubleTap
         uiView.onLongPressStart = onLongPressStart
@@ -1249,6 +1260,15 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
     }
 
     final class GestureOverlayView: UIView, UIGestureRecognizerDelegate {
+        var isGestureOverlayEnabled = true {
+            didSet {
+                guard isGestureOverlayEnabled != oldValue else { return }
+                isUserInteractionEnabled = isGestureOverlayEnabled
+                singleTapGesture.isEnabled = isGestureOverlayEnabled
+                doubleTapGesture.isEnabled = isGestureOverlayEnabled
+                longPressGesture.isEnabled = isGestureOverlayEnabled
+            }
+        }
         var onSingleTap: (() -> Void)?
         var onDoubleTap: ((PlayerGestureRegion) -> Void)?
         var onLongPressStart: (() -> Void)?
@@ -1283,7 +1303,7 @@ private struct PlayerGestureOverlay: UIViewRepresentable {
         override init(frame: CGRect) {
             super.init(frame: frame)
             backgroundColor = .clear
-            isUserInteractionEnabled = true
+            isUserInteractionEnabled = isGestureOverlayEnabled
             singleTapGesture.require(toFail: doubleTapGesture)
             addGestureRecognizer(singleTapGesture)
             addGestureRecognizer(doubleTapGesture)
