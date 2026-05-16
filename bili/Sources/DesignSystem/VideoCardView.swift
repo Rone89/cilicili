@@ -165,6 +165,122 @@ struct VideoFeedStoryCardView: View {
             .padding(.vertical, 12)
     }
 }
+
+struct YouTubeStyleVideoFeedCardView: View {
+    let display: VideoCardDisplayModel
+
+    init(video: VideoItem) {
+        self.display = VideoCardDisplayModel(video: video)
+    }
+
+    init(display: VideoCardDisplayModel) {
+        self.display = display
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            thumbnail
+            metadataRow
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .contentShape(Rectangle())
+    }
+
+    private var thumbnail: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let height = max(proxy.size.height, 1)
+
+            ZStack(alignment: .bottomTrailing) {
+                Color.gray.opacity(0.12)
+
+                CachedRemoteImage(
+                    url: display.coverURL,
+                    targetPixelSize: 900
+                ) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Color.gray.opacity(0.12)
+                        .overlay(ProgressView())
+                }
+                .frame(width: width, height: height)
+                .clipped()
+
+                if !display.durationText.isEmpty {
+                    Text(display.durationText)
+                        .font(.system(size: 12, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .frame(height: 22)
+                        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .padding(8)
+                }
+            }
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var metadataRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            CachedRemoteImage(
+                url: display.avatarURL,
+                targetPixelSize: 80
+            ) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(width: 36, height: 36)
+            .clipShape(Circle())
+            .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(display.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(metadataText)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 30, alignment: .top)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var metadataText: String {
+        [
+            display.authorName,
+            display.viewText.isEmpty ? nil : "\(display.viewText)次观看",
+            display.publishTimeText
+        ]
+        .compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+        .joined(separator: " · ")
+    }
+}
 struct VideoCardView: View {
     let display: VideoCardDisplayModel
     private let showsPublishTimeInAuthorRow: Bool
