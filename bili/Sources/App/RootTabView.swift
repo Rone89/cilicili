@@ -7,6 +7,7 @@ struct RootTabView: View {
     @StateObject private var homeViewModelHolder = RootHomeViewModelHolder()
     @State private var selectedTab = Self.initialTab.appTab
     @State private var bottomMode: BottomTabMode = .root
+    @State private var rootTabBarRestoreRequestID = 0
     @State private var activeVideo: VideoItem?
     @State private var videoNavigationPath = NavigationPath()
     @State private var navigationPath = NavigationPath()
@@ -56,6 +57,7 @@ struct RootTabView: View {
             .tint(.pink)
             .tabBarMinimizeBehavior(.onScrollDown)
             .liquidGlassTabBarBackground()
+            .restoresRootTabBarWhenRequested(requestID: rootTabBarRestoreRequestID)
 
             if bottomMode == .video {
                 videoNavigationHost()
@@ -279,6 +281,7 @@ struct RootTabView: View {
             bottomMode = .root
             isClosingVideo = false
         }
+        rootTabBarRestoreRequestID &+= 1
     }
 
     private static var initialTab: RootTab {

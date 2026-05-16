@@ -9,12 +9,17 @@ extension View {
     func keepsRootTabBarHiddenDuringPresentation() -> some View {
         background(NativeBottomBarPresentationHider())
     }
+
+    func restoresRootTabBarWhenRequested(requestID: Int) -> some View {
+        background(NativeBottomBarVisibilityRestorer(requestID: requestID))
+    }
 }
 
 @MainActor
 private enum NativeBottomBarVisibilityCoordinator {
     private static var restoreTask: Task<Void, Never>?
     private static let imageViewerReturnDelay: UInt64 = 520_000_000
+    private static let forceVisibleRetryDelay: UInt64 = 180_000_000
 
     static func hide(tabBarController: UITabBarController?, fallbackTabBar: UITabBar?, animated: Bool) {
         restoreTask?.cancel()
@@ -57,18 +62,64 @@ private enum NativeBottomBarVisibilityCoordinator {
         }
     }
 
-    private static func setHidden(
-        _ hidden: Bool,
+    static func forceVisible(
         tabBarController: UITabBarController?,
         fallbackTabBar: UITabBar?,
         animated: Bool
     ) {
-        if let tabBarController {
-            guard tabBarController.isTabBarHidden != hidden else { return }
-            tabBarController.setTabBarHidden(hidden, animated: animated)
-        } else {
-            fallbackTabBar?.isHidden = hidden
+        restoreTask?.cancel()
+        setHidden(
+            false,
+            tabBarController: tabBarController,
+            fallbackTabBar: fallbackTabBar,
+            animated: animated,
+            force: true
+        )
+        restoreTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: forceVisibleRetryDelay)
+            guard !Task.isCancelled else { return }
+            setHidden(
+                false,
+                tabBarController: tabBarController,
+                fallbackTabBar: fallbackTabBar,
+                animated: false,
+                force: true
+            )
         }
+    }
+
+    private static func setHidden(
+        _ hidden: Bool,
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?,
+        animated: Bool,
+        force: Bool = false
+    ) {
+        if let tabBarController {
+            let needsVisibilityRepair = !hidden && !isActuallyVisible(
+                tabBarController: tabBarController,
+                fallbackTabBar: fallbackTabBar
+            )
+            guard force || needsVisibilityRepair || tabBarController.isTabBarHidden != hidden else { return }
+            tabBarController.setTabBarHidden(hidden, animated: animated)
+            normalize(tabBarController.tabBar, hidden: hidden)
+        } else {
+            guard let fallbackTabBar else { return }
+            let needsVisibilityRepair = !hidden && (fallbackTabBar.isHidden || fallbackTabBar.alpha < 0.99)
+            guard force || needsVisibilityRepair || fallbackTabBar.isHidden != hidden else { return }
+            fallbackTabBar.isHidden = hidden
+            normalize(fallbackTabBar, hidden: hidden)
+        }
+    }
+
+    private static func normalize(_ tabBar: UITabBar, hidden: Bool) {
+        tabBar.layer.removeAllAnimations()
+        tabBar.isHidden = hidden
+        if hidden {
+            return
+        }
+        tabBar.alpha = 1
+        tabBar.transform = .identity
     }
 
     static func isActuallyVisible(tabBarController: UITabBarController?, fallbackTabBar: UITabBar?) -> Bool {
@@ -79,6 +130,72 @@ private enum NativeBottomBarVisibilityCoordinator {
         let frameInSuperview = tabBar.layer.presentation()?.frame ?? tabBar.frame
         let visibleHeight = frameInSuperview.intersection(superview.bounds).height
         return visibleHeight > 8
+    }
+}
+
+private struct NativeBottomBarVisibilityRestorer: UIViewControllerRepresentable {
+    let requestID: Int
+
+    func makeUIViewController(context _: Context) -> Controller {
+        Controller()
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.restoreIfNeeded(requestID: requestID)
+    }
+
+    final class Controller: UIViewController {
+        private var lastAppliedRequestID = 0
+
+        override func loadView() {
+            view = PassthroughView()
+        }
+
+        func restoreIfNeeded(requestID: Int) {
+            guard requestID > 0, requestID != lastAppliedRequestID else { return }
+            lastAppliedRequestID = requestID
+            restoreRootTabBar(retryCount: 2)
+        }
+
+        private func restoreRootTabBar(retryCount: Int) {
+            let tabBarController = rootTabBarController()
+            let fallbackTabBar = tabBarController?.tabBar
+            if tabBarController == nil, fallbackTabBar == nil, retryCount > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    self?.restoreRootTabBar(retryCount: retryCount - 1)
+                }
+                return
+            }
+            NativeBottomBarVisibilityCoordinator.forceVisible(
+                tabBarController: tabBarController,
+                fallbackTabBar: fallbackTabBar,
+                animated: false
+            )
+        }
+
+        private func rootTabBarController() -> UITabBarController? {
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let viewController = current as? UIViewController,
+                   let tabBarController = viewController.tabBarController {
+                    return tabBarController
+                }
+                responder = current.next
+            }
+            return view.window?.rootViewController?.descendantTabBarController()
+        }
+    }
+
+    private final class PassthroughView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
     }
 }
 
