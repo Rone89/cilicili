@@ -1,4 +1,5 @@
 import AVKit
+import Combine
 import SwiftUI
 import UIKit
 
@@ -893,9 +894,11 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         willSet {
             if viewModel !== newValue {
                 restoreLongPressPlaybackRateIfNeeded()
+                viewModelCancellables.removeAll()
             }
         }
         didSet {
+            bindViewModelIfNeeded()
             lastKnownPlayingState = viewModel?.isPlaying ?? false
             refreshFromViewModel()
             scheduleAutoHideIfNeeded()
@@ -936,7 +939,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var longPressRateRestoreValue: BiliPlaybackRate?
     private var lastKnownPlayingState = false
     private var lastFeedbackRegion: ManualFullscreenTapRegion = .center
-    private var refreshTimer: Timer?
+    private var viewModelCancellables = Set<AnyCancellable>()
     private var autoHideControlsTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
     private var isDanmakuEnabled = true
@@ -987,7 +990,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     }
 
     deinit {
-        refreshTimer?.invalidate()
         autoHideControlsTask?.cancel()
         feedbackTask?.cancel()
     }
@@ -995,13 +997,11 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window == nil {
-            refreshTimer?.invalidate()
-            refreshTimer = nil
             autoHideControlsTask?.cancel()
             feedbackTask?.cancel()
             restoreLongPressPlaybackRateIfNeeded()
         } else {
-            startRefreshTimerIfNeeded()
+            refreshFromViewModel()
             setControlsVisible(true, animated: false)
             scheduleAutoHideIfNeeded()
         }
@@ -1052,6 +1052,18 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             feedbackView.widthAnchor.constraint(equalToConstant: 92),
             feedbackView.heightAnchor.constraint(equalToConstant: 78)
         ])
+    }
+
+    private func bindViewModelIfNeeded() {
+        guard let viewModel else { return }
+        viewModelCancellables.removeAll()
+        viewModel.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshFromViewModel()
+                }
+            }
+            .store(in: &viewModelCancellables)
     }
 
     override func layoutSubviews() {
@@ -1285,17 +1297,6 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         button.clipsToBounds = false
         button.widthAnchor.constraint(equalToConstant: size).isActive = true
         button.heightAnchor.constraint(equalToConstant: size).isActive = true
-    }
-
-    private func startRefreshTimerIfNeeded() {
-        guard refreshTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refreshFromViewModel()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
     }
 
     private func refreshFromViewModel() {

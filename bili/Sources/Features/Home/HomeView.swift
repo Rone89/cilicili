@@ -22,6 +22,8 @@ struct HomeView: View {
     ]
     @State private var pressedPreloadVideos = Set<String>()
     @State private var visiblePreloadVideos = Set<String>()
+    @State private var visiblePreloadCandidates = [String: VideoItem]()
+    @State private var visiblePreloadDebouncer = TaskDebouncer()
 
     init(
         viewModel: HomeViewModel,
@@ -118,10 +120,10 @@ struct HomeView: View {
                         ForEach(viewModel.videoCells) { cell in
                             videoCard(cell.video, display: cell.display)
                                 .onAppear {
-                                    beginVisiblePreloadIfNeeded(for: cell.video)
+                                    registerVisiblePreloadCandidate(cell.video)
                                 }
                                 .onDisappear {
-                                    endVisiblePreload(for: cell.video)
+                                    unregisterVisiblePreloadCandidate(cell.video)
                                 }
                                 .task(id: cell.id) {
                                     await viewModel.loadMoreIfNeeded(current: cell.video)
@@ -318,6 +320,34 @@ struct HomeView: View {
 
     private func endVisiblePreload(for video: VideoItem) {
         visiblePreloadVideos.remove(video.bvid)
+    }
+
+    private func registerVisiblePreloadCandidate(_ video: VideoItem) {
+        guard !video.bvid.isEmpty else { return }
+        visiblePreloadCandidates[video.bvid] = video
+        if visiblePreloadCandidates.count > 4,
+           let oldestKey = visiblePreloadCandidates.keys.first {
+            visiblePreloadCandidates.removeValue(forKey: oldestKey)
+        }
+        scheduleVisiblePreloadFlush()
+    }
+
+    private func unregisterVisiblePreloadCandidate(_ video: VideoItem) {
+        visiblePreloadCandidates.removeValue(forKey: video.bvid)
+        endVisiblePreload(for: video)
+        if visiblePreloadCandidates.isEmpty {
+            visiblePreloadDebouncer.cancel()
+        }
+    }
+
+    private func scheduleVisiblePreloadFlush() {
+        let candidates = Array(visiblePreloadCandidates.values.prefix(2))
+        visiblePreloadDebouncer.schedule(delay: .milliseconds(420)) {
+            for video in candidates {
+                guard visiblePreloadCandidates[video.bvid] != nil else { continue }
+                beginVisiblePreloadIfNeeded(for: video)
+            }
+        }
     }
 
     private func openFirstDetailIfNeeded(_ viewModel: HomeViewModel) {

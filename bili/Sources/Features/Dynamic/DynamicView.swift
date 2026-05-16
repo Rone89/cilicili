@@ -2567,6 +2567,7 @@ final class DynamicViewModel: ObservableObject {
     private var filterCancellable: AnyCancellable?
     private var imagePrefetchTask: Task<Void, Never>?
     private var playbackPreloadTask: Task<Void, Never>?
+    private let resourcePrefetchDebouncer = TaskDebouncer()
 
     var hasMoreItems: Bool {
         hasMore
@@ -2584,6 +2585,7 @@ final class DynamicViewModel: ObservableObject {
     }
 
     deinit {
+        resourcePrefetchDebouncer.cancel()
         imagePrefetchTask?.cancel()
         playbackPreloadTask?.cancel()
     }
@@ -2656,8 +2658,13 @@ final class DynamicViewModel: ObservableObject {
     }
 
     private func scheduleResourcePrefetch(for items: [DynamicFeedItem], initialDelay: TimeInterval) {
-        scheduleImagePrefetch(for: items, initialDelay: initialDelay)
-        schedulePlaybackPreload(for: items, initialDelay: initialDelay + 0.35)
+        let snapshot = Array(items.prefix(8))
+        let delayMilliseconds = max(Int64(((initialDelay + 0.2) * 1000).rounded()), 120)
+        resourcePrefetchDebouncer.schedule(delay: .milliseconds(delayMilliseconds)) { [weak self] in
+            guard let self else { return }
+            self.scheduleImagePrefetch(for: snapshot, initialDelay: 0)
+            self.schedulePlaybackPreload(for: snapshot, initialDelay: 0.3)
+        }
     }
 
     private func scheduleImagePrefetch(for items: [DynamicFeedItem], initialDelay: TimeInterval) {
