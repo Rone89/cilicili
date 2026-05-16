@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 import Combine
 
 struct DynamicView: View {
@@ -28,7 +28,7 @@ struct DynamicView: View {
     @ViewBuilder
     private func content(_ viewModel: DynamicViewModel) -> some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 22) {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -47,8 +47,6 @@ struct DynamicView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
                 } else {
-                    let lastItemID = viewModel.items.last?.id
-
                     ForEach(viewModel.items) { item in
                         DynamicFeedCard(
                             item: item,
@@ -62,18 +60,14 @@ struct DynamicView: View {
                         .task {
                             await viewModel.loadMoreIfNeeded(current: item)
                         }
-
-                        if item.id != lastItemID {
-                            Divider()
-                                .padding(.leading, 60)
-                        }
                     }
 
                     dynamicFooter(viewModel)
-                        .padding(.top, 10)
+                        .padding(.top, 4)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
         }
         .nativeTopScrollEdgeEffect()
         .scrollDisabled(isImageViewerTransitionLocked)

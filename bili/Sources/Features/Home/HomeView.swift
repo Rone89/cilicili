@@ -156,9 +156,7 @@ struct HomeView: View {
     @ViewBuilder
     private func feedContent(_ viewModel: HomeViewModel) -> some View {
         if libraryStore.homeFeedLayout == .singleColumn {
-            let lastVideoID = viewModel.videoCells.last?.id
-
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 26) {
                 ForEach(viewModel.videoCells) { cell in
                     videoCard(cell.video, display: cell.display)
                         .padding(.vertical, 12)
@@ -172,11 +170,6 @@ struct HomeView: View {
                         .task(id: cell.id) {
                             await viewModel.loadMoreIfNeeded(current: cell.video)
                         }
-
-                    if cell.id != lastVideoID {
-                        Divider()
-                            .padding(.leading, 48)
-                    }
                 }
 
                 if viewModel.state.isLoading && !viewModel.isRefreshing {
@@ -186,6 +179,8 @@ struct HomeView: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
         } else {
             LazyVGrid(columns: feedColumns, spacing: feedSpacing) {
                 ForEach(viewModel.videoCells) { cell in
