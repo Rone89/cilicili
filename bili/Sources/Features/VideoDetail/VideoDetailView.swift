@@ -13,7 +13,6 @@ struct VideoDetailView: View {
     @State private var isShowingDescription = false
     @State private var isShowingCommentsSheet = false
     @State private var replySheetComment: Comment?
-    @State private var introScrollOffset: CGFloat = 0
     @State private var manualFullscreenMode: ManualVideoFullscreenMode?
     @State private var isRestoringPortraitFromManualLandscape = false
     @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
@@ -664,47 +663,16 @@ struct VideoDetailView: View {
     private func detailScrollPage(_ viewModel: VideoDetailViewModel) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                scrollOffsetReader()
                 detailCard(viewModel)
                 episodeSection(viewModel)
-                if viewModel.shouldShowRelatedSectionShell {
-                    relatedSection(viewModel)
-                }
+                VideoDetailRelatedSection(viewModel: viewModel)
                 deferredCommentsEntry(viewModel)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 20)
             .contentTransition(.opacity)
         }
-        .coordinateSpace(name: detailScrollSpaceName)
-        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { offset in
-            updatePortraitScrollOffset(offset)
-        }
         .background(Color.videoDetailBackground)
-    }
-
-    private func portraitScrollOffset() -> CGFloat {
-        introScrollOffset
-    }
-
-    private func updatePortraitScrollOffset(_ offset: CGFloat) {
-        guard abs(introScrollOffset - offset) > 0.5 else { return }
-        introScrollOffset = offset
-    }
-
-    private var detailScrollSpaceName: String {
-        "VideoDetailScrollSpace"
-    }
-
-    private func scrollOffsetReader() -> some View {
-        GeometryReader { proxy in
-            Color.clear
-                .preference(
-                    key: ScrollOffsetPreferenceKey.self,
-                    value: -proxy.frame(in: .named(detailScrollSpaceName)).minY
-                )
-        }
-        .frame(height: 0)
     }
 
     @ViewBuilder
@@ -3639,6 +3607,108 @@ private struct VideoDescriptionOwnerRow: View {
     }
 }
 
+private struct VideoDetailRelatedSection: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @ObservedObject var viewModel: VideoDetailViewModel
+    @State private var preloadedRelatedVideos = Set<String>()
+
+    var body: some View {
+        if viewModel.shouldShowRelatedSectionShell {
+            let relatedVideos = Array(viewModel.related.prefix(5))
+            let usesCompactRelatedArtwork = viewModel.shouldUseCompactRelatedArtwork
+
+            VStack(alignment: .leading, spacing: 10) {
+                if !relatedVideos.isEmpty {
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 12) {
+                            ForEach(relatedVideos) { video in
+                                VideoRouteLink(video) {
+                                    RelatedVideoCard(
+                                        video: video,
+                                        usesCompactArtwork: usesCompactRelatedArtwork
+                                    )
+                                }
+                                .onAppear {
+                                    beginRelatedPreloadIfNeeded(video)
+                                }
+                            }
+                        }
+                    }
+                    .contentMargins(.horizontal, 14, for: .scrollContent)
+                    .scrollIndicators(.hidden)
+                    .overlay(alignment: .topTrailing) {
+                        if viewModel.relatedState.isLoading {
+                            NativeLoadingIndicator()
+                                .controlSize(.small)
+                                .padding(.trailing, 14)
+                        }
+                    }
+                    .transition(.opacity)
+                } else if viewModel.relatedState == .idle || viewModel.relatedState.isLoading {
+                    relatedPlaceholderContent
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
+            .background(Color.videoDetailSurface)
+            .animation(.easeOut(duration: 0.18), value: viewModel.related.isEmpty)
+            .animation(.easeOut(duration: 0.18), value: viewModel.relatedState)
+        }
+    }
+
+    private func beginRelatedPreloadIfNeeded(_ video: VideoItem) {
+        guard !video.bvid.isEmpty,
+              !preloadedRelatedVideos.contains(video.bvid),
+              preloadedRelatedVideos.count < 1,
+              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+        else { return }
+        let api = dependencies.api
+        let preferredQuality = libraryStore.preferredVideoQuality
+        let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
+            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        guard playbackAdaptationProfile.backgroundPreloadLimit > 1 else { return }
+        preloadedRelatedVideos.insert(video.bvid)
+        Task(priority: .background) {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
+            await VideoPreloadCenter.shared.preloadPlayInfo(
+                video,
+                api: api,
+                preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
+                priority: .background,
+                playbackAdaptationProfile: playbackAdaptationProfile
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var relatedPlaceholderContent: some View {
+        if case .failed(let message) = viewModel.relatedState {
+            RelatedVideoRetryState(
+                message: viewModel.lastRelatedLoadTimedOut ? "鐩稿叧鎺ㄨ崘鍔犺浇瓒呮椂锛屽彲浠ョ◢鍚庨噸璇曘€?" : message
+            ) {
+                Task {
+                    await viewModel.retryRelated()
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 146)
+        } else {
+            HStack(spacing: 12) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RelatedVideoPlaceholderCard(isLoading: viewModel.relatedState.isLoading)
+                }
+            }
+            .padding(.horizontal, 14)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
 private struct RelatedVideoCard: View {
     let video: VideoItem
     let usesCompactArtwork: Bool
@@ -3896,8 +3966,6 @@ private struct VideoDetailRenderSnapshot: Equatable {
     let interactionMessage: String?
     let isMutatingInteraction: Bool
     let playbackFallbackMessage: String?
-    let relatedSignature: String
-    let relatedState: LoadingState
     let stablePlayerID: ObjectIdentifier?
 
     init(_ viewModel: VideoDetailViewModel) {
@@ -3914,8 +3982,6 @@ private struct VideoDetailRenderSnapshot: Equatable {
         interactionMessage = viewModel.interactionMessage
         isMutatingInteraction = viewModel.isMutatingInteraction
         playbackFallbackMessage = viewModel.playbackFallbackMessage
-        relatedSignature = viewModel.related.snapshotSignature
-        relatedState = viewModel.relatedState
         stablePlayerID = viewModel.stablePlayerViewModel.map(ObjectIdentifier.init)
     }
 }
