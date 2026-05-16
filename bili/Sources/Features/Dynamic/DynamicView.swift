@@ -2585,7 +2585,6 @@ final class DynamicViewModel: ObservableObject {
     }
 
     deinit {
-        resourcePrefetchDebouncer.cancel()
         imagePrefetchTask?.cancel()
         playbackPreloadTask?.cancel()
     }
