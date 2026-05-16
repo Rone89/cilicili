@@ -116,33 +116,11 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 120)
                 } else {
-                    LazyVGrid(columns: feedColumns, spacing: feedSpacing) {
-                        ForEach(viewModel.videoCells) { cell in
-                            videoCard(cell.video, display: cell.display)
-                                .onAppear {
-                                    registerVisiblePreloadCandidate(cell.video)
-                                }
-                                .onDisappear {
-                                    unregisterVisiblePreloadCandidate(cell.video)
-                                }
-                                .task(id: cell.id) {
-                                    await viewModel.loadMoreIfNeeded(current: cell.video)
-                                }
-                        }
-
-                        if viewModel.state.isLoading && !viewModel.isRefreshing {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                                .gridCellColumns(feedColumns.count)
-                                .padding()
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, feedHorizontalPadding)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(y: 12)),
-                        removal: .opacity
-                    ))
+                    feedContent(viewModel)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 12)),
+                            removal: .opacity
+                        ))
                 }
             }
             .padding(.top, 8)
@@ -173,6 +151,66 @@ struct HomeView: View {
 
     private var feedHorizontalPadding: CGFloat {
         libraryStore.homeFeedLayout == .singleColumn ? 0 : 10
+    }
+
+    @ViewBuilder
+    private func feedContent(_ viewModel: HomeViewModel) -> some View {
+        if libraryStore.homeFeedLayout == .singleColumn {
+            let lastVideoID = viewModel.videoCells.last?.id
+
+            LazyVStack(spacing: 0) {
+                ForEach(viewModel.videoCells) { cell in
+                    videoCard(cell.video, display: cell.display)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemBackground))
+                        .onAppear {
+                            registerVisiblePreloadCandidate(cell.video)
+                        }
+                        .onDisappear {
+                            unregisterVisiblePreloadCandidate(cell.video)
+                        }
+                        .task(id: cell.id) {
+                            await viewModel.loadMoreIfNeeded(current: cell.video)
+                        }
+
+                    if cell.id != lastVideoID {
+                        Divider()
+                            .padding(.leading, 48)
+                    }
+                }
+
+                if viewModel.state.isLoading && !viewModel.isRefreshing {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            LazyVGrid(columns: feedColumns, spacing: feedSpacing) {
+                ForEach(viewModel.videoCells) { cell in
+                    videoCard(cell.video, display: cell.display)
+                        .onAppear {
+                            registerVisiblePreloadCandidate(cell.video)
+                        }
+                        .onDisappear {
+                            unregisterVisiblePreloadCandidate(cell.video)
+                        }
+                        .task(id: cell.id) {
+                            await viewModel.loadMoreIfNeeded(current: cell.video)
+                        }
+                }
+
+                if viewModel.state.isLoading && !viewModel.isRefreshing {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .gridCellColumns(feedColumns.count)
+                        .padding()
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, feedHorizontalPadding)
+        }
     }
 
     private func refreshBridge(_ viewModel: HomeViewModel) -> some View {

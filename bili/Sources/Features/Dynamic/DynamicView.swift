@@ -28,7 +28,7 @@ struct DynamicView: View {
     @ViewBuilder
     private func content(_ viewModel: DynamicViewModel) -> some View {
         ScrollView {
-            LazyVStack(spacing: 18) {
+            LazyVStack(spacing: 0) {
                 if viewModel.items.isEmpty && viewModel.state.isLoading {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -47,6 +47,8 @@ struct DynamicView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
                 } else {
+                    let lastItemID = viewModel.items.last?.id
+
                     ForEach(viewModel.items) { item in
                         DynamicFeedCard(
                             item: item,
@@ -54,14 +56,21 @@ struct DynamicView: View {
                             transitionNamespace: imageTransitionNamespace,
                             openImage: presentImage
                         )
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 0)
-                            .task {
-                                await viewModel.loadMoreIfNeeded(current: item)
-                            }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemBackground))
+                        .task {
+                            await viewModel.loadMoreIfNeeded(current: item)
+                        }
+
+                        if item.id != lastItemID {
+                            Divider()
+                                .padding(.leading, 60)
+                        }
                     }
 
                     dynamicFooter(viewModel)
+                        .padding(.top, 10)
                 }
             }
             .padding(.vertical, 8)
@@ -185,7 +194,6 @@ private struct DynamicFeedCard: View {
     private let publishTimeText: String
     private let usesHomeVideoCardStyle: Bool
     private let usesSeparatedDynamicLayout: Bool
-    private let leadsWithImageGrid: Bool
     private let showsExpandButton: Bool
     @State private var commentsTarget: DynamicFeedItem?
     @State private var isTextExpanded = false
@@ -223,11 +231,6 @@ private struct DynamicFeedCard: View {
             || item.isForward
             || (!self.imageItems.isEmpty && self.video == nil)
             || isPureTextDynamic
-        self.leadsWithImageGrid = !self.imageItems.isEmpty
-            && self.video == nil
-            && self.live == nil
-            && item.original == nil
-            && !item.isForward
         self.showsExpandButton = Self.shouldShowExpandButton(for: self.topLevelDisplayText ?? "")
         _isLiked = State(initialValue: item.isLiked)
         _likeCount = State(initialValue: item.likeCount ?? 0)
@@ -320,13 +323,9 @@ private struct DynamicFeedCard: View {
 
     private var separatedStoryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if leadsWithImageGrid {
-                imageSquareGrid
-            }
-
             topLevelText
 
-            if !leadsWithImageGrid, !imageItems.isEmpty {
+            if !imageItems.isEmpty {
                 imageSquareGrid
             }
 
@@ -2046,42 +2045,36 @@ private struct DynamicImageSquareGrid: View {
     let transitionScope: String
     let transitionNamespace: Namespace.ID
     let openImage: (Int, String) -> Void
-    private static let spacing: CGFloat = 5
+    private static let spacing: CGFloat = 10
 
     private var displayedImages: Array<(offset: Int, element: DynamicImageItem)> {
-        Array(images.prefix(9).enumerated())
-    }
-
-    private var columns: [GridItem] {
-        Array(
-            repeating: GridItem(.flexible(), spacing: Self.spacing),
-            count: 3
-        )
+        Array(images.enumerated())
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
-            ForEach(displayedImages, id: \.offset) { index, image in
-                DynamicImageButton(
-                    image: image,
-                    index: index,
-                    displayMode: .square(cornerRadius: 12),
-                    transitionScope: transitionScope,
-                    transitionNamespace: transitionNamespace,
-                    openImage: openImage
-                ) {
-                    if index == 8, images.count > 9 {
-                        ZStack {
-                            Color.black.opacity(0.46)
-                            Text("+\(images.count - 8)")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
+        GeometryReader { proxy in
+            let squareSide = max(proxy.size.height, 1)
+
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: Self.spacing) {
+                    ForEach(displayedImages, id: \.offset) { index, image in
+                        DynamicImageButton(
+                            image: image,
+                            index: index,
+                            displayMode: .square(cornerRadius: 18),
+                            transitionScope: transitionScope,
+                            transitionNamespace: transitionNamespace,
+                            openImage: openImage
+                        )
+                        .frame(width: squareSide, height: squareSide)
+                        .accessibilityLabel(accessibilityTitle(for: index))
                     }
                 }
-                .accessibilityLabel(accessibilityTitle(for: index))
             }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .aspectRatio(16 / 9, contentMode: .fit)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -2456,12 +2449,12 @@ private struct DynamicLivePreview: View {
     }
 
     private var largeContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            cover(showsCenterBadge: true)
+        VStack(alignment: .leading, spacing: 10) {
+            cover(showsCenterBadge: false)
                 .aspectRatio(16 / 9, contentMode: .fit)
 
             Text(live.displayTitle)
-                .font(.headline.weight(.semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2536,17 +2529,21 @@ private struct DynamicLivePreview: View {
 
     private var metadata: some View {
         HStack(spacing: 10) {
+            Label(live.statusText, systemImage: "dot.radiowaves.left.and.right")
+                .foregroundStyle(.pink)
+
             if let viewerText = live.viewerText {
-                Label(viewerText, systemImage: "person.2")
+                Text(viewerText)
             }
 
             if let areaName = live.areaName, !areaName.isEmpty {
-                Label(areaName, systemImage: "tag")
+                Text(areaName)
                     .lineLimit(1)
             }
         }
-        .font(.caption)
+        .font(.system(size: 13))
         .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
 
