@@ -19,6 +19,8 @@ struct VideoDetailView: View {
     @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
     @State private var pendingManualLandscapeExitTask: Task<Void, Never>?
     @State private var lastManualLandscapeRequestTime: Date?
+    @State private var manualFullscreenRequestMode: ManualVideoFullscreenMode?
+    @State private var manualFullscreenRequestDeadline: Date?
     @State private var hidesPlayerSystemChrome = false
     @State private var preloadedRelatedVideos = Set<String>()
     @State private var isShowingDanmakuSettings = false
@@ -190,6 +192,9 @@ struct VideoDetailView: View {
     }
 
     private func updateManualLandscapeOrientation(_ orientation: UIDeviceOrientation) {
+        if shouldIgnoreManualFullscreenOrientationChange(orientation) {
+            return
+        }
         switch orientation {
         case .landscapeLeft, .landscapeRight:
             pendingManualLandscapeExitTask?.cancel()
@@ -200,8 +205,10 @@ struct VideoDetailView: View {
             if shouldApplyManualLandscapeOrientation(orientation) {
                 manualFullscreenMode = mode
             }
+            clearPendingManualFullscreenRequestIfNeeded(for: orientation)
         case .portrait, .portraitUpsideDown:
             pendingManualLandscapeEnterTask?.cancel()
+            clearPendingManualFullscreenRequestIfNeeded(for: orientation)
             guard manualFullscreenMode?.isLandscape == true else {
                 pendingManualLandscapeExitTask?.cancel()
                 return
@@ -289,6 +296,7 @@ struct VideoDetailView: View {
         } else {
             targetMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
         }
+        registerPendingManualFullscreenRequest(for: targetMode)
         manualFullscreenMode = targetMode
         requestManualFullscreenSurfaceEntry(
             mode: targetMode,
@@ -349,6 +357,7 @@ struct VideoDetailView: View {
         pendingManualLandscapeEnterTask?.cancel()
         pendingManualLandscapeExitTask?.cancel()
         isRestoringPortraitFromManualLandscape = true
+        clearPendingManualFullscreenRequest()
         AppOrientationLock.restorePortrait()
         manualFullscreenMode = nil
         lastManualLandscapeRequestTime = nil
@@ -365,6 +374,46 @@ struct VideoDetailView: View {
         defer { lastManualLandscapeRequestTime = now }
         guard let lastManualLandscapeRequestTime else { return true }
         return now.timeIntervalSince(lastManualLandscapeRequestTime) > 0.34
+    }
+
+    private func registerPendingManualFullscreenRequest(for mode: ManualVideoFullscreenMode) {
+        manualFullscreenRequestMode = mode
+        manualFullscreenRequestDeadline = Date().addingTimeInterval(mode.isLandscape ? 0.9 : 0.45)
+    }
+
+    private func clearPendingManualFullscreenRequest() {
+        manualFullscreenRequestMode = nil
+        manualFullscreenRequestDeadline = nil
+    }
+
+    private func clearPendingManualFullscreenRequestIfNeeded(for orientation: UIDeviceOrientation) {
+        guard let mode = manualFullscreenRequestMode else { return }
+        switch mode {
+        case .portrait:
+            if orientation.isPortrait {
+                clearPendingManualFullscreenRequest()
+            }
+        case .landscape:
+            if orientation.isLandscape {
+                clearPendingManualFullscreenRequest()
+            }
+        }
+    }
+
+    private func shouldIgnoreManualFullscreenOrientationChange(_ orientation: UIDeviceOrientation) -> Bool {
+        guard let mode = manualFullscreenRequestMode,
+              let deadline = manualFullscreenRequestDeadline
+        else { return false }
+        if Date() > deadline {
+            clearPendingManualFullscreenRequest()
+            return false
+        }
+        switch mode {
+        case .portrait:
+            return false
+        case .landscape:
+            return orientation.isPortrait
+        }
     }
 
     private func commentsSheet(_ viewModel: VideoDetailViewModel) -> some View {

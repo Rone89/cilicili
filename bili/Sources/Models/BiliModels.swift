@@ -623,6 +623,13 @@ struct PlayVariant: Identifiable, Hashable, Sendable {
     }
 
     nonisolated var videoAspectRatio: Double? {
+        if let videoStream,
+           let width = videoStream.width,
+           let height = videoStream.height,
+           width > 0,
+           height > 0 {
+            return Double(width) / Double(height)
+        }
         guard let resolution else { return nil }
         let parts = resolution
             .lowercased()
