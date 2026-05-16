@@ -8,7 +8,9 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
     let durationText: String
     let publishTimeText: String
     let coverURL: URL?
+    let largeCoverURL: URL?
     let avatarURL: URL?
+    let coverAspectRatio: CGFloat
 
     init(video: VideoItem) {
         id = video.id
@@ -19,7 +21,9 @@ struct VideoCardDisplayModel: Identifiable, Equatable {
         let formattedPublishTime = BiliFormatters.relativeTime(video.pubdate)
         publishTimeText = formattedPublishTime.isEmpty ? "投稿" : formattedPublishTime
         coverURL = video.pic.flatMap { URL(string: $0.biliCoverThumbnailURL(width: 480, height: 270)) }
+        largeCoverURL = video.pic.flatMap { URL(string: $0.biliImageThumbnailURL(maxSide: 1280)) }
         avatarURL = video.owner?.face.flatMap { URL(string: $0.biliAvatarThumbnailURL(size: 48)) }
+        coverAspectRatio = CGFloat(video.dimension?.aspectRatio ?? 16.0 / 9.0)
     }
 }
 
@@ -195,7 +199,7 @@ struct YouTubeStyleVideoFeedCardView: View {
                 Color.gray.opacity(0.12)
 
                 CachedRemoteImage(
-                    url: display.coverURL,
+                    url: display.largeCoverURL ?? display.coverURL,
                     targetPixelSize: 900
                 ) { image in
                     image
@@ -222,7 +226,7 @@ struct YouTubeStyleVideoFeedCardView: View {
             .frame(width: width, height: height)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .aspectRatio(sanitizedCoverAspectRatio, contentMode: .fit)
         .frame(maxWidth: .infinity)
     }
 
@@ -258,14 +262,8 @@ struct YouTubeStyleVideoFeedCardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Image(systemName: "ellipsis")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 30, alignment: .top)
-                .padding(.top, 1)
-                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 12)
     }
 
     private var metadataText: String {
@@ -279,6 +277,10 @@ struct YouTubeStyleVideoFeedCardView: View {
             return value
         }
         .joined(separator: " · ")
+    }
+
+    private var sanitizedCoverAspectRatio: CGFloat {
+        min(max(display.coverAspectRatio, 0.56), 2.2)
     }
 }
 struct VideoCardView: View {

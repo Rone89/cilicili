@@ -54,8 +54,8 @@ struct DynamicView: View {
                             transitionNamespace: imageTransitionNamespace,
                             openImage: presentImage
                         )
-                            .frame(maxWidth: 420)
-                            .padding(.horizontal, 20)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 0)
                             .task {
                                 await viewModel.loadMoreIfNeeded(current: item)
                             }
@@ -250,7 +250,7 @@ private struct DynamicFeedCard: View {
 
     private func homeVideoCard(_ video: VideoItem) -> some View {
         VideoRouteLink(video) {
-            VideoFeedStoryCardView(video: video)
+            YouTubeStyleVideoFeedCardView(video: video)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("鐟欏棝顣?\(video.title)")
@@ -312,9 +312,9 @@ private struct DynamicFeedCard: View {
     }
 
     private var separatedDynamicContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 11) {
             authorHeader
-                .padding(.horizontal, 2)
+                .padding(.horizontal, 12)
 
             separatedStoryCard
         }
@@ -346,15 +346,9 @@ private struct DynamicFeedCard: View {
 
             compactActionBar
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(Color(.separator).opacity(0.08), lineWidth: 0.6)
-        }
-        .shadow(color: .black.opacity(0.045), radius: 14, y: 5)
     }
 
     private var imageSquareGrid: some View {
@@ -1847,10 +1841,11 @@ private struct DynamicOriginalPreview: View {
 
     var body: some View {
         originalContent
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color(.tertiarySystemGroupedBackground).opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder
@@ -1909,7 +1904,7 @@ private struct DynamicOriginalPreview: View {
     }
 
     private func originalAuthorIdentity(_ author: DynamicAuthor) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Text("转发动态")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)

@@ -18,7 +18,7 @@ struct HomeView: View {
         GridItem(.flexible(), spacing: 10)
     ]
     private let singleColumns = [
-        GridItem(.flexible(minimum: 0, maximum: 640), spacing: 0)
+        GridItem(.flexible(minimum: 0), spacing: 0)
     ]
     @State private var pressedPreloadVideos = Set<String>()
     @State private var visiblePreloadVideos = Set<String>()
@@ -137,7 +137,7 @@ struct HomeView: View {
                                 .padding()
                         }
                     }
-                    .frame(maxWidth: feedMaxWidth)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, feedHorizontalPadding)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .offset(y: 12)),
@@ -172,11 +172,7 @@ struct HomeView: View {
     }
 
     private var feedHorizontalPadding: CGFloat {
-        libraryStore.homeFeedLayout == .singleColumn ? 12 : 10
-    }
-
-    private var feedMaxWidth: CGFloat? {
-        libraryStore.homeFeedLayout == .singleColumn ? 680 : nil
+        libraryStore.homeFeedLayout == .singleColumn ? 0 : 10
     }
 
     private func refreshBridge(_ viewModel: HomeViewModel) -> some View {
