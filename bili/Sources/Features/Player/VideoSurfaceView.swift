@@ -368,6 +368,12 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
                 onToggle: onToggleManualFullscreenDanmaku,
                 onShowSettings: onShowManualFullscreenDanmakuSettings
             )
+            fullscreenController.onDismissDragChanged = { [weak self] translationY, progress in
+                self?.updateManualFullscreenDismissDrag(translationY: translationY, progress: progress)
+            }
+            fullscreenController.onDismissDragCancelled = { [weak self] in
+                self?.cancelManualFullscreenDismissDrag()
+            }
 
             let fullscreenSuperview = sourceWindow.rootViewController?.view ?? sourceWindow
             fullscreenController.view.frame = fullscreenSuperview.bounds
@@ -447,6 +453,8 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             self.drawableView.transform = .identity
             self.drawableView.frame = self.bounds
             state.fullscreenController.onExit = nil
+            state.fullscreenController.onDismissDragChanged = nil
+            state.fullscreenController.onDismissDragCancelled = nil
             state.fullscreenController.viewModel = nil
             state.fullscreenController.willMove(toParent: nil)
             state.fullscreenController.view.removeFromSuperview()
@@ -474,6 +482,30 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         } completion: { _ in
             state.fullscreenController.view.alpha = 1
             restoreIntoOriginalHierarchy()
+        }
+    }
+
+    private func updateManualFullscreenDismissDrag(translationY: CGFloat, progress: CGFloat) {
+        guard let state = fullscreenState else { return }
+        let clampedProgress = min(max(progress, 0), 1)
+        let scale = 1 - clampedProgress * 0.065
+        let transform = CGAffineTransform(translationX: 0, y: translationY)
+            .scaledBy(x: scale, y: scale)
+        state.contentView.transform = transform
+        state.backdropView.alpha = max(0.42, 1 - clampedProgress * 0.52)
+    }
+
+    private func cancelManualFullscreenDismissDrag() {
+        guard let state = fullscreenState else { return }
+        UIView.animate(
+            withDuration: 0.28,
+            delay: 0,
+            usingSpringWithDamping: 0.82,
+            initialSpringVelocity: 0.7,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            state.contentView.transform = .identity
+            state.backdropView.alpha = 1
         }
     }
 
@@ -666,6 +698,16 @@ private final class ManualVideoFullscreenViewController: UIViewController {
             controlsOverlay.onExit = onExit
         }
     }
+    var onDismissDragChanged: ((CGFloat, CGFloat) -> Void)? {
+        didSet {
+            controlsOverlay.onDismissDragChanged = onDismissDragChanged
+        }
+    }
+    var onDismissDragCancelled: (() -> Void)? {
+        didSet {
+            controlsOverlay.onDismissDragCancelled = onDismissDragCancelled
+        }
+    }
     var onLayout: (() -> Void)?
     weak var viewModel: PlayerStateViewModel? {
         didSet {
@@ -704,6 +746,8 @@ private final class ManualVideoFullscreenViewController: UIViewController {
         controlsOverlay.translatesAutoresizingMaskIntoConstraints = false
         controlsOverlay.viewModel = viewModel
         controlsOverlay.onExit = onExit
+        controlsOverlay.onDismissDragChanged = onDismissDragChanged
+        controlsOverlay.onDismissDragCancelled = onDismissDragCancelled
         controlsOverlay.mode = mode
         view.addSubview(controlsOverlay)
         NSLayoutConstraint.activate([
@@ -905,6 +949,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         }
     }
     var onExit: (() -> Void)?
+    var onDismissDragChanged: ((CGFloat, CGFloat) -> Void)?
+    var onDismissDragCancelled: (() -> Void)?
     var mode: ManualVideoFullscreenMode = .landscape(.landscapeLeft) {
         didSet {
             guard oldValue != mode else { return }
@@ -945,6 +991,8 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private var isDanmakuEnabled = true
     private var onToggleDanmaku: (() -> Void)?
     private var onShowDanmakuSettings: (() -> Void)?
+    private var isDraggingToDismiss = false
+    private var dismissPanStartedWithControlsVisible = true
     private var lastFullscreenLayoutSize: CGSize = .zero
     private var exitButtonTopConstraint: NSLayoutConstraint?
     private var transportCenterYConstraint: NSLayoutConstraint?
@@ -972,6 +1020,15 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     private lazy var longPressGesture: UILongPressGestureRecognizer = {
         let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         gesture.minimumPressDuration = 0.28
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        return gesture
+    }()
+
+    private lazy var dismissPanGesture: UIPanGestureRecognizer = {
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleDismissPan(_:)))
+        gesture.minimumNumberOfTouches = 1
+        gesture.maximumNumberOfTouches = 1
         gesture.cancelsTouchesInView = false
         gesture.delegate = self
         return gesture
@@ -1102,6 +1159,7 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         addGestureRecognizer(singleTapGesture)
         addGestureRecognizer(doubleTapGesture)
         addGestureRecognizer(longPressGesture)
+        addGestureRecognizer(dismissPanGesture)
     }
 
     private func configureControls() {
@@ -1457,9 +1515,56 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         switch recognizer.state {
         case .began:
+            guard !isDraggingToDismiss else { return }
             beginLongPressSpeedBoost()
         case .ended, .cancelled, .failed:
             endLongPressSpeedBoost()
+        default:
+            break
+        }
+    }
+
+    @objc private func handleDismissPan(_ recognizer: UIPanGestureRecognizer) {
+        let rawTranslationY = recognizer.translation(in: self).y
+        let velocityY = recognizer.velocity(in: self).y
+        let minimumTravel = max(min(bounds.height, bounds.width) * 0.22, 96)
+        let translationY: CGFloat = mode.isPortrait
+            ? max(0, rawTranslationY)
+            : rawTranslationY
+        let progress = min(abs(translationY) / minimumTravel, 1)
+
+        switch recognizer.state {
+        case .began:
+            isDraggingToDismiss = true
+            dismissPanStartedWithControlsVisible = isControlsVisible
+            restoreLongPressPlaybackRateIfNeeded()
+            autoHideControlsTask?.cancel()
+            autoHideControlsTask = nil
+            setControlsVisible(false, animated: true)
+        case .changed:
+            guard isDraggingToDismiss else { return }
+            onDismissDragChanged?(translationY, progress)
+        case .ended:
+            guard isDraggingToDismiss else { return }
+            isDraggingToDismiss = false
+            let hasDismissVelocity = mode.isPortrait
+                ? velocityY > 980
+                : abs(velocityY) > 980
+            let shouldExit = abs(translationY) > minimumTravel || hasDismissVelocity
+            if shouldExit {
+                Haptics.light()
+                onExit?()
+            } else {
+                onDismissDragCancelled?()
+                setControlsVisible(dismissPanStartedWithControlsVisible, animated: true)
+                scheduleAutoHideIfNeeded()
+            }
+        case .cancelled, .failed:
+            guard isDraggingToDismiss else { return }
+            isDraggingToDismiss = false
+            onDismissDragCancelled?()
+            setControlsVisible(dismissPanStartedWithControlsVisible, animated: true)
+            scheduleAutoHideIfNeeded()
         default:
             break
         }
@@ -1646,6 +1751,26 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             return false
         }
         return true
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === dismissPanGesture else { return true }
+        guard !isScrubbing else { return false }
+        let velocity = dismissPanGesture.velocity(in: self)
+        let verticalSpeed = abs(velocity.y)
+        let horizontalSpeed = abs(velocity.x)
+        guard verticalSpeed > 120, verticalSpeed > horizontalSpeed * 1.12 else { return false }
+        if mode.isPortrait {
+            return velocity.y > 120
+        }
+        return true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === dismissPanGesture || otherGestureRecognizer === dismissPanGesture {
+            return false
+        }
+        return false
     }
 
     private static func sliderTrackImage(height: CGFloat, color: UIColor) -> UIImage {
