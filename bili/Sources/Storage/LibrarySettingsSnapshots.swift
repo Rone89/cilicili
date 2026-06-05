@@ -1,0 +1,195 @@
+import Combine
+import SwiftUI
+
+struct RootRuntimeSettingsSnapshot: Equatable {
+    var appearanceMode: AppAppearanceMode = .system
+}
+
+@MainActor
+final class RootRuntimeSettingsStore: ObservableObject {
+    @Published private(set) var snapshot = RootRuntimeSettingsSnapshot()
+    private weak var libraryStore: LibraryStore?
+    private var cancellable: AnyCancellable?
+
+    var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
+
+    func bind(_ libraryStore: LibraryStore) {
+        guard self.libraryStore !== libraryStore else {
+            refresh()
+            return
+        }
+        self.libraryStore = libraryStore
+        refresh()
+        cancellable = libraryStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        guard let libraryStore else { return }
+        let next = RootRuntimeSettingsSnapshot(appearanceMode: libraryStore.appearanceMode)
+        guard next != snapshot else { return }
+        snapshot = next
+    }
+}
+
+struct HomeRuntimeSettingsSnapshot: Equatable {
+    var homeFeedLayout: HomeFeedLayout = .singleColumn
+    var homeRefreshTriggerDistance: Double = LibraryStore.defaultHomeRefreshTriggerDistance
+}
+
+@MainActor
+final class HomeRuntimeSettingsStore: ObservableObject {
+    @Published private(set) var snapshot = HomeRuntimeSettingsSnapshot()
+    private weak var libraryStore: LibraryStore?
+    private var cancellable: AnyCancellable?
+
+    var homeFeedLayout: HomeFeedLayout { snapshot.homeFeedLayout }
+    var homeRefreshTriggerDistance: Double { snapshot.homeRefreshTriggerDistance }
+
+    func bind(_ libraryStore: LibraryStore) {
+        guard self.libraryStore !== libraryStore else {
+            refresh()
+            return
+        }
+        self.libraryStore = libraryStore
+        refresh()
+        cancellable = libraryStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        guard let libraryStore else { return }
+        let next = HomeRuntimeSettingsSnapshot(
+            homeFeedLayout: libraryStore.homeFeedLayout,
+            homeRefreshTriggerDistance: libraryStore.homeRefreshTriggerDistance
+        )
+        guard next != snapshot else { return }
+        snapshot = next
+    }
+}
+
+struct PlayerRuntimeSettingsSnapshot: Equatable {
+    var defaultPlaybackRate: Double = 1.0
+    var incognitoModeEnabled = false
+}
+
+@MainActor
+final class PlayerRuntimeSettingsStore: ObservableObject {
+    @Published private(set) var snapshot = PlayerRuntimeSettingsSnapshot()
+    private weak var libraryStore: LibraryStore?
+    private var cancellable: AnyCancellable?
+
+    var defaultPlaybackRate: Double { snapshot.defaultPlaybackRate }
+    var incognitoModeEnabled: Bool { snapshot.incognitoModeEnabled }
+
+    func bind(_ libraryStore: LibraryStore) {
+        guard self.libraryStore !== libraryStore else {
+            refresh()
+            return
+        }
+        self.libraryStore = libraryStore
+        refresh()
+        cancellable = libraryStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        guard let libraryStore else { return }
+        let next = PlayerRuntimeSettingsSnapshot(
+            defaultPlaybackRate: libraryStore.defaultPlaybackRate,
+            incognitoModeEnabled: libraryStore.incognitoModeEnabled
+        )
+        guard next != snapshot else { return }
+        snapshot = next
+    }
+}
+
+struct VideoDetailRuntimeSettingsSnapshot: Equatable {
+    var playerPerformanceOverlayEnabled = false
+    var preferredVideoQuality: Int? = LibraryStore.defaultPreferredVideoQuality
+    var effectivePlaybackCDNPreference: PlaybackCDNPreference = .automatic
+    var playbackAutoOptimizationEnabled = true
+}
+
+@MainActor
+final class VideoDetailRuntimeSettingsStore: ObservableObject {
+    @Published private(set) var snapshot = VideoDetailRuntimeSettingsSnapshot()
+    private weak var libraryStore: LibraryStore?
+    private var cancellable: AnyCancellable?
+
+    var playerPerformanceOverlayEnabled: Bool { snapshot.playerPerformanceOverlayEnabled }
+    var preferredVideoQuality: Int? { snapshot.preferredVideoQuality }
+    var effectivePlaybackCDNPreference: PlaybackCDNPreference { snapshot.effectivePlaybackCDNPreference }
+    var playbackAutoOptimizationEnabled: Bool { snapshot.playbackAutoOptimizationEnabled }
+
+    func bind(_ libraryStore: LibraryStore) {
+        guard self.libraryStore !== libraryStore else {
+            refresh()
+            return
+        }
+        self.libraryStore = libraryStore
+        refresh()
+        cancellable = libraryStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        guard let libraryStore else { return }
+        let next = VideoDetailRuntimeSettingsSnapshot(
+            playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
+            preferredVideoQuality: libraryStore.preferredVideoQuality,
+            effectivePlaybackCDNPreference: libraryStore.effectivePlaybackCDNPreference,
+            playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+        )
+        guard next != snapshot else { return }
+        snapshot = next
+    }
+}
+
+struct DynamicCommentsRuntimeSettingsSnapshot: Equatable {
+    var blocksGoodsComments = true
+}
+
+@MainActor
+final class DynamicCommentsRuntimeSettingsStore: ObservableObject {
+    @Published private(set) var snapshot = DynamicCommentsRuntimeSettingsSnapshot()
+    private weak var libraryStore: LibraryStore?
+    private var cancellable: AnyCancellable?
+
+    var blocksGoodsComments: Bool { snapshot.blocksGoodsComments }
+
+    func bind(_ libraryStore: LibraryStore) {
+        guard self.libraryStore !== libraryStore else {
+            refresh()
+            return
+        }
+        self.libraryStore = libraryStore
+        refresh()
+        cancellable = libraryStore.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() {
+        guard let libraryStore else { return }
+        let next = DynamicCommentsRuntimeSettingsSnapshot(
+            blocksGoodsComments: libraryStore.blocksGoodsComments
+        )
+        guard next != snapshot else { return }
+        snapshot = next
+    }
+}

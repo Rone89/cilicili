@@ -1,0 +1,270 @@
+import CoreMedia
+import Foundation
+import Network
+import VideoToolbox
+
+nonisolated struct PlaybackEnvironment: Sendable {
+    enum NetworkClass: Sendable, Equatable {
+        case wifi
+        case cellular
+        case constrained
+        case unknown
+    }
+
+    enum ThermalPressure: Int, Sendable, Equatable {
+        case nominal
+        case fair
+        case elevated
+        case critical
+    }
+
+    let networkClass: NetworkClass
+    let isLowPowerModeEnabled: Bool
+    let isThermallyConstrained: Bool
+    let thermalPressure: ThermalPressure
+
+    nonisolated static var current: PlaybackEnvironment {
+        let thermalState = ProcessInfo.processInfo.thermalState
+        let pressure: ThermalPressure
+        switch thermalState {
+        case .nominal:
+            pressure = .nominal
+        case .fair:
+            pressure = .fair
+        case .serious:
+            pressure = .elevated
+        case .critical:
+            pressure = .critical
+        @unknown default:
+            pressure = .nominal
+        }
+        return PlaybackEnvironment(
+            networkClass: NetworkPathSnapshot.shared.currentNetworkClass,
+            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            isThermallyConstrained: pressure.rawValue >= ThermalPressure.elevated.rawValue,
+            thermalPressure: pressure
+        )
+    }
+
+    nonisolated var isThermallyElevated: Bool {
+        thermalPressure.rawValue >= ThermalPressure.fair.rawValue
+    }
+
+    nonisolated var shouldPreferConservativePlayback: Bool {
+        let isConstrainedNetwork: Bool
+        switch networkClass {
+        case .cellular, .constrained:
+            isConstrainedNetwork = true
+        case .wifi, .unknown:
+            isConstrainedNetwork = false
+        }
+        return isLowPowerModeEnabled
+            || isThermallyConstrained
+            || isConstrainedNetwork
+    }
+
+    nonisolated var fastStartQuality: Int {
+        64
+    }
+
+    nonisolated var startupPreferredQualityCeiling: Int {
+        64
+    }
+
+    nonisolated var preferredQualityLadder: [Int] {
+        if shouldPreferConservativePlayback {
+            return [64, 32, 16, 6]
+        }
+        return [80, 64, 32, 16, 6]
+    }
+
+    nonisolated var preferredForwardBufferDuration: TimeInterval {
+        shouldPreferConservativePlayback ? 0.35 : 0.55
+    }
+
+    nonisolated var separatedTrackForwardBufferDuration: TimeInterval {
+        shouldPreferConservativePlayback ? 0.45 : 0.75
+    }
+
+    nonisolated var startupForwardBufferDuration: TimeInterval {
+        switch networkClass {
+        case .wifi:
+            return shouldPreferConservativePlayback ? 0.18 : 0.12
+        case .unknown:
+            return shouldPreferConservativePlayback ? 0.22 : 0.16
+        case .cellular, .constrained:
+            return 0.24
+        }
+    }
+
+    nonisolated var highRateForwardBufferDuration: TimeInterval {
+        shouldPreferConservativePlayback ? 2.0 : 3.2
+    }
+
+    nonisolated var maxBufferDuration: TimeInterval {
+        shouldPreferConservativePlayback ? 3.2 : 5.0
+    }
+
+    nonisolated var preferredPlayURLStartupGrace: UInt64 {
+        switch networkClass {
+        case .wifi:
+            return 220_000_000
+        case .unknown:
+            return 180_000_000
+        case .cellular, .constrained:
+            return 140_000_000
+        }
+    }
+
+    nonisolated var startupWarmupPrepareBudget: TimeInterval {
+        switch networkClass {
+        case .wifi:
+            return 0
+        case .unknown:
+            return 0
+        case .cellular, .constrained:
+            return 0
+        }
+    }
+
+    nonisolated var diagnosticSummary: String {
+        let networkTitle: String
+        switch networkClass {
+        case .wifi:
+            networkTitle = "Wi-Fi"
+        case .cellular:
+            networkTitle = "蜂窝网络"
+        case .constrained:
+            networkTitle = "受限网络"
+        case .unknown:
+            networkTitle = "未知网络"
+        }
+        var parts = [networkTitle]
+        if isLowPowerModeEnabled {
+            parts.append("省电")
+        }
+        if isThermallyConstrained {
+            parts.append("温控")
+        } else if isThermallyElevated {
+            parts.append("温热")
+        }
+        if shouldPreferConservativePlayback {
+            parts.append("保守")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension PlaybackEnvironment.NetworkClass {
+    nonisolated var performanceSampleKey: String {
+        switch self {
+        case .wifi:
+            return "wifi"
+        case .cellular:
+            return "cellular"
+        case .constrained:
+            return "constrained"
+        case .unknown:
+            return "unknown"
+        }
+    }
+
+    nonisolated var performanceSampleTitle: String {
+        switch self {
+        case .wifi:
+            return "Wi-Fi"
+        case .cellular:
+            return "蜂窝网络"
+        case .constrained:
+            return "受限网络"
+        case .unknown:
+            return "未知网络"
+        }
+    }
+}
+
+nonisolated enum PlaybackCodecPolicy {
+    nonisolated static var canDecodeHEVC: Bool {
+#if targetEnvironment(simulator)
+        return true
+#else
+        VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)
+#endif
+    }
+
+    nonisolated static var canDecodeAV1: Bool {
+#if targetEnvironment(simulator)
+        return true
+#else
+        VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+#endif
+    }
+
+    nonisolated static var requiresHEVCPlayback: Bool {
+        true
+    }
+
+    nonisolated static var allowsNonHEVCHardwareFallback: Bool {
+        true
+    }
+
+    nonisolated static var requiresAACAudioPlayback: Bool {
+        true
+    }
+}
+
+final class NetworkPathSnapshot: @unchecked Sendable {
+    nonisolated static let shared = NetworkPathSnapshot()
+
+    nonisolated private let monitor = NWPathMonitor()
+    nonisolated private let queue = DispatchQueue(label: "cc.bili.network-path")
+    nonisolated private let lock = NSLock()
+    nonisolated(unsafe) private var cachedClass: PlaybackEnvironment.NetworkClass = .unknown
+
+    nonisolated private init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            self?.update(path)
+        }
+        monitor.start(queue: queue)
+    }
+
+    nonisolated var currentNetworkClass: PlaybackEnvironment.NetworkClass {
+        lock.withLock { cachedClass }
+    }
+
+    nonisolated private func update(_ path: NWPath) {
+        let value: PlaybackEnvironment.NetworkClass
+        if path.isConstrained {
+            value = .constrained
+        } else if path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet) {
+            value = .wifi
+        } else if path.usesInterfaceType(.cellular) {
+            value = .cellular
+        } else {
+            value = .unknown
+        }
+        let didChange = lock.withLock {
+            let previous = cachedClass
+            guard previous != value else { return false }
+            cachedClass = value
+            return true
+        }
+        if didChange {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .biliPlaybackNetworkClassDidChange, object: self)
+            }
+        }
+    }
+}
+
+extension Notification.Name {
+    static let biliPlaybackNetworkClassDidChange = Notification.Name("cc.bili.playbackNetworkClassDidChange")
+}
+
+private extension NSLock {
+    nonisolated func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
+    }
+}
