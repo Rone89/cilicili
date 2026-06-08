@@ -62,6 +62,16 @@ private enum NativeBottomBarVisibilityCoordinator {
         }
     }
 
+    static func restoreImmediately(
+        tabBarController: UITabBarController?,
+        fallbackTabBar: UITabBar?,
+        animated: Bool
+    ) {
+        restoreTask?.cancel()
+        guard tabBarController != nil || fallbackTabBar != nil else { return }
+        setHidden(false, tabBarController: tabBarController, fallbackTabBar: fallbackTabBar, animated: animated)
+    }
+
     static func forceVisible(
         tabBarController: UITabBarController?,
         fallbackTabBar: UITabBar?,
@@ -321,11 +331,6 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
 
             let tabBarController = rootTabBarController()
             let fallbackTabBar = rootTabBar()
-            NativeBottomBarVisibilityCoordinator.hide(
-                tabBarController: tabBarController,
-                fallbackTabBar: fallbackTabBar,
-                animated: false
-            )
 
             guard let coordinator = enclosingNavigationController()?.transitionCoordinator else {
                 NativeBottomBarVisibilityCoordinator.restore(
@@ -338,7 +343,13 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
             }
 
             let restoreDelay = self.restoreDelay
-            coordinator.animate(alongsideTransition: nil) { context in
+            coordinator.animate(alongsideTransition: { _ in
+                NativeBottomBarVisibilityCoordinator.restoreImmediately(
+                    tabBarController: tabBarController,
+                    fallbackTabBar: fallbackTabBar,
+                    animated: animated
+                )
+            }, completion: { context in
                 let transitionWasCancelled = context.isCancelled
                 Task { @MainActor in
                     if transitionWasCancelled {
@@ -356,7 +367,7 @@ private struct NativeBottomBarOnPushHider: UIViewControllerRepresentable {
                         )
                     }
                 }
-            }
+            })
         }
 
         private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {

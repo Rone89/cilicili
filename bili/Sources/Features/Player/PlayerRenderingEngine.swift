@@ -288,6 +288,7 @@ protocol PlayerRenderingEngine: AnyObject {
     func seek(by interval: TimeInterval, from currentTime: TimeInterval, duration: TimeInterval?) -> TimeInterval?
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval?
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot
+    func currentVideoFrameImage() -> UIImage?
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource?
     func togglePictureInPicture()
     func invalidatePictureInPicturePlaybackState()
@@ -304,6 +305,10 @@ extension PlayerRenderingEngine {
             setMuted(true)
             setVolume(0)
         }
+    }
+
+    func currentVideoFrameImage() -> UIImage? {
+        nil
     }
 }
 
@@ -678,6 +683,9 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
     var speedBoostInterruptionCount: Int
     var startupBreakdownMessage: String?
     var startupQuality: Int?
+    var startupTargetQuality: Int?
+    var startupDecisionMessage: String?
+    var startupUpgradeMessage: String?
     var startupCDNKey: String?
     var startupCDNTitle: String?
     var startupNetworkKey: String?
@@ -727,6 +735,9 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         speedBoostInterruptionCount = session.speedBoostInterruptionCount
         startupBreakdownMessage = session.startupBreakdownMessage
         startupQuality = session.startupQuality
+        startupTargetQuality = session.startupTargetQuality
+        startupDecisionMessage = session.startupDecisionMessage
+        startupUpgradeMessage = session.startupUpgradeMessage
         startupCDNKey = session.startupCDNKey
         startupCDNTitle = session.startupCDNTitle
         startupNetworkKey = session.startupNetworkKey
@@ -777,6 +788,9 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         session.speedBoostInterruptionCount = speedBoostInterruptionCount
         session.startupBreakdownMessage = startupBreakdownMessage
         session.startupQuality = startupQuality
+        session.startupTargetQuality = startupTargetQuality
+        session.startupDecisionMessage = startupDecisionMessage
+        session.startupUpgradeMessage = startupUpgradeMessage
         session.startupCDNKey = startupCDNKey
         session.startupCDNTitle = startupCDNTitle
         session.startupNetworkKey = startupNetworkKey
@@ -862,6 +876,9 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var startupGapMessage: String?
     var startupBreakdownMessage: String?
     var startupQuality: Int?
+    var startupTargetQuality: Int?
+    var startupDecisionMessage: String?
+    var startupUpgradeMessage: String?
     var startupCDNKey: String?
     var startupCDNTitle: String?
     var startupNetworkKey: String?
@@ -897,7 +914,7 @@ struct PlayerPlaybackAdaptationProfile: Equatable, Sendable {
             case .cautious:
                 return 80
             case .slow:
-                return 64
+                return 32
             }
         }
 
@@ -994,6 +1011,18 @@ struct PlayerPlaybackAdaptationProfile: Equatable, Sendable {
             return 1
         case .slow:
             return 0
+        }
+    }
+
+    nonisolated var backgroundRoutePlanPreloadLimit: Int {
+        guard isEnabled else { return 3 }
+        switch level {
+        case .normal:
+            return 3
+        case .fallback:
+            return 2
+        case .cautious, .slow:
+            return 1
         }
     }
 }
@@ -1280,6 +1309,10 @@ final class PlayerPerformanceStore: ObservableObject {
                 session.firstFramePlayerMilliseconds = session.firstFramePlayerMilliseconds
                     ?? Self.millisecondsValue(for: "firstFrame", in: tokens)
                 session.startupQuality = Self.integerValue(for: "q", in: tokens) ?? session.startupQuality
+                if let targetQuality = Self.integerValue(for: "targetQ", in: tokens),
+                   targetQuality > 0 {
+                    session.startupTargetQuality = targetQuality
+                }
                 if let cdnKey = tokens["cdn"], !cdnKey.isEmpty {
                     session.startupCDNKey = cdnKey
                     session.startupCDNTitle = Self.cdnTitle(for: cdnKey)
@@ -1339,6 +1372,9 @@ final class PlayerPerformanceStore: ObservableObject {
             }
         case .qualitySupplement:
             session.qualitySupplementMessage = event.message ?? session.qualitySupplementMessage
+            if let message = event.message {
+                Self.updateStartupQualityFields(message, in: &session)
+            }
         case .resumeDecision:
             if event.message?.contains("player applied") == true,
                let applyMilliseconds = Self.firstMilliseconds(in: event.message) {
@@ -1559,6 +1595,9 @@ final class PlayerPerformanceStore: ObservableObject {
         session.startupGapMessage = nil
         session.startupBreakdownMessage = nil
         session.startupQuality = nil
+        session.startupTargetQuality = nil
+        session.startupDecisionMessage = nil
+        session.startupUpgradeMessage = nil
         session.startupCDNKey = nil
         session.startupCDNTitle = nil
         session.startupNetworkKey = nil
@@ -1681,6 +1720,41 @@ final class PlayerPerformanceStore: ObservableObject {
         }
     }
 
+    private static func updateStartupQualityFields(_ message: String, in session: inout PlayerPerformanceSession) {
+        guard message.hasPrefix("startupQuality")
+            || message.hasPrefix("stagedStartup")
+            || message.contains(" staged ")
+        else { return }
+
+        if let transition = qualityTransition(in: message) {
+            session.startupQuality = transition.from
+            session.startupTargetQuality = transition.to
+        }
+
+        if message.hasPrefix("startupQuality")
+            || message.hasPrefix("stagedStartup selected")
+            || message.hasPrefix("stagedStartup queued")
+            || message.contains(" staged ") {
+            session.startupDecisionMessage = appendDiagnosticMessage(
+                session.startupDecisionMessage,
+                message,
+                maxParts: 4
+            )
+            return
+        }
+
+        if message.hasPrefix("stagedStartup inPlace")
+            || message.hasPrefix("stagedStartup upgrade")
+            || message.hasPrefix("stagedStartup warmTimeoutContinue")
+            || message.hasPrefix("stagedStartup skip") {
+            session.startupUpgradeMessage = appendDiagnosticMessage(
+                session.startupUpgradeMessage,
+                message,
+                maxParts: 4
+            )
+        }
+    }
+
     private static func legacyPlayURLSource(in message: String) -> String? {
         if message.contains("pending cache") {
             return "pendingCache"
@@ -1704,6 +1778,21 @@ final class PlayerPerformanceStore: ObservableObject {
             return "networkOrCache"
         }
         return nil
+    }
+
+    private static func qualityTransition(in message: String) -> (from: Int, to: Int)? {
+        let pattern = #"q?(\d+)->q?(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: message,
+                range: NSRange(message.startIndex..., in: message)
+              ),
+              let fromRange = Range(match.range(at: 1), in: message),
+              let toRange = Range(match.range(at: 2), in: message),
+              let from = Int(message[fromRange]),
+              let to = Int(message[toRange])
+        else { return nil }
+        return (from, to)
     }
 
     private static func legacyFirstInteger(in message: String) -> Int? {

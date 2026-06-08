@@ -34,7 +34,6 @@ enum PlaybackStartupURLProbeService {
     private static let requestTimeout: TimeInterval = 0.65
     private static let startupRangeProbeLimit: Int64 = 96 * 1024
     private static let throughputCandidateLimit = 4
-    private static let probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
 
     static func optimizedVariant(
         for variant: PlayVariant,
@@ -244,7 +243,11 @@ enum PlaybackStartupURLProbeService {
         }
 
         do {
-            let (data, response) = try await probeSession.data(for: request)
+            let (data, response) = try await BiliNetworkRetry.data(
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                request: request,
+                policy: .playbackProbe
+            )
             guard !Task.isCancelled,
                   !data.isEmpty,
                   let httpResponse = response as? HTTPURLResponse
@@ -273,7 +276,11 @@ enum PlaybackStartupURLProbeService {
 
         let start = Date()
         do {
-            let (_, response) = try await probeSession.data(for: request)
+            let (_, response) = try await BiliNetworkRetry.data(
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                request: request,
+                policy: .playbackProbe
+            )
             guard !Task.isCancelled else { return .failure }
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<400).contains(statusCode) else { return .failure }
@@ -354,7 +361,11 @@ enum PlaybackStartupURLProbeService {
 
         let start = Date()
         do {
-            let (data, response) = try await probeSession.data(for: request)
+            let (data, response) = try await BiliNetworkRetry.data(
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                request: request,
+                policy: .playbackProbe
+            )
             guard !Task.isCancelled else { return .failure(url) }
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<400).contains(statusCode) else { return .failure(url) }

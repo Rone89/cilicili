@@ -104,6 +104,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
+    @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var homeRefreshTriggerDistance: Double
     @Published private(set) var homeFeedLayout: HomeFeedLayout
 
@@ -126,11 +127,12 @@ final class LibraryStore: ObservableObject {
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
+    private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
     static let defaultPreferredVideoQuality = 112
-    static let supportedVideoQualities = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
+    static let supportedVideoQualities = [129, 127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
     static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
     static let defaultHomeRefreshTriggerDistance = 110.0
     private var playbackCDNProbeSnapshotsByContext: [String: PlaybackCDNProbeSnapshot] = [:]
@@ -215,6 +217,7 @@ final class LibraryStore: ObservableObject {
         self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
+        self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
         self.homeRefreshTriggerDistance = Self.normalizedHomeRefreshDistance(
             userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double ?? Self.defaultHomeRefreshTriggerDistance
         )
@@ -261,10 +264,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func effectivePlaybackCDNPreference(for preference: PlaybackCDNPreference) -> PlaybackCDNPreference {
-        guard preference == .automatic else { return preference }
-        return automaticPlaybackCDNRecommendation
-            ?? playbackCDNRecommendation(allowExpired: true)
-            ?? preference
+        preference
     }
 
     func setPlaybackCDNProbeSnapshot(_ snapshot: PlaybackCDNProbeSnapshot?) {
@@ -410,6 +410,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.guestModeEnabledKey)
     }
 
+    func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
+        minimizesTabBarOnScroll = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
+    }
+
     func setHomeRefreshTriggerDistance(_ distance: Double) {
         let normalizedDistance = Self.normalizedHomeRefreshDistance(distance)
         homeRefreshTriggerDistance = normalizedDistance
@@ -433,6 +438,8 @@ final class LibraryStore: ObservableObject {
     static func videoQualityTitle(_ quality: Int?) -> String {
         guard let quality else { return "自动（快速开播）" }
         switch quality {
+        case 129:
+            return "HDR Vivid"
         case 127:
             return "超高清 8K"
         case 126:

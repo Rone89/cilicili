@@ -37,7 +37,7 @@ struct LiveRoomDetailView: View {
         }
         .toolbar(hidesPlayerSystemChrome ? .hidden : .visible, for: .navigationBar)
         .background(Color.videoDetailBackground)
-        .hidesRootTabBarOnPush(restoreDelay: 180_000_000)
+        .hidesRootTabBarOnPush()
         .onPreferenceChange(LiveDetailChromeHiddenPreferenceKey.self) { isHidden in
             hidesPlayerSystemChrome = isHidden
         }
@@ -388,12 +388,6 @@ private struct LiveRoomContentView: View {
         .background(Color.black)
         .zIndex(1)
         .clipped()
-        .overlay(alignment: .topTrailing) {
-            liveTopPlayerTools(viewModel)
-                .padding(.top, 10)
-                .padding(.trailing, 10)
-                .zIndex(100)
-        }
     }
 
     private func detailScrollPage(_ viewModel: LiveRoomViewModel, layoutWidth: CGFloat) -> some View {
@@ -404,108 +398,186 @@ private struct LiveRoomContentView: View {
             liveDetailControls(viewModel, contentWidth: contentWidth)
                 .padding(.horizontal, horizontalPadding)
         }
-        .padding(.top, 12)
+        .padding(.top, 8)
         .frame(width: layoutWidth, alignment: .top)
         .background(Color.videoDetailBackground)
     }
 
     private func liveDetailControls(_ viewModel: LiveRoomViewModel, contentWidth: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 10) {
-                    Button {
-                        isShowingDescription = true
-                    } label: {
-                        LiveInlineMetadataButtonLabel(title: "简介", systemImage: "text.alignleft")
-                    }
-                    .buttonStyle(.plain)
-
-                    liveStreamInlineMenu(viewModel)
-
-                    liveQualityInlineMenu(viewModel)
-
-                    Button {
-                        viewModel.toggleDanmaku()
-                    } label: {
-                        LiveInlineMetadataButtonLabel(
-                            title: viewModel.isDanmakuEnabled ? "弹幕开" : "弹幕关",
-                            systemImage: viewModel.isDanmakuEnabled ? "text.bubble.fill" : "text.bubble"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(viewModel.isDanmakuEnabled ? .pink : .secondary)
-
-                    Button {
-                        viewModel.toggleLiveDanmakuDiagnostics()
-                    } label: {
-                        LiveInlineMetadataButtonLabel(
-                            title: viewModel.isLiveDanmakuDiagnosticsEnabled ? "诊断开" : "诊断",
-                            systemImage: "waveform.path.ecg"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(viewModel.isLiveDanmakuDiagnosticsEnabled ? .pink : .secondary)
-
-                    LiveInlineMetadataButtonLabel(
-                        title: viewModel.isLive ? "直播中" : "未开播",
-                        systemImage: viewModel.isLive ? "dot.radiowaves.left.and.right" : "pause.circle"
-                    )
-                    .foregroundStyle(viewModel.isLive ? .pink : .secondary)
-                }
-                .frame(height: 32)
-            }
-            .scrollIndicators(.hidden)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.primary)
-
+        VStack(alignment: .leading, spacing: 12) {
+            LiveRoomInfoBlock(viewModel: viewModel)
             liveActionStrip(viewModel, contentWidth: contentWidth)
+            liveInlineControlStrip(viewModel)
             liveStatusNotice(viewModel)
         }
         .frame(width: contentWidth, alignment: .leading)
     }
 
-    private func liveActionStrip(_ viewModel: LiveRoomViewModel, contentWidth: CGFloat) -> some View {
-        let columnSpacing: CGFloat = 6
-        let columnWidth = max((contentWidth - columnSpacing * 2) / 3, 1)
+    private func liveInlineControlStrip(_ viewModel: LiveRoomViewModel) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                Button {
+                    isShowingDescription = true
+                } label: {
+                    LiveInlineMetadataButtonLabel(title: "简介", systemImage: "text.alignleft")
+                }
+                .buttonStyle(.plain)
 
-        return HStack(spacing: columnSpacing) {
-            liveActionContent(
-                title: viewModel.onlineActionText,
-                systemImage: "person.2.fill",
-                foregroundStyle: .secondary
-            )
-            .frame(width: columnWidth, height: 46)
+                liveStreamInlineMenu(viewModel)
 
-            liveActionContent(
-                title: viewModel.areaActionText,
-                systemImage: "tag.fill",
-                foregroundStyle: .secondary
-            )
-            .frame(width: columnWidth, height: 46)
+                liveQualityInlineMenu(viewModel)
 
-            liveActionContent(
-                title: viewModel.isFollowingAnchor ? "已关注" : "主播",
-                systemImage: viewModel.isFollowingAnchor ? "person.crop.circle.badge.checkmark.fill" : "person.crop.circle.fill",
-                foregroundStyle: viewModel.isFollowingAnchor ? .pink : .secondary
-            )
-            .frame(width: columnWidth, height: 46)
+                Button {
+                    viewModel.toggleDanmaku()
+                } label: {
+                    LiveInlineMetadataButtonLabel(
+                        title: viewModel.isDanmakuEnabled ? "弹幕开" : "弹幕关",
+                        systemImage: viewModel.isDanmakuEnabled ? "text.bubble.fill" : "text.bubble"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(viewModel.isDanmakuEnabled ? .pink : .secondary)
+
+                Button {
+                    viewModel.toggleLiveDanmakuDiagnostics()
+                } label: {
+                    LiveInlineMetadataButtonLabel(
+                        title: viewModel.isLiveDanmakuDiagnosticsEnabled ? "诊断开" : "诊断",
+                        systemImage: "waveform.path.ecg"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(viewModel.isLiveDanmakuDiagnosticsEnabled ? .pink : .secondary)
+            }
+            .frame(height: 30)
         }
-        .frame(width: contentWidth, height: 50, alignment: .center)
-        .padding(.vertical, 2)
+        .scrollIndicators(.hidden)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.primary)
+    }
+
+    private func liveActionStrip(_ viewModel: LiveRoomViewModel, contentWidth: CGFloat) -> some View {
+        let columnSpacing: CGFloat = 4
+        let columnWidth = max((contentWidth - columnSpacing * 4) / 5, 1)
+
+        return GlassEffectContainer(spacing: columnSpacing) {
+            HStack(spacing: columnSpacing) {
+                liveOwnerAvatar(viewModel)
+                    .frame(width: columnWidth, height: 25)
+
+                liveFollowButton(viewModel)
+                    .frame(width: columnWidth, height: 25)
+
+                liveActionContent(
+                    title: viewModel.onlineActionText,
+                    systemImage: "person.2.fill",
+                    foregroundStyle: .primary
+                )
+                .frame(width: columnWidth, height: 25)
+
+                liveActionContent(
+                    title: viewModel.areaActionText,
+                    systemImage: "tag.fill",
+                    foregroundStyle: .primary
+                )
+                .frame(width: columnWidth, height: 25)
+
+                liveActionContent(
+                    title: viewModel.isLive ? "直播中" : "未开播",
+                    systemImage: viewModel.isLive ? "dot.radiowaves.left.and.right" : "pause.circle",
+                    foregroundStyle: viewModel.isLive ? .pink : .secondary
+                )
+                .frame(width: columnWidth, height: 25)
+            }
+        }
+        .frame(width: contentWidth, height: 25, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func liveOwnerAvatar(_ viewModel: LiveRoomViewModel) -> some View {
+        let owner = viewModel.anchorOwner
+        if owner.mid > 0 {
+            NavigationLink(value: owner) {
+                liveOwnerAvatarContent(urlString: owner.face?.normalizedBiliURL())
+            }
+            .buttonStyle(.plain)
+            .contentShape(Circle())
+            .accessibilityLabel("打开 \(owner.name) 的主页")
+        } else {
+            liveOwnerAvatarContent(urlString: viewModel.anchorFace)
+                .opacity(0.58)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func liveOwnerAvatarContent(urlString: String?) -> some View {
+        AvatarRemoteImage(urlString: urlString, pixelSize: 112) {
+            Image(systemName: "person.crop.circle.fill")
+                .resizable()
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 32, height: 32)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(.white.opacity(0.24), lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(0.24), radius: 5, x: 0, y: 2.2)
+        .shadow(color: .black.opacity(0.10), radius: 1.2, x: 0, y: 0.6)
+        .frame(width: 32, height: 32)
+        .contentShape(Circle())
+    }
+
+    @ViewBuilder
+    private func liveFollowButton(_ viewModel: LiveRoomViewModel) -> some View {
+        if viewModel.isFollowingAnchor {
+            liveFollowButtonContent(viewModel, isFollowing: true)
+                .buttonBorderShape(.capsule)
+                .controlSize(.mini)
+                .buttonStyle(.glass)
+        } else {
+            liveFollowButtonContent(viewModel, isFollowing: false)
+                .buttonBorderShape(.capsule)
+                .controlSize(.mini)
+                .buttonStyle(.glassProminent)
+        }
+    }
+
+    private func liveFollowButtonContent(_ viewModel: LiveRoomViewModel, isFollowing: Bool) -> some View {
+        Button {
+            Haptics.light()
+            Task {
+                await viewModel.toggleFollowAnchor()
+                Haptics.success()
+            }
+        } label: {
+            Text(isFollowing ? "已关注" : "关注")
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .frame(maxWidth: .infinity)
+                .frame(height: 25)
+        }
+        .disabled(viewModel.anchorUIDForFollow == nil || viewModel.isMutatingAnchorFollow)
+        .opacity((viewModel.anchorUIDForFollow != nil && !viewModel.isMutatingAnchorFollow) ? 1 : 0.58)
+        .accessibilityLabel(isFollowing ? "已关注主播" : "关注主播")
     }
 
     private func liveActionContent(title: String, systemImage: String, foregroundStyle: Color) -> some View {
-        VStack(spacing: 5) {
+        HStack(spacing: 4) {
             Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
+                .font(.system(size: 12, weight: .semibold))
+
             Text(title)
-                .font(.caption2)
+                .font(.caption2.weight(.semibold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.68)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 38)
+        .frame(height: 25)
+        .padding(.horizontal, 7)
         .foregroundStyle(foregroundStyle)
+        .background(Color.videoDetailSecondarySurface.opacity(0.92), in: Capsule())
     }
 
     @ViewBuilder
@@ -735,38 +807,6 @@ private struct LiveRoomContentView: View {
             )
             .opacity(0.45)
         }
-    }
-
-    private func liveTopPlayerTools(_ viewModel: LiveRoomViewModel) -> some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
-                liveDanmakuDiagnosticsButton(viewModel)
-                liveQualityMenu(viewModel)
-                liveStreamMenu(viewModel)
-            }
-        }
-        .fixedSize()
-        .allowsHitTesting(true)
-    }
-
-    private func liveDanmakuDiagnosticsButton(_ viewModel: LiveRoomViewModel) -> some View {
-        Button {
-            Haptics.light()
-            viewModel.toggleLiveDanmakuDiagnostics()
-        } label: {
-            Label(
-                viewModel.isLiveDanmakuDiagnosticsEnabled ? "诊断开" : "诊断",
-                systemImage: "waveform.path.ecg"
-            )
-            .font(.caption.weight(.semibold))
-            .labelStyle(.titleAndIcon)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-        }
-        .biliPlayerGlassButtonStyle(prominent: viewModel.isLiveDanmakuDiagnosticsEnabled)
-        .foregroundStyle(.white)
-        .contentShape(Capsule())
-        .accessibilityLabel(viewModel.isLiveDanmakuDiagnosticsEnabled ? "关闭直播弹幕诊断" : "开启直播弹幕诊断")
     }
 
     private func livePlayerAccessory(_ viewModel: LiveRoomViewModel) -> some View {
@@ -2148,6 +2188,106 @@ private extension LiveDanmakuDiagnosticPhase {
     }
 }
 
+private struct LiveRoomInfoBlock: View {
+    @ObservedObject var viewModel: LiveRoomViewModel
+    @State private var isExpanded = false
+
+    var body: some View {
+        let descriptionText = viewModel.descriptionText ?? ""
+        let descriptionPreview = Self.collapsedDescriptionPreview(descriptionText)
+        let hasDescriptionContent = descriptionPreview != nil
+        let metadataText = metadataText(descriptionPreview: isExpanded ? nil : descriptionPreview)
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text(titleText)
+                .font(.callout.weight(.semibold))
+                .lineSpacing(1.5)
+                .foregroundStyle(.primary)
+                .lineLimit(isExpanded ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .center, spacing: 8) {
+                Text(metadataText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if hasDescriptionContent {
+                    Button {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(isExpanded ? "收起直播简介" : "展开直播简介")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isExpanded {
+                BiliLinkedText(
+                    descriptionText,
+                    font: UIFont.preferredFont(forTextStyle: .caption1),
+                    textColor: .secondary
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.snappy(duration: 0.22), value: isExpanded)
+    }
+
+    private var titleText: String {
+        let trimmedTitle = viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "直播间" : trimmedTitle
+    }
+
+    private func metadataText(descriptionPreview: String?) -> String {
+        var parts = [String]()
+        let anchorName = viewModel.anchorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !anchorName.isEmpty {
+            parts.append(anchorName)
+        }
+
+        if viewModel.onlineText != "在线人数 -" {
+            parts.append(viewModel.onlineText)
+        }
+
+        if let areaText = viewModel.areaText {
+            parts.append(areaText)
+        }
+
+        if let liveTimeText = viewModel.liveTimeText {
+            parts.append(liveTimeText)
+        }
+
+        if let descriptionPreview {
+            parts.append(descriptionPreview)
+        }
+
+        return parts.isEmpty ? "直播详情" : parts.joined(separator: "  ")
+    }
+
+    private static func collapsedDescriptionPreview(_ text: String) -> String? {
+        let trimmed = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "这个直播间暂时没有简介。" else { return nil }
+        return trimmed
+    }
+}
+
 private struct LiveInlineMetadataButtonLabel: View {
     let title: String
     let systemImage: String
@@ -2263,7 +2403,9 @@ private struct LiveRoomInfoCard: View {
     @ObservedObject var viewModel: LiveRoomViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
+            LiveRoomInfoBlock(viewModel: viewModel)
+
             HStack(alignment: .top, spacing: 10) {
                 AvatarRemoteImage(urlString: viewModel.anchorFace, pixelSize: 96) {
                     Image(systemName: "person.crop.circle.fill")
@@ -2304,11 +2446,6 @@ private struct LiveRoomInfoCard: View {
                 Spacer(minLength: 0)
             }
 
-            Text(viewModel.title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.primary)
-                .lineLimit(3)
-
             HStack(spacing: 8) {
                 if let areaText = viewModel.areaText {
                     Label(areaText, systemImage: "tag")
@@ -2319,25 +2456,8 @@ private struct LiveRoomInfoCard: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-
-            if let descriptionText = viewModel.descriptionText {
-                Text(descriptionText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(
-            .regular.tint(Color.videoDetailGlassTint).interactive(false),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.16), lineWidth: 0.8)
-        }
     }
 }
 
@@ -2348,10 +2468,10 @@ private extension Color {
             : .systemGroupedBackground
     })
 
-    static let videoDetailGlassTint = Color(UIColor { traitCollection in
+    static let videoDetailSecondarySurface = Color(UIColor { traitCollection in
         traitCollection.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: 0.055)
-            : UIColor(white: 1, alpha: 0.74)
+            ? UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1)
+            : .secondarySystemGroupedBackground
     })
 }
 

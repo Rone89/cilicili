@@ -45,11 +45,7 @@ final class AppDependencies: ObservableObject {
             await RemoteImageCache.shared.applyAdaptiveBudget()
             async let startupResources: Void = api.prewarmStartupResources()
             async let dynamicFeed: Void = DynamicFeedWarmCache.shared.prewarm(api: api)
-            async let playbackCDNRecommendation: Void = PlaybackCDNProbeCoordinator.shared.prepareRecommendationForImmediatePlaybackIfNeeded(
-                libraryStore: libraryStore,
-                timeout: 0.75
-            )
-            _ = await (startupResources, dynamicFeed, playbackCDNRecommendation)
+            _ = await (startupResources, dynamicFeed)
         }
         Task { @MainActor [weak self] in
             self?.refreshPlaybackCDNProbeIfNeeded()
@@ -63,11 +59,10 @@ final class AppDependencies: ObservableObject {
     private func handlePlaybackNetworkClassChange() {
         libraryStore.syncPlaybackCDNProbeSnapshotForCurrentContext()
         Task(priority: .utility) { [libraryStore] in
-            await RemoteImageCache.shared.applyAdaptiveBudget()
-            await PlaybackCDNProbeCoordinator.shared.prepareRecommendationForImmediatePlaybackIfNeeded(
-                libraryStore: libraryStore,
-                timeout: 0.75
-            )
+            await RemoteImageCache.shared.refreshNetworkSessionForPathChange()
+            BiliPlaybackNetworkSessionPool.shared.refreshForNetworkPathChange()
+            PlaybackRangeStreamingSessionCoordinator.refreshForNetworkPathChange()
+            PlaybackCDNProbeCoordinator.shared.refreshIfNeeded(libraryStore: libraryStore)
         }
     }
 }

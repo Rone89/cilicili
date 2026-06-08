@@ -149,7 +149,7 @@ struct MineView: View {
 
                 if libraryStore.playbackCDNPreference == .automatic,
                    let activeRecommendation = libraryStore.automaticPlaybackCDNRecommendation {
-                    Label("自动选择当前使用 \(activeRecommendation.title)", systemImage: "bolt.horizontal")
+                    Label("测速参考 \(activeRecommendation.title)", systemImage: "bolt.horizontal")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -238,6 +238,13 @@ struct MineView: View {
                     }
                 } label: {
                     Label("首页布局", systemImage: "rectangle.grid.1x2")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.minimizesTabBarOnScroll },
+                    set: { libraryStore.setMinimizesTabBarOnScroll($0) }
+                )) {
+                    Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -333,7 +340,7 @@ struct MineView: View {
 
                 if libraryStore.playbackNetworkAddressFamilyPreference != .automatic,
                    libraryStore.playbackCDNProbeSnapshotForCurrentContext == nil {
-                    Label("网络协议已切换，请重新测速 CDN 以生成匹配的新推荐。", systemImage: "arrow.triangle.2.circlepath")
+                    Label("网络协议已切换，请重新测速 CDN 以生成匹配的新参考。", systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -394,7 +401,7 @@ struct MineView: View {
             } header: {
                 Text("播放偏好")
             } footer: {
-                Text("自动模式会优先使用新鲜 CDN 测速推荐；没有结果时保留接口返回顺序。手动选择 CDN 或协议后，播放仍会保留备用地址作为回退。")
+                Text("自动模式会优先保留接口下发的播放地址候选，再根据真实播放记录和启动探测微调排序。测速结果用于诊断和手动推荐；手动选择 CDN 或协议后，播放仍会保留备用地址作为回退。")
             }
 
             Section("内容过滤") {
@@ -478,7 +485,7 @@ struct MineView: View {
                         .lineLimit(1)
                 }
 
-                Text("根据 AVPlayer 实际码率、传输耗时和新增 stall 自动修正 CDN Host 排序。")
+                Text("根据 AVPlayer 实际码率、传输耗时和新增 stall，在接口候选地址内自动修正 CDN Host 排序。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 

@@ -661,7 +661,7 @@ final class HomeViewModel: ObservableObject {
     private func scheduleImagePrefetch(for videos: [VideoItem]) {
         imagePrefetchTask?.cancel()
         let environment = PlaybackEnvironment.current
-        let prefetchLimit = environment.shouldPreferConservativePlayback ? 6 : 8
+        let prefetchLimit = environment.shouldPreferConservativePlayback ? 4 : 5
         let prefetchPlan = imagePrefetchPlan(for: videos, limit: prefetchLimit)
 
         guard !prefetchPlan.coverSources.isEmpty || !prefetchPlan.avatarSources.isEmpty else { return }
@@ -670,11 +670,10 @@ final class HomeViewModel: ObservableObject {
         let coverTargetPixelSize = prefetchPlan.coverTargetPixelSize
         let avatarTargetPixelSize = prefetchPlan.avatarTargetPixelSize
         imagePrefetchTask = Task(priority: .utility) {
-            let concurrentLoads = environment.shouldPreferConservativePlayback ? 1 : 2
             async let coverPrefetch: Void = RemoteImageCache.shared.prefetch(
                 coverSourcesToPrefetch,
                 targetPixelSize: coverTargetPixelSize,
-                maximumConcurrentLoads: concurrentLoads
+                maximumConcurrentLoads: 1
             )
             async let avatarPrefetch: Void = RemoteImageCache.shared.prefetch(
                 avatarSourcesToPrefetch,
@@ -686,7 +685,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func prewarmInitialImagesBeforePublishing(_ videos: [VideoItem]) async {
-        let prefetchPlan = imagePrefetchPlan(for: videos, limit: 4)
+        let prefetchPlan = imagePrefetchPlan(for: videos, limit: 3)
         guard !prefetchPlan.coverSources.isEmpty || !prefetchPlan.avatarSources.isEmpty else { return }
 
         await withTaskGroup(of: Void.self) { group in
@@ -694,7 +693,7 @@ final class HomeViewModel: ObservableObject {
                 async let coverPrefetch: Void = RemoteImageCache.shared.prefetch(
                     prefetchPlan.coverSources,
                     targetPixelSize: prefetchPlan.coverTargetPixelSize,
-                    maximumConcurrentLoads: 2
+                    maximumConcurrentLoads: 1
                 )
                 async let avatarPrefetch: Void = RemoteImageCache.shared.prefetch(
                     prefetchPlan.avatarSources,
@@ -704,7 +703,7 @@ final class HomeViewModel: ObservableObject {
                 _ = await (coverPrefetch, avatarPrefetch)
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 450_000_000)
+                try? await Task.sleep(nanoseconds: 320_000_000)
             }
             _ = await group.next()
             group.cancelAll()
@@ -749,14 +748,10 @@ final class HomeViewModel: ObservableObject {
 
     private func schedulePlaybackPreload(for videos: [VideoItem], initialDelay: TimeInterval) {
         playbackPreloadTask?.cancel()
-        guard !PlaybackEnvironment.current.shouldPreferConservativePlayback else {
-            playbackPreloadTask = nil
-            return
-        }
         let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
             isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
         )
-        let candidateLimit = max(0, min(1, playbackAdaptationProfile.backgroundPreloadLimit))
+        let candidateLimit = max(0, min(1, playbackAdaptationProfile.backgroundRoutePlanPreloadLimit))
         guard candidateLimit > 0 else {
             playbackPreloadTask = nil
             return
@@ -772,7 +767,7 @@ final class HomeViewModel: ObservableObject {
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
         playbackPreloadTask = Task(priority: .background) { [api, cdnPreference] in
-            try? await Task.sleep(nanoseconds: UInt64(initialDelay * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64((initialDelay + 0.4) * 1_000_000_000))
             for (index, video) in candidates.enumerated() {
                 guard !Task.isCancelled else { return }
                 await VideoPreloadCenter.shared.updatePlaybackPreferences(
@@ -787,7 +782,8 @@ final class HomeViewModel: ObservableObject {
                     cdnPreference: cdnPreference,
                     priority: .background,
                     warmsMedia: true,
-                    mediaWarmupDelay: index == 0 ? 0.45 : 0.9,
+                    mediaWarmupMode: .routePlanOnly,
+                    mediaWarmupDelay: 0.35,
                     playbackAdaptationProfile: playbackAdaptationProfile
                 )
                 if index < candidates.count - 1 {

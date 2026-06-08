@@ -4,41 +4,70 @@ import UIKit
 
 struct DynamicView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+
+    var body: some View {
+        DynamicContentRoot(
+            api: dependencies.api,
+            libraryStore: dependencies.libraryStore,
+            sessionStore: dependencies.sessionStore
+        )
+        .navigationTitle("动态")
+        .navigationBarTitleDisplayMode(.inline)
+        .nativeTopNavigationChrome()
+    }
+}
+
+private struct DynamicContentRoot: View {
+    let api: BiliAPIClient
+    let libraryStore: LibraryStore
+    @ObservedObject var sessionStore: SessionStore
     @StateObject private var holder = DynamicViewModelHolder()
 
     var body: some View {
         Group {
             if let viewModel = holder.viewModel {
-                content(viewModel)
+                content(viewModel, isLoggedIn: sessionStore.isLoggedIn)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(0..<3, id: \.self) { index in
-                            DynamicFeedSkeletonCard()
-
-                            if index != 2 {
-                                Divider()
-                                    .padding(.leading, 66)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
-                }
-                .rootFloatingTabBarContentPadding()
-                .background(Color(.systemBackground))
+                initialContent(isLoggedIn: sessionStore.isLoggedIn)
                     .task {
-                        holder.configure(api: dependencies.api, libraryStore: dependencies.libraryStore)
+                        holder.configure(
+                            api: api,
+                            libraryStore: libraryStore,
+                            sessionStore: sessionStore
+                        )
                     }
             }
         }
-        .navigationTitle("动态")
-        .navigationBarTitleDisplayMode(.inline)
-        .nativeTopNavigationChrome()
     }
 
     @ViewBuilder
-    private func content(_ viewModel: DynamicViewModel) -> some View {
+    private func initialContent(isLoggedIn: Bool) -> some View {
+        if isLoggedIn {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { index in
+                        DynamicFeedSkeletonCard()
+
+                        if index != 2 {
+                            Divider()
+                                .padding(.leading, 66)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+            }
+            .rootFloatingTabBarContentPadding()
+            .background(Color(.systemBackground))
+        } else {
+            dynamicLoginEmptyState
+                .rootFloatingTabBarContentPadding()
+                .background(Color(.systemBackground))
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ viewModel: DynamicViewModel, isLoggedIn: Bool) -> some View {
         GeometryReader { proxy in
             let contentWidth = max(floor(proxy.size.width - 32), 0)
 
@@ -46,7 +75,11 @@ struct DynamicView: View {
             LazyVStack(spacing: 0) {
                 FollowedLiveStrip(rooms: viewModel.followedLiveRooms)
 
-                if viewModel.items.isEmpty && viewModel.state.isLoading {
+                if !isLoggedIn {
+                    dynamicLoginEmptyState
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 110)
+                } else if viewModel.items.isEmpty && viewModel.state.isLoading {
                     ForEach(0..<3, id: \.self) { index in
                         DynamicFeedSkeletonCard()
                             .allowsHitTesting(false)
@@ -71,7 +104,7 @@ struct DynamicView: View {
                         VStack(spacing: 0) {
                             DynamicFeedCard(
                                 item: item,
-                                api: dependencies.api,
+                                api: api,
                                 contentWidth: contentWidth
                             )
                             .frame(maxWidth: .infinity)
@@ -101,11 +134,11 @@ struct DynamicView: View {
         .refreshable {
             await viewModel.refresh()
         }
-        .task {
+        .task(id: isLoggedIn) {
             await viewModel.loadInitial()
         }
         .overlay {
-            if case .failed(let message) = viewModel.state, viewModel.items.isEmpty {
+            if isLoggedIn, case .failed(let message) = viewModel.state, viewModel.items.isEmpty {
                 ErrorStateView(title: "动态加载失败", message: message) {
                     Task { await viewModel.refresh() }
                 }
@@ -113,6 +146,14 @@ struct DynamicView: View {
             }
         }
         }
+    }
+
+    private var dynamicLoginEmptyState: some View {
+        EmptyStateView(
+            title: "暂无动态",
+            systemImage: "sparkles",
+            message: "登录后会显示你关注 UP 的动态。"
+        )
     }
 
     @ViewBuilder
@@ -3860,6 +3901,7 @@ final class DynamicViewModel: ObservableObject {
 
     private let api: BiliAPIClient
     private let libraryStore: LibraryStore
+    private let sessionStore: SessionStore
     private var rawItems: [DynamicFeedItem] = []
     private var offset = ""
     private var hasMore = true
@@ -3873,9 +3915,10 @@ final class DynamicViewModel: ObservableObject {
         hasMore
     }
 
-    init(api: BiliAPIClient, libraryStore: LibraryStore) {
+    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
         self.api = api
         self.libraryStore = libraryStore
+        self.sessionStore = sessionStore
         filterCancellable = libraryStore.$blocksAdDynamics
             .combineLatest(libraryStore.$blocksGoodsDynamics)
             .combineLatest(libraryStore.$blockedDynamicKeywords)
@@ -3898,6 +3941,10 @@ final class DynamicViewModel: ObservableObject {
 
     func loadInitial() async {
         guard items.isEmpty else { return }
+        guard sessionStore.isLoggedIn else {
+            prepareLoggedOutState()
+            return
+        }
         state = .loading
         offset = ""
         hasMore = true
@@ -3912,6 +3959,10 @@ final class DynamicViewModel: ObservableObject {
     }
 
     func refresh() async {
+        guard sessionStore.isLoggedIn else {
+            prepareLoggedOutState()
+            return
+        }
         state = .loading
         offset = ""
         hasMore = true
@@ -3932,6 +3983,10 @@ final class DynamicViewModel: ObservableObject {
     }
 
     func loadMore() async {
+        guard sessionStore.isLoggedIn else {
+            prepareLoggedOutState()
+            return
+        }
         guard hasMore, !state.isLoading else { return }
         state = .loading
         do {
@@ -3946,6 +4001,17 @@ final class DynamicViewModel: ObservableObject {
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    private func prepareLoggedOutState() {
+        followedLiveTask?.cancel()
+        followedLiveTask = nil
+        rawItems = []
+        items = []
+        followedLiveRooms = []
+        offset = ""
+        hasMore = false
+        state = .idle
     }
 
     private func apply(page: DynamicFeedData, prefetchDelay: TimeInterval) {
@@ -4154,9 +4220,9 @@ final class DynamicViewModelHolder: ObservableObject {
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshot: DynamicRenderSnapshot?
 
-    func configure(api: BiliAPIClient, libraryStore: LibraryStore) {
+    func configure(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
         if viewModel == nil {
-            let viewModel = DynamicViewModel(api: api, libraryStore: libraryStore)
+            let viewModel = DynamicViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
             self.viewModel = viewModel
             lastSnapshot = DynamicRenderSnapshot(viewModel)
             cancellable = viewModel.objectWillChange.sink { [weak self] _ in

@@ -74,10 +74,74 @@ final class ResourceLoadingServicesTests: XCTestCase {
         XCTAssertNil(loginInvalidatedCached)
     }
 
+    func testPlayVariantsExposeAdvertisedLockedQualities() throws {
+        let json = """
+        {
+            "quality": 112,
+            "accept_quality": [129, 116, 112],
+            "accept_description": ["HDR Vivid", "1080P 高帧率", "1080P 高码率"],
+            "support_formats": [
+                { "quality": 129, "new_description": "HDR Vivid" },
+                { "quality": 116, "new_description": "1080P 高帧率" },
+                { "quality": 112, "new_description": "1080P 高码率" }
+            ],
+            "dash": {
+                "video": [
+                    {
+                        "id": 116,
+                        "baseUrl": "https://example.com/video-116.m4s",
+                        "bandwidth": 2200000,
+                        "codecs": "avc1.64002a",
+                        "width": 1920,
+                        "height": 1080,
+                        "frameRate": "60"
+                    },
+                    {
+                        "id": 112,
+                        "baseUrl": "https://example.com/video-112.m4s",
+                        "bandwidth": 2600000,
+                        "codecs": "avc1.640028",
+                        "width": 1920,
+                        "height": 1080,
+                        "frameRate": "30"
+                    }
+                ],
+                "audio": [
+                    {
+                        "id": 30280,
+                        "baseUrl": "https://example.com/audio.m4s",
+                        "bandwidth": 128000,
+                        "codecs": "mp4a.40.2"
+                    }
+                ]
+            }
+        }
+        """
+        let data = try JSONDecoder().decode(PlayURLData.self, from: Data(json.utf8))
+        let variants = data.playVariants
+        let highFrameVariant = try XCTUnwrap(variants.first { $0.quality == 116 })
+        let playableVariant = try XCTUnwrap(variants.first { $0.quality == 112 })
+        let lockedVariant = try XCTUnwrap(variants.first { $0.quality == 129 })
+
+        XCTAssertTrue(highFrameVariant.isPlayable)
+        XCTAssertTrue(highFrameVariant.qualityMenuTitle.contains("流畅优先"))
+        XCTAssertTrue(highFrameVariant.qualityMenuTitle.contains("帧率 60fps"))
+        XCTAssertTrue(playableVariant.isPlayable)
+        XCTAssertTrue(playableVariant.qualityMenuTitle.contains("细节优先"))
+        XCTAssertTrue(playableVariant.qualityMenuTitle.contains("画质 1920x1080"))
+        XCTAssertTrue(playableVariant.qualityMenuTitle.contains("帧率 30fps"))
+        XCTAssertTrue(playableVariant.qualityMenuTitle.contains("码率 2.6 Mbps"))
+        XCTAssertTrue(playableVariant.qualityMenuTitle.contains("编码 AVC"))
+        XCTAssertFalse(lockedVariant.isPlayable)
+        XCTAssertEqual(lockedVariant.title, "HDR Vivid")
+        XCTAssertTrue(lockedVariant.isHDR)
+        XCTAssertTrue(lockedVariant.qualityMenuTitle.contains("需要登录或权限"))
+    }
+
     func testRelatedPlaybackPrefetchPolicyAllowsOnlyWifiHealthyPlayback() {
-        let wifi = PlaybackEnvironment(networkClass: .wifi, isLowPowerModeEnabled: false, isThermallyConstrained: false)
-        let cellular = PlaybackEnvironment(networkClass: .cellular, isLowPowerModeEnabled: false, isThermallyConstrained: false)
-        let lowPower = PlaybackEnvironment(networkClass: .wifi, isLowPowerModeEnabled: true, isThermallyConstrained: false)
+        let wifi = PlaybackEnvironment(networkClass: .wifi, isLowPowerModeEnabled: false, isThermallyConstrained: false, thermalPressure: .nominal)
+        let cellular = PlaybackEnvironment(networkClass: .cellular, isLowPowerModeEnabled: false, isThermallyConstrained: false, thermalPressure: .nominal)
+        let lowPower = PlaybackEnvironment(networkClass: .wifi, isLowPowerModeEnabled: true, isThermallyConstrained: false, thermalPressure: .nominal)
 
         XCTAssertEqual(RelatedPlaybackPrefetchPolicy.candidateLimit(environment: wifi, backgroundPreloadLimit: 4, isPlaying: true, isBuffering: false), 2)
         XCTAssertEqual(RelatedPlaybackPrefetchPolicy.candidateLimit(environment: wifi, backgroundPreloadLimit: 2, isPlaying: true, isBuffering: false), 0)

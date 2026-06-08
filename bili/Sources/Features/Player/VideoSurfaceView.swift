@@ -211,6 +211,13 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     private var onPrepareManualFullscreenSeek: ((Double) -> Void)?
     private weak var playerViewModel: PlayerStateViewModel?
     private var lastRequestedOrientationMask: UIInterfaceOrientationMask?
+    private static let manualFullscreenLayoutAnimationDuration: TimeInterval = 0.28
+    private static let manualFullscreenPresentationDuration: TimeInterval = 0.32
+    private static let manualFullscreenDismissalDuration: TimeInterval = 0.38
+    private static let manualFullscreenAspectBridgeAnimationDuration: TimeInterval = 0.34
+    private static let manualFullscreenAspectBridgeExitDuration: TimeInterval = 0.44
+    private static let manualFullscreenSnapshotFadeDuration: TimeInterval = 0.14
+    private static let manualFullscreenAspectAnimationTolerance: CGFloat = 0.10
 
     func setPlayerViewModel(_ viewModel: PlayerStateViewModel, prefersNativePlaybackControls: Bool) {
         playerViewModel = viewModel
@@ -245,6 +252,16 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
     func setManualFullscreenSeekPreparation(_ handler: ((Double) -> Void)?) {
         onPrepareManualFullscreenSeek = handler
         fullscreenState?.fullscreenController.onPrepareForUserSeek = handler
+    }
+
+    func makePlaybackTransitionSnapshotView() -> UIView? {
+        layoutIfNeeded()
+        let fallbackView: UIView = isNativePlaybackControllerEnabled
+            ? nativePlayerViewController.view
+            : drawableView
+        let sourceView = fullscreenState?.contentView
+            ?? fallbackView
+        return makeTransitionSnapshotView(from: sourceView)
     }
 
     func detachPlayerSurface() {
@@ -384,12 +401,12 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         }
 
         guard let sourceWindow = window ?? UIApplication.shared.biliKeyWindow,
-              let windowScene = sourceWindow.windowScene
+              sourceWindow.windowScene != nil
         else {
             PlayerMetricsLog.logger.error("manualFullscreenEnterRejected reason=noSourceWindow")
             return
         }
-        _ = windowScene
+        requestGeometry(for: sourceWindow, mode: mode)
 
         if fullscreenState == nil {
             superview?.layoutIfNeeded()
@@ -450,6 +467,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
             let startFrameInSourceWindow = originalSuperview.convert(originalFrame, to: sourceWindow)
             let startFrame = sourceWindow.convert(startFrameInSourceWindow, to: fullscreenSuperview)
+            let entrySnapshotView = makeTransitionSnapshotView(from: drawableView)
             let backdropView = UIView(frame: fullscreenController.view.bounds)
             backdropView.backgroundColor = .black
             backdropView.isUserInteractionEnabled = false
@@ -461,8 +479,16 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             contentView.clipsToBounds = true
             contentView.layer.backgroundColor = UIColor.black.cgColor
             let fullscreenBounds = fullscreenController.view.bounds
-            contentView.bounds = CGRect(origin: .zero, size: fullscreenBounds.size)
-            contentView.center = CGPoint(x: fullscreenBounds.midX, y: fullscreenBounds.midY)
+            let startsFromInlineFrame = animated
+                && startFrame.width > 1
+                && startFrame.height > 1
+            fullscreenController.prepareForEnterAnimation(animated: startsFromInlineFrame)
+            if startsFromInlineFrame {
+                contentView.frame = startFrame
+            } else {
+                contentView.bounds = CGRect(origin: .zero, size: fullscreenBounds.size)
+                contentView.center = CGPoint(x: fullscreenBounds.midX, y: fullscreenBounds.midY)
+            }
 
             fullscreenController.view.addSubview(backdropView)
             fullscreenController.view.addSubview(contentView)
@@ -473,6 +499,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
             fullscreenState = FullscreenState(
                 sourceWindow: sourceWindow,
+                presentingController: nil,
                 fullscreenController: fullscreenController,
                 fullscreenSuperview: fullscreenSuperview,
                 originalSuperview: originalSuperview,
@@ -481,8 +508,13 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
                 originalWindowFrame: startFrame,
                 backdropView: backdropView,
                 contentView: contentView,
+                transitionDriver: nil,
                 mode: mode
             )
+            fullscreenState?.isAwaitingEntryOverlayTransition = startsFromInlineFrame
+            if let fullscreenState {
+                installManualFullscreenTransitionSnapshot(entrySnapshotView, in: fullscreenState)
+            }
             fullscreenController.onExit = { [weak self] in
                 self?.handleExitFullscreenButton()
             }
@@ -491,12 +523,20 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             }
             playerViewModel?.setHostFullscreenActive(true, exitTarget: self)
             playerViewModel?.recoverSurfaceAfterHostFullscreenTransition()
-            applyManualFullscreenLayout(animated: false)
+            requestGeometry(for: sourceWindow, mode: mode)
+            applyManualFullscreenLayout(animated: startsFromInlineFrame)
+            if let fullscreenState {
+                scheduleManualFullscreenLayoutStabilization(for: fullscreenState)
+            }
         }
 
         if fullscreenState?.mode != mode {
+            requestGeometry(for: fullscreenState?.sourceWindow ?? sourceWindow, mode: mode)
             fullscreenState?.mode = mode
             fullscreenState?.fullscreenController.mode = mode
+            if let fullscreenState {
+                scheduleManualFullscreenLayoutStabilization(for: fullscreenState)
+            }
         }
         playerViewModel?.setHostFullscreenActive(true, exitTarget: self)
         requestGeometry(for: fullscreenState?.sourceWindow ?? sourceWindow, mode: mode)
@@ -511,20 +551,26 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             requestPortraitGeometry(for: state.sourceWindow)
         }
 
-        let restoreIntoOriginalHierarchy = { [weak self] in
+        let restoreIntoOriginalHierarchy = { [weak self] shouldFinishTransition in
             guard let self else { return }
             let originalSuperview = state.originalSuperview ?? self
             let index = min(state.originalIndex, originalSuperview.subviews.count)
             originalSuperview.insertSubview(self.drawableView, at: index)
             self.drawableView.transform = .identity
             self.drawableView.frame = originalSuperview === self ? self.bounds : state.originalFrame
+            state.fullscreenController.view.transform = .identity
             state.fullscreenController.onExit = nil
             state.fullscreenController.onDismissDragChanged = nil
             state.fullscreenController.onDismissDragCancelled = nil
             state.fullscreenController.viewModel = nil
-            state.fullscreenController.willMove(toParent: nil)
-            state.fullscreenController.view.removeFromSuperview()
-            state.fullscreenController.removeFromParent()
+            state.layoutStabilizationTask?.cancel()
+            state.layoutStabilizationTask = nil
+            if state.fullscreenController.presentingViewController == nil,
+               state.fullscreenController.parent != nil || state.fullscreenController.view.superview != nil {
+                state.fullscreenController.willMove(toParent: nil)
+                state.fullscreenController.view.removeFromSuperview()
+                state.fullscreenController.removeFromParent()
+            }
             self.fullscreenState = nil
             self.isExitingManualFullscreen = false
             self.lastRequestedOrientationMask = nil
@@ -533,11 +579,19 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             self.playerViewModel?.setHostFullscreenActive(false, exitTarget: nil)
             self.playerViewModel?.recoverSurfaceAfterHostFullscreenTransition()
             self.requestPortraitGeometry(for: state.sourceWindow)
-            self.finishManualFullscreenTransition()
+            if shouldFinishTransition {
+                self.finishManualFullscreenTransition()
+            }
         }
 
         guard animated else {
-            restoreIntoOriginalHierarchy()
+            guard state.fullscreenController.presentingViewController != nil else {
+                restoreIntoOriginalHierarchy(true)
+                return
+            }
+            state.fullscreenController.dismiss(animated: false) {
+                restoreIntoOriginalHierarchy(true)
+            }
             return
         }
 
@@ -545,20 +599,55 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         state.fullscreenController.view.isUserInteractionEnabled = false
         state.fullscreenController.view.backgroundColor = .clear
 
+        if state.fullscreenController.presentingViewController != nil,
+           let transitionDriver = state.transitionDriver {
+            transitionDriver.prepareForDismissal(
+                targetFrameProvider: { [weak self, weak state] in
+                    guard let self, let state else { return nil }
+                    return self.manualFullscreenRestorationWindowFrame(for: state)
+                },
+                onWillFinish: {
+                    restoreIntoOriginalHierarchy(false)
+                },
+                onFinished: { [weak self] in
+                    self?.finishManualFullscreenTransition()
+                }
+            )
+            DispatchQueue.main.async { [weak fullscreenController = state.fullscreenController] in
+                fullscreenController?.dismiss(animated: true)
+            }
+            return
+        }
+
         let animateExit = { [weak self] in
             guard let self, self.fullscreenState === state else { return }
             let targetFrame = self.manualFullscreenRestorationFrame(for: state)
             guard targetFrame.width > 1, targetFrame.height > 1 else {
-                restoreIntoOriginalHierarchy()
+                restoreIntoOriginalHierarchy(true)
                 return
             }
 
             let currentFrame = state.contentView.layer.presentation()?.frame ?? state.contentView.frame
+            let shouldAnimateContentGeometry = Self.aspectRatioDelta(
+                currentFrame.size,
+                targetFrame.size
+            ) <= Self.manualFullscreenAspectAnimationTolerance
             UIView.performWithoutAnimation {
                 state.contentView.transform = .identity
                 state.contentView.frame = currentFrame
                 self.drawableView.frame = state.contentView.bounds
+                self.playerViewModel?.refreshSurfaceLayout()
                 state.fullscreenController.view.layoutIfNeeded()
+            }
+
+            guard shouldAnimateContentGeometry else {
+                self.animateManualFullscreenExitWithAspectBridge(
+                    state: state,
+                    currentFrame: currentFrame,
+                    targetFrame: targetFrame,
+                    restoreIntoOriginalHierarchy: restoreIntoOriginalHierarchy
+                )
+                return
             }
 
             let timing = UISpringTimingParameters(
@@ -574,10 +663,11 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
                 state.backdropView.alpha = 0
                 state.contentView.frame = targetFrame
                 self.drawableView.frame = state.contentView.bounds
+                self.playerViewModel?.refreshSurfaceLayout()
                 state.fullscreenController.view.layoutIfNeeded()
             }
             animator.addCompletion { _ in
-                restoreIntoOriginalHierarchy()
+                restoreIntoOriginalHierarchy(true)
             }
             animator.startAnimation()
         }
@@ -608,6 +698,24 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         return originalSuperview.convert(bounds, to: fullscreenSuperview)
     }
 
+    private func manualFullscreenRestorationWindowFrame(for state: FullscreenState) -> CGRect {
+        guard let originalSuperview = state.originalSuperview else {
+            return state.originalWindowFrame
+        }
+
+        originalSuperview.superview?.setNeedsLayout()
+        originalSuperview.superview?.layoutIfNeeded()
+        originalSuperview.setNeedsLayout()
+        originalSuperview.layoutIfNeeded()
+        state.sourceWindow.layoutIfNeeded()
+
+        let bounds = originalSuperview.bounds
+        guard bounds.width > 1, bounds.height > 1 else {
+            return state.originalWindowFrame
+        }
+        return originalSuperview.convert(bounds, to: state.sourceWindow)
+    }
+
     private func updateManualFullscreenDismissDrag(translationY: CGFloat, progress: CGFloat) {
         guard let state = fullscreenState else { return }
         let clampedProgress = min(max(progress, 0), 1)
@@ -616,10 +724,12 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             .scaledBy(x: scale, y: scale)
         state.contentView.transform = transform
         state.backdropView.alpha = max(0.42, 1 - clampedProgress * 0.52)
+        state.fullscreenController.updateDismissTransition(progress: clampedProgress)
     }
 
     private func cancelManualFullscreenDismissDrag() {
         guard let state = fullscreenState else { return }
+        state.fullscreenController.cancelDismissTransition(animated: true)
         UIView.animate(
             withDuration: 0.28,
             delay: 0,
@@ -632,46 +742,511 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         }
     }
 
-    private func applyManualFullscreenLayout(animated _: Bool) {
+    private func applyManualFullscreenLayout(animated: Bool) {
         guard let state = fullscreenState else { return }
         guard !isExitingManualFullscreen else { return }
 
-        let bounds = state.fullscreenController.view.bounds
+        let bounds = resolvedManualFullscreenBounds(for: state)
+        applyManualFullscreenViewportIfNeeded(for: state, targetBounds: bounds)
         let needsLayout = state.lastAppliedBounds.size != bounds.size
             || state.contentView.bounds.size != bounds.size
             || state.backdropView.frame.size != bounds.size
 
         guard needsLayout else {
+            guard !state.isRunningAspectBridgeTransition else { return }
+            UIView.performWithoutAnimation {
+                self.drawableView.transform = .identity
+                self.drawableView.frame = state.contentView.bounds
+                self.playerViewModel?.refreshSurfaceLayout()
+                state.fullscreenController.refreshFullscreenLayout(flush: false)
+            }
+            if state.isAwaitingEntryOverlayTransition {
+                state.isAwaitingEntryOverlayTransition = false
+                state.fullscreenController.finishEnterAnimation(animated: animated)
+            }
             onFullscreenTransitionEnd?()
             return
         }
 
         let applyLayout = {
+            state.lastAppliedBounds = bounds
+            state.backdropView.frame = bounds
+            state.contentView.transform = .identity
+            state.contentView.bounds = CGRect(origin: .zero, size: bounds.size)
+            state.contentView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+            self.drawableView.transform = .identity
+            self.drawableView.frame = state.contentView.bounds
+            state.transitionSnapshotView?.frame = state.contentView.bounds
+            self.playerViewModel?.refreshSurfaceLayout()
+            state.fullscreenController.view.bringSubviewToFront(state.contentView)
+            if let snapshotView = state.transitionSnapshotView {
+                state.contentView.bringSubviewToFront(snapshotView)
+            }
+            state.fullscreenController.bringPlayerToFront()
+            state.fullscreenController.refreshFullscreenLayout(flush: false)
+            state.fullscreenController.refreshSystemChrome()
+        }
+
+        let inheritedAnimationDuration = UIView.inheritedAnimationDuration
+        let currentLayoutSize = state.lastAppliedBounds.isNull
+            ? state.contentView.bounds.size
+            : state.lastAppliedBounds.size
+        let changesEstablishedAspectRatio = !state.lastAppliedBounds.isNull
+            && Self.aspectRatioDelta(
+                currentLayoutSize,
+                bounds.size
+            ) > Self.manualFullscreenAspectAnimationTolerance
+        let shouldAnimate = (animated || inheritedAnimationDuration > 0)
+            && !changesEstablishedAspectRatio
+
+        let finish = { [weak self] in
+            guard let self else { return }
+            self.fadeOutManualFullscreenTransitionSnapshot(for: state)
+            if state.isAwaitingEntryOverlayTransition {
+                state.isAwaitingEntryOverlayTransition = false
+                state.fullscreenController.finishEnterAnimation(animated: shouldAnimate)
+            }
+            self.finishManualFullscreenTransition()
+        }
+
+        if changesEstablishedAspectRatio, state.isRunningAspectBridgeTransition {
             UIView.performWithoutAnimation {
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
-                state.lastAppliedBounds = bounds
-                state.backdropView.frame = bounds
-                state.contentView.transform = .identity
-                state.contentView.bounds = CGRect(origin: .zero, size: bounds.size)
-                state.contentView.center = CGPoint(x: bounds.midX, y: bounds.midY)
-                self.drawableView.transform = .identity
-                self.drawableView.frame = state.contentView.bounds
-                self.playerViewModel?.refreshSurfaceLayout()
-                state.fullscreenController.view.bringSubviewToFront(state.contentView)
-                state.fullscreenController.bringPlayerToFront()
-                state.fullscreenController.refreshFullscreenLayout(flush: false)
-                state.fullscreenController.refreshSystemChrome()
+                applyLayout()
+                state.fullscreenController.view.layoutIfNeeded()
                 CATransaction.commit()
             }
+            return
         }
 
-        let finish = { [weak self] in
-            self?.finishManualFullscreenTransition()
+        if changesEstablishedAspectRatio, !state.isRunningAspectBridgeTransition {
+            let currentFrame = state.contentView.layer.presentation()?.frame ?? state.contentView.frame
+            let duration = inheritedAnimationDuration > 0
+                ? inheritedAnimationDuration
+                : Self.manualFullscreenAspectBridgeAnimationDuration
+            animateManualFullscreenLayoutWithAspectBridge(
+                state: state,
+                currentFrame: currentFrame,
+                targetBounds: bounds,
+                duration: duration,
+                applyLayout: applyLayout,
+                finish: finish
+            )
+            return
         }
 
-        applyLayout()
-        finish()
+        if shouldAnimate {
+            installManualFullscreenTransitionSnapshotIfNeeded(for: state)
+        } else if changesEstablishedAspectRatio {
+            clearManualFullscreenTransitionSnapshot(for: state)
+        }
+
+        if shouldAnimate {
+            let duration = inheritedAnimationDuration > 0
+                ? inheritedAnimationDuration
+                : Self.manualFullscreenLayoutAnimationDuration
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+            ) {
+                applyLayout()
+                state.fullscreenController.view.layoutIfNeeded()
+            } completion: { _ in
+                finish()
+            }
+        } else {
+            UIView.performWithoutAnimation {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                applyLayout()
+                state.fullscreenController.view.layoutIfNeeded()
+                CATransaction.commit()
+            }
+            finish()
+        }
+    }
+
+    private func resolvedManualFullscreenBounds(for state: FullscreenState) -> CGRect {
+        let viewBounds = state.fullscreenController.view.bounds
+        guard state.mode.isLandscape else { return viewBounds }
+
+        let windowSize = state.sourceWindow.bounds.size
+        let rootSize = state.sourceWindow.rootViewController?.view.bounds.size ?? windowSize
+        let candidateSizes = [viewBounds.size, windowSize, rootSize]
+        let landscapeSize = candidateSizes.first { $0.width > $0.height && $0.width > 1 && $0.height > 1 }
+            ?? CGSize(
+                width: max(viewBounds.width, viewBounds.height, windowSize.width, windowSize.height),
+                height: min(
+                    max(min(viewBounds.width, viewBounds.height), 1),
+                    max(min(windowSize.width, windowSize.height), 1)
+                )
+            )
+        return CGRect(origin: .zero, size: landscapeSize)
+    }
+
+    private func applyManualFullscreenViewportIfNeeded(
+        for state: FullscreenState,
+        targetBounds: CGRect
+    ) {
+        guard let superview = state.fullscreenController.view.superview else { return }
+        let superviewBounds = superview.bounds
+        let shouldCompensatePortraitRoot = state.mode.isLandscape
+            && superviewBounds.height > superviewBounds.width
+            && targetBounds.width > targetBounds.height
+
+        guard shouldCompensatePortraitRoot else {
+            if state.fullscreenController.view.transform != .identity {
+                state.fullscreenController.view.transform = .identity
+            }
+            return
+        }
+
+        let angle: CGFloat
+        switch state.mode.interfaceOrientation {
+        case .landscapeLeft:
+            angle = .pi / 2
+        case .landscapeRight:
+            angle = -.pi / 2
+        default:
+            angle = 0
+        }
+
+        UIView.performWithoutAnimation {
+            state.fullscreenController.view.bounds = targetBounds
+            state.fullscreenController.view.center = CGPoint(
+                x: superviewBounds.midX,
+                y: superviewBounds.midY
+            )
+            state.fullscreenController.view.transform = CGAffineTransform(rotationAngle: angle)
+            state.fullscreenController.view.setNeedsLayout()
+        }
+    }
+
+    private func scheduleManualFullscreenLayoutStabilization(for state: FullscreenState) {
+        state.layoutStabilizationTask?.cancel()
+        state.layoutStabilizationTask = Task { @MainActor [weak self, weak state] in
+            let delays: [UInt64] = [0, 50_000_000, 120_000_000, 240_000_000, 420_000_000]
+            for delay in delays {
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: delay)
+                } else {
+                    await Task.yield()
+                }
+                guard let self,
+                      let state,
+                      !Task.isCancelled,
+                      self.fullscreenState === state,
+                      !self.isExitingManualFullscreen
+                else { return }
+
+                state.fullscreenController.view.setNeedsLayout()
+                state.fullscreenController.view.layoutIfNeeded()
+                state.lastAppliedBounds = .null
+                self.applyManualFullscreenLayout(animated: false)
+                self.playerViewModel?.recoverSurfaceAfterHostFullscreenTransition()
+            }
+            state?.layoutStabilizationTask = nil
+        }
+    }
+
+    private func animateManualFullscreenLayoutWithAspectBridge(
+        state: FullscreenState,
+        currentFrame: CGRect,
+        targetBounds: CGRect,
+        duration: TimeInterval,
+        applyLayout: @escaping () -> Void,
+        finish: @escaping () -> Void
+    ) {
+        guard let overlaySuperview = state.fullscreenController.view else {
+            UIView.performWithoutAnimation {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                applyLayout()
+                state.fullscreenController.viewIfLoaded?.layoutIfNeeded()
+                CATransaction.commit()
+            }
+            finish()
+            return
+        }
+
+        guard currentFrame.width > 1,
+              currentFrame.height > 1,
+              targetBounds.width > 1,
+              targetBounds.height > 1,
+              let snapshotView = makeTransitionSnapshotView(
+                from: state.contentView,
+                layoutMode: .aspectFit
+              )
+        else {
+            UIView.performWithoutAnimation {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                applyLayout()
+                overlaySuperview.layoutIfNeeded()
+                CATransaction.commit()
+            }
+            finish()
+            return
+        }
+
+        state.isRunningAspectBridgeTransition = true
+        clearManualFullscreenTransitionSnapshot(for: state)
+
+        let sourceSuperview = state.contentView.superview ?? overlaySuperview
+        let startFrame = sourceSuperview.convert(currentFrame, to: overlaySuperview)
+        snapshotView.frame = startFrame
+        snapshotView.autoresizingMask = []
+        snapshotView.isUserInteractionEnabled = false
+        snapshotView.alpha = 1
+        overlaySuperview.addSubview(snapshotView)
+        overlaySuperview.bringSubviewToFront(snapshotView)
+
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            state.contentView.alpha = 0
+            applyLayout()
+            overlaySuperview.bringSubviewToFront(snapshotView)
+            overlaySuperview.layoutIfNeeded()
+            CATransaction.commit()
+        }
+
+        let targetFrame = CGRect(origin: .zero, size: targetBounds.size)
+        let timing = UICubicTimingParameters(animationCurve: .easeInOut)
+        let animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
+        animator.isInterruptible = false
+        animator.addAnimations {
+            snapshotView.frame = targetFrame
+            snapshotView.layoutIfNeeded()
+        }
+        animator.addCompletion { [weak state, weak snapshotView] _ in
+            guard let state else {
+                snapshotView?.removeFromSuperview()
+                return
+            }
+            state.isRunningAspectBridgeTransition = false
+            UIView.performWithoutAnimation {
+                state.contentView.alpha = 1
+            }
+            finish()
+            guard let snapshotView else { return }
+            UIView.animate(
+                withDuration: Self.manualFullscreenSnapshotFadeDuration,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+            ) {
+                snapshotView.alpha = 0
+            } completion: { _ in
+                snapshotView.removeFromSuperview()
+            }
+        }
+        animator.startAnimation()
+    }
+
+    private func animateManualFullscreenExitWithAspectBridge(
+        state: FullscreenState,
+        currentFrame: CGRect,
+        targetFrame: CGRect,
+        restoreIntoOriginalHierarchy: @escaping (Bool) -> Void
+    ) {
+        let fallbackFullscreenView = state.fullscreenController.view ?? state.sourceWindow
+        let overlaySuperview = state.fullscreenSuperview
+            ?? fallbackFullscreenView.superview
+            ?? state.sourceWindow.rootViewController?.view
+            ?? state.sourceWindow
+
+        guard currentFrame.width > 1,
+              currentFrame.height > 1,
+              targetFrame.width > 1,
+              targetFrame.height > 1,
+              let snapshotView = makeTransitionSnapshotView(
+                from: state.contentView,
+                layoutMode: .softAspectFill(0.78)
+              )
+        else {
+            UIView.animate(
+                withDuration: 0.16,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+            ) {
+                state.backdropView.alpha = 0
+                state.contentView.alpha = 0
+            } completion: { _ in
+                restoreIntoOriginalHierarchy(true)
+            }
+            return
+        }
+
+        let sourceSuperview = state.contentView.superview ?? fallbackFullscreenView
+        let startFrame = sourceSuperview.convert(currentFrame, to: overlaySuperview)
+        let bridgeBackdropView = UIView(frame: overlaySuperview.bounds)
+        bridgeBackdropView.backgroundColor = .black
+        bridgeBackdropView.alpha = max(0.88, state.backdropView.alpha)
+        bridgeBackdropView.isUserInteractionEnabled = false
+        bridgeBackdropView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlaySuperview.addSubview(bridgeBackdropView)
+
+        snapshotView.frame = startFrame
+        snapshotView.autoresizingMask = []
+        snapshotView.isUserInteractionEnabled = false
+        snapshotView.alpha = 1
+        overlaySuperview.addSubview(snapshotView)
+        overlaySuperview.bringSubviewToFront(snapshotView)
+
+        UIView.performWithoutAnimation {
+            state.contentView.alpha = 0
+            state.backdropView.alpha = 0
+        }
+        restoreIntoOriginalHierarchy(false)
+        overlaySuperview.layoutIfNeeded()
+        bridgeBackdropView.frame = overlaySuperview.bounds
+        overlaySuperview.bringSubviewToFront(bridgeBackdropView)
+        overlaySuperview.bringSubviewToFront(snapshotView)
+
+        let resolvedTargetFrame = Self.resolvedExitTargetFrame(
+            fallback: targetFrame,
+            originalSuperview: state.originalSuperview,
+            overlaySuperview: overlaySuperview
+        )
+        let timing = UISpringTimingParameters(
+            mass: 1,
+            stiffness: 190,
+            damping: 28,
+            initialVelocity: .zero
+        )
+        let animator = UIViewPropertyAnimator(
+            duration: Self.manualFullscreenAspectBridgeExitDuration,
+            timingParameters: timing
+        )
+        animator.isInterruptible = false
+        animator.scrubsLinearly = false
+        animator.addAnimations {
+            bridgeBackdropView.alpha = 0
+            snapshotView.frame = resolvedTargetFrame
+            snapshotView.layoutIfNeeded()
+        }
+        animator.addCompletion { [weak self, weak snapshotView, weak bridgeBackdropView] _ in
+            guard let self else {
+                snapshotView?.removeFromSuperview()
+                bridgeBackdropView?.removeFromSuperview()
+                return
+            }
+            guard let snapshotView else {
+                bridgeBackdropView?.removeFromSuperview()
+                self.finishManualFullscreenTransition()
+                return
+            }
+            UIView.animate(
+                withDuration: Self.manualFullscreenSnapshotFadeDuration,
+                delay: 0.02,
+                options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+            ) {
+                snapshotView.alpha = 0
+                bridgeBackdropView?.alpha = 0
+            } completion: { _ in
+                snapshotView.removeFromSuperview()
+                bridgeBackdropView?.removeFromSuperview()
+                self.finishManualFullscreenTransition()
+            }
+        }
+        animator.startAnimation()
+    }
+
+    private static func resolvedExitTargetFrame(
+        fallback: CGRect,
+        originalSuperview: UIView?,
+        overlaySuperview: UIView
+    ) -> CGRect {
+        guard let originalSuperview else { return fallback }
+        originalSuperview.superview?.layoutIfNeeded()
+        originalSuperview.layoutIfNeeded()
+        let bounds = originalSuperview.bounds
+        guard bounds.width > 1, bounds.height > 1 else { return fallback }
+        return originalSuperview.convert(bounds, to: overlaySuperview)
+    }
+
+    private func makeTransitionSnapshotView(
+        from sourceView: UIView,
+        layoutMode: AspectPreservingTransitionSnapshotView.LayoutMode = .aspectFit
+    ) -> UIView? {
+        sourceView.layoutIfNeeded()
+
+        let sourceBounds = sourceView.bounds
+        guard sourceBounds.width > 1, sourceBounds.height > 1 else { return nil }
+        let snapshotContentView: UIView
+        if let snapshotView = sourceView.snapshotView(afterScreenUpdates: false) {
+            snapshotContentView = snapshotView
+        } else {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = max(sourceView.window?.screen.scale ?? sourceView.traitCollection.displayScale, 1)
+            format.opaque = true
+            let image = UIGraphicsImageRenderer(size: sourceBounds.size, format: format).image { _ in
+                sourceView.drawHierarchy(in: sourceBounds, afterScreenUpdates: false)
+            }
+            guard image.size.width > 1, image.size.height > 1 else { return nil }
+            let imageView = UIImageView(image: image)
+            imageView.backgroundColor = .black
+            imageView.contentMode = .scaleAspectFill
+            imageView.clipsToBounds = true
+            snapshotContentView = imageView
+        }
+        snapshotContentView.frame = CGRect(origin: .zero, size: sourceBounds.size)
+        snapshotContentView.autoresizingMask = []
+
+        let container = AspectPreservingTransitionSnapshotView(
+            sourceSize: sourceBounds.size,
+            layoutMode: layoutMode,
+            contentView: snapshotContentView
+        )
+        return container
+    }
+
+    private static func aspectRatioDelta(_ lhs: CGSize, _ rhs: CGSize) -> CGFloat {
+        guard lhs.width > 1, lhs.height > 1, rhs.width > 1, rhs.height > 1 else {
+            return 0
+        }
+        return abs((lhs.width / lhs.height) - (rhs.width / rhs.height))
+    }
+
+    private func installManualFullscreenTransitionSnapshotIfNeeded(for state: FullscreenState) {
+        guard state.transitionSnapshotView == nil else { return }
+        installManualFullscreenTransitionSnapshot(
+            makeTransitionSnapshotView(from: state.contentView),
+            in: state
+        )
+    }
+
+    private func installManualFullscreenTransitionSnapshot(_ snapshotView: UIView?, in state: FullscreenState) {
+        guard let snapshotView else { return }
+        snapshotView.frame = state.contentView.bounds
+        snapshotView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        snapshotView.isUserInteractionEnabled = false
+        snapshotView.alpha = 1
+        state.transitionSnapshotView?.removeFromSuperview()
+        state.transitionSnapshotView = snapshotView
+        state.contentView.addSubview(snapshotView)
+    }
+
+    private func fadeOutManualFullscreenTransitionSnapshot(for state: FullscreenState) {
+        guard let snapshotView = state.transitionSnapshotView else { return }
+        UIView.animate(
+            withDuration: Self.manualFullscreenSnapshotFadeDuration,
+            delay: 0.03,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            snapshotView.alpha = 0
+        } completion: { [weak state] _ in
+            guard let state, state.transitionSnapshotView === snapshotView else { return }
+            snapshotView.removeFromSuperview()
+            state.transitionSnapshotView = nil
+        }
+    }
+
+    private func clearManualFullscreenTransitionSnapshot(for state: FullscreenState) {
+        state.transitionSnapshotView?.removeFromSuperview()
+        state.transitionSnapshotView = nil
     }
 
     private func requestPortraitGeometry(for window: UIWindow) {
@@ -681,7 +1256,9 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         AppOrientationLock.update(to: .portrait, in: windowScene)
         windowScene.requestGeometryUpdate(
             UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
-        ) { _ in }
+        ) { error in
+            PlayerMetricsLog.logger.error("manualFullscreenGeometryRequestFailed mode=portrait error=\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func requestGeometry(for window: UIWindow, mode: ManualVideoFullscreenMode) {
@@ -692,7 +1269,9 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         AppOrientationLock.update(to: mask, in: windowScene)
         windowScene.requestGeometryUpdate(
             UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask)
-        ) { _ in }
+        ) { error in
+            PlayerMetricsLog.logger.error("manualFullscreenGeometryRequestFailed mode=\(String(describing: mode), privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func exitHostFullscreen() {
@@ -753,6 +1332,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
 
     private final class FullscreenState {
         let sourceWindow: UIWindow
+        weak var presentingController: UIViewController?
         let fullscreenController: ManualVideoFullscreenViewController
         weak var fullscreenSuperview: UIView?
         weak var originalSuperview: UIView?
@@ -761,11 +1341,17 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
         let originalWindowFrame: CGRect
         let backdropView: UIView
         let contentView: UIView
+        let transitionDriver: ManualVideoFullscreenTransitioningDelegate?
         var mode: ManualVideoFullscreenMode
         var lastAppliedBounds = CGRect.null
+        var transitionSnapshotView: UIView?
+        var isRunningAspectBridgeTransition = false
+        var isAwaitingEntryOverlayTransition = false
+        var layoutStabilizationTask: Task<Void, Never>?
 
         init(
             sourceWindow: UIWindow,
+            presentingController: UIViewController?,
             fullscreenController: ManualVideoFullscreenViewController,
             fullscreenSuperview: UIView,
             originalSuperview: UIView,
@@ -774,9 +1360,11 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             originalWindowFrame: CGRect,
             backdropView: UIView,
             contentView: UIView,
+            transitionDriver: ManualVideoFullscreenTransitioningDelegate?,
             mode: ManualVideoFullscreenMode
         ) {
             self.sourceWindow = sourceWindow
+            self.presentingController = presentingController
             self.fullscreenController = fullscreenController
             self.fullscreenSuperview = fullscreenSuperview
             self.originalSuperview = originalSuperview
@@ -785,6 +1373,7 @@ final class VideoSurfaceContainerView: UIView, PlayerHostFullscreenExitTarget {
             self.originalWindowFrame = originalWindowFrame
             self.backdropView = backdropView
             self.contentView = contentView
+            self.transitionDriver = transitionDriver
             self.mode = mode
         }
     }
@@ -800,6 +1389,340 @@ private extension UIView {
             responder = currentResponder.next
         }
         return nil
+    }
+}
+
+@MainActor
+private final class AspectPreservingTransitionSnapshotView: UIView {
+    enum LayoutMode: Equatable {
+        case aspectFit
+        case aspectFill
+        case softAspectFill(CGFloat)
+    }
+
+    private let sourceSize: CGSize
+    private let layoutMode: LayoutMode
+    private let contentView: UIView
+
+    init(sourceSize: CGSize, layoutMode: LayoutMode, contentView: UIView) {
+        self.sourceSize = sourceSize
+        self.layoutMode = layoutMode
+        self.contentView = contentView
+        super.init(frame: CGRect(origin: .zero, size: sourceSize))
+        backgroundColor = .black
+        isOpaque = true
+        clipsToBounds = true
+        addSubview(contentView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        contentView.frame = Self.aspectPreservingFrame(
+            sourceSize: sourceSize,
+            bounds: bounds,
+            layoutMode: layoutMode,
+            scale: max(window?.screen.scale ?? traitCollection.displayScale, 1)
+        )
+    }
+
+    private static func aspectPreservingFrame(
+        sourceSize: CGSize,
+        bounds: CGRect,
+        layoutMode: LayoutMode,
+        scale: CGFloat
+    ) -> CGRect {
+        guard sourceSize.width > 1,
+              sourceSize.height > 1,
+              bounds.width > 1,
+              bounds.height > 1
+        else {
+            return bounds
+        }
+
+        let widthScale = bounds.width / sourceSize.width
+        let heightScale = bounds.height / sourceSize.height
+        let minScale = min(widthScale, heightScale)
+        let maxScale = max(widthScale, heightScale)
+        let fittedScale: CGFloat
+        switch layoutMode {
+        case .aspectFit:
+            fittedScale = minScale
+        case .aspectFill:
+            fittedScale = maxScale
+        case .softAspectFill(let bias):
+            let clampedBias = min(max(bias, 0), 1)
+            fittedScale = minScale + (maxScale - minScale) * clampedBias
+        }
+        let fittedSize = CGSize(
+            width: sourceSize.width * fittedScale,
+            height: sourceSize.height * fittedScale
+        )
+        let rawFrame = CGRect(
+            x: bounds.midX - fittedSize.width / 2,
+            y: bounds.midY - fittedSize.height / 2,
+            width: fittedSize.width,
+            height: fittedSize.height
+        )
+        guard scale > 0 else { return rawFrame }
+        return CGRect(
+            x: (rawFrame.origin.x * scale).rounded() / scale,
+            y: (rawFrame.origin.y * scale).rounded() / scale,
+            width: (rawFrame.size.width * scale).rounded() / scale,
+            height: (rawFrame.size.height * scale).rounded() / scale
+        )
+    }
+}
+
+private final class ManualVideoFullscreenTransitioningDelegate: NSObject, UIViewControllerTransitioningDelegate {
+    private weak var sourceWindow: UIWindow?
+    private weak var contentView: UIView?
+    private weak var backdropView: UIView?
+    private weak var drawableView: UIView?
+    private let presentationStartFrameInWindow: CGRect
+    private let presentationDuration: TimeInterval
+    private let dismissalDuration: TimeInterval
+    private var dismissalTargetFrameProvider: (() -> CGRect?)?
+    private var onDismissalAnimationWillFinish: (() -> Void)?
+    private var onDismissalAnimationFinished: (() -> Void)?
+
+    init(
+        sourceWindow: UIWindow,
+        contentView: UIView,
+        backdropView: UIView,
+        drawableView: UIView,
+        presentationStartFrameInWindow: CGRect,
+        presentationDuration: TimeInterval,
+        dismissalDuration: TimeInterval
+    ) {
+        self.sourceWindow = sourceWindow
+        self.contentView = contentView
+        self.backdropView = backdropView
+        self.drawableView = drawableView
+        self.presentationStartFrameInWindow = presentationStartFrameInWindow
+        self.presentationDuration = presentationDuration
+        self.dismissalDuration = dismissalDuration
+        super.init()
+    }
+
+    func prepareForDismissal(
+        targetFrameProvider: @escaping () -> CGRect?,
+        onWillFinish: @escaping () -> Void,
+        onFinished: @escaping () -> Void
+    ) {
+        dismissalTargetFrameProvider = targetFrameProvider
+        onDismissalAnimationWillFinish = onWillFinish
+        onDismissalAnimationFinished = onFinished
+    }
+
+    func animationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController,
+        source: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        ManualVideoFullscreenTransitionAnimator(operation: .present, driver: self)
+    }
+
+    func animationController(forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        ManualVideoFullscreenTransitionAnimator(operation: .dismiss, driver: self)
+    }
+
+    fileprivate func transitionDuration(for operation: ManualVideoFullscreenTransitionAnimator.Operation) -> TimeInterval {
+        switch operation {
+        case .present:
+            return presentationDuration
+        case .dismiss:
+            return dismissalDuration
+        }
+    }
+
+    fileprivate func preparePresentation(in presentedView: UIView) {
+        guard let contentView,
+              let backdropView,
+              let drawableView
+        else { return }
+
+        let startFrame = convertedPresentationStartFrame(in: presentedView)
+        backdropView.frame = presentedView.bounds
+        backdropView.alpha = 0
+        contentView.transform = .identity
+        contentView.frame = startFrame
+        drawableView.transform = .identity
+        drawableView.frame = contentView.bounds
+        presentedView.layoutIfNeeded()
+    }
+
+    fileprivate func animatePresentation(in presentedView: UIView) {
+        guard let contentView,
+              let backdropView,
+              let drawableView
+        else { return }
+
+        backdropView.alpha = 1
+        contentView.transform = .identity
+        contentView.frame = presentedView.bounds
+        drawableView.transform = .identity
+        drawableView.frame = contentView.bounds
+        presentedView.layoutIfNeeded()
+    }
+
+    fileprivate func prepareDismissal(in dismissedView: UIView) {
+        guard let contentView,
+              let drawableView
+        else { return }
+
+        let currentFrame = contentView.layer.presentation()?.frame ?? contentView.frame
+        contentView.transform = .identity
+        contentView.frame = currentFrame
+        drawableView.transform = .identity
+        drawableView.frame = contentView.bounds
+        dismissedView.layoutIfNeeded()
+    }
+
+    fileprivate func animateDismissal(in dismissedView: UIView) {
+        guard let contentView,
+              let backdropView,
+              let drawableView
+        else { return }
+
+        backdropView.alpha = 0
+        contentView.transform = .identity
+        contentView.frame = convertedDismissalTargetFrame(in: dismissedView) ?? contentView.frame
+        drawableView.transform = .identity
+        drawableView.frame = contentView.bounds
+        dismissedView.layoutIfNeeded()
+    }
+
+    fileprivate func restoreContentBeforeDismissalCompletion() {
+        onDismissalAnimationWillFinish?()
+    }
+
+    fileprivate func finishDismissalAnimation() {
+        onDismissalAnimationFinished?()
+        dismissalTargetFrameProvider = nil
+        onDismissalAnimationWillFinish = nil
+        onDismissalAnimationFinished = nil
+    }
+
+    fileprivate func cancelDismissalAnimation() {
+        dismissalTargetFrameProvider = nil
+        onDismissalAnimationWillFinish = nil
+        onDismissalAnimationFinished = nil
+    }
+
+    private func convertedPresentationStartFrame(in view: UIView) -> CGRect {
+        guard let sourceWindow else { return presentationStartFrameInWindow }
+        return view.convert(presentationStartFrameInWindow, from: sourceWindow)
+    }
+
+    private func convertedDismissalTargetFrame(in view: UIView) -> CGRect? {
+        guard let targetFrame = dismissalTargetFrameProvider?() else { return nil }
+        guard let sourceWindow else { return targetFrame }
+        return view.convert(targetFrame, from: sourceWindow)
+    }
+}
+
+private final class ManualVideoFullscreenTransitionAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    enum Operation {
+        case present
+        case dismiss
+    }
+
+    private let operation: Operation
+    private let driver: ManualVideoFullscreenTransitioningDelegate
+
+    init(operation: Operation, driver: ManualVideoFullscreenTransitioningDelegate) {
+        self.operation = operation
+        self.driver = driver
+        super.init()
+    }
+
+    func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+        driver.transitionDuration(for: operation)
+    }
+
+    func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+        switch operation {
+        case .present:
+            animatePresentation(using: transitionContext)
+        case .dismiss:
+            animateDismissal(using: transitionContext)
+        }
+    }
+
+    private func animatePresentation(using transitionContext: UIViewControllerContextTransitioning) {
+        guard let toController = transitionContext.viewController(forKey: .to),
+              let toView = transitionContext.view(forKey: .to)
+        else {
+            transitionContext.completeTransition(false)
+            return
+        }
+
+        let containerView = transitionContext.containerView
+        toView.frame = transitionContext.finalFrame(for: toController)
+        containerView.addSubview(toView)
+        driver.preparePresentation(in: toView)
+
+        let timing = UISpringTimingParameters(
+            mass: 1,
+            stiffness: 320,
+            damping: 34,
+            initialVelocity: .zero
+        )
+        let animator = UIViewPropertyAnimator(
+            duration: transitionDuration(using: transitionContext),
+            timingParameters: timing
+        )
+        animator.isInterruptible = true
+        animator.scrubsLinearly = false
+        animator.addAnimations {
+            self.driver.animatePresentation(in: toView)
+        }
+        animator.addCompletion { _ in
+            let completed = !transitionContext.transitionWasCancelled
+            transitionContext.completeTransition(completed)
+        }
+        animator.startAnimation()
+    }
+
+    private func animateDismissal(using transitionContext: UIViewControllerContextTransitioning) {
+        guard let fromView = transitionContext.view(forKey: .from) else {
+            transitionContext.completeTransition(false)
+            return
+        }
+
+        driver.prepareDismissal(in: fromView)
+        let timing = UISpringTimingParameters(
+            mass: 1,
+            stiffness: 210,
+            damping: 30,
+            initialVelocity: .zero
+        )
+        let animator = UIViewPropertyAnimator(
+            duration: transitionDuration(using: transitionContext),
+            timingParameters: timing
+        )
+        animator.isInterruptible = true
+        animator.scrubsLinearly = false
+        animator.addAnimations {
+            self.driver.animateDismissal(in: fromView)
+        }
+        animator.addCompletion { _ in
+            let completed = !transitionContext.transitionWasCancelled
+            if completed {
+                self.driver.restoreContentBeforeDismissalCompletion()
+            } else {
+                self.driver.cancelDismissalAnimation()
+            }
+            transitionContext.completeTransition(completed)
+            if completed {
+                self.driver.finishDismissalAnimation()
+            }
+        }
+        animator.startAnimation()
     }
 }
 
@@ -849,6 +1772,8 @@ private final class ManualVideoFullscreenViewController: UIViewController {
     private var contentOverlayHostingController: UIHostingController<AnyView>?
     private var pendingContentOverlay: AnyView?
     private var isFlushingLayout = false
+    private var contentOverlayTargetAlpha: CGFloat = 1
+    private var contentOverlayTargetTransform = CGAffineTransform.identity
 
     override func loadView() {
         let view = UIView()
@@ -963,8 +1888,43 @@ private final class ManualVideoFullscreenViewController: UIViewController {
         refreshControlsOverlayVisibility()
     }
 
+    func prepareForEnterAnimation(animated: Bool) {
+        guard animated, isViewLoaded else { return }
+        contentOverlayTargetAlpha = 0
+        contentOverlayTargetTransform = CGAffineTransform(scaleX: 0.985, y: 0.985)
+        applyContentOverlayTransition(animated: false)
+        controlsOverlay.prepareForEnterAnimation(animated: animated)
+    }
+
+    func finishEnterAnimation(animated: Bool) {
+        guard isViewLoaded else { return }
+        contentOverlayTargetAlpha = 1
+        contentOverlayTargetTransform = .identity
+        applyContentOverlayTransition(animated: animated, duration: 0.22, delay: 0.03)
+        controlsOverlay.finishEnterAnimation(animated: animated)
+    }
+
     func prepareForExitAnimation(animated: Bool) {
+        contentOverlayTargetAlpha = 0
+        contentOverlayTargetTransform = CGAffineTransform(scaleX: 0.985, y: 0.985)
+        applyContentOverlayTransition(animated: animated, duration: 0.18)
         controlsOverlay.prepareForExitAnimation(animated: animated)
+    }
+
+    func updateDismissTransition(progress: CGFloat) {
+        guard isViewLoaded else { return }
+        let clampedProgress = min(max(progress, 0), 1)
+        contentOverlayTargetAlpha = max(0.18, 1 - clampedProgress * 0.78)
+        let scale = 1 - clampedProgress * 0.015
+        contentOverlayTargetTransform = CGAffineTransform(scaleX: scale, y: scale)
+        applyContentOverlayTransition(animated: false)
+    }
+
+    func cancelDismissTransition(animated: Bool) {
+        guard isViewLoaded else { return }
+        contentOverlayTargetAlpha = 1
+        contentOverlayTargetTransform = .identity
+        applyContentOverlayTransition(animated: animated, duration: 0.20)
     }
 
     func setContentOverlay(_ overlay: AnyView?) {
@@ -1001,6 +1961,7 @@ private final class ManualVideoFullscreenViewController: UIViewController {
             hostingController.didMove(toParent: self)
             contentOverlayHostingController = hostingController
         }
+        applyContentOverlayTransition(animated: false)
         refreshControlsOverlayVisibility()
     }
 
@@ -1024,6 +1985,28 @@ private final class ManualVideoFullscreenViewController: UIViewController {
             view.bringSubviewToFront(overlayView)
         }
         view.bringSubviewToFront(controlsOverlay)
+    }
+
+    private func applyContentOverlayTransition(
+        animated: Bool,
+        duration: TimeInterval = 0.18,
+        delay: TimeInterval = 0
+    ) {
+        guard let overlayView = contentOverlayHostingController?.view else { return }
+        let changes = {
+            overlayView.alpha = self.contentOverlayTargetAlpha
+            overlayView.transform = self.contentOverlayTargetTransform
+        }
+        guard animated else {
+            changes()
+            return
+        }
+        UIView.animate(
+            withDuration: duration,
+            delay: delay,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
+            animations: changes
+        )
     }
 
     private func installPendingContentOverlayIfNeeded() {
@@ -1634,6 +2617,12 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             self.transportStack.isHidden = true
             self.controlsStack.alpha = 0
             self.feedbackView.alpha = 0
+            self.speedFeedbackView.alpha = 0
+            self.topChrome.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.exitButton.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.topActionsStack.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.bottomChrome.transform = CGAffineTransform(translationX: 0, y: 10)
+            self.controlsStack.transform = CGAffineTransform(translationX: 0, y: 10)
             self.transportStack.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
         }
         let completion = {
@@ -1664,6 +2653,93 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
         animator.startAnimation()
     }
 
+    func prepareForEnterAnimation(animated: Bool) {
+        guard animated else { return }
+        autoHideControlsTask?.cancel()
+        autoHideControlsTask = nil
+        feedbackTask?.cancel()
+        feedbackTask = nil
+        longPressSpeedBoostTask?.cancel()
+        longPressSpeedBoostTask = nil
+        restoreLongPressPlaybackRateIfNeeded()
+        let changes = {
+            self.topChrome.alpha = 0
+            self.bottomChrome.alpha = 0
+            self.exitButton.alpha = 0
+            self.topActionsStack.alpha = 0
+            self.transportStack.alpha = 0
+            self.transportStack.isHidden = true
+            self.controlsStack.alpha = 0
+            self.feedbackView.alpha = 0
+            self.speedFeedbackView.alpha = 0
+            self.topChrome.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.exitButton.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.topActionsStack.transform = CGAffineTransform(translationX: 0, y: -8)
+            self.bottomChrome.transform = CGAffineTransform(translationX: 0, y: 10)
+            self.controlsStack.transform = CGAffineTransform(translationX: 0, y: 10)
+            self.transportStack.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        }
+        changes()
+        exitButton.isUserInteractionEnabled = false
+        topActionsStack.isUserInteractionEnabled = false
+        transportStack.isUserInteractionEnabled = false
+        transportStack.accessibilityElementsHidden = true
+        controlsStack.isUserInteractionEnabled = false
+    }
+
+    func finishEnterAnimation(animated: Bool) {
+        let chromeVisible = isControlsVisible && !suppressesPlaybackChrome
+        let alpha: CGFloat = chromeVisible ? 1 : 0
+        let changes = {
+            self.topChrome.alpha = alpha
+            self.bottomChrome.alpha = alpha
+            self.exitButton.alpha = alpha
+            self.topActionsStack.alpha = alpha
+            self.transportStack.alpha = 0
+            self.transportStack.isHidden = true
+            self.controlsStack.alpha = alpha
+            self.feedbackView.alpha = 0
+            self.speedFeedbackView.alpha = 0
+            self.topChrome.transform = .identity
+            self.exitButton.transform = .identity
+            self.topActionsStack.transform = .identity
+            self.bottomChrome.transform = .identity
+            self.controlsStack.transform = .identity
+            self.transportStack.transform = .identity
+        }
+        let completion = {
+            self.exitButton.isUserInteractionEnabled = chromeVisible
+            self.topActionsStack.isUserInteractionEnabled = chromeVisible
+            self.transportStack.isUserInteractionEnabled = false
+            self.transportStack.accessibilityElementsHidden = true
+            self.controlsStack.isUserInteractionEnabled = chromeVisible
+        }
+
+        guard animated else {
+            changes()
+            completion()
+            if chromeVisible {
+                refreshTimelineFromViewModel(force: true)
+                scheduleAutoHideIfNeeded()
+            }
+            return
+        }
+
+        UIView.animate(
+            withDuration: 0.22,
+            delay: 0.03,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            changes()
+        } completion: { _ in
+            completion()
+            if chromeVisible {
+                self.refreshTimelineFromViewModel(force: true)
+                self.scheduleAutoHideIfNeeded()
+            }
+        }
+    }
+
     private func setControlsVisible(_ visible: Bool, animated: Bool) {
         isControlsVisible = visible
         let chromeVisible = visible && !suppressesPlaybackChrome
@@ -1676,6 +2752,11 @@ private final class ManualFullscreenPlaybackControlsView: UIView, UIGestureRecog
             self.transportStack.alpha = 0
             self.transportStack.isHidden = true
             self.controlsStack.alpha = alpha
+            self.topChrome.transform = .identity
+            self.exitButton.transform = .identity
+            self.topActionsStack.transform = .identity
+            self.bottomChrome.transform = .identity
+            self.controlsStack.transform = .identity
             self.transportStack.transform = chromeVisible
                 ? .identity
                 : CGAffineTransform(scaleX: 0.88, y: 0.88)

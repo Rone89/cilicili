@@ -310,67 +310,22 @@ private struct SearchRankBadge: View {
 }
 
 private struct SearchVideoResultRow: View {
-    let video: VideoItem
     private let display: VideoCardDisplayModel
-    @Environment(\.displayScale) private var displayScale
 
     init(video: VideoItem) {
-        self.video = video
         self.display = VideoCardDisplayModel(video: video)
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            cover
-
-            VStack(alignment: .leading, spacing: 5) {
-                StableVideoTitleText(display.title, style: .related, lineLimit: 2)
-                    .frame(minHeight: 36, alignment: .topLeading)
-
-                Label(display.authorName, systemImage: "person.crop.circle")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 7) {
-                    SearchMetadataLabel(text: display.viewText, systemImage: "play.rectangle")
-                    SearchMetadataLabel(text: display.publishTimeText, systemImage: "clock")
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(display.title)
-    }
-
-    private var cover: some View {
-        ZStack(alignment: .bottomTrailing) {
-            CachedRemoteImage(
-                url: display.coverThumbnailURL(fitting: CGSize(width: 118, height: 66), scale: displayScale),
-                fallbackURL: display.sourceCoverURL,
-                targetPixelSize: display.coverTargetPixelSize(fitting: CGSize(width: 118, height: 66), scale: displayScale),
-                animatesAppearance: false
-            ) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                SearchImagePlaceholder(systemImage: "play.rectangle")
-            }
-
-            if let duration = video.duration, duration > 0 {
-                VideoCoverDurationBadge(BiliFormatters.duration(duration))
-                    .padding(7)
-            }
-        }
-        .frame(width: 118, height: 66)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.quaternary, lineWidth: 0.7)
-        }
-        .mediaShadow(.subtle)
+        VideoCompactListRow(
+            display: display,
+            coverSize: CGSize(width: 118, height: 66),
+            coverCornerRadius: 10,
+            showsCoverBorder: true,
+            titleMinHeight: 36,
+            authorStyle: .icon("person.crop.circle"),
+            metadataStyle: .search
+        )
     }
 }
 

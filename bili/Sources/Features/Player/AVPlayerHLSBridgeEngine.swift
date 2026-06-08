@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import CoreImage
 import Network
 import OSLog
 import UIKit
@@ -19,10 +20,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var layerReadyForDisplayObserver: NSKeyValueObservation?
     private var controllerReadyForDisplayObserver: NSKeyValueObservation?
     private var periodicTimeObserver: Any?
+    private let videoFrameContext = CIContext()
     private weak var surfaceView: UIView?
     private weak var playerLayer: AVPlayerLayer?
     private weak var playerViewController: AVPlayerViewController?
     private var playerItem: AVPlayerItem?
+    private var videoOutput: AVPlayerItemVideoOutput?
     private var source: PlayerStreamSource?
     private var hlsBridge: LocalHLSBridge?
     private var liveHLSProxy: LocalLiveHLSProxy?
@@ -280,6 +283,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         isStartupFastStartActive = !prepared.isDirectLiveHLS
         let item = prepared.item
         configureStartupBuffering(for: item, source: source)
+        attachVideoOutput(to: item)
         player.replaceCurrentItem(with: item)
         recordPrepareStage(
             source: source,
@@ -513,6 +517,31 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         )
     }
 
+    func currentVideoFrameImage() -> UIImage? {
+        guard let videoOutput,
+              player.currentItem === playerItem
+        else { return nil }
+
+        let hostTime = CACurrentMediaTime()
+        let hostItemTime = videoOutput.itemTime(forHostTime: hostTime)
+        var displayTime = CMTime.invalid
+        if let pixelBuffer = videoOutput.copyPixelBuffer(
+            forItemTime: hostItemTime,
+            itemTimeForDisplay: &displayTime
+        ) {
+            return makeImage(from: pixelBuffer)
+        }
+
+        let currentItemTime = player.currentTime()
+        guard let pixelBuffer = videoOutput.copyPixelBuffer(
+            forItemTime: currentItemTime,
+            itemTimeForDisplay: nil
+        ) else {
+            return nil
+        }
+        return makeImage(from: pixelBuffer)
+    }
+
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? {
         guard let playerLayer else { return nil }
         return AVPictureInPictureController.ContentSource(playerLayer: playerLayer)
@@ -552,6 +581,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         silencePlayerImmediately()
         oldItem?.cancelPendingSeeks()
         oldItem?.asset.cancelLoading()
+        if let videoOutput {
+            oldItem?.remove(videoOutput)
+        }
+        videoOutput = nil
         removeCurrentItemObservers()
         removePeriodicTimeObserver()
         if oldItem != nil {
@@ -580,6 +613,25 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         isStartupFastStartActive = false
         manualPreferredPeakBitRate = nil
         lastRecordedAccessLogStallCount = 0
+    }
+
+    private func attachVideoOutput(to item: AVPlayerItem) {
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        output.suppressesPlayerRendering = false
+        item.add(output)
+        videoOutput = output
+    }
+
+    private func makeImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        guard width > 0, height > 0 else { return nil }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let cgImage = videoFrameContext.createCGImage(ciImage, from: rect) else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 
     private func isCurrentPlaybackGeneration(_ generation: Int) -> Bool {
@@ -1934,8 +1986,6 @@ private struct HLSBridgeRemoteFailure: LocalizedError, Sendable {
 }
 
 struct LocalHLSBridge: Sendable {
-    private static let playbackDataSession = BiliURLSessionFactory.makePlaybackDataSession()
-
     let masterPlaylistURL: URL
     let mediaTimeOffset: TimeInterval
     let videoClockDelay: TimeInterval
@@ -2123,23 +2173,28 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String],
         metricsID: String?
     ) async throws -> HLSBridgeRoutePlan {
-        guard let primaryVideoTrack = videoTracks.first else {
+        guard !videoTracks.isEmpty else {
             throw PlayerEngineError.missingVideoURL
         }
         let start = CACurrentMediaTime()
-        PlayerMetricsLog.logger.info("hlsBridgeRoutePlanBuildStart")
-        async let videoRenditionTask = makeRendition(for: primaryVideoTrack, durationHint: durationHint, headers: headers, metricsID: metricsID)
+        PlayerMetricsLog.logger.info(
+            "hlsBridgeRoutePlanBuildStart videoVariants=\(videoTracks.count, privacy: .public)"
+        )
         async let audioRenditionTask = makeRendition(for: audioTrack, durationHint: durationHint, headers: headers, metricsID: metricsID)
-        let (videoRendition, audioRendition) = try await (videoRenditionTask, audioRenditionTask)
-        let videoRenditions = [videoRendition]
-        let deferredVideoVariantCount = max(videoTracks.count - 1, 0)
+        let videoRenditions = try await makeVideoRenditions(
+            for: videoTracks,
+            durationHint: durationHint,
+            headers: headers,
+            metricsID: metricsID
+        )
+        let audioRendition = try await audioRenditionTask
         let renditionMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeRenditionsReady elapsedMs=\(renditionMilliseconds, format: .fixed(precision: 1), privacy: .public) videoVariants=\(videoRenditions.count, privacy: .public) deferredVideoVariants=\(deferredVideoVariantCount, privacy: .public) videoRefs=\(videoRendition.references.count, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public)"
+            "hlsBridgeRenditionsReady elapsedMs=\(renditionMilliseconds, format: .fixed(precision: 1), privacy: .public) videoVariants=\(videoRenditions.count, privacy: .public) videoRefs=\(videoRenditions.first?.references.count ?? 0, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public)"
         )
         await recordManifestStage(
             metricsID: metricsID,
-            "renditions=\(formatMilliseconds(renditionMilliseconds)) video=\(qualitySummary(for: videoRenditions)) deferredVideo=\(deferredVideoVariantCount) videoRefs=\(videoRendition.references.count) audioRefs=\(audioRendition.references.count)"
+            "renditions=\(formatMilliseconds(renditionMilliseconds)) video=\(qualitySummary(for: videoRenditions)) videoRefs=\(videoRenditions.first?.references.count ?? 0) audioRefs=\(audioRendition.references.count)"
         )
 
         return HLSBridgeRoutePlan(
@@ -2147,6 +2202,66 @@ struct LocalHLSBridge: Sendable {
             audioRendition: audioRendition,
             masterPlaylistVersion: masterPlaylistVersion(for: videoRenditions)
         )
+    }
+
+    private nonisolated static func makeVideoRenditions(
+        for tracks: [HLSBridgeTrack],
+        durationHint: TimeInterval?,
+        headers: [String: String],
+        metricsID: String?
+    ) async throws -> [HLSRendition] {
+        guard let primaryTrack = tracks.first else { return [] }
+        let primaryRendition = try await makeRendition(
+            for: primaryTrack,
+            durationHint: durationHint,
+            headers: headers,
+            metricsID: metricsID
+        )
+        let alternateTracks = Array(tracks.dropFirst())
+        guard !alternateTracks.isEmpty else { return [primaryRendition] }
+        let waitBudget = optionalVideoRenditionPostPrimaryWaitNanoseconds
+        guard waitBudget > 0 else {
+            await recordManifestStage(
+                metricsID: metricsID,
+                "alternateVideo=deferred"
+            )
+            return [primaryRendition]
+        }
+        let alternateTask = Task(priority: .utility) {
+            await makeOptionalVideoRenditions(
+                for: alternateTracks,
+                durationHint: durationHint,
+                headers: headers,
+                metricsID: metricsID
+            )
+        }
+        defer { alternateTask.cancel() }
+        let alternateRenditions = await optionalVideoRenditions(
+            from: alternateTask,
+            waitBudget: waitBudget
+        )
+        return [primaryRendition] + alternateRenditions
+    }
+
+    private nonisolated static func optionalVideoRenditions(
+        from task: Task<[HLSRendition], Never>,
+        waitBudget: UInt64
+    ) async -> [HLSRendition] {
+        guard waitBudget > 0 else { return [] }
+        let timeoutTask = Task(priority: .utility) { () -> [HLSRendition] in
+            try? await Task.sleep(nanoseconds: waitBudget)
+            return []
+        }
+        defer {
+            timeoutTask.cancel()
+        }
+        return await withTaskGroup(of: [HLSRendition].self, returning: [HLSRendition].self) { group in
+            group.addTask { await task.value }
+            group.addTask { await timeoutTask.value }
+            let renditions = await group.next() ?? []
+            group.cancelAll()
+            return renditions
+        }
     }
 
     private nonisolated static func build(
@@ -2194,13 +2309,6 @@ struct LocalHLSBridge: Sendable {
         audioRendition.registerRoutes(routePrefix: "audio", into: &routes)
         server.updateRoutes(routes)
         try await server.start()
-        await warmStartupRanges(
-            videoRendition: videoRendition,
-            audioRendition: audioRendition,
-            headers: headers,
-            metricsID: metricsID,
-            waitBudget: PlaybackEnvironment.current.startupWarmupPrepareBudget
-        )
         let serverMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
             "hlsBridgeServerReady elapsedMs=\(serverMilliseconds, format: .fixed(precision: 1), privacy: .public) dynamicRange=\(videoRendition.dynamicRange.rawValue, privacy: .public) codec=\(videoRendition.codec, privacy: .public) version=\(plan.masterPlaylistVersion, privacy: .public) variants=\(videoRenditions.count, privacy: .public) routes=\(routes.count, privacy: .public)"
@@ -2370,12 +2478,16 @@ struct LocalHLSBridge: Sendable {
     private nonisolated static var optionalVideoRenditionBudgetNanoseconds: UInt64 {
         switch PlaybackEnvironment.current.networkClass {
         case .wifi:
-            return 620_000_000
+            return 260_000_000
         case .unknown:
-            return 480_000_000
+            return 180_000_000
         case .cellular, .constrained:
-            return 300_000_000
+            return 120_000_000
         }
+    }
+
+    private nonisolated static var optionalVideoRenditionPostPrimaryWaitNanoseconds: UInt64 {
+        0
     }
 
     private nonisolated static func formatMilliseconds(_ value: Double) -> String {
@@ -2384,57 +2496,6 @@ struct LocalHLSBridge: Sendable {
             return String(format: "%.2fs", Double(rounded) / 1000)
         }
         return "\(rounded)ms"
-    }
-
-    private nonisolated static func warmStartupRanges(
-        videoRendition: HLSRendition,
-        audioRendition: HLSRendition,
-        headers: [String: String],
-        metricsID: String?,
-        waitBudget: TimeInterval
-    ) async {
-        // Fire-and-forget: startup warmup must never extend manifest generation.
-        Task.detached(priority: .userInitiated) {
-            let start = CACurrentMediaTime()
-            let sourceURLCount = max(
-                ([videoRendition.sourceURL] + videoRendition.fallbackSourceURLs).removingDuplicates().count,
-                ([audioRendition.sourceURL] + audioRendition.fallbackSourceURLs).removingDuplicates().count
-            )
-            let strategy = bootstrapFetchStrategy(urlCount: sourceURLCount)
-            async let videoStartup: Void = warmRanges(
-                startupWarmRanges(
-                    initialization: videoRendition.initialization,
-                    references: videoRendition.references,
-                    includeExtraVideoSegment: true
-                ),
-                from: [videoRendition.sourceURL] + videoRendition.fallbackSourceURLs,
-                headers: headers,
-                strategy: strategy.fetchStrategy,
-                delayStepNanoseconds: 0
-            )
-            async let audioStartup: Void = warmRanges(
-                startupWarmRanges(
-                    initialization: audioRendition.initialization,
-                    references: audioRendition.references,
-                    includeExtraVideoSegment: false
-                ),
-                from: [audioRendition.sourceURL] + audioRendition.fallbackSourceURLs,
-                headers: headers,
-                strategy: strategy.fetchStrategy,
-                delayStepNanoseconds: 0
-            )
-            _ = await (videoStartup, audioStartup)
-            let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
-            PlayerMetricsLog.logger.info(
-                "hlsBridgeWarmupStartup videoRefs=\(videoRendition.references.count, privacy: .public) audioRefs=\(audioRendition.references.count, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
-            )
-            await recordManifestStage(
-                metricsID: metricsID,
-                "startupWarm=\(formatMilliseconds(elapsedMilliseconds))"
-            )
-        }
-        guard waitBudget > 0 else { return }
-        try? await Task.sleep(nanoseconds: UInt64(waitBudget * 1_000_000_000))
     }
 
     private nonisolated static func startupWarmRanges(
@@ -2499,20 +2560,21 @@ struct LocalHLSBridge: Sendable {
         ) {
             let fetchStart = CACurrentMediaTime()
             let sourceURLs = [track.url] + track.fallbackURLs
-            let (indexData, fetchMode) = try await fetchIndexRange(
+            let bootstrapPayload = try await fetchRenditionBootstrapPayload(
+                initialization: initialization,
                 indexRange: indexRange,
                 from: sourceURLs,
                 headers: headers
             )
             await recordManifestStage(
                 metricsID: metricsID,
-                "\(mediaType)Boot=\(fetchMode) \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)))"
+                "\(mediaType)Boot=\(bootstrapPayload.mode) \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)))"
             )
             PlayerMetricsLog.logger.info(
-                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(fetchMode, privacy: .public) bytes=\(indexData.count, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
+                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(bootstrapPayload.mode, privacy: .public) bytes=\(bootstrapPayload.indexData.count, privacy: .public) initBytes=\(bootstrapPayload.initializationData?.count ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
             )
             let parseStart = CACurrentMediaTime()
-            let references = try SIDXParser.parseReferences(from: indexData, sidxStartOffset: indexRange.start)
+            let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
             guard !references.isEmpty else {
                 throw PlayerEngineError.unsupportedMedia
             }
@@ -2528,7 +2590,7 @@ struct LocalHLSBridge: Sendable {
             return makeRendition(
                 for: track,
                 initialization: initialization,
-                initializationData: nil,
+                initializationData: bootstrapPayload.initializationData,
                 references: references,
                 durationHint: durationHint,
                 timelineOffsetOverride: resolvedTimelineOffset
@@ -2544,6 +2606,96 @@ struct LocalHLSBridge: Sendable {
             "\(mediaType)=\(renditionResult.state.rawValue) \(formatMilliseconds(elapsedMilliseconds)) refs=\(rendition.references.count)"
         )
         return rendition
+    }
+
+    private struct HLSRenditionBootstrapPayload: Sendable {
+        let initializationData: Data?
+        let indexData: Data
+        let mode: String
+    }
+
+    private nonisolated static func fetchRenditionBootstrapPayload(
+        initialization: HTTPByteRange,
+        indexRange: HTTPByteRange,
+        from urls: [URL],
+        headers: [String: String]
+    ) async throws -> HLSRenditionBootstrapPayload {
+        let strategy = bootstrapFetchStrategy(urlCount: urls.count)
+        if let combinedRange = combinedBootstrapRange(initialization: initialization, indexRange: indexRange) {
+            do {
+                let combinedData = try await fetchByteRange(
+                    combinedRange,
+                    from: urls,
+                    headers: headers,
+                    policy: strategy
+                )
+                if let initializationData = dataSlice(for: initialization, in: combinedData, baseRange: combinedRange),
+                   let indexData = dataSlice(for: indexRange, in: combinedData, baseRange: combinedRange) {
+                    return HLSRenditionBootstrapPayload(
+                        initializationData: initializationData,
+                        indexData: indexData,
+                        mode: "\(strategy.fetchStrategy.logLabel)+init"
+                    )
+                }
+            } catch {
+                PlayerMetricsLog.logger.info(
+                    "hlsBridgeBootstrapCombinedFallback range=\(combinedRange.start, privacy: .public)-\(combinedRange.endInclusive, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        let indexData = try await fetchByteRange(
+            indexRange,
+            from: urls,
+            headers: headers,
+            policy: strategy
+        )
+        return HLSRenditionBootstrapPayload(
+            initializationData: nil,
+            indexData: indexData,
+            mode: strategy.fetchStrategy.logLabel
+        )
+    }
+
+    private nonisolated static func combinedBootstrapRange(
+        initialization: HTTPByteRange,
+        indexRange: HTTPByteRange
+    ) -> HTTPByteRange? {
+        guard initialization.length > 0, indexRange.length > 0 else { return nil }
+        let lowerBound = min(initialization.start, indexRange.start)
+        let upperBound = max(initialization.endInclusive, indexRange.endInclusive)
+        guard upperBound >= lowerBound else { return nil }
+
+        let gap: Int64
+        if initialization.endInclusive < indexRange.start {
+            gap = indexRange.start - initialization.endInclusive - 1
+        } else if indexRange.endInclusive < initialization.start {
+            gap = initialization.start - indexRange.endInclusive - 1
+        } else {
+            gap = 0
+        }
+
+        let combinedLength = upperBound - lowerBound + 1
+        guard gap <= maxBootstrapCombinedGapBytes,
+              combinedLength <= maxBootstrapCombinedRangeBytes
+        else { return nil }
+        return HTTPByteRange(start: lowerBound, endInclusive: upperBound)
+    }
+
+    private nonisolated static func dataSlice(
+        for range: HTTPByteRange,
+        in data: Data,
+        baseRange: HTTPByteRange
+    ) -> Data? {
+        guard range.start >= baseRange.start,
+              range.endInclusive <= baseRange.endInclusive,
+              let lowerBound = Int(exactly: range.start - baseRange.start),
+              let length = Int(exactly: range.length),
+              length > 0,
+              lowerBound >= 0,
+              lowerBound + length <= data.count
+        else { return nil }
+        return data.subdata(in: lowerBound..<(lowerBound + length))
     }
 
     private nonisolated static func fetchIndexRange(
@@ -2570,6 +2722,9 @@ struct LocalHLSBridge: Sendable {
             remoteRequestPolicy: .startupIndex(urlCount: urlCount)
         )
     }
+
+    private nonisolated static let maxBootstrapCombinedRangeBytes: Int64 = 256 * 1024
+    private nonisolated static let maxBootstrapCombinedGapBytes: Int64 = 32 * 1024
 
     fileprivate nonisolated static func fetchByteRange(
         _ range: HTTPByteRange,
@@ -2647,7 +2802,7 @@ struct LocalHLSBridge: Sendable {
         for (index, url) in sourceURLs.enumerated() {
             let fetchStart = CACurrentMediaTime()
             do {
-                let data = try await VideoRangeCache.shared.cachedOrFetch(url: url, range: range) {
+                let cacheResult = try await VideoRangeCache.shared.cachedOrFetchWithSource(url: url, range: range) {
                     try await fetchRemoteByteRangeWithRetry(
                         range,
                         from: url,
@@ -2655,15 +2810,20 @@ struct LocalHLSBridge: Sendable {
                         policy: remoteRequestPolicy
                     )
                 }
-                await HLSSourcePreferenceCache.shared.recordResult(
-                    url: url,
-                    for: sourceURLs,
-                    elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
-                    bytes: Int64(data.count),
-                    succeeded: true
-                )
+                let data = cacheResult.data
+                if cacheResult.source == .remote {
+                    await HLSSourcePreferenceCache.shared.recordResult(
+                        url: url,
+                        for: sourceURLs,
+                        elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
+                        bytes: Int64(data.count),
+                        succeeded: true
+                    )
+                }
                 if index > 0 {
-                    await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: sourceURLs)
+                    if cacheResult.source == .remote {
+                        await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: sourceURLs)
+                    }
                     await VideoRangeCache.shared.store(data, url: primaryURL, range: range)
                     PlayerMetricsLog.logger.info(
                         "hlsBridgeByteRangeFallbackSuccess fallbackIndex=\(index, privacy: .public) range=\(range.start, privacy: .public)-\(range.endInclusive, privacy: .public)"
@@ -2694,16 +2854,16 @@ struct LocalHLSBridge: Sendable {
         headers: [String: String],
         remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
     ) async throws -> Data {
-        let result: Result<(index: Int, data: Data), Error> = await withTaskGroup(of: Result<(index: Int, data: Data), Error>.self) { group in
+        let result: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error> = await withTaskGroup(of: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error>.self) { group in
             for (index, url) in sourceURLs.enumerated() {
                 group.addTask(priority: .userInitiated) {
                     let fetchStart = CACurrentMediaTime()
                     do {
                         if index > 0 {
-                            let delay = UInt64(55_000_000 + max(index - 1, 0) * 45_000_000)
+                            let delay = remoteRequestPolicy.fastFallbackDelayNanoseconds(forSourceIndex: index)
                             try await Task.sleep(nanoseconds: delay)
                         }
-                        let data = try await VideoRangeCache.shared.cachedOrFetch(url: url, range: range) {
+                        let cacheResult = try await VideoRangeCache.shared.cachedOrFetchWithSource(url: url, range: range) {
                             try await fetchRemoteByteRangeWithRetry(
                                 range,
                                 from: url,
@@ -2711,14 +2871,17 @@ struct LocalHLSBridge: Sendable {
                                 policy: remoteRequestPolicy
                             )
                         }
-                        await HLSSourcePreferenceCache.shared.recordResult(
-                            url: url,
-                            for: sourceURLs,
-                            elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
-                            bytes: Int64(data.count),
-                            succeeded: true
-                        )
-                        return .success((index, data))
+                        let data = cacheResult.data
+                        if cacheResult.source == .remote {
+                            await HLSSourcePreferenceCache.shared.recordResult(
+                                url: url,
+                                for: sourceURLs,
+                                elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
+                                bytes: Int64(data.count),
+                                succeeded: true
+                            )
+                        }
+                        return .success((index, data, cacheResult.source))
                     } catch {
                         await HLSSourcePreferenceCache.shared.recordFailure(
                             url: url,
@@ -2736,7 +2899,7 @@ struct LocalHLSBridge: Sendable {
                 switch result {
                 case let .success(payload):
                     group.cancelAll()
-                    return Result<(index: Int, data: Data), Error>.success(payload)
+                    return Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error>.success(payload)
                 case let .failure(error):
                     lastError = error
                 }
@@ -2746,7 +2909,7 @@ struct LocalHLSBridge: Sendable {
 
         switch result {
         case let .success(payload):
-            if let preferredURL = sourceURLs[safe: payload.index] {
+            if payload.source == .remote, let preferredURL = sourceURLs[safe: payload.index] {
                 await HLSSourcePreferenceCache.shared.recordPreferredURL(preferredURL, for: sourceURLs)
             }
             if payload.index > 0 {
@@ -2817,7 +2980,7 @@ struct LocalHLSBridge: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await playbackDataSession.data(for: request)
+            (data, response) = try await BiliPlaybackNetworkSessionPool.shared.playbackDataSession().data(for: request)
         } catch let error as URLError {
             throw HLSBridgeRemoteFailure.urlSession(error, url: url, range: range)
         } catch {
@@ -2906,12 +3069,13 @@ struct LocalHLSBridge: Sendable {
             let renditionResult = try await HLSRenditionCache.shared.cachedOrBuild(
                 for: renditionCacheKey(for: track, initialization: initialization, indexRange: indexRange)
             ) {
-                let (indexData, _) = try await fetchIndexRange(
+                let bootstrapPayload = try await fetchRenditionBootstrapPayload(
+                    initialization: initialization,
                     indexRange: indexRange,
                     from: sourceURLs,
                     headers: headers
                 )
-                let references = try SIDXParser.parseReferences(from: indexData, sidxStartOffset: indexRange.start)
+                let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
                 guard !references.isEmpty else {
                     throw PlayerEngineError.unsupportedMedia
                 }
@@ -2924,7 +3088,7 @@ struct LocalHLSBridge: Sendable {
                 return makeRendition(
                     for: track,
                     initialization: initialization,
-                    initializationData: nil,
+                    initializationData: bootstrapPayload.initializationData,
                     references: references,
                     durationHint: nil,
                     timelineOffsetOverride: resolvedTimelineOffset
@@ -3036,7 +3200,7 @@ struct LocalHLSBridge: Sendable {
             "video"
         }
         return [
-            "timeline-v8-sidx-only",
+            "timeline-v9-bootstrap-init",
             mediaType,
             track.cacheIdentity,
             "\(initialization.start)-\(initialization.endInclusive)",
@@ -3285,9 +3449,9 @@ private struct HLSRendition: Sendable {
             )
         }
 
-        let segmentTransform = HLSMediaSegmentTransform(
-            baseMediaDecodeTimeOffset: baseMediaDecodeTimeOffsetTicks
-        )
+        let segmentTransform = baseMediaDecodeTimeOffsetTicks > 0
+            ? HLSMediaSegmentTransform(baseMediaDecodeTimeOffset: baseMediaDecodeTimeOffsetTicks)
+            : nil
         for (index, reference) in references.enumerated() {
             routes["/media/\(routePrefix)/segment-\(index).m4s"] = .remoteByteRange(
                 url: sourceURL,
@@ -3755,7 +3919,11 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
         request.timeoutInterval = timeoutInterval
         request.networkServiceType = .video
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await BiliNetworkRetry.data(
+            sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackDataSession() },
+            request: request,
+            policy: .playbackShortResource
+        )
         if let response = response as? HTTPURLResponse,
            !(200...299).contains(response.statusCode) {
             throw PlayerEngineError.unsupportedMedia
@@ -4878,9 +5046,9 @@ private enum HLSRemoteRangeStreamer {
             throw error
         }
         try LocalHLSProxyServer.validateRemoteRangeResponse(response, requestedRange: range, url: url)
-        try await send(responseHeader, to: connection)
 
         let cacheCollector = VideoRangeStreamCacheCollector(range: range, cacheLimit: cacheLimit)
+        var didStartResponse = false
         do {
             let chunkSize = min(max(startupChunkSize, 24 * 1024), 96 * 1024)
             var chunk = Data()
@@ -4889,42 +5057,62 @@ private enum HLSRemoteRangeStreamer {
             chunk.reserveCapacity(chunkSize)
             for try await data in stream.handler.chunks {
                 try Task.checkCancellation()
+                try cacheCollector?.append(data)
                 chunk.append(data)
                 if chunk.count >= chunkSize {
-                    try cacheCollector?.append(chunk)
-                    let outboundChunk: Data
+                    let outboundChunk: Data?
                     if let transform, !didApplyTransform {
-                        outboundChunk = transform.apply(to: chunk)
-                        didApplyTransform = true
+                        let transformResult = transform.applyResult(to: chunk)
+                        if transformResult.didNormalizeTiming {
+                            outboundChunk = transformResult.data
+                            didApplyTransform = true
+                        } else {
+                            outboundChunk = nil
+                        }
                     } else {
                         outboundChunk = chunk
                     }
-                    try await send(outboundChunk, to: connection)
-                    if !didNotifyFirstChunk {
-                        didNotifyFirstChunk = true
-                        await onFirstChunkSent?(outboundChunk.count)
+                    if let outboundChunk {
+                        if !didStartResponse {
+                            try await send(responseHeader, to: connection)
+                            didStartResponse = true
+                        }
+                        try await send(outboundChunk, to: connection)
+                        if !didNotifyFirstChunk {
+                            didNotifyFirstChunk = true
+                            await onFirstChunkSent?(outboundChunk.count)
+                        }
+                        chunk.removeAll(keepingCapacity: true)
                     }
-                    chunk.removeAll(keepingCapacity: true)
                 }
             }
             if !chunk.isEmpty {
-                try cacheCollector?.append(chunk)
                 let outboundChunk: Data
                 if let transform, !didApplyTransform {
-                    outboundChunk = transform.apply(to: chunk)
+                    let transformResult = transform.applyResult(to: chunk)
+                    outboundChunk = transformResult.data
                     didApplyTransform = true
                 } else {
                     outboundChunk = chunk
                 }
+                if !didStartResponse {
+                    try await send(responseHeader, to: connection)
+                    didStartResponse = true
+                }
                 try await send(outboundChunk, to: connection)
                 if !didNotifyFirstChunk {
+                    didNotifyFirstChunk = true
                     await onFirstChunkSent?(outboundChunk.count)
                 }
             }
+            guard didNotifyFirstChunk else {
+                throw HLSBridgeRemoteFailure.emptyResponse(url: url, range: range)
+            }
         } catch {
             stream.task.cancel()
-            connection.cancel()
             cacheCollector?.cancel()
+            guard didStartResponse else { throw error }
+            connection.cancel()
             throw HLSRangeStreamError.responseAlreadyStarted(error)
         }
         connection.cancel()
@@ -4945,6 +5133,12 @@ private enum HLSRemoteRangeStreamer {
     }
 }
 
+nonisolated enum PlaybackRangeStreamingSessionCoordinator {
+    static func refreshForNetworkPathChange() {
+        HLSRemoteRangeStreamingSession.shared.refreshForNetworkPathChange()
+    }
+}
+
 private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     static let shared = HLSRemoteRangeStreamingSession()
 
@@ -4955,20 +5149,21 @@ private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDele
         delegate: self,
         delegateQueue: delegateQueue
     )
-    private var handlers: [Int: HLSRemoteRangeStreamHandler] = [:]
+    private var handlers: [ObjectIdentifier: HLSRemoteRangeStreamHandler] = [:]
 
     private override init() {
         delegateQueue = OperationQueue()
-        delegateQueue.maxConcurrentOperationCount = 1
+        delegateQueue.maxConcurrentOperationCount = 2
         delegateQueue.qualityOfService = .userInitiated
         super.init()
     }
 
     func start(request: URLRequest) -> (task: URLSessionDataTask, handler: HLSRemoteRangeStreamHandler) {
         let handler = HLSRemoteRangeStreamHandler()
-        let task = session.dataTask(with: request)
         lock.lock()
-        handlers[task.taskIdentifier] = handler
+        let currentSession = session
+        let task = currentSession.dataTask(with: request)
+        handlers[ObjectIdentifier(task)] = handler
         lock.unlock()
         task.resume()
         return (task, handler)
@@ -4976,8 +5171,21 @@ private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDele
 
     func finish(task: URLSessionTask) {
         lock.lock()
-        handlers[task.taskIdentifier] = nil
+        handlers[ObjectIdentifier(task)] = nil
         lock.unlock()
+    }
+
+    func refreshForNetworkPathChange() {
+        let oldSession: URLSession
+        lock.lock()
+        oldSession = session
+        session = URLSession(
+            configuration: BiliURLSessionFactory.makePlaybackStreamingConfiguration(),
+            delegate: self,
+            delegateQueue: delegateQueue
+        )
+        lock.unlock()
+        oldSession.finishTasksAndInvalidate()
     }
 
     func urlSession(
@@ -5013,7 +5221,7 @@ private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDele
 
     private func handler(for task: URLSessionTask) -> HLSRemoteRangeStreamHandler? {
         lock.lock()
-        let handler = handlers[task.taskIdentifier]
+        let handler = handlers[ObjectIdentifier(task)]
         lock.unlock()
         return handler
     }
@@ -5457,13 +5665,17 @@ private struct HLSRemoteByteRangeRequestPolicy: Sendable {
     let smallRangeTimeout: TimeInterval
     let largeRangeTimeout: TimeInterval
     let retryDelayNanoseconds: UInt64
+    let firstFallbackDelayNanoseconds: UInt64
+    let additionalFallbackDelayNanoseconds: UInt64
 
     nonisolated static func `default`(for range: HTTPByteRange) -> HLSRemoteByteRangeRequestPolicy {
         HLSRemoteByteRangeRequestPolicy(
             attempts: 2,
             smallRangeTimeout: 1.6,
             largeRangeTimeout: 2.4,
-            retryDelayNanoseconds: 90_000_000
+            retryDelayNanoseconds: 90_000_000,
+            firstFallbackDelayNanoseconds: 55_000_000,
+            additionalFallbackDelayNanoseconds: 45_000_000
         )
     }
 
@@ -5471,22 +5683,32 @@ private struct HLSRemoteByteRangeRequestPolicy: Sendable {
         if urlCount > 1 {
             return HLSRemoteByteRangeRequestPolicy(
                 attempts: 1,
-                smallRangeTimeout: 0.95,
-                largeRangeTimeout: 1.2,
-                retryDelayNanoseconds: 0
+                smallRangeTimeout: 0.78,
+                largeRangeTimeout: 1.05,
+                retryDelayNanoseconds: 0,
+                firstFallbackDelayNanoseconds: 18_000_000,
+                additionalFallbackDelayNanoseconds: 22_000_000
             )
         } else {
             return HLSRemoteByteRangeRequestPolicy(
                 attempts: 2,
-                smallRangeTimeout: 0.95,
-                largeRangeTimeout: 1.2,
-                retryDelayNanoseconds: 50_000_000
+                smallRangeTimeout: 0.85,
+                largeRangeTimeout: 1.1,
+                retryDelayNanoseconds: 45_000_000,
+                firstFallbackDelayNanoseconds: 55_000_000,
+                additionalFallbackDelayNanoseconds: 45_000_000
             )
         }
     }
 
     nonisolated func timeoutInterval(for range: HTTPByteRange) -> TimeInterval {
         range.length > 1_500_000 ? largeRangeTimeout : smallRangeTimeout
+    }
+
+    nonisolated func fastFallbackDelayNanoseconds(forSourceIndex index: Int) -> UInt64 {
+        guard index > 0 else { return 0 }
+        return firstFallbackDelayNanoseconds
+            + UInt64(max(index - 1, 0)) * additionalFallbackDelayNanoseconds
     }
 }
 
@@ -5507,8 +5729,14 @@ private struct HLSMediaSegmentTransform: Sendable {
     let baseMediaDecodeTimeOffset: UInt64
 
     nonisolated func apply(to data: Data) -> Data {
-        guard baseMediaDecodeTimeOffset > 0 else { return data }
-        return FMP4TimelineNormalizer.normalized(
+        applyResult(to: data).data
+    }
+
+    nonisolated func applyResult(to data: Data) -> FMP4TimelineNormalizer.NormalizationResult {
+        guard baseMediaDecodeTimeOffset > 0 else {
+            return FMP4TimelineNormalizer.NormalizationResult(data: data, didNormalizeTiming: true)
+        }
+        return FMP4TimelineNormalizer.normalizedResult(
             data,
             subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
         )
@@ -5518,6 +5746,11 @@ private struct HLSMediaSegmentTransform: Sendable {
 private enum FMP4TimelineNormalizer {
     struct InitialTiming: Sendable {
         let baseMediaDecodeTimeTicks: UInt64
+    }
+
+    struct NormalizationResult: Sendable {
+        let data: Data
+        let didNormalizeTiming: Bool
     }
 
     nonisolated static func initialTiming(in data: Data) -> InitialTiming? {
@@ -5530,26 +5763,39 @@ private enum FMP4TimelineNormalizer {
         _ data: Data,
         subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
     ) -> Data {
-        guard baseMediaDecodeTimeOffset > 0, data.count >= 16 else { return data }
+        normalizedResult(
+            data,
+            subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
+        ).data
+    }
+
+    nonisolated static func normalizedResult(
+        _ data: Data,
+        subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
+    ) -> NormalizationResult {
+        guard baseMediaDecodeTimeOffset > 0, data.count >= 16 else {
+            return NormalizationResult(data: data, didNormalizeTiming: baseMediaDecodeTimeOffset == 0)
+        }
         var bytes = [UInt8](data)
-        normalizeBoxes(
+        let didNormalizeTiming = normalizeBoxes(
             in: &bytes,
             range: 0..<bytes.count,
             subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
         )
-        return Data(bytes)
+        return NormalizationResult(data: Data(bytes), didNormalizeTiming: didNormalizeTiming)
     }
 
     private nonisolated static func normalizeBoxes(
         in bytes: inout [UInt8],
         range: Range<Int>,
         subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
-    ) {
+    ) -> Bool {
+        var didNormalizeTiming = false
         var cursor = range.lowerBound
         while cursor + 8 <= range.upperBound {
             let boxStart = cursor
             let declaredSize = Int64(readUInt32(bytes, offset: cursor))
-            guard cursor + 8 <= range.upperBound else { return }
+            guard cursor + 8 <= range.upperBound else { return didNormalizeTiming }
             let typeStart = cursor + 4
             let typeEnd = cursor + 8
             let type = String(bytes: bytes[typeStart..<typeEnd], encoding: .ascii)
@@ -5557,37 +5803,38 @@ private enum FMP4TimelineNormalizer {
 
             let boxEnd: Int
             if declaredSize == 1 {
-                guard cursor + 8 <= range.upperBound else { return }
+                guard cursor + 8 <= range.upperBound else { return didNormalizeTiming }
                 let largeSize = readUInt64(bytes, offset: cursor)
                 cursor += 8
-                guard largeSize >= 16 else { return }
+                guard largeSize >= 16 else { return didNormalizeTiming }
                 boxEnd = boxStart + Int(min(UInt64(Int.max), largeSize))
             } else if declaredSize == 0 {
                 boxEnd = range.upperBound
             } else {
-                guard declaredSize >= 8 else { return }
+                guard declaredSize >= 8 else { return didNormalizeTiming }
                 boxEnd = boxStart + Int(declaredSize)
             }
 
-            guard boxEnd <= range.upperBound, boxEnd > cursor else { return }
+            guard boxEnd <= range.upperBound, boxEnd > cursor else { return didNormalizeTiming }
 
             if type == "tfdt" {
-                normalizeTFDT(
+                didNormalizeTiming = normalizeTFDT(
                     in: &bytes,
                     payloadStart: cursor,
                     boxEnd: boxEnd,
                     subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-                )
+                ) || didNormalizeTiming
             } else if isContainerBox(type) {
-                normalizeBoxes(
+                didNormalizeTiming = normalizeBoxes(
                     in: &bytes,
                     range: cursor..<boxEnd,
                     subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-                )
+                ) || didNormalizeTiming
             }
 
             cursor = boxEnd
         }
+        return didNormalizeTiming
     }
 
     private nonisolated static func firstTiming(in bytes: [UInt8], range: Range<Int>) -> InitialTiming? {
@@ -5660,21 +5907,22 @@ private enum FMP4TimelineNormalizer {
         payloadStart: Int,
         boxEnd: Int,
         subtractingBaseMediaDecodeTime offset: UInt64
-    ) {
-        guard offset > 0 else { return }
-        guard payloadStart + 8 <= boxEnd else { return }
+    ) -> Bool {
+        guard offset > 0 else { return true }
+        guard payloadStart + 8 <= boxEnd else { return false }
         let version = bytes[payloadStart]
         let timeOffset = payloadStart + 4
         if version == 1 {
-            guard timeOffset + 8 <= boxEnd else { return }
+            guard timeOffset + 8 <= boxEnd else { return false }
             let original = readUInt64(bytes, offset: timeOffset)
             writeUInt64(original > offset ? original - offset : 0, to: &bytes, offset: timeOffset)
         } else {
-            guard timeOffset + 4 <= boxEnd else { return }
+            guard timeOffset + 4 <= boxEnd else { return false }
             let original = UInt64(readUInt32(bytes, offset: timeOffset))
             let normalized = original > offset ? original - offset : 0
             writeUInt32(UInt32(min(normalized, UInt64(UInt32.max))), to: &bytes, offset: timeOffset)
         }
+        return true
     }
 
     private nonisolated static func isContainerBox(_ type: String?) -> Bool {
@@ -6097,12 +6345,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
         if path.hasSuffix("/init.mp4") {
             return .fastFallback
         }
-        guard path.contains("/segment-0.m4s")
-                || path.contains("/segment-1.m4s")
-        else {
-            return .sequential
-        }
-        return .fastFallback
+        return .sequential
     }
 
     nonisolated private func shouldStreamRemoteRange(
@@ -6122,7 +6365,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
 
     nonisolated private func startupChunkSize(for path: String, transform: HLSMediaSegmentTransform?) -> Int {
         if transform != nil {
-            return 128 * 1024
+            return 16 * 1024
         }
         if path.contains("/media/audio/") {
             return 12 * 1024
@@ -6201,14 +6444,6 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
             case let .cached(data):
                 let cachedStart = CACurrentMediaTime()
                 let responseData = transform?.apply(to: data) ?? data
-                await HLSSourcePreferenceCache.shared.recordResult(
-                    url: url,
-                    for: canonicalURLs,
-                    elapsedMilliseconds: 0,
-                    bytes: Int64(data.count),
-                    succeeded: true,
-                    metricsID: metricsID
-                )
                 queue.async {
                     self.sendData(
                         responseData,
@@ -6220,7 +6455,6 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                         closesConnection: true
                     )
                 }
-                await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs)
                 PlayerMetricsLog.logger.info(
                     "hlsProxyRangeStreamCacheHit path=\(request.path, privacy: .public) bytes=\(responseData.count, privacy: .public)"
                 )
@@ -6255,15 +6489,6 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                             closesConnection: true
                         )
                     }
-                    await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs)
-                    await HLSSourcePreferenceCache.shared.recordResult(
-                        url: url,
-                        for: canonicalURLs,
-                        elapsedMilliseconds: 0,
-                        bytes: Int64(data.count),
-                        succeeded: true,
-                        metricsID: metricsID
-                    )
                     PlayerMetricsLog.logger.info(
                         "hlsProxyRangeStreamJoined path=\(request.path, privacy: .public) bytes=\(responseData.count, privacy: .public)"
                     )

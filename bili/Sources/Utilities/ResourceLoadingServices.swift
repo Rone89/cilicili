@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import OSLog
 import UIKit
 
 nonisolated struct PlayURLCacheKey: Hashable, Sendable {
@@ -274,6 +275,8 @@ actor PlayURLCache {
 nonisolated enum BiliURLSessionFactory {
     static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
     static let webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    static let imageUserAgent = mobileUserAgent
+    static let responseCompressionHeader = "br, gzip, deflate"
 
     private static let apiURLCache = URLCache(
         memoryCapacity: 32 * 1024 * 1024,
@@ -281,15 +284,50 @@ nonisolated enum BiliURLSessionFactory {
         directory: URL.cachesDirectory.appending(path: "BiliAPICache", directoryHint: .isDirectory)
     )
 
+    static let imageURLCache = URLCache(
+        memoryCapacity: 32 * 1024 * 1024,
+        diskCapacity: 512 * 1024 * 1024,
+        directory: URL.cachesDirectory.appending(path: "BiliRemoteImageCache", directoryHint: .isDirectory)
+    )
+
     static func makeAPISession(delegate: URLSessionDelegate? = nil) -> URLSession {
+        let configuration = makeAPIConfiguration()
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    }
+
+    static func makeAPIConfiguration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.default
         configuration.requestCachePolicy = .useProtocolCachePolicy
         configuration.urlCache = apiURLCache
         configuration.httpMaximumConnectionsPerHost = 6
         configuration.waitsForConnectivity = true
+        configuration.networkServiceType = .responsiveData
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 40
-        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        configuration.httpAdditionalHeaders = [
+            "User-Agent": mobileUserAgent,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": responseCompressionHeader,
+            "Accept-Language": "zh-CN,zh;q=0.9"
+        ]
+        return configuration
+    }
+
+    static func makeImageSession() -> URLSession {
+        URLSession(configuration: makeImageConfiguration())
+    }
+
+    static func makeImageConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.default
+        configuration.requestCachePolicy = .returnCacheDataElseLoad
+        configuration.urlCache = imageURLCache
+        configuration.httpMaximumConnectionsPerHost = 8
+        configuration.waitsForConnectivity = true
+        configuration.networkServiceType = .responsiveData
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 24
+        configuration.httpAdditionalHeaders = imageHeaders()
+        return configuration
     }
 
     static func makePlaybackResourceSession(delegateQueue: OperationQueue? = nil) -> URLSession {
@@ -301,10 +339,15 @@ nonisolated enum BiliURLSessionFactory {
         configuration.networkServiceType = .video
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 60
+        configuration.httpAdditionalHeaders = playbackHeaders(referer: "https://www.bilibili.com/", cookieHeader: nil)
         return URLSession(configuration: configuration, delegate: nil, delegateQueue: delegateQueue)
     }
 
     static func makePlaybackDataSession() -> URLSession {
+        URLSession(configuration: makePlaybackDataConfiguration(), delegate: nil, delegateQueue: nil)
+    }
+
+    static func makePlaybackDataConfiguration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
@@ -313,7 +356,8 @@ nonisolated enum BiliURLSessionFactory {
         configuration.networkServiceType = .video
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 20
-        return URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
+        configuration.httpAdditionalHeaders = playbackHeaders(referer: "https://www.bilibili.com/", cookieHeader: nil)
+        return configuration
     }
 
     static func makePlaybackStreamingConfiguration() -> URLSessionConfiguration {
@@ -325,6 +369,7 @@ nonisolated enum BiliURLSessionFactory {
         configuration.networkServiceType = .video
         configuration.timeoutIntervalForRequest = 4
         configuration.timeoutIntervalForResource = 18
+        configuration.httpAdditionalHeaders = playbackHeaders(referer: "https://www.bilibili.com/", cookieHeader: nil)
         return configuration
     }
 
@@ -337,6 +382,13 @@ nonisolated enum BiliURLSessionFactory {
         configuration.networkServiceType = .responsiveData
         configuration.timeoutIntervalForRequest = 0.8
         configuration.timeoutIntervalForResource = 2
+        configuration.httpAdditionalHeaders = [
+            "User-Agent": mobileUserAgent,
+            "Accept": "*/*",
+            "Accept-Encoding": responseCompressionHeader,
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": "https://www.bilibili.com/"
+        ]
         return URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
     }
 
@@ -360,7 +412,18 @@ nonisolated enum BiliURLSessionFactory {
             "Origin": "https://www.bilibili.com",
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9",
+            "Accept-Encoding": responseCompressionHeader,
             "Cookie": cookieHeader
+        ]
+    }
+
+    static func imageHeaders() -> [String: String] {
+        [
+            "Referer": "https://www.bilibili.com/",
+            "User-Agent": imageUserAgent,
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Encoding": responseCompressionHeader,
+            "Accept-Language": "zh-CN,zh;q=0.9"
         ]
     }
 
@@ -368,7 +431,9 @@ nonisolated enum BiliURLSessionFactory {
         var headers = [
             "User-Agent": mobileUserAgent,
             "Referer": referer,
-            "Accept": "*/*"
+            "Accept": "*/*",
+            "Accept-Encoding": responseCompressionHeader,
+            "Accept-Language": "zh-CN,zh;q=0.9"
         ]
         if let cookieHeader, !cookieHeader.isEmpty {
             headers["Cookie"] = cookieHeader
@@ -382,6 +447,365 @@ nonisolated struct URLCacheStatistics: Sendable {
     let memoryCapacity: Int
     let diskUsage: Int
     let diskCapacity: Int
+}
+
+nonisolated struct BiliNetworkRetryPolicy: Sendable {
+    let label: String
+    let attempts: Int
+    let baseDelayNanoseconds: UInt64
+    let maxDelayNanoseconds: UInt64
+    let jitterNanoseconds: UInt64
+    let retryStatusCodes: Set<Int>
+    let retryMethods: Set<String>
+    let retriesEmptyData: Bool
+
+    init(
+        label: String = "custom",
+        attempts: Int,
+        baseDelayNanoseconds: UInt64,
+        maxDelayNanoseconds: UInt64,
+        jitterNanoseconds: UInt64,
+        retryStatusCodes: Set<Int> = Self.defaultRetryStatusCodes,
+        retryMethods: Set<String> = Self.defaultRetryMethods,
+        retriesEmptyData: Bool = false
+    ) {
+        self.label = label
+        self.attempts = max(1, attempts)
+        self.baseDelayNanoseconds = baseDelayNanoseconds
+        self.maxDelayNanoseconds = max(baseDelayNanoseconds, maxDelayNanoseconds)
+        self.jitterNanoseconds = jitterNanoseconds
+        self.retryStatusCodes = retryStatusCodes
+        self.retryMethods = retryMethods
+        self.retriesEmptyData = retriesEmptyData
+    }
+
+    static let api = BiliNetworkRetryPolicy(
+        label: "api",
+        attempts: 2,
+        baseDelayNanoseconds: 120_000_000,
+        maxDelayNanoseconds: 260_000_000,
+        jitterNanoseconds: 60_000_000,
+        retriesEmptyData: true
+    )
+
+    static let image = BiliNetworkRetryPolicy(
+        label: "image",
+        attempts: 2,
+        baseDelayNanoseconds: 70_000_000,
+        maxDelayNanoseconds: 180_000_000,
+        jitterNanoseconds: 50_000_000
+    )
+
+    static let playbackProbe = BiliNetworkRetryPolicy(
+        label: "playbackProbe",
+        attempts: 2,
+        baseDelayNanoseconds: 45_000_000,
+        maxDelayNanoseconds: 120_000_000,
+        jitterNanoseconds: 35_000_000
+    )
+
+    static let playbackShortResource = BiliNetworkRetryPolicy(
+        label: "playbackShortResource",
+        attempts: 2,
+        baseDelayNanoseconds: 90_000_000,
+        maxDelayNanoseconds: 220_000_000,
+        jitterNanoseconds: 60_000_000,
+        retriesEmptyData: true
+    )
+
+    private static let defaultRetryMethods: Set<String> = ["GET", "HEAD", "OPTIONS"]
+    private static let defaultRetryStatusCodes: Set<Int> = [
+        408, 425, 429, 500, 502, 503, 504, 522, 523, 524
+    ]
+
+    func delayNanoseconds(afterFailureAt attemptIndex: Int) -> UInt64 {
+        let multiplier = UInt64(max(attemptIndex + 1, 1))
+        let scaledDelay = min(maxDelayNanoseconds, baseDelayNanoseconds * multiplier)
+        let jitter = jitterNanoseconds > 0 ? UInt64.random(in: 0...jitterNanoseconds) : 0
+        return min(maxDelayNanoseconds, scaledDelay + jitter)
+    }
+
+    func canRetry(_ request: URLRequest) -> Bool {
+        let method = (request.httpMethod ?? "GET").uppercased()
+        return retryMethods.contains(method)
+    }
+
+    func shouldRetry(statusCode: Int) -> Bool {
+        retryStatusCodes.contains(statusCode)
+    }
+}
+
+nonisolated enum BiliNetworkRetry {
+    static func data(
+        session: URLSession,
+        request: URLRequest,
+        priority: Float = URLSessionTask.defaultPriority,
+        policy: BiliNetworkRetryPolicy
+    ) async throws -> (Data, URLResponse) {
+        try await data(
+            sessionProvider: { session },
+            request: request,
+            priority: priority,
+            policy: policy
+        )
+    }
+
+    static func data(
+        sessionProvider: @escaping @Sendable () -> URLSession,
+        request: URLRequest,
+        priority: Float = URLSessionTask.defaultPriority,
+        policy: BiliNetworkRetryPolicy
+    ) async throws -> (Data, URLResponse) {
+        let canRetryRequest = policy.canRetry(request)
+        var lastError: Error?
+        let startedAt = Date()
+
+        for attempt in 0..<policy.attempts {
+            try Task.checkCancellation()
+            do {
+                let (data, response) = try await dataOnce(
+                    session: sessionProvider(),
+                    request: request,
+                    priority: priority
+                )
+                if canRetryRequest,
+                   attempt < policy.attempts - 1,
+                   let reason = retryReason(data: data, response: response, policy: policy) {
+                    let delay = policy.delayNanoseconds(afterFailureAt: attempt)
+                    logRetry(
+                        policy: policy,
+                        request: request,
+                        attempt: attempt,
+                        reason: reason,
+                        startedAt: startedAt,
+                        delayNanoseconds: delay
+                    )
+                    try await sleepBeforeRetry(delayNanoseconds: delay)
+                    continue
+                }
+                return (data, response)
+            } catch {
+                guard canRetryRequest,
+                      attempt < policy.attempts - 1,
+                      let reason = retryReason(error: error)
+                else {
+                    if !(error is CancellationError),
+                       (error as? URLError)?.code != .cancelled {
+                        logFinalFailure(
+                            policy: policy,
+                            request: request,
+                            attempt: attempt,
+                            error: error,
+                            startedAt: startedAt
+                        )
+                    }
+                    throw error
+                }
+                lastError = error
+                let delay = policy.delayNanoseconds(afterFailureAt: attempt)
+                logRetry(
+                    policy: policy,
+                    request: request,
+                    attempt: attempt,
+                    reason: reason,
+                    startedAt: startedAt,
+                    delayNanoseconds: delay
+                )
+                try await sleepBeforeRetry(delayNanoseconds: delay)
+            }
+        }
+
+        throw lastError ?? URLError(.unknown)
+    }
+
+    private static func dataOnce(
+        session: URLSession,
+        request: URLRequest,
+        priority: Float
+    ) async throws -> (Data, URLResponse) {
+        let taskBox = BiliNetworkURLSessionTaskBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.dataTask(with: request) { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let data, let response else {
+                        continuation.resume(throwing: URLError(.badServerResponse))
+                        return
+                    }
+                    continuation.resume(returning: (data, response))
+                }
+                task.priority = priority
+                taskBox.task = task
+                task.resume()
+            }
+        } onCancel: {
+            taskBox.cancel()
+        }
+    }
+
+    private static func retryReason(
+        data: Data,
+        response: URLResponse,
+        policy: BiliNetworkRetryPolicy
+    ) -> String? {
+        if policy.retriesEmptyData, data.isEmpty {
+            return "emptyData"
+        }
+        guard let httpResponse = response as? HTTPURLResponse else { return nil }
+        guard policy.shouldRetry(statusCode: httpResponse.statusCode) else { return nil }
+        return "status=\(httpResponse.statusCode)"
+    }
+
+    private static func retryReason(error: Error) -> String? {
+        if error is CancellationError {
+            return nil
+        }
+        guard let urlError = error as? URLError else {
+            return nil
+        }
+        switch urlError.code {
+        case .cancelled:
+            return nil
+        case .timedOut,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .dnsLookupFailed,
+             .networkConnectionLost,
+             .notConnectedToInternet,
+             .cannotLoadFromNetwork,
+             .badServerResponse,
+             .resourceUnavailable:
+            return "urlError=\(urlError.code.rawValue)"
+        default:
+            return nil
+        }
+    }
+
+    private static func logRetry(
+        policy: BiliNetworkRetryPolicy,
+        request: URLRequest,
+        attempt: Int,
+        reason: String,
+        startedAt: Date,
+        delayNanoseconds: UInt64
+    ) {
+        let delayMilliseconds = Double(delayNanoseconds) / 1_000_000
+        PlayerMetricsLog.logger.info(
+            "networkRetry policy=\(policy.label, privacy: .public) attempt=\(attempt + 1, privacy: .public)/\(policy.attempts, privacy: .public) reason=\(reason, privacy: .public) method=\(request.httpMethod ?? "GET", privacy: .public) host=\(request.url?.host ?? "-", privacy: .public) path=\(diagnosticPath(for: request.url), privacy: .public) elapsedMs=\(elapsedMilliseconds(since: startedAt), privacy: .public) delayMs=\(Int(delayMilliseconds.rounded()), privacy: .public)"
+        )
+    }
+
+    private static func logFinalFailure(
+        policy: BiliNetworkRetryPolicy,
+        request: URLRequest,
+        attempt: Int,
+        error: Error,
+        startedAt: Date
+    ) {
+        PlayerMetricsLog.logger.error(
+            "networkRetryFinalFailure policy=\(policy.label, privacy: .public) attempt=\(attempt + 1, privacy: .public)/\(policy.attempts, privacy: .public) method=\(request.httpMethod ?? "GET", privacy: .public) host=\(request.url?.host ?? "-", privacy: .public) path=\(diagnosticPath(for: request.url), privacy: .public) elapsedMs=\(elapsedMilliseconds(since: startedAt), privacy: .public) error=\(String(describing: error), privacy: .public)"
+        )
+    }
+
+    private static func elapsedMilliseconds(since start: Date) -> Int {
+        max(0, Int((Date().timeIntervalSince(start) * 1000).rounded()))
+    }
+
+    private static func diagnosticPath(for url: URL?) -> String {
+        guard let url else { return "-" }
+        if url.host?.contains("bilibili.com") == true {
+            switch url.path {
+            case "/x/player/playurl", "/x/player/wbi/playurl":
+                return "playurl"
+            case "/x/web-interface/view":
+                return "detail"
+            case "/x/web-interface/archive/related":
+                return "related"
+            default:
+                break
+            }
+        }
+        return url.path.isEmpty ? "/" : url.path
+    }
+
+    private static func sleepBeforeRetry(
+        delayNanoseconds: UInt64
+    ) async throws {
+        guard delayNanoseconds > 0 else { return }
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+    }
+}
+
+private nonisolated final class BiliNetworkURLSessionTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _task: URLSessionTask?
+    private var isCancelled = false
+
+    var task: URLSessionTask? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _task
+        }
+        set {
+            lock.lock()
+            _task = newValue
+            let shouldCancel = isCancelled
+            lock.unlock()
+            if shouldCancel {
+                newValue?.cancel()
+            }
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let task = _task
+        lock.unlock()
+        task?.cancel()
+    }
+}
+
+nonisolated final class BiliPlaybackNetworkSessionPool: @unchecked Sendable {
+    static let shared = BiliPlaybackNetworkSessionPool()
+
+    private let lock = NSLock()
+    private var dataSession = BiliURLSessionFactory.makePlaybackDataSession()
+    private var probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
+
+    private init() {}
+
+    func playbackDataSession() -> URLSession {
+        lock.lock()
+        let session = dataSession
+        lock.unlock()
+        return session
+    }
+
+    func playbackProbeSession() -> URLSession {
+        lock.lock()
+        let session = probeSession
+        lock.unlock()
+        return session
+    }
+
+    func refreshForNetworkPathChange() {
+        let oldDataSession: URLSession
+        let oldProbeSession: URLSession
+        lock.lock()
+        oldDataSession = dataSession
+        oldProbeSession = probeSession
+        dataSession = BiliURLSessionFactory.makePlaybackDataSession()
+        probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
+        lock.unlock()
+
+        oldDataSession.finishTasksAndInvalidate()
+        oldProbeSession.finishTasksAndInvalidate()
+    }
 }
 
 nonisolated struct BiliAPIResponseCachePolicy: Sendable {

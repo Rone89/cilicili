@@ -79,6 +79,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     let title: String
     var onPlaybackFailure: ((String?) -> Void)?
     var onBufferingPressure: ((Int) -> Void)?
+    var onFirstFramePresented: (@MainActor () -> Void)?
 
     private(set) var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval?
@@ -226,6 +227,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         speedBoostRecoveryTask?.cancel()
         scrubSeekUIReleaseTask?.cancel()
         onPlaybackFailure = nil
+        onFirstFramePresented = nil
         timeObserver?.invalidate()
         let engine = engine
         Task { @MainActor in
@@ -258,6 +260,19 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     var currentProgress: Double {
         playbackClock.progress
+    }
+
+    func makePlaybackTransitionSnapshotView() -> UIView? {
+        if let image = engine.currentVideoFrameImage() {
+            let imageView = UIImageView(image: image)
+            imageView.backgroundColor = .black
+            imageView.contentMode = .scaleAspectFit
+            imageView.clipsToBounds = true
+            imageView.isOpaque = true
+            imageView.frame = surfaceView?.bounds ?? CGRect(origin: .zero, size: image.size)
+            return imageView
+        }
+        return surfaceView?.makePlaybackTransitionSnapshotView()
     }
 
     func attachSurface(_ view: VideoSurfaceContainerView, prefersNativePlaybackControls: Bool = true) {
@@ -725,6 +740,30 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         rescheduleTimeObserverIfNeeded()
     }
 
+    func prepareForVisualPlaybackTransition() {
+        guard !isTerminated else { return }
+        silenceAudioForNavigationIfNeeded()
+        ActivePlaybackCoordinator.shared.deactivate(self)
+        wantsAutoplay = false
+        cancelDeferredBufferingIndicator()
+        cancelStartupResumeRecoveryTracking()
+        cancelSeekRecoveryTracking()
+        playbackRecoveryWatchdogTask?.cancel()
+        playbackRecoveryWatchdogTask = nil
+        isPreparing = false
+        isBuffering = false
+        if engine.hasMedia {
+            let snapshot = engine.snapshot(durationHint: durationHint)
+            isPlaying = snapshot.isPlaying
+            playbackPhase = snapshot.isPlaying ? .playing : .paused
+        } else {
+            isPlaying = false
+            playbackPhase = .idle
+        }
+        invalidatePictureInPicturePlaybackState()
+        rescheduleTimeObserverIfNeeded()
+    }
+
     func restoreAudioAfterCancelledNavigation() {
         guard !isTerminated, let navigationAudioSuspension else { return }
         self.navigationAudioSuspension = nil
@@ -795,6 +834,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         wantsAutoplay = false
         onPlaybackFailure = nil
         onBufferingPressure = nil
+        onFirstFramePresented = nil
         engine.onPlaybackStateChange = nil
         engine.onPlaybackIntentChange = nil
         engine.onLoadingProgressChange = nil
@@ -1911,12 +1951,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func markPlaybackSurfaceReady() {
+        let shouldNotifyFirstFrame = !hasPresentedPlayback
         cancelDeferredBufferingIndicator()
         playbackRecoveryWatchdogTask?.cancel()
         playbackRecoveryWatchdogTask = nil
         recoveryAttemptCount = 0
         isPlaybackSurfaceReady = true
         hasPresentedPlayback = true
+        if shouldNotifyFirstFrame {
+            onFirstFramePresented?()
+        }
         loadingProgress = 1
         isPreparing = false
         isBuffering = false

@@ -68,9 +68,9 @@ enum PlaybackNetworkAddressFamilyPreference: String, CaseIterable, Identifiable,
         case .automatic:
             return "由系统网络栈自动选择可用协议族。"
         case .ipv4Only:
-            return "CDN 自动推荐只选择支持 IPv4 的线路，适合 IPv4-only 设备。"
+            return "CDN 测速只选择支持 IPv4 的线路，适合 IPv4-only 设备。"
         case .ipv6Only:
-            return "CDN 自动推荐只选择支持 IPv6 的线路，适合 IPv6 网络环境。"
+            return "CDN 测速只选择支持 IPv6 的线路，适合 IPv6 网络环境。"
         }
     }
 
@@ -186,7 +186,7 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
     nonisolated var detail: String {
         switch self {
         case .automatic:
-            return "优先使用最近测速推荐，缺失或过期时保留接口返回顺序"
+            return "保留接口下发的播放地址候选，并根据真实播放记录与启动探测微调排序"
         case .baseURL:
             return "优先使用接口返回的原始地址"
         case .backupURL:
@@ -420,26 +420,46 @@ nonisolated final class PlaybackURLPreferenceStore: @unchecked Sendable {
     }
 
     func orderedURLs(_ urls: [URL]) -> [URL] {
+        let urls = urls.removingDuplicateURLs()
+        guard urls.count > 1 else { return urls }
         loadStoreIfNeeded()
         let scoredURLs = lock.withLock {
             urls.enumerated().map { index, url -> (index: Int, url: URL, score: Double?) in
-                guard let host = url.host else { return (index, url, nil) }
-                return (index, url, scores[scoreKey(for: host)]?.rankScore)
+                guard let host = url.host,
+                      let score = scores[scoreKey(for: host)],
+                      score.isUsefulForAutomaticOrdering
+                else {
+                    return (index, url, nil)
+                }
+                return (index, url, score.rankScore)
             }
         }
-        guard scoredURLs.contains(where: { $0.score != nil }) else { return urls }
+        let scoredCount = scoredURLs.filter { $0.score != nil }.count
+        let shouldDemotePrimary = lock.withLock { () -> Bool in
+            guard let primaryHost = urls.first?.host,
+                  let score = scores[scoreKey(for: primaryHost)]
+            else { return false }
+            return score.shouldDemoteInAutomaticOrdering
+        }
+        guard scoredCount >= 2 || shouldDemotePrimary else { return urls }
         return scoredURLs
             .sorted { lhs, rhs in
                 switch (lhs.score, rhs.score) {
                 case let (left?, right?):
-                    if abs(left - right) > 0.01 {
+                    if abs(left - right) > 60 {
                         return left < right
                     }
                     return lhs.index < rhs.index
                 case (.some, .none):
-                    return true
-                case (.none, .some):
+                    guard lhs.index == 0, shouldDemotePrimary else {
+                        return lhs.index < rhs.index
+                    }
                     return false
+                case (.none, .some):
+                    guard rhs.index == 0, shouldDemotePrimary else {
+                        return lhs.index < rhs.index
+                    }
+                    return true
                 case (.none, .none):
                     return lhs.index < rhs.index
                 }
@@ -703,6 +723,24 @@ nonisolated final class PlaybackURLPreferenceStore: @unchecked Sendable {
             let throughputBonus = min(averageKilobytesPerSecond / 256.0, 300)
             let repeatedFailurePenalty = Double(min(failureCount, 8)) * 85
             return averageMilliseconds + failureRate * 1_200 + repeatedFailurePenalty - throughputBonus
+        }
+
+        var attemptCount: Int {
+            successCount + failureCount
+        }
+
+        var failureRate: Double {
+            guard attemptCount > 0 else { return 0 }
+            return Double(failureCount) / Double(attemptCount)
+        }
+
+        var isUsefulForAutomaticOrdering: Bool {
+            attemptCount >= 2 || failureCount > 0
+        }
+
+        var shouldDemoteInAutomaticOrdering: Bool {
+            guard attemptCount >= 2 else { return false }
+            return failureRate >= 0.45 || (failureCount >= 2 && successCount == 0)
         }
 
         mutating func record(

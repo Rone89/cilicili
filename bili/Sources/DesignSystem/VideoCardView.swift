@@ -130,9 +130,11 @@ struct VideoCoverGlassBadge<Content: View>: View {
 
 struct VideoCoverDurationBadge: View {
     let duration: String
+    private let maxWidth: CGFloat
 
-    init(_ duration: String) {
+    init(_ duration: String, maxWidth: CGFloat = 96) {
         self.duration = duration
+        self.maxWidth = maxWidth
     }
 
     var body: some View {
@@ -150,7 +152,8 @@ struct VideoCoverDurationBadge: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(.black.opacity(0.58))
             }
-            .frame(maxWidth: 96, alignment: .trailing)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: maxWidth, alignment: .trailing)
             .shadow(color: .black.opacity(0.42), radius: 1.0, x: 0, y: 1)
             .shadow(color: .black.opacity(0.16), radius: 2.6, x: 0, y: 1.4)
             .clipped()
@@ -268,6 +271,211 @@ struct AdaptiveVideoCoverImage: View {
                 scale: displayScale,
                 maximumPixelLength: maximumPixelLength
             )
+        }
+    }
+}
+
+struct VideoCompactListRow: View, Equatable {
+    enum AuthorStyle: Equatable {
+        case plain
+        case icon(String)
+    }
+
+    enum MetadataStyle: Equatable {
+        case related
+        case search
+    }
+
+    let display: VideoCardDisplayModel
+    let coverSize: CGSize
+    var coverMaximumPixelLength: Int = 1280
+    var coverCornerRadius: CGFloat = 10
+    var showsCoverBorder = false
+    var titleMinHeight: CGFloat = 36
+    var authorStyle: AuthorStyle = .plain
+    var metadataStyle: MetadataStyle = .related
+
+    static func == (lhs: VideoCompactListRow, rhs: VideoCompactListRow) -> Bool {
+        lhs.display == rhs.display
+            && lhs.coverSize == rhs.coverSize
+            && lhs.coverMaximumPixelLength == rhs.coverMaximumPixelLength
+            && lhs.coverCornerRadius == rhs.coverCornerRadius
+            && lhs.showsCoverBorder == rhs.showsCoverBorder
+            && lhs.titleMinHeight == rhs.titleMinHeight
+            && lhs.authorStyle == rhs.authorStyle
+            && lhs.metadataStyle == rhs.metadataStyle
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VideoCompactCover(
+                display: display,
+                size: coverSize,
+                maximumPixelLength: coverMaximumPixelLength,
+                cornerRadius: coverCornerRadius,
+                showsBorder: showsCoverBorder
+            )
+
+            VStack(alignment: .leading, spacing: 5) {
+                StableVideoTitleText(display.title, style: .related, lineLimit: 2)
+                    .frame(minHeight: titleMinHeight, alignment: .topLeading)
+
+                authorLabel
+
+                metadataRow
+            }
+            .frame(maxWidth: .infinity, minHeight: coverSize.height, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(display.title)
+    }
+
+    @ViewBuilder
+    private var authorLabel: some View {
+        switch authorStyle {
+        case .plain:
+            Text(display.authorName)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        case .icon(let systemImage):
+            Label(display.authorName, systemImage: systemImage)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var metadataRow: some View {
+        switch metadataStyle {
+        case .related:
+            HStack(spacing: 4) {
+                if !display.viewText.isEmpty {
+                    Label(display.viewText, systemImage: "play.fill")
+                        .labelStyle(.titleAndIcon)
+                }
+
+                if !display.publishTimeText.isEmpty {
+                    Text(display.viewText.isEmpty ? display.publishTimeText : "· \(display.publishTimeText)")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        case .search:
+            HStack(spacing: 7) {
+                VideoCompactMetadataLabel(text: display.viewText, systemImage: "play.rectangle")
+                VideoCompactMetadataLabel(text: display.publishTimeText, systemImage: "clock")
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+    }
+}
+
+struct VideoCompactListPlaceholderRow: View {
+    let coverSize: CGSize
+    var fill: Color = Color(.secondarySystemGroupedBackground)
+    var isLoading = false
+    var cornerRadius: CGFloat = 10
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(fill)
+                .frame(width: coverSize.width, height: coverSize.height)
+
+            VStack(alignment: .leading, spacing: 7) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(fill)
+                    .frame(height: 15)
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(fill)
+                    .frame(width: 156, height: 15)
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(fill)
+                    .frame(width: 118, height: 12)
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(fill)
+                    .frame(width: 92, height: 11)
+            }
+            .frame(maxWidth: .infinity, minHeight: coverSize.height, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .redacted(reason: .placeholder)
+        .overlay(alignment: .center) {
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.regular)
+                    .tint(.secondary)
+                    .padding(10)
+                    .accessibilityLabel("正在加载视频列表")
+            }
+        }
+    }
+}
+
+private struct VideoCompactCover: View, Equatable {
+    let display: VideoCardDisplayModel
+    let size: CGSize
+    let maximumPixelLength: Int
+    let cornerRadius: CGFloat
+    let showsBorder: Bool
+    private let badgeInset: CGFloat = 7
+
+    static func == (lhs: VideoCompactCover, rhs: VideoCompactCover) -> Bool {
+        lhs.display == rhs.display
+            && lhs.size == rhs.size
+            && lhs.maximumPixelLength == rhs.maximumPixelLength
+            && lhs.cornerRadius == rhs.cornerRadius
+            && lhs.showsBorder == rhs.showsBorder
+    }
+
+    var body: some View {
+        AdaptiveVideoCoverImage(
+            display: display,
+            style: .exactCrop,
+            fixedSize: size,
+            maximumPixelLength: maximumPixelLength
+        )
+        .frame(width: size.width, height: size.height)
+        .overlay(alignment: .bottomTrailing) {
+            if !display.durationText.isEmpty {
+                VideoCoverDurationBadge(
+                    display.durationText,
+                    maxWidth: max(size.width - badgeInset * 2, 1)
+                )
+                .padding(badgeInset)
+            }
+        }
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            if showsBorder {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.quaternary, lineWidth: 0.7)
+            }
+        }
+        .mediaShadow(.subtle)
+    }
+}
+
+private struct VideoCompactMetadataLabel: View {
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        if !text.isEmpty {
+            Label(text, systemImage: systemImage)
+                .labelStyle(.titleAndIcon)
         }
     }
 }

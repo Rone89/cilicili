@@ -191,6 +191,10 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         activeEngine.snapshot(durationHint: durationHint)
     }
 
+    func currentVideoFrameImage() -> UIImage? {
+        activeEngine.currentVideoFrameImage()
+    }
+
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? {
         activeEngine.pictureInPictureContentSource()
     }
@@ -344,6 +348,11 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
         displayLayer.videoGravity = videoGravity
         displayLayer.backgroundColor = UIColor.black.cgColor
         displayLayer.preventsDisplaySleepDuringVideoPlayback = true
+        displayLayer.actions = [
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "frame": NSNull()
+        ]
         synchronizer.addRenderer(videoRenderer)
         synchronizer.addRenderer(audioRenderer)
         observeVideoRendererFailures()
@@ -1749,7 +1758,6 @@ nonisolated private final class NativeDASHResourceLoader: NSObject, AVAssetResou
     private let headers: [String: String]
     private let mediaType: AVMediaType
     private let lock = NSLock()
-    private let session = BiliURLSessionFactory.makePlaybackDataSession()
     private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var bootstrapWarmupTask: Task<Void, Never>?
     private var knownContentLength: Int64?
@@ -1774,7 +1782,6 @@ nonisolated private final class NativeDASHResourceLoader: NSObject, AVAssetResou
     deinit {
         cancelAll()
         cancelBootstrapWarmup()
-        session.invalidateAndCancel()
     }
 
     func startBootstrapWarmup(_ ranges: [HTTPByteRange]) {
@@ -2106,7 +2113,11 @@ nonisolated private final class NativeDASHResourceLoader: NSObject, AVAssetResou
         request.networkServiceType = .video
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await BiliNetworkRetry.data(
+            sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackDataSession() },
+            request: request,
+            policy: .playbackShortResource
+        )
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode)
         else {
@@ -2244,9 +2255,6 @@ nonisolated private final class NativeDASHResourceLoader: NSObject, AVAssetResou
         tasks.removeAll()
         lock.unlock()
         currentTasks.forEach { $0.cancel() }
-        session.getAllTasks { tasks in
-            tasks.forEach { $0.cancel() }
-        }
     }
 
     private static func contentLength(

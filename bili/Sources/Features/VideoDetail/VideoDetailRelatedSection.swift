@@ -19,53 +19,22 @@ struct VideoDetailRelatedSection: View {
 
     var body: some View {
         let relatedItems = store.relatedItems
-        let lastRelatedVideoID = relatedItems.last?.id
-        let horizontalPadding: CGFloat = 12
-        let contentWidth = max(layoutWidth - horizontalPadding * 2, 1)
-        let coverWidth = min(max(contentWidth * 0.40, 132), 160)
+        let layout = VideoDetailRelatedListLayout(layoutWidth: layoutWidth)
 
         VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                Text("相关推荐")
-                    .font(.headline)
-
-                Spacer()
-
-                if store.state.isLoading {
-                    NativeLoadingIndicator()
-                        .controlSize(.small)
-                        .tint(.secondary)
-                }
-            }
-            .padding(.horizontal, horizontalPadding)
+            VideoDetailRelatedHeader(isLoading: store.state.isLoading)
+                .padding(.horizontal, layout.horizontalPadding)
 
             if !relatedItems.isEmpty {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(relatedItems) { item in
-                        VStack(spacing: 0) {
-                            VideoRouteLink(item.video) {
-                                RelatedVideoListRow(
-                                    item: item,
-                                    coverWidth: coverWidth
-                                )
-                                .equatable()
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear {
-                                beginRelatedPreloadIfNeeded(item.video)
-                            }
-
-                            if item.id != lastRelatedVideoID {
-                                Divider()
-                                    .padding(.leading, coverWidth + 10)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, horizontalPadding)
+                VideoDetailRelatedList(
+                    items: relatedItems,
+                    layout: layout,
+                    beginPreload: beginRelatedPreloadIfNeeded
+                )
+                .padding(.horizontal, layout.horizontalPadding)
                 .transition(.opacity)
             } else {
-                relatedPlaceholderContent(coverWidth: coverWidth, horizontalPadding: horizontalPadding)
+                relatedPlaceholderContent(layout: layout)
             }
         }
         .frame(width: layoutWidth, alignment: .leading)
@@ -96,15 +65,15 @@ struct VideoDetailRelatedSection: View {
                 preferredQuality: preferredQuality,
                 cdnPreference: cdnPreference,
                 priority: .background,
-                warmsMedia: true,
-                mediaWarmupDelay: 0.25,
+                warmsMedia: false,
+                mediaWarmupDelay: 0,
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
     }
 
     @ViewBuilder
-    private func relatedPlaceholderContent(coverWidth: CGFloat, horizontalPadding: CGFloat) -> some View {
+    private func relatedPlaceholderContent(layout: VideoDetailRelatedListLayout) -> some View {
         if case .failed(let message) = store.state {
             RelatedVideoRetryState(
                 message: store.lastLoadTimedOut ? "相关推荐加载超时，可以稍后重试。" : message
@@ -113,21 +82,14 @@ struct VideoDetailRelatedSection: View {
                     await retryRelated()
                 }
             }
-            .padding(.horizontal, horizontalPadding)
+            .padding(.horizontal, layout.horizontalPadding)
             .padding(.vertical, 16)
         } else {
-            VStack(spacing: 0) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RelatedVideoListPlaceholderRow(
-                        coverWidth: coverWidth,
-                        isLoading: store.state.isLoading
-                    )
-
-                    Divider()
-                        .padding(.leading, coverWidth + 10)
-                }
-            }
-            .padding(.horizontal, horizontalPadding)
+            VideoDetailRelatedPlaceholderList(
+                layout: layout,
+                isLoading: store.state.isLoading
+            )
+            .padding(.horizontal, layout.horizontalPadding)
             .allowsHitTesting(false)
         }
     }
@@ -137,27 +99,14 @@ struct InitialRelatedSection: View {
     let layoutWidth: CGFloat
 
     var body: some View {
-        let horizontalPadding: CGFloat = 12
-        let contentWidth = max(layoutWidth - horizontalPadding * 2, 1)
-        let coverWidth = min(max(contentWidth * 0.40, 132), 160)
+        let layout = VideoDetailRelatedListLayout(layoutWidth: layoutWidth)
 
         VStack(alignment: .leading, spacing: 9) {
-            Text("相关推荐")
-                .font(.headline)
-                .padding(.horizontal, horizontalPadding)
+            VideoDetailRelatedHeader(isLoading: false)
+                .padding(.horizontal, layout.horizontalPadding)
 
-            VStack(spacing: 0) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RelatedVideoListPlaceholderRow(
-                        coverWidth: coverWidth,
-                        isLoading: true
-                    )
-
-                    Divider()
-                        .padding(.leading, coverWidth + 10)
-                }
-            }
-            .padding(.horizontal, horizontalPadding)
+            VideoDetailRelatedPlaceholderList(layout: layout, isLoading: true)
+                .padding(.horizontal, layout.horizontalPadding)
         }
         .frame(width: layoutWidth, alignment: .leading)
         .padding(.top, 1)
@@ -173,140 +122,117 @@ struct NativeLoadingIndicator: View {
     }
 }
 
-private struct RelatedVideoListRow: View, Equatable {
-    let item: VideoDetailRelatedDisplayItem
-    let coverWidth: CGFloat
-    @Environment(\.displayScale) private var displayScale
+private struct VideoDetailRelatedListLayout {
+    let layoutWidth: CGFloat
+    let horizontalPadding: CGFloat = 12
 
-    static func == (lhs: RelatedVideoListRow, rhs: RelatedVideoListRow) -> Bool {
-        lhs.item == rhs.item && lhs.coverWidth == rhs.coverWidth
+    var contentWidth: CGFloat {
+        max(layoutWidth - horizontalPadding * 2, 1)
     }
 
-    private var display: VideoCardDisplayModel {
-        item.display
+    var coverWidth: CGFloat {
+        min(max(contentWidth * 0.40, 132), 160)
     }
 
-    private var coverHeight: CGFloat {
-        coverWidth * 9 / 16
+    var coverSize: CGSize {
+        CGSize(width: coverWidth, height: coverWidth * 9 / 16)
     }
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            cover
-
-            VStack(alignment: .leading, spacing: 5) {
-                StableVideoTitleText(display.title, style: .related, lineLimit: 2)
-                    .frame(minHeight: 36, alignment: .topLeading)
-
-                Text(display.authorName)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 4) {
-                    if !display.viewText.isEmpty {
-                        Label(display.viewText, systemImage: "play.fill")
-                            .labelStyle(.titleAndIcon)
-                    }
-
-                    if !display.publishTimeText.isEmpty {
-                        Text(display.viewText.isEmpty ? display.publishTimeText : "· \(display.publishTimeText)")
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, minHeight: coverHeight, alignment: .topLeading)
-        }
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(display.title)
-    }
-
-    private var cover: some View {
-        ZStack(alignment: .bottomTrailing) {
-            let size = CGSize(width: coverWidth, height: coverHeight)
-            let maximumPixelLength = PlaybackEnvironment.current.shouldPreferConservativePlayback ? 360 : 480
-            CachedRemoteImage(
-                url: display.coverThumbnailURL(
-                    fitting: size,
-                    scale: displayScale,
-                    maximumPixelLength: maximumPixelLength
-                ),
-                fallbackURL: display.sourceCoverURL,
-                targetPixelSize: display.coverTargetPixelSize(
-                    fitting: size,
-                    scale: displayScale,
-                    maximumPixelLength: maximumPixelLength
-                )
-            ) { image in
-                image.resizable().scaledToFill()
-            } phasePlaceholder: { phase, _ in
-                BiliMediaPlaceholder(
-                    style: .video,
-                    phase: phase,
-                    showsSpinner: phase == .loading,
-                    iconSize: 14
-                )
-            }
-
-            if !display.durationText.isEmpty {
-                VideoCoverDurationBadge(display.durationText)
-                    .padding(6)
-            }
-        }
-        .frame(width: coverWidth, height: coverHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .mediaShadow(.subtle)
+    var dividerLeadingPadding: CGFloat {
+        coverWidth + 10
     }
 }
 
-private struct RelatedVideoListPlaceholderRow: View {
-    let coverWidth: CGFloat
+private struct VideoDetailRelatedHeader: View {
     let isLoading: Bool
 
-    private var coverHeight: CGFloat {
-        coverWidth * 9 / 16
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("相关推荐")
+                .font(.headline)
+
+            Spacer()
+
+            if isLoading {
+                NativeLoadingIndicator()
+                    .controlSize(.small)
+                    .tint(.secondary)
+            }
+        }
+    }
+}
+
+private struct VideoDetailRelatedList: View {
+    let items: [VideoDetailRelatedDisplayItem]
+    let layout: VideoDetailRelatedListLayout
+    let beginPreload: (VideoItem) -> Void
+
+    var body: some View {
+        let lastRelatedVideoID = items.last?.id
+
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(items) { item in
+                VStack(spacing: 0) {
+                    VideoRouteLink(item.video) {
+                        VideoDetailRelatedRow(
+                            item: item,
+                            coverSize: layout.coverSize
+                        )
+                        .equatable()
+                    }
+                    .buttonStyle(.plain)
+                    .onAppear {
+                        beginPreload(item.video)
+                    }
+
+                    if item.id != lastRelatedVideoID {
+                        Divider()
+                            .padding(.leading, layout.dividerLeadingPadding)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct VideoDetailRelatedRow: View, Equatable {
+    let item: VideoDetailRelatedDisplayItem
+    let coverSize: CGSize
+
+    static func == (lhs: VideoDetailRelatedRow, rhs: VideoDetailRelatedRow) -> Bool {
+        lhs.item == rhs.item && lhs.coverSize == rhs.coverSize
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.videoDetailSecondarySurface)
-                .frame(width: coverWidth, height: coverHeight)
-
-            VStack(alignment: .leading, spacing: 7) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.videoDetailSecondarySurface)
-                    .frame(height: 15)
-
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.videoDetailSecondarySurface)
-                    .frame(width: 156, height: 15)
-
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.videoDetailSecondarySurface)
-                    .frame(width: 118, height: 12)
-
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.videoDetailSecondarySurface)
-                    .frame(width: 92, height: 11)
-            }
-            .frame(maxWidth: .infinity, minHeight: coverHeight, alignment: .topLeading)
-        }
+        VideoCompactListRow(
+            display: item.display,
+            coverSize: coverSize,
+            coverMaximumPixelLength: PlaybackEnvironment.current.shouldPreferConservativePlayback ? 360 : 480,
+            coverCornerRadius: 10,
+            titleMinHeight: 36,
+            authorStyle: .plain,
+            metadataStyle: .related
+        )
         .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .redacted(reason: .placeholder)
-        .overlay(alignment: .center) {
-            if isLoading {
-                NativeLoadingIndicator()
-                    .controlSize(.regular)
-                    .tint(.secondary)
-                    .padding(10)
-                    .accessibilityLabel("正在加载相关推荐")
+    }
+}
+
+private struct VideoDetailRelatedPlaceholderList: View {
+    let layout: VideoDetailRelatedListLayout
+    let isLoading: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { _ in
+                VideoCompactListPlaceholderRow(
+                    coverSize: layout.coverSize,
+                    fill: Color.videoDetailSecondarySurface,
+                    isLoading: isLoading
+                )
+                .padding(.vertical, 9)
+
+                Divider()
+                    .padding(.leading, layout.dividerLeadingPadding)
             }
         }
     }

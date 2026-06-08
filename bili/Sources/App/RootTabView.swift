@@ -74,7 +74,7 @@ struct RootTabView: View {
                 }
             }
             .tint(.pink)
-            .tabBarMinimizeBehavior(.onScrollDown)
+            .tabBarMinimizeBehavior(runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never)
             .tabViewSearchActivation(.searchTabSelection)
             .restoresRootTabBarWhenRequested(requestID: rootTabBarRestoreRequestID)
             .background(RootTabBarAppearanceInstaller())
@@ -320,10 +320,6 @@ struct RootTabView: View {
 
         Task {
             dependencies.refreshPlaybackCDNProbeIfNeeded()
-            await PlaybackCDNProbeCoordinator.shared.prepareRecommendationForImmediatePlaybackIfNeeded(
-                libraryStore: dependencies.libraryStore,
-                timeout: 0.65
-            )
             let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
                 for: video.bvid,
                 isEnabled: dependencies.libraryStore.isPlaybackAutoOptimizationEnabled

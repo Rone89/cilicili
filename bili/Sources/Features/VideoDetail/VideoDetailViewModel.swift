@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import OSLog
 import QuartzCore
+import UIKit
 
 @MainActor
 final class VideoDetailCommentsRenderStore: ObservableObject {
@@ -361,6 +362,9 @@ final class VideoDetailPlayerIdentityRenderStore: ObservableObject {
     @Published private var snapshot = VideoDetailPlayerIdentityRenderSnapshot()
 
     var playerViewModel: PlayerStateViewModel? { snapshot.playerViewModel }
+    var transitionSnapshotView: UIView? { snapshot.transitionSnapshotView }
+    var transitionFallbackCoverURL: URL? { snapshot.transitionFallbackCoverURL }
+    var transitionPlayerOpacity: Double { snapshot.transitionPlayerOpacity }
 
     fileprivate func update(_ next: VideoDetailPlayerIdentityRenderSnapshot) {
         guard next != snapshot else { return }
@@ -889,12 +893,33 @@ private struct VideoDetailInteractionRenderSnapshot: Equatable {
 
 private struct VideoDetailPlayerIdentityRenderSnapshot: Equatable {
     var playerViewModel: PlayerStateViewModel?
+    var transitionSnapshotView: UIView?
+    var transitionFallbackCoverURL: URL?
+    var transitionPlayerOpacity = 0.0
 
     static func == (
         lhs: VideoDetailPlayerIdentityRenderSnapshot,
         rhs: VideoDetailPlayerIdentityRenderSnapshot
     ) -> Bool {
-        switch (lhs.playerViewModel, rhs.playerViewModel) {
+        isSamePlayer(lhs.playerViewModel, rhs.playerViewModel)
+            && isSameView(lhs.transitionSnapshotView, rhs.transitionSnapshotView)
+            && lhs.transitionFallbackCoverURL == rhs.transitionFallbackCoverURL
+            && abs(lhs.transitionPlayerOpacity - rhs.transitionPlayerOpacity) < 0.001
+    }
+
+    private static func isSamePlayer(_ lhs: PlayerStateViewModel?, _ rhs: PlayerStateViewModel?) -> Bool {
+        switch (lhs, rhs) {
+        case (.none, .none):
+            return true
+        case let (.some(left), .some(right)):
+            return left === right
+        default:
+            return false
+        }
+    }
+
+    private static func isSameView(_ lhs: UIView?, _ rhs: UIView?) -> Bool {
+        switch (lhs, rhs) {
         case (.none, .none):
             return true
         case let (.some(left), .some(right)):
@@ -1112,7 +1137,6 @@ private struct VideoDetailPlaybackRenderSnapshot: Equatable {
         isSwitchingPlayQuality: Bool
     ) -> [VideoDetailPlaybackQualityMenuItem] {
         playVariants.map { variant in
-            let title = variant.subtitle.isEmpty ? variant.title : "\(variant.title)  \(variant.subtitle)"
             let systemImage: String
             if pendingPlayVariantID == variant.id {
                 systemImage = "arrow.triangle.2.circlepath"
@@ -1123,7 +1147,7 @@ private struct VideoDetailPlaybackRenderSnapshot: Equatable {
             }
             return VideoDetailPlaybackQualityMenuItem(
                 variant: variant,
-                title: title,
+                title: variant.qualityMenuTitle,
                 systemImage: systemImage,
                 isDisabled: !variant.isPlayable || isSwitchingPlayQuality
             )
@@ -1417,6 +1441,43 @@ final class VideoDetailViewModel: ObservableObject {
         case failed
     }
 
+    private struct PlaybackStartupWaiter {
+        let acceptsFailure: Bool
+        let continuation: CheckedContinuation<PlaybackStartupRelease?, Never>
+    }
+
+    private enum PlayURLLoadMode {
+        case normal
+        case playbackRecovery
+
+        var startMessage: String {
+            switch self {
+            case .normal:
+                return "start"
+            case .playbackRecovery:
+                return "start recovery"
+            }
+        }
+
+        var allowsStartupCache: Bool {
+            switch self {
+            case .normal:
+                return true
+            case .playbackRecovery:
+                return false
+            }
+        }
+
+        var allowsNetworkFailureCacheFallback: Bool {
+            switch self {
+            case .normal:
+                return true
+            case .playbackRecovery:
+                return false
+            }
+        }
+    }
+
     private struct RenderStoreSyncMask: OptionSet {
         let rawValue: Int
 
@@ -1486,7 +1547,16 @@ final class VideoDetailViewModel: ObservableObject {
             commentsRenderStore.updateState(commentState)
         }
     }
-    @Published var playURLState: LoadingState = .idle { didSet { scheduleRenderStoreSync(.playback) } }
+    @Published var playURLState: LoadingState = .idle {
+        didSet {
+            scheduleRenderStoreSync(.playback)
+            if playURLState.isLoading {
+                beginPlaybackStartupAttempt()
+            } else if case .failed = playURLState {
+                finishPlaybackStartupWaiters(with: .failed)
+            }
+        }
+    }
     @Published var isSupplementingPlayQualities = false { didSet { scheduleRenderStoreSync(.playback) } }
     @Published private(set) var isSwitchingPlayQuality = false { didSet { scheduleRenderStoreSync(.playback) } }
     @Published private(set) var pendingPlayVariantID: String? { didSet { scheduleRenderStoreSync(.playback) } }
@@ -1648,6 +1718,21 @@ final class VideoDetailViewModel: ObservableObject {
     private var stablePlayerIdentity: String?
     private var stablePlayerErrorCancellable: AnyCancellable?
     private var stablePlayerFirstFrameCancellable: AnyCancellable?
+    private var playbackTransitionPlayerViewModel: PlayerStateViewModel? {
+        didSet { scheduleRenderStoreSync(.playerIdentity) }
+    }
+    private var playbackTransitionSnapshotView: UIView? {
+        didSet { scheduleRenderStoreSync(.playerIdentity) }
+    }
+    private var playbackTransitionFallbackCoverURL: URL? {
+        didSet { scheduleRenderStoreSync(.playerIdentity) }
+    }
+    private var playbackTransitionOpacity = 0.0 {
+        didSet { scheduleRenderStoreSync(.playerIdentity) }
+    }
+    private var playbackTransitionReleaseTask: Task<Void, Never>?
+    private var playbackStartupRelease: PlaybackStartupRelease?
+    private var playbackStartupWaiters: [UUID: PlaybackStartupWaiter] = [:]
     private var didSelectPlayVariantManually = false
     private var failedPlayVariantIDs = Set<String>()
     private var playbackRecoveryAttemptCount = 0
@@ -1680,6 +1765,9 @@ final class VideoDetailViewModel: ObservableObject {
     private static let hlsRenditionPrebuildDelayNanoseconds: UInt64 = 850_000_000
     private static let hlsRenditionPrebuildStepNanoseconds: UInt64 = 360_000_000
     private static let hlsRenditionPrebuildTimeout: TimeInterval = 0.78
+    private static let playbackTransitionReleaseDelayNanoseconds: UInt64 = 220_000_000
+    private static let playbackTransitionFadeDurationNanoseconds: UInt64 = 280_000_000
+    private static let playbackTransitionMaximumRetainNanoseconds: UInt64 = 6_000_000_000
     private static let renderStoreSyncCoalescingDelayNanoseconds: UInt64 = 16_000_000
 
     private struct SeekWarmupPlan {
@@ -1696,6 +1784,38 @@ final class VideoDetailViewModel: ObservableObject {
             await MainActor.run {
                 self?.backgroundTasks[id] = nil
             }
+        }
+    }
+
+    private func beginPlaybackStartupAttempt() {
+        if stablePlayerViewModel?.hasPresentedPlayback == true {
+            finishPlaybackStartupWaiters(with: .firstFrame)
+        } else {
+            playbackStartupRelease = nil
+        }
+    }
+
+    private func finishPlaybackStartupWaiters(with release: PlaybackStartupRelease?) {
+        playbackStartupRelease = release
+        guard !playbackStartupWaiters.isEmpty else { return }
+
+        let waiters = playbackStartupWaiters
+        playbackStartupWaiters.removeAll()
+        for waiter in waiters.values {
+            switch release {
+            case .firstFrame:
+                waiter.continuation.resume(returning: .firstFrame)
+            case .failed:
+                waiter.continuation.resume(returning: waiter.acceptsFailure ? .failed : nil)
+            case .none:
+                waiter.continuation.resume(returning: nil)
+            }
+        }
+    }
+
+    private func cancelPlaybackStartupWaiter(_ id: UUID) {
+        if let waiter = playbackStartupWaiters.removeValue(forKey: id) {
+            waiter.continuation.resume(returning: nil)
         }
     }
 
@@ -1951,7 +2071,12 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func syncPlayerIdentityRenderStore() {
         playerIdentityRenderStore.update(
-            VideoDetailPlayerIdentityRenderSnapshot(playerViewModel: stablePlayerViewModel)
+            VideoDetailPlayerIdentityRenderSnapshot(
+                playerViewModel: stablePlayerViewModel,
+                transitionSnapshotView: playbackTransitionSnapshotView,
+                transitionFallbackCoverURL: playbackTransitionFallbackCoverURL,
+                transitionPlayerOpacity: playbackTransitionOpacity
+            )
         )
     }
 
@@ -1984,6 +2109,10 @@ final class VideoDetailViewModel: ObservableObject {
         recentSeekWarmupKeyOrder.removeAll()
         bufferingCDNRefreshTask?.cancel()
         renderStoreSyncTask?.cancel()
+        let startupWaiters = playbackStartupWaiters
+        playbackStartupWaiters.removeAll()
+        playbackStartupRelease = nil
+        startupWaiters.values.forEach { $0.continuation.resume(returning: nil) }
         relatedLoadingTask?.cancel()
         relatedRefreshTask?.cancel()
         relatedPreloadTask?.cancel()
@@ -2154,12 +2283,14 @@ final class VideoDetailViewModel: ObservableObject {
         if state.isLoading {
             state = .idle
         }
+        finishPlaybackStartupWaiters(with: nil)
         playURLState = .idle
         shouldResumePlaybackAfterCancelledNavigation = false
         pendingNavigationResumeTime = nil
         hasPendingNavigationInterruption = false
         stablePlayerViewModel?.stop()
         stablePlayerViewModel = nil
+        clearPlaybackTransitionPlayer()
         stablePlayerIdentity = nil
         stablePlayerErrorCancellable = nil
         stablePlayerFirstFrameCancellable = nil
@@ -2188,7 +2319,9 @@ final class VideoDetailViewModel: ObservableObject {
     @discardableResult
     private func discardTerminatedStablePlayerIfNeeded() -> Bool {
         guard stablePlayerViewModel?.isTerminated == true else { return false }
+        finishPlaybackStartupWaiters(with: nil)
         stablePlayerViewModel = nil
+        clearPlaybackTransitionPlayer()
         stablePlayerIdentity = nil
         stablePlayerErrorCancellable = nil
         stablePlayerFirstFrameCancellable = nil
@@ -2225,6 +2358,7 @@ final class VideoDetailViewModel: ObservableObject {
         uploaderInteractionTask?.cancel()
         uploaderInteractionTask = nil
         uploaderInteractionLoadIdentity = nil
+        finishPlaybackStartupWaiters(with: nil)
     }
 
     private func cancelRelatedLoad() {
@@ -2320,14 +2454,17 @@ final class VideoDetailViewModel: ObservableObject {
         guard selectedCID == nil, !detail.bvid.isEmpty else { return }
         let seedDetail = detail
         let preferredQuality = adaptiveStartupPreferredQuality
+        let targetPreferredQuality = targetPlaybackPreferredQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
         let adaptationProfile = playbackAdaptationProfile
         trackBackgroundTask(
             Task(priority: priority) { [api] in
+                await VideoPreloadCenter.shared.prioritizePlayback(for: seedDetail)
                 await VideoPreloadCenter.shared.preloadDetailAndPlayback(
                     seedDetail,
                     api: api,
                     preferredQuality: preferredQuality,
+                    targetPreferredQuality: targetPreferredQuality,
                     cdnPreference: cdnPreference,
                     warmsMedia: true,
                     mediaWarmupDelay: 0.15,
@@ -2472,8 +2609,10 @@ final class VideoDetailViewModel: ObservableObject {
         lastBufferingCDNRefreshCount = 0
         bufferingCDNRefreshTask?.cancel()
         bufferingCDNRefreshTask = nil
+        finishPlaybackStartupWaiters(with: nil)
         stablePlayerViewModel?.stop()
         stablePlayerViewModel = nil
+        clearPlaybackTransitionPlayer()
         stablePlayerIdentity = nil
         stablePlayerErrorCancellable = nil
         stablePlayerFirstFrameCancellable = nil
@@ -2931,6 +3070,7 @@ final class VideoDetailViewModel: ObservableObject {
         Task { [quality = variant.quality, cdnPreference = libraryStore.effectivePlaybackCDNPreference] in
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: quality,
+                targetPreferredQuality: quality,
                 cdnPreference: cdnPreference,
                 playbackAdaptationProfile: PlayerPlaybackAdaptationProfile(level: .normal)
             )
@@ -3126,11 +3266,11 @@ final class VideoDetailViewModel: ObservableObject {
         await loadPlayURL()
     }
 
-    private func loadPlayURL() async {
+    private func loadPlayURL(mode: PlayURLLoadMode = .normal) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
         let signpostState = PlayerMetricsLog.beginSignpostedInterval(
             "VideoDetailPlayURL",
-            message: "bvid=\(detail.bvid) cid=\(selectedCID ?? 0)"
+            message: "bvid=\(detail.bvid) cid=\(selectedCID ?? 0) mode=\(mode)"
         )
         var signpostMessage = "bvid=\(detail.bvid) loading"
         defer {
@@ -3149,7 +3289,10 @@ final class VideoDetailViewModel: ObservableObject {
         fastStartUpgradeTask?.cancel()
         fastStartUpgradeTask = nil
         isSupplementingPlayQualities = false
-        PlayerMetricsLog.record(.playURLStart, metricsID: detail.bvid, title: detail.title, message: "start")
+        if mode == .playbackRecovery {
+            cancelStartupPlayURLTask()
+        }
+        PlayerMetricsLog.record(.playURLStart, metricsID: detail.bvid, title: detail.title, message: mode.startMessage)
         guard let cid = selectedCID else {
             playVariants = []
             selectedPlayVariant = nil
@@ -3161,6 +3304,7 @@ final class VideoDetailViewModel: ObservableObject {
         let pageNumber = selectedPageNumber
         var deferredPlayableFallback: (data: PlayURLData, source: String)?
         func rememberDeferredPlayableFallback(_ data: PlayURLData, source: String) {
+            guard mode.allowsNetworkFailureCacheFallback else { return }
             guard isPlayablePlayURLData(data) else { return }
             if let existing = deferredPlayableFallback,
                existing.data.highestPlayableQuality >= data.highestPlayableQuality {
@@ -3173,11 +3317,12 @@ final class VideoDetailViewModel: ObservableObject {
             scheduleAutomaticCDNRecommendationForPlayback()
             await VideoPreloadCenter.shared.updatePlaybackPreferences(
                 preferredQuality: adaptiveStartupPreferredQuality,
+                targetPreferredQuality: targetPlaybackPreferredQuality,
                 cdnPreference: libraryStore.effectivePlaybackCDNPreference,
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
-            let acceptsImmediatePlayableFallback = false
-            if let cachedPlayableData = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
+            if mode.allowsStartupCache,
+               let cachedPlayableData = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
@@ -3187,14 +3332,14 @@ final class VideoDetailViewModel: ObservableObject {
                     signpostMessage = "bvid=\(detail.bvid) invalidated"
                     return
                 }
-                let needsPreferredRefetch = shouldRefetchForPreferredQuality(cachedPlayableData)
-                if needsPreferredRefetch, !acceptsImmediatePlayableFallback {
+                let needsStartupRefetch = shouldRefetchForStartupQuality(cachedPlayableData)
+                if needsStartupRefetch {
                     rememberDeferredPlayableFallback(cachedPlayableData, source: "playableCacheFallbackAfterNetworkFailure")
                     PlayerMetricsLog.logger.info(
-                        "playURLPlayableCacheBypass bvid=\(self.detail.bvid, privacy: .public) preferred=\(self.libraryStore.preferredVideoQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(cachedPlayableData.playVariants), privacy: .public)"
+                        "playURLPlayableCacheBypass bvid=\(self.detail.bvid, privacy: .public) startupPreferred=\(self.adaptiveStartupPreferredQuality ?? 0, privacy: .public) targetPreferred=\(self.targetPlaybackPreferredQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(cachedPlayableData.playVariants), privacy: .public)"
                     )
                 } else {
-                    let source = needsPreferredRefetch ? "playableCachePreferredMiss" : "playableCache"
+                    let source = shouldRefetchForPreferredQuality(cachedPlayableData) ? "playableCacheTargetMiss" : "playableCache"
                     PlayerMetricsLog.record(
                         .playURLLoaded,
                         metricsID: detail.bvid,
@@ -3211,7 +3356,8 @@ final class VideoDetailViewModel: ObservableObject {
                     return
                 }
             }
-            if let cachedData = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
+            if mode.allowsStartupCache,
+               let cachedData = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
@@ -3222,9 +3368,9 @@ final class VideoDetailViewModel: ObservableObject {
                     signpostMessage = "bvid=\(detail.bvid) invalidated"
                     return
                 }
-                let needsPreferredRefetch = shouldRefetchForPreferredQuality(cachedData)
-                if !needsPreferredRefetch || acceptsImmediatePlayableFallback {
-                    let source = needsPreferredRefetch ? "cachePreferredMiss" : "cache"
+                let needsStartupRefetch = shouldRefetchForStartupQuality(cachedData)
+                if !needsStartupRefetch {
+                    let source = shouldRefetchForPreferredQuality(cachedData) ? "cacheTargetMiss" : "cache"
                     PlayerMetricsLog.record(
                         .playURLLoaded,
                         metricsID: detail.bvid,
@@ -3242,10 +3388,11 @@ final class VideoDetailViewModel: ObservableObject {
                 }
                 rememberDeferredPlayableFallback(cachedData, source: "cacheFallbackAfterNetworkFailure")
                 PlayerMetricsLog.logger.info(
-                    "playURLCacheBypass bvid=\(self.detail.bvid, privacy: .public) preferred=\(self.libraryStore.preferredVideoQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(cachedData.playVariants), privacy: .public)"
+                    "playURLCacheBypass bvid=\(self.detail.bvid, privacy: .public) startupPreferred=\(self.adaptiveStartupPreferredQuality ?? 0, privacy: .public) targetPreferred=\(self.targetPlaybackPreferredQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(cachedData.playVariants), privacy: .public)"
                 )
             }
-            if let pendingData = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
+            if mode.allowsStartupCache,
+               let pendingData = await VideoPreloadCenter.shared.cachedOrPendingPlayURL(
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
@@ -3257,14 +3404,14 @@ final class VideoDetailViewModel: ObservableObject {
                     signpostMessage = "bvid=\(detail.bvid) invalidated"
                     return
                 }
-                let needsPreferredRefetch = shouldRefetchForPreferredQuality(pendingData)
-                if needsPreferredRefetch, !acceptsImmediatePlayableFallback {
+                let needsStartupRefetch = shouldRefetchForStartupQuality(pendingData)
+                if needsStartupRefetch {
                     rememberDeferredPlayableFallback(pendingData, source: "pendingCacheFallbackAfterNetworkFailure")
                     PlayerMetricsLog.logger.info(
-                        "playURLPendingCacheBypass bvid=\(self.detail.bvid, privacy: .public) preferred=\(self.libraryStore.preferredVideoQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(pendingData.playVariants), privacy: .public)"
+                        "playURLPendingCacheBypass bvid=\(self.detail.bvid, privacy: .public) startupPreferred=\(self.adaptiveStartupPreferredQuality ?? 0, privacy: .public) targetPreferred=\(self.targetPlaybackPreferredQuality ?? 0, privacy: .public) cachedQualities=\(Self.qualitySummary(pendingData.playVariants), privacy: .public)"
                     )
                 } else {
-                    let source = needsPreferredRefetch ? "pendingCachePreferredMiss" : "pendingCache"
+                    let source = shouldRefetchForPreferredQuality(pendingData) ? "pendingCacheTargetMiss" : "pendingCache"
                     PlayerMetricsLog.record(
                         .playURLLoaded,
                         metricsID: detail.bvid,
@@ -3299,6 +3446,7 @@ final class VideoDetailViewModel: ObservableObject {
                 cid: cid,
                 page: pageNumber,
                 preferredQuality: adaptiveStartupPreferredQuality,
+                targetPreferredQuality: targetPlaybackPreferredQuality,
                 cdnPreference: libraryStore.effectivePlaybackCDNPreference,
                 warmsMedia: false,
                 mediaWarmupDelay: 0
@@ -3324,7 +3472,7 @@ final class VideoDetailViewModel: ObservableObject {
                 signpostMessage = "bvid=\(detail.bvid) invalidated"
                 return
             }
-            if let fallback = deferredPlayableFallback {
+            if mode.allowsNetworkFailureCacheFallback, let fallback = deferredPlayableFallback {
                 PlayerMetricsLog.record(
                     .playURLLoaded,
                     metricsID: detail.bvid,
@@ -3345,7 +3493,8 @@ final class VideoDetailViewModel: ObservableObject {
                 signpostMessage = "bvid=\(detail.bvid) deferred cache after failure"
                 return
             }
-            if let staleFallback = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
+            if mode.allowsNetworkFailureCacheFallback,
+               let staleFallback = await VideoPreloadCenter.shared.cachedPlayablePlayURL(
                 for: detail.bvid,
                 cid: cid,
                 page: pageNumber,
@@ -3372,7 +3521,8 @@ final class VideoDetailViewModel: ObservableObject {
                 signpostMessage = "bvid=\(detail.bvid) stale playable cache after failure"
                 return
             }
-            if let memoryFallback = await api.cachedPlayablePlayURLFallback(bvid: detail.bvid, cid: cid),
+            if mode.allowsNetworkFailureCacheFallback,
+               let memoryFallback = await api.cachedPlayablePlayURLFallback(bvid: detail.bvid, cid: cid),
                isPlayablePlayURLData(memoryFallback) {
                 PlayerMetricsLog.record(
                     .playURLLoaded,
@@ -3433,16 +3583,7 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func scheduleAutomaticCDNRecommendationForPlayback() {
         guard libraryStore.playbackCDNPreference == .automatic else { return }
-        let shouldRefreshFromPlaybackHistory = PlayerPerformanceStore.shared.shouldRefreshPlaybackCDNProbe(
-            metricsID: detail.bvid,
-            isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
-        )
-        guard libraryStore.automaticPlaybackCDNRecommendation == nil || shouldRefreshFromPlaybackHistory else { return }
-        trackBackgroundTask(
-            Task(priority: .utility) { [weak self] in
-                await self?.prepareAutomaticCDNRecommendationForPlayback()
-            }
-        )
+        PlaybackCDNProbeCoordinator.shared.refreshIfNeeded(libraryStore: libraryStore)
     }
 
     private func clearPlayVariantSwitchIfCurrent(_ token: UUID) {
@@ -3629,6 +3770,7 @@ final class VideoDetailViewModel: ObservableObject {
             cid: cid,
             page: page,
             preferredQuality: adaptiveStartupPreferredQuality,
+            targetPreferredQuality: targetPlaybackPreferredQuality,
             cdnPreference: libraryStore.effectivePlaybackCDNPreference,
             warmsMedia: false,
             mediaWarmupDelay: 0
@@ -3760,6 +3902,7 @@ final class VideoDetailViewModel: ObservableObject {
         }
 
         let selectedVariant = preferredDefaultVariant(in: variants)
+        let targetVariant = selectedVariant
         guard !isPlaybackInvalidatedForNavigation else { return }
         playVariants = variants
         selectedPlayVariant = selectedVariant
@@ -3771,36 +3914,54 @@ final class VideoDetailViewModel: ObservableObject {
         }
         fastStartUpgradeTask?.cancel()
         fastStartUpgradeTask = nil
-        await warmSelectedStartupPackageIfNeeded(selectedVariant, cid: cid, page: page)
+        scheduleSelectedStartupPackageWarmupAfterFirstFrame(selectedVariant, cid: cid, page: page)
         updateStablePlayerViewModelIfNeeded()
         playURLState = .loaded
         warmSelectedVariantAfterFirstFrameIfNeeded(selectedVariant, cid: cid, page: page)
         rankPlaybackCDNCandidatesAfterFirstFrameIfNeeded(selectedVariant, cid: cid)
         scheduleHLSRenditionPrebuildAfterFirstFrameIfNeeded(
             startupVariant: selectedVariant,
-            targetVariant: selectedVariant,
+            targetVariant: targetVariant,
             cid: cid,
             page: page
         )
         playURLSupplementTask?.cancel()
         playURLSupplementTask = nil
         isSupplementingPlayQualities = false
+        if schedulesSupplementalLoad {
+            scheduleSupplementalTargetQualityLoadIfNeeded(
+                variants: variants,
+                cid: cid,
+                page: page
+            )
+        }
     }
 
-    private func warmSelectedStartupPackageIfNeeded(_ variant: PlayVariant?, cid: Int?, page: Int?) async {
+    private func scheduleSelectedStartupPackageWarmupAfterFirstFrame(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
               let cid,
               let variant,
               variant.isPlayable,
               !variant.isProgressiveFastStart
         else { return }
-        await VideoPreloadCenter.shared.warmVariant(
-            variant,
-            bvid: detail.bvid,
-            cid: cid,
-            page: page,
-            delay: 0
-        )
+        let variantID = variant.id
+        Task(priority: .utility) { [weak self, variant] in
+            guard let self else { return }
+            let didPresentPlayback = await self.waitForFirstFrameOrFailure()
+            guard didPresentPlayback,
+                  !Task.isCancelled,
+                  !self.isPlaybackInvalidatedForNavigation,
+                  self.selectedCID == cid,
+                  self.selectedPlayVariant?.id == variantID
+            else { return }
+            await VideoPreloadCenter.shared.warmVariant(
+                variant,
+                bvid: self.detail.bvid,
+                cid: cid,
+                page: page,
+                delay: 0.2
+            )
+        }
     }
 
     private func optimizedStartupVariant(_ variant: PlayVariant?, source: String) async -> PlayVariant? {
@@ -3873,6 +4034,34 @@ final class VideoDetailViewModel: ObservableObject {
         false
     }
 
+    private func scheduleSupplementalTargetQualityLoadIfNeeded(
+        variants: [PlayVariant],
+        cid: Int?,
+        page: Int?
+    ) {
+        guard let cid,
+              needsSupplementalTargetQuality(variants)
+        else { return }
+        scheduleSupplementalPlayURLLoad(
+            cid: cid,
+            page: page,
+            waitsForFirstFrame: true,
+            startDelay: 0.12
+        )
+    }
+
+    private func needsSupplementalTargetQuality(_ variants: [PlayVariant]) -> Bool {
+        guard let preferredQuality = targetPlaybackPreferredQuality else { return false }
+        let playableVariants = variants.filter(\.isPlayable)
+        guard !playableVariants.isEmpty else { return false }
+        if [116, 74].contains(preferredQuality) {
+            return !playableVariants.contains {
+                $0.quality == preferredQuality && variantFrameRate($0) >= 50
+            }
+        }
+        return !playableVariants.contains { $0.quality == preferredQuality }
+    }
+
     private func playVariantsNeedSupplementalFrameRateUpgrade(_ variants: [PlayVariant]) -> Bool {
         let playableVariants = variants.filter(\.isPlayable)
         guard !playableVariants.isEmpty else { return false }
@@ -3912,18 +4101,19 @@ final class VideoDetailViewModel: ObservableObject {
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
                 self.isSupplementingPlayQualities = true
                 let supplementStart = CACurrentMediaTime()
+                let supplementalPreferredQuality = self.targetPlaybackPreferredQuality
                 PlayerMetricsLog.record(
                     .qualitySupplement,
                     metricsID: self.detail.bvid,
                     title: self.detail.title,
-                    message: "start preferred=\(self.libraryStore.preferredVideoQuality ?? 0)"
+                    message: "start preferred=\(supplementalPreferredQuality ?? 0)"
                 )
 
                 let data = try await self.api.fetchPlayURL(
                     bvid: self.detail.bvid,
                     cid: cid,
                     page: page,
-                    preferredQuality: self.libraryStore.preferredVideoQuality,
+                    preferredQuality: supplementalPreferredQuality,
                     supplementsQualities: true
                 )
                 guard !Task.isCancelled, !self.isPlaybackInvalidatedForNavigation, self.selectedCID == cid else { return }
@@ -3932,10 +4122,11 @@ final class VideoDetailViewModel: ObservableObject {
                     bvid: self.detail.bvid,
                     cid: cid,
                     page: page,
-                    preferredQuality: self.adaptiveStartupPreferredQuality,
+                    preferredQuality: self.targetPlaybackPreferredQuality,
+                    targetPreferredQuality: self.targetPlaybackPreferredQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
-                    warmsMedia: true,
-                    mediaWarmupDelay: 0.2
+                    warmsMedia: false,
+                    mediaWarmupDelay: 0
                 )
                 guard !self.isPlaybackInvalidatedForNavigation else { return }
 
@@ -3967,13 +4158,7 @@ final class VideoDetailViewModel: ObservableObject {
                         .qualitySupplement,
                         metricsID: self.detail.bvid,
                         title: self.detail.title,
-                        message: "success \(supplementMilliseconds) staged \(currentVariant.quality)->\(preferredVariant.quality) variants=\(variants.filter(\.isPlayable).count)"
-                    )
-                    self.scheduleFastStartUpgradeIfNeeded(
-                        from: currentVariant,
-                        to: preferredVariant,
-                        cid: cid,
-                        page: page
+                        message: "success \(supplementMilliseconds) targetAvailable keep q\(currentVariant.quality) target q\(preferredVariant.quality) variants=\(variants.filter(\.isPlayable).count)"
                     )
                 } else if let currentVariant,
                           let matchingVariant = self.playVariants.first(where: { $0.id == currentVariant.id }) {
@@ -4026,12 +4211,6 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldAutoUpgradeSupplementalVariant(from currentVariant: PlayVariant?) -> Bool {
-        let hasConfiguredPreferredQuality = libraryStore.preferredVideoQuality != nil
-        guard hasConfiguredPreferredQuality
-                || playbackAdaptationProfile.level.rawValue <= PlayerPlaybackAdaptationProfile.Level.fallback.rawValue
-        else {
-            return false
-        }
         guard !didSelectPlayVariantManually else { return false }
         guard let currentVariant, currentVariant.isPlayable else { return selectedPlayVariant == nil }
         guard let preferredVariant = preferredDefaultVariant(in: playVariants),
@@ -4075,12 +4254,15 @@ final class VideoDetailViewModel: ObservableObject {
     func updateStablePlayerViewModelIfNeeded(
         resumeTimeOverride: TimeInterval? = nil,
         shouldResumePlayback: Bool? = nil,
-        playbackRateOverride: BiliPlaybackRate? = nil
+        playbackRateOverride: BiliPlaybackRate? = nil,
+        preservesPreviousPlayerUntilFirstFrame: Bool = false
     ) {
         guard !isPlaybackInvalidatedForNavigation else { return }
         guard let variant = selectedPlayVariant, variant.isPlayable else {
+            finishPlaybackStartupWaiters(with: nil)
             stablePlayerViewModel?.stop()
             stablePlayerViewModel = nil
+            clearPlaybackTransitionPlayer()
             stablePlayerIdentity = nil
             stablePlayerErrorCancellable = nil
             stablePlayerFirstFrameCancellable = nil
@@ -4116,7 +4298,12 @@ final class VideoDetailViewModel: ObservableObject {
         let resumeTime = resumeCandidate.time
         let shouldAutoplay = shouldResumePlayback ?? currentPlaybackIntent()
         let playbackRate = playbackRateOverride ?? previousPlayer?.playbackRate ?? .x10
-        stablePlayerViewModel?.stop()
+        if preservesPreviousPlayerUntilFirstFrame {
+            beginPlaybackTransition(from: previousPlayer)
+        } else {
+            previousPlayer?.stop(reason: .replacedByAnotherPlayer)
+            clearPlaybackTransitionPlayer()
+        }
         stablePlayerIdentity = identity
         stablePlayerErrorCancellable = nil
         stablePlayerFirstFrameCancellable = nil
@@ -4155,6 +4342,14 @@ final class VideoDetailViewModel: ObservableObject {
         playerViewModel.onBufferingPressure = { [weak self] count in
             self?.handleBufferingPressure(count)
         }
+        playerViewModel.onFirstFramePresented = { [weak self, weak playerViewModel] in
+            guard let self,
+                  let playerViewModel,
+                  self.stablePlayerViewModel === playerViewModel
+            else { return }
+            self.finishPlaybackStartupWaiters(with: .firstFrame)
+            self.releasePlaybackTransitionPlayer(after: Self.playbackTransitionReleaseDelayNanoseconds)
+        }
         playerViewModel.setPlaybackRate(playbackRate)
         playerViewModel.setPlaybackIntent(shouldAutoplay)
         stablePlayerViewModel = playerViewModel
@@ -4188,6 +4383,96 @@ final class VideoDetailViewModel: ObservableObject {
             playerViewModel.play()
         }
         signpostMessage = "bvid=\(detail.bvid) ready autoplay=\(shouldAutoplay)"
+    }
+
+    private func beginPlaybackTransition(from player: PlayerStateViewModel?) {
+        guard let player,
+              player.hasPresentedPlayback,
+              !player.isTerminated
+        else {
+            clearPlaybackTransitionPlayer()
+            return
+        }
+        if let transitionPlayer = playbackTransitionPlayerViewModel,
+           transitionPlayer !== player {
+            clearPlaybackTransitionPlayer()
+        } else {
+            playbackTransitionReleaseTask?.cancel()
+            playbackTransitionReleaseTask = nil
+        }
+        let snapshotView = player.makePlaybackTransitionSnapshotView()
+        player.prepareForVisualPlaybackTransition()
+        playbackTransitionPlayerViewModel = player
+        playbackTransitionSnapshotView = snapshotView
+        playbackTransitionFallbackCoverURL = playbackTransitionCoverURL()
+        playbackTransitionOpacity = 1
+        PlayerMetricsLog.record(
+            .qualitySupplement,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "stagedStartup transitionHold snapshot=\(snapshotView != nil ? "frame" : "cover")"
+        )
+        releasePlaybackTransitionPlayer(after: Self.playbackTransitionMaximumRetainNanoseconds)
+    }
+
+    private func releasePlaybackTransitionPlayer(after delay: UInt64) {
+        guard playbackTransitionPlayerViewModel != nil else { return }
+        playbackTransitionReleaseTask?.cancel()
+        let transitionPlayer = playbackTransitionPlayerViewModel
+        playbackTransitionReleaseTask = Task { @MainActor [weak self, weak transitionPlayer] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self,
+                  !Task.isCancelled,
+                  let transitionPlayer,
+                  self.playbackTransitionPlayerViewModel === transitionPlayer
+            else { return }
+            self.playbackTransitionOpacity = 0
+            PlayerMetricsLog.record(
+                .qualitySupplement,
+                metricsID: self.detail.bvid,
+                title: self.detail.title,
+                message: "stagedStartup transitionFade"
+            )
+            try? await Task.sleep(nanoseconds: Self.playbackTransitionFadeDurationNanoseconds)
+            guard !Task.isCancelled,
+                  self.playbackTransitionPlayerViewModel === transitionPlayer
+            else { return }
+            self.finishPlaybackTransitionRelease(transitionPlayer)
+        }
+    }
+
+    private func clearPlaybackTransitionPlayer() {
+        playbackTransitionReleaseTask?.cancel()
+        playbackTransitionReleaseTask = nil
+        let transitionPlayer = playbackTransitionPlayerViewModel
+        playbackTransitionPlayerViewModel = nil
+        playbackTransitionSnapshotView = nil
+        playbackTransitionFallbackCoverURL = nil
+        playbackTransitionOpacity = 0
+        guard let transitionPlayer else { return }
+        if stablePlayerViewModel !== transitionPlayer {
+            transitionPlayer.stop(reason: .replacedByAnotherPlayer)
+        }
+    }
+
+    private func finishPlaybackTransitionRelease(_ transitionPlayer: PlayerStateViewModel) {
+        playbackTransitionReleaseTask = nil
+        guard playbackTransitionPlayerViewModel === transitionPlayer else { return }
+        playbackTransitionPlayerViewModel = nil
+        playbackTransitionSnapshotView = nil
+        playbackTransitionFallbackCoverURL = nil
+        playbackTransitionOpacity = 0
+        if stablePlayerViewModel !== transitionPlayer {
+            transitionPlayer.stop(reason: .replacedByAnotherPlayer)
+        }
+    }
+
+    private func playbackTransitionCoverURL() -> URL? {
+        guard let cover = detail.pic?.normalizedBiliURL() else { return nil }
+        let width = PlaybackEnvironment.current.shouldPreferConservativePlayback ? 480 : 720
+        let height = Int((Double(width) * 9.0 / 16.0).rounded())
+        return URL(string: cover.biliCoverThumbnailURL(width: width, height: height))
+            ?? URL(string: cover)
     }
 
     private func currentPlaybackResumeTime() -> TimeInterval {
@@ -4357,6 +4642,7 @@ final class VideoDetailViewModel: ObservableObject {
                 guard let self,
                       self.stablePlayerViewModel === playerViewModel
                 else { return }
+                self.finishPlaybackStartupWaiters(with: .failed)
                 self.handlePlaybackError(message, for: variant)
             }
     }
@@ -4374,12 +4660,14 @@ final class VideoDetailViewModel: ObservableObject {
                       let playerViewModel,
                       self.stablePlayerViewModel === playerViewModel
                 else { return }
+                self.finishPlaybackStartupWaiters(with: .firstFrame)
                 self.recordStartupPlaybackMetrics(
                     variant: variant,
                     resumeCandidate: resumeCandidate,
                     playerViewModel: playerViewModel,
                     firstFrameElapsedMilliseconds: firstFrameElapsedMilliseconds
                 )
+                self.releasePlaybackTransitionPlayer(after: Self.playbackTransitionReleaseDelayNanoseconds)
             }
     }
 
@@ -4407,6 +4695,7 @@ final class VideoDetailViewModel: ObservableObject {
             "cid=\(selectedCID ?? 0)",
             "source=\(lastPlayURLSource ?? "-")",
             "q=\(variant.quality)",
+            "targetQ=\(targetPlaybackPreferredQuality ?? 0)",
             "cdn=\(cdnPreference.rawValue)",
             "network=\(environment.networkClass.performanceSampleKey)"
         ].joined(separator: " ")
@@ -4515,12 +4804,21 @@ final class VideoDetailViewModel: ObservableObject {
             message: "recoveryReload attempt=\(attempt) q=\(failedVariant.quality) error=\(message)"
         )
         selectedPlayVariant = nil
+        stablePlayerViewModel?.stop()
+        stablePlayerViewModel = nil
+        clearPlaybackTransitionPlayer()
+        stablePlayerIdentity = nil
+        stablePlayerErrorCancellable = nil
+        stablePlayerFirstFrameCancellable = nil
+        finishPlaybackStartupWaiters(with: nil)
         playURLState = .idle
         Task { @MainActor [weak self] in
             guard let self else { return }
             await PlayURLCache.shared.invalidate(bvid: self.detail.bvid)
             await VideoPreloadCenter.shared.invalidatePlayURLCache(for: self.detail.bvid)
-            await self.loadPlayURL()
+            await self.api.clearCachedPlayURLFailures(bvid: self.detail.bvid)
+            self.cancelStartupPlayURLTask()
+            await self.loadPlayURL(mode: .playbackRecovery)
             guard !Task.isCancelled,
                   !self.isPlaybackInvalidatedForNavigation,
                   self.selectedPlayVariant?.isPlayable == true
@@ -4587,26 +4885,7 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func hlsAlternateVideoRenditions(for startupVariant: PlayVariant) -> [PlayerVideoRenditionSource] {
-        guard let targetVariant = preferredDefaultVariant(in: playVariants),
-              shouldScheduleStagedStartupUpgrade(from: startupVariant, to: targetVariant),
-              startupVariant.audioURL == targetVariant.audioURL
-        else { return [] }
-        return hlsAlternatePlayVariantCandidates(
-            startupVariant: startupVariant,
-            targetVariant: targetVariant
-        )
-        .compactMap { variant in
-            guard let videoURL = variant.videoURL,
-                  let videoStream = variant.videoStream
-            else { return nil }
-            return PlayerVideoRenditionSource(
-                quality: variant.quality,
-                title: variant.title,
-                videoURL: videoURL,
-                videoStream: videoStream,
-                dynamicRange: variant.dynamicRange
-            )
-        }
+        []
     }
 
     private func recordHLSVideoVariantPlan(
@@ -4630,14 +4909,7 @@ final class VideoDetailViewModel: ObservableObject {
         let limit = hlsAlternateVideoRenditionLimit
         guard limit > 0 else { return [] }
         let candidates = sortedPlayVariants(playVariants)
-            .filter {
-                $0.isPlayable
-                    && $0.id != startupVariant.id
-                    && $0.audioURL == startupVariant.audioURL
-                    && $0.dynamicRange != .dolbyVision
-                    && $0.videoStream?.isHardwareDecodingCompatibleVideo == true
-                    && $0.videoURL != nil
-            }
+            .filter { isHLSAlternateVideoVariant($0, forStartupVariant: startupVariant) }
         guard !candidates.isEmpty else { return [] }
 
         var selected = [PlayVariant]()
@@ -4650,7 +4922,9 @@ final class VideoDetailViewModel: ObservableObject {
             selected.append(variant)
         }
 
-        append(targetVariant)
+        if isHLSAlternateVideoVariant(targetVariant, forStartupVariant: startupVariant) {
+            append(targetVariant)
+        }
         for quality in hlsManualSwitchWarmupQualityOrder(targetQuality: targetVariant.quality) {
             append(candidates.first { $0.quality == quality })
         }
@@ -4658,6 +4932,17 @@ final class VideoDetailViewModel: ObservableObject {
             append(candidate)
         }
         return selected
+    }
+
+    private func isHLSAlternateVideoVariant(_ variant: PlayVariant, forStartupVariant startupVariant: PlayVariant) -> Bool {
+        variant.isPlayable
+            && variant.id != startupVariant.id
+            && variant.audioURL == startupVariant.audioURL
+            && variant.dynamicRange == startupVariant.dynamicRange
+            && variant.videoStream?.isHardwareDecodingCompatibleVideo == true
+            && variant.videoURL != nil
+            && variantsShareVideoCodecFamily(variant, startupVariant)
+            && variantsShareStartupFrameRateClass(variant, startupVariant)
     }
 
     private var hlsAlternateVideoRenditionLimit: Int {
@@ -4715,8 +5000,12 @@ final class VideoDetailViewModel: ObservableObject {
         )
     }
 
-    var adaptiveStartupPreferredQuality: Int? {
+    var targetPlaybackPreferredQuality: Int? {
         libraryStore.preferredVideoQuality ?? LibraryStore.defaultPreferredVideoQuality
+    }
+
+    var adaptiveStartupPreferredQuality: Int? {
+        targetPlaybackPreferredQuality
     }
 
     var adaptiveStartupQualityCeiling: Int? {
@@ -4724,11 +5013,18 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func preferredDefaultVariant(in variants: [PlayVariant]) -> PlayVariant? {
+        preferredDefaultVariant(in: variants, preferredQuality: nil)
+    }
+
+    private func preferredDefaultVariant(in variants: [PlayVariant], preferredQuality: Int?) -> PlayVariant? {
         let playableVariants = sortedPlayVariants(variants).filter(\.isPlayable)
         let playbackEnvironment = PlaybackEnvironment.current
 
-        if let preferredVariant = storedPreferredVariant(in: playableVariants) {
+        if let preferredVariant = storedPreferredVariant(in: playableVariants, preferredQuality: preferredQuality) {
             return preferredVariant
+        }
+        if preferredQuality != nil {
+            return nil
         }
 
         if let defaultVariant = playableVariants.first(where: { $0.quality == LibraryStore.defaultPreferredVideoQuality }) {
@@ -4747,7 +5043,7 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func shouldRefetchForPreferredQuality(_ data: PlayURLData) -> Bool {
-        guard let preferredQuality = adaptiveStartupPreferredQuality else { return false }
+        guard let preferredQuality = targetPlaybackPreferredQuality else { return false }
         if [116, 74].contains(preferredQuality) {
             let variants = data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference)
             if variants.contains(where: {
@@ -4766,6 +5062,11 @@ final class VideoDetailViewModel: ObservableObject {
             }
         }
         return data.shouldRefetchForPreferredQuality(preferredQuality)
+    }
+
+    private func shouldRefetchForStartupQuality(_ data: PlayURLData) -> Bool {
+        !data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference)
+            .contains(where: \.isPlayable)
     }
 
     private func logSelectedPlayVariant(
@@ -4791,10 +5092,11 @@ final class VideoDetailViewModel: ObservableObject {
         return summary.isEmpty ? "-" : summary
     }
 
-    private func storedPreferredVariant(in playableVariants: [PlayVariant]) -> PlayVariant? {
-        guard let preferredQuality = didSelectPlayVariantManually
-                ? libraryStore.preferredVideoQuality
-                : adaptiveStartupPreferredQuality
+    private func storedPreferredVariant(in playableVariants: [PlayVariant], preferredQuality: Int?) -> PlayVariant? {
+        guard let preferredQuality = preferredQuality
+                ?? (didSelectPlayVariantManually
+                    ? libraryStore.preferredVideoQuality
+                    : targetPlaybackPreferredQuality)
         else { return nil }
         let sortedVariants = sortedPlayVariants(playableVariants)
         if let exactVariant = sortedVariants.first(where: { $0.quality == preferredQuality }) {
@@ -4811,6 +5113,105 @@ final class VideoDetailViewModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    private func automaticStartupVariant(in variants: [PlayVariant], targetVariant: PlayVariant?) -> PlayVariant? {
+        guard !didSelectPlayVariantManually,
+              let startupQuality = adaptiveStartupPreferredQuality,
+              let targetVariant,
+              startupQuality < targetVariant.quality
+        else { return nil }
+        guard let startupVariant = preferredDefaultVariant(
+            in: variants,
+            preferredQuality: startupQuality
+        ) ?? fallbackAutomaticStartupVariant(
+            in: variants,
+            targetVariant: targetVariant,
+            startupQuality: startupQuality
+        ) else { return nil }
+        guard startupVariant.id != targetVariant.id,
+              startupVariant.isPlayable,
+              variant(targetVariant, isBetterThan: startupVariant)
+        else { return nil }
+        PlayerMetricsLog.record(
+            .qualitySupplement,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "startupQuality selected q\(startupVariant.quality)->q\(targetVariant.quality)"
+        )
+        return startupVariant
+    }
+
+    private func fallbackAutomaticStartupVariant(
+        in variants: [PlayVariant],
+        targetVariant: PlayVariant,
+        startupQuality: Int
+    ) -> PlayVariant? {
+        let candidates = sortedPlayVariants(variants)
+            .filter {
+                $0.isPlayable
+                    && $0.id != targetVariant.id
+                    && $0.quality < targetVariant.quality
+                    && $0.dynamicRange == targetVariant.dynamicRange
+                    && $0.videoURL != nil
+                    && $0.videoStream?.isHardwareDecodingCompatibleVideo == true
+            }
+        guard !candidates.isEmpty else { return nil }
+
+        let preferredAudioURL = targetVariant.audioURL
+        let preferredGroups = [
+            candidates.filter {
+                $0.audioURL == preferredAudioURL
+                    && variantsShareVideoCodecFamily($0, targetVariant)
+            },
+            candidates.filter { $0.audioURL == preferredAudioURL },
+            candidates
+        ]
+        let preferredQualities = Self.uniqueStartupFallbackQualities(
+            startupQuality: startupQuality,
+            targetQuality: targetVariant.quality
+        )
+
+        for group in preferredGroups where !group.isEmpty {
+            for quality in preferredQualities {
+                if let candidate = group.first(where: { $0.quality == quality }) {
+                    PlayerMetricsLog.record(
+                        .qualitySupplement,
+                        metricsID: detail.bvid,
+                        title: detail.title,
+                        message: "startupQuality fallback q\(candidate.quality)->q\(targetVariant.quality)"
+                    )
+                    return candidate
+                }
+            }
+            if let candidate = group.min(by: { lhs, rhs in
+                if lhs.quality != rhs.quality {
+                    return lhs.quality < rhs.quality
+                }
+                return (lhs.bandwidth ?? Int.max) < (rhs.bandwidth ?? Int.max)
+            }) {
+                PlayerMetricsLog.record(
+                    .qualitySupplement,
+                    metricsID: detail.bvid,
+                    title: detail.title,
+                    message: "startupQuality lowest q\(candidate.quality)->q\(targetVariant.quality)"
+                )
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func uniqueStartupFallbackQualities(
+        startupQuality: Int,
+        targetQuality: Int
+    ) -> [Int] {
+        var seen = Set<Int>()
+        let qualityLadder = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
+        return ([startupQuality, 32, 64, 80, 74, 16, 6] + qualityLadder.reversed())
+            .filter { quality in
+                quality < targetQuality && seen.insert(quality).inserted
+            }
     }
 
     private func sortedPlayVariants(_ variants: [PlayVariant]) -> [PlayVariant] {
@@ -4862,7 +5263,173 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func fastStartVariant(for target: PlayVariant?, in variants: [PlayVariant]) -> PlayVariant? {
-        target
+        guard let target else { return nil }
+        if let reason = startupStagedStartupDisabledReason(for: target) {
+            logStagedStartupDecision(
+                "disabled reason=\(reason) target=q\(target.quality) available=\(Self.qualitySummary(variants))"
+            )
+            return target
+        }
+        guard let startup = stagedStartupVariant(for: target, in: variants) else {
+            logStagedStartupDecision(
+                "disabled reason=noCandidate target=q\(target.quality) available=\(Self.qualitySummary(variants))"
+            )
+            return target
+        }
+        logStagedStartupDecision(
+            "selected q\(startup.quality)->q\(target.quality) targetFPS=\(Self.formattedFrameRate(variantFrameRate(target))) startupFPS=\(Self.formattedFrameRate(variantFrameRate(startup)))"
+        )
+        PlayerMetricsLog.record(
+            .qualitySupplement,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "stagedStartup selected q\(startup.quality)->q\(target.quality)"
+        )
+        return startup
+    }
+
+    private func startupStagedStartupDisabledReason(for targetVariant: PlayVariant) -> String? {
+        guard !didSelectPlayVariantManually else { return "manualSelection" }
+        guard targetVariant.isPlayable else { return "notPlayable" }
+        guard !targetVariant.isProgressiveFastStart else { return "progressive" }
+        guard targetVariant.audioURL != nil else { return "noAudio" }
+        guard targetVariant.videoStream?.isHardwareDecodingCompatibleVideo == true else { return "unsupportedCodec" }
+        guard targetVariant.dynamicRange == .sdr else { return "dynamicRange-\(targetVariant.dynamicRange.rawValue)" }
+        guard targetVariant.quality >= 74 else { return "lowTargetQuality" }
+        let environment = PlaybackEnvironment.current
+        guard !environment.shouldPreferConservativePlayback else { return "conservative" }
+        switch environment.networkClass {
+        case .wifi, .unknown:
+            break
+        case .cellular, .constrained:
+            return "network-\(environment.networkClass.performanceSampleKey)"
+        }
+        return nil
+    }
+
+    private func stagedStartupVariant(for target: PlayVariant, in variants: [PlayVariant]) -> PlayVariant? {
+        guard let targetAudioURL = target.audioURL,
+              target.videoURL != nil
+        else { return nil }
+
+        let candidates = sortedPlayVariants(variants)
+            .filter {
+                $0.isPlayable
+                    && $0.id != target.id
+                    && $0.audioURL == targetAudioURL
+                    && $0.quality < target.quality
+                    && $0.dynamicRange == target.dynamicRange
+                    && $0.videoStream?.isHardwareDecodingCompatibleVideo == true
+                    && $0.videoURL != nil
+                    && variantsShareVideoCodecFamily($0, target)
+            }
+        guard !candidates.isEmpty else { return nil }
+
+        let sameFrameRateCandidates = candidates.filter { variantsShareStartupFrameRateClass($0, target) }
+        if let candidate = preferredStagedStartupVariant(
+            in: sameFrameRateCandidates,
+            qualityOrder: stagedStartupQualityOrder(for: target)
+        ) {
+            return candidate
+        }
+
+        guard variantFrameRate(target) >= 50 else {
+            return sameFrameRateCandidates.first
+        }
+
+        return preferredStagedStartupVariant(
+            in: candidates.filter { !variantsShareStartupFrameRateClass($0, target) },
+            qualityOrder: stagedStartupQualityOrder(for: target, allowsFrameRateFallback: true)
+        )
+    }
+
+    private func preferredStagedStartupVariant(
+        in candidates: [PlayVariant],
+        qualityOrder: [Int]
+    ) -> PlayVariant? {
+        guard !candidates.isEmpty else { return nil }
+        for quality in qualityOrder {
+            if let candidate = candidates.first(where: { $0.quality == quality }) {
+                return candidate
+            }
+        }
+        return candidates.first
+    }
+
+    private func stagedStartupQualityOrder(
+        for target: PlayVariant,
+        allowsFrameRateFallback: Bool = false
+    ) -> [Int] {
+        let startupCeiling = adaptiveStartupQualityCeiling ?? Int.max
+        func bounded(_ qualities: [Int]) -> [Int] {
+            qualities.filter { $0 <= startupCeiling }
+        }
+        if variantFrameRate(target) >= 50 {
+            if allowsFrameRateFallback {
+                switch target.quality {
+                case 116...:
+                    return bounded([80, 64, 32])
+                case 74..<116:
+                    return bounded([64, 32])
+                default:
+                    return []
+                }
+            }
+            return target.quality > 74 ? bounded([74]) : []
+        }
+
+        switch target.quality {
+        case 120...:
+            return bounded([112, 80, 64, 32])
+        case 112..<120:
+            return bounded([80, 64, 32])
+        case 80..<112:
+            return bounded([64, 32])
+        default:
+            return []
+        }
+    }
+
+    private func variantsShareStartupFrameRateClass(_ lhs: PlayVariant, _ rhs: PlayVariant) -> Bool {
+        let lhsIsHighFrameRate = variantFrameRate(lhs) >= 50
+        let rhsIsHighFrameRate = variantFrameRate(rhs) >= 50
+        return lhsIsHighFrameRate == rhsIsHighFrameRate
+    }
+
+    private func variantsShareVideoCodecFamily(_ lhs: PlayVariant, _ rhs: PlayVariant) -> Bool {
+        guard let lhsCodec = videoCodecFamily(lhs),
+              let rhsCodec = videoCodecFamily(rhs)
+        else {
+            return true
+        }
+        return lhsCodec == rhsCodec
+    }
+
+    private func videoCodecFamily(_ variant: PlayVariant) -> String? {
+        if let codecid = variant.videoStream?.codecid {
+            switch codecid {
+            case 7:
+                return "avc"
+            case 12:
+                return "hevc"
+            case 13:
+                return "av1"
+            default:
+                break
+            }
+        }
+
+        let codec = (variant.videoStream?.codecs ?? variant.codec ?? "").lowercased()
+        if codec.contains("avc1") || codec.contains("avc3") {
+            return "avc"
+        }
+        if codec.contains("hvc1") || codec.contains("hev1") || codec.contains("dvh1") || codec.contains("dvhe") {
+            return "hevc"
+        }
+        if codec.contains("av01") {
+            return "av1"
+        }
+        return nil
     }
 
     private func scheduleFastStartUpgradeIfNeeded(
@@ -4945,23 +5512,27 @@ final class VideoDetailViewModel: ObservableObject {
                 timeout: Self.fastStartUpgradeWarmupTimeout
             )
 
-            guard didWarmTarget else {
-                self.recordStagedStartupUpgradeSkipped(reason: "warmTimeout", startupVariant: startupVariant, targetVariant: optimizedTarget)
-                self.fastStartUpgradeTask = nil
-                return
+            if !didWarmTarget {
+                PlayerMetricsLog.record(
+                    .qualitySupplement,
+                    metricsID: self.detail.bvid,
+                    title: self.detail.title,
+                    message: "stagedStartup warmTimeoutContinue q\(startupVariant.quality)->q\(optimizedTarget.quality)"
+                )
             }
             guard self.canPerformStagedStartupUpgrade(from: startupVariantID, cid: cid) else {
-                self.recordStagedStartupUpgradeSkipped(reason: "changedDuringWarmup", startupVariant: startupVariant, targetVariant: optimizedTarget)
+                let reason = didWarmTarget ? "changedDuringWarmup" : "unstableAfterWarmTimeout"
+                self.recordStagedStartupUpgradeSkipped(reason: reason, startupVariant: startupVariant, targetVariant: optimizedTarget)
                 self.fastStartUpgradeTask = nil
                 return
             }
 
-            if canUpgradeInPlace {
+            if canUpgradeInPlace,
+               let playerViewModel = self.stablePlayerViewModel,
+               playerViewModel.preferVideoRenditionInCurrentItem(targetVariant) {
                 self.selectedPlayVariant = targetVariant
                 self.stablePlayerIdentity = self.playerIdentity(for: targetVariant)
-                if let playerViewModel = self.stablePlayerViewModel {
-                    self.observePlaybackErrors(playerViewModel, variant: targetVariant)
-                }
+                self.observePlaybackErrors(playerViewModel, variant: targetVariant)
                 self.playbackFallbackMessage = nil
                 self.logSelectedPlayVariant(
                     targetVariant,
@@ -4997,14 +5568,46 @@ final class VideoDetailViewModel: ObservableObject {
             self.updateStablePlayerViewModelIfNeeded(
                 resumeTimeOverride: resumeTime,
                 shouldResumePlayback: shouldResumePlayback,
-                playbackRateOverride: playbackRate
+                playbackRateOverride: playbackRate,
+                preservesPreviousPlayerUntilFirstFrame: true
             )
             self.fastStartUpgradeTask = nil
         }
     }
 
     private func shouldUseStagedStartupVariant(for targetVariant: PlayVariant) -> Bool {
-        false
+        stagedStartupDisabledReason(for: targetVariant) == nil
+    }
+
+    private func stagedStartupDisabledReason(for targetVariant: PlayVariant) -> String? {
+        guard !didSelectPlayVariantManually else { return "manualSelection" }
+        guard targetVariant.isPlayable else { return "notPlayable" }
+        guard !targetVariant.isProgressiveFastStart else { return "progressive" }
+        guard targetVariant.audioURL != nil else { return "noAudio" }
+        guard targetVariant.videoStream?.isHardwareDecodingCompatibleVideo == true else { return "unsupportedCodec" }
+        guard targetVariant.dynamicRange == .sdr else { return "dynamicRange-\(targetVariant.dynamicRange.rawValue)" }
+        guard targetVariant.quality >= 74 else { return "lowTargetQuality" }
+        let environment = PlaybackEnvironment.current
+        guard !environment.shouldPreferConservativePlayback else { return "conservative" }
+        switch environment.networkClass {
+        case .wifi, .unknown:
+            break
+        case .cellular, .constrained:
+            return "network-\(environment.networkClass.performanceSampleKey)"
+        }
+
+        return nil
+    }
+
+    private func logStagedStartupDecision(_ message: String) {
+        PlayerMetricsLog.logger.info(
+            "stagedStartup \(message, privacy: .public) bvid=\(self.detail.bvid, privacy: .public)"
+        )
+    }
+
+    private nonisolated static func formattedFrameRate(_ frameRate: Double) -> String {
+        guard frameRate > 0 else { return "-" }
+        return String(format: "%.0f", frameRate)
     }
 
     private func shouldScheduleStagedStartupUpgrade(from startupVariant: PlayVariant, to targetVariant: PlayVariant) -> Bool {
@@ -5903,17 +6506,54 @@ final class VideoDetailViewModel: ObservableObject {
     }
 
     private func waitForPlaybackStartupRelease(acceptsFailure: Bool) async -> PlaybackStartupRelease? {
-        while stablePlayerViewModel?.hasPresentedPlayback != true {
-            guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return nil }
-            if stablePlayerViewModel?.errorMessage != nil {
-                return acceptsFailure ? .failed : nil
-            }
-            if case .failed = playURLState {
-                return acceptsFailure ? .failed : nil
-            }
-            try? await Task.sleep(nanoseconds: 160_000_000)
+        guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else { return nil }
+        if stablePlayerViewModel?.hasPresentedPlayback == true || playbackStartupRelease == .firstFrame {
+            return .firstFrame
         }
-        return .firstFrame
+        if stablePlayerViewModel?.errorMessage != nil || isPlayURLFailed {
+            return acceptsFailure ? .failed : nil
+        }
+        if let release = playbackStartupRelease {
+            switch release {
+            case .firstFrame:
+                return .firstFrame
+            case .failed:
+                return acceptsFailure ? .failed : nil
+            }
+        }
+
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                if stablePlayerViewModel?.hasPresentedPlayback == true || playbackStartupRelease == .firstFrame {
+                    continuation.resume(returning: .firstFrame)
+                    return
+                }
+                if stablePlayerViewModel?.errorMessage != nil || isPlayURLFailed {
+                    continuation.resume(returning: acceptsFailure ? .failed : nil)
+                    return
+                }
+                playbackStartupWaiters[waiterID] = PlaybackStartupWaiter(
+                    acceptsFailure: acceptsFailure,
+                    continuation: continuation
+                )
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelPlaybackStartupWaiter(waiterID)
+            }
+        }
+    }
+
+    private var isPlayURLFailed: Bool {
+        if case .failed = playURLState {
+            return true
+        }
+        return false
     }
 
     private var adaptiveRelatedLoadTimeoutNanoseconds: UInt64 {
@@ -5976,8 +6616,8 @@ final class VideoDetailViewModel: ObservableObject {
                     preferredQuality: preferredQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
                     priority: .background,
-                    warmsMedia: true,
-                    mediaWarmupDelay: 0.35,
+                    warmsMedia: false,
+                    mediaWarmupDelay: 0,
                     playbackAdaptationProfile: playbackAdaptationProfile
                 )
             }

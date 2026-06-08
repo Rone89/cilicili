@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import OSLog
 
 private enum HomePullRefreshCoordinateSpace {
     static let name = "homePullRefreshScroll"
@@ -25,6 +26,36 @@ private struct HomeFeedWidthPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct HomeVisibleVideoFrame: Equatable {
+    let bvid: String
+    let index: Int
+    let minY: CGFloat
+    let midY: CGFloat
+    let maxY: CGFloat
+    let height: CGFloat
+
+    init(bvid: String, index: Int, frame: CGRect) {
+        self.bvid = bvid
+        self.index = index
+        minY = Self.quantized(frame.minY)
+        midY = Self.quantized(frame.midY)
+        maxY = Self.quantized(frame.maxY)
+        height = Self.quantized(frame.height)
+    }
+
+    private static func quantized(_ value: CGFloat) -> CGFloat {
+        (value / 4).rounded() * 4
+    }
+}
+
+private struct HomeVisibleVideoFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [HomeVisibleVideoFrame] = []
+
+    static func reduce(value: inout [HomeVisibleVideoFrame], nextValue: () -> [HomeVisibleVideoFrame]) {
+        value.append(contentsOf: nextValue())
     }
 }
 
@@ -142,6 +173,9 @@ struct HomeView: View {
             let roundedWidth = width.rounded(.down)
             guard abs(roundedWidth - feedContainerWidth) > 0.5 else { return }
             feedContainerWidth = roundedWidth
+        }
+        .onPreferenceChange(HomeVisibleVideoFramePreferenceKey.self) { frames in
+            updateVisiblePreloadFrames(frames)
         }
         .onPreferenceChange(HomePullRefreshDistancePreferenceKey.self) { pullDistance in
             handleConfiguredPullRefresh(pullDistance: pullDistance, viewModel: viewModel)
@@ -273,13 +307,14 @@ struct HomeView: View {
         let loadMoreTriggerCellID = cells.last?.id
         if runtimeSettings.homeFeedLayout != .doubleColumn {
             LazyVStack(spacing: 0) {
-                ForEach(cells) { cell in
+                ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
                     VStack(spacing: 0) {
                         videoCard(cell.video, display: cell.display)
+                            .homeVisibleVideoFrame(for: cell.video, index: index)
                             .padding(.top, 9)
                             .padding(.bottom, 14)
                             .onAppear {
-                                registerVisiblePreloadCandidate(cell.video)
+                                registerVisiblePreloadCandidate(cell.video, index: index)
                             }
                             .onDisappear {
                                 unregisterVisiblePreloadCandidate(cell.video)
@@ -301,10 +336,11 @@ struct HomeView: View {
             .padding(.bottom, 18)
         } else {
             LazyVGrid(columns: feedColumns, spacing: feedSpacing) {
-                ForEach(cells) { cell in
+                ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
                     videoCard(cell.video, display: cell.display)
+                        .homeVisibleVideoFrame(for: cell.video, index: index)
                         .onAppear {
-                            registerVisiblePreloadCandidate(cell.video)
+                            registerVisiblePreloadCandidate(cell.video, index: index)
                         }
                         .onDisappear {
                             unregisterVisiblePreloadCandidate(cell.video)
@@ -387,9 +423,22 @@ struct HomeView: View {
         )
     }
 
-    private func registerVisiblePreloadCandidate(_ video: VideoItem) {
+    private func registerVisiblePreloadCandidate(_ video: VideoItem, index: Int) {
         preloadCoordinator.registerVisiblePreloadCandidate(
             video,
+            index: index,
+            api: dependencies.api,
+            preferredQuality: dependencies.libraryStore.preferredVideoQuality,
+            cdnPreference: dependencies.libraryStore.effectivePlaybackCDNPreference,
+            playbackAdaptationProfile: PlayerPerformanceStore.shared.playbackAdaptationProfile(
+                isEnabled: dependencies.libraryStore.isPlaybackAutoOptimizationEnabled
+            )
+        )
+    }
+
+    private func updateVisiblePreloadFrames(_ frames: [HomeVisibleVideoFrame]) {
+        preloadCoordinator.updateVisiblePreloadFrames(
+            frames,
             api: dependencies.api,
             preferredQuality: dependencies.libraryStore.preferredVideoQuality,
             cdnPreference: dependencies.libraryStore.effectivePlaybackCDNPreference,
@@ -422,6 +471,23 @@ struct HomeView: View {
 }
 
 private extension View {
+    func homeVisibleVideoFrame(for video: VideoItem, index: Int) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: HomeVisibleVideoFramePreferenceKey.self,
+                    value: [
+                        HomeVisibleVideoFrame(
+                            bvid: video.bvid,
+                            index: index,
+                            frame: proxy.frame(in: .global)
+                        )
+                    ]
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     func homeLoadMoreTask(
         if shouldAttachTask: Bool,
@@ -444,9 +510,12 @@ private final class HomeFeedPreloadCoordinator {
     private var visiblePreloadVideos = Set<String>()
     private var recentVisiblePreloadVideos = Set<String>()
     private var recentVisiblePreloadOrder: [String] = []
-    private var visiblePreloadCandidates = [String: VideoItem]()
+    private var visiblePreloadCandidates = [String: VisiblePreloadCandidate]()
+    private var latestVisibleFrames = [String: HomeVisibleVideoFrame]()
+    private var visiblePreloadSequence = 0
     private let visiblePreloadDebouncer = TaskDebouncer()
     private let recentVisiblePreloadLimit = 18
+    private let visibleCandidateLimit = 8
 
     func beginPressedPreloadIfNeeded(
         for video: VideoItem,
@@ -481,6 +550,7 @@ private final class HomeFeedPreloadCoordinator {
 
     func registerVisiblePreloadCandidate(
         _ video: VideoItem,
+        index: Int,
         api: BiliAPIClient,
         preferredQuality: Int?,
         cdnPreference: PlaybackCDNPreference,
@@ -488,34 +558,112 @@ private final class HomeFeedPreloadCoordinator {
     ) {
         guard !video.bvid.isEmpty else { return }
 
-        visiblePreloadCandidates[video.bvid] = video
-        if visiblePreloadCandidates.count > 4,
-           let oldestKey = visiblePreloadCandidates.keys.first {
-            visiblePreloadCandidates.removeValue(forKey: oldestKey)
+        if var candidate = visiblePreloadCandidates[video.bvid] {
+            candidate.video = video
+            candidate.index = index
+            visiblePreloadCandidates[video.bvid] = candidate
+        } else {
+            visiblePreloadSequence += 1
+            visiblePreloadCandidates[video.bvid] = VisiblePreloadCandidate(
+                video: video,
+                index: index,
+                frame: latestVisibleFrames[video.bvid],
+                sequence: visiblePreloadSequence
+            )
         }
+        trimVisiblePreloadCandidatesIfNeeded()
+        scheduleVisiblePreload(
+            delay: .milliseconds(620),
+            api: api,
+            preferredQuality: preferredQuality,
+            cdnPreference: cdnPreference,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
+    }
 
-        let candidates = Array(visiblePreloadCandidates.values.prefix(1))
-        visiblePreloadDebouncer.schedule(delay: .milliseconds(420)) { [weak self] in
-            guard let self else { return }
-            for video in candidates {
-                guard self.visiblePreloadCandidates[video.bvid] != nil else { continue }
-                self.beginVisiblePreloadIfNeeded(
-                    for: video,
-                    api: api,
-                    preferredQuality: preferredQuality,
-                    cdnPreference: cdnPreference,
-                    playbackAdaptationProfile: playbackAdaptationProfile
-                )
+    func updateVisiblePreloadFrames(
+        _ frames: [HomeVisibleVideoFrame],
+        api: BiliAPIClient,
+        preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
+    ) {
+        guard !frames.isEmpty else { return }
+        var didUpdate = false
+        for frame in frames {
+            latestVisibleFrames[frame.bvid] = frame
+            guard var candidate = visiblePreloadCandidates[frame.bvid] else { continue }
+            if candidate.frame != frame || candidate.index != frame.index {
+                candidate.frame = frame
+                candidate.index = frame.index
+                visiblePreloadCandidates[frame.bvid] = candidate
+                didUpdate = true
             }
         }
+        guard didUpdate else { return }
+        trimVisiblePreloadCandidatesIfNeeded()
+        scheduleVisiblePreload(
+            delay: .milliseconds(180),
+            api: api,
+            preferredQuality: preferredQuality,
+            cdnPreference: cdnPreference,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
     }
 
     func unregisterVisiblePreloadCandidate(_ video: VideoItem) {
         visiblePreloadCandidates.removeValue(forKey: video.bvid)
+        latestVisibleFrames.removeValue(forKey: video.bvid)
         visiblePreloadVideos.remove(video.bvid)
         if visiblePreloadCandidates.isEmpty {
             visiblePreloadDebouncer.cancel()
         }
+    }
+
+    private func scheduleVisiblePreload(
+        delay: Duration,
+        api: BiliAPIClient,
+        preferredQuality: Int?,
+        cdnPreference: PlaybackCDNPreference,
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
+    ) {
+        visiblePreloadDebouncer.schedule(delay: delay) { [weak self] in
+            guard let self,
+                  let candidate = self.bestVisiblePreloadCandidate()
+            else { return }
+            self.logVisiblePreloadChoice(candidate)
+            self.beginVisiblePreloadIfNeeded(
+                for: candidate.video,
+                api: api,
+                preferredQuality: preferredQuality,
+                cdnPreference: cdnPreference,
+                playbackAdaptationProfile: playbackAdaptationProfile
+            )
+        }
+    }
+
+    private func bestVisiblePreloadCandidate() -> VisiblePreloadCandidate? {
+        let screenHeight = max(UIScreen.main.bounds.height, 1)
+        return visiblePreloadCandidates.values
+            .filter {
+                let bvid = $0.video.bvid
+                return !bvid.isEmpty
+                    && !visiblePreloadVideos.contains(bvid)
+                    && !recentVisiblePreloadVideos.contains(bvid)
+                    && isVisibleEnough($0, screenHeight: screenHeight)
+            }
+            .sorted { lhs, rhs in
+                let lhsScore = visiblePreloadScore(lhs, screenHeight: screenHeight)
+                let rhsScore = visiblePreloadScore(rhs, screenHeight: screenHeight)
+                if abs(lhsScore - rhsScore) > 0.01 {
+                    return lhsScore < rhsScore
+                }
+                if lhs.index != rhs.index {
+                    return lhs.index < rhs.index
+                }
+                return lhs.sequence < rhs.sequence
+            }
+            .first
     }
 
     private func beginVisiblePreloadIfNeeded(
@@ -530,8 +678,7 @@ private final class HomeFeedPreloadCoordinator {
               !visiblePreloadVideos.contains(bvid),
               !recentVisiblePreloadVideos.contains(bvid),
               visiblePreloadVideos.count < 1,
-              playbackAdaptationProfile.backgroundPreloadLimit > 0,
-              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+              playbackAdaptationProfile.backgroundRoutePlanPreloadLimit > 0
         else { return }
 
         visiblePreloadVideos.insert(bvid)
@@ -544,10 +691,67 @@ private final class HomeFeedPreloadCoordinator {
                 cdnPreference: cdnPreference,
                 priority: .utility,
                 warmsMedia: true,
+                mediaWarmupMode: .routePlanOnly,
                 mediaWarmupDelay: 0.35,
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
+    }
+
+    private func trimVisiblePreloadCandidatesIfNeeded() {
+        guard visiblePreloadCandidates.count > visibleCandidateLimit else { return }
+        let kept = Set(
+            visiblePreloadCandidates.values
+                .sorted { lhs, rhs in
+                    if lhs.index != rhs.index {
+                        return lhs.index < rhs.index
+                    }
+                    return lhs.sequence < rhs.sequence
+                }
+                .prefix(visibleCandidateLimit)
+                .map { $0.video.bvid }
+        )
+        visiblePreloadCandidates = visiblePreloadCandidates.filter { kept.contains($0.key) }
+    }
+
+    private func isVisibleEnough(_ candidate: VisiblePreloadCandidate, screenHeight: CGFloat) -> Bool {
+        guard let frame = candidate.frame else { return true }
+        let topBound = screenHeight * 0.12
+        let bottomBound = screenHeight * 0.86
+        let visibleHeight = max(0, min(frame.maxY, bottomBound) - max(frame.minY, topBound))
+        let ratio = visibleHeight / max(frame.height, 1)
+        return ratio >= 0.18
+    }
+
+    private func visiblePreloadScore(_ candidate: VisiblePreloadCandidate, screenHeight: CGFloat) -> CGFloat {
+        guard let frame = candidate.frame else {
+            return 10_000 + CGFloat(candidate.index)
+        }
+
+        let topBound = screenHeight * 0.12
+        let bottomBound = screenHeight * 0.86
+        let visibleHeight = max(0, min(frame.maxY, bottomBound) - max(frame.minY, topBound))
+        let visibilityRatio = min(max(visibleHeight / max(frame.height, 1), 0), 1)
+        let targetY = screenHeight * 0.38
+        var score = abs(frame.midY - targetY)
+        if frame.midY > screenHeight * 0.70 {
+            score += screenHeight * 0.40
+        }
+        if frame.minY < topBound {
+            score += screenHeight * 0.15
+        }
+        score -= visibilityRatio * 40
+        score += CGFloat(candidate.index) * 0.01
+        return score
+    }
+
+    private func logVisiblePreloadChoice(_ candidate: VisiblePreloadCandidate) {
+        let screenHeight = max(UIScreen.main.bounds.height, 1)
+        let score = visiblePreloadScore(candidate, screenHeight: screenHeight)
+        let midY = candidate.frame.map { Double($0.midY) } ?? -1
+        PlayerMetricsLog.logger.info(
+            "homeVisiblePreloadCandidate bvid=\(candidate.video.bvid, privacy: .public) index=\(candidate.index, privacy: .public) score=\(Double(score), format: .fixed(precision: 1), privacy: .public) midY=\(midY, format: .fixed(precision: 1), privacy: .public)"
+        )
     }
 
     private func rememberVisiblePreload(_ bvid: String) {
@@ -558,6 +762,13 @@ private final class HomeFeedPreloadCoordinator {
             let evicted = recentVisiblePreloadOrder.removeFirst()
             recentVisiblePreloadVideos.remove(evicted)
         }
+    }
+
+    private struct VisiblePreloadCandidate {
+        var video: VideoItem
+        var index: Int
+        var frame: HomeVisibleVideoFrame?
+        let sequence: Int
     }
 }
 

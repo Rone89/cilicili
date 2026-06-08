@@ -795,7 +795,7 @@ nonisolated final class BiliAPIClient {
     }
 
     func clearCachedPlayURLFailures(bvid: String) async {
-        await state.clearPlayURLFailures(containing: bvid)
+        await state.clearPlayURLFailuresAndTasks(containing: bvid)
     }
 
     func cachedPlayablePlayURLFallback(bvid: String, cid: Int) async -> PlayURLData? {
@@ -1068,7 +1068,11 @@ nonisolated final class BiliAPIClient {
         let snapshot = await requestSnapshot()
         let environment = PlaybackEnvironment.current
         let configuredQuality = preferredQuality ?? snapshot.preferredVideoQuality
-        let requestedQuality = min(configuredQuality ?? environment.startupPreferredQualityCeiling, startupQualityCeiling ?? Int.max)
+        let requestedQuality = startupRequestedQuality(
+            configuredQuality: configuredQuality,
+            startupQualityCeiling: startupQualityCeiling,
+            environment: environment
+        )
         let key = PlayURLCacheKey(
             bvid: bvid,
             cid: cid,
@@ -1112,7 +1116,11 @@ nonisolated final class BiliAPIClient {
         let snapshot = await requestSnapshot()
         let environment = PlaybackEnvironment.current
         let configuredQuality = preferredQuality ?? snapshot.preferredVideoQuality
-        let requestedQuality = min(configuredQuality ?? environment.startupPreferredQualityCeiling, startupQualityCeiling ?? Int.max)
+        let requestedQuality = startupRequestedQuality(
+            configuredQuality: configuredQuality,
+            startupQualityCeiling: startupQualityCeiling,
+            environment: environment
+        )
         let key = PlayURLCacheKey(
             bvid: bvid,
             cid: cid,
@@ -1142,11 +1150,13 @@ nonisolated final class BiliAPIClient {
         let environment = PlaybackEnvironment.current
         let storedPreferredQuality = await preferredVideoQuality()
         let configuredQuality = preferredQuality ?? storedPreferredQuality
-        let qualityCeiling = startupQualityCeiling ?? environment.startupPreferredQualityCeiling
-        let honorsConfiguredQuality = configuredQuality != nil
-        let requestedQuality = configuredQuality ?? qualityCeiling
-        let allowsUsableFallback = configuredQuality == nil
-            && (environment.shouldPreferConservativePlayback || startupQualityCeiling != nil)
+        let requestedQuality = startupRequestedQuality(
+            configuredQuality: configuredQuality,
+            startupQualityCeiling: startupQualityCeiling,
+            environment: environment
+        )
+        let honorsConfiguredQuality = configuredQuality != nil && configuredQuality == requestedQuality
+        let allowsUsableFallback = startupQualityCeiling != nil
         var bestStartupData: PlayURLData?
         if let racedStartupData = try await fetchRacedStartupPlayURL(
             bvid: bvid,
@@ -1193,6 +1203,16 @@ nonisolated final class BiliAPIClient {
 
         guard let bestStartupData else { throw BiliAPIError.emptyPlayURL }
         return bestStartupData
+    }
+
+    private nonisolated func startupRequestedQuality(
+        configuredQuality: Int?,
+        startupQualityCeiling: Int?,
+        environment: PlaybackEnvironment
+    ) -> Int {
+        let requestedQuality = configuredQuality ?? LibraryStore.defaultPreferredVideoQuality
+        guard let startupQualityCeiling else { return requestedQuality }
+        return min(requestedQuality, startupQualityCeiling)
     }
 
     private func fetchRacedStartupPlayURL(
@@ -2876,27 +2896,12 @@ nonisolated final class BiliAPIClient {
     private func data(for request: URLRequest, priority: Float = URLSessionTask.defaultPriority) async throws -> (Data, URLResponse) {
         var request = request
         request.networkServiceType = priority >= URLSessionTask.highPriority ? .responsiveData : .default
-        let taskBox = URLSessionTaskBox()
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let task = session.dataTask(with: request) { data, response, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    guard let data, let response else {
-                        continuation.resume(throwing: BiliAPIError.emptyData)
-                        return
-                    }
-                    continuation.resume(returning: (data, response))
-                }
-                task.priority = priority
-                taskBox.task = task
-                task.resume()
-            }
-        } onCancel: {
-            taskBox.cancel()
-        }
+        return try await BiliNetworkRetry.data(
+            session: session,
+            request: request,
+            priority: priority,
+            policy: .api
+        )
     }
 
     private nonisolated static func responseCacheKey(for request: URLRequest) -> String? {
@@ -3341,10 +3346,15 @@ private actor BiliAPIClientState {
         playURLStageTasks[key] = nil
     }
 
-    func clearPlayURLFailures(containing bvid: String) {
+    func clearPlayURLFailuresAndTasks(containing bvid: String) {
         guard !bvid.isEmpty else { return }
         let failureKeys = playURLFailureCache.keys.filter { $0.contains("|\(bvid)|") }
         failureKeys.forEach { playURLFailureCache[$0] = nil }
+        let taskKeys = playURLStageTasks.keys.filter { $0.contains("|\(bvid)|") }
+        for key in taskKeys {
+            playURLStageTasks[key]?.cancel()
+            playURLStageTasks[key] = nil
+        }
     }
 
     func cachedDanmaku(for cid: Int) -> [DanmakuItem]? {
@@ -3413,36 +3423,5 @@ private actor BiliAPIClientState {
             .prefix(overflow)
             .map(\.key)
         oldestKeys.forEach { danmakuCache[$0] = nil }
-    }
-}
-
-private nonisolated final class URLSessionTaskBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _task: URLSessionTask?
-    private var isCancelled = false
-
-    var task: URLSessionTask? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _task
-        }
-        set {
-            lock.lock()
-            _task = newValue
-            let shouldCancel = isCancelled
-            lock.unlock()
-            if shouldCancel {
-                newValue?.cancel()
-            }
-        }
-    }
-
-    func cancel() {
-        lock.lock()
-        isCancelled = true
-        let task = _task
-        lock.unlock()
-        task?.cancel()
     }
 }

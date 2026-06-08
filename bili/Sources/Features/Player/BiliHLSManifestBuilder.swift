@@ -59,8 +59,17 @@ enum BiliHLSManifestBuilder {
                 mediaType: .video,
                 dynamicRange: source.dynamicRange
             )
+            let alternateVideoTracks = source.alternateVideoRenditions.map { rendition in
+                HLSBridgeTrack(
+                    url: rendition.videoURL,
+                    fallbackURLs: rendition.videoStream.backupPlayURLs(cdnPreference: source.cdnPreference),
+                    stream: rendition.videoStream,
+                    mediaType: .video,
+                    dynamicRange: rendition.dynamicRange
+                )
+            }
             bridge = try await LocalHLSBridge.make(
-                videoTracks: [primaryVideoTrack],
+                videoTracks: [primaryVideoTrack] + alternateVideoTracks,
                 audioTrack: HLSBridgeTrack(
                     url: audioURL,
                     fallbackURLs: source.audioStream?.backupPlayURLs(cdnPreference: source.cdnPreference) ?? [],

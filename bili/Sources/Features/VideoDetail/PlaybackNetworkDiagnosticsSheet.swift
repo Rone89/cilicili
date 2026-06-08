@@ -131,7 +131,7 @@ struct PlaybackNetworkDiagnosticsSheet: View {
 
             if libraryStore.playbackCDNPreference == .automatic {
                 diagnosticRow(
-                    "自动推荐",
+                    "测速参考",
                     libraryStore.automaticPlaybackCDNRecommendation?.title ?? "暂无可用推荐"
                 )
             }
@@ -279,6 +279,8 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                 diagnosticRow("播放器首帧", formattedMilliseconds(session.firstFramePlayerMilliseconds))
                 diagnosticRow("取流耗时", formattedMilliseconds(session.playURLMilliseconds))
                 diagnosticRow("取流来源", startupPlayURLTitle(for: session))
+                diagnosticRow("启动档位", startupQualityTitle(session.startupQuality))
+                diagnosticRow("目标档位", startupQualityTitle(session.startupTargetQuality))
                 diagnosticRow("Prepare", formattedMilliseconds(session.prepareMilliseconds))
                 diagnosticRow("HLS Route", startupRoutePlanTitle(for: session))
                 if session.startupRoutePrebuildState != nil {
@@ -288,6 +290,12 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                 diagnosticRow("首片预热", startupRangeWarmTitle(for: session))
                 if let startupBreakdownMessage = session.startupBreakdownMessage {
                     diagnosticMultilineRow("首帧分段", startupBreakdownMessage)
+                }
+                if let startupDecisionMessage = session.startupDecisionMessage {
+                    diagnosticMultilineRow("启动决策", startupDecisionMessage)
+                }
+                if let startupUpgradeMessage = session.startupUpgradeMessage {
+                    diagnosticMultilineRow("升档结果", startupUpgradeMessage)
                 }
                 if let resumeApplyMilliseconds = session.resumeApplyMilliseconds {
                     diagnosticRow("续播 Seek", formattedMilliseconds(resumeApplyMilliseconds))
@@ -380,11 +388,11 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                     snapshot.probedAt.formatted(date: .abbreviated, time: .shortened)
                 )
                 diagnosticRow("有效状态", snapshot.isExpired() ? "已过期" : "有效")
-                diagnosticRow("推荐 CDN", snapshot.recommendedPreference?.title ?? "暂无推荐")
+                diagnosticRow("测速参考", snapshot.recommendedPreference?.title ?? "暂无参考")
 
                 if let recommendation = snapshot.recommendedPreference,
                    let result = snapshot.result(for: recommendation) {
-                    diagnosticRow("推荐延迟", result.elapsedMilliseconds.map { "\($0) ms" } ?? "失败")
+                    diagnosticRow("参考延迟", result.elapsedMilliseconds.map { "\($0) ms" } ?? "失败")
                 }
 
                 if !snapshot.successfulResults.isEmpty {
@@ -458,16 +466,22 @@ struct PlaybackNetworkDiagnosticsSheet: View {
             return "可播放缓存"
         case "playableCachePreferredMiss":
             return "可播放缓存，画质待刷新"
+        case "playableCacheTargetMiss":
+            return "可播放缓存，目标画质待刷新"
         case "playableCacheStaleWhileRefresh":
             return "可播放缓存，后台刷新"
         case "cache":
             return "缓存"
         case "cachePreferredMiss":
             return "缓存，画质待刷新"
+        case "cacheTargetMiss":
+            return "缓存，目标画质待刷新"
         case "pendingCache":
             return "预加载结果"
         case "pendingCachePreferredMiss":
             return "预加载结果，画质待刷新"
+        case "pendingCacheTargetMiss":
+            return "预加载结果，目标画质待刷新"
         case "pendingCacheStaleWhileRefresh":
             return "预加载结果，后台刷新"
         case "detailWarmCache":
@@ -504,6 +518,11 @@ struct PlaybackNetworkDiagnosticsSheet: View {
             parts.append("\(count) 档")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func startupQualityTitle(_ quality: Int?) -> String {
+        guard let quality else { return "未记录" }
+        return "\(LibraryStore.videoQualityTitle(quality)) · q\(quality)"
     }
 
     private func startupRoutePlanTitle(for session: PlayerPerformanceSession) -> String {
@@ -744,6 +763,8 @@ struct PlaybackNetworkDiagnosticsSheet: View {
             lines.append("总首帧：\(formattedMilliseconds(session.firstFrameTotalMilliseconds))")
             lines.append("播放器首帧：\(formattedMilliseconds(session.firstFramePlayerMilliseconds))")
             lines.append("启动取流来源：\(startupPlayURLTitle(for: session))")
+            lines.append("启动档位：\(startupQualityTitle(session.startupQuality))")
+            lines.append("目标档位：\(startupQualityTitle(session.startupTargetQuality))")
             lines.append("HLS Route：\(startupRoutePlanTitle(for: session))")
             if session.startupRoutePrebuildState != nil {
                 lines.append("Route 预构建：\(startupRoutePrebuildTitle(for: session))")
@@ -752,6 +773,12 @@ struct PlaybackNetworkDiagnosticsSheet: View {
             lines.append("首片预热：\(startupRangeWarmTitle(for: session))")
             if let startupBreakdownMessage = session.startupBreakdownMessage {
                 lines.append("首帧分段：\(startupBreakdownMessage)")
+            }
+            if let startupDecisionMessage = session.startupDecisionMessage {
+                lines.append("启动决策：\(startupDecisionMessage)")
+            }
+            if let startupUpgradeMessage = session.startupUpgradeMessage {
+                lines.append("升档结果：\(startupUpgradeMessage)")
             }
             if let resumeApplyMilliseconds = session.resumeApplyMilliseconds {
                 lines.append("续播 Seek：\(formattedMilliseconds(resumeApplyMilliseconds))")
@@ -812,7 +839,7 @@ struct PlaybackNetworkDiagnosticsSheet: View {
         lines.append("温控限制：\(playbackEnvironment.isThermallyConstrained ? "已触发" : "未触发")")
         if let snapshot = libraryStore.playbackCDNProbeSnapshotForCurrentContext {
             lines.append("测速时间：\(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
-            lines.append("测速推荐：\(snapshot.recommendedPreference?.title ?? "暂无推荐")")
+            lines.append("测速参考：\(snapshot.recommendedPreference?.title ?? "暂无参考")")
             lines.append("测速是否过期：\(snapshot.isExpired() ? "是" : "否")")
         }
         if let errorMessage = playerViewModel?.errorMessage, !errorMessage.isEmpty {

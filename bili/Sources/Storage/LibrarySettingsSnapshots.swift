@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
+    var minimizesTabBarOnScroll = true
 }
 
 @MainActor
@@ -12,6 +13,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
     private var cancellable: AnyCancellable?
 
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
+    var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -29,7 +31,10 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
     private func refresh() {
         guard let libraryStore else { return }
-        let next = RootRuntimeSettingsSnapshot(appearanceMode: libraryStore.appearanceMode)
+        let next = RootRuntimeSettingsSnapshot(
+            appearanceMode: libraryStore.appearanceMode,
+            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll
+        )
         guard next != snapshot else { return }
         snapshot = next
     }
@@ -118,6 +123,7 @@ struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var preferredVideoQuality: Int? = LibraryStore.defaultPreferredVideoQuality
     var effectivePlaybackCDNPreference: PlaybackCDNPreference = .automatic
     var playbackAutoOptimizationEnabled = true
+    var minimizesTabBarOnScroll = true
 }
 
 @MainActor
@@ -130,6 +136,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
     var preferredVideoQuality: Int? { snapshot.preferredVideoQuality }
     var effectivePlaybackCDNPreference: PlaybackCDNPreference { snapshot.effectivePlaybackCDNPreference }
     var playbackAutoOptimizationEnabled: Bool { snapshot.playbackAutoOptimizationEnabled }
+    var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -151,7 +158,8 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
             playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
             preferredVideoQuality: libraryStore.preferredVideoQuality,
             effectivePlaybackCDNPreference: libraryStore.effectivePlaybackCDNPreference,
-            playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
+            playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled,
+            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll
         )
         guard next != snapshot else { return }
         snapshot = next

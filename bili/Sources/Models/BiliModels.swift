@@ -554,11 +554,52 @@ nonisolated struct PlayURLData: Decodable, Sendable {
             }
         }
 
+        appendAdvertisedLockedVariants(
+            orderedQualities: orderedQualities,
+            supportByQuality: supportByQuality,
+            descriptions: descriptions,
+            videosByQuality: videosByQuality,
+            into: &variants
+        )
+
         return variants
+    }
+
+    nonisolated private func appendAdvertisedLockedVariants(
+        orderedQualities: [Int],
+        supportByQuality: [Int: PlaySupportFormat],
+        descriptions: [Int: String],
+        videosByQuality: [Int: [DASHStream]],
+        into variants: inout [PlayVariant]
+    ) {
+        for quality in orderedQualities {
+            guard quality > 0,
+                  !variants.contains(where: { $0.quality == quality })
+            else { continue }
+
+            let support = supportByQuality[quality]
+            let representativeStream = videosByQuality[quality]?.sorted(by: DASHStream.preferPlayable).first
+            variants.append(PlayVariant(
+                quality: quality,
+                title: support?.title ?? descriptions[quality] ?? Self.qualityTitle(quality),
+                videoURL: nil,
+                audioURL: nil,
+                videoStream: representativeStream,
+                audioStream: nil,
+                codec: representativeStream?.codecLabel ?? support?.codecLabel,
+                resolution: representativeStream?.resolutionLabel,
+                frameRate: representativeStream?.frameRate,
+                bandwidth: representativeStream?.bandwidth,
+                isHDR: Self.isHDR(quality: quality, title: support?.title ?? descriptions[quality]),
+                badge: support?.badge
+            ))
+        }
     }
 
     nonisolated private static func qualityTitle(_ quality: Int) -> String {
         switch quality {
+        case 129:
+            return "HDR Vivid"
         case 127:
             return "超高清 8K"
         case 126:
@@ -589,9 +630,11 @@ nonisolated struct PlayURLData: Decodable, Sendable {
     }
 
     nonisolated private static func isHDR(quality: Int, title: String?) -> Bool {
-        quality == 125
+        quality == 129
+            || quality == 125
             || quality == 126
             || title?.localizedCaseInsensitiveContains("HDR") == true
+            || title?.localizedCaseInsensitiveContains("Vivid") == true
             || title?.contains("杜比视界") == true
     }
 
@@ -724,6 +767,9 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
     }
 
     nonisolated var qualityBadge: String? {
+        if quality == 129 || title.localizedCaseInsensitiveContains("Vivid") {
+            return "HDR Vivid"
+        }
         if quality == 126 {
             return "杜比"
         }
@@ -757,9 +803,67 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
             parts.append(badge)
         }
         if !isPlayable {
-            parts.append("需要登录或权限")
+            parts.append(unavailableReason)
         }
         return parts.joined(separator: " · ")
+    }
+
+    nonisolated var qualityMenuTitle: String {
+        var parts = [String]()
+        if let playbackExperienceLabel {
+            parts.append(playbackExperienceLabel)
+        }
+        if let resolution {
+            parts.append("画质 \(resolution)")
+        }
+        if let frameRateLabel {
+            parts.append("帧率 \(frameRateLabel)")
+        }
+        if let bitrateLabel {
+            parts.append("码率 \(bitrateLabel)")
+        }
+        if let codec, !codec.isEmpty {
+            parts.append("编码 \(codec)")
+        }
+        if let dynamicRangeMenuLabel {
+            parts.append(dynamicRangeMenuLabel)
+        }
+        if let badge, !badge.isEmpty, !parts.contains(badge), !title.contains(badge) {
+            parts.append(badge)
+        }
+        if !isPlayable {
+            parts.append(unavailableReason)
+        }
+        return parts.isEmpty ? title : "\(title) · \(parts.joined(separator: " · "))"
+    }
+
+    nonisolated private var unavailableReason: String {
+        if let videoStream, !videoStream.isHardwareDecodingCompatibleVideo {
+            return "当前设备暂不可播"
+        }
+        return "需要登录或权限"
+    }
+
+    nonisolated private var playbackExperienceLabel: String? {
+        switch quality {
+        case 116, 74:
+            return "流畅优先"
+        case 112:
+            return "细节优先"
+        default:
+            break
+        }
+        if let frameRate = DASHStream.numericFrameRate(from: frameRate), frameRate >= 50 {
+            return "流畅优先"
+        }
+        return nil
+    }
+
+    nonisolated private var dynamicRangeMenuLabel: String? {
+        guard let qualityBadge,
+              !title.localizedCaseInsensitiveContains(qualityBadge)
+        else { return nil }
+        return qualityBadge
     }
 
     nonisolated private var frameRateLabel: String? {

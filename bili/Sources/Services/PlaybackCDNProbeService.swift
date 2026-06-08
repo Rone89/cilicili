@@ -246,7 +246,6 @@ final class PlaybackCDNProbeCoordinator {
 enum PlaybackCDNProbeService {
     private static let probePath = "/upgcxcode/00/00/1/1.m4s"
     private static let timeout: TimeInterval = 2.2
-    private static let probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
 
     static func probeAll(
         addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic
@@ -361,7 +360,11 @@ enum PlaybackCDNProbeService {
 
         let start = Date()
         do {
-            let (_, response) = try await probeSession.data(for: request)
+            let (_, response) = try await BiliNetworkRetry.data(
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                request: request,
+                policy: .playbackProbe
+            )
             let elapsed = Int(Date().timeIntervalSince(start) * 1000)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             let didSucceed = (200..<400).contains(statusCode) || statusCode == 403

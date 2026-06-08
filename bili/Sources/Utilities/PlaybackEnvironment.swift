@@ -64,11 +64,11 @@ nonisolated struct PlaybackEnvironment: Sendable {
     }
 
     nonisolated var fastStartQuality: Int {
-        64
+        32
     }
 
     nonisolated var startupPreferredQualityCeiling: Int {
-        64
+        32
     }
 
     nonisolated var preferredQualityLadder: [Int] {
@@ -89,11 +89,11 @@ nonisolated struct PlaybackEnvironment: Sendable {
     nonisolated var startupForwardBufferDuration: TimeInterval {
         switch networkClass {
         case .wifi:
-            return shouldPreferConservativePlayback ? 0.18 : 0.12
+            return shouldPreferConservativePlayback ? 0.10 : 0.06
         case .unknown:
-            return shouldPreferConservativePlayback ? 0.22 : 0.16
+            return shouldPreferConservativePlayback ? 0.12 : 0.08
         case .cellular, .constrained:
-            return 0.24
+            return 0.14
         }
     }
 
@@ -108,22 +108,11 @@ nonisolated struct PlaybackEnvironment: Sendable {
     nonisolated var preferredPlayURLStartupGrace: UInt64 {
         switch networkClass {
         case .wifi:
-            return 220_000_000
+            return 90_000_000
         case .unknown:
-            return 180_000_000
+            return 70_000_000
         case .cellular, .constrained:
-            return 140_000_000
-        }
-    }
-
-    nonisolated var startupWarmupPrepareBudget: TimeInterval {
-        switch networkClass {
-        case .wifi:
-            return 0
-        case .unknown:
-            return 0
-        case .cellular, .constrained:
-            return 0
+            return 50_000_000
         }
     }
 
