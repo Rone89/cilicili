@@ -95,9 +95,7 @@ struct PortraitCommentsSheet: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(.clear)
-            .navigationTitle(store.replyCountText.map { "评论 \($0)" } ?? "评论")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.automatic, for: .navigationBar)
+            .hiddenInlineNavigationTitle()
             .nativeTopScrollEdgeEffect()
             .refreshable {
                 await retryComments()
@@ -122,21 +120,28 @@ struct PortraitCommentsSheet: View {
     }
 
     private var sortPickerRow: some View {
-        Picker(
-            "评论排序",
-            selection: Binding(
-                get: { store.selectedSort },
-                set: { sort in
-                    Task { await selectCommentSort(sort) }
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(CommentSort.allCases) { sort in
+                    Button {
+                        Task { await selectCommentSort(sort) }
+                    } label: {
+                        Text(sort.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 30)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(store.selectedSort == sort ? .primary : .secondary)
+                    .commentPlayerGlassCapsule()
+                    .opacity(store.selectedSort == sort ? 1 : 0.72)
+                    .accessibilityLabel(sort.title)
+                    .accessibilityValue(store.selectedSort == sort ? "已选中" : "")
                 }
-            )
-        ) {
-            ForEach(CommentSort.allCases) { sort in
-                Text(sort.title).tag(sort)
             }
         }
-        .pickerStyle(.segmented)
-        .controlSize(.small)
         .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 8, trailing: 14))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -223,9 +228,10 @@ struct PortraitCommentsSheet: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
+                    .commentPlayerGlassCapsule()
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.pink)
+            .foregroundStyle(.primary)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else if !store.comments.isEmpty {
@@ -380,11 +386,10 @@ struct CommentsSectionView: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Color.videoDetailSecondarySurface)
-                    .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .commentPlayerGlassRoundedRectangle()
             }
             .buttonStyle(.plain)
+            .foregroundStyle(.primary)
         }
     }
 
@@ -405,18 +410,17 @@ struct CommentsSectionView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.videoDetailSecondarySurface)
-                        .foregroundStyle(.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .commentPlayerGlassRoundedRectangle()
                 } else {
                     Label("加载更多评论", systemImage: "arrow.down.circle")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .foregroundStyle(.pink)
+                        .commentPlayerGlassCapsule()
                 }
             }
             .buttonStyle(.plain)
+            .foregroundStyle(.primary)
         } else {
             Text("没有更多评论了")
                 .font(.caption)
@@ -578,9 +582,12 @@ private struct CommentRow: View, Equatable {
                     transitionScope: comment.id.description
                 )
 
-                if !display.replyPreviews.isEmpty {
+                if display.visibleReplyCount > 0 {
                     Button(action: showReplies) {
-                        CommentReplyPreviewContainer {
+                        CommentReplyPreviewContainer(
+                            replyCount: display.visibleReplyCount,
+                            showsPreview: !display.replyPreviews.isEmpty
+                        ) {
                             ForEach(display.replyPreviews) { reply in
                                 ReplyPreviewRow(reply: reply)
                             }
@@ -588,15 +595,6 @@ private struct CommentRow: View, Equatable {
                     }
                     .buttonStyle(.plain)
                     .disabled(!style.showsReplyPreviewContainer)
-                }
-
-                if display.visibleReplyCount > 0 {
-                    CommentInlineActionPill(
-                        title: "\(display.visibleReplyCount) 条回复",
-                        systemImage: "bubble.left.and.bubble.right",
-                        action: showReplies
-                    )
-                    .padding(.top, 1)
                 }
             }
         }
@@ -658,32 +656,41 @@ private struct ReplyPreviewRow: View {
 }
 
 private struct CommentReplyPreviewContainer<Content: View>: View {
+    let replyCount: Int
+    let showsPreview: Bool
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(replyCount: Int, showsPreview: Bool, @ViewBuilder content: () -> Content) {
+        self.replyCount = replyCount
+        self.showsPreview = showsPreview
         self.content = content()
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.pink.opacity(0.42))
-                .frame(width: 3)
-                .padding(.vertical, 2)
+        VStack(alignment: .leading, spacing: 8) {
+            if showsPreview {
+                HStack(alignment: .top, spacing: 8) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color.pink.opacity(0.42))
+                        .frame(width: 3)
+                        .padding(.vertical, 2)
 
-            VStack(alignment: .leading, spacing: 6) {
-                content
+                    VStack(alignment: .leading, spacing: 6) {
+                        content
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Label("\(replyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
+                .font(.caption.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.pink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(Color.videoDetailSecondarySurface)
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color(.separator).opacity(0.08), lineWidth: 0.6)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
@@ -858,8 +865,8 @@ struct CommentRepliesSheet: View {
                     }
                 }
             }
-            .navigationTitle("评论回复")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
+            .nativeTopScrollEdgeEffect()
             .task {
                 await loadReplies(rootComment)
             }
@@ -937,9 +944,10 @@ private struct CommentRepliesContent: View {
                 Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
             }
-            .buttonStyle(.bordered)
-            .tint(.pink)
+            .buttonStyle(.plain)
+            .foregroundStyle(.pink)
         }
     }
 }
@@ -1033,6 +1041,8 @@ private struct CommentReplyDetailRow: View {
                     Button(action: showDialog) {
                         Label("查看对话", systemImage: "text.bubble")
                             .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 9)
+                            .frame(height: 26)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.pink)
@@ -1085,8 +1095,8 @@ private struct CommentDialogSheet: View {
                     )
                 }
             }
-            .navigationTitle("查看对话")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
+            .nativeTopScrollEdgeEffect()
             .task {
                 await loadDialog(rootComment, focusReply)
             }
@@ -1223,38 +1233,32 @@ private struct CommentMetricBadge: View {
             .lineLimit(1)
             .minimumScaleFactor(0.82)
             .foregroundStyle(isHighlighted ? .pink : .secondary)
-            .padding(.horizontal, 8)
             .frame(height: 24)
-            .background(Color.videoDetailSecondarySurface, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(isHighlighted ? Color.pink.opacity(0.12) : Color.secondary.opacity(0.10), lineWidth: 0.7)
-            }
     }
 }
 
-private struct CommentInlineActionPill: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .padding(.horizontal, 9)
-                .frame(height: 26)
-                .background(Color.pink.opacity(0.08), in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(Color.pink.opacity(0.12), lineWidth: 0.7)
-                }
+private extension View {
+    @ViewBuilder
+    func commentPlayerGlassCapsule(showsShadow: Bool = true) -> some View {
+        let glass = biliPlayerClearGlass(interactive: false, in: Capsule())
+        if showsShadow {
+            glass.shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+        } else {
+            glass
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.pink)
+    }
+
+    @ViewBuilder
+    func commentPlayerGlassRoundedRectangle(cornerRadius: CGFloat = 12, showsShadow: Bool = true) -> some View {
+        let glass = biliPlayerClearGlass(
+            interactive: false,
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+        if showsShadow {
+            glass.shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 3)
+        } else {
+            glass
+        }
     }
 }
 

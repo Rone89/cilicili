@@ -644,14 +644,14 @@ private struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
             guard let tabBar = tabBarController?.tabBar ?? enclosingTabBarController()?.tabBar else { return }
 
             let appearance = UITabBarAppearance()
-            appearance.configureWithDefaultBackground()
-            appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
             appearance.backgroundColor = UIColor { traitCollection in
                 traitCollection.userInterfaceStyle == .dark
-                    ? UIColor.black.withAlphaComponent(0.50)
-                    : UIColor.systemBackground.withAlphaComponent(0.68)
+                    ? UIColor.black.withAlphaComponent(0.18)
+                    : UIColor.systemBackground.withAlphaComponent(0.16)
             }
-            appearance.shadowColor = UIColor.label.withAlphaComponent(0.08)
+            appearance.shadowColor = UIColor.label.withAlphaComponent(0.04)
 
             let normalColor = UIColor.secondaryLabel.withAlphaComponent(0.82)
             let selectedColor = UIColor.systemPink
@@ -663,10 +663,12 @@ private struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
             tabBar.scrollEdgeAppearance = appearance
             tabBar.tintColor = selectedColor
             tabBar.unselectedItemTintColor = normalColor
+            tabBar.isTranslucent = true
+            tabBar.backgroundColor = .clear
             tabBar.layer.shadowColor = UIColor.black.cgColor
-            tabBar.layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.22 : 0.10
-            tabBar.layer.shadowRadius = 18
-            tabBar.layer.shadowOffset = CGSize(width: 0, height: -3)
+            tabBar.layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.14 : 0.05
+            tabBar.layer.shadowRadius = 14
+            tabBar.layer.shadowOffset = CGSize(width: 0, height: -2)
         }
 
         private func configure(

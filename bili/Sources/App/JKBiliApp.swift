@@ -17,6 +17,7 @@ struct JKBiliApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
+                .scrollIndicators(.hidden, axes: .vertical)
                 .environmentObject(dependencies)
                 .environmentObject(dependencies.sessionStore)
                 .environmentObject(dependencies.libraryStore)

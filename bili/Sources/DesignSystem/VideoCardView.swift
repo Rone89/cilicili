@@ -100,30 +100,27 @@ struct StableVideoTitleText: View {
 
 struct VideoCoverGlassBadge<Content: View>: View {
     let content: Content
-    private let tintOpacity: Double
 
-    init(tintOpacity: Double = 0.16, @ViewBuilder content: () -> Content) {
+    init(@ViewBuilder content: () -> Content) {
         self.content = content()
-        self.tintOpacity = tintOpacity
     }
 
     var body: some View {
         content
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.horizontal, 7)
-            .frame(maxWidth: 146, minHeight: 22)
-            .background {
-                Capsule()
-                    .fill(.clear)
-                    .glassEffect(
-                        .regular.tint(.black.opacity(tintOpacity)).interactive(false),
-                        in: Capsule()
-                    )
-            }
-            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+            .minimumScaleFactor(0.86)
+            .allowsTightening(true)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .glassEffect(
+                .regular,
+                in: .capsule
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: 146, alignment: .leading)
             .clipped()
     }
 }
@@ -139,23 +136,18 @@ struct VideoCoverDurationBadge: View {
 
     var body: some View {
         Text(duration)
-            .font(.caption2.weight(.semibold))
+            .font(.system(size: 11, weight: .semibold))
             .monospacedDigit()
             .foregroundStyle(.white)
             .lineLimit(1)
             .truncationMode(.tail)
             .minimumScaleFactor(0.86)
             .allowsTightening(true)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(.black.opacity(0.58))
-            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .biliPlayerClearGlass(interactive: false, in: Capsule())
             .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: maxWidth, alignment: .trailing)
-            .shadow(color: .black.opacity(0.42), radius: 1.0, x: 0, y: 1)
-            .shadow(color: .black.opacity(0.16), radius: 2.6, x: 0, y: 1.4)
             .clipped()
             .accessibilityLabel("视频时长 \(duration)")
     }
@@ -172,14 +164,19 @@ struct VideoCoverViewCountBadge: View {
         Label(viewText, systemImage: "play.fill")
             .font(.caption2.weight(.semibold))
             .labelStyle(.titleAndIcon)
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .lineLimit(1)
             .truncationMode(.tail)
             .minimumScaleFactor(0.86)
             .allowsTightening(true)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .glassEffect(
+                .regular,
+                in: .capsule
+            )
+            .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: 112, alignment: .leading)
-            .shadow(color: .black.opacity(0.42), radius: 1.0, x: 0, y: 1)
-            .shadow(color: .black.opacity(0.16), radius: 2.6, x: 0, y: 1.4)
             .clipped()
             .accessibilityLabel("观看次数 \(viewText)")
     }
@@ -190,18 +187,45 @@ struct VideoCoverPlayBadge: View {
     var iconSize: CGFloat = 15
 
     var body: some View {
-        Image(systemName: "play.fill")
-            .font(.system(size: iconSize, weight: .bold))
-            .foregroundStyle(.white)
-            .offset(x: 1)
-            .frame(width: size, height: size)
-            .background(.black.opacity(0.52), in: Circle())
-            .overlay {
-                Circle()
-                    .stroke(.white.opacity(0.18), lineWidth: 0.8)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
-            .accessibilityHidden(true)
+        GlassEffectContainer(spacing: 8) {
+            Image(systemName: "play.fill")
+                .font(.system(size: iconSize, weight: .bold))
+                .foregroundStyle(.white)
+                .offset(x: 1)
+                .frame(width: size, height: size)
+                .biliPlayerClearGlass(interactive: false, in: Circle())
+                .videoCoverControlShadow()
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+struct VideoCoverBottomScrim: View {
+    var opacity: Double = 0.42
+    var heightFraction: CGFloat = 0.52
+
+    var body: some View {
+        GeometryReader { proxy in
+            LinearGradient(
+                colors: [
+                    .clear,
+                    .black.opacity(opacity)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: max(proxy.size.height * min(max(heightFraction, 0), 1), 0))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    func videoCoverControlShadow() -> some View {
+        shadow(color: .black.opacity(0.28), radius: 8, x: 0, y: 4)
+            .shadow(color: .black.opacity(0.16), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -447,13 +471,18 @@ private struct VideoCompactCover: View, Equatable {
             maximumPixelLength: maximumPixelLength
         )
         .frame(width: size.width, height: size.height)
-        .overlay(alignment: .bottomTrailing) {
+        .overlay {
             if !display.durationText.isEmpty {
-                VideoCoverDurationBadge(
-                    display.durationText,
-                    maxWidth: max(size.width - badgeInset * 2, 1)
-                )
-                .padding(badgeInset)
+                ZStack(alignment: .bottomTrailing) {
+                    VideoCoverBottomScrim()
+
+                    VideoCoverDurationBadge(
+                        display.durationText,
+                        maxWidth: max(size.width - badgeInset * 2, 1)
+                    )
+                    .padding(badgeInset)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .clipped()
@@ -487,6 +516,23 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
 
     final class Coordinator {
         var lastSignature: Signature?
+        var lastMeasuredWidth: CGFloat?
+
+        func measuredWidth(proposedWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
+            if let proposedWidth, proposedWidth.isFinite, proposedWidth > 1 {
+                return ceil(proposedWidth)
+            }
+
+            if boundsWidth.isFinite, boundsWidth > 1 {
+                return ceil(boundsWidth)
+            }
+
+            if let lastMeasuredWidth, lastMeasuredWidth.isFinite, lastMeasuredWidth > 1 {
+                return ceil(lastMeasuredWidth)
+            }
+
+            return nil
+        }
     }
 
     struct Signature: Equatable {
@@ -504,6 +550,9 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
         let label = UILabel()
         label.numberOfLines = lineLimit
         label.lineBreakMode = titleLineBreakMode
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = titleLineBreakStrategy
+        }
         label.adjustsFontForContentSizeCategory = true
         label.allowsDefaultTighteningForTruncation = true
         label.textAlignment = .natural
@@ -524,13 +573,23 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
 
         label.numberOfLines = lineLimit
         label.lineBreakMode = titleLineBreakMode
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = titleLineBreakStrategy
+        }
         label.attributedText = attributedTitle
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
-        guard let width = proposal.width ?? (uiView.bounds.width > 1 ? uiView.bounds.width : nil),
-              width > 1
-        else { return nil }
+        guard let width = context.coordinator.measuredWidth(
+            proposedWidth: proposal.width,
+            boundsWidth: uiView.bounds.width
+        ) else {
+            context.coordinator.lastMeasuredWidth = nil
+            uiView.preferredMaxLayoutWidth = 0
+            return nil
+        }
+
+        context.coordinator.lastMeasuredWidth = width
         uiView.preferredMaxLayoutWidth = width
         let measured = uiView.sizeThatFits(
             CGSize(width: width, height: .greatestFiniteMagnitude)
@@ -544,9 +603,7 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
         paragraphStyle.lineBreakMode = titleLineBreakMode
         paragraphStyle.alignment = .natural
         paragraphStyle.hyphenationFactor = 0
-        if #available(iOS 14.0, *) {
-            paragraphStyle.lineBreakStrategy = []
-        }
+        paragraphStyle.lineBreakStrategy = titleLineBreakStrategy
         return NSAttributedString(
             string: title,
             attributes: [
@@ -558,7 +615,29 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
     }
 
     private var titleLineBreakMode: NSLineBreakMode {
-        lineLimit == 1 ? .byTruncatingTail : .byWordWrapping
+        guard lineLimit != 1 else { return .byTruncatingTail }
+        return title.prefersCharacterWrappingForCJKText ? .byCharWrapping : .byWordWrapping
+    }
+
+    private var titleLineBreakStrategy: NSParagraphStyle.LineBreakStrategy {
+        title.prefersCharacterWrappingForCJKText ? [] : .standard
+    }
+}
+
+extension String {
+    var prefersCharacterWrappingForCJKText: Bool {
+        unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF:
+                true
+            case 0x20000...0x2A6DF, 0x2A700...0x2B73F, 0x2B740...0x2B81F, 0x2B820...0x2CEAF:
+                true
+            case 0x3040...0x309F, 0x30A0...0x30FF, 0xAC00...0xD7AF:
+                true
+            default:
+                false
+            }
+        }
     }
 }
 
@@ -639,6 +718,7 @@ struct VideoFeedStoryCardView: View, Equatable {
                 ZStack(alignment: .bottom) {
                     AdaptiveVideoCoverImage(display: display, style: .exactCrop)
 
+                    coverBottomScrim
                     coverMetaOverlay
                 }
             }
@@ -665,6 +745,13 @@ struct VideoFeedStoryCardView: View, Equatable {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .clipped()
+    }
+
+    @ViewBuilder
+    private var coverBottomScrim: some View {
+        if !display.viewText.isEmpty || !display.durationText.isEmpty {
+            VideoCoverBottomScrim()
+        }
     }
 
     private var title: some View {
@@ -740,6 +827,8 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
                 ZStack(alignment: .bottomTrailing) {
                     AdaptiveVideoCoverImage(display: display, style: .maxSide, fixedSize: fixedCoverSize)
 
+                    thumbnailBottomScrim
+
                     if showsPlayBadge {
                         VideoCoverPlayBadge(size: 40, iconSize: 15)
                             .padding(8)
@@ -758,6 +847,13 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .mediaShadow(coverShadowLevel)
+    }
+
+    @ViewBuilder
+    private var thumbnailBottomScrim: some View {
+        if showsPlayBadge || !display.durationText.isEmpty {
+            VideoCoverBottomScrim()
+        }
     }
 
     private var metadataRow: some View {
@@ -809,17 +905,20 @@ struct VideoCardView: View, Equatable {
 
     let display: VideoCardDisplayModel
     private let showsPublishTimeInAuthorRow: Bool
+    private let showsCoverViewCountBadge: Bool
     private let surfaceStyle: SurfaceStyle
     private let fixedCoverSize: CGSize?
 
     init(
         video: VideoItem,
         showsPublishTimeInAuthorRow: Bool = false,
+        showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
         fixedCoverSize: CGSize? = nil
     ) {
         self.display = VideoCardDisplayModel(video: video)
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
+        self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
     }
@@ -827,11 +926,13 @@ struct VideoCardView: View, Equatable {
     init(
         display: VideoCardDisplayModel,
         showsPublishTimeInAuthorRow: Bool = false,
+        showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
         fixedCoverSize: CGSize? = nil
     ) {
         self.display = display
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
+        self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
     }
@@ -839,6 +940,7 @@ struct VideoCardView: View, Equatable {
     static func == (lhs: VideoCardView, rhs: VideoCardView) -> Bool {
         lhs.display == rhs.display
             && lhs.showsPublishTimeInAuthorRow == rhs.showsPublishTimeInAuthorRow
+            && lhs.showsCoverViewCountBadge == rhs.showsCoverViewCountBadge
             && lhs.surfaceStyle == rhs.surfaceStyle
             && lhs.fixedCoverSize == rhs.fixedCoverSize
     }
@@ -897,6 +999,7 @@ struct VideoCardView: View, Equatable {
             .overlay {
                 ZStack(alignment: .bottom) {
                     coverImage
+                    coverBottomScrim
                     coverMetaOverlay
                 }
             }
@@ -917,7 +1020,7 @@ struct VideoCardView: View, Equatable {
 
     private var coverMetaOverlay: some View {
         HStack(spacing: 6) {
-            if !display.viewText.isEmpty {
+            if showsCoverViewCountBadge, !display.viewText.isEmpty {
                 VideoCoverViewCountBadge(display.viewText)
             }
 
@@ -931,6 +1034,13 @@ struct VideoCardView: View, Equatable {
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .clipped()
+    }
+
+    @ViewBuilder
+    private var coverBottomScrim: some View {
+        if (showsCoverViewCountBadge && !display.viewText.isEmpty) || !display.durationText.isEmpty {
+            VideoCoverBottomScrim()
+        }
     }
 
     private var authorRow: some View {

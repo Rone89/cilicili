@@ -837,6 +837,40 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
         return parts.isEmpty ? title : "\(title) · \(parts.joined(separator: " · "))"
     }
 
+    nonisolated var compactAccessoryTitle: String {
+        let normalizedTitle = title.replacingOccurrences(of: " ", with: "")
+        switch quality {
+        case 129:
+            return "HDR Vivid"
+        case 127:
+            return "8K超高清"
+        case 126:
+            return "杜比视界"
+        case 125:
+            return "HDR真彩"
+        case 120:
+            return "4K超清"
+        case 116:
+            return "1080P高帧"
+        case 112:
+            return "1080P高码率"
+        case 80:
+            return "1080P高清"
+        case 74:
+            return "720P高帧"
+        case 64:
+            return "720P准高清"
+        case 32:
+            return "480P清晰"
+        case 16:
+            return "360P流畅"
+        case 6:
+            return "240P极速"
+        default:
+            return normalizedTitle
+        }
+    }
+
     nonisolated private var unavailableReason: String {
         if let videoStream, !videoStream.isHardwareDecodingCompatibleVideo {
             return "当前设备暂不可播"

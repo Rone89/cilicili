@@ -16,8 +16,7 @@ struct SearchView: View {
                     }
             }
         }
-        .navigationTitle("搜索")
-        .navigationBarTitleDisplayMode(.large)
+        .rootNavigationTitle("搜索")
         .nativeTopNavigationChrome()
     }
 

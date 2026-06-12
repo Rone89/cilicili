@@ -102,6 +102,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
+    @Published private(set) var showsVideoDetailNetworkDiagnosticsButton: Bool
+    @Published private(set) var showsVideoDetailPinnedProgressBar: Bool
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
@@ -125,6 +127,8 @@ final class LibraryStore: ObservableObject {
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
+    private static let showsVideoDetailNetworkDiagnosticsButtonKey = "cc.bili.videoDetail.showsNetworkDiagnosticsButton.v1"
+    private static let showsVideoDetailPinnedProgressBarKey = "cc.bili.videoDetail.showsPinnedProgressBar.v1"
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
@@ -135,7 +139,9 @@ final class LibraryStore: ObservableObject {
     static let supportedVideoQualities = [129, 127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
     static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
     static let defaultHomeRefreshTriggerDistance = 110.0
+    private static let temporaryPlaybackCDNAvoidanceDuration: TimeInterval = 10 * 60
     private var playbackCDNProbeSnapshotsByContext: [String: PlaybackCDNProbeSnapshot] = [:]
+    private var temporarilyAvoidedPlaybackCDNPreferences: [PlaybackCDNPreference: Date] = [:]
 
     var effectivePlaybackCDNPreference: PlaybackCDNPreference {
         effectivePlaybackCDNPreference(for: playbackCDNPreference)
@@ -147,6 +153,24 @@ final class LibraryStore: ObservableObject {
 
     var automaticPlaybackCDNRecommendation: PlaybackCDNPreference? {
         playbackCDNRecommendation(allowExpired: false)
+    }
+
+    var activePlaybackCDNAvoidanceDescription: String? {
+        let now = Date()
+        let activeAvoidances = temporarilyAvoidedPlaybackCDNPreferences
+            .filter { $0.value > now }
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value {
+                    return lhs.value < rhs.value
+                }
+                return lhs.key.title < rhs.key.title
+            }
+        guard !activeAvoidances.isEmpty else { return nil }
+        return activeAvoidances
+            .map { preference, expiresAt in
+                "\(preference.title) 至 \(expiresAt.formatted(date: .omitted, time: .shortened))"
+            }
+            .joined(separator: "、")
     }
 
     var playbackCDNProbeSnapshotForCurrentContext: PlaybackCDNProbeSnapshot? {
@@ -215,6 +239,8 @@ final class LibraryStore: ObservableObject {
         }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
+        self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? true
+        self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? true
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
@@ -254,17 +280,34 @@ final class LibraryStore: ObservableObject {
 
     func setPlaybackCDNPreference(_ preference: PlaybackCDNPreference) {
         playbackCDNPreference = preference
+        clearTemporaryPlaybackCDNAvoidance()
         userDefaults.set(preference.rawValue, forKey: Self.playbackCDNPreferenceKey)
     }
 
     func setPlaybackNetworkAddressFamilyPreference(_ preference: PlaybackNetworkAddressFamilyPreference) {
         playbackNetworkAddressFamilyPreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.playbackNetworkAddressFamilyPreferenceKey)
+        clearTemporaryPlaybackCDNAvoidance()
         clearPlaybackCDNProbeSnapshots()
     }
 
     func effectivePlaybackCDNPreference(for preference: PlaybackCDNPreference) -> PlaybackCDNPreference {
-        preference
+        guard preference == .automatic else { return preference }
+        return playbackCDNRecommendation(allowExpired: false) ?? .automatic
+    }
+
+    @discardableResult
+    func temporarilyAvoidAutomaticPlaybackCDN(
+        _ preference: PlaybackCDNPreference,
+        duration: TimeInterval = 10 * 60
+    ) -> Bool {
+        guard playbackCDNPreference == .automatic,
+              preference.isManualHost
+        else { return false }
+        let expiration = Date().addingTimeInterval(max(30, duration))
+        temporarilyAvoidedPlaybackCDNPreferences[preference] = expiration
+        objectWillChange.send()
+        return true
     }
 
     func setPlaybackCDNProbeSnapshot(_ snapshot: PlaybackCDNProbeSnapshot?) {
@@ -290,11 +333,31 @@ final class LibraryStore: ObservableObject {
 
     private func playbackCDNRecommendation(allowExpired: Bool) -> PlaybackCDNPreference? {
         guard let snapshot = playbackCDNProbeSnapshotForCurrentContext,
-              allowExpired || !snapshot.isExpired(),
-              let preference = snapshot.recommendedPreference,
-              snapshot.result(for: preference)?.didSucceed == true
+              allowExpired || !snapshot.isExpired()
         else { return nil }
-        return preference
+        var seenPreferences = Set<PlaybackCDNPreference>()
+        var candidates = [PlaybackCDNPreference]()
+        func appendCandidate(_ preference: PlaybackCDNPreference?) {
+            guard let preference,
+                  snapshot.result(for: preference)?.didSucceed == true,
+                  seenPreferences.insert(preference).inserted
+            else { return }
+            candidates.append(preference)
+        }
+        appendCandidate(snapshot.recommendedPreference)
+        snapshot.successfulResults.forEach { appendCandidate($0.preference) }
+        return candidates.first { !isPlaybackCDNTemporarilyAvoided($0) }
+    }
+
+    private func isPlaybackCDNTemporarilyAvoided(_ preference: PlaybackCDNPreference, now: Date = Date()) -> Bool {
+        guard let expiresAt = temporarilyAvoidedPlaybackCDNPreferences[preference] else { return false }
+        return expiresAt > now
+    }
+
+    private func clearTemporaryPlaybackCDNAvoidance() {
+        guard !temporarilyAvoidedPlaybackCDNPreferences.isEmpty else { return }
+        temporarilyAvoidedPlaybackCDNPreferences.removeAll()
+        objectWillChange.send()
     }
 
     private var currentPlaybackCDNProbeContextKey: String {
@@ -398,6 +461,16 @@ final class LibraryStore: ObservableObject {
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {
         playerPerformanceOverlayEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.playerPerformanceOverlayEnabledKey)
+    }
+
+    func setShowsVideoDetailNetworkDiagnosticsButton(_ isEnabled: Bool) {
+        showsVideoDetailNetworkDiagnosticsButton = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey)
+    }
+
+    func setShowsVideoDetailPinnedProgressBar(_ isEnabled: Bool) {
+        showsVideoDetailPinnedProgressBar = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.showsVideoDetailPinnedProgressBarKey)
     }
 
     func setIncognitoModeEnabled(_ isEnabled: Bool) {

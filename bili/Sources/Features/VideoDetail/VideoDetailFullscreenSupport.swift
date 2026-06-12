@@ -12,8 +12,13 @@ extension GeometryProxy {
            let rootView = window.rootViewController?.view {
             let localFrame = frame(in: .global)
             let frameInWindow = rootView.convert(localFrame, from: nil)
+            let resolvedSize = Self.resolvedFullscreenSize(
+                windowSize: window.bounds.size,
+                rootSize: rootView.bounds.size,
+                orientation: window.windowScene?.effectiveGeometry.interfaceOrientation
+            )
             return FullscreenContainerGeometry(
-                size: window.bounds.size,
+                size: resolvedSize,
                 offset: CGSize(width: -frameInWindow.minX, height: -frameInWindow.minY)
             )
         }
@@ -26,6 +31,35 @@ extension GeometryProxy {
             size: expandedSize,
             offset: CGSize(width: -safeAreaInsets.leading, height: -safeAreaInsets.top)
         )
+    }
+
+    private static func resolvedFullscreenSize(
+        windowSize: CGSize,
+        rootSize: CGSize,
+        orientation: UIInterfaceOrientation?
+    ) -> CGSize {
+        let candidates = [rootSize, windowSize].filter { $0.width > 1 && $0.height > 1 }
+        guard let orientation else {
+            return candidates.first ?? windowSize
+        }
+
+        if orientation.isLandscape {
+            if let landscapeSize = candidates.first(where: { $0.width >= $0.height }) {
+                return landscapeSize
+            }
+            let fallback = candidates.first ?? windowSize
+            return CGSize(width: max(fallback.width, fallback.height), height: min(fallback.width, fallback.height))
+        }
+
+        if orientation.isPortrait {
+            if let portraitSize = candidates.first(where: { $0.height >= $0.width }) {
+                return portraitSize
+            }
+            let fallback = candidates.first ?? windowSize
+            return CGSize(width: min(fallback.width, fallback.height), height: max(fallback.width, fallback.height))
+        }
+
+        return candidates.first ?? windowSize
     }
 }
 
@@ -45,24 +79,6 @@ extension UIApplication {
             .filter { $0.activationState == .foregroundActive }
             .flatMap(\.windows)
             .first { $0.isKeyWindow }
-    }
-}
-
-extension ManualVideoFullscreenMode {
-    var videoDetailInterfaceOrientationMask: UIInterfaceOrientationMask {
-        switch self {
-        case .portrait:
-            return .portrait
-        case .landscape(let orientation):
-            switch orientation {
-            case .landscapeLeft:
-                return .landscapeRight
-            case .landscapeRight:
-                return .landscapeLeft
-            default:
-                return .landscapeRight
-            }
-        }
     }
 }
 
@@ -188,10 +204,10 @@ struct VideoDetailLifecycleBridge: UIViewControllerRepresentable {
 
         override func viewWillDisappear(_ animated: Bool) {
             super.viewWillDisappear(animated)
-            onWillDisappear?()
             guard !isObservingTransition else { return }
             guard let coordinator = transitionCoordinator else { return }
             guard isClosingNavigationTransition(coordinator) else { return }
+            onWillDisappear?()
             isObservingTransition = true
             coordinator.animate(alongsideTransition: nil) { [weak self] context in
                 guard let self else { return }
@@ -227,6 +243,50 @@ struct VideoDetailLifecycleBridge: UIViewControllerRepresentable {
                 return true
             }
             return toIndex < fromIndex
+        }
+    }
+}
+
+struct VideoDetailRotationLayoutBridge: UIViewControllerRepresentable {
+    let onLayoutTransition: () -> Void
+    let onTransitionCompleted: () -> Void
+
+    func makeUIViewController(context _: Context) -> Controller {
+        let controller = Controller()
+        controller.onLayoutTransition = onLayoutTransition
+        controller.onTransitionCompleted = onTransitionCompleted
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
+        uiViewController.onLayoutTransition = onLayoutTransition
+        uiViewController.onTransitionCompleted = onTransitionCompleted
+    }
+
+    final class Controller: UIViewController {
+        var onLayoutTransition: (() -> Void)?
+        var onTransitionCompleted: (() -> Void)?
+
+        override func loadView() {
+            view = ClearPassthroughView()
+        }
+
+        override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+            super.viewWillTransition(to: size, with: coordinator)
+            onLayoutTransition?()
+            coordinator.animate(alongsideTransition: { [weak self] _ in
+                self?.view.window?.layoutIfNeeded()
+                self?.onLayoutTransition?()
+            }, completion: { [weak self] _ in
+                self?.view.window?.layoutIfNeeded()
+                self?.onLayoutTransition?()
+                self?.onTransitionCompleted?()
+            })
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            onLayoutTransition?()
         }
     }
 }

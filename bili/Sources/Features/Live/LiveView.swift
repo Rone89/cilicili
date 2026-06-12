@@ -20,8 +20,7 @@ struct LiveView: View {
                     }
             }
         }
-        .navigationTitle("直播")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootNavigationTitle("直播")
         .nativeTopNavigationChrome()
     }
 }
@@ -315,14 +314,16 @@ private struct LiveRoomStatusBadge: View {
     var body: some View {
         Label("直播中", systemImage: "dot.radiowaves.left.and.right")
             .font(.system(size: 10.5, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
             .allowsTightening(true)
             .padding(.horizontal, 6)
-            .frame(maxWidth: 76, minHeight: 20, maxHeight: 20)
-            .background(Color.pink.opacity(0.94), in: Capsule())
+            .padding(.vertical, 4)
+            .glassEffect(.regular, in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: 76, alignment: .leading)
             .clipped()
     }
 }
@@ -333,14 +334,16 @@ private struct LiveRoomOnlineBadge: View {
     var body: some View {
         Label(text, systemImage: "person.2.fill")
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
             .allowsTightening(true)
             .padding(.horizontal, 6)
-            .frame(maxWidth: 86, minHeight: 20, maxHeight: 20)
-            .background(.black.opacity(0.48), in: Capsule())
+            .padding(.vertical, 4)
+            .glassEffect(.regular, in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: 86, alignment: .leading)
             .clipped()
     }
 }

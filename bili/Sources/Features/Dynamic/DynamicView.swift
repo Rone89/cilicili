@@ -11,8 +11,7 @@ struct DynamicView: View {
             libraryStore: dependencies.libraryStore,
             sessionStore: dependencies.sessionStore
         )
-        .navigationTitle("动态")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootNavigationTitle("动态")
         .nativeTopNavigationChrome()
     }
 }
@@ -238,10 +237,10 @@ private struct FollowedLiveAvatar: View {
 
                 Text("直播中")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 6)
-                    .frame(height: 17)
-                    .background(Color.pink, in: Capsule())
+                    .padding(.vertical, 3)
+                    .glassEffect(.regular, in: Capsule())
                     .offset(y: 5)
             }
 
@@ -330,6 +329,8 @@ private struct DynamicFeedCard: View {
                 Color.clear
 
                 AdaptiveVideoCoverImage(display: display, style: .maxSide)
+
+                VideoCoverBottomScrim()
 
                 DynamicVideoPlayBadge(size: 34, iconSize: 14)
                     .padding(8)
@@ -1018,8 +1019,34 @@ private struct DynamicAttributedTextInput: Equatable {
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 2
-        style.lineBreakMode = .byWordWrapping
+        style.lineBreakMode = lineBreakMode
+        style.lineBreakStrategy = lineBreakStrategy
         return style
+    }
+
+    var lineBreakMode: NSLineBreakMode {
+        plainTextForLineBreaking.prefersCharacterWrappingForCJKText ? .byCharWrapping : .byWordWrapping
+    }
+
+    var lineBreakStrategy: NSParagraphStyle.LineBreakStrategy {
+        plainTextForLineBreaking.prefersCharacterWrappingForCJKText ? [] : .standard
+    }
+
+    private var plainTextForLineBreaking: String {
+        segments
+            .map { segment -> String in
+                switch segment {
+                case .text(let text):
+                    text
+                case .emoji(let text, _):
+                    text
+                case .link(let title, _):
+                    title
+                case .mention(let text, _, _):
+                    text
+                }
+            }
+            .joined()
     }
 
     private func attributedText(_ text: String) -> NSAttributedString {
@@ -1065,6 +1092,9 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     func makeUIView(context: Context) -> BiliInteractiveAttributedLabel {
         let label = BiliInteractiveAttributedLabel()
         label.backgroundColor = .clear
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = input.lineBreakStrategy
+        }
         label.adjustsFontForContentSizeCategory = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentHuggingPriority(.required, for: .vertical)
@@ -1074,7 +1104,10 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     func updateUIView(_ label: BiliInteractiveAttributedLabel, context: Context) {
         label.onLinkTap = onURLTap
         label.numberOfLines = input.maxLines ?? 0
-        label.lineBreakMode = .byWordWrapping
+        label.lineBreakMode = input.lineBreakMode
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = input.lineBreakStrategy
+        }
         let renderResult = context.coordinator.render(input)
         if context.coordinator.appliedRenderKey != renderResult.key {
             label.attributedText = renderResult.attributedString
@@ -1086,9 +1119,16 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: BiliInteractiveAttributedLabel, context: Context) -> CGSize? {
-        guard let width = proposal.width ?? (uiView.bounds.width > 1 ? uiView.bounds.width : nil),
-              width > 1
-        else { return nil }
+        guard let width = context.coordinator.measuredWidth(
+            proposedWidth: proposal.width,
+            boundsWidth: uiView.bounds.width
+        ) else {
+            context.coordinator.lastMeasuredWidth = nil
+            uiView.preferredMaxLayoutWidth = 0
+            return nil
+        }
+
+        context.coordinator.lastMeasuredWidth = width
         uiView.preferredMaxLayoutWidth = width
         let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(width: width, height: ceil(size.height))
@@ -1097,9 +1137,26 @@ private struct DynamicAttributedTextLabel: UIViewRepresentable {
     final class Coordinator {
         var currentInput: DynamicAttributedTextInput?
         var appliedRenderKey: String?
+        var lastMeasuredWidth: CGFloat?
         private var cachedInputKey: String?
         private var cachedRenderResult: DynamicAttributedTextRenderResult?
         private var imageTasks: [URL: Task<Void, Never>] = [:]
+
+        func measuredWidth(proposedWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
+            if let proposedWidth, proposedWidth.isFinite, proposedWidth > 1 {
+                return ceil(proposedWidth)
+            }
+
+            if boundsWidth.isFinite, boundsWidth > 1 {
+                return ceil(boundsWidth)
+            }
+
+            if let lastMeasuredWidth, lastMeasuredWidth.isFinite, lastMeasuredWidth > 1 {
+                return ceil(lastMeasuredWidth)
+            }
+
+            return nil
+        }
 
         func render(_ input: DynamicAttributedTextInput) -> DynamicAttributedTextRenderResult {
             if cachedInputKey == input.cacheKey, let cachedRenderResult {
@@ -1221,8 +1278,8 @@ private struct DynamicCommentsSheet: View {
                     commentsContent
                 }
             }
-            .navigationTitle("评论")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
+            .nativeTopScrollEdgeEffect()
             .task {
                 runtimeSettings.bind(dependencies.libraryStore)
                 viewModel.setBlocksGoodsComments(runtimeSettings.blocksGoodsComments)
@@ -1287,7 +1344,11 @@ private struct DynamicCommentsSheet: View {
             }
             .padding(14)
         } else if viewModel.comments.isEmpty {
-            EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "这里还没有可展示的评论。")
+            DynamicCommentPlainEmptyStateView(
+                title: "暂无评论",
+                systemImage: "bubble.left",
+                message: "这里还没有可展示的评论。"
+            )
                 .padding(14)
         } else {
             let commentItems = viewModel.commentItems
@@ -1341,6 +1402,37 @@ private struct DynamicCommentsSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
         }
+    }
+}
+
+private struct DynamicCommentPlainEmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 24)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1702,12 +1794,6 @@ private struct DynamicCommentReplyPreviewContainer<Content: View>: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(Color(.secondarySystemGroupedBackground))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color(.separator).opacity(0.08), lineWidth: 0.6)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
@@ -1724,13 +1810,7 @@ private struct DynamicCommentMetricBadge: View {
             .lineLimit(1)
             .minimumScaleFactor(0.82)
             .foregroundStyle(isHighlighted ? .pink : .secondary)
-            .padding(.horizontal, 8)
             .frame(height: 24)
-            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(isHighlighted ? Color.pink.opacity(0.14) : Color.secondary.opacity(0.10), lineWidth: 0.7)
-            }
     }
 }
 
@@ -1748,11 +1828,6 @@ private struct DynamicCommentInlineActionPill: View {
                 .minimumScaleFactor(0.82)
                 .padding(.horizontal, 9)
                 .frame(height: 26)
-                .background(Color.pink.opacity(0.08), in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(Color.pink.opacity(0.12), lineWidth: 0.7)
-                }
         }
         .buttonStyle(.plain)
         .foregroundStyle(.pink)
@@ -1779,8 +1854,8 @@ private struct DynamicCommentRepliesSheet: View {
                     }
                 }
             }
-            .navigationTitle("评论回复")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
+            .nativeTopScrollEdgeEffect()
             .task {
                 await replyStore.loadReplies(for: rootComment)
             }
@@ -1851,10 +1926,10 @@ private struct DynamicCommentRepliesContent: View {
                 Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
-            .dynamicCommentGlassButtonStyle()
-            .controlSize(.small)
-            .tint(.pink)
+            .buttonStyle(.plain)
+            .foregroundStyle(.pink)
         }
     }
 }
@@ -2382,8 +2457,8 @@ private struct DynamicCommentDialogSheet: View {
                     DynamicCommentDialogContent(rootComment: rootComment, focusReply: focusReply, replyStore: replyStore)
                 }
             }
-            .navigationTitle("查看对话")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
+            .nativeTopScrollEdgeEffect()
             .task {
                 await replyStore.loadDialog(for: rootComment, reply: focusReply)
             }
@@ -2766,7 +2841,7 @@ private struct DynamicOriginalPreview: View {
 
                 if let video {
                     VideoRouteLink(video) {
-                        DynamicArchivePreview(video: video, style: .compact)
+                        DynamicArchivePreview(video: video, style: .compact, showsCoverBadges: false)
                     }
                 }
 
@@ -2870,7 +2945,6 @@ private struct DynamicImageHeroPreview: View {
                             .monospacedDigit()
                     }
                 }
-                .foregroundStyle(.white)
                 .padding(10)
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -3258,10 +3332,10 @@ private struct DynamicImageGrid: View {
                 Color.clear
                 Text("+\(images.count - 8)")
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
-                    .frame(height: 38)
-                    .glassEffect(.regular.tint(.black.opacity(0.16)).interactive(false), in: Capsule())
+                    .padding(.vertical, 7)
+                    .glassEffect(.regular, in: Capsule())
             }
         }
     }
@@ -3562,12 +3636,19 @@ private struct DynamicArchivePreview: View {
     let display: VideoCardDisplayModel
     var style: Style = .large
     var showsHeader = true
+    var showsCoverBadges = true
 
-    init(video: VideoItem, style: Style = .large, showsHeader: Bool = true) {
+    init(
+        video: VideoItem,
+        style: Style = .large,
+        showsHeader: Bool = true,
+        showsCoverBadges: Bool = true
+    ) {
         self.video = video
         self.display = VideoCardDisplayModel(video: video)
         self.style = style
         self.showsHeader = showsHeader
+        self.showsCoverBadges = showsCoverBadges
     }
 
     var body: some View {
@@ -3593,7 +3674,12 @@ private struct DynamicArchivePreview: View {
 
     private var compactContent: some View {
         HStack(spacing: 10) {
-            cover(showsPlayGlyph: true, aspectRatio: 16 / 9, fixedSize: Self.compactCoverSize)
+            cover(
+                showsPlayGlyph: showsCoverBadges,
+                showsDurationBadge: showsCoverBadges,
+                aspectRatio: 16 / 9,
+                fixedSize: Self.compactCoverSize
+            )
                 .frame(width: Self.compactCoverSize.width, height: Self.compactCoverSize.height)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -3613,12 +3699,21 @@ private struct DynamicArchivePreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func cover(showsPlayGlyph: Bool, aspectRatio: CGFloat, fixedSize: CGSize? = nil) -> some View {
+    private func cover(
+        showsPlayGlyph: Bool,
+        showsDurationBadge: Bool = true,
+        aspectRatio: CGFloat,
+        fixedSize: CGSize? = nil
+    ) -> some View {
         FixedAspectPreview(aspectRatio: aspectRatio) {
             ZStack {
                 Color.clear
 
                 AdaptiveVideoCoverImage(display: display, style: .exactCrop, fixedSize: fixedSize)
+
+                if showsPlayGlyph || showsDurationBadge {
+                    VideoCoverBottomScrim()
+                }
 
                 if showsPlayGlyph {
                     DynamicVideoPlayBadge(size: 28, iconSize: 12)
@@ -3626,7 +3721,7 @@ private struct DynamicArchivePreview: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
 
-                if video.duration != nil {
+                if showsDurationBadge, video.duration != nil {
                     VideoCoverDurationBadge(BiliFormatters.duration(video.duration))
                         .padding(8)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -3763,20 +3858,19 @@ private struct DynamicLivePreview: View {
                 if showsCenterBadge {
                     Label("直播中", systemImage: "dot.radiowaves.left.and.right")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .glassEffect(.regular.tint(.black.opacity(0.16)).interactive(false), in: Capsule())
+                        .padding(.vertical, 6)
+                        .glassEffect(.regular, in: Capsule())
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
 
                 Text(live.statusText)
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.pink.opacity(0.92))
-                    .clipShape(Capsule())
+                    .glassEffect(.regular, in: Capsule())
                     .padding(8)
             }
         }

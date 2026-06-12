@@ -26,7 +26,7 @@ struct VideoDetailDanmakuOverlay: View {
             playbackClock: clock,
             onPlaybackTime: onPlaybackTime
         )
-        .padding(.horizontal, usesLandscapePlaybackChrome ? 18 : 4)
+        .padding(.horizontal, usesLandscapePlaybackChrome ? 0 : 4)
         .onAppear {
             state.bind(store: store, playerViewModel: playerViewModel)
             onPlaybackTime(clock.currentTime, false)

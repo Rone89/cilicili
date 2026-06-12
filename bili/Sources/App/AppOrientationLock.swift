@@ -4,7 +4,11 @@ import UIKit
 enum AppOrientationLock {
     private(set) static var supportedOrientations: UIInterfaceOrientationMask = .portrait
 
-    static func update(to orientations: UIInterfaceOrientationMask, in scene: UIWindowScene?) {
+    static func update(
+        to orientations: UIInterfaceOrientationMask,
+        in scene: UIWindowScene?,
+        requestsGeometryUpdate: Bool = false
+    ) {
         supportedOrientations = orientations
 
         let targetScenes: [UIWindowScene]
@@ -22,6 +26,13 @@ enum AppOrientationLock {
                 controller.setNeedsStatusBarAppearanceUpdate()
                 controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
             }
+
+        guard requestsGeometryUpdate else { return }
+        targetScenes.forEach { scene in
+            scene.requestGeometryUpdate(
+                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientations)
+            ) { _ in }
+        }
     }
 
     static func restorePortrait(in scene: UIWindowScene? = nil) {
@@ -41,7 +52,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        AppOrientationLock.supportedOrientations
+        return AppOrientationLock.supportedOrientations
     }
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {

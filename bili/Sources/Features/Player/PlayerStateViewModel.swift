@@ -2,7 +2,16 @@ import AVFoundation
 import AVKit
 import Combine
 import OSLog
+import SwiftUI
 import UIKit
+
+struct PlaybackTransitionSnapshot {
+    let image: UIImage
+
+    init(image: UIImage) {
+        self.image = image
+    }
+}
 
 @MainActor
 enum PlayerStartupResumePolicy {
@@ -149,7 +158,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var navigationAudioSuspension: NavigationAudioSuspension?
     private var sponsorBlockEnabled = false
     private var onSponsorBlockSegmentSkipped: (@Sendable (SponsorBlockSkipEvent) async -> Void)?
-    private var hostFullscreenRequestHandler: (() -> Void)?
     private(set) var isTerminated = false
     private var isStopping = false
     private var lastBufferingPressureNotificationCount = 0
@@ -262,29 +270,40 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         playbackClock.progress
     }
 
+    func makePlaybackTransitionSnapshot() -> PlaybackTransitionSnapshot? {
+        guard let image = currentVideoFrameSnapshotImage()
+            ?? surfaceView?.makePlaybackTransitionSnapshotImage()
+        else {
+            return nil
+        }
+        return PlaybackTransitionSnapshot(image: image)
+    }
+
     func makePlaybackTransitionSnapshotView() -> UIView? {
-        if let image = engine.currentVideoFrameImage() {
-            let imageView = UIImageView(image: image)
-            imageView.backgroundColor = .black
-            imageView.contentMode = .scaleAspectFit
-            imageView.clipsToBounds = true
-            imageView.isOpaque = true
-            imageView.frame = surfaceView?.bounds ?? CGRect(origin: .zero, size: image.size)
+        if let imageView = makeCurrentVideoFrameSnapshotView() {
+            imageView.frame = surfaceView?.bounds ?? CGRect(origin: .zero, size: imageView.bounds.size)
             return imageView
         }
         return surfaceView?.makePlaybackTransitionSnapshotView()
     }
 
+    func makeCurrentVideoFrameSnapshotView() -> UIView? {
+        guard let image = currentVideoFrameSnapshotImage() else { return nil }
+        let imageView = UIImageView(image: image)
+        imageView.backgroundColor = .black
+        imageView.contentMode = .scaleAspectFit
+        imageView.clipsToBounds = true
+        imageView.isOpaque = true
+        imageView.frame = CGRect(origin: .zero, size: image.size)
+        return imageView
+    }
+
+    private func currentVideoFrameSnapshotImage() -> UIImage? {
+        engine.currentVideoFrameImage()
+    }
+
     func attachSurface(_ view: VideoSurfaceContainerView, prefersNativePlaybackControls: Bool = true) {
         self.prefersNativePlaybackControls = prefersNativePlaybackControls
-        if ManualVideoFullscreenSession.isActive,
-           let currentSurface = surfaceView,
-           currentSurface !== view,
-           currentSurface.isInManualFullscreen,
-           !view.isInManualFullscreen {
-            return
-        }
-
         let isNewSurface = surfaceView !== view
         let usesNativePlaybackControls = engine.usesNativePlaybackControls && prefersNativePlaybackControls
         let shouldAttachDirectSurface = !usesNativePlaybackControls && nativePlaybackController != nil
@@ -330,8 +349,72 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engine.refreshSurfaceLayout()
     }
 
+    func setContentOverlay(_ overlay: AnyView?) {
+        engine.setContentOverlay(overlay)
+        engine.refreshSurfaceLayout()
+    }
+
+    func setDanmakuControls(
+        isEnabled: Bool,
+        onToggle: (() -> Void)?,
+        onShowSettings: (() -> Void)?
+    ) {
+        engine.setDanmakuControls(
+            isEnabled: isEnabled,
+            onToggle: onToggle,
+            onShowSettings: onShowSettings
+        )
+    }
+
+    func setQualityControls(_ controls: PlayerQualityControls?) {
+        engine.setQualityControls(controls)
+    }
+
+    private func installPlaybackHandoffSnapshot(
+        on hostView: UIView,
+        fallbackView: UIView?,
+        fadeDelay: TimeInterval,
+        fadeDuration: TimeInterval
+    ) {
+        guard let snapshotView = makePlaybackHandoffSnapshotView(fallbackView: fallbackView) else { return }
+        snapshotView.frame = hostView.bounds
+        snapshotView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        snapshotView.isUserInteractionEnabled = false
+        snapshotView.alpha = 1
+        snapshotView.backgroundColor = .black
+        hostView.addSubview(snapshotView)
+        hostView.bringSubviewToFront(snapshotView)
+
+        let delayNanoseconds = UInt64(max(fadeDelay, 0) * 1_000_000_000)
+        Task { @MainActor [weak snapshotView] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard let snapshotView, snapshotView.superview != nil else { return }
+            UIView.animate(withDuration: fadeDuration, delay: 0, options: [.curveEaseOut]) {
+                snapshotView.alpha = 0
+            } completion: { _ in
+                snapshotView.removeFromSuperview()
+            }
+        }
+    }
+
+    private func makePlaybackHandoffSnapshotView(fallbackView: UIView?) -> UIView? {
+        if let imageView = makeCurrentVideoFrameSnapshotView() {
+            return imageView
+        }
+
+        guard let fallbackView,
+              let snapshotView = fallbackView.snapshotView(afterScreenUpdates: false)
+        else { return nil }
+        snapshotView.backgroundColor = .black
+        snapshotView.isOpaque = true
+        return snapshotView
+    }
+
     func detachSurface(_ view: VideoSurfaceContainerView) {
         guard surfaceView === view else { return }
+        engine.setContentOverlay(nil)
+        engine.setDanmakuControls(isEnabled: false, onToggle: nil, onShowSettings: nil)
+        engine.setQualityControls(nil)
         engine.detachNativePlaybackController(view.nativePlayerViewController)
         engine.detachSurface(view.drawableView)
         view.setNativePlaybackControllerEnabled(false)
@@ -341,22 +424,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     func refreshSurfaceLayout() {
         guard surfaceView != nil else { return }
         engine.refreshSurfaceLayout()
-    }
-
-    @discardableResult
-    func enterManualFullscreen(
-        mode: ManualVideoFullscreenMode,
-        onExit: (() -> Void)?,
-        animated: Bool
-    ) -> Bool {
-        guard let surfaceView else {
-            PlayerMetricsLog.logger.error("manualFullscreenEnterFailed reason=noSurface")
-            return false
-        }
-        surfaceView.setManualFullscreenMode(mode, onExit: onExit, animated: animated)
-        let didEnter = surfaceView.isInManualFullscreen
-        PlayerMetricsLog.logger.info("manualFullscreenEnterRequested didEnter=\(didEnter, privacy: .public)")
-        return didEnter
     }
 
     func playbackSnapshot() -> PlayerPlaybackSnapshot {
@@ -388,28 +455,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         streamSource.alternateVideoRenditions.forEach { urls.insert($0.videoURL) }
         return urls
-    }
-
-    func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget? = nil) {
-        engine.setHostFullscreenActive(isActive, exitTarget: exitTarget)
-        engine.refreshSurfaceLayout()
-    }
-
-    func recoverSurfaceAfterHostFullscreenTransition() {
-        guard surfaceView != nil else { return }
-        engine.refreshSurfaceLayout()
-        schedulePlaybackRecoveryWatchdog(reason: hasPresentedPlayback ? .stall : .firstFrame)
-    }
-
-    func setHostFullscreenRequestHandler(_ handler: (() -> Void)?) {
-        hostFullscreenRequestHandler = handler
-    }
-
-    @discardableResult
-    func requestHostFullscreen() -> Bool {
-        guard let hostFullscreenRequestHandler else { return false }
-        hostFullscreenRequestHandler()
-        return true
     }
 
     func recoverPlaybackAfterAppResume() {

@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import OSLog
+import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
@@ -10,9 +11,11 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     private weak var surface: UIView?
     private weak var nativeController: AVPlayerViewController?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
-    private var hostFullscreenActive = false
-    private weak var hostFullscreenExitTarget: PlayerHostFullscreenExitTarget?
     private weak var viewModel: PlayerStateViewModel?
+    private var contentOverlay: AnyView?
+    private var isDanmakuEnabled = true
+    private var onToggleDanmaku: (() -> Void)?
+    private var onShowDanmakuSettings: (() -> Void)?
     private var currentVolume: Float = 1
     private var currentMuted = false
     private var currentRate: Double = 1
@@ -71,6 +74,26 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         activeEngine.setVideoGravity(gravity)
     }
 
+    func setContentOverlay(_ overlay: AnyView?) {
+        contentOverlay = overlay
+        activeEngine.setContentOverlay(overlay)
+    }
+
+    func setDanmakuControls(
+        isEnabled: Bool,
+        onToggle: (() -> Void)?,
+        onShowSettings: (() -> Void)?
+    ) {
+        isDanmakuEnabled = isEnabled
+        onToggleDanmaku = onToggle
+        onShowDanmakuSettings = onShowSettings
+        activeEngine.setDanmakuControls(
+            isEnabled: isEnabled,
+            onToggle: onToggle,
+            onShowSettings: onShowSettings
+        )
+    }
+
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
         nativeController = controller
         activeEngine.attachNativePlaybackController(controller)
@@ -81,12 +104,6 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         if nativeController === controller {
             nativeController = nil
         }
-    }
-
-    func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget?) {
-        hostFullscreenActive = isActive
-        hostFullscreenExitTarget = exitTarget
-        activeEngine.setHostFullscreenActive(isActive, exitTarget: exitTarget)
     }
 
     func prepare(source: PlayerStreamSource) async throws {
@@ -230,13 +247,18 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         engine.setVolume(currentVolume)
         engine.setMuted(currentMuted)
         engine.setPlaybackRate(currentRate)
+        engine.setContentOverlay(contentOverlay)
+        engine.setDanmakuControls(
+            isEnabled: isDanmakuEnabled,
+            onToggle: onToggleDanmaku,
+            onShowSettings: onShowDanmakuSettings
+        )
         if let surface {
             engine.attachSurface(surface)
         }
         if let nativeController {
             engine.attachNativePlaybackController(nativeController)
         }
-        engine.setHostFullscreenActive(hostFullscreenActive, exitTarget: hostFullscreenExitTarget)
     }
 
     private func bind(_ engine: PlayerRenderingEngine) {
@@ -502,8 +524,6 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
     func attachNativePlaybackController(_: AVPlayerViewController) {}
 
     func detachNativePlaybackController(_: AVPlayerViewController) {}
-
-    func setHostFullscreenActive(_: Bool, exitTarget _: PlayerHostFullscreenExitTarget?) {}
 
     func prepare(source: PlayerStreamSource) async throws {
         guard Self.canPrepare(source) else {

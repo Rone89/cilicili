@@ -97,8 +97,9 @@ struct HomeView: View {
 
     var body: some View {
         content(viewModel)
-        .navigationTitle("首页")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootNavigationTitle("首页") {
+            feedPickerRow(viewModel)
+        }
         .nativeTopNavigationChrome()
     }
 
@@ -121,24 +122,25 @@ struct HomeView: View {
     }
 
     private func feedPickerRow(_ viewModel: HomeViewModel) -> some View {
-        Picker(
-            "首页内容",
-            selection: Binding(
-                get: { viewModel.mode },
-                set: { newMode in
-                    Task { await viewModel.switchMode(newMode) }
-                }
-            )
-        ) {
+        Menu {
             ForEach(HomeFeedMode.allCases, id: \.self) { mode in
-                Text(mode.title)
-                    .tag(mode)
+                Button {
+                    Task { await viewModel.switchMode(mode) }
+                } label: {
+                    Label(mode.title, systemImage: viewModel.mode == mode ? "checkmark" : mode.systemImage)
+                }
             }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
         }
-        .pickerStyle(.segmented)
-        .controlSize(.small)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, 16)
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .biliPlayerClearGlass(interactive: true, in: Circle())
+        .accessibilityLabel("首页内容")
+        .accessibilityValue(viewModel.mode.title)
     }
 
     @ViewBuilder
@@ -148,8 +150,6 @@ struct HomeView: View {
             homeFeedWidthReader
 
             VStack(spacing: 6) {
-                feedPickerRow(viewModel)
-
                 if viewModel.videos.isEmpty && (viewModel.state == .idle || viewModel.state.isLoading) {
                     initialFeedSkeleton
                 } else if viewModel.videos.isEmpty {
@@ -403,6 +403,7 @@ struct HomeView: View {
             VideoCardView(
                 display: display,
                 showsPublishTimeInAuthorRow: true,
+                showsCoverViewCountBadge: false,
                 surfaceStyle: .blended,
                 fixedCoverSize: doubleColumnFixedCoverSize
             )

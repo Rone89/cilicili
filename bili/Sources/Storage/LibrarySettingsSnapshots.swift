@@ -120,6 +120,8 @@ final class PlayerRuntimeSettingsStore: ObservableObject {
 
 struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playerPerformanceOverlayEnabled = false
+    var showsNetworkDiagnosticsButton = true
+    var showsPinnedProgressBar = true
     var preferredVideoQuality: Int? = LibraryStore.defaultPreferredVideoQuality
     var effectivePlaybackCDNPreference: PlaybackCDNPreference = .automatic
     var playbackAutoOptimizationEnabled = true
@@ -133,6 +135,8 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
     private var cancellable: AnyCancellable?
 
     var playerPerformanceOverlayEnabled: Bool { snapshot.playerPerformanceOverlayEnabled }
+    var showsNetworkDiagnosticsButton: Bool { snapshot.showsNetworkDiagnosticsButton }
+    var showsPinnedProgressBar: Bool { snapshot.showsPinnedProgressBar }
     var preferredVideoQuality: Int? { snapshot.preferredVideoQuality }
     var effectivePlaybackCDNPreference: PlaybackCDNPreference { snapshot.effectivePlaybackCDNPreference }
     var playbackAutoOptimizationEnabled: Bool { snapshot.playbackAutoOptimizationEnabled }
@@ -156,6 +160,8 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
         guard let libraryStore else { return }
         let next = VideoDetailRuntimeSettingsSnapshot(
             playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
+            showsNetworkDiagnosticsButton: libraryStore.showsVideoDetailNetworkDiagnosticsButton,
+            showsPinnedProgressBar: libraryStore.showsVideoDetailPinnedProgressBar,
             preferredVideoQuality: libraryStore.preferredVideoQuality,
             effectivePlaybackCDNPreference: libraryStore.effectivePlaybackCDNPreference,
             playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled,

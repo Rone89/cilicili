@@ -137,10 +137,9 @@ private struct LiveRoomContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var viewModel: LiveRoomViewModel
     @State private var isShowingDescription = false
-    @State private var manualFullscreenMode: ManualVideoFullscreenMode?
-    @State private var isRestoringPortraitFromManualLandscape = false
-    @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
-    @State private var pendingManualLandscapeExitTask: Task<Void, Never>?
+    @State private var fullscreenMode: PlayerFullscreenMode?
+    @State private var isCompletingFullscreenExit = false
+    @State private var pendingFullscreenExitTask: Task<Void, Never>?
 
     private static let supportedLiveOrientations: UIInterfaceOrientationMask = [
         .portrait,
@@ -154,16 +153,16 @@ private struct LiveRoomContentView: View {
             let fullscreenSize = fullscreenGeometry.size
             let fullscreenOffset = fullscreenGeometry.offset
             let sceneIsLandscape = proxy.size.width > proxy.size.height
-            let isManualFullscreen = manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape
-            let isLandscape = sceneIsLandscape && !isManualFullscreen
-            let shouldHideSystemChrome = isLandscape || isManualFullscreen
-            let isManualLandscapeFullscreen = manualFullscreenMode?.isLandscape == true
+            let isInlineFullscreen = fullscreenMode != nil || isCompletingFullscreenExit
+            let isLandscape = sceneIsLandscape && !isInlineFullscreen
+            let shouldHideSystemChrome = isLandscape || isInlineFullscreen
+            let isLandscapeFullscreen = fullscreenMode?.isLandscape == true
             let stablePortraitWidth = Self.stablePortraitLayoutWidth(
                 proxySize: proxy.size,
                 fullscreenSize: fullscreenSize
             )
-            let layoutSize = isManualFullscreen
-                ? (isManualLandscapeFullscreen
+            let layoutSize = isInlineFullscreen
+                ? (isLandscapeFullscreen
                     ? CGSize(width: max(proxy.size.width, proxy.size.height), height: min(proxy.size.width, proxy.size.height))
                     : CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height)))
                 : CGSize(width: stablePortraitWidth, height: proxy.size.height)
@@ -172,7 +171,7 @@ private struct LiveRoomContentView: View {
                 viewModel,
                 screenSize: isLandscape ? fullscreenSize : layoutSize,
                 isLandscape: isLandscape,
-                isManualFullscreen: isManualFullscreen
+                isInlineFullscreen: isInlineFullscreen
             )
             .frame(
                 width: isLandscape ? fullscreenSize.width : layoutSize.width,
@@ -180,13 +179,13 @@ private struct LiveRoomContentView: View {
             )
             .offset(isLandscape ? fullscreenOffset : .zero)
             .background(isLandscape ? Color.black : Color.videoDetailBackground)
-            .ignoresSafeArea(.container, edges: (isLandscape || isManualFullscreen) ? .all : [])
+            .ignoresSafeArea(.container, edges: (isLandscape || isInlineFullscreen) ? .all : [])
             .preference(key: LiveDetailChromeHiddenPreferenceKey.self, value: shouldHideSystemChrome)
             .statusBar(hidden: shouldHideSystemChrome)
             .persistentSystemOverlays(shouldHideSystemChrome ? .hidden : .automatic)
             .background {
                 LiveStatusBarStyleBridge(
-                    style: (isLandscape || isManualFullscreen) ? .lightContent : .default,
+                    style: (isLandscape || isInlineFullscreen) ? .lightContent : .default,
                     isHidden: shouldHideSystemChrome
                 )
                 .frame(width: 0, height: 0)
@@ -207,16 +206,15 @@ private struct LiveRoomContentView: View {
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             allowLiveAutoRotation()
-            updateLiveManualOrientation(UIDevice.current.orientation)
+            updateLiveFullscreenOrientation(UIDevice.current.orientation)
         }
         .onDisappear {
-            pendingManualLandscapeEnterTask?.cancel()
-            pendingManualLandscapeExitTask?.cancel()
+            pendingFullscreenExitTask?.cancel()
             viewModel.stopPlaybackForNavigation()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             AppOrientationLock.restorePortrait()
-            manualFullscreenMode = nil
-            isRestoringPortraitFromManualLandscape = false
+            fullscreenMode = nil
+            isCompletingFullscreenExit = false
         }
         .sheet(isPresented: $isShowingDescription) {
             LiveRoomDescriptionSheet(viewModel: viewModel)
@@ -224,7 +222,7 @@ private struct LiveRoomContentView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                if manualFullscreenMode == nil {
+                if fullscreenMode == nil {
                     allowLiveAutoRotation()
                 }
                 viewModel.resumeLiveDanmakuIfNeeded()
@@ -235,9 +233,9 @@ private struct LiveRoomContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            updateLiveManualOrientation(UIDevice.current.orientation)
+            updateLiveFullscreenOrientation(UIDevice.current.orientation)
         }
-        .ignoresSafeArea(.container, edges: (manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape) ? .all : [])
+        .ignoresSafeArea(.container, edges: (fullscreenMode != nil || isCompletingFullscreenExit) ? .all : [])
     }
 
     private static func stablePortraitLayoutWidth(proxySize: CGSize, fullscreenSize: CGSize) -> CGFloat {
@@ -256,14 +254,14 @@ private struct LiveRoomContentView: View {
         )
     }
 
-    private func updateLiveManualOrientation(_ orientation: UIDeviceOrientation) {
+    private func updateLiveFullscreenOrientation(_ orientation: UIDeviceOrientation) {
         switch orientation {
         case .landscapeLeft, .landscapeRight:
-            guard manualFullscreenMode?.isLandscape != true else { return }
-            enterManualLandscapePlayback(playerViewModel: viewModel.playerViewModel)
+            guard fullscreenMode?.isLandscape != true else { return }
+            enterInlineFullscreenPlayback(playerViewModel: viewModel.playerViewModel)
         case .portrait, .portraitUpsideDown:
-            guard manualFullscreenMode?.isLandscape == true else { return }
-            exitManualLandscapePlayback(playerViewModel: viewModel.playerViewModel)
+            guard fullscreenMode?.isLandscape == true else { return }
+            exitInlineFullscreenPlayback(playerViewModel: viewModel.playerViewModel)
         default:
             break
         }
@@ -273,10 +271,10 @@ private struct LiveRoomContentView: View {
         _ viewModel: LiveRoomViewModel,
         screenSize: CGSize,
         isLandscape: Bool,
-        isManualFullscreen: Bool
+        isInlineFullscreen: Bool
     ) -> some View {
         let standardHeight = screenSize.width * 9 / 16
-        let expandsToFullscreen = isLandscape || isManualFullscreen
+        let expandsToFullscreen = isLandscape || isInlineFullscreen
         let playerHeight = expandsToFullscreen ? screenSize.height : standardHeight
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
 
@@ -298,8 +296,8 @@ private struct LiveRoomContentView: View {
                     .nativeTopScrollEdgeEffect()
                     .frame(width: screenSize.width, alignment: .top)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .opacity(isManualFullscreen ? 0 : 1)
-                    .allowsHitTesting(!isManualFullscreen)
+                    .opacity(isInlineFullscreen ? 0 : 1)
+                    .allowsHitTesting(!isInlineFullscreen)
                 }
                 .frame(width: screenSize.width, height: screenSize.height, alignment: .top)
             }
@@ -326,7 +324,7 @@ private struct LiveRoomContentView: View {
         playerWidth: CGFloat?,
         playerHeight: CGFloat
     ) -> some View {
-        let usesLandscapeChrome = isLandscape || manualFullscreenMode?.isLandscape == true
+        let usesLandscapeChrome = isLandscape || fullscreenMode?.isLandscape == true
         return ZStack {
             if let playerViewModel = viewModel.playerViewModel {
                 BiliPlayerView(
@@ -350,12 +348,12 @@ private struct LiveRoomContentView: View {
                     embeddedAspectRatio: 16 / 9,
                     keepsPlayerSurfaceStable: true,
                     prefersNativePlaybackControls: false,
-                    manualFullscreenMode: manualFullscreenMode,
-                    onRequestManualFullscreen: {
-                        enterManualLandscapePlayback(playerViewModel: playerViewModel)
+                    fullscreenMode: fullscreenMode,
+                    onRequestFullscreen: {
+                        enterInlineFullscreenPlayback(playerViewModel: playerViewModel)
                     },
-                    onExitManualFullscreen: {
-                        exitManualLandscapePlayback(playerViewModel: playerViewModel)
+                    onExitFullscreen: {
+                        exitInlineFullscreenPlayback(playerViewModel: playerViewModel)
                     }
                 )
                 .id(ObjectIdentifier(playerViewModel))
@@ -600,70 +598,50 @@ private struct LiveRoomContentView: View {
         }
     }
 
-    private func enterManualLandscapePlayback(playerViewModel: PlayerStateViewModel? = nil) {
-        if let manualFullscreenMode {
-            requestManualFullscreenSurfaceEntry(
-                mode: manualFullscreenMode,
-                playerViewModel: playerViewModel
-            )
-            return
-        }
-
-        pendingManualLandscapeExitTask?.cancel()
-        pendingManualLandscapeEnterTask?.cancel()
-        isRestoringPortraitFromManualLandscape = false
+    private func enterInlineFullscreenPlayback(playerViewModel: PlayerStateViewModel? = nil) {
+        pendingFullscreenExitTask?.cancel()
+        isCompletingFullscreenExit = false
 
         let orientation = UIDevice.current.orientation
-        let targetMode = ManualVideoFullscreenMode.landscape(orientation.isLandscape ? orientation : .landscapeRight)
-        manualFullscreenMode = targetMode
-
-        if let windowScene = UIApplication.shared.liveDetailForegroundKeyWindow?.windowScene {
-            AppOrientationLock.update(to: targetMode.liveDetailInterfaceOrientationMask, in: windowScene)
-            windowScene.requestGeometryUpdate(
-                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: targetMode.liveDetailInterfaceOrientationMask)
-            ) { _ in }
-        }
-
-        if requestManualFullscreenSurfaceEntry(
-            mode: targetMode,
-            playerViewModel: playerViewModel
-        ) {
+        let targetMode = PlayerFullscreenMode.landscape(orientation.isLandscape ? orientation : .landscapeRight)
+        guard fullscreenMode != targetMode else {
+            requestLiveFullscreenGeometry(for: targetMode)
+            playerViewModel?.refreshSurfaceLayout()
             return
         }
+        withAnimation(.timingCurve(0.2, 0.92, 0.18, 1, duration: 0.42)) {
+            fullscreenMode = targetMode
+        }
 
-        pendingManualLandscapeEnterTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard !Task.isCancelled, manualFullscreenMode == targetMode else { return }
-            _ = requestManualFullscreenSurfaceEntry(
-                mode: targetMode,
-                playerViewModel: playerViewModel
-            )
+        requestLiveFullscreenGeometry(for: targetMode)
+        playerViewModel?.refreshSurfaceLayout()
+    }
+
+    private func exitInlineFullscreenPlayback(playerViewModel: PlayerStateViewModel? = nil) {
+        guard fullscreenMode != nil else { return }
+        pendingFullscreenExitTask?.cancel()
+        isCompletingFullscreenExit = true
+
+        withAnimation(.timingCurve(0.2, 0.92, 0.18, 1, duration: 0.42)) {
+            fullscreenMode = nil
+        }
+        playerViewModel?.refreshSurfaceLayout()
+
+        pendingFullscreenExitTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled else { return }
+            isCompletingFullscreenExit = false
+            requestLivePortraitGeometry()
+            allowLiveAutoRotation()
         }
     }
 
-    private func exitManualLandscapePlayback(playerViewModel: PlayerStateViewModel? = nil) {
-        guard manualFullscreenMode != nil else { return }
-        pendingManualLandscapeEnterTask?.cancel()
-        pendingManualLandscapeExitTask?.cancel()
-        isRestoringPortraitFromManualLandscape = true
-        let restoringMode = ManualVideoFullscreenMode.portrait
-        manualFullscreenMode = restoringMode
-
-        if let playerViewModel {
-            _ = playerViewModel.enterManualFullscreen(
-                mode: restoringMode,
-                onExit: nil,
-                animated: true
-            )
-        }
-        requestLivePortraitGeometry()
-
-        pendingManualLandscapeExitTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 320_000_000)
-            guard !Task.isCancelled else { return }
-            manualFullscreenMode = nil
-            isRestoringPortraitFromManualLandscape = false
-            allowLiveAutoRotation()
+    private func requestLiveFullscreenGeometry(for mode: PlayerFullscreenMode) {
+        if let windowScene = UIApplication.shared.liveDetailForegroundKeyWindow?.windowScene {
+            AppOrientationLock.update(to: mode.liveDetailInterfaceOrientationMask, in: windowScene)
+            windowScene.requestGeometryUpdate(
+                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mode.liveDetailInterfaceOrientationMask)
+            ) { _ in }
         }
     }
 
@@ -676,21 +654,6 @@ private struct LiveRoomContentView: View {
         } else {
             AppOrientationLock.update(to: Self.supportedLiveOrientations, in: nil)
         }
-    }
-
-    @discardableResult
-    private func requestManualFullscreenSurfaceEntry(
-        mode: ManualVideoFullscreenMode,
-        playerViewModel: PlayerStateViewModel?
-    ) -> Bool {
-        guard let playerViewModel else { return false }
-        return playerViewModel.enterManualFullscreen(
-            mode: mode,
-            onExit: {
-                exitManualLandscapePlayback(playerViewModel: playerViewModel)
-            },
-            animated: true
-        )
     }
 
     @ViewBuilder
@@ -1972,7 +1935,7 @@ private extension UIApplication {
     }
 }
 
-private extension ManualVideoFullscreenMode {
+private extension PlayerFullscreenMode {
     var liveDetailInterfaceOrientationMask: UIInterfaceOrientationMask {
         switch self {
         case .portrait:

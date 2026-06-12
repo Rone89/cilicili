@@ -354,12 +354,6 @@ struct VideoDetailQualityInlineButton: View {
     var body: some View {
         if store.hasQualityMenu {
             Menu {
-                if store.isSupplementingPlayQualities {
-                    Button {} label: {
-                        Label("正在补全高清档位", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .disabled(true)
-                }
                 if store.isSwitchingPlayQuality {
                     Button {} label: {
                         Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")

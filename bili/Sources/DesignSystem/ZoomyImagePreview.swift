@@ -927,23 +927,25 @@ private struct ZoomyFullScreenImageViewer: View {
                 .opacity(backgroundOpacity)
                 .ignoresSafeArea()
 
-            if items.count > 1 {
-                TabView(selection: $selectedItemID) {
-                    ForEach(items) { item in
-                        imagePage(for: item)
-                            .tag(item.id)
+            ZStack {
+                if items.count > 1 {
+                    TabView(selection: $selectedItemID) {
+                        ForEach(items) { item in
+                            imagePage(for: item)
+                                .tag(item.id)
+                        }
                     }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
-                .ignoresSafeArea()
-            } else {
-                imagePage(for: items.first)
+                    .tabViewStyle(.page(indexDisplayMode: .automatic))
                     .ignoresSafeArea()
-            }
+                } else {
+                    imagePage(for: items.first)
+                        .ignoresSafeArea()
+                }
 
-            viewerChrome
+                viewerChrome
+            }
+            .offset(y: dismissDragOffset)
         }
-        .offset(y: dismissDragOffset)
         .simultaneousGesture(dismissDragGesture)
         .onAppear {
             syncSelectedItemContext()
@@ -1239,10 +1241,11 @@ private final class ZoomyZoomableImageHostView: UIView, UIScrollViewDelegate, UI
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .black
-        isOpaque = true
+        backgroundColor = .clear
+        isOpaque = false
 
-        scrollView.backgroundColor = .black
+        scrollView.backgroundColor = .clear
+        scrollView.isOpaque = false
         scrollView.delegate = self
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 5

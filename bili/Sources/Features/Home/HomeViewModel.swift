@@ -17,9 +17,9 @@ enum HomeFeedMode: String, CaseIterable, Hashable {
     var systemImage: String {
         switch self {
         case .recommend:
-            return "sparkles"
+            return "wand.and.stars.inverse"
         case .popular:
-            return "flame"
+            return "chart.line.uptrend.xyaxis"
         }
     }
 }

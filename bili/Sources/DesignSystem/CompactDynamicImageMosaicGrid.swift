@@ -196,10 +196,13 @@ struct CompactDynamicImageMosaicGrid: View {
     private func overflowOverlay(for item: CompactDynamicImageDisplayItem) -> some View {
         if item.index == 8, imageCount > 9 {
             ZStack {
-                Color.black.opacity(0.30)
+                Color.clear
                 Text("+\(imageCount - 8)")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .glassEffect(.regular, in: Capsule())
             }
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -289,6 +292,7 @@ private struct CompactDynamicImageThumbnail: View {
     let imageCount: Int
     let placeholderFill: Color
     @State private var thumbnailShadowOpacityScale = 1.0
+    @State private var thumbnailStrokeOpacityScale = 1.0
     private let normalizedURLString: String?
     private let thumbnailSize: CGSize
     @Environment(\.displayScale) private var displayScale
@@ -338,7 +342,7 @@ private struct CompactDynamicImageThumbnail: View {
         .mediaShadow(.subtle, opacityScale: thumbnailShadowOpacityScale)
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
+                .stroke(Color(.separator).opacity(0.10 * thumbnailStrokeOpacityScale), lineWidth: 0.6)
         }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -346,9 +350,11 @@ private struct CompactDynamicImageThumbnail: View {
     private func updateThumbnailShadowVisibility(isViewerPresented: Bool) {
         if isViewerPresented {
             thumbnailShadowOpacityScale = 0
+            thumbnailStrokeOpacityScale = 0
         } else {
             withAnimation(.easeOut(duration: 0.18)) {
                 thumbnailShadowOpacityScale = 1
+                thumbnailStrokeOpacityScale = 1
             }
         }
     }

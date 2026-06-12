@@ -28,6 +28,16 @@ private enum VideoDetailContentTab: String, CaseIterable, Identifiable {
     }
 }
 
+private enum VideoDetailPlaybackControlPolicy {
+    static let prefersNativePlaybackControls = false
+}
+
+private enum VideoDetailFullscreenTrigger {
+    case none
+    case manual
+    case rotation
+}
+
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.scenePhase) private var scenePhase
@@ -38,27 +48,19 @@ struct VideoDetailView: View {
     @StateObject private var holder = VideoDetailViewModelHolder()
     @StateObject private var runtimeSettings = VideoDetailRuntimeSettingsStore()
     @State private var replySheetComment: Comment?
-    @State private var manualFullscreenMode: ManualVideoFullscreenMode?
-    @State private var isRestoringPortraitFromManualLandscape = false
-    @State private var isHoldingPortraitContentAfterManualFullscreen = false
-    @State private var pendingManualLandscapeEnterTask: Task<Void, Never>?
-    @State private var pendingManualLandscapeExitTask: Task<Void, Never>?
-    @State private var pendingPortraitContentRevealTask: Task<Void, Never>?
-    @State private var lastManualLandscapeRequestTime: Date?
-    @State private var manualFullscreenRequestMode: ManualVideoFullscreenMode?
-    @State private var manualFullscreenRequestDeadline: Date?
+    @State private var fullscreenMode: PlayerFullscreenMode?
+    @State private var fullscreenTrigger: VideoDetailFullscreenTrigger = .none
+    @State private var pendingRotationLandscapeOrientation: UIDeviceOrientation?
+    @State private var exitingFullscreenMode: PlayerFullscreenMode?
+    @State private var isCompletingFullscreenExit = false
+    @State private var isSystemRotationLayoutTransitioning = false
+    @State private var pendingFullscreenExitTask: Task<Void, Never>?
     @State private var isShowingDanmakuSettings = false
     @State private var isShowingFavoriteFolders = false
     @State private var isShowingNetworkDiagnostics = false
     @State private var selectedDetailContentTab: VideoDetailContentTab = .detail
 
-    private static let portraitContentRevealDelayNanoseconds: UInt64 = 190_000_000
-    private static let portraitContentRevealAnimation = Animation.easeOut(duration: 0.22)
-    private static let supportedVideoDetailOrientations: UIInterfaceOrientationMask = [
-        .portrait,
-        .landscapeLeft,
-        .landscapeRight
-    ]
+    private static let inlineFullscreenTransitionAnimation = Animation.easeInOut(duration: 0.26)
 
     init(
         seedVideo: VideoItem,
@@ -112,23 +114,37 @@ struct VideoDetailView: View {
                 holder.viewModel?.pausePlaybackForPotentialNavigation()
             }
         )
+        .background(
+            VideoDetailRotationLayoutBridge(
+                onLayoutTransition: {
+                    refreshActivePlayerSurfaceLayout()
+                },
+                onTransitionCompleted: {
+                    isSystemRotationLayoutTransitioning = false
+                    refreshActivePlayerSurfaceLayout()
+                }
+            )
+        )
         .onAppear {
             runtimeSettings.bind(dependencies.libraryStore)
-            allowVideoDetailOrientations()
+            restorePortraitWhenFullscreenInactive()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            updateManualLandscapeOrientation(UIDevice.current.orientation)
+            handleFullscreenDeviceOrientation(UIDevice.current.orientation)
             holder.viewModel?.resumePlaybackAfterCoveredNavigationIfNeeded()
         }
         .onDisappear {
-            pendingManualLandscapeEnterTask?.cancel()
-            pendingManualLandscapeExitTask?.cancel()
-            pendingPortraitContentRevealTask?.cancel()
+            pendingFullscreenExitTask?.cancel()
+            pendingRotationLandscapeOrientation = nil
+            exitingFullscreenMode = nil
+            fullscreenMode = nil
+            fullscreenTrigger = .none
+            isCompletingFullscreenExit = false
             holder.viewModel?.pausePlaybackForPotentialNavigation()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             AppOrientationLock.restorePortrait()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            updateManualLandscapeOrientation(UIDevice.current.orientation)
+            handleFullscreenDeviceOrientation(UIDevice.current.orientation)
         }
         .onReceive(NotificationCenter.default.publisher(for: .biliStopActiveVideoPlayback)) { _ in
             holder.viewModel?.stopPlaybackForNavigation()
@@ -141,9 +157,13 @@ struct VideoDetailView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
+            restorePortraitWhenFullscreenInactive()
+            handleFullscreenDeviceOrientation(UIDevice.current.orientation)
             holder.viewModel?.recoverPlaybackAfterAppResume()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            restorePortraitWhenFullscreenInactive()
+            handleFullscreenDeviceOrientation(UIDevice.current.orientation)
             holder.viewModel?.recoverPlaybackAfterAppResume()
         }
     }
@@ -153,25 +173,22 @@ struct VideoDetailView: View {
         GeometryReader { proxy in
             let fullscreenGeometry = proxy.fullscreenContainerGeometry
             let fullscreenSize = fullscreenGeometry.size
-            let fullscreenOffset = fullscreenGeometry.offset
-            let sceneIsLandscape = proxy.size.width > proxy.size.height
-            let isManualFullscreen = manualFullscreenMode != nil
-            let isRestoringPortrait = isRestoringPortraitFromManualLandscape
-            let shouldReserveFullscreenChrome = isManualFullscreen || isRestoringPortrait
-            let isLandscape = sceneIsLandscape && !shouldReserveFullscreenChrome
-            let shouldHideSystemChrome = isLandscape || shouldReserveFullscreenChrome
-            let isManualLandscapeFullscreen = manualFullscreenMode?.isLandscape == true
+            let effectiveFullscreenMode = activeFullscreenMode
+            let usesFullscreenLayout = fullscreenMode != nil
+            let isLandscapeFullscreen = fullscreenMode?.isLandscape == true
+            let shouldHideSystemChrome = effectiveFullscreenMode != nil || isCompletingFullscreenExit
             let stablePortraitWidth = Self.stablePortraitLayoutWidth(
                 proxySize: proxy.size,
                 fullscreenSize: fullscreenSize
             )
-            let layoutSize = isManualFullscreen
-                ? (isManualLandscapeFullscreen
-                    ? CGSize(width: max(proxy.size.width, proxy.size.height), height: min(proxy.size.width, proxy.size.height))
-                    : CGSize(width: min(proxy.size.width, proxy.size.height), height: max(proxy.size.width, proxy.size.height)))
+            let layoutSize = usesFullscreenLayout
+                ? fullscreenSize
                 : CGSize(width: stablePortraitWidth, height: proxy.size.height)
 
-            ZStack(alignment: .top) {
+            let playbackSize = layoutSize
+            let fullscreenOffset = usesFullscreenLayout ? fullscreenGeometry.offset : .zero
+
+            ZStack(alignment: .topLeading) {
                 if shouldHideSystemChrome {
                     Color.black
                         .ignoresSafeArea()
@@ -179,21 +196,33 @@ struct VideoDetailView: View {
 
                 standardPlaybackPage(
                     viewModel,
-                    screenSize: isLandscape ? fullscreenSize : layoutSize,
-                    isLandscape: isLandscape
+                    screenSize: playbackSize,
+                    isLandscape: isLandscapeFullscreen
                 )
                 .frame(
-                    width: isLandscape ? fullscreenSize.width : layoutSize.width,
-                    height: isLandscape ? fullscreenSize.height : layoutSize.height
+                    width: playbackSize.width,
+                    height: playbackSize.height
+                )
+                .offset(
+                    x: fullscreenOffset.width,
+                    y: fullscreenOffset.height
                 )
             }
             .frame(
-                width: isLandscape ? fullscreenSize.width : layoutSize.width,
-                height: isLandscape ? fullscreenSize.height : layoutSize.height
+                width: proxy.size.width,
+                height: proxy.size.height,
+                alignment: .topLeading
             )
-            .offset(isLandscape ? fullscreenOffset : .zero)
-            .background(isLandscape ? Color.black : Color.videoDetailBackground)
-            .ignoresSafeArea(.container, edges: (isLandscape || shouldReserveFullscreenChrome) ? .all : [])
+            .animation(
+                isSystemRotationLayoutTransitioning ? nil : Self.inlineFullscreenTransitionAnimation,
+                value: fullscreenMode
+            )
+            .animation(
+                isSystemRotationLayoutTransitioning ? nil : Self.inlineFullscreenTransitionAnimation,
+                value: effectiveFullscreenMode
+            )
+            .background(shouldHideSystemChrome ? Color.black : Color.videoDetailBackground)
+            .ignoresSafeArea(.container, edges: usesFullscreenLayout ? .all : [])
             .preference(key: VideoDetailChromeHiddenPreferenceKey.self, value: shouldHideSystemChrome)
             .statusBar(hidden: shouldHideSystemChrome)
             .persistentSystemOverlays(shouldHideSystemChrome ? .hidden : .automatic)
@@ -221,7 +250,7 @@ struct VideoDetailView: View {
                     VideoDetailPerformanceOverlayContainer(
                         store: viewModel.networkDiagnosticsRenderStore
                     )
-                        .padding(.top, isLandscape || isManualFullscreen ? 14 : 10)
+                        .padding(.top, shouldHideSystemChrome ? 14 : 10)
                         .padding(.leading, 10)
                         .allowsHitTesting(false)
                         .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
@@ -229,6 +258,13 @@ struct VideoDetailView: View {
             }
             .task {
                 await viewModel.load()
+            }
+            .onReceive(viewModel.playerIdentityRenderStore.objectWillChange) { _ in
+                Task { @MainActor in
+                    await Task.yield()
+                    restorePortraitWhenFullscreenInactive()
+                    retryPendingRotationFullscreenIfNeeded()
+                }
             }
             .sheet(item: $replySheetComment) { comment in
                 CommentRepliesSheet(
@@ -287,7 +323,7 @@ struct VideoDetailView: View {
                 )
             }
         }
-        .ignoresSafeArea(.container, edges: (manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape) ? .all : [])
+        .ignoresSafeArea(.container, edges: fullscreenMode != nil ? .all : [])
     }
 
     private func initialContent() -> some View {
@@ -318,7 +354,8 @@ struct VideoDetailView: View {
                 PlayerLoadingPlaceholder(
                     progress: 0.08,
                     message: "加载视频信息",
-                    isFinishing: false
+                    isFinishing: false,
+                    showsChromeSkeleton: true
                 )
                 .frame(width: layoutWidth, height: standardHeight)
                 .background(Color.black)
@@ -330,8 +367,10 @@ struct VideoDetailView: View {
                     .padding(.leading, 10)
                 }
                 .overlay(alignment: .bottom) {
-                    VideoDetailPinnedProgressPlaceholder()
-                        .frame(width: layoutWidth, height: VideoDetailPinnedProgressBar.height)
+                    if runtimeSettings.showsPinnedProgressBar {
+                        VideoDetailPinnedProgressPlaceholder()
+                            .frame(width: layoutWidth, height: VideoDetailPinnedProgressBar.height)
+                    }
                 }
                 .zIndex(1)
 
@@ -359,52 +398,15 @@ struct VideoDetailView: View {
         return min(proxyShortSide, fullscreenShortSide, windowShortSide)
     }
 
-    private func updateManualLandscapeOrientation(_ orientation: UIDeviceOrientation) {
-        guard manualFullscreenMode != nil || isRestoringPortraitFromManualLandscape else {
-            allowVideoDetailOrientations()
-            clearPendingManualFullscreenRequestIfNeeded(for: orientation)
-            return
-        }
-        guard !isRestoringPortraitFromManualLandscape else {
-            if orientation.isPortrait {
-                clearPendingManualFullscreenRequestIfNeeded(for: orientation)
-            }
-            return
-        }
-        if shouldIgnoreManualFullscreenOrientationChange(orientation) {
-            return
-        }
-        switch orientation {
-        case .landscapeLeft, .landscapeRight:
-            pendingManualLandscapeExitTask?.cancel()
-            isRestoringPortraitFromManualLandscape = false
-            let mode: ManualVideoFullscreenMode = .landscape(orientation)
-            guard manualFullscreenMode != mode else { return }
-            pendingManualLandscapeEnterTask?.cancel()
-            if shouldApplyManualLandscapeOrientation(orientation) {
-                manualFullscreenMode = mode
-            }
-            clearPendingManualFullscreenRequestIfNeeded(for: orientation)
-        case .portrait, .portraitUpsideDown:
-            pendingManualLandscapeEnterTask?.cancel()
-            clearPendingManualFullscreenRequestIfNeeded(for: orientation)
-            guard manualFullscreenMode?.isLandscape == true else {
-                pendingManualLandscapeExitTask?.cancel()
-                return
-            }
-            pendingManualLandscapeExitTask?.cancel()
-            beginRestoringPortraitFromManualLandscape()
-        default:
-            break
-        }
-    }
-
     private func standardPlaybackPage(
         _ viewModel: VideoDetailViewModel,
         screenSize: CGSize,
         isLandscape: Bool = false
     ) -> some View {
-        let config = makeStandardPlaybackPageConfig(screenSize: screenSize, isLandscape: isLandscape)
+        let config = makeStandardPlaybackPageConfig(
+            screenSize: screenSize,
+            isLandscape: isLandscape
+        )
         return VideoDetailStandardPlaybackPage(
             config: config,
             viewModel: viewModel,
@@ -420,30 +422,30 @@ struct VideoDetailView: View {
         isLandscape: Bool
     ) -> VideoDetailStandardPlaybackPageConfig {
         let standardHeight: CGFloat = screenSize.width * 9 / 16
-        let isManualFullscreen: Bool = manualFullscreenMode != nil
-        let expandsToFullscreen: Bool = isManualFullscreen || isLandscape
-        let playerHeight: CGFloat = isLandscape ? screenSize.height : (isManualFullscreen ? screenSize.height : standardHeight)
+        let effectiveFullscreenMode = activeFullscreenMode
+        let isFullscreen: Bool = effectiveFullscreenMode != nil || isCompletingFullscreenExit
+        let playerHeight: CGFloat = isLandscape ? screenSize.height : (fullscreenMode != nil ? screenSize.height : standardHeight)
         let playerWidth: CGFloat? = isLandscape ? screenSize.width : nil
-        let activeManualFullscreenMode: ManualVideoFullscreenMode?
+        let activeFullscreenMode: PlayerFullscreenMode?
         let exitHandler: (() -> Void)?
-        activeManualFullscreenMode = manualFullscreenMode
-        exitHandler = manualFullscreenMode == nil ? nil : { exitManualLandscapePlayback() }
+        activeFullscreenMode = effectiveFullscreenMode
+        exitHandler = effectiveFullscreenMode == nil ? nil : { exitFullscreenPlayback() }
 
         return VideoDetailStandardPlaybackPageConfig(
             screenSize: screenSize,
             standardHeight: standardHeight,
             isLandscape: isLandscape,
-            isManualFullscreen: isManualFullscreen,
-            expandsToFullscreen: expandsToFullscreen,
+            isFullscreen: isFullscreen,
             playerWidth: playerWidth,
             playerHeight: playerHeight,
-            manualFullscreenMode: activeManualFullscreenMode,
-            isHoldingPortraitContentAfterManualFullscreen: isHoldingPortraitContentAfterManualFullscreen,
+            fullscreenMode: activeFullscreenMode,
+            isDanmakuSettingsPresented: isShowingDanmakuSettings,
             minimizesTabBarOnScroll: runtimeSettings.minimizesTabBarOnScroll,
-            onRequestManualFullscreen: { playerViewModel in
-                enterManualLandscapePlayback(playerViewModel: playerViewModel)
+            showsPinnedProgressBar: runtimeSettings.showsPinnedProgressBar,
+            onRequestFullscreen: { playerViewModel in
+                enterFullscreenPlayback(playerViewModel: playerViewModel, trigger: .manual)
             },
-            onExitManualFullscreen: exitHandler,
+            onExitFullscreen: exitHandler,
             onNavigateBack: {
                 dismissVideoDetail()
             },
@@ -458,81 +460,158 @@ struct VideoDetailView: View {
         dismiss()
     }
 
-    private func exitManualLandscapePlayback() {
-        guard manualFullscreenMode != nil else { return }
-        pendingManualLandscapeExitTask?.cancel()
-        beginRestoringPortraitFromManualLandscape()
+    private var isUsingSystemNativePlayerUI: Bool {
+        false
     }
 
-    private func enterManualLandscapePlayback(playerViewModel: PlayerStateViewModel? = nil) {
-        if let manualFullscreenMode {
-            _ = requestManualFullscreenSurfaceEntry(
-                mode: manualFullscreenMode,
-                playerViewModel: playerViewModel
-            )
+    private var shouldUseInlineFullscreenRotation: Bool {
+        guard let decodePath = holder.viewModel?
+            .playerIdentityRenderStore
+            .playerViewModel?
+            .engineDiagnostics
+            .decodePath
+        else { return false }
+        return decodePath != .unknown && !isUsingSystemNativePlayerUI
+    }
+
+    private var currentPlayerDecodePath: PlayerEngineDiagnostics.DecodePath? {
+        holder.viewModel?
+            .playerIdentityRenderStore
+            .playerViewModel?
+            .engineDiagnostics
+            .decodePath
+    }
+
+    private var activeFullscreenMode: PlayerFullscreenMode? {
+        fullscreenMode ?? exitingFullscreenMode
+    }
+
+    private func exitFullscreenPlayback() {
+        guard activeFullscreenMode != nil else { return }
+        pendingRotationLandscapeOrientation = nil
+        beginCompletingFullscreenExit()
+    }
+
+    private func handleFullscreenDeviceOrientation(_ orientation: UIDeviceOrientation) {
+        guard let decodePath = currentPlayerDecodePath, decodePath != .unknown else {
+            if orientation.isLandscape {
+                pendingRotationLandscapeOrientation = orientation
+            } else if orientation.isPortrait {
+                pendingRotationLandscapeOrientation = nil
+            }
             return
         }
-        pendingManualLandscapeExitTask?.cancel()
-        pendingManualLandscapeEnterTask?.cancel()
-        isRestoringPortraitFromManualLandscape = false
 
-        let deviceOrientation = UIDevice.current.orientation
-        let targetMode: ManualVideoFullscreenMode
-        if shouldUsePortraitFullscreen {
-            targetMode = .portrait
-        } else {
-            targetMode = .landscape(deviceOrientation == .landscapeRight ? .landscapeRight : .landscapeLeft)
+        guard shouldUseInlineFullscreenRotation else {
+            pendingRotationLandscapeOrientation = nil
+            return
         }
-        cancelPortraitContentRevealHold()
-        registerPendingManualFullscreenRequest(for: targetMode)
-        if requestManualFullscreenSurfaceEntry(
-            mode: targetMode,
-            playerViewModel: playerViewModel
-        ) {
-            manualFullscreenMode = targetMode
-        } else {
-            manualFullscreenMode = targetMode
-        }
-        if let windowScene = UIApplication.shared.videoDetailKeyWindow?.windowScene {
-            AppOrientationLock.update(to: targetMode.videoDetailInterfaceOrientationMask, in: windowScene)
-            windowScene.requestGeometryUpdate(
-                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: targetMode.videoDetailInterfaceOrientationMask)
-            ) { _ in }
+        switch orientation {
+        case .landscapeLeft, .landscapeRight:
+            pendingRotationLandscapeOrientation = orientation
+            enterFullscreenPlayback(
+                playerViewModel: holder.viewModel?.playerIdentityRenderStore.playerViewModel,
+                preferredLandscapeOrientation: orientation,
+                trigger: fullscreenTrigger == .none ? .rotation : fullscreenTrigger
+            )
+        case .portrait, .portraitUpsideDown:
+            pendingRotationLandscapeOrientation = nil
+            guard fullscreenMode?.isLandscape == true else { return }
+            guard fullscreenTrigger == .rotation else { return }
+            exitFullscreenPlayback()
+        default:
+            break
         }
     }
 
-    private func requestManualFullscreenSurfaceEntry(
-        mode: ManualVideoFullscreenMode,
-        playerViewModel: PlayerStateViewModel?
-    ) -> Bool {
-        guard let playerViewModel else { return false }
-        let didEnter = playerViewModel.enterManualFullscreen(
-            mode: mode,
-            onExit: { exitManualLandscapePlayback() },
-            animated: true
-        )
-        guard !didEnter else { return true }
-
-        pendingManualLandscapeEnterTask?.cancel()
-        pendingManualLandscapeEnterTask = Task { @MainActor in
-            for attempt in 0..<8 {
-                if attempt == 0 {
-                    await Task.yield()
-                } else {
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                }
-                guard !Task.isCancelled, manualFullscreenMode == mode else { return }
-                if playerViewModel.enterManualFullscreen(
-                    mode: mode,
-                    onExit: { exitManualLandscapePlayback() },
-                    animated: attempt > 0
-                ) {
-                    break
-                }
-            }
-            pendingManualLandscapeEnterTask = nil
+    private func retryPendingRotationFullscreenIfNeeded() {
+        guard let retryOrientation = pendingRotationLandscapeOrientation ?? (UIDevice.current.orientation.isLandscape ? UIDevice.current.orientation : nil) else {
+            return
         }
-        return false
+        guard currentPlayerDecodePath != nil, currentPlayerDecodePath != .unknown else {
+            pendingRotationLandscapeOrientation = retryOrientation
+            return
+        }
+        guard shouldUseInlineFullscreenRotation else {
+            pendingRotationLandscapeOrientation = nil
+            return
+        }
+        enterFullscreenPlayback(
+            playerViewModel: holder.viewModel?.playerIdentityRenderStore.playerViewModel,
+            preferredLandscapeOrientation: retryOrientation,
+            trigger: .rotation
+        )
+    }
+
+    private func enterFullscreenPlayback(
+        playerViewModel: PlayerStateViewModel? = nil,
+        preferredLandscapeOrientation: UIDeviceOrientation? = nil,
+        trigger: VideoDetailFullscreenTrigger
+    ) {
+        pendingFullscreenExitTask?.cancel()
+        exitingFullscreenMode = nil
+        isCompletingFullscreenExit = false
+        guard shouldUseInlineFullscreenRotation else {
+            pendingRotationLandscapeOrientation = nil
+            return
+        }
+        let resolvedPlayerViewModel = playerViewModel
+            ?? holder.viewModel?.playerIdentityRenderStore.playerViewModel
+        let landscapeOrientation = preferredLandscapeOrientation?.isLandscape == true
+            ? preferredLandscapeOrientation!
+            : preferredLandscapeDeviceOrientation()
+        let targetMode: PlayerFullscreenMode
+        if shouldUsePortraitFullscreen, preferredLandscapeOrientation == nil {
+            targetMode = .portrait
+        } else {
+            targetMode = .landscape(landscapeOrientation)
+        }
+
+        let isRotationTriggered = trigger == .rotation
+        if fullscreenMode != nil {
+            requestInlineFullscreenGeometry(for: targetMode)
+            setFullscreenMode(
+                targetMode,
+                trigger: trigger,
+                animated: !isRotationTriggered
+            )
+            resolvedPlayerViewModel?.refreshSurfaceLayout()
+            return
+        }
+
+        guard let resolvedPlayerViewModel else {
+            if preferredLandscapeOrientation?.isLandscape == true {
+                pendingRotationLandscapeOrientation = preferredLandscapeOrientation
+            }
+            return
+        }
+        requestInlineFullscreenGeometry(for: targetMode)
+        setFullscreenMode(
+            targetMode,
+            trigger: trigger,
+            animated: !isRotationTriggered
+        )
+        resolvedPlayerViewModel.refreshSurfaceLayout()
+    }
+
+    private func requestInlineFullscreenGeometry(for mode: PlayerFullscreenMode) {
+        let scene = UIApplication.shared.videoDetailKeyWindow?.windowScene
+            ?? UIApplication.shared.biliForegroundKeyWindow?.windowScene
+        AppOrientationLock.update(
+            to: mode.videoDetailInterfaceOrientationMask,
+            in: scene,
+            requestsGeometryUpdate: true
+        )
+    }
+
+    private func requestInlinePortraitGeometry() {
+        let scene = UIApplication.shared.videoDetailKeyWindow?.windowScene
+            ?? UIApplication.shared.biliForegroundKeyWindow?.windowScene
+        AppOrientationLock.update(
+            to: .portrait,
+            in: scene,
+            requestsGeometryUpdate: true
+        )
     }
 
     private var shouldUsePortraitFullscreen: Bool {
@@ -551,145 +630,67 @@ struct VideoDetailView: View {
         return store.pages.first { $0.cid == selectedCID }
     }
 
-    private func beginRestoringPortraitFromManualLandscape() {
-        guard manualFullscreenMode != nil else { return }
-        pendingManualLandscapeEnterTask?.cancel()
-        pendingManualLandscapeExitTask?.cancel()
-        isRestoringPortraitFromManualLandscape = true
-        let restoringMode = ManualVideoFullscreenMode.portrait
-        registerPendingManualFullscreenRequest(for: restoringMode)
-        manualFullscreenMode = restoringMode
-        if let playerViewModel = holder.viewModel?.playerIdentityRenderStore.playerViewModel {
-            _ = playerViewModel.enterManualFullscreen(
-                mode: restoringMode,
-                onExit: nil,
-                animated: true
-            )
+    private func beginCompletingFullscreenExit() {
+        guard let mode = activeFullscreenMode else { return }
+        let isRotationTriggered = fullscreenTrigger == .rotation
+        pendingFullscreenExitTask?.cancel()
+        exitingFullscreenMode = mode
+        isCompletingFullscreenExit = true
+        requestInlinePortraitGeometry()
+        setFullscreenMode(nil, trigger: .none, animated: !isRotationTriggered)
+        refreshActivePlayerSurfaceLayout()
+        pendingFullscreenExitTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            guard !Task.isCancelled else { return }
+            exitingFullscreenMode = nil
+            isCompletingFullscreenExit = false
+            restorePortraitWhenFullscreenInactive()
+            refreshActivePlayerSurfaceLayout()
         }
-        if let windowScene = UIApplication.shared.videoDetailKeyWindow?.windowScene {
-            AppOrientationLock.update(to: .portrait, in: windowScene)
-            windowScene.requestGeometryUpdate(
-                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
-            ) { _ in }
+    }
+
+    private func setFullscreenMode(
+        _ mode: PlayerFullscreenMode?,
+        trigger: VideoDetailFullscreenTrigger,
+        animated: Bool
+    ) {
+        let update = {
+            fullscreenMode = mode
+            fullscreenTrigger = trigger
+            if trigger == .rotation {
+                isSystemRotationLayoutTransitioning = true
+            }
+        }
+
+        if animated {
+            withAnimation(Self.inlineFullscreenTransitionAnimation, update)
         } else {
-            AppOrientationLock.restorePortrait()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction, update)
         }
-        lastManualLandscapeRequestTime = nil
+        refreshActivePlayerSurfaceLayout()
+    }
 
-        pendingManualLandscapeExitTask = Task { @MainActor in
-            for attempt in 0..<34 {
-                if attempt == 0 {
-                    await Task.yield()
-                } else {
-                    try? await Task.sleep(nanoseconds: 25_000_000)
-                }
-                guard !Task.isCancelled else { return }
-                if Self.isVideoDetailWindowPortraitAndLaidOutOrUnavailable {
-                    break
-                }
-            }
+    private func refreshActivePlayerSurfaceLayout() {
+        holder.viewModel?
+            .playerIdentityRenderStore
+            .playerViewModel?
+            .refreshSurfaceLayout()
+    }
 
-            guard !Task.isCancelled, manualFullscreenMode == restoringMode else { return }
-            try? await Task.sleep(nanoseconds: 35_000_000)
-            guard !Task.isCancelled, manualFullscreenMode == restoringMode else { return }
-            beginPortraitContentRevealAfterManualFullscreen()
-            pendingManualLandscapeExitTask = nil
+    private func restorePortraitWhenFullscreenInactive() {
+        guard fullscreenMode == nil, !isCompletingFullscreenExit else { return }
+        AppOrientationLock.restorePortrait(in: UIApplication.shared.videoDetailKeyWindow?.windowScene)
+    }
+
+    private func preferredLandscapeDeviceOrientation() -> UIDeviceOrientation {
+        if let orientation = UIApplication.shared.videoDetailKeyWindow?.windowScene?.effectiveGeometry.interfaceOrientation,
+           orientation.isLandscape {
+            return orientation == .landscapeLeft ? .landscapeRight : .landscapeLeft
         }
-    }
-
-    private func beginPortraitContentRevealAfterManualFullscreen() {
-        clearPendingManualFullscreenRequest()
-        pendingPortraitContentRevealTask?.cancel()
-        isHoldingPortraitContentAfterManualFullscreen = true
-        manualFullscreenMode = nil
-        isRestoringPortraitFromManualLandscape = false
-        allowVideoDetailOrientations()
-
-        pendingPortraitContentRevealTask = Task { @MainActor in
-            defer { pendingPortraitContentRevealTask = nil }
-            try? await Task.sleep(nanoseconds: Self.portraitContentRevealDelayNanoseconds)
-            guard !Task.isCancelled, manualFullscreenMode == nil else { return }
-            withAnimation(Self.portraitContentRevealAnimation) {
-                isHoldingPortraitContentAfterManualFullscreen = false
-            }
-        }
-    }
-
-    private func cancelPortraitContentRevealHold() {
-        pendingPortraitContentRevealTask?.cancel()
-        pendingPortraitContentRevealTask = nil
-        isHoldingPortraitContentAfterManualFullscreen = false
-    }
-
-    private func shouldApplyManualLandscapeOrientation(_ orientation: UIDeviceOrientation) -> Bool {
-        guard orientation.isLandscape else { return false }
-        let now = Date()
-        defer { lastManualLandscapeRequestTime = now }
-        guard let lastManualLandscapeRequestTime else { return true }
-        return now.timeIntervalSince(lastManualLandscapeRequestTime) > 0.34
-    }
-
-    private func allowVideoDetailOrientations() {
-        AppOrientationLock.update(
-            to: Self.supportedVideoDetailOrientations,
-            in: UIApplication.shared.videoDetailKeyWindow?.windowScene
-        )
-    }
-
-    private func registerPendingManualFullscreenRequest(for mode: ManualVideoFullscreenMode) {
-        manualFullscreenRequestMode = mode
-        manualFullscreenRequestDeadline = Date().addingTimeInterval(mode.isLandscape ? 0.9 : 0.45)
-    }
-
-    private func clearPendingManualFullscreenRequest() {
-        manualFullscreenRequestMode = nil
-        manualFullscreenRequestDeadline = nil
-    }
-
-    private func clearPendingManualFullscreenRequestIfNeeded(for orientation: UIDeviceOrientation) {
-        guard let mode = manualFullscreenRequestMode else { return }
-        switch mode {
-        case .portrait:
-            if orientation.isPortrait {
-                clearPendingManualFullscreenRequest()
-            }
-        case .landscape:
-            if orientation.isLandscape {
-                clearPendingManualFullscreenRequest()
-            }
-        }
-    }
-
-    private func shouldIgnoreManualFullscreenOrientationChange(_ orientation: UIDeviceOrientation) -> Bool {
-        guard let mode = manualFullscreenRequestMode,
-              let deadline = manualFullscreenRequestDeadline
-        else { return false }
-        if Date() > deadline {
-            clearPendingManualFullscreenRequest()
-            return false
-        }
-        switch mode {
-        case .portrait:
-            return orientation.isLandscape
-        case .landscape:
-            return orientation.isPortrait
-        }
-    }
-
-    private static var isVideoDetailWindowPortraitAndLaidOutOrUnavailable: Bool {
-        guard let window = UIApplication.shared.videoDetailKeyWindow else { return true }
-        let windowSize = window.bounds.size
-        guard windowSize.width > 1, windowSize.height > 1 else { return false }
-
-        let rootSize = window.rootViewController?.view.bounds.size ?? windowSize
-        guard rootSize.width > 1, rootSize.height > 1 else { return false }
-
-        let hasPortraitBounds = windowSize.height >= windowSize.width
-            && rootSize.height >= rootSize.width
-        if let orientation = window.windowScene?.effectiveGeometry.interfaceOrientation {
-            return orientation.isPortrait && hasPortraitBounds
-        }
-        return hasPortraitBounds
+        let current = UIDevice.current.orientation
+        return current == .landscapeRight ? .landscapeRight : .landscapeLeft
     }
 
     private func detailCard(_ viewModel: VideoDetailViewModel, contentWidth: CGFloat) -> some View {
@@ -698,7 +699,9 @@ struct VideoDetailView: View {
                 store: viewModel.descriptionRenderStore
             )
             actionStrip(viewModel, contentWidth: contentWidth)
-            networkDiagnosticsButton
+            if runtimeSettings.showsNetworkDiagnosticsButton {
+                networkDiagnosticsButton
+            }
             VideoDetailInteractionNotice(store: viewModel.interactionRenderStore)
             VideoDetailPlayURLNotice(
                 placeholderStore: viewModel.playbackRenderStore.placeholderStore,
@@ -822,6 +825,11 @@ struct VideoDetailView: View {
                 initialDetailControls(contentWidth: contentWidth)
                     .padding(.horizontal, horizontalPadding)
 
+                if shouldShowInitialPageMenuPlaceholder {
+                    InitialPageMenuPlaceholder(pageCount: seedVideo.pages?.count ?? 0)
+                        .padding(.horizontal, horizontalPadding)
+                }
+
                 InitialRelatedSection(layoutWidth: layoutWidth)
 
             case .comments:
@@ -843,27 +851,12 @@ struct VideoDetailView: View {
         .allowsHitTesting(false)
     }
 
+    private var shouldShowInitialPageMenuPlaceholder: Bool {
+        (seedVideo.pages?.count ?? 0) > 1
+    }
+
     private func initialTitleInfoPlaceholder() -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.secondary.opacity(0.18))
-                .frame(height: 17)
-
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.secondary.opacity(0.12))
-                    .frame(width: 220, height: 12)
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .redacted(reason: .placeholder)
+        VideoDetailInfoLoadingPlaceholder(titleText: seedVideo.title)
     }
 
     private func initialActionStrip(contentWidth: CGFloat) -> some View {
@@ -935,15 +928,15 @@ private struct VideoDetailStandardPlaybackPageConfig {
     let screenSize: CGSize
     let standardHeight: CGFloat
     let isLandscape: Bool
-    let isManualFullscreen: Bool
-    let expandsToFullscreen: Bool
+    let isFullscreen: Bool
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
-    let manualFullscreenMode: ManualVideoFullscreenMode?
-    let isHoldingPortraitContentAfterManualFullscreen: Bool
+    let fullscreenMode: PlayerFullscreenMode?
+    let isDanmakuSettingsPresented: Bool
     let minimizesTabBarOnScroll: Bool
-    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
-    let onExitManualFullscreen: (() -> Void)?
+    let showsPinnedProgressBar: Bool
+    let onRequestFullscreen: (PlayerStateViewModel) -> Void
+    let onExitFullscreen: (() -> Void)?
     let onNavigateBack: () -> Void
     let onShowDanmakuSettings: () -> Void
 }
@@ -955,11 +948,11 @@ private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
     let detailContent: (VideoDetailContentTab) -> DetailContent
 
     var body: some View {
-        let hidesPortraitContent = config.isManualFullscreen
-            || config.isHoldingPortraitContentAfterManualFullscreen
+        let hidesPortraitContent = config.isFullscreen
+        let usesBlackBackdrop = config.isLandscape
 
         ZStack(alignment: .top) {
-            (config.expandsToFullscreen ? Color.black : Color.videoDetailBackground)
+            Color.videoDetailBackground
                 .ignoresSafeArea()
 
             if !config.isLandscape {
@@ -972,12 +965,11 @@ private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
                 )
                 .frame(width: config.screenSize.width, height: config.screenSize.height, alignment: .top)
                 .opacity(hidesPortraitContent ? 0 : 1)
-                .offset(y: hidesPortraitContent ? 8 : 0)
-                .allowsHitTesting(!hidesPortraitContent)
+                .allowsHitTesting(!config.isFullscreen)
                 .animation(.easeOut(duration: 0.22), value: hidesPortraitContent)
             }
 
-            if config.expandsToFullscreen {
+            if usesBlackBackdrop {
                 Color.black
                     .ignoresSafeArea()
                     .transition(.opacity)
@@ -993,8 +985,9 @@ private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
                 isLandscape: config.isLandscape,
                 playerWidth: config.playerWidth,
                 playerHeight: config.playerHeight,
-                manualFullscreenMode: config.manualFullscreenMode,
-                isHoldingPortraitContentAfterManualFullscreen: config.isHoldingPortraitContentAfterManualFullscreen,
+                fullscreenMode: config.fullscreenMode,
+                isDanmakuSettingsPresented: config.isDanmakuSettingsPresented,
+                showsPinnedProgressBar: config.showsPinnedProgressBar,
                 selectPlayVariant: { [weak viewModel] variant in
                     viewModel?.selectPlayVariant(variant)
                 },
@@ -1007,8 +1000,8 @@ private struct VideoDetailStandardPlaybackPage<DetailContent: View>: View {
                 onDanmakuPlaybackTime: { [weak viewModel] currentTime, isLoadShedding in
                     viewModel?.updateDanmakuPlaybackTime(currentTime, underLoad: isLoadShedding)
                 },
-                onRequestManualFullscreen: config.onRequestManualFullscreen,
-                onExitManualFullscreen: config.onExitManualFullscreen,
+                onRequestFullscreen: config.onRequestFullscreen,
+                onExitFullscreen: config.onExitFullscreen,
                 onNavigateBack: config.onNavigateBack,
                 onShowDanmakuSettings: config.onShowDanmakuSettings
             )
@@ -1066,19 +1059,23 @@ private struct VideoDetailInfoBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
+        Group {
+            if store.hasResolvedDetailMetadata {
+                resolvedContent
+            } else {
+                VideoDetailInfoLoadingPlaceholder(titleText: store.titleText)
+            }
+        }
+    }
+
+    private var resolvedContent: some View {
         let descriptionText = store.descriptionText
         let descriptionPreview = Self.collapsedDescriptionPreview(descriptionText)
         let hasDescriptionContent = descriptionPreview != nil
         let metadataText = metadataText(descriptionPreview: isExpanded ? nil : descriptionPreview)
 
-        VStack(alignment: .leading, spacing: 6) {
-            Text(titleText)
-                .font(.callout.weight(.semibold))
-                .lineSpacing(1.5)
-                .foregroundStyle(.primary)
-                .lineLimit(isExpanded ? nil : 2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return VStack(alignment: .leading, spacing: 6) {
+            VideoDetailInfoTitleText(text: titleText, isExpanded: isExpanded)
 
             HStack(alignment: .center, spacing: 8) {
                 Text(metadataText)
@@ -1104,6 +1101,7 @@ private struct VideoDetailInfoBlock: View {
                     .accessibilityLabel(isExpanded ? "收起视频简介" : "展开视频简介")
                 }
             }
+            .frame(height: 24, alignment: .center)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isExpanded {
@@ -1159,6 +1157,75 @@ private struct VideoDetailInfoBlock: View {
     }
 }
 
+private struct VideoDetailInfoLoadingPlaceholder: View {
+    let titleText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                titleSkeleton
+            } else {
+                VideoDetailInfoTitleText(text: titleText, isExpanded: false)
+            }
+
+            VideoDetailMetadataLoadingRow()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var titleSkeleton: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.secondary.opacity(0.16))
+                .frame(height: 17)
+
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+                .frame(height: 17)
+                .padding(.trailing, 96)
+        }
+        .redacted(reason: .placeholder)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct VideoDetailInfoTitleText: View {
+    let text: String
+    let isExpanded: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.callout.weight(.semibold))
+            .lineSpacing(1.5)
+            .foregroundStyle(.primary)
+            .lineLimit(isExpanded ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct VideoDetailMetadataLoadingRow: View {
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+                .frame(maxWidth: 220)
+                .frame(height: 12)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(0.28))
+                .frame(width: 24, height: 24)
+        }
+        .frame(height: 24, alignment: .center)
+        .redacted(reason: .placeholder)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct VideoDetailPageMenu: View {
     @ObservedObject var store: VideoDetailPageSelectorRenderStore
     let selectPage: (VideoPage) -> Void
@@ -1183,6 +1250,32 @@ private struct VideoDetailPageMenu: View {
             .buttonStyle(.bordered)
             .controlSize(.large)
         }
+    }
+}
+
+private struct InitialPageMenuPlaceholder: View {
+    let pageCount: Int
+
+    var body: some View {
+        Label("\(pageCount)P", systemImage: "rectangle.stack")
+            .frame(maxWidth: .infinity)
+            .buttonStylePlaceholder()
+            .controlSize(.large)
+            .opacity(0.42)
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    func buttonStylePlaceholder() -> some View {
+        frame(height: 36)
+            .background(Color.videoDetailSecondarySurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.10), lineWidth: 0.7)
+            }
     }
 }
 
@@ -1212,14 +1305,15 @@ private struct VideoDetailPlayerHero: View {
     let isLandscape: Bool
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
-    let manualFullscreenMode: ManualVideoFullscreenMode?
-    let isHoldingPortraitContentAfterManualFullscreen: Bool
+    let fullscreenMode: PlayerFullscreenMode?
+    let isDanmakuSettingsPresented: Bool
+    let showsPinnedProgressBar: Bool
     let selectPlayVariant: (PlayVariant) -> Void
     let onToggleDanmaku: () -> Void
     let onPrepareForUserSeek: (Double) -> Void
     let onDanmakuPlaybackTime: (TimeInterval, Bool) -> Void
-    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
-    let onExitManualFullscreen: (() -> Void)?
+    let onRequestFullscreen: (PlayerStateViewModel) -> Void
+    let onExitFullscreen: (() -> Void)?
     let onNavigateBack: () -> Void
     let onShowDanmakuSettings: () -> Void
 
@@ -1235,21 +1329,22 @@ private struct VideoDetailPlayerHero: View {
                         isLandscape: isLandscape,
                         playerWidth: playerWidth,
                         playerHeight: playerHeight,
-                        manualFullscreenMode: manualFullscreenMode,
+                        fullscreenMode: fullscreenMode,
+                        isDanmakuSettingsPresented: isDanmakuSettingsPresented,
                         selectPlayVariant: selectPlayVariant,
                         onToggleDanmaku: onToggleDanmaku,
                         onPrepareForUserSeek: onPrepareForUserSeek,
                         onDanmakuPlaybackTime: onDanmakuPlaybackTime,
-                        onRequestManualFullscreen: onRequestManualFullscreen,
-                        onExitManualFullscreen: onExitManualFullscreen,
+                        onRequestFullscreen: onRequestFullscreen,
+                        onExitFullscreen: onExitFullscreen,
                         onNavigateBack: onNavigateBack,
                         onShowDanmakuSettings: onShowDanmakuSettings
                     )
 
-                    if playerIdentityStore.transitionSnapshotView != nil
+                    if playerIdentityStore.transitionSnapshot != nil
                         || playerIdentityStore.transitionFallbackCoverURL != nil {
                         VideoDetailPlayerTransitionMask(
-                            snapshotView: playerIdentityStore.transitionSnapshotView,
+                            snapshot: playerIdentityStore.transitionSnapshot,
                             fallbackCoverURL: playerIdentityStore.transitionFallbackCoverURL,
                             playerWidth: playerWidth,
                             playerHeight: playerHeight
@@ -1280,7 +1375,9 @@ private struct VideoDetailPlayerHero: View {
         .frame(maxWidth: .infinity)
         .frame(height: playerHeight)
         .overlay(alignment: .bottom) {
-            if !isLandscape, manualFullscreenMode == nil, !isHoldingPortraitContentAfterManualFullscreen {
+            if showsPinnedProgressBar,
+               !isLandscape,
+               fullscreenMode == nil {
                 if let playerViewModel = playerIdentityStore.playerViewModel {
                     VideoDetailPinnedProgressBar(
                         playerViewModel: playerViewModel,
@@ -1299,14 +1396,13 @@ private struct VideoDetailPlayerHero: View {
                 }
             }
         }
-        .animation(.easeOut(duration: 0.18), value: isHoldingPortraitContentAfterManualFullscreen)
         .zIndex(1)
         .clipped()
     }
 }
 
 private struct VideoDetailPlayerTransitionMask: View {
-    let snapshotView: UIView?
+    let snapshot: PlaybackTransitionSnapshot?
     let fallbackCoverURL: URL?
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
@@ -1314,8 +1410,10 @@ private struct VideoDetailPlayerTransitionMask: View {
     var body: some View {
         ZStack {
             Color.black
-            if let snapshotView {
-                PlaybackTransitionSnapshotRepresentable(snapshotView: snapshotView)
+            if let image = snapshot?.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
             } else {
                 CachedRemoteImage(
                     url: fallbackCoverURL,
@@ -1337,33 +1435,6 @@ private struct VideoDetailPlayerTransitionMask: View {
     }
 }
 
-private struct PlaybackTransitionSnapshotRepresentable: UIViewRepresentable {
-    let snapshotView: UIView
-
-    func makeUIView(context _: Context) -> UIView {
-        let container = UIView()
-        container.backgroundColor = .black
-        container.isOpaque = true
-        container.clipsToBounds = true
-        installSnapshot(in: container)
-        return container
-    }
-
-    func updateUIView(_ uiView: UIView, context _: Context) {
-        installSnapshot(in: uiView)
-    }
-
-    private func installSnapshot(in container: UIView) {
-        if snapshotView.superview !== container {
-            snapshotView.removeFromSuperview()
-            container.addSubview(snapshotView)
-        }
-        snapshotView.frame = container.bounds
-        snapshotView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        snapshotView.isUserInteractionEnabled = false
-    }
-}
-
 private struct VideoDetailPlayerSurface: View {
     @ObservedObject var surfaceStore: VideoDetailPlayerSurfaceRenderStore
     let qualityControlStore: VideoDetailQualityControlRenderStore
@@ -1372,19 +1443,20 @@ private struct VideoDetailPlayerSurface: View {
     let isLandscape: Bool
     let playerWidth: CGFloat?
     let playerHeight: CGFloat
-    let manualFullscreenMode: ManualVideoFullscreenMode?
+    let fullscreenMode: PlayerFullscreenMode?
+    let isDanmakuSettingsPresented: Bool
     let selectPlayVariant: (PlayVariant) -> Void
     let onToggleDanmaku: () -> Void
     let onPrepareForUserSeek: (Double) -> Void
     let onDanmakuPlaybackTime: (TimeInterval, Bool) -> Void
-    let onRequestManualFullscreen: (PlayerStateViewModel) -> Void
-    let onExitManualFullscreen: (() -> Void)?
+    let onRequestFullscreen: (PlayerStateViewModel) -> Void
+    let onExitFullscreen: (() -> Void)?
     let onNavigateBack: () -> Void
     let onShowDanmakuSettings: () -> Void
+    @State private var isShowingQualityControls = false
     private var usesLandscapePlaybackChrome: Bool {
-        isLandscape || manualFullscreenMode?.isLandscape == true
+        isLandscape || fullscreenMode?.isLandscape == true
     }
-
     var body: some View {
         BiliPlayerView(
             viewModel: playerViewModel,
@@ -1395,31 +1467,39 @@ private struct VideoDetailPlayerSurface: View {
             showsNavigationChrome: false,
             showsStartupLoadingIndicator: false,
             pausesOnDisappear: false,
-            surfaceOverlay: AnyView(danmakuOverlay),
+            surfaceOverlay: AnyView(playerSurfaceOverlay),
             controlsAccessory: AnyView(
                 VideoDetailPlayerQualityControl(
                     store: qualityControlStore,
-                    selectPlayVariant: selectPlayVariant
+                    selectPlayVariant: selectPlayVariant,
+                    onPresentationChange: { isShowingQualityControls = $0 }
                 )
             ),
             topLeadingControlsAccessory: AnyView(VideoDetailPlayerBackButton(action: onNavigateBack)),
             isDanmakuEnabled: surfaceStore.isDanmakuEnabled,
             onToggleDanmaku: onToggleDanmaku,
             onShowDanmakuSettings: onShowDanmakuSettings,
+            isSecondaryControlsPresented: isShowingQualityControls || isDanmakuSettingsPresented,
             embeddedAspectRatio: 16 / 9,
             keepsPlayerSurfaceStable: true,
-            prefersNativePlaybackControls: false,
-            manualFullscreenMode: manualFullscreenMode,
+            prefersNativePlaybackControls: VideoDetailPlaybackControlPolicy.prefersNativePlaybackControls,
+            fullscreenMode: fullscreenMode,
             onPrepareForUserSeek: onPrepareForUserSeek,
-            onRequestManualFullscreen: {
-                onRequestManualFullscreen(playerViewModel)
+            onRequestFullscreen: {
+                onRequestFullscreen(playerViewModel)
             },
-            onExitManualFullscreen: onExitManualFullscreen
+            onExitFullscreen: onExitFullscreen
         )
         .id(ObjectIdentifier(playerViewModel))
         .frame(width: playerWidth)
         .frame(height: playerHeight)
-        .overlay {
+        .background(Color.black)
+    }
+
+    private var playerSurfaceOverlay: some View {
+        ZStack {
+            danmakuOverlay
+
             if let historyVideo = surfaceStore.historyVideo {
                 PlaybackPosterOverlay(
                     video: historyVideo,
@@ -1429,7 +1509,6 @@ private struct VideoDetailPlayerSurface: View {
                 )
             }
         }
-        .background(Color.black)
     }
 
     private var danmakuOverlay: some View {
@@ -1444,18 +1523,34 @@ private struct VideoDetailPlayerSurface: View {
 }
 
 private struct VideoDetailPlayerQualityControl: View {
+    @Environment(\.playerNativeControlMetrics) private var controlMetrics
     @ObservedObject var store: VideoDetailQualityControlRenderStore
     let selectPlayVariant: (PlayVariant) -> Void
+    let onPresentationChange: (Bool) -> Void
+    @State private var isShowingQualityDialog = false
 
     var body: some View {
         if store.hasQualityMenu {
-            Menu {
-                if store.isSupplementingPlayQualities {
-                    Button {} label: {
-                        Label("正在补全高清档位", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .disabled(true)
-                }
+            Button {
+                isShowingQualityDialog = true
+            } label: {
+                Text(store.qualityAccessoryButtonTitle)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, controlMetrics.qualityHorizontalPadding)
+                    .frame(maxWidth: controlMetrics.qualityButtonMaxWidth)
+                    .frame(height: controlMetrics.controlHeight)
+            }
+            .biliPlayerCompactGlassCapsule(metrics: controlMetrics)
+            .foregroundStyle(.white)
+            .accessibilityLabel("清晰度")
+            .confirmationDialog(
+                "清晰度",
+                isPresented: $isShowingQualityDialog,
+                titleVisibility: .visible
+            ) {
                 if store.isSwitchingPlayQuality {
                     Button {} label: {
                         Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")
@@ -1471,17 +1566,13 @@ private struct VideoDetailPlayerQualityControl: View {
                     }
                     .disabled(item.isDisabled)
                 }
-            } label: {
-                Text(store.qualityAccessoryButtonTitle)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(minWidth: 54, minHeight: 30)
-                    .padding(.horizontal, 5)
             }
-            .foregroundStyle(.white)
-            .biliPlayerYouTubePillStyle()
-            .accessibilityLabel("清晰度")
+            .onChange(of: isShowingQualityDialog) { _, isPresented in
+                onPresentationChange(isPresented)
+            }
+            .onDisappear {
+                onPresentationChange(false)
+            }
         }
     }
 }
@@ -1499,7 +1590,8 @@ private struct VideoDetailPlayerPlaceholder: View {
                 progress: loadingProgress,
                 message: loadingMessage,
                 isFinishing: false,
-                secondaryMessage: secondaryLoadingMessage
+                secondaryMessage: secondaryLoadingMessage,
+                showsChromeSkeleton: true
             )
             .frame(width: playerWidth)
             .frame(height: playerHeight)
@@ -1574,6 +1666,7 @@ private struct VideoDetailPlayerPlaceholder: View {
 }
 
 private struct VideoDetailPlayerBackButton: View {
+    @Environment(\.playerNativeControlMetrics) private var controlMetrics
     let action: () -> Void
 
     var body: some View {
@@ -1582,13 +1675,14 @@ private struct VideoDetailPlayerBackButton: View {
             action()
         }) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 34, height: 34)
+                .font(.system(size: controlMetrics.iconSize, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(
+                    width: controlMetrics.controlHeight,
+                    height: controlMetrics.controlHeight
+                )
         }
-        .buttonStyle(.plain)
-        .background(Circle().fill(.black.opacity(0.34)))
-        .contentShape(Circle())
-        .foregroundStyle(.white)
+        .biliPlayerCompactGlassCircle(metrics: controlMetrics)
         .accessibilityLabel("返回")
     }
 }
@@ -1634,4 +1728,22 @@ private extension Color {
             ? UIColor(white: 1, alpha: 0.055)
             : UIColor(white: 1, alpha: 0.74)
     })
+}
+
+private extension PlayerFullscreenMode {
+    var videoDetailInterfaceOrientationMask: UIInterfaceOrientationMask {
+        switch self {
+        case .portrait:
+            return .portrait
+        case .landscape(let orientation):
+            switch orientation {
+            case .landscapeLeft:
+                return .landscapeRight
+            case .landscapeRight:
+                return .landscapeLeft
+            default:
+                return .landscapeRight
+            }
+        }
+    }
 }

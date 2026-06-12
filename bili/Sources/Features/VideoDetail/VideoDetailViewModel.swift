@@ -362,7 +362,7 @@ final class VideoDetailPlayerIdentityRenderStore: ObservableObject {
     @Published private var snapshot = VideoDetailPlayerIdentityRenderSnapshot()
 
     var playerViewModel: PlayerStateViewModel? { snapshot.playerViewModel }
-    var transitionSnapshotView: UIView? { snapshot.transitionSnapshotView }
+    var transitionSnapshot: PlaybackTransitionSnapshot? { snapshot.transitionSnapshot }
     var transitionFallbackCoverURL: URL? { snapshot.transitionFallbackCoverURL }
     var transitionPlayerOpacity: Double { snapshot.transitionPlayerOpacity }
 
@@ -643,6 +643,7 @@ final class VideoDetailDescriptionRenderStore: ObservableObject {
     var publishDateText: String { snapshot.publishDateText }
     var publishDateSubtitleText: String? { snapshot.publishDateSubtitleText }
     var descriptionText: String { snapshot.descriptionText }
+    var hasResolvedDetailMetadata: Bool { snapshot.hasResolvedDetailMetadata }
     var canFavorite: Bool { snapshot.canFavorite }
     var shareURL: URL? { snapshot.shareURL }
     var shareSubject: String { snapshot.shareSubject }
@@ -893,7 +894,7 @@ private struct VideoDetailInteractionRenderSnapshot: Equatable {
 
 private struct VideoDetailPlayerIdentityRenderSnapshot: Equatable {
     var playerViewModel: PlayerStateViewModel?
-    var transitionSnapshotView: UIView?
+    var transitionSnapshot: PlaybackTransitionSnapshot?
     var transitionFallbackCoverURL: URL?
     var transitionPlayerOpacity = 0.0
 
@@ -902,7 +903,7 @@ private struct VideoDetailPlayerIdentityRenderSnapshot: Equatable {
         rhs: VideoDetailPlayerIdentityRenderSnapshot
     ) -> Bool {
         isSamePlayer(lhs.playerViewModel, rhs.playerViewModel)
-            && isSameView(lhs.transitionSnapshotView, rhs.transitionSnapshotView)
+            && isSameSnapshot(lhs.transitionSnapshot, rhs.transitionSnapshot)
             && lhs.transitionFallbackCoverURL == rhs.transitionFallbackCoverURL
             && abs(lhs.transitionPlayerOpacity - rhs.transitionPlayerOpacity) < 0.001
     }
@@ -918,12 +919,12 @@ private struct VideoDetailPlayerIdentityRenderSnapshot: Equatable {
         }
     }
 
-    private static func isSameView(_ lhs: UIView?, _ rhs: UIView?) -> Bool {
+    private static func isSameSnapshot(_ lhs: PlaybackTransitionSnapshot?, _ rhs: PlaybackTransitionSnapshot?) -> Bool {
         switch (lhs, rhs) {
         case (.none, .none):
             return true
         case let (.some(left), .some(right)):
-            return left === right
+            return left.image === right.image
         default:
             return false
         }
@@ -1089,7 +1090,7 @@ private struct VideoDetailPlaybackRenderSnapshot: Equatable {
             isSupplementingPlayQualities: isSupplementingPlayQualities,
             isSwitchingPlayQuality: isSwitchingPlayQuality
         )
-        qualityButtonSystemImage = (isSupplementingPlayQualities || isSwitchingPlayQuality)
+        qualityButtonSystemImage = isSwitchingPlayQuality
             ? "arrow.triangle.2.circlepath"
             : "slider.horizontal.3"
         qualityMenuItems = Self.makeQualityMenuItems(
@@ -1110,9 +1111,6 @@ private struct VideoDetailPlaybackRenderSnapshot: Equatable {
         if isSwitchingPlayQuality {
             return "切换中"
         }
-        if isSupplementingPlayQualities {
-            return "补高清中"
-        }
         return selectedPlayVariant?.title ?? "清晰度"
     }
 
@@ -1124,10 +1122,7 @@ private struct VideoDetailPlaybackRenderSnapshot: Equatable {
         if isSwitchingPlayQuality {
             return "切换中"
         }
-        if isSupplementingPlayQualities {
-            return "补高清"
-        }
-        return selectedPlayVariant?.title ?? "清晰度"
+        return selectedPlayVariant?.compactAccessoryTitle ?? "清晰度"
     }
 
     private static func makeQualityMenuItems(
@@ -1292,6 +1287,7 @@ struct VideoDetailDescriptionRenderSnapshot: Equatable {
     var publishDateText = "-"
     var publishDateSubtitleText: String?
     var descriptionText = "这个视频暂时没有简介。"
+    var hasResolvedDetailMetadata = false
     var canFavorite = false
     var shareURL: URL?
     var shareSubject = ""
@@ -1313,6 +1309,7 @@ struct VideoDetailDescriptionRenderSnapshot: Equatable {
         publishDateSubtitleText = viewModel.detailDisplayMetrics.publishDateSubtitleText
         let description = (detail.desc ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         descriptionText = description.isEmpty ? "这个视频暂时没有简介。" : description
+        hasResolvedDetailMetadata = viewModel.hasResolvedDetailMetadata
         canFavorite = viewModel.detailDisplayMetrics.canFavorite
         shareURL = Self.videoShareURL(for: detail)
         shareSubject = trimmedTitle
@@ -1721,7 +1718,7 @@ final class VideoDetailViewModel: ObservableObject {
     private var playbackTransitionPlayerViewModel: PlayerStateViewModel? {
         didSet { scheduleRenderStoreSync(.playerIdentity) }
     }
-    private var playbackTransitionSnapshotView: UIView? {
+    private var playbackTransitionSnapshot: PlaybackTransitionSnapshot? {
         didSet { scheduleRenderStoreSync(.playerIdentity) }
     }
     private var playbackTransitionFallbackCoverURL: URL? {
@@ -1741,6 +1738,9 @@ final class VideoDetailViewModel: ObservableObject {
     private var renderStoreSyncTask: Task<Void, Never>?
     private var pendingRenderStoreSyncs: RenderStoreSyncMask = []
     private var didRecordDetailLoadedEvent = false
+    private(set) var hasResolvedDetailMetadata = false {
+        didSet { scheduleRenderStoreSync(.description) }
+    }
     private var isPlaybackInvalidatedForNavigation = false
     private var playVariantSwitchToken: UUID?
     private var uploaderInteractionTask: Task<Void, Never>?
@@ -2073,7 +2073,7 @@ final class VideoDetailViewModel: ObservableObject {
         playerIdentityRenderStore.update(
             VideoDetailPlayerIdentityRenderSnapshot(
                 playerViewModel: stablePlayerViewModel,
-                transitionSnapshotView: playbackTransitionSnapshotView,
+                transitionSnapshot: playbackTransitionSnapshot,
                 transitionFallbackCoverURL: playbackTransitionFallbackCoverURL,
                 transitionPlayerOpacity: playbackTransitionOpacity
             )
@@ -2388,6 +2388,7 @@ final class VideoDetailViewModel: ObservableObject {
             return false
         }
         detail = detail.mergingFilledValues(from: cached)
+        hasResolvedDetailMetadata = true
         syncCommentsRenderStore()
         selectedCID = selectedCID ?? cached.pages?.first?.cid ?? cached.cid
         return activateCurrentDetailForFastStart(source: "cache")
@@ -2560,6 +2561,7 @@ final class VideoDetailViewModel: ObservableObject {
                 return
             }
             detail = detail.mergingFilledValues(from: fullDetail)
+            hasResolvedDetailMetadata = true
             syncCommentsRenderStore()
             selectedCID = selectedCID ?? fullDetail.pages?.first?.cid ?? fullDetail.cid
             if !activateCurrentDetailForFastStart(source: "network") {
@@ -2590,6 +2592,7 @@ final class VideoDetailViewModel: ObservableObject {
             if state != .loaded {
                 state = .failed(error.localizedDescription)
             }
+            hasResolvedDetailMetadata = true
             signpostMessage = "bvid=\(detail.bvid) failed \(error.localizedDescription)"
         }
     }
@@ -4400,17 +4403,17 @@ final class VideoDetailViewModel: ObservableObject {
             playbackTransitionReleaseTask?.cancel()
             playbackTransitionReleaseTask = nil
         }
-        let snapshotView = player.makePlaybackTransitionSnapshotView()
+        let snapshot = player.makePlaybackTransitionSnapshot()
         player.prepareForVisualPlaybackTransition()
         playbackTransitionPlayerViewModel = player
-        playbackTransitionSnapshotView = snapshotView
+        playbackTransitionSnapshot = snapshot
         playbackTransitionFallbackCoverURL = playbackTransitionCoverURL()
         playbackTransitionOpacity = 1
         PlayerMetricsLog.record(
             .qualitySupplement,
             metricsID: detail.bvid,
             title: detail.title,
-            message: "stagedStartup transitionHold snapshot=\(snapshotView != nil ? "frame" : "cover")"
+            message: "stagedStartup transitionHold snapshot=\(snapshot != nil ? "frame" : "cover")"
         )
         releasePlaybackTransitionPlayer(after: Self.playbackTransitionMaximumRetainNanoseconds)
     }
@@ -4446,7 +4449,7 @@ final class VideoDetailViewModel: ObservableObject {
         playbackTransitionReleaseTask = nil
         let transitionPlayer = playbackTransitionPlayerViewModel
         playbackTransitionPlayerViewModel = nil
-        playbackTransitionSnapshotView = nil
+        playbackTransitionSnapshot = nil
         playbackTransitionFallbackCoverURL = nil
         playbackTransitionOpacity = 0
         guard let transitionPlayer else { return }
@@ -4459,7 +4462,7 @@ final class VideoDetailViewModel: ObservableObject {
         playbackTransitionReleaseTask = nil
         guard playbackTransitionPlayerViewModel === transitionPlayer else { return }
         playbackTransitionPlayerViewModel = nil
-        playbackTransitionSnapshotView = nil
+        playbackTransitionSnapshot = nil
         playbackTransitionFallbackCoverURL = nil
         playbackTransitionOpacity = 0
         if stablePlayerViewModel !== transitionPlayer {
@@ -4720,6 +4723,7 @@ final class VideoDetailViewModel: ObservableObject {
               selectedPlayVariant?.id == failedVariant.id
         else { return }
         failedPlayVariantIDs.insert(failedVariant.id)
+        temporarilyAvoidCurrentAutomaticPlaybackCDN(reason: "playbackError")
         PlaybackCDNProbeCoordinator.shared.refreshForPlaybackPressure(libraryStore: libraryStore)
         if playbackFailurePrefersPlayURLReload(message),
            schedulePlaybackRecoveryReload(after: message, failedVariant: failedVariant) {
@@ -4759,6 +4763,7 @@ final class VideoDetailViewModel: ObservableObject {
         else { return }
         lastBufferingCDNRefreshCount = count
         let previousPreference = libraryStore.effectivePlaybackCDNPreference
+        temporarilyAvoidCurrentAutomaticPlaybackCDN(reason: "bufferingPressure count=\(count)")
         PlayerMetricsLog.record(
             .network,
             metricsID: detail.bvid,
@@ -4781,6 +4786,20 @@ final class VideoDetailViewModel: ObservableObject {
             }
             self.bufferingCDNRefreshTask = nil
         }
+    }
+
+    private func temporarilyAvoidCurrentAutomaticPlaybackCDN(reason: String) {
+        guard libraryStore.playbackCDNPreference == .automatic else { return }
+        let currentPreference = libraryStore.effectivePlaybackCDNPreference
+        guard currentPreference != .automatic,
+              libraryStore.temporarilyAvoidAutomaticPlaybackCDN(currentPreference)
+        else { return }
+        PlayerMetricsLog.record(
+            .network,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "automaticCDNAvoided cdn=\(currentPreference.rawValue) reason=\(diagnosticToken(reason))"
+        )
     }
 
     @discardableResult

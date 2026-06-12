@@ -109,6 +109,9 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     func makeUIView(context: Context) -> BiliInteractiveAttributedLabel {
         let label = BiliInteractiveAttributedLabel()
         label.backgroundColor = .clear
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = input.lineBreakStrategy
+        }
         label.adjustsFontForContentSizeCategory = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentHuggingPriority(.required, for: .vertical)
@@ -118,7 +121,10 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     func updateUIView(_ label: BiliInteractiveAttributedLabel, context: Context) {
         label.onLinkTap = onURLTap
         label.numberOfLines = input.lineLimit ?? 0
-        label.lineBreakMode = .byWordWrapping
+        label.lineBreakMode = input.lineBreakMode
+        if #available(iOS 14.0, *) {
+            label.lineBreakStrategy = input.lineBreakStrategy
+        }
 
         let renderResult = context.coordinator.render(input)
         if context.coordinator.appliedRenderKey != renderResult.key {
@@ -132,9 +138,16 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: BiliInteractiveAttributedLabel, context: Context) -> CGSize? {
-        guard let width = proposal.width ?? (uiView.bounds.width > 1 ? uiView.bounds.width : nil),
-              width > 1
-        else { return nil }
+        guard let width = context.coordinator.measuredWidth(
+            proposedWidth: proposal.width,
+            boundsWidth: uiView.bounds.width
+        ) else {
+            context.coordinator.lastMeasuredWidth = nil
+            uiView.preferredMaxLayoutWidth = 0
+            return nil
+        }
+
+        context.coordinator.lastMeasuredWidth = width
         uiView.preferredMaxLayoutWidth = width
         let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(width: width, height: ceil(size.height))
@@ -143,9 +156,26 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     final class Coordinator {
         var currentInput: BiliEmoteRenderInput?
         var appliedRenderKey: String?
+        var lastMeasuredWidth: CGFloat?
         private var cachedInputKey: String?
         private var cachedRenderResult: BiliEmoteRenderResult?
         private var imageTasks: [URL: Task<Void, Never>] = [:]
+
+        func measuredWidth(proposedWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
+            if let proposedWidth, proposedWidth.isFinite, proposedWidth > 1 {
+                return ceil(proposedWidth)
+            }
+
+            if boundsWidth.isFinite, boundsWidth > 1 {
+                return ceil(boundsWidth)
+            }
+
+            if let lastMeasuredWidth, lastMeasuredWidth.isFinite, lastMeasuredWidth > 1 {
+                return ceil(lastMeasuredWidth)
+            }
+
+            return nil
+        }
 
         func render(_ input: BiliEmoteRenderInput) -> BiliEmoteRenderResult {
             if cachedInputKey == input.cacheKey, let cachedRenderResult {
@@ -560,8 +590,17 @@ private struct BiliEmoteRenderInput {
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 2
-        style.lineBreakMode = .byWordWrapping
+        style.lineBreakMode = lineBreakMode
+        style.lineBreakStrategy = lineBreakStrategy
         return style
+    }
+
+    var lineBreakMode: NSLineBreakMode {
+        message.prefersCharacterWrappingForCJKText ? .byCharWrapping : .byWordWrapping
+    }
+
+    var lineBreakStrategy: NSParagraphStyle.LineBreakStrategy {
+        message.prefersCharacterWrappingForCJKText ? [] : .standard
     }
 
     private func append(

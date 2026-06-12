@@ -134,6 +134,9 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                     "测速参考",
                     libraryStore.automaticPlaybackCDNRecommendation?.title ?? "暂无可用推荐"
                 )
+                if let avoidanceDescription = libraryStore.activePlaybackCDNAvoidanceDescription {
+                    diagnosticRow("临时避让", avoidanceDescription)
+                }
             }
 
             diagnosticRow("视频 Host", variant?.videoURL?.host ?? "未获取")

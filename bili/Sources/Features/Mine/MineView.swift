@@ -26,8 +26,7 @@ struct MineView: View {
                     }
             }
         }
-        .navigationTitle("我的")
-        .navigationBarTitleDisplayMode(.inline)
+        .rootNavigationTitle("我的")
         .nativeTopNavigationChrome()
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
@@ -152,6 +151,12 @@ struct MineView: View {
                     Label("测速参考 \(activeRecommendation.title)", systemImage: "bolt.horizontal")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+
+                if let avoidanceDescription = libraryStore.activePlaybackCDNAvoidanceDescription {
+                    Label("临时避让 \(avoidanceDescription)", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
 
                 if libraryStore.playbackNetworkAddressFamilyPreference != .automatic {
@@ -385,6 +390,20 @@ struct MineView: View {
                     set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
                 )) {
                     Label("播放性能浮层", systemImage: "waveform.path.ecg.rectangle")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.showsVideoDetailNetworkDiagnosticsButton },
+                    set: { libraryStore.setShowsVideoDetailNetworkDiagnosticsButton($0) }
+                )) {
+                    Label("视频详情网络诊断", systemImage: "stethoscope")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.showsVideoDetailPinnedProgressBar },
+                    set: { libraryStore.setShowsVideoDetailPinnedProgressBar($0) }
+                )) {
+                    Label("视频窗口底部进度条", systemImage: "line.3.horizontal.decrease")
                 }
 
                 NavigationLink {

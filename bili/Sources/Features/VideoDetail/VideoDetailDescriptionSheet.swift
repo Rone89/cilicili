@@ -46,41 +46,17 @@ struct VideoDescriptionSheet: View {
     }
 }
 
-private struct VideoTitleText: UIViewRepresentable {
+private struct VideoTitleText: View {
     let text: String
 
-    func makeUIView(context _: Context) -> UILabel {
-        let label = UILabel()
-        label.numberOfLines = 3
-        label.lineBreakMode = .byWordWrapping
-        label.textAlignment = .left
-        label.adjustsFontForContentSizeCategory = true
-        label.setContentCompressionResistancePriority(.required, for: .vertical)
-        label.setContentHuggingPriority(.required, for: .vertical)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }
-
-    func updateUIView(_ label: UILabel, context _: Context) {
-        label.text = text
-        label.font = Self.font
-        label.textColor = .label
-        label.lineBreakMode = .byWordWrapping
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView label: UILabel, context _: Context) -> CGSize? {
-        guard let width = proposal.width ?? (label.bounds.width > 1 ? label.bounds.width : nil),
-              width > 1
-        else {
-            return nil
-        }
-        label.preferredMaxLayoutWidth = width
-        return label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-    }
-
-    private static var font: UIFont {
-        let baseFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
-        return UIFontMetrics(forTextStyle: .title3).scaledFont(for: baseFont)
+    var body: some View {
+        Text(text)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(3)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 }
 

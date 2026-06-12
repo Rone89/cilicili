@@ -3,6 +3,7 @@ import Combine
 import AVFoundation
 import AVKit
 import OSLog
+import SwiftUI
 import UIKit
 
 struct PlayerVideoRenditionSource: Equatable, Sendable {
@@ -97,6 +98,7 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         case unknown
         case avPlayer
         case sampleBuffer
+        case ksPlayer
 
         var title: String {
             switch self {
@@ -106,6 +108,8 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
                 return "AVPlayer / 系统解码"
             case .sampleBuffer:
                 return "SampleBuffer / 系统硬解"
+            case .ksPlayer:
+                return "KSPlayer / FFmpeg"
             }
         }
     }
@@ -242,9 +246,22 @@ enum PlayerEngineError: LocalizedError {
     }
 }
 
-@MainActor
-protocol PlayerHostFullscreenExitTarget: AnyObject {
-    func exitHostFullscreen()
+struct PlayerQualityControls {
+    let title: String
+    let items: [PlayerQualityControlItem]
+
+    var isEmpty: Bool {
+        items.isEmpty
+    }
+}
+
+struct PlayerQualityControlItem: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let isDisabled: Bool
+    let action: @MainActor () -> Void
 }
 
 @MainActor
@@ -269,9 +286,11 @@ protocol PlayerRenderingEngine: AnyObject {
     func recoverSurface()
     func setViewModel(_ viewModel: PlayerStateViewModel?)
     func setVideoGravity(_ gravity: AVLayerVideoGravity)
+    func setContentOverlay(_ overlay: AnyView?)
+    func setDanmakuControls(isEnabled: Bool, onToggle: (() -> Void)?, onShowSettings: (() -> Void)?)
+    func setQualityControls(_ controls: PlayerQualityControls?)
     func attachNativePlaybackController(_ controller: AVPlayerViewController)
     func detachNativePlaybackController(_ controller: AVPlayerViewController)
-    func setHostFullscreenActive(_ isActive: Bool, exitTarget: PlayerHostFullscreenExitTarget?)
     func prepare(source: PlayerStreamSource) async throws
     func play()
     func pause()
@@ -310,14 +329,22 @@ extension PlayerRenderingEngine {
     func currentVideoFrameImage() -> UIImage? {
         nil
     }
+
+    func setContentOverlay(_: AnyView?) {}
+
+    func setDanmakuControls(isEnabled _: Bool, onToggle _: (() -> Void)?, onShowSettings _: (() -> Void)?) {}
+
+    func setQualityControls(_: PlayerQualityControls?) {}
 }
 
 @MainActor
 enum DefaultPlayerRenderingEngine {
     static func make() -> PlayerRenderingEngine {
-        // Keep startup on AVPlayer/HLSBridge for fast first frame and low-power
-        // system decode; Native DASH remains behind an explicit experiment flag.
-        AdaptivePlayerRenderingEngine()
+        #if targetEnvironment(simulator)
+        AVPlayerHLSBridgeEngine()
+        #else
+        KSPlayerRenderingEngine()
+        #endif
     }
 }
 

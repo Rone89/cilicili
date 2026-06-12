@@ -62,6 +62,7 @@ Packages/FFmpegKit/Sources/*.xcframework/
 *.heic
 *.mov
 *.mp4
+!bili/Assets.xcassets/AppIcon.appiconset/*.png
 
 # macOS
 .DS_Store

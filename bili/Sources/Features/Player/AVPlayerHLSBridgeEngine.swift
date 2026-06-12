@@ -3,6 +3,7 @@ import AVKit
 import CoreImage
 import Network
 import OSLog
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -55,6 +56,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var isStopped = true
     private var targetVolume: Float = 1
     private var targetMuted = false
+    private var contentOverlay: AnyView?
+    private var contentOverlayHostingController: UIHostingController<AnyView>?
+    private weak var contentOverlayContainerView: UIView?
 
     var hasMedia: Bool {
         !isStopped && player.currentItem != nil
@@ -199,6 +203,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playerLayer?.videoGravity = gravity
     }
 
+    func setContentOverlay(_ overlay: AnyView?) {
+        contentOverlay = overlay
+        installContentOverlayIfPossible()
+    }
+
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
         if let playerViewController, playerViewController !== controller {
             playerViewController.player = nil
@@ -206,17 +215,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         playerViewController = controller
         configureNativePlaybackController(controller)
+        installContentOverlayIfPossible()
         removePlayerLayer()
     }
 
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
         guard playerViewController === controller else { return }
+        removeContentOverlayHostingController()
         controller.player = nil
         controllerReadyForDisplayObserver = nil
         playerViewController = nil
     }
-
-    func setHostFullscreenActive(_: Bool, exitTarget _: PlayerHostFullscreenExitTarget?) {}
 
     func prepare(source: PlayerStreamSource) async throws {
         let prepareStart = CACurrentMediaTime()
@@ -352,6 +361,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         source = nil
         playerLayer?.player = nil
         playerViewController?.player = nil
+        setContentOverlay(nil)
         layerReadyForDisplayObserver = nil
         deactivateAudioSessionIfPossible()
         publishPlaybackState(.idle)
@@ -361,6 +371,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let normalizedRate = max(Float(rate), 0.1)
         guard abs(currentRate - normalizedRate) > 0.001 else { return }
         currentRate = normalizedRate
+        player.defaultRate = normalizedRate
         applyRateAwareBuffering()
         applyRateAwareAudioPitchAlgorithm()
         if player.rate > 0 {
@@ -678,7 +689,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if controller.player !== player {
             controller.player = player
         }
-        controller.showsPlaybackControls = true
+        controller.showsPlaybackControls = false
         if controller.videoGravity != videoGravity {
             controller.videoGravity = videoGravity
         }
@@ -687,7 +698,63 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         controller.requiresLinearPlayback = false
         controller.updatesNowPlayingInfoCenter = false
         controller.view.backgroundColor = .black
+        if #available(iOS 16.0, *) {
+            controller.speeds = AVPlaybackSpeed.systemDefaultSpeeds
+        }
         observeControllerReadyForDisplay(controller)
+    }
+
+    private func installContentOverlayIfPossible() {
+        guard let overlay = contentOverlay,
+              let playerViewController,
+              let containerView = playerViewController.contentOverlayView
+        else {
+            if contentOverlay == nil {
+                removeContentOverlayHostingController()
+            }
+            return
+        }
+
+        if contentOverlayContainerView !== containerView {
+            removeContentOverlayHostingController()
+        }
+        containerView.backgroundColor = .clear
+        containerView.isOpaque = false
+        containerView.isUserInteractionEnabled = false
+
+        if let contentOverlayHostingController {
+            contentOverlayHostingController.rootView = overlay
+            contentOverlayHostingController.view.isUserInteractionEnabled = false
+        } else {
+            let hostingController = UIHostingController(rootView: overlay)
+            hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+            hostingController.view.backgroundColor = .clear
+            hostingController.view.isOpaque = false
+            hostingController.view.isUserInteractionEnabled = false
+            playerViewController.addChild(hostingController)
+            containerView.addSubview(hostingController.view)
+            NSLayoutConstraint.activate([
+                hostingController.view.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                hostingController.view.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                hostingController.view.topAnchor.constraint(equalTo: containerView.topAnchor),
+                hostingController.view.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+            ])
+            hostingController.didMove(toParent: playerViewController)
+            contentOverlayHostingController = hostingController
+            contentOverlayContainerView = containerView
+        }
+    }
+
+    private func removeContentOverlayHostingController() {
+        guard let contentOverlayHostingController else {
+            contentOverlayContainerView = nil
+            return
+        }
+        contentOverlayHostingController.willMove(toParent: nil)
+        contentOverlayHostingController.view.removeFromSuperview()
+        contentOverlayHostingController.removeFromParent()
+        self.contentOverlayHostingController = nil
+        contentOverlayContainerView = nil
     }
 
     private func removePlayerLayer() {

@@ -15,20 +15,14 @@ struct PlaybackPosterOverlay: View {
                 PlayerLoadingPlaceholder(
                     progress: snapshot.loadingProgress,
                     message: snapshot.loadingMessage,
-                    isFinishing: snapshot.isFinishing
+                    isFinishing: snapshot.isFinishing,
+                    showsChromeSkeleton: true
                 )
                 .background(Color.black.opacity(dimOpacity))
                 .compositingGroup()
                 .clipped()
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity,
-                        removal: .opacity.animation(.smooth(duration: 0.30))
-                    )
-                )
-                .animation(.smooth(duration: 0.30), value: snapshot.isPlaybackSurfaceReady)
-                .animation(.smooth(duration: 0.18), value: snapshot.isFinishing)
-                .animation(.smooth(duration: 0.20), value: snapshot.loadingProgress)
+                .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                .animation(.easeOut(duration: 0.18), value: snapshot.isPlaybackSurfaceReady)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
