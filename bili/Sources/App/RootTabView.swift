@@ -19,6 +19,7 @@ struct RootTabView: View {
     @State private var didConsumeStartupVideo = false
     @State private var didConsumeStartupLiveRoom = false
     @State private var isClosingVideo = false
+    @State private var videoPresentationGeneration = 0
     @State private var closeVideoFallbackTask: Task<Void, Never>?
     @State private var inAppBrowserItem: InAppBrowserItem?
     @State private var recentPlaybackPreloadTimes: [String: Date] = [:]
@@ -29,48 +30,58 @@ struct RootTabView: View {
     var body: some View {
         ZStack {
             TabView(selection: tabSelection) {
-                Tab(value: AppTab.home) {
-                    NavigationStack(path: $navigationPath) {
-                        homePage()
+                if visibleRootTabs.contains(.home) {
+                    Tab(value: AppTab.home) {
+                        NavigationStack(path: $navigationPath) {
+                            homePage()
+                        }
+                    } label: {
+                        Label(AppTab.home.title, systemImage: AppTab.home.systemImage)
                     }
-                } label: {
-                    Label(RootTab.home.title, systemImage: RootTab.home.systemImage)
                 }
 
-                Tab(value: AppTab.dynamic) {
-                    NavigationStack(path: $dynamicNavigationPath) {
-                        DynamicView()
-                            .videoDestinations()
+                if visibleRootTabs.contains(.dynamic) {
+                    Tab(value: AppTab.dynamic) {
+                        NavigationStack(path: $dynamicNavigationPath) {
+                            DynamicView()
+                                .videoDestinations()
+                        }
+                    } label: {
+                        Label(AppTab.dynamic.title, systemImage: AppTab.dynamic.systemImage)
                     }
-                } label: {
-                    Label(RootTab.dynamic.title, systemImage: RootTab.dynamic.systemImage)
                 }
 
-                Tab(value: AppTab.live) {
-                    NavigationStack(path: $liveNavigationPath) {
-                        LiveView()
-                            .videoDestinations()
+                if visibleRootTabs.contains(.live) {
+                    Tab(value: AppTab.live) {
+                        NavigationStack(path: $liveNavigationPath) {
+                            LiveView()
+                                .videoDestinations()
+                        }
+                    } label: {
+                        Label(AppTab.live.title, systemImage: AppTab.live.systemImage)
                     }
-                } label: {
-                    Label(RootTab.live.title, systemImage: RootTab.live.systemImage)
                 }
 
-                Tab(value: AppTab.mine) {
-                    NavigationStack(path: $mineNavigationPath) {
-                        MineView()
-                            .videoDestinations()
+                if visibleRootTabs.contains(.mine) {
+                    Tab(value: AppTab.mine) {
+                        NavigationStack(path: $mineNavigationPath) {
+                            MineView()
+                                .videoDestinations()
+                        }
+                    } label: {
+                        Label(AppTab.mine.title, systemImage: AppTab.mine.systemImage)
                     }
-                } label: {
-                    Label(RootTab.mine.title, systemImage: RootTab.mine.systemImage)
                 }
 
-                Tab(value: AppTab.search, role: .search) {
-                    NavigationStack(path: $searchNavigationPath) {
-                        SearchView()
-                            .videoDestinations()
+                if visibleRootTabs.contains(.search) {
+                    Tab(value: AppTab.search, role: .search) {
+                        NavigationStack(path: $searchNavigationPath) {
+                            SearchView()
+                                .videoDestinations()
+                        }
+                    } label: {
+                        Label(AppTab.search.title, systemImage: AppTab.search.systemImage)
                     }
-                } label: {
-                    Label(RootTab.search.title, systemImage: RootTab.search.systemImage)
                 }
             }
             .tint(.pink)
@@ -97,6 +108,7 @@ struct RootTabView: View {
         .background(NavigationChromeInstaller(isStandardChromeEnabled: bottomMode == .video))
         .animation(.smooth(duration: 0.28), value: bottomMode)
         .animation(.smooth(duration: 0.22), value: selectedTab)
+        .animation(.smooth(duration: 0.22), value: runtimeSettings.visibleRootTabs)
         .preferredColorScheme(runtimeSettings.appearanceMode.preferredColorScheme)
         .sheet(item: $inAppBrowserItem) { item in
             InAppBrowserView(url: item.url)
@@ -108,6 +120,9 @@ struct RootTabView: View {
             openStartupVideoIfNeeded()
             openStartupLiveRoomIfNeeded()
             await dependencies.api.prewarmPlaybackSigningKeys()
+        }
+        .onChange(of: runtimeSettings.visibleRootTabs) { _, tabs in
+            repairSelectedTabIfNeeded(visibleTabs: tabs)
         }
     }
 
@@ -139,8 +154,26 @@ struct RootTabView: View {
     private var tabSelection: Binding<AppTab> {
         Binding(
             get: { selectedTab },
-            set: { selectedTab = $0 }
+            set: { tab in
+                selectedTab = visibleRootTabs.contains(tab) ? tab : fallbackRootTab(for: tab)
+            }
         )
+    }
+
+    private var visibleRootTabs: [AppTab] {
+        runtimeSettings.visibleRootTabs
+    }
+
+    private func repairSelectedTabIfNeeded(visibleTabs: [AppTab]) {
+        guard !visibleTabs.contains(selectedTab) else { return }
+        selectedTab = fallbackRootTab(for: selectedTab, visibleTabs: visibleTabs)
+    }
+
+    private func fallbackRootTab(for tab: AppTab, visibleTabs: [AppTab]? = nil) -> AppTab {
+        let tabs = visibleTabs ?? visibleRootTabs
+        if tabs.contains(.home) { return .home }
+        if tabs.contains(.mine) { return .mine }
+        return tabs.first ?? .home
     }
 
     private var shouldAutoOpenDetail: Bool {
@@ -242,7 +275,10 @@ struct RootTabView: View {
                 .navigationDestination(for: VideoItem.self) { video in
                     VideoDetailView(
                         seedVideo: video,
-                        hidesRootTabBar: false
+                        hidesRootTabBar: false,
+                        onRequestClose: {
+                            closeVideo()
+                        }
                     )
                     .id(video.id)
                 }
@@ -277,6 +313,7 @@ struct RootTabView: View {
 
         beginPlaybackPreload(for: video)
         let update = {
+            videoPresentationGeneration &+= 1
             didConsumeStartupVideo = true
             isClosingVideo = false
             activeVideo = video
@@ -292,7 +329,7 @@ struct RootTabView: View {
         } else {
             withAnimation(.smooth(duration: 0.32), update)
         }
-        pushInitialVideo(video, animated: !opensFromStartup)
+        pushInitialVideo(video, generation: videoPresentationGeneration, animated: !opensFromStartup)
     }
 
     private func pushVideo(_ video: VideoItem) {
@@ -360,11 +397,13 @@ struct RootTabView: View {
         recentPlaybackPreloadTimes = recentPlaybackPreloadTimes.filter { keptKeys.contains($0.key) }
     }
 
-    private func pushInitialVideo(_ video: VideoItem, animated: Bool) {
+    private func pushInitialVideo(_ video: VideoItem, generation: Int, animated: Bool) {
         DispatchQueue.main.async {
             guard bottomMode == .video,
                   videoNavigationPath.isEmpty,
-                  activeVideo?.id == video.id
+                  activeVideo?.id == video.id,
+                  videoPresentationGeneration == generation,
+                  !isClosingVideo
             else { return }
 
             let push = {
@@ -383,16 +422,7 @@ struct RootTabView: View {
 
     private func closeVideo() {
         guard bottomMode == .video else { return }
-
-        if videoNavigationPath.isEmpty {
-            scheduleCloseVideo()
-            return
-        }
-
-        withAnimation(.smooth(duration: 0.24)) {
-            videoNavigationPath = NavigationPath()
-        }
-        scheduleCloseVideo()
+        beginDefinitiveVideoClose()
     }
 
     private func scheduleCloseVideo() {
@@ -400,6 +430,7 @@ struct RootTabView: View {
             return
         }
         isClosingVideo = true
+        videoPresentationGeneration &+= 1
         ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
         NotificationCenter.default.post(name: .biliPauseActiveVideoPlaybackForNavigation, object: nil)
         closeVideoFallbackTask?.cancel()
@@ -408,6 +439,25 @@ struct RootTabView: View {
             guard !Task.isCancelled, bottomMode == .video, isClosingVideo else { return }
             completeCloseVideoIfNeeded()
         }
+    }
+
+    private func beginDefinitiveVideoClose() {
+        isClosingVideo = true
+        videoPresentationGeneration &+= 1
+        closeVideoFallbackTask?.cancel()
+        closeVideoFallbackTask = nil
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        NotificationCenter.default.post(name: .biliStopActiveVideoPlayback, object: nil)
+        AppOrientationLock.restorePortrait()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            activeVideo = nil
+            videoNavigationPath = NavigationPath()
+            bottomMode = .root
+            isClosingVideo = false
+        }
+        rootTabBarRestoreRequestID &+= 1
     }
 
     private func cancelCloseVideoIfNeeded() {
@@ -586,29 +636,6 @@ private extension View {
     }
 }
 
-private enum AppTab: Hashable {
-    case home
-    case dynamic
-    case live
-    case mine
-    case search
-
-    var title: String {
-        switch self {
-        case .home:
-            return "首页"
-        case .dynamic:
-            return "动态"
-        case .live:
-            return "直播"
-        case .mine:
-            return "我的"
-        case .search:
-            return "搜索"
-        }
-    }
-}
-
 private enum BottomTabMode {
     case root
     case video
@@ -701,7 +728,7 @@ private struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
     }
 }
 
-private enum RootTab: Hashable {
+private enum RootTab: String, Hashable {
     case home
     case search
     case dynamic
@@ -709,20 +736,10 @@ private enum RootTab: Hashable {
     case mine
 
     init?(argumentValue: String) {
-        switch argumentValue.lowercased() {
-        case "home":
-            self = .home
-        case "search":
-            self = .search
-        case "dynamic":
-            self = .dynamic
-        case "live":
-            self = .live
-        case "mine":
-            self = .mine
-        default:
+        guard let tab = RootTab(rawValue: argumentValue.lowercased()) else {
             return nil
         }
+        self = tab
     }
 
     var appTab: AppTab {
@@ -741,32 +758,10 @@ private enum RootTab: Hashable {
     }
 
     var title: String {
-        switch self {
-        case .home:
-            return "首页"
-        case .search:
-            return "搜索"
-        case .dynamic:
-            return "动态"
-        case .live:
-            return "直播"
-        case .mine:
-            return "我的"
-        }
+        appTab.title
     }
 
     var systemImage: String {
-        switch self {
-        case .home:
-            return "house"
-        case .search:
-            return "magnifyingglass"
-        case .dynamic:
-            return "sparkles"
-        case .live:
-            return "play.tv"
-        case .mine:
-            return "person.crop.circle"
-        }
+        appTab.systemImage
     }
 }

@@ -3,7 +3,9 @@ import Combine
 
 struct SearchView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var holder = SearchViewModelHolder()
+    @State private var showsAllHotSearches = false
 
     var body: some View {
         Group {
@@ -16,7 +18,11 @@ struct SearchView: View {
                     }
             }
         }
-        .rootNavigationTitle("搜索")
+        .rootNavigationTitle("搜索") {
+            if let viewModel = holder.viewModel {
+                searchScopeMenu(viewModel)
+            }
+        }
         .nativeTopNavigationChrome()
     }
 
@@ -32,19 +38,8 @@ struct SearchView: View {
                     }
                 ),
                 placement: .automatic,
-                prompt: "搜索视频、UP主、番剧、影视、专栏"
+                prompt: viewModel.selectedScope == .video ? "搜索视频" : "搜索 UP 主"
             )
-            .searchScopes(Binding(
-                get: { viewModel.selectedScope },
-                set: { scope in
-                    Task { await viewModel.selectScope(scope) }
-                }
-            )) {
-                ForEach(SearchScope.allCases) { scope in
-                    Text(scope.title)
-                        .tag(scope)
-                }
-            }
             .searchSuggestions {
                 ForEach(viewModel.suggestions) { item in
                     Label(item.value, systemImage: "magnifyingglass")
@@ -62,7 +57,7 @@ struct SearchView: View {
                 }
             }
             .task {
-                await viewModel.loadHotSearch()
+                await loadHotSearchIfNeeded(viewModel)
             }
     }
 
@@ -73,14 +68,19 @@ struct SearchView: View {
                     loadingSection(viewModel)
                 }
 
-                if viewModel.hotSearches.isEmpty {
+                if !libraryStore.showsHotSearches {
+                    EmptyStateView(title: "开始搜索", systemImage: "magnifyingglass", message: "输入关键词后搜索视频或 UP 主。")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 22)
+                        .listRowBackground(Color.clear)
+                } else if viewModel.hotSearches.isEmpty {
                     EmptyStateView(title: "暂无热门搜索", systemImage: "magnifyingglass", message: "输入关键词后搜索。")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
                         .listRowBackground(Color.clear)
                 } else {
                     Section {
-                        ForEach(Array(viewModel.hotSearches.enumerated()), id: \.element.id) { index, item in
+                        ForEach(Array(displayedHotSearches(viewModel).enumerated()), id: \.element.id) { index, item in
                             Button {
                                 Task { await viewModel.search(item.keyword) }
                             } label: {
@@ -88,6 +88,20 @@ struct SearchView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("热门搜索第 \(index + 1) 名，\(item.showName ?? item.keyword)")
+                        }
+
+                        if viewModel.hotSearches.count > 3 {
+                            Button {
+                                withAnimation(.smooth(duration: 0.2)) {
+                                    showsAllHotSearches.toggle()
+                                }
+                            } label: {
+                                Label(
+                                    showsAllHotSearches ? "收起热搜" : "查看更多热搜",
+                                    systemImage: showsAllHotSearches ? "chevron.up" : "chevron.down"
+                                )
+                                .font(.subheadline)
+                            }
                         }
                     } header: {
                         SearchSectionHeader(title: "热门搜索", systemImage: "flame")
@@ -138,11 +152,42 @@ struct SearchView: View {
         .background(Color(.systemGroupedBackground))
         .refreshable {
             if viewModel.showsDiscovery {
-                await viewModel.loadHotSearch()
+                await loadHotSearchIfNeeded(viewModel)
             } else {
                 await viewModel.search(viewModel.query)
             }
         }
+    }
+
+    private func loadHotSearchIfNeeded(_ viewModel: SearchViewModel) async {
+        guard libraryStore.showsHotSearches else { return }
+        await viewModel.loadHotSearch()
+    }
+
+    private func displayedHotSearches(_ viewModel: SearchViewModel) -> [HotSearchItem] {
+        showsAllHotSearches ? viewModel.hotSearches : Array(viewModel.hotSearches.prefix(3))
+    }
+
+    private func searchScopeMenu(_ viewModel: SearchViewModel) -> some View {
+        Menu {
+            ForEach(SearchScope.allCases) { scope in
+                Button {
+                    Task { await viewModel.selectScope(scope) }
+                } label: {
+                    Label(scope.title, systemImage: scope.systemImage)
+                }
+            }
+        } label: {
+            Image(systemName: viewModel.selectedScope.systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .biliPlayerClearGlass(interactive: true, in: Circle())
+        .accessibilityLabel("搜索类型")
+        .accessibilityValue(viewModel.selectedScope.title)
     }
 
     private func loadingSection(_ viewModel: SearchViewModel) -> some View {

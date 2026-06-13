@@ -29,6 +29,31 @@ enum PlaybackAutoOptimizationMode: String, CaseIterable, Identifiable, Codable, 
     }
 }
 
+enum PlaybackCDNProbeRefreshPolicy: String, CaseIterable, Identifiable, Codable, Sendable {
+    case interval
+    case appLaunch
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated var title: String {
+        switch self {
+        case .interval:
+            return "按间隔自动测速"
+        case .appLaunch:
+            return "每次打开 App 自动测速"
+        }
+    }
+
+    nonisolated var detail: String {
+        switch self {
+        case .interval:
+            return "测速结果过期后自动刷新，可自定义间隔。"
+        case .appLaunch:
+            return "App 启动或回到前台时自动测速并更新推荐 CDN。"
+        }
+    }
+}
+
 enum PlaybackNetworkAddressFamily: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
     case ipv4
     case ipv6

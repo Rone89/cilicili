@@ -4,6 +4,7 @@ import SwiftUI
 struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
     var minimizesTabBarOnScroll = true
+    var visibleRootTabs: [AppTab] = AppTab.defaultVisibleTabs
 }
 
 @MainActor
@@ -14,6 +15,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
+    var visibleRootTabs: [AppTab] { snapshot.visibleRootTabs }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -33,7 +35,8 @@ final class RootRuntimeSettingsStore: ObservableObject {
         guard let libraryStore else { return }
         let next = RootRuntimeSettingsSnapshot(
             appearanceMode: libraryStore.appearanceMode,
-            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll
+            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
+            visibleRootTabs: libraryStore.visibleRootTabs
         )
         guard next != snapshot else { return }
         snapshot = next

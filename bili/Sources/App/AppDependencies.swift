@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 
 @MainActor
 final class AppDependencies: ObservableObject {
@@ -41,6 +42,13 @@ final class AppDependencies: ObservableObject {
                 }
             }
             .store(in: &sessionCancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+                }
+            }
+            .store(in: &sessionCancellables)
         Task(priority: .utility) { [api] in
             await RemoteImageCache.shared.applyAdaptiveBudget()
             async let startupResources: Void = api.prewarmStartupResources()
@@ -48,12 +56,16 @@ final class AppDependencies: ObservableObject {
             _ = await (startupResources, dynamicFeed)
         }
         Task { @MainActor [weak self] in
-            self?.refreshPlaybackCDNProbeIfNeeded()
+            self?.refreshPlaybackCDNProbeOnAppActivationIfNeeded()
         }
     }
 
     func refreshPlaybackCDNProbeIfNeeded() {
         PlaybackCDNProbeCoordinator.shared.refreshIfNeeded(libraryStore: libraryStore)
+    }
+
+    func refreshPlaybackCDNProbeOnAppActivationIfNeeded() {
+        PlaybackCDNProbeCoordinator.shared.refreshOnAppActivationIfNeeded(libraryStore: libraryStore)
     }
 
     private func handlePlaybackNetworkClassChange() {

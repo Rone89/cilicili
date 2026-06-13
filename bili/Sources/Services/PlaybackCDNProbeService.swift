@@ -40,6 +40,11 @@ struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
     }
 
     var id: PlaybackCDNPreference { preference }
+
+    var failureReason: String? {
+        guard !didSucceed else { return nil }
+        return errorDescription?.isEmpty == false ? errorDescription : "连接失败"
+    }
 }
 
 struct PlaybackCDNProbeSnapshot: Codable, Equatable, Sendable {
@@ -70,7 +75,6 @@ final class PlaybackCDNProbeCoordinator {
     private var refreshToken: UUID?
     private var lastAdaptiveRefreshAt: Date?
     private var lastPressureRefreshAt: Date?
-    private let adaptiveRefreshInterval: TimeInterval = 2 * 60 * 60
     private let pressureRefreshInterval: TimeInterval = 10 * 60
     private let failedProbeRetryInterval: TimeInterval = 15 * 60
 
@@ -82,6 +86,24 @@ final class PlaybackCDNProbeCoordinator {
         PlayerMetricsLog.signpostEvent(
             "PlaybackCDNRefresh",
             message: "trigger=adaptive preference=\(libraryStore.playbackCDNPreference.rawValue)"
+        )
+        startRefresh(libraryStore: libraryStore)
+    }
+
+    func refreshOnAppActivationIfNeeded(libraryStore: LibraryStore) {
+        guard libraryStore.playbackCDNProbeRefreshPolicy == .appLaunch else {
+            refreshIfNeeded(libraryStore: libraryStore)
+            return
+        }
+        refreshNow(libraryStore: libraryStore, trigger: "appActivation")
+    }
+
+    func refreshNow(libraryStore: LibraryStore, trigger: String = "manual") {
+        guard refreshTask == nil else { return }
+        guard libraryStore.playbackCDNPreference == .automatic else { return }
+        PlayerMetricsLog.signpostEvent(
+            "PlaybackCDNRefresh",
+            message: "trigger=\(trigger) preference=\(libraryStore.playbackCDNPreference.rawValue)"
         )
         startRefresh(libraryStore: libraryStore)
     }
@@ -184,7 +206,7 @@ final class PlaybackCDNProbeCoordinator {
     private func shouldRefresh(libraryStore: LibraryStore) -> Bool {
         guard libraryStore.playbackCDNPreference == .automatic else { return false }
         guard let snapshot = libraryStore.playbackCDNProbeSnapshotForCurrentContext else { return true }
-        if snapshot.isExpired() {
+        if snapshot.isExpired(freshnessInterval: libraryStore.playbackCDNProbeRefreshInterval) {
             return true
         }
         if snapshot.recommendedPreference == nil,
@@ -196,13 +218,13 @@ final class PlaybackCDNProbeCoordinator {
         ) else {
             return false
         }
-        if snapshot.isExpired(freshnessInterval: adaptiveRefreshInterval) {
+        if snapshot.isExpired(freshnessInterval: libraryStore.playbackCDNProbeRefreshInterval) {
             return true
         }
         guard let lastAdaptiveRefreshAt else {
             return true
         }
-        return Date().timeIntervalSince(lastAdaptiveRefreshAt) >= adaptiveRefreshInterval
+        return Date().timeIntervalSince(lastAdaptiveRefreshAt) >= libraryStore.playbackCDNProbeRefreshInterval
     }
 
     private func startRefresh(libraryStore: LibraryStore) {
@@ -322,7 +344,7 @@ enum PlaybackCDNProbeService {
                 preference: preference,
                 elapsedMilliseconds: nil,
                 didSucceed: false,
-                errorDescription: "missing host"
+                errorDescription: "没有可测速 Host"
             )
         }
 
@@ -334,7 +356,7 @@ enum PlaybackCDNProbeService {
                         preference: preference,
                         elapsedMilliseconds: nil,
                         didSucceed: false,
-                        errorDescription: "no \(requiredFamily.title) address",
+                        errorDescription: "未解析到 \(requiredFamily.title) 地址",
                         addressFamily: nil
                     )
                 }
@@ -343,7 +365,7 @@ enum PlaybackCDNProbeService {
                     preference: preference,
                     elapsedMilliseconds: nil,
                     didSucceed: false,
-                    errorDescription: "DNS \(error.localizedDescription)",
+                    errorDescription: dnsFailureDescription(error),
                     addressFamily: nil
                 )
             }
@@ -372,17 +394,87 @@ enum PlaybackCDNProbeService {
                 preference: preference,
                 elapsedMilliseconds: elapsed,
                 didSucceed: didSucceed,
-                errorDescription: didSucceed ? nil : "HTTP \(statusCode)",
+                errorDescription: didSucceed ? nil : httpFailureDescription(statusCode: statusCode),
                 addressFamily: addressFamilyPreference.requiredFamily
             )
         } catch {
+            let elapsed = Int(Date().timeIntervalSince(start) * 1000)
             return PlaybackCDNProbeResult(
                 preference: preference,
-                elapsedMilliseconds: nil,
+                elapsedMilliseconds: elapsed,
                 didSucceed: false,
-                errorDescription: error.localizedDescription,
+                errorDescription: networkFailureDescription(error),
                 addressFamily: addressFamilyPreference.requiredFamily
             )
+        }
+    }
+
+    private static func httpFailureDescription(statusCode: Int) -> String {
+        switch statusCode {
+        case 0:
+            return "未收到 HTTP 响应"
+        case 400:
+            return "请求参数异常（HTTP 400）"
+        case 401:
+            return "需要鉴权（HTTP 401）"
+        case 404:
+            return "探测资源不存在（HTTP 404）"
+        case 408:
+            return "CDN 响应超时（HTTP 408）"
+        case 429:
+            return "请求过于频繁（HTTP 429）"
+        case 500...599:
+            return "CDN 服务异常（HTTP \(statusCode)）"
+        default:
+            return "HTTP 状态异常（\(statusCode)）"
+        }
+    }
+
+    private static func dnsFailureDescription(_ error: Error) -> String {
+        if let error = error as? DNSResolutionError {
+            return error.reasonDescription
+        }
+        return "DNS 解析失败：\(error.localizedDescription)"
+    }
+
+    private static func networkFailureDescription(_ error: Error) -> String {
+        if error is CancellationError {
+            return "测速已取消"
+        }
+        guard let urlError = error as? URLError else {
+            return "连接失败：\(error.localizedDescription)"
+        }
+
+        switch urlError.code {
+        case .timedOut:
+            return "连接超时"
+        case .cannotFindHost, .dnsLookupFailed:
+            return "DNS 解析失败"
+        case .cannotConnectToHost:
+            return "无法连接到 CDN Host"
+        case .networkConnectionLost:
+            return "连接中断"
+        case .notConnectedToInternet:
+            return "当前网络不可用"
+        case .cannotLoadFromNetwork:
+            return "系统禁止从网络加载"
+        case .secureConnectionFailed:
+            return "TLS 握手失败"
+        case .serverCertificateUntrusted,
+             .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid,
+             .serverCertificateHasUnknownRoot:
+            return "证书校验失败"
+        case .appTransportSecurityRequiresSecureConnection:
+            return "ATS 安全策略拦截"
+        case .badServerResponse:
+            return "服务器响应异常"
+        case .resourceUnavailable:
+            return "资源不可用"
+        case .cancelled:
+            return "测速被取消"
+        default:
+            return "连接失败（\(urlError.code.rawValue)）"
         }
     }
 
@@ -425,6 +517,9 @@ enum PlaybackCDNProbeService {
 
     private static func sortedResults(_ results: [PlaybackCDNProbeResult]) -> [PlaybackCDNProbeResult] {
         results.sorted { lhs, rhs in
+            if lhs.didSucceed != rhs.didSucceed {
+                return lhs.didSucceed
+            }
             switch (lhs.elapsedMilliseconds, rhs.elapsedMilliseconds) {
             case let (left?, right?):
                 return left < right
@@ -482,5 +577,18 @@ private struct DNSResolutionError: LocalizedError {
 
     var errorDescription: String? {
         String(cString: gai_strerror(code))
+    }
+
+    var reasonDescription: String {
+        switch code {
+        case EAI_NONAME:
+            return "DNS 未找到主机"
+        case EAI_AGAIN:
+            return "DNS 临时失败"
+        case EAI_FAIL:
+            return "DNS 查询失败"
+        default:
+            return "DNS 解析失败：\(errorDescription ?? "code \(code)")"
+        }
     }
 }

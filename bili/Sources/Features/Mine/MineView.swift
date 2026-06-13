@@ -14,6 +14,7 @@ struct MineView: View {
     @State private var isShowingPlaybackCDNProbeDetails = false
     @State private var playbackURLPreferenceSnapshots: [PlaybackURLPreferenceSnapshot] = []
     @State private var isShowingPlaybackURLPreferenceDetails = false
+    @State private var hasLoadedAccountSummary = false
 
     var body: some View {
         Group {
@@ -41,20 +42,6 @@ struct MineView: View {
                 case .qrCode:
                     QRCodeLoginView(viewModel: viewModel)
                 }
-            }
-        }
-        .onDisappear {
-            playbackCDNProbeTask?.cancel()
-            playbackCDNProbeTask = nil
-            isProbingPlaybackCDN = false
-        }
-        .task {
-            refreshPlaybackURLPreferenceSnapshots()
-            refreshPlaybackCDNProbeIfNeeded()
-        }
-        .navigationDestination(for: AccountLibraryKind.self) { kind in
-            if let viewModel = holder.viewModel {
-                AccountLibraryListPage(kind: kind, viewModel: viewModel)
             }
         }
     }
@@ -144,7 +131,7 @@ struct MineView: View {
 
                 Text("上次测速 \(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
-                    .foregroundStyle(snapshot.isExpired() ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
+                    .foregroundStyle(isPlaybackCDNProbeSnapshotExpired(snapshot) ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
 
                 if libraryStore.playbackCDNPreference == .automatic,
                    let activeRecommendation = libraryStore.automaticPlaybackCDNRecommendation {
@@ -165,8 +152,8 @@ struct MineView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if snapshot.isExpired() {
-                    Label("CDN 测速结果已超过 24 小时，建议重新测速", systemImage: "clock.badge.exclamationmark")
+                if isPlaybackCDNProbeSnapshotExpired(snapshot) {
+                    Label("CDN 测速结果已超过 \(playbackCDNProbeRefreshIntervalTitle)，建议重新测速", systemImage: "clock.badge.exclamationmark")
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
@@ -188,40 +175,119 @@ struct MineView: View {
     }
 
     private func playbackCDNProbeResultRow(_ result: PlaybackCDNProbeResult) -> some View {
-        HStack {
-            Text(result.preference.title)
-                .lineLimit(1)
-            Spacer()
-            if let elapsed = result.elapsedMilliseconds {
-                Text("\(elapsed) ms")
-                    .monospacedDigit()
-            } else {
-                Text(result.errorDescription ?? "失败")
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(result.preference.title)
                     .lineLimit(1)
+                Spacer()
+                if result.didSucceed, let elapsed = result.elapsedMilliseconds {
+                    Text("\(elapsed) ms")
+                        .monospacedDigit()
+                } else if let elapsed = result.elapsedMilliseconds {
+                    Text("失败 · \(elapsed) ms")
+                        .monospacedDigit()
+                } else {
+                    Text("失败")
+                }
+            }
+            .font(.caption)
+
+            if let failureReason = result.failureReason {
+                Label(failureReason, systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .lineLimit(2)
             }
         }
-        .font(.caption)
         .foregroundStyle(result.didSucceed ? .secondary : .tertiary)
     }
 
     @ViewBuilder
     private func content(_ viewModel: MineViewModel) -> some View {
         Form {
-            Section {
-                if sessionStore.isLoggedIn {
-                    loggedInHeader
-                    Button(role: .destructive) {
-                        viewModel.logout()
-                    } label: {
-                        Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
-                } else {
-                    loginPanel(viewModel)
-                }
-            }
+            accountSection(viewModel)
 
             accountLibrarySection(viewModel)
 
+            settingsSection
+        }
+        .formStyle(.grouped)
+        .nativeTopScrollEdgeEffect()
+        .task {
+            await refreshAccountSummaryIfNeeded(viewModel)
+        }
+    }
+
+    private func refreshAccountSummaryIfNeeded(_ viewModel: MineViewModel) async {
+        guard sessionStore.isLoggedIn else {
+            hasLoadedAccountSummary = false
+            return
+        }
+        guard !hasLoadedAccountSummary else { return }
+        hasLoadedAccountSummary = true
+        await viewModel.refreshUser()
+    }
+
+    private func accountSection(_ viewModel: MineViewModel) -> some View {
+        Section {
+            if sessionStore.isLoggedIn {
+                loggedInHeader
+                Button(role: .destructive) {
+                    viewModel.logout()
+                } label: {
+                    Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } else {
+                loginPanel(viewModel)
+            }
+        }
+    }
+
+    private var settingsSection: some View {
+        Section("设置") {
+            NavigationLink {
+                displayAndHomeSettingsPage
+            } label: {
+                SettingsNavigationRow(
+                    title: "显示与首页",
+                    subtitle: visibleTabSummary,
+                    systemImage: "rectangle.3.group"
+                )
+            }
+
+            NavigationLink {
+                playbackSettingsPage
+            } label: {
+                SettingsNavigationRow(
+                    title: "播放偏好",
+                    subtitle: libraryStore.playbackAutoOptimizationMode.title,
+                    systemImage: "play.rectangle"
+                )
+            }
+
+            NavigationLink {
+                contentFilterSettingsPage
+            } label: {
+                SettingsNavigationRow(
+                    title: "内容过滤",
+                    subtitle: "\(libraryStore.blockedDynamicKeywords.count) 个关键词",
+                    systemImage: "line.3.horizontal.decrease.circle"
+                )
+            }
+
+            NavigationLink {
+                privacySettingsPage
+            } label: {
+                SettingsNavigationRow(
+                    title: "隐私",
+                    subtitle: privacySummary,
+                    systemImage: "hand.raised"
+                )
+            }
+        }
+    }
+
+    private var displayAndHomeSettingsPage: some View {
+        Form {
             Section("显示") {
                 Picker(selection: Binding(
                     get: { libraryStore.appearanceMode },
@@ -234,6 +300,37 @@ struct MineView: View {
                     Label("外观", systemImage: "circle.lefthalf.filled")
                 }
 
+                Toggle(isOn: Binding(
+                    get: { libraryStore.minimizesTabBarOnScroll },
+                    set: { libraryStore.setMinimizesTabBarOnScroll($0) }
+                )) {
+                    Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+            }
+
+            Section {
+                ForEach(AppTab.defaultVisibleTabs) { tab in
+                    Toggle(isOn: Binding(
+                        get: { libraryStore.visibleRootTabs.contains(tab) },
+                        set: { libraryStore.setRootTab(tab, isVisible: $0) }
+                    )) {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    }
+                    .disabled(!tab.canHideFromRootTabBar)
+                }
+
+                Button {
+                    libraryStore.resetVisibleRootTabs()
+                } label: {
+                    Label("恢复默认 Tab", systemImage: "arrow.counterclockwise")
+                }
+            } header: {
+                Text("底部 Tab")
+            } footer: {
+                Text("首页和我的固定显示，避免隐藏设置入口。")
+            }
+
+            Section("首页") {
                 Picker(selection: Binding(
                     get: { libraryStore.homeFeedLayout },
                     set: { libraryStore.setHomeFeedLayout($0) }
@@ -245,16 +342,9 @@ struct MineView: View {
                     Label("首页布局", systemImage: "rectangle.grid.1x2")
                 }
 
-                Toggle(isOn: Binding(
-                    get: { libraryStore.minimizesTabBarOnScroll },
-                    set: { libraryStore.setMinimizesTabBarOnScroll($0) }
-                )) {
-                    Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
-                }
-
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Label("首页下拉刷新距离", systemImage: "arrow.down.circle")
+                        Label("下拉刷新距离", systemImage: "arrow.down.circle")
                         Spacer()
                         Text("\(Int(libraryStore.homeRefreshTriggerDistance)) pt")
                             .font(.subheadline.monospacedDigit())
@@ -291,6 +381,22 @@ struct MineView: View {
                 }
             }
 
+            Section("搜索") {
+                Toggle(isOn: Binding(
+                    get: { libraryStore.showsHotSearches },
+                    set: { libraryStore.setShowsHotSearches($0) }
+                )) {
+                    Label("显示热门搜索", systemImage: "flame")
+                }
+            }
+        }
+        .nativeTopScrollEdgeEffect()
+        .navigationTitle("显示与首页")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var playbackSettingsPage: some View {
+        Form {
             Section {
                 playbackPreferenceSummary
 
@@ -330,6 +436,38 @@ struct MineView: View {
                     Label("CDN 线路", systemImage: "network")
                 }
                 .pickerStyle(.navigationLink)
+
+                Picker(selection: Binding(
+                    get: { libraryStore.playbackCDNProbeRefreshPolicy },
+                    set: { libraryStore.setPlaybackCDNProbeRefreshPolicy($0) }
+                )) {
+                    ForEach(PlaybackCDNProbeRefreshPolicy.allCases) { policy in
+                        Text(policy.title).tag(policy)
+                    }
+                } label: {
+                    Label("CDN 自动测速", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .pickerStyle(.navigationLink)
+
+                if libraryStore.playbackCDNProbeRefreshPolicy == .interval {
+                    Stepper(
+                        value: Binding(
+                            get: { libraryStore.playbackCDNProbeRefreshIntervalMinutes },
+                            set: { libraryStore.setPlaybackCDNProbeRefreshIntervalMinutes($0) }
+                        ),
+                        in: LibraryStore.playbackCDNProbeRefreshIntervalRange,
+                        step: 15
+                    ) {
+                        Label(
+                            "测速间隔 \(playbackCDNProbeRefreshIntervalTitle)",
+                            systemImage: "timer"
+                        )
+                    }
+                } else {
+                    Label("App 启动或回到前台时会自动测速并更新推荐 CDN。", systemImage: "bolt.horizontal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 Picker(selection: Binding(
                     get: { libraryStore.playbackNetworkAddressFamilyPreference },
@@ -377,7 +515,13 @@ struct MineView: View {
                     Label("默认倍速", systemImage: "speedometer")
                 }
                 .pickerStyle(.navigationLink)
+            } header: {
+                Text("播放偏好")
+            } footer: {
+                Text("自动模式会优先保留接口下发的播放地址候选，再根据真实播放记录和启动探测微调排序。测速结果用于诊断和手动推荐；手动选择 CDN 或协议后，播放仍会保留备用地址作为回退。")
+            }
 
+            Section("播放工具") {
                 Toggle(isOn: Binding(
                     get: { libraryStore.sponsorBlockEnabled },
                     set: { libraryStore.setSponsorBlockEnabled($0) }
@@ -417,13 +561,25 @@ struct MineView: View {
                 } label: {
                     Label("资源缓存", systemImage: "internaldrive")
                 }
-            } header: {
-                Text("播放偏好")
-            } footer: {
-                Text("自动模式会优先保留接口下发的播放地址候选，再根据真实播放记录和启动探测微调排序。测速结果用于诊断和手动推荐；手动选择 CDN 或协议后，播放仍会保留备用地址作为回退。")
             }
+        }
+        .nativeTopScrollEdgeEffect()
+        .navigationTitle("播放偏好")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            refreshPlaybackURLPreferenceSnapshots()
+            refreshPlaybackCDNProbeIfNeeded()
+        }
+        .onDisappear {
+            playbackCDNProbeTask?.cancel()
+            playbackCDNProbeTask = nil
+            isProbingPlaybackCDN = false
+        }
+    }
 
-            Section("内容过滤") {
+    private var contentFilterSettingsPage: some View {
+        Form {
+            Section {
                 Toggle(isOn: Binding(
                     get: { libraryStore.blocksAdDynamics },
                     set: { libraryStore.setBlocksAdDynamics($0) }
@@ -461,8 +617,15 @@ struct MineView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+        }
+        .nativeTopScrollEdgeEffect()
+        .navigationTitle("内容过滤")
+        .navigationBarTitleDisplayMode(.inline)
+    }
 
-            Section("隐私") {
+    private var privacySettingsPage: some View {
+        Form {
+            Section {
                 Toggle(isOn: Binding(
                     get: { libraryStore.incognitoModeEnabled },
                     set: { libraryStore.setIncognitoModeEnabled($0) }
@@ -482,12 +645,36 @@ struct MineView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
         .nativeTopScrollEdgeEffect()
-        .task {
-            refreshPlaybackURLPreferenceSnapshots()
-            await viewModel.refreshUser()
+        .navigationTitle("隐私")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var visibleTabSummary: String {
+        libraryStore.visibleRootTabs.map(\.title).joined(separator: "、")
+    }
+
+    private var privacySummary: String {
+        var enabled = [String]()
+        if libraryStore.incognitoModeEnabled {
+            enabled.append("无痕")
         }
+        if libraryStore.guestModeEnabled {
+            enabled.append("游客")
+        }
+        return enabled.isEmpty ? "默认" : enabled.joined(separator: "、")
+    }
+
+    private var playbackCDNProbeRefreshIntervalTitle: String {
+        let minutes = libraryStore.playbackCDNProbeRefreshIntervalMinutes
+        if minutes >= 60, minutes.isMultiple(of: 60) {
+            return "\(minutes / 60) 小时"
+        }
+        return "\(minutes) 分钟"
+    }
+
+    private func isPlaybackCDNProbeSnapshotExpired(_ snapshot: PlaybackCDNProbeSnapshot) -> Bool {
+        snapshot.isExpired(freshnessInterval: libraryStore.playbackCDNProbeRefreshInterval)
     }
 
     @ViewBuilder
@@ -597,50 +784,26 @@ struct MineView: View {
 
     private func accountLibrarySection(_ viewModel: MineViewModel) -> some View {
         Section {
-            LazyVGrid(columns: [
-                GridItem(.flexible(minimum: 0), spacing: 10),
-                GridItem(.flexible(minimum: 0), spacing: 10)
-            ], spacing: 10) {
-                NavigationLink(value: AccountLibraryKind.history) {
-                    AccountLibraryQuickEntry(
-                        title: "观看记录",
-                        systemImage: "clock.arrow.circlepath",
-                        status: libraryStatusText(
-                            isLoggedIn: sessionStore.isLoggedIn,
-                            state: viewModel.historyState,
-                            count: viewModel.accountHistory.count,
-                            emptyTitle: "暂无记录"
-                        )
-                    )
-                }
-                .buttonStyle(.plain)
-
-                NavigationLink(value: AccountLibraryKind.favorites) {
-                    AccountLibraryQuickEntry(
-                        title: "账号收藏",
-                        systemImage: "star",
-                        status: libraryStatusText(
-                            isLoggedIn: sessionStore.isLoggedIn,
-                            state: viewModel.favoriteState,
-                            count: viewModel.favoriteFolders.count,
-                            emptyTitle: "暂无收藏"
-                        )
-                    )
-                }
-                .buttonStyle(.plain)
+            NavigationLink {
+                AccountLibraryListPage(kind: .history, viewModel: viewModel)
+            } label: {
+                AccountLibraryButtonRow(
+                    title: "观看记录",
+                    systemImage: "clock.arrow.circlepath"
+                )
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+
+            NavigationLink {
+                AccountLibraryListPage(kind: .favorites, viewModel: viewModel)
+            } label: {
+                AccountLibraryButtonRow(
+                    title: "账号收藏",
+                    systemImage: "star"
+                )
+            }
         } header: {
             Text("账号内容")
         }
-    }
-
-    private func libraryStatusText(isLoggedIn: Bool, state: LoadingState, count: Int, emptyTitle: String) -> String {
-        guard isLoggedIn else { return "登录后同步" }
-        if state.isLoading, count == 0 { return "同步中" }
-        if case .failed = state, count == 0 { return "同步失败" }
-        if count == 0 { return emptyTitle }
-        return "\(count) 条"
     }
 
     private var loggedInHeader: some View {
@@ -904,37 +1067,48 @@ private enum AccountLibraryKind: Hashable, Identifiable {
     }
 }
 
-private struct AccountLibraryQuickEntry: View {
+private struct AccountLibraryButtonRow: View {
     let title: String
     let systemImage: String
-    let status: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.pink)
                 .frame(width: 28, height: 28)
-                .background(.pink.opacity(0.12), in: Circle())
+
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 8)
+        }
+    }
+}
+
+private struct SettingsNavigationRow: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.pink)
+                .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline)
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
 
-                Text(status)
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(11)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(uiColor: .separator).opacity(0.10), lineWidth: 0.5)
         }
     }
 }
@@ -971,8 +1145,9 @@ private struct AccountLibraryListPage: View {
                 content
             }
         }
+        .nativeTopScrollEdgeEffect()
         .navigationTitle(kind.title)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -1089,8 +1264,9 @@ private struct FavoriteFolderContentPage: View {
                 }
             }
         }
+        .nativeTopScrollEdgeEffect()
         .navigationTitle(folder.displayTitle)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -1303,6 +1479,7 @@ private struct PlayerPerformanceLogView: View {
                 }
             }
         }
+        .nativeTopScrollEdgeEffect()
         .navigationTitle("播放性能")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1409,6 +1586,7 @@ private struct ResourceCacheManagementView: View {
                 }
             }
         }
+        .nativeTopScrollEdgeEffect()
         .navigationTitle("资源缓存")
         .navigationBarTitleDisplayMode(.inline)
         .disabled(isWorking)
@@ -1993,7 +2171,6 @@ private struct MineRenderSnapshot: Equatable {
     let historyState: LoadingState
     let favoriteState: LoadingState
     let accountLibraryRevision: Int
-    let favoriteFolderRevision: Int
 
     init(_ viewModel: MineViewModel) {
         state = viewModel.state
@@ -2002,6 +2179,5 @@ private struct MineRenderSnapshot: Equatable {
         historyState = viewModel.historyState
         favoriteState = viewModel.favoriteState
         accountLibraryRevision = viewModel.accountLibraryRevision
-        favoriteFolderRevision = viewModel.favoriteFolderRevision
     }
 }

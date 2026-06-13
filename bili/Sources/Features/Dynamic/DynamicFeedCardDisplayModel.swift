@@ -1,0 +1,130 @@
+import SwiftUI
+
+struct DynamicFeedCardDisplayModel {
+    let video: VideoItem?
+    let videoDisplay: VideoCardDisplayModel?
+    let live: DynamicLive?
+    let liveRoom: LiveRoom?
+    let authorOwner: VideoOwner?
+    let authorAvatarURLString: String?
+    let authorName: String
+    let imageItems: [DynamicImageItem]
+    let textSegments: [DynamicTextSegment]
+    let collapsedTextInput: DynamicAttributedTextInput
+    let expandedTextInput: DynamicAttributedTextInput
+    let topLevelDisplayText: String?
+    let publishTimeText: String
+    let usesHomeVideoCardStyle: Bool
+    let usesSeparatedDynamicLayout: Bool
+    let showsExpandButton: Bool
+    let initialLikeCount: Int
+    let commentTitle: String
+    let repostTitle: String
+    let shareURL: URL?
+    let shareTitle: String
+    let shareMessage: String
+
+    init(item: DynamicFeedItem) {
+        let video = item.archive?.asVideoItem(author: item.author)
+        let live = item.live
+        let imageItems = item.imageItems.filter { $0.normalizedURL != nil }
+        let textSegments = item.textSegments
+        let topLevelDisplayText = DynamicTextSegment.displayText(from: textSegments)
+        let authorName = item.author?.name ?? "Unknown"
+        let isPureTextDynamic = video == nil
+            && live == nil
+            && imageItems.isEmpty
+            && item.original == nil
+            && !item.isForward
+            && !(topLevelDisplayText?.isEmpty ?? true)
+
+        self.video = video
+        self.videoDisplay = video.map(VideoCardDisplayModel.init(video:))
+        self.live = live
+        self.liveRoom = live?.asLiveRoom(author: item.author)
+        self.authorOwner = item.author?.owner
+        self.authorAvatarURLString = item.author?.face?.normalizedBiliURL()
+        self.authorName = authorName
+        self.imageItems = imageItems
+        self.textSegments = textSegments
+        self.collapsedTextInput = .dynamicFeedHeadline(segments: textSegments, emoteSize: 23, maxLines: 6)
+        self.expandedTextInput = .dynamicFeedHeadline(segments: textSegments, emoteSize: 23, maxLines: nil)
+        self.topLevelDisplayText = topLevelDisplayText
+        self.publishTimeText = Self.publishTime(for: item.author)
+        self.usesHomeVideoCardStyle = video != nil && item.original == nil && !item.isForward
+        self.usesSeparatedDynamicLayout = item.original != nil
+            || item.isForward
+            || (!imageItems.isEmpty && video == nil)
+            || isPureTextDynamic
+        self.showsExpandButton = Self.shouldShowExpandButton(for: topLevelDisplayText ?? "")
+        self.initialLikeCount = item.likeCount ?? 0
+        self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
+        self.repostTitle = Self.statTitle(count: item.repostCount, fallback: "转发")
+        self.shareURL = Self.shareURL(item: item, video: video, live: live)
+        self.shareTitle = Self.shareTitle(authorName: authorName, text: topLevelDisplayText, video: video, live: live)
+        self.shareMessage = "\(authorName)：\(self.shareTitle)"
+    }
+
+    static func statTitle(count: Int?, fallback: String) -> String {
+        guard let count, count > 0 else { return fallback }
+        return BiliFormatters.compactCount(count)
+    }
+
+    private static func publishTime(for author: DynamicAuthor?) -> String {
+        if let timestamp = author?.pubTS, timestamp > 0 {
+            return BiliFormatters.relativeTime(timestamp)
+        }
+        return author?.pubTime ?? ""
+    }
+
+    private static func shouldShowExpandButton(for text: String) -> Bool {
+        if text.count > 120 {
+            return true
+        }
+
+        var newlineCount = 0
+        for character in text where character.isNewline {
+            newlineCount += 1
+            if newlineCount >= 4 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func shareURL(item: DynamicFeedItem, video: VideoItem?, live: DynamicLive?) -> URL? {
+        if let dynamicID = validShareID(item.idStr) {
+            return URL(string: "https://t.bilibili.com/\(dynamicID)")
+        }
+        if let bvid = video?.bvid.trimmingCharacters(in: .whitespacesAndNewlines), !bvid.isEmpty {
+            return URL(string: "https://www.bilibili.com/video/\(bvid)")
+        }
+        if let liveURL = live?.normalizedLinkURL {
+            return liveURL
+        }
+        if let roomID = live?.roomID, roomID > 0 {
+            return URL(string: "https://live.bilibili.com/\(roomID)")
+        }
+        return nil
+    }
+
+    private static func shareTitle(authorName: String, text: String?, video: VideoItem?, live: DynamicLive?) -> String {
+        let candidates = [
+            text,
+            video?.title,
+            live?.displayTitle
+        ]
+        return candidates.compactMap { value in
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }.first ?? "\(authorName) 的动态"
+    }
+
+    private static func validShareID(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 6, trimmed.rangeOfCharacter(from: CharacterSet.decimalDigits.inverted) == nil else {
+            return nil
+        }
+        return trimmed
+    }
+}

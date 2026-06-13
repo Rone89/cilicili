@@ -170,7 +170,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let maximumPlaybackRecoveryAttempts = 2
     private let deferredBufferingIndicatorDelayNanoseconds: UInt64 = 750_000_000
     private let seekCoalescingDelayNanoseconds: UInt64 = 90_000_000
-    private let seekUIReleaseDelayNanoseconds: UInt64 = 1_150_000_000
+    private let seekUIReleaseDelayNanoseconds: UInt64 = 420_000_000
     private let resumeRecoveryWatchdogDelayNanoseconds: UInt64 = 2_400_000_000
     private let seekRecoveryWatchdogDelayNanoseconds: UInt64 = 2_400_000_000
 
@@ -1013,7 +1013,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             defer {
                 if self.scrubSeekGeneration == generation {
                     self.scrubSeekTask = nil
-                    self.isUserSeeking = false
                     self.rescheduleTimeObserverIfNeeded(force: true)
                 }
                 PlayerMetricsLog.endSignpostedInterval(
@@ -1046,6 +1045,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             }
             if let time {
                 self.updatePlaybackTime(time, force: true, countsAsNaturalPlayback: false)
+                self.isUserSeeking = false
+                self.isBuffering = false
                 self.beginSeekRecoveryTracking(
                     reason: "scrub",
                     targetTime: time,
@@ -2386,16 +2387,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             else { return }
 
             self.isUserSeeking = false
-            if self.hasPresentedPlayback {
-                self.isBuffering = true
-                self.playbackPhase = .buffering
-            }
-            self.scrubSeekTask?.cancel()
             self.playbackRecoveryWatchdogTask?.cancel()
             self.playbackRecoveryWatchdogTask = nil
             if self.wantsAutoplay {
                 self.engine.play()
                 self.engine.setPlaybackRate(self.playbackRate.rawValue)
+            }
+            if self.hasPresentedPlayback {
+                self.isBuffering = false
+                self.playbackPhase = self.wantsAutoplay ? .playing : .paused
             }
             self.resumePlaybackAfterUserSeek()
             self.recordSeekTransition(

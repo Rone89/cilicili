@@ -25,6 +25,20 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
     }
 }
 
+enum ZoomyImageContentMode {
+    case fit
+    case fill
+
+    fileprivate var uiViewContentMode: UIView.ContentMode {
+        switch self {
+        case .fit:
+            return .scaleAspectFit
+        case .fill:
+            return .scaleAspectFill
+        }
+    }
+}
+
 @MainActor
 final class ZoomyImagePreviewGroup: ObservableObject {
     @Published fileprivate var isPresented = false
@@ -84,7 +98,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
     let targetPixelSize: Int?
     let viewerTargetPixelSize: Int
     let cornerRadius: CGFloat
-    let contentMode: UIView.ContentMode
+    let contentMode: ZoomyImageContentMode
     let onImageLoaded: ((UIImage) -> Void)?
     let onViewerPresentationChange: ((Bool) -> Void)?
     @ViewBuilder let placeholder: (RemoteImageLoadingPhase) -> Placeholder
@@ -106,7 +120,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         targetPixelSize: Int? = nil,
         viewerTargetPixelSize: Int = 2400,
         cornerRadius: CGFloat,
-        contentMode: UIView.ContentMode = .scaleAspectFill,
+        contentMode: ZoomyImageContentMode = .fill,
         onImageLoaded: ((UIImage) -> Void)? = nil,
         onViewerPresentationChange: ((Bool) -> Void)? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
@@ -136,7 +150,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         targetPixelSize: Int? = nil,
         viewerTargetPixelSize: Int = 2400,
         cornerRadius: CGFloat,
-        contentMode: UIView.ContentMode = .scaleAspectFill,
+        contentMode: ZoomyImageContentMode = .fill,
         onImageLoaded: ((UIImage) -> Void)? = nil,
         onViewerPresentationChange: ((Bool) -> Void)? = nil,
         @ViewBuilder phasePlaceholder: @escaping (RemoteImageLoadingPhase) -> Placeholder
@@ -169,7 +183,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 ZoomyThumbnailImageView(
                     image: loader.image,
                     cornerRadius: cornerRadius,
-                    contentMode: contentMode
+                    contentMode: contentMode.uiViewContentMode
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
@@ -223,7 +237,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 targetPixelSize: viewerTargetPixelSize,
                 sourceAnchor: sourceAnchor,
                 sourceCornerRadius: cornerRadius,
-                sourceContentMode: contentMode,
+                sourceContentMode: contentMode.uiViewContentMode,
                 onDismissed: {
                     isSourceContentHidden = false
                     viewerGroup?.isPresented = false

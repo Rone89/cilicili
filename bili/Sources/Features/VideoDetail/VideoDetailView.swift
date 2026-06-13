@@ -44,6 +44,7 @@ struct VideoDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let seedVideo: VideoItem
     private let hidesRootTabBar: Bool
+    private let onRequestClose: (() -> Void)?
 
     @StateObject private var holder = VideoDetailViewModelHolder()
     @StateObject private var runtimeSettings = VideoDetailRuntimeSettingsStore()
@@ -59,15 +60,18 @@ struct VideoDetailView: View {
     @State private var isShowingFavoriteFolders = false
     @State private var isShowingNetworkDiagnostics = false
     @State private var selectedDetailContentTab: VideoDetailContentTab = .detail
+    @State private var isClosingDetail = false
 
     private static let inlineFullscreenTransitionAnimation = Animation.easeInOut(duration: 0.26)
 
     init(
         seedVideo: VideoItem,
-        hidesRootTabBar: Bool = true
+        hidesRootTabBar: Bool = true,
+        onRequestClose: (() -> Void)? = nil
     ) {
         self.seedVideo = seedVideo
         self.hidesRootTabBar = hidesRootTabBar
+        self.onRequestClose = onRequestClose
     }
 
     var body: some View {
@@ -98,9 +102,11 @@ struct VideoDetailView: View {
                     holder.viewModel?.pausePlaybackForPotentialNavigation()
                 },
                 onDidAppear: {
+                    guard !isClosingDetail else { return }
                     holder.viewModel?.resumePlaybackAfterCoveredNavigationIfNeeded()
                 },
                 onTransitionCompleted: { cancelled in
+                    guard !isClosingDetail else { return }
                     if cancelled {
                         holder.viewModel?.resumePlaybackAfterCancelledNavigation()
                     } else {
@@ -130,6 +136,7 @@ struct VideoDetailView: View {
             restorePortraitWhenFullscreenInactive()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             handleFullscreenDeviceOrientation(UIDevice.current.orientation)
+            guard !isClosingDetail else { return }
             holder.viewModel?.resumePlaybackAfterCoveredNavigationIfNeeded()
         }
         .onDisappear {
@@ -153,15 +160,17 @@ struct VideoDetailView: View {
             holder.viewModel?.pausePlaybackForPotentialNavigation()
         }
         .onReceive(NotificationCenter.default.publisher(for: .biliResumeActiveVideoPlaybackAfterCancelledNavigation)) { _ in
+            guard !isClosingDetail else { return }
             holder.viewModel?.resumePlaybackAfterCancelledNavigation()
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard phase == .active, !isClosingDetail else { return }
             restorePortraitWhenFullscreenInactive()
             handleFullscreenDeviceOrientation(UIDevice.current.orientation)
             holder.viewModel?.recoverPlaybackAfterAppResume()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            guard !isClosingDetail else { return }
             restorePortraitWhenFullscreenInactive()
             handleFullscreenDeviceOrientation(UIDevice.current.orientation)
             holder.viewModel?.recoverPlaybackAfterAppResume()
@@ -456,8 +465,14 @@ struct VideoDetailView: View {
     }
 
     private func dismissVideoDetail() {
+        guard !isClosingDetail else { return }
+        isClosingDetail = true
         holder.viewModel?.stopPlaybackForNavigation()
-        dismiss()
+        if let onRequestClose {
+            onRequestClose()
+        } else {
+            dismiss()
+        }
     }
 
     private var isUsingSystemNativePlayerUI: Bool {
@@ -1337,7 +1352,7 @@ private struct VideoDetailPlayerHero: View {
                         onDanmakuPlaybackTime: onDanmakuPlaybackTime,
                         onRequestFullscreen: onRequestFullscreen,
                         onExitFullscreen: onExitFullscreen,
-                        onNavigateBack: onNavigateBack,
+                        onNavigateBack: handleBackButtonTap,
                         onShowDanmakuSettings: onShowDanmakuSettings
                     )
 
@@ -1365,7 +1380,7 @@ private struct VideoDetailPlayerHero: View {
                     playerHeight: playerHeight
                 )
                 .overlay(alignment: .topLeading) {
-                    VideoDetailPlayerBackButton(action: onNavigateBack)
+                    VideoDetailPlayerBackButton(action: handleBackButtonTap)
                         .padding(.top, 10)
                         .padding(.leading, 10)
                 }
@@ -1398,6 +1413,14 @@ private struct VideoDetailPlayerHero: View {
         }
         .zIndex(1)
         .clipped()
+    }
+
+    private func handleBackButtonTap() {
+        if let onExitFullscreen {
+            onExitFullscreen()
+        } else {
+            onNavigateBack()
+        }
     }
 }
 
@@ -1575,6 +1598,7 @@ private struct VideoDetailPlayerQualityControl: View {
             }
         }
     }
+
 }
 
 private struct VideoDetailPlayerPlaceholder: View {

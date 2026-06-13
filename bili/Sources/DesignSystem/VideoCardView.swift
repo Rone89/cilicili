@@ -84,15 +84,22 @@ struct StableVideoTitleText: View {
     let title: String
     let style: Style
     let lineLimit: Int
+    let preferredWidth: CGFloat?
 
-    init(_ title: String, style: Style, lineLimit: Int = 2) {
+    init(_ title: String, style: Style, lineLimit: Int = 2, preferredWidth: CGFloat? = nil) {
         self.title = title
         self.style = style
         self.lineLimit = lineLimit
+        self.preferredWidth = preferredWidth
     }
 
     var body: some View {
-        StableVideoTitleLabel(title: title, font: style.uiFont, lineLimit: lineLimit)
+        StableVideoTitleLabel(
+            title: title,
+            font: style.uiFont,
+            lineLimit: lineLimit,
+            preferredWidth: preferredWidth
+        )
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(title)
     }
@@ -513,14 +520,22 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
     let title: String
     let font: UIFont
     let lineLimit: Int
+    let preferredWidth: CGFloat?
 
     final class Coordinator {
         var lastSignature: Signature?
         var lastMeasuredWidth: CGFloat?
 
-        func measuredWidth(proposedWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
-            if let proposedWidth, proposedWidth.isFinite, proposedWidth > 1 {
-                return ceil(proposedWidth)
+        func measuredWidth(proposedWidth: CGFloat?, preferredWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
+            let preferred = validWidth(preferredWidth)
+            let proposed = validWidth(proposedWidth)
+
+            if let preferred {
+                return ceil(max(preferred, proposed ?? 0))
+            }
+
+            if let proposed {
+                return ceil(proposed)
             }
 
             if boundsWidth.isFinite, boundsWidth > 1 {
@@ -533,6 +548,11 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
 
             return nil
         }
+
+        private func validWidth(_ width: CGFloat?) -> CGFloat? {
+            guard let width, width.isFinite, width > 1 else { return nil }
+            return width
+        }
     }
 
     struct Signature: Equatable {
@@ -540,6 +560,7 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
         let fontName: String
         let pointSize: CGFloat
         let lineLimit: Int
+        let preferredWidth: CGFloat?
     }
 
     func makeCoordinator() -> Coordinator {
@@ -566,7 +587,8 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
             title: title,
             fontName: font.fontName,
             pointSize: font.pointSize,
-            lineLimit: lineLimit
+            lineLimit: lineLimit,
+            preferredWidth: preferredWidth
         )
         guard context.coordinator.lastSignature != signature else { return }
         context.coordinator.lastSignature = signature
@@ -582,6 +604,7 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
         guard let width = context.coordinator.measuredWidth(
             proposedWidth: proposal.width,
+            preferredWidth: preferredWidth,
             boundsWidth: uiView.bounds.width
         ) else {
             context.coordinator.lastMeasuredWidth = nil

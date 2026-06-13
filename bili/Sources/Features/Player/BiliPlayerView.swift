@@ -249,6 +249,7 @@ struct BiliPlayerView: View {
     @State private var arePlaybackControlsVisible = true
     @State private var isPlaybackControlsAutoHideSuspended = false
     @State private var playbackControlsAutoHideTask: Task<Void, Never>?
+    @State private var speedBoostState: PlayerSpeedBoostState?
     @StateObject private var progressReporter = PlayerPlaybackProgressReporter()
     private let historyVideo: VideoItem?
     private let historyCID: Int?
@@ -528,6 +529,7 @@ struct BiliPlayerView: View {
             if phase == .active {
                 viewModel.recoverPlaybackAfterAppResume()
             } else if phase == .background {
+                endSpeedBoost(reason: "background")
                 Task {
                     await VideoPreloadCenter.shared.cancelAll()
                 }
@@ -538,6 +540,7 @@ struct BiliPlayerView: View {
             viewModel.recoverPlaybackAfterAppResume()
         }
         .onDisappear {
+            endSpeedBoost(reason: "disappear")
             savePlaybackProgress(viewModel.currentTime)
             progressReporter.stop()
             cancelPlaybackControlsAutoHide()
@@ -614,6 +617,7 @@ struct BiliPlayerView: View {
             playbackSurface
                 .contentShape(Rectangle())
                 .gesture(playbackSurfaceTapGesture)
+                .simultaneousGesture(playbackSurfaceSpeedBoostGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .background(.black)
                 .zIndex(0)
@@ -652,6 +656,15 @@ struct BiliPlayerView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .allowsHitTesting(false)
                 .zIndex(6)
+            }
+
+            if speedBoostState != nil {
+                PlayerSpeedBoostIndicator()
+                    .padding(.top, presentation == .embedded ? 10 : 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .allowsHitTesting(false)
+                    .zIndex(6)
             }
 
             if showsActivePlaybackControls, let topLeadingControlsAccessory {
@@ -813,6 +826,52 @@ struct BiliPlayerView: View {
             }
     }
 
+    private var playbackSurfaceSpeedBoostGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.28, maximumDistance: 80)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                guard case .second(true, _) = value else { return }
+                beginSpeedBoostIfNeeded()
+            }
+            .onEnded { _ in
+                endSpeedBoost(reason: "gestureEnded")
+            }
+    }
+
+    private func beginSpeedBoostIfNeeded() {
+        guard speedBoostState == nil else { return }
+        let previousRate = viewModel.playbackRate
+        let wasPlaying = surfaceState.isPlaying || viewModel.isPlaying || viewModel.wantsAutoplay
+        speedBoostState = PlayerSpeedBoostState(
+            restoredRate: previousRate,
+            shouldPauseWhenFinished: !wasPlaying
+        )
+        Haptics.medium()
+        viewModel.recordSpeedBoostMetric("begin restore=\(previousRate.title) wasPlaying=\(wasPlaying)")
+        cancelPlaybackControlsAutoHide()
+        withAnimation(.easeInOut(duration: 0.12)) {
+            arePlaybackControlsVisible = false
+        }
+        if !wasPlaying {
+            viewModel.play()
+        }
+        viewModel.setPlaybackRate(.x20)
+    }
+
+    private func endSpeedBoost(reason: String) {
+        guard let speedBoostState else { return }
+        self.speedBoostState = nil
+        viewModel.setPlaybackRate(speedBoostState.restoredRate)
+        viewModel.stabilizePlaybackAfterSpeedBoost(
+            restoredRate: speedBoostState.restoredRate,
+            reason: reason
+        )
+        if speedBoostState.shouldPauseWhenFinished {
+            viewModel.pause()
+        }
+        showPlaybackControlsAndScheduleAutoHide()
+    }
+
     private func togglePlaybackControlsVisibility() {
         guard showsPlaybackControls else { return }
         if arePlaybackControlsVisible {
@@ -888,7 +947,7 @@ struct BiliPlayerView: View {
 
     private var showsInlineLoadingProgress: Bool {
         guard surfaceState.hasPresentedPlayback else { return false }
-        return surfaceState.isUserSeeking || surfaceState.isBuffering
+        return surfaceState.isBuffering && !surfaceState.isUserSeeking
     }
 
     private func prepareUserSeekWarmupIfNeeded(_ progress: Double, force: Bool = false) {
@@ -898,6 +957,24 @@ struct BiliPlayerView: View {
         onPrepareForUserSeek?(clampedProgress)
     }
 
+}
+
+private struct PlayerSpeedBoostState: Equatable {
+    let restoredRate: BiliPlaybackRate
+    let shouldPauseWhenFinished: Bool
+}
+
+private struct PlayerSpeedBoostIndicator: View {
+    var body: some View {
+        Label("2.0x", systemImage: "forward.fill")
+            .font(.caption.weight(.bold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .biliPlayerClearGlass(interactive: false, in: Capsule())
+            .accessibilityLabel("二倍速播放中")
+    }
 }
 
 struct PlayerNativeControlMetrics: Equatable {

@@ -65,7 +65,11 @@ struct UploaderView: View {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(viewModel.videos) { video in
                             VideoRouteLink(video) {
-                                VideoCardView(video: video, fixedCoverSize: gridCoverSize)
+                                VideoCardView(
+                                    video: video,
+                                    showsCoverViewCountBadge: false,
+                                    fixedCoverSize: gridCoverSize
+                                )
                             }
                             .task {
                                 await viewModel.loadMoreIfNeeded(current: video)

@@ -390,7 +390,7 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                     "测速时间",
                     snapshot.probedAt.formatted(date: .abbreviated, time: .shortened)
                 )
-                diagnosticRow("有效状态", snapshot.isExpired() ? "已过期" : "有效")
+                diagnosticRow("有效状态", isPlaybackCDNProbeSnapshotExpired(snapshot) ? "已过期" : "有效")
                 diagnosticRow("测速参考", snapshot.recommendedPreference?.title ?? "暂无参考")
 
                 if let recommendation = snapshot.recommendedPreference,
@@ -408,8 +408,8 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                     }
                 }
 
-                if snapshot.isExpired() {
-                    Label("测速结果超过 24 小时，自动 CDN 可能需要重新测速。", systemImage: "clock.badge.exclamationmark")
+                if isPlaybackCDNProbeSnapshotExpired(snapshot) {
+                    Label("测速结果超过 \(playbackCDNProbeRefreshIntervalTitle)，自动 CDN 可能需要重新测速。", systemImage: "clock.badge.exclamationmark")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -421,6 +421,18 @@ struct PlaybackNetworkDiagnosticsSheet: View {
                 )
             }
         }
+    }
+
+    private var playbackCDNProbeRefreshIntervalTitle: String {
+        let minutes = libraryStore.playbackCDNProbeRefreshIntervalMinutes
+        if minutes >= 60, minutes.isMultiple(of: 60) {
+            return "\(minutes / 60) 小时"
+        }
+        return "\(minutes) 分钟"
+    }
+
+    private func isPlaybackCDNProbeSnapshotExpired(_ snapshot: PlaybackCDNProbeSnapshot) -> Bool {
+        snapshot.isExpired(freshnessInterval: libraryStore.playbackCDNProbeRefreshInterval)
     }
 
     private var streamModeTitle: String {
@@ -843,7 +855,7 @@ struct PlaybackNetworkDiagnosticsSheet: View {
         if let snapshot = libraryStore.playbackCDNProbeSnapshotForCurrentContext {
             lines.append("测速时间：\(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
             lines.append("测速参考：\(snapshot.recommendedPreference?.title ?? "暂无参考")")
-            lines.append("测速是否过期：\(snapshot.isExpired() ? "是" : "否")")
+            lines.append("测速是否过期：\(isPlaybackCDNProbeSnapshotExpired(snapshot) ? "是" : "否")")
         }
         if let errorMessage = playerViewModel?.errorMessage, !errorMessage.isEmpty {
             lines.append("播放器错误：\(errorMessage)")

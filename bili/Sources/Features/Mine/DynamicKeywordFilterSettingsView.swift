@@ -62,6 +62,7 @@ struct DynamicKeywordFilterSettingsView: View {
                 Text("已屏蔽关键词")
             }
         }
+        .nativeTopScrollEdgeEffect()
         .navigationTitle("动态关键词")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
