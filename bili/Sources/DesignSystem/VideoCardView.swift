@@ -54,6 +54,10 @@ nonisolated struct VideoCardDisplayModel: Identifiable, Equatable {
     func coverTargetPixelSize(fitting size: CGSize, scale: CGFloat, maximumPixelLength: Int = 1280) -> Int {
         String.biliThumbnailMaxPixelSide(fitting: size, scale: scale, maximumPixelLength: maximumPixelLength)
     }
+
+    var coverLoadIdentity: String {
+        sourceCoverURL?.absoluteString ?? coverURL?.absoluteString ?? id
+    }
 }
 
 struct StableVideoTitleText: View {
@@ -209,7 +213,7 @@ struct VideoCoverPlayBadge: View {
 
 struct VideoCoverBottomScrim: View {
     var opacity: Double = 0.42
-    var heightFraction: CGFloat = 0.52
+    var heightFraction: CGFloat = 1.0 / 4.0
 
     var body: some View {
         GeometryReader { proxy in
@@ -246,6 +250,7 @@ struct AdaptiveVideoCoverImage: View {
     let style: Style
     var fixedSize: CGSize?
     var maximumPixelLength: Int = 1280
+    var onPhaseChange: ((RemoteImageLoadingPhase) -> Void)?
 
     @Environment(\.displayScale) private var displayScale
 
@@ -267,7 +272,7 @@ struct AdaptiveVideoCoverImage: View {
     private func remoteImage(fitting size: CGSize) -> some View {
         CachedRemoteImage(
             url: thumbnailURL(fitting: size),
-            fallbackURL: display.sourceCoverURL,
+            fallbackURL: fallbackURL(fitting: size),
             targetPixelSize: display.coverTargetPixelSize(
                 fitting: size,
                 scale: displayScale,
@@ -278,6 +283,9 @@ struct AdaptiveVideoCoverImage: View {
             image
                 .resizable()
                 .scaledToFill()
+                .onAppear {
+                    onPhaseChange?(.loaded)
+                }
         } phasePlaceholder: { phase, _ in
             BiliMediaPlaceholder(
                 style: .video,
@@ -285,6 +293,12 @@ struct AdaptiveVideoCoverImage: View {
                 showsSpinner: phase == .loading,
                 iconSize: 18
             )
+            .onAppear {
+                onPhaseChange?(phase)
+            }
+            .onChange(of: phase) { _, newPhase in
+                onPhaseChange?(newPhase)
+            }
         }
     }
 
@@ -302,6 +316,19 @@ struct AdaptiveVideoCoverImage: View {
                 scale: displayScale,
                 maximumPixelLength: maximumPixelLength
             )
+        }
+    }
+
+    private func fallbackURL(fitting size: CGSize) -> URL? {
+        switch style {
+        case .exactCrop:
+            return display.sourceCoverURL ?? display.largeThumbnailURL(
+                fitting: size,
+                scale: displayScale,
+                maximumPixelLength: maximumPixelLength
+            )
+        case .maxSide:
+            return display.sourceCoverURL
         }
     }
 }
@@ -461,6 +488,7 @@ private struct VideoCompactCover: View, Equatable {
     let cornerRadius: CGFloat
     let showsBorder: Bool
     private let badgeInset: CGFloat = 7
+    @State private var loadedCoverIdentity: String?
 
     static func == (lhs: VideoCompactCover, rhs: VideoCompactCover) -> Bool {
         lhs.display == rhs.display
@@ -475,11 +503,14 @@ private struct VideoCompactCover: View, Equatable {
             display: display,
             style: .exactCrop,
             fixedSize: size,
-            maximumPixelLength: maximumPixelLength
+            maximumPixelLength: maximumPixelLength,
+            onPhaseChange: { phase in
+                updateLoadedCoverIdentity(for: phase)
+            }
         )
         .frame(width: size.width, height: size.height)
         .overlay {
-            if !display.durationText.isEmpty {
+            if isCurrentCoverLoaded, !display.durationText.isEmpty {
                 ZStack(alignment: .bottomTrailing) {
                     VideoCoverBottomScrim()
 
@@ -501,6 +532,21 @@ private struct VideoCompactCover: View, Equatable {
             }
         }
         .mediaShadow(.subtle)
+    }
+
+    private var isCurrentCoverLoaded: Bool {
+        loadedCoverIdentity == display.coverLoadIdentity
+    }
+
+    private func updateLoadedCoverIdentity(for phase: RemoteImageLoadingPhase) {
+        switch phase {
+        case .loaded:
+            loadedCoverIdentity = display.coverLoadIdentity
+        case .idle, .loading, .failed:
+            if loadedCoverIdentity != display.coverLoadIdentity {
+                loadedCoverIdentity = nil
+            }
+        }
     }
 }
 
@@ -667,6 +713,7 @@ extension String {
 struct VideoFeedStoryCardView: View, Equatable {
     let display: VideoCardDisplayModel
     private let showsHeader: Bool
+    @State private var loadedCoverIdentity: String?
 
     init(video: VideoItem, showsHeader: Bool = true) {
         self.display = VideoCardDisplayModel(video: video)
@@ -739,10 +786,18 @@ struct VideoFeedStoryCardView: View, Equatable {
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .overlay {
                 ZStack(alignment: .bottom) {
-                    AdaptiveVideoCoverImage(display: display, style: .exactCrop)
+                    AdaptiveVideoCoverImage(
+                        display: display,
+                        style: .exactCrop,
+                        onPhaseChange: { phase in
+                            updateLoadedCoverIdentity(for: phase)
+                        }
+                    )
 
-                    coverBottomScrim
-                    coverMetaOverlay
+                    if isCurrentCoverLoaded {
+                        coverBottomScrim
+                        coverMetaOverlay
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -777,6 +832,21 @@ struct VideoFeedStoryCardView: View, Equatable {
         }
     }
 
+    private var isCurrentCoverLoaded: Bool {
+        loadedCoverIdentity == display.coverLoadIdentity
+    }
+
+    private func updateLoadedCoverIdentity(for phase: RemoteImageLoadingPhase) {
+        switch phase {
+        case .loaded:
+            loadedCoverIdentity = display.coverLoadIdentity
+        case .idle, .loading, .failed:
+            if loadedCoverIdentity != display.coverLoadIdentity {
+                loadedCoverIdentity = nil
+            }
+        }
+    }
+
     private var title: some View {
         StableVideoTitleText(display.title, style: .feedStory)
             .padding(.horizontal, 12)
@@ -790,8 +860,10 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
     private let showsPlayBadge: Bool
     private let fixedCoverAspectRatio: CGFloat?
     private let fixedCoverSize: CGSize?
+    private let coverMaximumPixelLength: Int
     private let coverShadowLevel: MediaShadowLevel
     private static let metadataAvatarSide: CGFloat = 34
+    @State private var loadedCoverIdentity: String?
 
     init(
         video: VideoItem,
@@ -799,6 +871,7 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
         showsPlayBadge: Bool = false,
         fixedCoverAspectRatio: CGFloat? = nil,
         fixedCoverSize: CGSize? = nil,
+        coverMaximumPixelLength: Int = 1280,
         coverShadowLevel: MediaShadowLevel = .control
     ) {
         self.display = VideoCardDisplayModel(video: video)
@@ -806,6 +879,7 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
         self.showsPlayBadge = showsPlayBadge
         self.fixedCoverAspectRatio = fixedCoverAspectRatio
         self.fixedCoverSize = fixedCoverSize
+        self.coverMaximumPixelLength = coverMaximumPixelLength
         self.coverShadowLevel = coverShadowLevel
     }
 
@@ -815,6 +889,7 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
         showsPlayBadge: Bool = false,
         fixedCoverAspectRatio: CGFloat? = nil,
         fixedCoverSize: CGSize? = nil,
+        coverMaximumPixelLength: Int = 1280,
         coverShadowLevel: MediaShadowLevel = .control
     ) {
         self.display = display
@@ -822,6 +897,7 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
         self.showsPlayBadge = showsPlayBadge
         self.fixedCoverAspectRatio = fixedCoverAspectRatio
         self.fixedCoverSize = fixedCoverSize
+        self.coverMaximumPixelLength = coverMaximumPixelLength
         self.coverShadowLevel = coverShadowLevel
     }
 
@@ -831,6 +907,7 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
             && lhs.showsPlayBadge == rhs.showsPlayBadge
             && lhs.fixedCoverAspectRatio == rhs.fixedCoverAspectRatio
             && lhs.fixedCoverSize == rhs.fixedCoverSize
+            && lhs.coverMaximumPixelLength == rhs.coverMaximumPixelLength
             && lhs.coverShadowLevel == rhs.coverShadowLevel
     }
 
@@ -848,27 +925,37 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
             .aspectRatio(effectiveCoverAspectRatio, contentMode: .fit)
             .overlay {
                 ZStack(alignment: .bottomTrailing) {
-                    AdaptiveVideoCoverImage(display: display, style: .maxSide, fixedSize: fixedCoverSize)
+                    AdaptiveVideoCoverImage(
+                        display: display,
+                        style: .maxSide,
+                        fixedSize: fixedCoverSize,
+                        maximumPixelLength: coverMaximumPixelLength,
+                        onPhaseChange: { phase in
+                            updateLoadedCoverIdentity(for: phase)
+                        }
+                    )
 
-                    thumbnailBottomScrim
+                    if isCurrentCoverLoaded {
+                        thumbnailBottomScrim
 
-                    if showsPlayBadge {
-                        VideoCoverPlayBadge(size: 40, iconSize: 15)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    }
+                        if showsPlayBadge {
+                            VideoCoverPlayBadge(size: 40, iconSize: 15)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        }
 
-                    if !display.durationText.isEmpty {
-                        VideoCoverDurationBadge(display.durationText)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        if !display.durationText.isEmpty {
+                            VideoCoverDurationBadge(display.durationText)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             }
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .mediaShadow(coverShadowLevel)
     }
 
@@ -918,6 +1005,21 @@ struct YouTubeStyleVideoFeedCardView: View, Equatable {
     private var effectiveCoverAspectRatio: CGFloat {
         fixedCoverAspectRatio ?? sanitizedCoverAspectRatio
     }
+
+    private var isCurrentCoverLoaded: Bool {
+        loadedCoverIdentity == display.coverLoadIdentity
+    }
+
+    private func updateLoadedCoverIdentity(for phase: RemoteImageLoadingPhase) {
+        switch phase {
+        case .loaded:
+            loadedCoverIdentity = display.coverLoadIdentity
+        case .idle, .loading, .failed:
+            if loadedCoverIdentity != display.coverLoadIdentity {
+                loadedCoverIdentity = nil
+            }
+        }
+    }
 }
 
 struct VideoCardView: View, Equatable {
@@ -931,19 +1033,23 @@ struct VideoCardView: View, Equatable {
     private let showsCoverViewCountBadge: Bool
     private let surfaceStyle: SurfaceStyle
     private let fixedCoverSize: CGSize?
+    private let coverMaximumPixelLength: Int
+    @State private var loadedCoverIdentity: String?
 
     init(
         video: VideoItem,
         showsPublishTimeInAuthorRow: Bool = false,
         showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
-        fixedCoverSize: CGSize? = nil
+        fixedCoverSize: CGSize? = nil,
+        coverMaximumPixelLength: Int = 1280
     ) {
         self.display = VideoCardDisplayModel(video: video)
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
         self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
+        self.coverMaximumPixelLength = coverMaximumPixelLength
     }
 
     init(
@@ -951,13 +1057,15 @@ struct VideoCardView: View, Equatable {
         showsPublishTimeInAuthorRow: Bool = false,
         showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
-        fixedCoverSize: CGSize? = nil
+        fixedCoverSize: CGSize? = nil,
+        coverMaximumPixelLength: Int = 1280
     ) {
         self.display = display
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
         self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
+        self.coverMaximumPixelLength = coverMaximumPixelLength
     }
 
     static func == (lhs: VideoCardView, rhs: VideoCardView) -> Bool {
@@ -966,6 +1074,7 @@ struct VideoCardView: View, Equatable {
             && lhs.showsCoverViewCountBadge == rhs.showsCoverViewCountBadge
             && lhs.surfaceStyle == rhs.surfaceStyle
             && lhs.fixedCoverSize == rhs.fixedCoverSize
+            && lhs.coverMaximumPixelLength == rhs.coverMaximumPixelLength
     }
 
     var body: some View {
@@ -1022,8 +1131,10 @@ struct VideoCardView: View, Equatable {
             .overlay {
                 ZStack(alignment: .bottom) {
                     coverImage
-                    coverBottomScrim
-                    coverMetaOverlay
+                    if isCurrentCoverLoaded {
+                        coverBottomScrim
+                        coverMetaOverlay
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -1038,7 +1149,15 @@ struct VideoCardView: View, Equatable {
 
     @ViewBuilder
     private var coverImage: some View {
-        AdaptiveVideoCoverImage(display: display, style: .exactCrop, fixedSize: fixedCoverSize)
+        AdaptiveVideoCoverImage(
+            display: display,
+            style: .exactCrop,
+            fixedSize: fixedCoverSize,
+            maximumPixelLength: coverMaximumPixelLength,
+            onPhaseChange: { phase in
+                updateLoadedCoverIdentity(for: phase)
+            }
+        )
     }
 
     private var coverMetaOverlay: some View {
@@ -1063,6 +1182,21 @@ struct VideoCardView: View, Equatable {
     private var coverBottomScrim: some View {
         if (showsCoverViewCountBadge && !display.viewText.isEmpty) || !display.durationText.isEmpty {
             VideoCoverBottomScrim()
+        }
+    }
+
+    private var isCurrentCoverLoaded: Bool {
+        loadedCoverIdentity == display.coverLoadIdentity
+    }
+
+    private func updateLoadedCoverIdentity(for phase: RemoteImageLoadingPhase) {
+        switch phase {
+        case .loaded:
+            loadedCoverIdentity = display.coverLoadIdentity
+        case .idle, .loading, .failed:
+            if loadedCoverIdentity != display.coverLoadIdentity {
+                loadedCoverIdentity = nil
+            }
         }
     }
 

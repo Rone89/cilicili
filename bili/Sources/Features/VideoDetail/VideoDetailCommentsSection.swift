@@ -45,7 +45,6 @@ struct PortraitCommentsSheet: View {
     let beginInitialCommentsLoad: () -> Void
     let selectCommentSort: (CommentSort) async -> Void
     let retryComments: () async -> Void
-    let loadMoreCommentsIfNeeded: (Comment) async -> Void
     let loadMoreComments: () async -> Void
     let loadReplies: (Comment) async -> Void
     let reloadReplies: (Comment) async -> Void
@@ -62,7 +61,6 @@ struct PortraitCommentsSheet: View {
         beginInitialCommentsLoad: @escaping () -> Void,
         selectCommentSort: @escaping (CommentSort) async -> Void,
         retryComments: @escaping () async -> Void,
-        loadMoreCommentsIfNeeded: @escaping (Comment) async -> Void,
         loadMoreComments: @escaping () async -> Void,
         loadReplies: @escaping (Comment) async -> Void,
         reloadReplies: @escaping (Comment) async -> Void,
@@ -76,7 +74,6 @@ struct PortraitCommentsSheet: View {
         self.beginInitialCommentsLoad = beginInitialCommentsLoad
         self.selectCommentSort = selectCommentSort
         self.retryComments = retryComments
-        self.loadMoreCommentsIfNeeded = loadMoreCommentsIfNeeded
         self.loadMoreComments = loadMoreComments
         self.loadReplies = loadReplies
         self.reloadReplies = reloadReplies
@@ -159,7 +156,6 @@ struct PortraitCommentsSheet: View {
             errorRow(message: "评论暂时没有返回内容")
         } else {
             let commentItems = store.commentItems
-            let loadMoreTriggerCommentID = commentItems.last?.id
             ForEach(commentItems) { item in
                 CommentRow(
                     item: item,
@@ -171,9 +167,6 @@ struct PortraitCommentsSheet: View {
                 .equatable()
                 .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
                 .listRowBackground(Color.clear)
-                .commentLoadMoreTask(if: item.id == loadMoreTriggerCommentID, id: item.id) {
-                    await loadMoreCommentsIfNeeded(item.comment)
-                }
                 .listRowSeparator(.hidden)
 
                 Divider()
@@ -212,26 +205,20 @@ struct PortraitCommentsSheet: View {
 
     @ViewBuilder
     private var footerRow: some View {
-        if store.state.isLoading {
+        if store.loadMoreState.isLoading {
             CommentLoadingSkeletonRow()
                 .padding(.vertical, 12)
                 .padding(.horizontal, 16)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-        } else if case .failed(let message) = store.state {
-            errorRow(message: message)
+        } else if case .failed(let message) = store.loadMoreState {
+            retryLoadMoreRow(message: message)
         } else if store.hasMoreComments {
-            Button {
-                Task { await loadMoreComments() }
-            } label: {
-                Label("加载更多评论", systemImage: "arrow.down.circle")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .commentPlayerGlassCapsule()
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            Color.clear
+                .frame(height: 20)
+                .commentLoadMoreTrigger(if: true, id: store.commentItems.last?.id ?? -1) {
+                    await loadMoreComments()
+                }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else if !store.comments.isEmpty {
@@ -241,8 +228,26 @@ struct PortraitCommentsSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            .listRowBackground(Color.clear)
         }
+    }
+
+    private func retryLoadMoreRow(message: String) -> some View {
+        Button {
+            Task { await loadMoreComments() }
+        } label: {
+            Label("评论加载失败，点按重试", systemImage: "arrow.clockwise")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(message)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
 }
@@ -256,7 +261,6 @@ struct CommentsSectionView: View {
     let beginInitialCommentsLoad: () -> Void
     let selectCommentSort: (CommentSort) async -> Void
     let retryComments: () async -> Void
-    let loadMoreCommentsIfNeeded: (Comment) async -> Void
     let loadMoreComments: () async -> Void
     let showReplies: (Comment) -> Void
 
@@ -332,7 +336,6 @@ struct CommentsSectionView: View {
                 .frame(height: 1)
         } else {
             let commentItems = visibleCommentItems
-            let loadMoreTriggerCommentID = maxVisibleComments == nil ? commentItems.last?.id : nil
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(commentItems) { item in
                     CommentRow(
@@ -344,9 +347,6 @@ struct CommentsSectionView: View {
                     )
                     .equatable()
                     .padding(.horizontal, style.horizontalPadding)
-                    .commentLoadMoreTask(if: item.id == loadMoreTriggerCommentID, id: item.id) {
-                        await loadMoreCommentsIfNeeded(item.comment)
-                    }
 
                     Divider()
                         .padding(.leading, 56)
@@ -395,32 +395,28 @@ struct CommentsSectionView: View {
 
     @ViewBuilder
     private var commentFooter: some View {
-        if store.state.isLoading {
-            InlineLoadingStateView(title: "加载更多评论")
-        } else if case .failed(let message) = store.state {
-            CommentErrorView(message: message) {
-                Task { await retryComments() }
-            }
-        } else if store.hasMoreComments {
+        if store.loadMoreState.isLoading {
+            InlineLoadingStateView(title: "正在加载评论")
+        } else if case .failed(let message) = store.loadMoreState {
             Button {
                 Task { await loadMoreComments() }
             } label: {
-                if style.usesGroupedFooter {
-                    Label("加载更多评论", systemImage: "arrow.down.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .commentPlayerGlassRoundedRectangle()
-                } else {
-                    Label("加载更多评论", systemImage: "arrow.down.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .commentPlayerGlassCapsule()
-                }
+                Label("评论加载失败，点按重试", systemImage: "arrow.clockwise")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            .accessibilityHint(message)
+        } else if store.hasMoreComments {
+            Color.clear
+                .frame(height: 18)
+                .commentLoadMoreTrigger(if: maxVisibleComments == nil, id: store.commentItems.last?.id ?? -1) {
+                    await loadMoreComments()
+                }
         } else {
             Text("没有更多评论了")
                 .font(.caption)
@@ -434,15 +430,18 @@ struct CommentsSectionView: View {
 
 private extension View {
     @ViewBuilder
-    func commentLoadMoreTask(
+    func commentLoadMoreTrigger(
         if shouldAttachTask: Bool,
         id: Int,
         action: @escaping () async -> Void
     ) -> some View {
         if shouldAttachTask {
-            task(id: id) {
-                await action()
+            onAppear {
+                Task {
+                    await action()
+                }
             }
+            .id(id)
         } else {
             self
         }

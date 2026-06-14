@@ -63,6 +63,10 @@ Packages/FFmpegKit/Sources/*.xcframework/
 *.mov
 *.mp4
 !bili/Assets.xcassets/AppIcon.appiconset/*.png
+!bili/Assets.xcassets/LaunchLogo.imageset/*.png
+!bili/Assets.xcassets/LaunchScreenLogo.imageset/*.png
+!bili/Assets.xcassets/LaunchSplash.imageset/*.jpg
+!bili/Resources/*.png
 
 # macOS
 .DS_Store

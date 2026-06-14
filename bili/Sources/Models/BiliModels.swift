@@ -293,6 +293,20 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
 
 nonisolated struct RecommendFeedData: Decodable, Sendable {
     let item: [RecommendFeedItem]?
+    let items: [RecommendFeedItem]?
+
+    nonisolated var feedItems: [RecommendFeedItem] {
+        item ?? items ?? []
+    }
+
+    nonisolated func appNextIndex(after requestedIndex: Int) -> Int? {
+        let positiveIndexes = feedItems.compactMap(\.idx).filter { $0 > 0 }
+        if let lastIndex = positiveIndexes.last {
+            return lastIndex
+        }
+        guard !feedItems.isEmpty else { return nil }
+        return requestedIndex + 1
+    }
 }
 
 nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendable {
@@ -305,60 +319,228 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let title: String?
     let pic: String?
     let cover: String?
+    let uri: String?
+    let param: String?
     let goto: String?
+    let cardGoto: String?
     let duration: Int?
     let pubdate: Int?
+    let idx: Int?
     let owner: VideoOwner?
     let ownerInfo: VideoOwner?
+    let args: RecommendFeedItemArgs?
+    let descButton: RecommendFeedDescButton?
     let stat: VideoStat?
     let dimension: VideoDimension?
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, cid, title, pic, cover, goto, duration, pubdate, ctime, owner, stat, dimension
+        case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, stat, dimension
         case idValue = "id"
+        case cardGoto = "card_goto"
         case ownerInfo = "owner_info"
+        case descButton = "desc_button"
         case pubDate = "pub_date"
         case publishTime = "publish_time"
+        case coverLeftText1 = "cover_left_text_1"
+        case coverLeftText2 = "cover_left_text_2"
+        case coverRightText = "cover_right_text"
+        case playerArgs = "player_args"
+    }
+
+    enum PlayerArgsCodingKeys: String, CodingKey {
+        case aid
+        case cid
+        case duration
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let playerArgs = try? container.nestedContainer(keyedBy: PlayerArgsCodingKeys.self, forKey: .playerArgs)
         idValue = container.decodeLossyIntIfPresent(forKey: .idValue)
         aid = container.decodeLossyIntIfPresent(forKey: .aid)
-        bvid = try container.decodeIfPresent(String.self, forKey: .bvid)
+            ?? playerArgs?.decodeLossyIntIfPresent(forKey: .aid)
+            ?? container.decodeLossyIntIfPresent(forKey: .param)
+        bvid = container.decodeLossyStringIfPresent(forKey: .bvid)
         cid = container.decodeLossyIntIfPresent(forKey: .cid)
-        title = try container.decodeIfPresent(String.self, forKey: .title)
-        pic = try container.decodeIfPresent(String.self, forKey: .pic)
-        cover = try container.decodeIfPresent(String.self, forKey: .cover)
-        goto = try container.decodeIfPresent(String.self, forKey: .goto)
+            ?? playerArgs?.decodeLossyIntIfPresent(forKey: .cid)
+        title = container.decodeLossyStringIfPresent(forKey: .title)
+        pic = container.decodeLossyStringIfPresent(forKey: .pic)
+        cover = container.decodeLossyStringIfPresent(forKey: .cover)
+        uri = container.decodeLossyStringIfPresent(forKey: .uri)
+        param = container.decodeLossyStringIfPresent(forKey: .param)
+        goto = container.decodeLossyStringIfPresent(forKey: .goto)
+        cardGoto = container.decodeLossyStringIfPresent(forKey: .cardGoto)
+        idx = container.decodeLossyIntIfPresent(forKey: .idx)
         duration = container.decodeLossyIntIfPresent(forKey: .duration)
+            ?? playerArgs?.decodeLossyIntIfPresent(forKey: .duration)
+            ?? Self.durationSeconds(from: container.decodeLossyStringIfPresent(forKey: .coverRightText))
         pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
             ?? container.decodeLossyIntIfPresent(forKey: .pubDate)
             ?? container.decodeLossyIntIfPresent(forKey: .publishTime)
             ?? container.decodeLossyIntIfPresent(forKey: .ctime)
         owner = try container.decodeIfPresent(VideoOwner.self, forKey: .owner)
         ownerInfo = try container.decodeIfPresent(VideoOwner.self, forKey: .ownerInfo)
-        stat = try container.decodeIfPresent(VideoStat.self, forKey: .stat)
+        args = try container.decodeIfPresent(RecommendFeedItemArgs.self, forKey: .args)
+        descButton = try container.decodeIfPresent(RecommendFeedDescButton.self, forKey: .descButton)
+        stat = (try container.decodeIfPresent(VideoStat.self, forKey: .stat))
+            ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText1))
+            ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText2))
         dimension = try container.decodeIfPresent(VideoDimension.self, forKey: .dimension)
     }
 
     nonisolated func asVideoItem() -> VideoItem? {
-        guard goto == nil || goto == "av" else { return nil }
-        guard let bvid, let title else { return nil }
+        let target = goto ?? cardGoto
+        guard target == nil || target == "av" || target == "video" else { return nil }
+        guard let title,
+              let identity = Self.videoIdentity(bvid: bvid, uri: uri, aid: idValue ?? aid)
+        else { return nil }
         return VideoItem(
-            bvid: bvid,
+            bvid: identity.bvid,
             aid: idValue ?? aid,
             title: title,
             pic: (pic ?? cover)?.normalizedBiliURL(),
             desc: nil,
             duration: duration,
             pubdate: pubdate,
-            owner: owner ?? ownerInfo,
+            owner: owner ?? ownerInfo ?? args?.owner ?? descButton?.owner,
             stat: stat,
             cid: cid,
             pages: nil,
             dimension: dimension
         )
+    }
+
+    private nonisolated static func videoIdentity(bvid: String?, uri: String?, aid: Int?) -> (bvid: String, isSynthetic: Bool)? {
+        if let bvid, !bvid.isEmpty {
+            return (bvid, false)
+        }
+        if let bvid = Self.bvid(from: uri) {
+            return (bvid, false)
+        }
+        guard let aid, aid > 0 else { return nil }
+        return ("av\(aid)", true)
+    }
+
+    private nonisolated static func bvid(from uri: String?) -> String? {
+        guard let uri, !uri.isEmpty else { return nil }
+        if let range = uri.range(of: #"BV[A-Za-z0-9]+"#, options: .regularExpression) {
+            return String(uri[range])
+        }
+        return nil
+    }
+
+    private nonisolated static func stat(from text: String?) -> VideoStat? {
+        guard let view = compactCountValue(from: text) else { return nil }
+        return VideoStat(view: view, reply: nil, like: nil, coin: nil, favorite: nil)
+    }
+
+    private nonisolated static func compactCountValue(from text: String?) -> Int? {
+        guard let text else { return nil }
+        let normalized = text
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "播放", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        if normalized.hasSuffix("万"),
+           let value = Double(normalized.dropLast()) {
+            return Int((value * 10_000).rounded())
+        }
+        if normalized.hasSuffix("亿"),
+           let value = Double(normalized.dropLast()) {
+            return Int((value * 100_000_000).rounded())
+        }
+        return Int(normalized)
+    }
+
+    private nonisolated static func durationSeconds(from text: String?) -> Int? {
+        guard let text else { return nil }
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        switch parts.count {
+        case 2:
+            return parts[0] * 60 + parts[1]
+        case 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        default:
+            return nil
+        }
+    }
+}
+
+nonisolated struct RecommendFeedItemArgs: Decodable, Hashable, Sendable {
+    let upID: Int?
+    let upName: String?
+    let upFace: String?
+
+    enum CodingKeys: String, CodingKey {
+        case upID = "up_id"
+        case upMID = "up_mid"
+        case mid
+        case uid
+        case upName = "up_name"
+        case uname
+        case name
+        case author
+        case upFace = "up_face"
+        case face
+        case avatar
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        upID = container.decodeLossyIntIfPresent(forKey: .upID)
+            ?? container.decodeLossyIntIfPresent(forKey: .upMID)
+            ?? container.decodeLossyIntIfPresent(forKey: .mid)
+            ?? container.decodeLossyIntIfPresent(forKey: .uid)
+        upName = container.decodeLossyStringIfPresent(forKey: .upName)
+            ?? container.decodeLossyStringIfPresent(forKey: .uname)
+            ?? container.decodeLossyStringIfPresent(forKey: .name)
+            ?? container.decodeLossyStringIfPresent(forKey: .author)
+        upFace = container.decodeLossyStringIfPresent(forKey: .upFace)
+            ?? container.decodeLossyStringIfPresent(forKey: .face)
+            ?? container.decodeLossyStringIfPresent(forKey: .avatar)
+    }
+
+    nonisolated var owner: VideoOwner? {
+        guard upID != nil || upName != nil || upFace != nil else { return nil }
+        let trimmedName = upName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VideoOwner(
+            mid: upID ?? 0,
+            name: trimmedName?.isEmpty == false ? trimmedName! : "Unknown",
+            face: upFace?.normalizedBiliURL()
+        )
+    }
+}
+
+nonisolated struct RecommendFeedDescButton: Decodable, Hashable, Sendable {
+    let text: String?
+    let uri: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text, uri
+    }
+
+    nonisolated var owner: VideoOwner? {
+        let trimmedName = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mid = Self.mid(from: uri)
+        guard mid != nil || trimmedName?.isEmpty == false else { return nil }
+        return VideoOwner(
+            mid: mid ?? 0,
+            name: trimmedName?.isEmpty == false ? trimmedName! : "Unknown",
+            face: nil
+        )
+    }
+
+    private nonisolated static func mid(from uri: String?) -> Int? {
+        guard let uri, !uri.isEmpty else { return nil }
+        if let range = uri.range(of: #"space/(\d+)"#, options: .regularExpression) {
+            let value = uri[range].dropFirst("space/".count)
+            return Int(value)
+        }
+        if let range = uri.range(of: #"vmid=(\d+)"#, options: .regularExpression) {
+            let value = uri[range].dropFirst("vmid=".count)
+            return Int(value)
+        }
+        return nil
     }
 }
 
@@ -1380,16 +1562,48 @@ nonisolated struct CommentPage: Decodable {
 
 nonisolated struct CommentCursor: Decodable {
     let next: String?
+    let nextOffset: String?
     let isEnd: Bool?
+
+    var effectiveNext: String? {
+        Self.nonEmpty(next) ?? Self.nonEmpty(nextOffset)
+    }
 
     enum CodingKeys: String, CodingKey {
         case next
+        case nextOffset = "next_offset"
         case isEnd = "is_end"
+        case paginationReply = "pagination_reply"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         next = container.decodeLossyStringIfPresent(forKey: .next)
+        let nestedPagination = try? container.decodeIfPresent(CommentCursorPaginationReply.self, forKey: .paginationReply)
+        nextOffset = container.decodeLossyStringIfPresent(forKey: .nextOffset)
+            ?? nestedPagination?.nextOffset
+        isEnd = container.decodeLossyBoolIfPresent(forKey: .isEnd)
+            ?? nestedPagination?.isEnd
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+nonisolated private struct CommentCursorPaginationReply: Decodable {
+    let nextOffset: String?
+    let isEnd: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case nextOffset = "next_offset"
+        case isEnd = "is_end"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        nextOffset = container.decodeLossyStringIfPresent(forKey: .nextOffset)
         isEnd = container.decodeLossyBoolIfPresent(forKey: .isEnd)
     }
 }
@@ -3172,6 +3386,10 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
         modules?.moduleDynamic?.major?.live
     }
 
+    var paidContent: DynamicPaidContent? {
+        modules?.moduleDynamic?.paidContent
+    }
+
     var imageItems: [DynamicImageItem] {
         uniqueDynamicImages([
             modules?.moduleDynamic?.major?.imageItems ?? [],
@@ -3223,6 +3441,13 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
 
     var commentType: Int? {
         basic?.commentType
+    }
+
+    var contentDiagnosticSummary: String {
+        let majorKeys = modules?.moduleDynamic?.major?.diagnosticKeys.joined(separator: ",") ?? "-"
+        let additional = modules?.moduleDynamic?.additional
+        let additionalKeys = additional?.diagnosticKeys.joined(separator: ",") ?? "-"
+        return "id=\(idStr) type=\(type ?? "-") major=[\(majorKeys)] additionalType=\(additional?.type ?? "-") additional=[\(additionalKeys)] originalType=\(original?.type ?? "-")"
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3297,6 +3522,10 @@ nonisolated struct DynamicOriginalItem: Identifiable, Decodable, Hashable {
         modules?.moduleDynamic?.major?.live
     }
 
+    var paidContent: DynamicPaidContent? {
+        modules?.moduleDynamic?.paidContent
+    }
+
     var imageItems: [DynamicImageItem] {
         uniqueDynamicImages([
             modules?.moduleDynamic?.major?.imageItems ?? [],
@@ -3309,6 +3538,7 @@ nonisolated struct DynamicOriginalItem: Identifiable, Decodable, Hashable {
             || DynamicTextSegment.displayText(from: textSegments)?.isEmpty == false
             || archive != nil
             || live != nil
+            || paidContent != nil
             || !imageItems.isEmpty
     }
 
@@ -3359,7 +3589,9 @@ nonisolated extension DynamicFeedItem {
             DynamicTextSegment.displayText(from: textSegments),
             archive?.title,
             archive?.desc,
-            live?.displayTitle
+            live?.displayTitle,
+            paidContent?.title,
+            paidContent?.subtitle
         ]) + (original?.keywordFilterTextSources ?? [])
     }
 
@@ -3376,7 +3608,9 @@ nonisolated extension DynamicOriginalItem {
             DynamicTextSegment.displayText(from: textSegments),
             archive?.title,
             archive?.desc,
-            live?.displayTitle
+            live?.displayTitle,
+            paidContent?.title,
+            paidContent?.subtitle
         ])
     }
 }
@@ -3443,6 +3677,10 @@ nonisolated struct DynamicModuleDynamic: Decodable, Hashable {
         additional = try? container.decodeIfPresent(DynamicAdditional.self, forKey: .additional)
     }
 
+    var paidContent: DynamicPaidContent? {
+        major?.paidContent ?? additional?.paidContent
+    }
+
     var containsGoodsPromotion: Bool {
         additional?.containsGoodsPromotion == true
             || desc?.containsGoodsPromotion == true
@@ -3506,6 +3744,14 @@ nonisolated struct DynamicAdditional: Decodable, Hashable {
         BiliContentFilter.isGoodsDynamicAdditionalType(type)
             || raw.containsGoodsMetadata
     }
+
+    var paidContent: DynamicPaidContent? {
+        DynamicPaidContent(raw: raw, sourceKey: type, preferredKind: nil)
+    }
+
+    var diagnosticKeys: [String] {
+        raw.objectValueForDynamicParsing?.keys.sorted() ?? []
+    }
 }
 
 nonisolated struct DynamicRichTextNode: Decodable, Hashable {
@@ -3552,10 +3798,12 @@ nonisolated struct DynamicMajor: Decodable, Hashable {
     let opus: DynamicOpus?
     let draw: DynamicDraw?
     let live: DynamicLive?
+    let paidContent: DynamicPaidContent?
     private let fallbackArchive: DynamicArchive?
     let fallbackDisplayText: String?
     let fallbackSegments: [DynamicTextSegment]
     let fallbackImageItems: [DynamicImageItem]
+    let diagnosticKeys: [String]
 
     var resolvedArchive: DynamicArchive? {
         if let archive, archive.bvid?.isEmpty == false {
@@ -3616,10 +3864,531 @@ nonisolated struct DynamicMajor: Decodable, Hashable {
             ?? (try? container.decodeIfPresent(DynamicLive.self, forKey: .liveRcmd))
             ?? (try? container.decodeIfPresent(DynamicLive.self, forKey: .common))
             ?? raw.dynamicMajorFallbackLive
+        paidContent = DynamicPaidContent(raw: raw, sourceKey: nil, preferredKind: nil)
         fallbackArchive = raw.dynamicMajorFallbackArchive
         fallbackDisplayText = raw.dynamicMajorFallbackDisplayText
         fallbackSegments = raw.dynamicMajorFallbackTextSegments
         fallbackImageItems = raw.dynamicMajorFallbackImageItems
+        diagnosticKeys = raw.objectValueForDynamicParsing?.keys.sorted() ?? []
+    }
+}
+
+nonisolated struct DynamicPaidContent: Hashable {
+    enum Kind: String, Hashable {
+        case video
+        case article
+        case course
+        case collection
+        case unknown
+    }
+
+    let kind: Kind
+    let title: String
+    let subtitle: String?
+    let cover: String?
+    let jumpURL: String?
+    let bvid: String?
+    let aid: Int?
+    let cvid: Int?
+    let badgeText: String
+    let isChargeExclusive: Bool
+    let isLocked: Bool
+
+    init?(
+        raw: DynamicJSONValue,
+        sourceKey: String?,
+        preferredKind: Kind?
+    ) {
+        guard case .object(let rootObject) = raw else { return nil }
+
+        let rootType = rootObject["type"]?.textValueForDynamicParsing
+        let candidates = Self.candidateObjects(from: rootObject, sourceKey: sourceKey)
+        for candidate in candidates {
+            if let content = Self.content(
+                from: candidate.object,
+                sourceKey: candidate.key,
+                rootType: rootType,
+                preferredKind: preferredKind
+            ) {
+                self = content
+                return
+            }
+        }
+        return nil
+    }
+
+    private init(
+        kind: Kind,
+        title: String,
+        subtitle: String?,
+        cover: String?,
+        jumpURL: String?,
+        bvid: String?,
+        aid: Int?,
+        cvid: Int?,
+        badgeText: String,
+        isChargeExclusive: Bool,
+        isLocked: Bool
+    ) {
+        self.kind = kind
+        self.title = title
+        self.subtitle = subtitle
+        self.cover = cover
+        self.jumpURL = jumpURL
+        self.bvid = bvid
+        self.aid = aid
+        self.cvid = cvid
+        self.badgeText = badgeText
+        self.isChargeExclusive = isChargeExclusive
+        self.isLocked = isLocked
+    }
+
+    var normalizedCoverURL: String? {
+        cover?.normalizedBiliURL()
+    }
+
+    var normalizedJumpURL: URL? {
+        if let jumpURL, let url = URL(string: jumpURL.normalizedBiliURL()) {
+            return url
+        }
+        if let bvid, !bvid.isEmpty {
+            return URL(string: "https://www.bilibili.com/video/\(bvid)")
+        }
+        if let cvid, cvid > 0 {
+            return URL(string: "https://www.bilibili.com/read/cv\(cvid)")
+        }
+        return nil
+    }
+
+    var isChargeArticleLike: Bool {
+        guard isChargeExclusive else { return false }
+        if kind == .article || cvid != nil {
+            return true
+        }
+        let corpus = compactNonBlankDynamicFilterTexts([
+            title,
+            subtitle,
+            badgeText
+        ]).joined(separator: " ").lowercased()
+        return corpus.contains("专栏") || corpus.contains("article")
+    }
+
+    func chargePageURL(author: DynamicAuthor?) -> URL? {
+        if let mid = author?.mid, mid > 0 {
+            return URL(string: "https://www.bilibili.com/h5/upower/index?mid=\(mid)")
+        }
+        guard let url = normalizedJumpURL,
+              url.absoluteString.lowercased().contains("upower")
+        else { return nil }
+        return url
+    }
+
+    func asVideoItem(author: DynamicAuthor?) -> VideoItem? {
+        guard kind == .video, let bvid, !bvid.isEmpty else { return nil }
+        return VideoItem(
+            bvid: bvid,
+            aid: aid,
+            title: title,
+            pic: normalizedCoverURL,
+            desc: subtitle,
+            duration: nil,
+            pubdate: author?.pubTS,
+            owner: author?.owner,
+            stat: nil,
+            cid: nil,
+            pages: nil,
+            dimension: nil
+        )
+    }
+
+    private static func candidateObjects(
+        from root: [String: DynamicJSONValue],
+        sourceKey: String?
+    ) -> [(key: String, object: [String: DynamicJSONValue])] {
+        var result = [(key: String, object: [String: DynamicJSONValue])]()
+        var seenKeys = Set<String>()
+
+        func append(_ key: String, value: DynamicJSONValue?) {
+            guard let value else { return }
+            switch value {
+            case .object(let object):
+                let signature = "\(key)#\(object.keys.sorted().joined(separator: ","))"
+                guard seenKeys.insert(signature).inserted else { return }
+                result.append((key, object))
+                for nestedKey in ["content", "card", "item", "resource", "source", "sketch", "desc", "badge", "button", "cover_info"] {
+                    if let nested = object[nestedKey]?.objectValueForDynamicParsing {
+                        append("\(key).\(nestedKey)", value: .object(nested))
+                    }
+                }
+            case .array(let values):
+                for (index, item) in values.enumerated() {
+                    append("\(key).\(index)", value: item)
+                }
+            case .string(let text):
+                if let data = text.data(using: .utf8),
+                   let decoded = try? JSONDecoder().decode(DynamicJSONValue.self, from: data) {
+                    append(key, value: decoded)
+                }
+            case .number, .bool, .null:
+                return
+            }
+        }
+
+        if let sourceKey {
+            append(sourceKey, value: .object(root))
+        }
+
+        let preferredKeys = [
+            "upower_common", "upower_lottery", "charge", "paid", "blocked",
+            "common", "article", "courses", "course", "pgc", "ugc_season",
+            "medialist", "subscription", "subscription_new", "archive", "video"
+        ]
+        for key in preferredKeys {
+            append(key, value: root[key])
+        }
+        append("root", value: .object(root))
+        return result
+    }
+
+    private static func content(
+        from object: [String: DynamicJSONValue],
+        sourceKey: String,
+        rootType: String?,
+        preferredKind: Kind?
+    ) -> DynamicPaidContent? {
+        let objectType = object["type"]?.textValueForDynamicParsing
+        let objectSubtype = object["sub_type"]?.textValueForDynamicParsing
+        // Only trust structural API fields for paid-content identity. User-authored
+        // titles/descriptions can naturally mention "充电" without being upower-only.
+        let chargeSignalCorpus = compactNonBlankDynamicFilterTexts([
+            sourceKey,
+            rootType,
+            objectType,
+            objectSubtype,
+            object["badge_text"]?.dynamicDisplayText,
+            object["type_name"]?.dynamicDisplayText,
+            object["hint_message"]?.dynamicDisplayText,
+            nestedText(object, path: ["badge", "text"]),
+            nestedText(object, path: ["badge", "title"]),
+            nestedText(object, path: ["button", "text"])
+        ])
+        let lowerSource = "\(sourceKey) \(rootType ?? "") \(objectType ?? "") \(objectSubtype ?? "")".lowercased()
+        let isChargeExclusive = hasTruthyChargeFlag(in: object)
+            || chargeSignalCorpus.contains { isChargeMarker($0) }
+        let kind = preferredKind ?? inferredKind(source: lowerSource, object: object)
+
+        if sourceKey.contains("archive") || sourceKey.contains("video") {
+            guard isChargeExclusive else { return nil }
+        }
+
+        let jumpURLText = normalizedJumpURLString(firstNonBlankDynamicText([
+            object["jump_url"]?.textValueForDynamicParsing,
+            object["jumpUrl"]?.textValueForDynamicParsing,
+            object["url"]?.textValueForDynamicParsing,
+            object["uri"]?.textValueForDynamicParsing,
+            object["link"]?.textValueForDynamicParsing,
+            object["web_url"]?.textValueForDynamicParsing,
+            object["schema"]?.textValueForDynamicParsing
+        ]))
+        let bvid = firstNonBlankDynamicText([
+            object["bvid"]?.textValueForDynamicParsing,
+            object["bvid_str"]?.textValueForDynamicParsing,
+            bvid(from: jumpURLText)
+        ])
+        let cvid = firstNonNilInt([
+            object["cvid"]?.intValueForDynamicParsing,
+            object["cv_id"]?.intValueForDynamicParsing,
+            cvid(from: jumpURLText),
+            kind == .article ? object["id"]?.intValueForDynamicParsing : nil,
+            kind == .article ? object["rid"]?.intValueForDynamicParsing : nil
+        ])
+        let resolvedKind: Kind = {
+            if kind == .unknown, bvid != nil { return .video }
+            if kind == .unknown, cvid != nil { return .article }
+            return kind
+        }()
+        guard isChargeExclusive else { return nil }
+
+        let title = firstNonBlankDynamicText([
+            object["title"]?.dynamicDisplayText,
+            object["name"]?.dynamicDisplayText,
+            object["long_title"]?.dynamicDisplayText,
+            object["headline"]?.dynamicDisplayText,
+            object["desc"]?.dynamicDisplayText,
+            object["summary"]?.dynamicDisplayText,
+            object["content"]?.dynamicDisplayText,
+            object["message"]?.dynamicDisplayText,
+            object["hint_message"]?.dynamicDisplayText
+        ]) ?? defaultTitle(kind: resolvedKind, isChargeExclusive: isChargeExclusive)
+        let subtitle = firstNonBlankDynamicText([
+            object["sub_title"]?.dynamicDisplayText,
+            object["subtitle"]?.dynamicDisplayText,
+            object["desc"]?.dynamicDisplayText == title ? nil : object["desc"]?.dynamicDisplayText,
+            object["summary"]?.dynamicDisplayText == title ? nil : object["summary"]?.dynamicDisplayText,
+            object["hint_message"]?.dynamicDisplayText == title ? nil : object["hint_message"]?.dynamicDisplayText
+        ])
+        let cover = firstImageURL(from: object)
+        let badge = badgeText(
+            object: object,
+            kind: resolvedKind,
+            isChargeExclusive: isChargeExclusive
+        )
+        let isLocked = lowerSource.contains("blocked")
+            || chargeSignalCorpus.contains { text in
+                let normalized = text.lowercased()
+                return normalized.contains("不可见")
+                    || normalized.contains("暂不可见")
+                    || normalized.contains("需充电")
+                    || normalized.contains("解锁")
+                    || normalized.contains("locked")
+            }
+
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return DynamicPaidContent(
+            kind: resolvedKind,
+            title: title,
+            subtitle: subtitle,
+            cover: cover,
+            jumpURL: jumpURLText,
+            bvid: bvid,
+            aid: firstNonNilInt([
+                object["aid"]?.intValueForDynamicParsing,
+                object["id"]?.intValueForDynamicParsing,
+                object["rid"]?.intValueForDynamicParsing
+            ]),
+            cvid: cvid,
+            badgeText: badge,
+            isChargeExclusive: isChargeExclusive,
+            isLocked: isLocked
+        )
+    }
+
+    private static func inferredKind(
+        source: String,
+        object: [String: DynamicJSONValue]
+    ) -> Kind {
+        if source.contains("article") || source.contains("read") || cvid(from: source) != nil {
+            return .article
+        }
+        if source.contains("course") || source.contains("courses") {
+            return .course
+        }
+        if source.contains("pgc")
+            || source.contains("season")
+            || source.contains("medialist")
+            || source.contains("subscription") {
+            return .collection
+        }
+        if source.contains("archive")
+            || source.contains("video")
+            || source.contains("ugc")
+            || object["bvid"] != nil
+            || object["bvid_str"] != nil {
+            return .video
+        }
+        if object["cvid"] != nil || object["cv_id"] != nil {
+            return .article
+        }
+        return .unknown
+    }
+
+    private static func firstNonNilInt(_ values: [Int?]) -> Int? {
+        values.compactMap { $0 }.first
+    }
+
+    private static func hasTruthyChargeFlag(in object: [String: DynamicJSONValue]) -> Bool {
+        let flagKeys = [
+            "is_upower_exclusive", "is_upower_play", "is_charge", "is_charged",
+            "need_charge", "need_pay", "is_paid", "pay_only", "locked"
+        ]
+        return flagKeys.contains { key in
+            switch object[key] {
+            case .bool(let value):
+                return value
+            case .number(let value):
+                return value != "0"
+            case .string(let value):
+                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return normalized == "1" || normalized == "true" || normalized == "yes"
+            case .object, .array, .null, .none:
+                return false
+            }
+        }
+    }
+
+    private static func isChargeMarker(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        return normalized.contains("upower")
+            || normalized.contains("charge")
+            || normalized.contains("paid")
+            || normalized.contains("exclusive")
+            || normalized.contains("充电")
+            || normalized.contains("付费")
+            || normalized.contains("专属")
+    }
+
+    private static func firstImageURL(from object: [String: DynamicJSONValue]) -> String? {
+        let directKeys = [
+            "cover", "cover_url", "pic", "image", "image_url", "img_src",
+            "thumbnail", "thumb", "bg_img", "background", "poster"
+        ]
+        for key in directKeys {
+            if let url = imageURL(from: object[key]) {
+                return url
+            }
+        }
+        for key in ["covers", "pics", "images", "items"] {
+            if let image = object[key]?.dynamicImageItems.first?.normalizedURL {
+                return image
+            }
+        }
+        for key in ["cover_info", "image", "pic", "content", "card", "item", "resource"] {
+            if let nested = object[key]?.objectValueForDynamicParsing,
+               let url = firstImageURL(from: nested) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private static func imageURL(from value: DynamicJSONValue?) -> String? {
+        guard let value else { return nil }
+        if let text = value.textValueForDynamicParsing {
+            let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).normalizedBiliURL()
+            guard normalized.hasPrefix("http://") || normalized.hasPrefix("https://") else { return nil }
+            return normalized
+        }
+        if let object = value.objectValueForDynamicParsing {
+            return firstImageURL(from: object)
+        }
+        return nil
+    }
+
+    private static func badgeText(
+        object: [String: DynamicJSONValue],
+        kind: Kind,
+        isChargeExclusive: Bool
+    ) -> String {
+        let candidate = firstNonBlankDynamicText([
+            object["badge_text"]?.dynamicDisplayText,
+            object["type_name"]?.dynamicDisplayText,
+            object["label"]?.dynamicDisplayText,
+            object["tag"]?.dynamicDisplayText,
+            nestedText(object, path: ["badge", "text"]),
+            nestedText(object, path: ["badge", "title"]),
+            nestedText(object, path: ["button", "text"])
+        ])
+        if let candidate, isChargeMarker(candidate) {
+            return candidate
+        }
+        if isChargeExclusive {
+            switch kind {
+            case .video:
+                return "充电视频"
+            case .article:
+                return "充电专栏"
+            case .course:
+                return "充电课程"
+            case .collection, .unknown:
+                return "充电专属"
+            }
+        }
+        if let candidate, !candidate.isEmpty {
+            return candidate
+        }
+        switch kind {
+        case .video:
+            return "视频"
+        case .article:
+            return "专栏"
+        case .course:
+            return "课程"
+        case .collection:
+            return "合集"
+        case .unknown:
+            return "动态内容"
+        }
+    }
+
+    private static func defaultTitle(kind: Kind, isChargeExclusive: Bool) -> String {
+        if isChargeExclusive {
+            switch kind {
+            case .video:
+                return "充电视频"
+            case .article:
+                return "充电专栏"
+            case .course:
+                return "充电课程"
+            case .collection, .unknown:
+                return "充电专属内容"
+            }
+        }
+        switch kind {
+        case .video:
+            return "视频"
+        case .article:
+            return "专栏"
+        case .course:
+            return "课程"
+        case .collection:
+            return "合集"
+        case .unknown:
+            return "动态内容"
+        }
+    }
+
+    private static func nestedText(
+        _ object: [String: DynamicJSONValue],
+        path: [String]
+    ) -> String? {
+        guard let first = path.first else { return nil }
+        var value = object[first]
+        for key in path.dropFirst() {
+            value = value?.objectValueForDynamicParsing?[key]
+        }
+        return value?.dynamicDisplayText
+    }
+
+    private static func normalizedJumpURLString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let bvid = bvid(from: trimmed) {
+            return "https://www.bilibili.com/video/\(bvid)"
+        }
+        if let cvid = cvid(from: trimmed) {
+            return "https://www.bilibili.com/read/cv\(cvid)"
+        }
+        let normalized = trimmed.normalizedBiliURL()
+        if normalized.hasPrefix("http://") || normalized.hasPrefix("https://") {
+            return normalized
+        }
+        return nil
+    }
+
+    private static func bvid(from text: String?) -> String? {
+        guard let text,
+              let range = text.range(of: #"BV[A-Za-z0-9]{10,}"#, options: .regularExpression)
+        else { return nil }
+        return String(text[range])
+    }
+
+    private static func cvid(from text: String?) -> Int? {
+        guard let text else { return nil }
+        let patterns = [
+            #"cv(\d+)"#,
+            #"read/(?:mobile/)?(\d+)"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  match.numberOfRanges >= 2,
+                  let range = Range(match.range(at: 1), in: text),
+                  let value = Int(text[range])
+            else { continue }
+            return value
+        }
+        return nil
     }
 }
 

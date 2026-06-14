@@ -411,20 +411,25 @@ struct SearchResultSkeletonRow: View {
 
 struct LiveRoomSkeletonCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SkeletonAspectBlock(cornerRadius: 12)
+        VStack(alignment: .leading, spacing: 10) {
+            SkeletonAspectBlock(cornerRadius: 15)
 
-            SkeletonBlock(height: 14, shape: .rounded(5))
-            SkeletonBlock(width: 112, height: 14, shape: .rounded(5))
+            VStack(alignment: .leading, spacing: 7) {
+                SkeletonBlock(height: 18, shape: .rounded(5))
+                SkeletonBlock(width: 206, height: 17, shape: .rounded(5))
 
-            HStack(spacing: 6) {
-                SkeletonBlock(width: 20, height: 20, shape: .circle)
-                SkeletonBlock(width: 84, height: 11, shape: .capsule)
+                HStack(spacing: 6) {
+                    SkeletonBlock(width: 24, height: 24, shape: .circle)
+                    SkeletonBlock(width: 148, height: 12, shape: .capsule)
+                }
+                .padding(.top, 2)
+
+                SkeletonBlock(width: 112, height: 10, shape: .capsule)
             }
-
-            SkeletonBlock(width: 96, height: 10, shape: .capsule)
+            .padding(.horizontal, 2)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.vertical, 14)
         .accessibilityLabel("正在加载直播间")
     }
 }

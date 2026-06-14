@@ -11,8 +11,7 @@ struct BiliWebLoginView: View {
                 onLoginCookies(cookies)
                 dismiss()
             }
-            .navigationTitle("网页登录")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {

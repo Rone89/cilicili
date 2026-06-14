@@ -2194,6 +2194,12 @@ actor VideoPreloadCenter {
     }
 }
 
+nonisolated struct VideoRangeCacheStatistics: Sendable {
+    let entryCount: Int
+    let estimatedBytes: Int
+    let byteCapacity: Int
+}
+
 actor VideoRangeCache {
     static let shared = VideoRangeCache()
 
@@ -2338,7 +2344,33 @@ actor VideoRangeCache {
             indexCachedRange(url: url, range: range, fileURL: fileURL)
             estimatedCacheBytes = (estimatedCacheBytes ?? 0) + Int64(data.count)
             scheduleTrimIfNeeded()
+            ResourceCacheAutoTrim.schedule()
         } catch {}
+    }
+
+    func statistics() -> VideoRangeCacheStatistics {
+        let entries = cacheEntries()
+        let totalSize = entries.reduce(Int64(0)) { $0 + $1.size }
+        estimatedCacheBytes = totalSize
+        return VideoRangeCacheStatistics(
+            entryCount: entries.count,
+            estimatedBytes: min(Int64(Int.max), totalSize).intValue,
+            byteCapacity: min(Int64(Int.max), maxCacheBytes).intValue
+        )
+    }
+
+    func clear() {
+        trimTask?.cancel()
+        trimTask = nil
+        try? fileManager.removeItem(at: rootURL)
+        cachedRangesByURLHash.removeAll(keepingCapacity: true)
+        pendingRangesByURLHash.removeAll(keepingCapacity: true)
+        estimatedCacheBytes = 0
+        storeCountSinceTrim = 0
+    }
+
+    func trim(to targetBytes: Int64) {
+        trimCache(to: max(0, targetBytes))
     }
 
     private func containingCachedData(url: URL, range: HTTPByteRange) -> Data? {
@@ -2462,6 +2494,10 @@ actor VideoRangeCache {
     }
 
     private func trimIfNeeded() {
+        trimCache(to: maxCacheBytes)
+    }
+
+    private func trimCache(to targetBytes: Int64) {
         guard let files = try? fileManager.contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
@@ -2475,16 +2511,36 @@ actor VideoRangeCache {
         var totalSize = entries.reduce(Int64(0)) { $0 + $1.size }
         estimatedCacheBytes = totalSize
         storeCountSinceTrim = 0
-        guard totalSize > maxCacheBytes else { return }
+        guard totalSize > targetBytes else { return }
 
         for entry in entries.sorted(by: { $0.date < $1.date }) {
             try? fileManager.removeItem(at: entry.url)
             totalSize -= entry.size
-            if totalSize <= maxCacheBytes { break }
+            if totalSize <= targetBytes { break }
         }
         cachedRangesByURLHash.removeAll(keepingCapacity: true)
         pendingRangesByURLHash.removeAll(keepingCapacity: true)
         estimatedCacheBytes = totalSize
+    }
+
+    private func cacheEntries() -> [(url: URL, date: Date, size: Int64)] {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+        ) else { return [] }
+
+        return files.compactMap { url in
+            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else {
+                return nil
+            }
+            return (url, values.contentModificationDate ?? .distantPast, Int64(values.fileSize ?? 0))
+        }
+    }
+}
+
+private extension Int64 {
+    var intValue: Int {
+        Int(self)
     }
 }
 
@@ -2661,6 +2717,7 @@ struct CachedRemoteImage<Content: View, Placeholder: View>: View {
 
     @StateObject private var loader = CachedRemoteImageLoader()
     @State private var reloadToken = 0
+    @State private var automaticRetryTask: Task<Void, Never>?
 
     init(
         url: URL?,
@@ -2712,6 +2769,9 @@ struct CachedRemoteImage<Content: View, Placeholder: View>: View {
             }
         }
         .animation(animatesAppearance ? .easeInOut(duration: 0.16) : nil, value: loader.image != nil)
+        .onChange(of: loader.phase) { _, phase in
+            scheduleAutomaticRetryIfNeeded(for: phase)
+        }
         .task(id: loadTaskIdentity) {
             await loader.load(
                 url: url,
@@ -2723,6 +2783,8 @@ struct CachedRemoteImage<Content: View, Placeholder: View>: View {
             )
         }
         .onDisappear {
+            automaticRetryTask?.cancel()
+            automaticRetryTask = nil
             loader.cancel()
             if loader.image == nil {
                 loader.reset()
@@ -2741,8 +2803,30 @@ struct CachedRemoteImage<Content: View, Placeholder: View>: View {
     }
 
     private func retry() {
+        automaticRetryTask?.cancel()
+        automaticRetryTask = nil
         loader.reset()
         reloadToken &+= 1
+    }
+
+    private func scheduleAutomaticRetryIfNeeded(for phase: RemoteImageLoadingPhase) {
+        guard phase == .failed,
+              reloadToken == 0,
+              automaticRetryTask == nil
+        else {
+            if phase != .failed {
+                automaticRetryTask?.cancel()
+                automaticRetryTask = nil
+            }
+            return
+        }
+        automaticRetryTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled else { return }
+            loader.reset()
+            reloadToken &+= 1
+            automaticRetryTask = nil
+        }
     }
 }
 
@@ -2930,7 +3014,7 @@ actor RemoteImageCache {
     private var diskTrimTask: Task<Void, Never>?
     private var session: URLSession
     private let maximumInFlightLoads = 18
-    private let failedLoadTTL: TimeInterval = 45
+    private let failedLoadTTL: TimeInterval = 2
     private let diskTrimDelayNanoseconds: UInt64 = 1_500_000_000
 
     private init() {
@@ -3106,6 +3190,7 @@ actor RemoteImageCache {
             storedKeys.insert(key)
             stores += 1
             scheduleDiskTrimIfNeeded()
+            ResourceCacheAutoTrim.schedule()
         } else {
             diskRequests[key] = nil
             failedLoads[key] = Date()

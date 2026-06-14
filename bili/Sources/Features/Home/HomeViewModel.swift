@@ -31,29 +31,46 @@ private enum HomeFeedSnapshotCache {
         directoryHint: .isDirectory
     )
 
-    static func load(mode: HomeFeedMode, guestModeEnabled: Bool) -> [VideoItem]? {
-        if let snapshot = loadDiskSnapshot(mode: mode, guestModeEnabled: guestModeEnabled) {
+    static func load(
+        mode: HomeFeedMode,
+        guestModeEnabled: Bool,
+        recommendSource: HomeRecommendFeedSourcePreference
+    ) -> [VideoItem]? {
+        if let snapshot = loadDiskSnapshot(
+            mode: mode,
+            guestModeEnabled: guestModeEnabled,
+            recommendSource: recommendSource
+        ) {
             return snapshot.videos.map(\.videoItem)
         }
         guard let data = UserDefaults.standard.data(forKey: legacyKey(mode: mode, guestModeEnabled: guestModeEnabled)),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
               Date().timeIntervalSince(snapshot.savedAt) < maxAge
         else { return nil }
-        save(snapshot: snapshot, mode: mode, guestModeEnabled: guestModeEnabled)
+        save(snapshot: snapshot, mode: mode, guestModeEnabled: guestModeEnabled, recommendSource: recommendSource)
         UserDefaults.standard.removeObject(forKey: legacyKey(mode: mode, guestModeEnabled: guestModeEnabled))
         return snapshot.videos.map(\.videoItem)
     }
 
-    static func save(videos: [VideoItem], mode: HomeFeedMode, guestModeEnabled: Bool) {
+    static func save(
+        videos: [VideoItem],
+        mode: HomeFeedMode,
+        guestModeEnabled: Bool,
+        recommendSource: HomeRecommendFeedSourcePreference
+    ) {
         let snapshot = Snapshot(
             savedAt: Date(),
             videos: videos.map(CachedVideo.init(video:))
         )
-        save(snapshot: snapshot, mode: mode, guestModeEnabled: guestModeEnabled)
+        save(snapshot: snapshot, mode: mode, guestModeEnabled: guestModeEnabled, recommendSource: recommendSource)
     }
 
-    private static func loadDiskSnapshot(mode: HomeFeedMode, guestModeEnabled: Bool) -> Snapshot? {
-        let url = snapshotURL(mode: mode, guestModeEnabled: guestModeEnabled)
+    private static func loadDiskSnapshot(
+        mode: HomeFeedMode,
+        guestModeEnabled: Bool,
+        recommendSource: HomeRecommendFeedSourcePreference
+    ) -> Snapshot? {
+        let url = snapshotURL(mode: mode, guestModeEnabled: guestModeEnabled, recommendSource: recommendSource)
         guard let data = try? Data(contentsOf: url),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data)
         else { return nil }
@@ -64,19 +81,31 @@ private enum HomeFeedSnapshotCache {
         return snapshot
     }
 
-    private static func save(snapshot: Snapshot, mode: HomeFeedMode, guestModeEnabled: Bool) {
+    private static func save(
+        snapshot: Snapshot,
+        mode: HomeFeedMode,
+        guestModeEnabled: Bool,
+        recommendSource: HomeRecommendFeedSourcePreference
+    ) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         let fileManager = FileManager.default
         try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         try? data.write(
-            to: snapshotURL(mode: mode, guestModeEnabled: guestModeEnabled),
+            to: snapshotURL(mode: mode, guestModeEnabled: guestModeEnabled, recommendSource: recommendSource),
             options: [.atomic]
         )
         pruneExpiredSnapshots()
     }
 
-    private static func snapshotURL(mode: HomeFeedMode, guestModeEnabled: Bool) -> URL {
-        directoryURL.appending(path: "\(mode.rawValue)-guest-\(guestModeEnabled ? "1" : "0").json")
+    private static func snapshotURL(
+        mode: HomeFeedMode,
+        guestModeEnabled: Bool,
+        recommendSource: HomeRecommendFeedSourcePreference
+    ) -> URL {
+        let source = mode == .recommend ? recommendSource.rawValue : "default"
+        return directoryURL.appending(
+            path: "\(mode.rawValue)-source-\(source)-guest-\(guestModeEnabled ? "1" : "0").json"
+        )
     }
 
     private static func legacyKey(mode: HomeFeedMode, guestModeEnabled: Bool) -> String {
@@ -311,13 +340,14 @@ final class HomeViewModel: ObservableObject {
     @Published var isRefreshing = false
     @Published var isUserRefreshing = false
 
+    private static let userRefreshRecommendationCount = 10
     private let api: BiliAPIClient
     private let libraryStore: LibraryStore
     private var freshIndex = 0
     private var popularPage = 1
     private var requestRevision = 0
     private var lastUserRefreshDate: Date?
-    private var privacyCancellable: AnyCancellable?
+    private var recommendContextCancellable: AnyCancellable?
     private var imagePrefetchTask: Task<Void, Never>?
     private var playbackPreloadTask: Task<Void, Never>?
     private var videoCellCache: [String: HomeVideoCellCacheEntry] = [:]
@@ -330,12 +360,17 @@ final class HomeViewModel: ObservableObject {
         self.api = api
         self.libraryStore = libraryStore
         mode = initialMode
-        privacyCancellable = libraryStore.$guestModeEnabled
-            .removeDuplicates()
+        recommendContextCancellable = Publishers.CombineLatest(
+            libraryStore.$guestModeEnabled,
+            libraryStore.$homeRecommendFeedSourcePreference
+        )
+            .removeDuplicates { lhs, rhs in
+                lhs.0 == rhs.0 && lhs.1 == rhs.1
+            }
             .dropFirst()
             .sink { [weak self] _ in
                 guard let self else { return }
-                Task { await self.reloadForGuestModeChange() }
+                Task { await self.reloadForRecommendContextChange() }
             }
     }
 
@@ -371,10 +406,13 @@ final class HomeViewModel: ObservableObject {
         defer {
             isUserRefreshing = false
         }
-        await refresh()
+        await refresh(preservingExistingRecommendations: true)
     }
 
-    func refresh(resetCursor shouldResetCursor: Bool = false) async {
+    func refresh(
+        resetCursor shouldResetCursor: Bool = false,
+        preservingExistingRecommendations shouldPreserveExistingRecommendations: Bool = false
+    ) async {
         let previousVideos = videos
         let previousIDs = previousVideos.map(\.id)
         requestRevision += 1
@@ -392,12 +430,19 @@ final class HomeViewModel: ObservableObject {
             advanceRefreshCursor()
         }
         do {
-            let refreshedVideos = try await fetchFreshPage(replacing: previousIDs)
+            let refreshedVideos = try await fetchFreshPage(
+                replacing: previousIDs,
+                minimumFreshCount: shouldPreserveExistingRecommendations ? Self.userRefreshRecommendationCount : nil
+            )
             guard revision == requestRevision else { return }
             if previousVideos.isEmpty {
                 await prewarmInitialImagesBeforePublishing(refreshedVideos)
             }
-            replaceVideos(refreshedVideos, previousVideos: previousVideos)
+            replaceVideos(
+                refreshedVideos,
+                previousVideos: previousVideos,
+                preservingExistingRecommendations: shouldPreserveExistingRecommendations
+            )
             persistCurrentSnapshot()
             state = .loaded
         } catch {
@@ -406,9 +451,10 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func reloadForGuestModeChange() async {
+    func reloadForRecommendContextChange() async {
         guard mode == .recommend else { return }
         updateFeed([])
+        restoreCachedVideosIfAvailable()
         await refresh(resetCursor: true)
     }
 
@@ -449,7 +495,10 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    private func fetchFreshPage(replacing previousIDs: [String]) async throws -> [VideoItem] {
+    private func fetchFreshPage(
+        replacing previousIDs: [String],
+        minimumFreshCount: Int? = nil
+    ) async throws -> [VideoItem] {
         switch mode {
         case .popular:
             return try await api.fetchPopularVideos(page: popularPage)
@@ -457,7 +506,14 @@ final class HomeViewModel: ObservableObject {
             if usesGuestRecommendDiversity {
                 return try await fetchGuestRecommendPage(
                     excluding: Set(previousIDs),
-                    minimumFreshCount: previousIDs.isEmpty ? 14 : 10,
+                    minimumFreshCount: minimumFreshCount ?? (previousIDs.isEmpty ? 14 : 10),
+                    maximumAttempts: 5
+                )
+            }
+            if let minimumFreshCount {
+                return try await fetchUniqueRecommendRefreshPage(
+                    excluding: Set(previousIDs),
+                    minimumFreshCount: minimumFreshCount,
                     maximumAttempts: 5
                 )
             }
@@ -535,6 +591,41 @@ final class HomeViewModel: ObservableObject {
         return merged
     }
 
+    private func fetchUniqueRecommendRefreshPage(
+        excluding excludedIDs: Set<String>,
+        minimumFreshCount: Int,
+        maximumAttempts: Int
+    ) async throws -> [VideoItem] {
+        var freshVideos = [VideoItem]()
+        var freshIDs = Set<String>()
+        var lastRawPage = [VideoItem]()
+
+        for attempt in 0..<maximumAttempts {
+            if attempt > 0 {
+                freshIndex += 1
+            }
+            let page = try await api.fetchRecommendFeed(freshIndex: freshIndex)
+            lastRawPage = page
+
+            for video in page where !video.id.isEmpty {
+                guard !excludedIDs.contains(video.id),
+                      freshIDs.insert(video.id).inserted
+                else { continue }
+                freshVideos.append(video)
+                if freshVideos.count >= minimumFreshCount {
+                    break
+                }
+            }
+
+            if freshVideos.count >= minimumFreshCount {
+                break
+            }
+        }
+
+        guard !freshVideos.isEmpty else { return lastRawPage }
+        return Array(freshVideos.prefix(minimumFreshCount))
+    }
+
     private func hasVisibleChange(in page: [VideoItem], comparedTo previousIDs: [String]) -> Bool {
         guard !page.isEmpty else { return false }
         guard !previousIDs.isEmpty else { return true }
@@ -543,8 +634,14 @@ final class HomeViewModel: ObservableObject {
         return newFront != oldFront
     }
 
-    private func replaceVideos(_ newVideos: [VideoItem], previousVideos: [VideoItem]) {
-        let mergedVideos = mergedRefreshVideos(newVideos, previousVideos: previousVideos)
+    private func replaceVideos(
+        _ newVideos: [VideoItem],
+        previousVideos: [VideoItem],
+        preservingExistingRecommendations shouldPreserveExistingRecommendations: Bool = false
+    ) {
+        let mergedVideos = shouldPreserveExistingRecommendations
+            ? prependFreshVideos(newVideos, to: previousVideos)
+            : mergedRefreshVideos(newVideos, previousVideos: previousVideos)
         updateFeed(mergedVideos)
         recordGuestRecommendExposure(mergedVideos)
         scheduleImagePrefetch(for: mergedVideos)
@@ -560,6 +657,15 @@ final class HomeViewModel: ObservableObject {
             .prefix(50)
             .filter { seen.insert($0.id).inserted }
         return fresh + retainedTail
+    }
+
+    private func prependFreshVideos(_ fresh: [VideoItem], to previousVideos: [VideoItem]) -> [VideoItem] {
+        guard mode == .recommend, !fresh.isEmpty, !previousVideos.isEmpty else {
+            return fresh.isEmpty ? previousVideos : fresh
+        }
+        var seen = Set(fresh.map(\.id))
+        let retainedVideos = previousVideos.filter { seen.insert($0.id).inserted }
+        return fresh + retainedVideos
     }
 
     private func resetCursor() {
@@ -619,7 +725,11 @@ final class HomeViewModel: ObservableObject {
 
     private func restoreCachedVideosIfAvailable() {
         guard videos.isEmpty else { return }
-        guard let cachedVideos = HomeFeedSnapshotCache.load(mode: mode, guestModeEnabled: libraryStore.guestModeEnabled),
+        guard let cachedVideos = HomeFeedSnapshotCache.load(
+            mode: mode,
+            guestModeEnabled: libraryStore.guestModeEnabled,
+            recommendSource: libraryStore.homeRecommendFeedSourcePreference
+        ),
               !cachedVideos.isEmpty
         else { return }
         updateFeed(cachedVideos)
@@ -649,7 +759,8 @@ final class HomeViewModel: ObservableObject {
         HomeFeedSnapshotCache.save(
             videos: Array(videos.prefix(48)),
             mode: mode,
-            guestModeEnabled: libraryStore.guestModeEnabled
+            guestModeEnabled: libraryStore.guestModeEnabled,
+            recommendSource: libraryStore.homeRecommendFeedSourcePreference
         )
     }
 
@@ -730,11 +841,13 @@ final class HomeViewModel: ObservableObject {
         }
 
         for video in videos.prefix(limit) {
-            let coverHeight = Int(Double(coverTargetPixelSize) * 9.0 / 16.0)
             if let source = video.pic?.normalizedBiliURL(),
-               let url = URL(string: source.biliCoverThumbnailURL(width: coverTargetPixelSize, height: coverHeight)),
+               let coverSource = homeCoverImageSource(
+                source: source,
+                targetPixelSize: coverTargetPixelSize
+               ),
                seenCovers.insert(source).inserted {
-                coverSources.append(RemoteImageSource(url: url, fallbackURL: URL(string: source)))
+                coverSources.append(coverSource)
             }
             if let source = video.owner?.face?.normalizedBiliURL(),
                let url = URL(string: source.biliAvatarThumbnailURL(size: avatarTargetPixelSize)),
@@ -744,6 +857,19 @@ final class HomeViewModel: ObservableObject {
         }
 
         return (coverSources, avatarSources, coverTargetPixelSize, avatarTargetPixelSize)
+    }
+
+    private func homeCoverImageSource(source: String, targetPixelSize: Int) -> RemoteImageSource? {
+        let urlString: String
+        switch libraryStore.homeFeedLayout {
+        case .singleColumn:
+            urlString = source.biliImageThumbnailURL(maxSide: targetPixelSize)
+        case .doubleColumn:
+            let coverHeight = Int(Double(targetPixelSize) * 9.0 / 16.0)
+            urlString = source.biliCoverThumbnailURL(width: targetPixelSize, height: coverHeight)
+        }
+        guard let url = URL(string: urlString) else { return nil }
+        return RemoteImageSource(url: url, fallbackURL: URL(string: source))
     }
 
     private func schedulePlaybackPreload(for videos: [VideoItem], initialDelay: TimeInterval) {
@@ -757,7 +883,7 @@ final class HomeViewModel: ObservableObject {
             return
         }
         let candidates = Array(videos
-            .filter { $0.cid != nil && !$0.bvid.isEmpty }
+            .filter { $0.cid != nil && !$0.bvid.isEmpty && !$0.bvid.hasPrefix("av") }
             .prefix(candidateLimit))
         guard !candidates.isEmpty else {
             playbackPreloadTask = nil

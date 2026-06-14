@@ -106,6 +106,7 @@ nonisolated struct LiveDanmakuClientContext: Sendable {
 
 nonisolated final class BiliAPIClient {
     private let baseURL = URL(string: "https://api.bilibili.com")!
+    private let appURL = URL(string: "https://app.bilibili.com")!
     private let passportURL = URL(string: "https://passport.bilibili.com")!
     private let liveURL = URL(string: "https://api.live.bilibili.com")!
     private let commentURL = URL(string: "https://comment.bilibili.com")!
@@ -125,6 +126,8 @@ nonisolated final class BiliAPIClient {
         let csrfToken: String?
         let currentUserMID: Int?
         let preferredVideoQuality: Int?
+        let playbackStreamSourcePreference: PlaybackStreamSourcePreference
+        let homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
         let guestModeEnabled: Bool
     }
 
@@ -149,6 +152,8 @@ nonisolated final class BiliAPIClient {
             csrfToken: sessionStore.csrfToken(),
             currentUserMID: sessionStore.user?.mid,
             preferredVideoQuality: libraryStore.preferredVideoQuality,
+            playbackStreamSourcePreference: libraryStore.playbackStreamSourcePreference,
+            homeRecommendFeedSourcePreference: libraryStore.homeRecommendFeedSourcePreference,
             guestModeEnabled: libraryStore.guestModeEnabled
         )
     }
@@ -166,6 +171,11 @@ nonisolated final class BiliAPIClient {
     private func preferredVideoQuality() async -> Int? {
         let snapshot = await requestSnapshot()
         return snapshot.preferredVideoQuality
+    }
+
+    private func playbackStreamSourcePreference() async -> PlaybackStreamSourcePreference {
+        let snapshot = await requestSnapshot()
+        return snapshot.playbackStreamSourcePreference
     }
 
     private func isLoggedIn() async -> Bool {
@@ -190,33 +200,18 @@ nonisolated final class BiliAPIClient {
 
     func fetchRecommendFeed(freshIndex: Int = 0) async throws -> [VideoItem] {
         let snapshot = await requestSnapshot()
-        let taskKey = "recommend|\(freshIndex)|guest-\(snapshot.guestModeEnabled ? "1" : "0")"
+        let feedSource = snapshot.homeRecommendFeedSourcePreference
+        let taskKey = "recommend|\(feedSource.rawValue)|\(freshIndex)|guest-\(snapshot.guestModeEnabled ? "1" : "0")"
         if let task = await state.videoListTask(for: taskKey) {
             return try await task.value
         }
         let task = Task<[VideoItem], Error>(priority: .userInitiated) { [self] in
-            let keys = try await fetchWBIKeys(priority: .userInitiated)
-            let signed = WBISigner.sign([
-                "version": "1",
-                "homepage_ver": "1",
-                "feed_version": "V8",
-                "ps": "20",
-                "fresh_idx": String(freshIndex),
-                "brush": String(freshIndex),
-                "fresh_idx_1h": String(freshIndex),
-                "fresh_type": "4"
-            ], keys: keys)
-
-            let response: BiliResponse<RecommendFeedData> = try await get(
-                base: baseURL,
-                path: "/x/web-interface/wbi/index/top/feed/rcmd",
-                query: signed,
-                cookieHeader: await guestModeCookieHeader(),
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                responseCachePolicy: .brief
-            )
-            guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-            return response.payload?.item?.compactMap { $0.asVideoItem() } ?? []
+            switch feedSource {
+            case .web:
+                return try await fetchWebRecommendFeed(freshIndex: freshIndex)
+            case .app:
+                return try await fetchAppRecommendFeed(freshIndex: freshIndex, preferredVideoQuality: snapshot.preferredVideoQuality)
+            }
         }
         await state.setVideoListTask(task, for: taskKey)
         do {
@@ -227,6 +222,94 @@ nonisolated final class BiliAPIClient {
             await state.clearVideoListTask(for: taskKey)
             throw error
         }
+    }
+
+    private func fetchWebRecommendFeed(freshIndex: Int) async throws -> [VideoItem] {
+        let keys = try await fetchWBIKeys(priority: .userInitiated)
+        let signed = WBISigner.sign([
+            "version": "1",
+            "homepage_ver": "1",
+            "feed_version": "V8",
+            "ps": "20",
+            "fresh_idx": String(freshIndex),
+            "brush": String(freshIndex),
+            "fresh_idx_1h": String(freshIndex),
+            "fresh_type": "4"
+        ], keys: keys)
+
+        let response: BiliResponse<RecommendFeedData> = try await get(
+            base: baseURL,
+            path: "/x/web-interface/wbi/index/top/feed/rcmd",
+            query: signed,
+            cookieHeader: await guestModeCookieHeader(),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            responseCachePolicy: .brief
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        return response.payload?.feedItems.compactMap { $0.asVideoItem() } ?? []
+    }
+
+    private func fetchAppRecommendFeed(freshIndex: Int, preferredVideoQuality: Int?) async throws -> [VideoItem] {
+        let requestedIndex = freshIndex <= 0 ? 0 : await state.appRecommendFeedIndex(defaulting: freshIndex)
+        let response: BiliResponse<RecommendFeedData> = try await get(
+            base: appURL,
+            path: "/x/v2/feed/index",
+            query: [
+                "idx": String(requestedIndex),
+                "flush": requestedIndex == 0 ? "1" : "0",
+                "column": "4",
+                "pull": requestedIndex == 0 ? "1" : "0",
+                "device": "phone",
+                "mobi_app": "iphone",
+                "platform": "ios",
+                "build": "70000100",
+                "fnval": "4048",
+                "qn": String(preferredVideoQuality ?? 112),
+                "fourk": "1"
+            ],
+            referer: "https://app.bilibili.com",
+            userAgent: Self.mobileUserAgent,
+            cookieHeader: await guestModeCookieHeader(),
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            responseCachePolicy: .brief
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let payload = response.payload else { return [] }
+        await state.setAppRecommendFeedIndex(payload.appNextIndex(after: requestedIndex))
+        let videos = payload.feedItems.compactMap { $0.asVideoItem() }
+        return await hydrateAppRecommendFeedIfNeeded(videos)
+    }
+
+    private func hydrateAppRecommendFeedIfNeeded(_ videos: [VideoItem]) async -> [VideoItem] {
+        let hydrationCandidates = Array(videos.enumerated().filter { _, video in
+            video.aid != nil && (video.pubdate == nil || video.owner?.face == nil)
+        }.prefix(10))
+        guard !hydrationCandidates.isEmpty else { return videos }
+
+        let hydratedPairs = await withTaskGroup(of: (Int, VideoItem)?.self) { group in
+            for (index, video) in hydrationCandidates {
+                guard let aid = video.aid else { continue }
+                group.addTask { [self] in
+                    guard let fullDetail = try? await fetchVideoDetail(aid: aid) else { return nil }
+                    return (index, video.mergingFilledValues(from: fullDetail))
+                }
+            }
+
+            var pairs = [(Int, VideoItem)]()
+            for await pair in group {
+                if let pair {
+                    pairs.append(pair)
+                }
+            }
+            return pairs
+        }
+
+        guard !hydratedPairs.isEmpty else { return videos }
+        var mergedVideos = videos
+        for (index, video) in hydratedPairs where mergedVideos.indices.contains(index) {
+            mergedVideos[index] = video
+        }
+        return mergedVideos
     }
 
     func fetchPopularVideos(page: Int = 1) async throws -> [VideoItem] {
@@ -765,7 +848,7 @@ nonisolated final class BiliAPIClient {
             audioLanguage: "default",
             fnval: "4048",
             fnver: "0",
-            platform: "pc",
+            platform: snapshot.playbackStreamSourcePreference.cachePlatform,
             prefersProgressiveFastStart: false,
             supplementsQualities: supplementsQualities
         )
@@ -805,7 +888,12 @@ nonisolated final class BiliAPIClient {
             userMID: snapshot.currentUserMID,
             guestModeEnabled: snapshot.guestModeEnabled
         )
-        return await playURLCache.playableFallback(bvid: bvid, cid: cid, scope: scope)
+        return await playURLCache.playableFallback(
+            bvid: bvid,
+            cid: cid,
+            platform: snapshot.playbackStreamSourcePreference.cachePlatform,
+            scope: scope
+        )
     }
 
     private func fetchPlayURLUncached(
@@ -823,7 +911,9 @@ nonisolated final class BiliAPIClient {
         let anonymousCookieHeader = snapshot.anonymousCookieHeader
         let playCookieHeader = snapshot.cookieHeader
         let requestedQuality = preferredQuality ?? snapshot.preferredVideoQuality ?? qn
-        let query = playURLQuery(bvid: bvid, cid: cid, qn: requestedQuality)
+        let streamSource = snapshot.playbackStreamSourcePreference
+        let query = playURLQuery(bvid: bvid, cid: cid, qn: requestedQuality, streamSource: streamSource)
+        let playURLUserAgent = userAgent(for: streamSource)
         var lastError: Error?
         var bestPlayableData: PlayURLData?
 
@@ -845,7 +935,7 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: requestedQuality,
-                cookieMode: "auth-wbi",
+                cookieMode: "auth-wbi-\(streamSource.cachePlatform)",
                 start: wbiStageStart
             ) { [self] in
                 let keys = try await fetchWBIKeys(priority: .userInitiated)
@@ -857,7 +947,8 @@ nonisolated final class BiliAPIClient {
                     referer: referer,
                     cookieHeader: playCookieHeader,
                     stagePrefix: "wbiPrimary",
-                    cookieModePrefix: "auth-wbi",
+                    cookieModePrefix: "auth-wbi-\(streamSource.cachePlatform)",
+                    streamSource: streamSource,
                     priority: .userInitiated
                 )
             }
@@ -871,7 +962,8 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 referer: referer,
-                cookieHeader: playCookieHeader
+                cookieHeader: playCookieHeader,
+                streamSource: streamSource
             )
             logPlayURLStage("wbiPrimarySupplemented", bvid: bvid, cid: cid, start: wbiStageStart, data: supplemented)
             if supplemented.highestPlayableQuality > playable.highestPlayableQuality {
@@ -894,7 +986,7 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: requestedQuality,
-                cookieMode: "auth-legacy",
+                cookieMode: "auth-legacy-\(streamSource.cachePlatform)",
                 start: legacyStageStart
             ) { [self] in
                 let response: BiliResponse<PlayURLData> = try await get(
@@ -902,7 +994,7 @@ nonisolated final class BiliAPIClient {
                     path: "/x/player/playurl",
                     query: query,
                     referer: referer,
-                    userAgent: Self.webUserAgent,
+                    userAgent: playURLUserAgent,
                     cookieHeader: playCookieHeader
                 )
                 return try requirePlayURLData(response, requirePlayablePayload: true)
@@ -917,7 +1009,8 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 referer: referer,
-                cookieHeader: playCookieHeader
+                cookieHeader: playCookieHeader,
+                streamSource: streamSource
             )
             logPlayURLStage("legacyPrimarySupplemented", bvid: bvid, cid: cid, start: legacyStageStart, data: supplemented)
             if supplemented.highestPlayableQuality > (bestPlayableData?.highestPlayableQuality ?? 0) {
@@ -938,14 +1031,15 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: requestedQuality,
-                cookieMode: "anon-metadata",
+                cookieMode: "anon-metadata-\(streamSource.cachePlatform)",
                 start: metadataStageStart
             ) { [self] in
                 try await fetchAnonymousPlayURLMetadata(
                     bvid: bvid,
                     cid: cid,
                     referer: referer,
-                    query: query
+                    query: query,
+                    streamSource: streamSource
                 )
             }
             logPlayURLStage("anonymousMetadata", bvid: bvid, cid: cid, start: metadataStageStart, data: metadata)
@@ -966,7 +1060,7 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: requestedQuality,
-                cookieMode: "anon-legacy",
+                cookieMode: "anon-legacy-\(streamSource.cachePlatform)",
                 start: legacyAnonymousStageStart
             ) { [self] in
                 let response: BiliResponse<PlayURLData> = try await get(
@@ -974,7 +1068,7 @@ nonisolated final class BiliAPIClient {
                     path: "/x/player/playurl",
                     query: query,
                     referer: referer,
-                    userAgent: Self.webUserAgent,
+                    userAgent: playURLUserAgent,
                     cookieHeader: anonymousCookieHeader
                 )
                 return try requirePlayURLData(response, requirePlayablePayload: true)
@@ -1000,7 +1094,7 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: requestedQuality,
-                cookieMode: "auth-webpage",
+                cookieMode: "auth-webpage-\(streamSource.cachePlatform)",
                 start: webpageStageStart
             ) { [self] in
                 try await fetchWebPagePlayInfo(
@@ -1037,21 +1131,22 @@ nonisolated final class BiliAPIClient {
     ) async throws -> PlayURLData {
         let stageStart = CACurrentMediaTime()
         let referer = "https://www.bilibili.com/video/\(bvid)"
-        let storedPreferredQuality = await preferredVideoQuality()
-        let requestedQuality = preferredQuality ?? storedPreferredQuality ?? 112
+        let snapshot = await requestSnapshot()
+        let requestedQuality = preferredQuality ?? snapshot.preferredVideoQuality ?? 112
+        let streamSource = snapshot.playbackStreamSourcePreference
         let data = try await runCachedPlayURLStage(
             "webpagePlayInfo",
             bvid: bvid,
             cid: cid,
             qn: requestedQuality,
-            cookieMode: "auth-webpage",
+            cookieMode: "auth-webpage-\(streamSource.cachePlatform)",
             start: stageStart
         ) { [self] in
             try await fetchWebPagePlayInfo(
                 bvid: bvid,
                 page: page,
                 referer: referer,
-                cookieHeader: await cookieHeader()
+                cookieHeader: snapshot.cookieHeader
             )
         }
         logPlayURLStage("webpagePlayInfo", bvid: bvid, cid: cid, start: stageStart, data: data)
@@ -1080,7 +1175,7 @@ nonisolated final class BiliAPIClient {
             audioLanguage: "default",
             fnval: "4048",
             fnver: "0",
-            platform: "startup",
+            platform: "startup-\(snapshot.playbackStreamSourcePreference.cachePlatform)",
             prefersProgressiveFastStart: false,
             supplementsQualities: false
         )
@@ -1128,7 +1223,7 @@ nonisolated final class BiliAPIClient {
             audioLanguage: "default",
             fnval: "4048",
             fnver: "0",
-            platform: "startup",
+            platform: "startup-\(snapshot.playbackStreamSourcePreference.cachePlatform)",
             prefersProgressiveFastStart: false,
             supplementsQualities: false
         )
@@ -1385,6 +1480,15 @@ nonisolated final class BiliAPIClient {
         await state.cancelPlayURLStage(cacheKey)
     }
 
+    private nonisolated func userAgent(for streamSource: PlaybackStreamSourcePreference) -> String {
+        switch streamSource {
+        case .web:
+            return Self.webUserAgent
+        case .app:
+            return Self.mobileUserAgent
+        }
+    }
+
     private func preferredStartupCandidate(_ lhs: PlayURLData?, _ rhs: PlayURLData) -> PlayURLData {
         guard let lhs else { return rhs }
         return rhs.highestPlayableQuality > lhs.highestPlayableQuality ? rhs : lhs
@@ -1409,15 +1513,16 @@ nonisolated final class BiliAPIClient {
     ) async throws -> PlayURLData {
         let stageStart = CACurrentMediaTime()
         let referer = "https://www.bilibili.com/video/\(bvid)"
-        let storedPreferredQuality = await preferredVideoQuality()
-        let requestedQuality = preferredQuality ?? storedPreferredQuality ?? 112
-        let query = playURLQuery(bvid: bvid, cid: cid, qn: requestedQuality)
+        let snapshot = await requestSnapshot()
+        let requestedQuality = preferredQuality ?? snapshot.preferredVideoQuality ?? 112
+        let streamSource = snapshot.playbackStreamSourcePreference
+        let query = playURLQuery(bvid: bvid, cid: cid, qn: requestedQuality, streamSource: streamSource)
         let data = try await runCachedPlayURLStage(
             "startupLegacy",
             bvid: bvid,
             cid: cid,
             qn: requestedQuality,
-            cookieMode: "auth-legacy-startup",
+            cookieMode: "auth-legacy-startup-\(streamSource.cachePlatform)",
             start: stageStart
         ) { [self] in
             let response: BiliResponse<PlayURLData> = try await get(
@@ -1425,8 +1530,8 @@ nonisolated final class BiliAPIClient {
                 path: "/x/player/playurl",
                 query: query,
                 referer: referer,
-                userAgent: Self.webUserAgent,
-                cookieHeader: await cookieHeader(),
+                userAgent: userAgent(for: streamSource),
+                cookieHeader: snapshot.cookieHeader,
                 priority: .userInitiated
             )
             return try requirePlayURLData(response, requirePlayablePayload: true)
@@ -1443,10 +1548,11 @@ nonisolated final class BiliAPIClient {
     ) async throws -> PlayURLData {
         let stageStart = CACurrentMediaTime()
         let referer = "https://www.bilibili.com/video/\(bvid)"
-        let storedPreferredQuality = await preferredVideoQuality()
-        let requestedQuality = preferredQuality ?? storedPreferredQuality ?? 112
-        let authCookieHeader = await cookieHeader()
-        let anonymousCookieHeader = await anonymousCookieHeader()
+        let snapshot = await requestSnapshot()
+        let requestedQuality = preferredQuality ?? snapshot.preferredVideoQuality ?? 112
+        let streamSource = snapshot.playbackStreamSourcePreference
+        let authCookieHeader = snapshot.cookieHeader
+        let anonymousCookieHeader = snapshot.anonymousCookieHeader
         var lastError: Error?
         do {
             let data = try await fetchWBIPlayURLWithCodecFallbacks(
@@ -1457,7 +1563,8 @@ nonisolated final class BiliAPIClient {
                 referer: referer,
                 cookieHeader: authCookieHeader,
                 stagePrefix: "startupWBI",
-                cookieModePrefix: "auth-wbi-cached",
+                cookieModePrefix: "auth-wbi-cached-\(streamSource.cachePlatform)",
+                streamSource: streamSource,
                 priority: .userInitiated,
                 codecPreferences: PlayURLCodecPreference.primaryPlaybackOrder
             )
@@ -1478,7 +1585,8 @@ nonisolated final class BiliAPIClient {
                     referer: referer,
                     cookieHeader: anonymousCookieHeader,
                     stagePrefix: "startupWBIAnonymous",
-                    cookieModePrefix: "anon-wbi-cached",
+                    cookieModePrefix: "anon-wbi-cached-\(streamSource.cachePlatform)",
+                    streamSource: streamSource,
                     priority: .userInitiated,
                     codecPreferences: PlayURLCodecPreference.primaryPlaybackOrder
                 )
@@ -1503,7 +1611,8 @@ nonisolated final class BiliAPIClient {
                 referer: referer,
                 cookieHeader: authCookieHeader,
                 stagePrefix: "startupWBIRefreshed",
-                cookieModePrefix: "auth-wbi-refreshed",
+                cookieModePrefix: "auth-wbi-refreshed-\(streamSource.cachePlatform)",
+                streamSource: streamSource,
                 priority: .userInitiated,
                 codecPreferences: PlayURLCodecPreference.primaryPlaybackOrder
             )
@@ -1524,7 +1633,8 @@ nonisolated final class BiliAPIClient {
                     referer: referer,
                     cookieHeader: anonymousCookieHeader,
                     stagePrefix: "startupWBIRefreshedAnonymous",
-                    cookieModePrefix: "anon-wbi-refreshed",
+                    cookieModePrefix: "anon-wbi-refreshed-\(streamSource.cachePlatform)",
+                    streamSource: streamSource,
                     priority: .userInitiated,
                     codecPreferences: PlayURLCodecPreference.primaryPlaybackOrder
                 )
@@ -1545,7 +1655,8 @@ nonisolated final class BiliAPIClient {
                 referer: referer,
                 cookieHeader: anonymousCookieHeader.isEmpty ? authCookieHeader : anonymousCookieHeader,
                 stagePrefix: "startupWBIExtended",
-                cookieModePrefix: anonymousCookieHeader.isEmpty ? "auth-wbi-extended" : "anon-wbi-extended",
+                cookieModePrefix: "\(anonymousCookieHeader.isEmpty ? "auth-wbi-extended" : "anon-wbi-extended")-\(streamSource.cachePlatform)",
+                streamSource: streamSource,
                 priority: .userInitiated,
                 codecPreferences: PlayURLCodecPreference.extendedPlaybackOrder
             )
@@ -1604,6 +1715,7 @@ nonisolated final class BiliAPIClient {
         bvid: String,
         cid: Int,
         qn: Int,
+        streamSource: PlaybackStreamSourcePreference,
         codecPreference: PlayURLCodecPreference = .hevc
     ) -> [String: String] {
         var query = [
@@ -1613,7 +1725,7 @@ nonisolated final class BiliAPIClient {
             "fnval": "4048",
             "fnver": "0",
             "fourk": "1",
-            "platform": "pc",
+            "platform": streamSource.playURLPlatform,
             "high_quality": "1",
             "otype": "json",
             "try_look": "1"
@@ -1633,6 +1745,7 @@ nonisolated final class BiliAPIClient {
         cookieHeader: String,
         stagePrefix: String,
         cookieModePrefix: String,
+        streamSource: PlaybackStreamSourcePreference,
         priority: Float,
         codecPreferences: [PlayURLCodecPreference] = PlayURLCodecPreference.extendedPlaybackOrder
     ) async throws -> PlayURLData {
@@ -1654,6 +1767,7 @@ nonisolated final class BiliAPIClient {
                         bvid: bvid,
                         cid: cid,
                         qn: requestedQuality,
+                        streamSource: streamSource,
                         codecPreference: codecPreference
                     )
                     let signed = WBISigner.sign(query, keys: keys)
@@ -1662,7 +1776,7 @@ nonisolated final class BiliAPIClient {
                         path: "/x/player/wbi/playurl",
                         query: signed,
                         referer: referer,
-                        userAgent: Self.webUserAgent,
+                        userAgent: userAgent(for: streamSource),
                         cookieHeader: cookieHeader,
                         priority: priority
                     )
@@ -1838,7 +1952,8 @@ nonisolated final class BiliAPIClient {
         bvid: String,
         cid: Int,
         referer: String,
-        cookieHeader: String
+        cookieHeader: String,
+        streamSource: PlaybackStreamSourcePreference
     ) async -> PlayURLData {
         let preferredQualities = await supplementalQualityCandidates(from: initialData)
         var merged = initialData
@@ -1870,7 +1985,8 @@ nonisolated final class BiliAPIClient {
                 cid: cid,
                 keys: keys,
                 referer: referer,
-                cookieHeader: cookieHeader
+                cookieHeader: cookieHeader,
+                streamSource: streamSource
             )
             for result in results {
                 guard let data = result.data else { continue }
@@ -1896,7 +2012,8 @@ nonisolated final class BiliAPIClient {
         cid: Int,
         keys: WBIKeys,
         referer: String,
-        cookieHeader: String
+        cookieHeader: String,
+        streamSource: PlaybackStreamSourcePreference
     ) async -> [SupplementalPlayURLResult] {
         switch qualities.count {
         case 0:
@@ -1909,23 +2026,24 @@ nonisolated final class BiliAPIClient {
                     cid: cid,
                     keys: keys,
                     referer: referer,
-                    cookieHeader: cookieHeader
+                    cookieHeader: cookieHeader,
+                    streamSource: streamSource
                 )
             ]
         case 2:
-            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
+            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
             return await [first, second]
         case 3:
-            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let third = fetchSupplementalQuality(qualities[2], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
+            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let third = fetchSupplementalQuality(qualities[2], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
             return await [first, second, third]
         default:
-            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let third = fetchSupplementalQuality(qualities[2], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
-            async let fourth = fetchSupplementalQuality(qualities[3], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader)
+            async let first = fetchSupplementalQuality(qualities[0], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let second = fetchSupplementalQuality(qualities[1], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let third = fetchSupplementalQuality(qualities[2], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
+            async let fourth = fetchSupplementalQuality(qualities[3], bvid: bvid, cid: cid, keys: keys, referer: referer, cookieHeader: cookieHeader, streamSource: streamSource)
             return await [first, second, third, fourth]
         }
     }
@@ -1936,7 +2054,8 @@ nonisolated final class BiliAPIClient {
         cid: Int,
         keys: WBIKeys,
         referer: String,
-        cookieHeader: String
+        cookieHeader: String,
+        streamSource: PlaybackStreamSourcePreference
     ) async -> SupplementalPlayURLResult {
         let qualityStart = CACurrentMediaTime()
         do {
@@ -1945,17 +2064,17 @@ nonisolated final class BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 qn: quality,
-                cookieMode: "auth-wbi",
+                cookieMode: "auth-wbi-\(streamSource.cachePlatform)",
                 start: qualityStart
             ) { [self] in
-                let query = playURLQuery(bvid: bvid, cid: cid, qn: quality)
+                let query = playURLQuery(bvid: bvid, cid: cid, qn: quality, streamSource: streamSource)
                 let signed = WBISigner.sign(query, keys: keys)
                 let response: BiliResponse<PlayURLData> = try await get(
                     base: baseURL,
                     path: "/x/player/wbi/playurl",
                     query: signed,
                     referer: referer,
-                    userAgent: Self.webUserAgent,
+                    userAgent: userAgent(for: streamSource),
                     cookieHeader: cookieHeader,
                     priority: .utility
                 )
@@ -2025,19 +2144,32 @@ nonisolated final class BiliAPIClient {
         referer: String,
         query: [String: String]
     ) async -> PlayURLData {
-        guard let metadata = try? await fetchAnonymousPlayURLMetadata(bvid: bvid, cid: cid, referer: referer, query: query) else {
+        let streamSource = await playbackStreamSourcePreference()
+        guard let metadata = try? await fetchAnonymousPlayURLMetadata(
+            bvid: bvid,
+            cid: cid,
+            referer: referer,
+            query: query,
+            streamSource: streamSource
+        ) else {
             return playableData
         }
         return playableData.mergingDisplayFormats(from: metadata)
     }
 
-    private func fetchAnonymousPlayURLMetadata(bvid: String, cid: Int, referer: String, query: [String: String]) async throws -> PlayURLData {
+    private func fetchAnonymousPlayURLMetadata(
+        bvid: String,
+        cid: Int,
+        referer: String,
+        query: [String: String],
+        streamSource: PlaybackStreamSourcePreference
+    ) async throws -> PlayURLData {
         let response: BiliResponse<PlayURLData> = try await get(
             base: baseURL,
             path: "/x/player/playurl",
             query: query,
             referer: referer,
-            userAgent: Self.webUserAgent,
+            userAgent: userAgent(for: streamSource),
             cookieHeader: await anonymousCookieHeader()
         )
         return try requirePlayURLData(response)
@@ -2231,7 +2363,7 @@ nonisolated final class BiliAPIClient {
 
     func fetchComments(oid: String, type: Int, cursor: String = "", sort: CommentSort = .hot) async throws -> CommentPage {
         let mode = sort == .hot ? "3" : "2"
-        let pagination = #"{"offset":"\#(cursor)"}"#
+        let pagination = try Self.commentPaginationString(offset: cursor)
         let response: BiliResponse<CommentPage> = try await get(
             base: baseURL,
             path: "/x/v2/reply/main",
@@ -2246,6 +2378,11 @@ nonisolated final class BiliAPIClient {
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
+    }
+
+    private static func commentPaginationString(offset: String) throws -> String {
+        let data = try JSONEncoder().encode(CommentPaginationRequest(offset: offset))
+        return String(decoding: data, as: UTF8.self)
     }
 
     func fetchCommentReplies(aid: Int, root: Int, page: Int = 1) async throws -> CommentPage {
@@ -2896,12 +3033,14 @@ nonisolated final class BiliAPIClient {
     private func data(for request: URLRequest, priority: Float = URLSessionTask.defaultPriority) async throws -> (Data, URLResponse) {
         var request = request
         request.networkServiceType = priority >= URLSessionTask.highPriority ? .responsiveData : .default
-        return try await BiliNetworkRetry.data(
+        let response = try await BiliNetworkRetry.data(
             session: session,
             request: request,
             priority: priority,
             policy: .api
         )
+        ResourceCacheAutoTrim.schedule()
+        return response
     }
 
     private nonisolated static func responseCacheKey(for request: URLRequest) -> String? {
@@ -3170,6 +3309,10 @@ private struct SupplementalPlayURLResult {
     let data: PlayURLData?
 }
 
+nonisolated private struct CommentPaginationRequest: Encodable {
+    let offset: String
+}
+
 private struct StartupPlayURLAttempt: Sendable {
     let stage: String
     let data: PlayURLData?
@@ -3218,6 +3361,7 @@ private actor BiliAPIClientState {
     private var videoListTasks: [String: Task<[VideoItem], Error>] = [:]
     private var videoDetailTasks: [String: Task<VideoItem, Error>] = [:]
     private var uploaderProfileTasks: [Int: Task<UploaderProfile, Error>] = [:]
+    private var appRecommendFeedIndex: Int?
     private var startupWBISuppressedUntil: CFTimeInterval = 0
     private var playURLFailureCache: [String: CachedPlayURLFailure] = [:]
     private var playURLStageTasks: [String: Task<PlayURLData, Error>] = [:]
@@ -3300,6 +3444,15 @@ private actor BiliAPIClientState {
 
     func clearVideoListTask(for key: String) {
         videoListTasks[key] = nil
+    }
+
+    func appRecommendFeedIndex(defaulting defaultIndex: Int) -> Int {
+        appRecommendFeedIndex ?? defaultIndex
+    }
+
+    func setAppRecommendFeedIndex(_ index: Int?) {
+        guard let index, index > 0 else { return }
+        appRecommendFeedIndex = index
     }
 
     func videoDetailTask(for bvid: String) -> Task<VideoItem, Error>? {

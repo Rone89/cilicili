@@ -99,16 +99,12 @@ struct DynamicCommentsSheet: View {
                 .padding(14)
         } else {
             let commentItems = viewModel.commentItems
-            let lastCommentID = commentItems.last?.id
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(commentItems) { item in
                     DynamicCommentRow(item: item) {
                         replySheetComment = item.comment
                     }
                     .padding(.horizontal, 14)
-                    .dynamicLoadMoreTask(if: item.id == lastCommentID, id: item.id) {
-                        await viewModel.loadMoreIfNeeded(current: item.comment)
-                    }
 
                     Divider()
                         .padding(.leading, 62)
@@ -123,31 +119,55 @@ struct DynamicCommentsSheet: View {
 
     @ViewBuilder
     private var commentsFooter: some View {
-        if viewModel.state.isLoading {
+        if viewModel.loadMoreState.isLoading {
             CommentLoadingSkeletonRow()
                 .padding(.vertical, 10)
-        } else if case .failed(let message) = viewModel.state {
-            DynamicCommentErrorView(message: message) {
-                Task { await viewModel.loadMore() }
-            }
-        } else if viewModel.hasMoreComments {
+        } else if case .failed(let message) = viewModel.loadMoreState {
             Button {
                 Task { await viewModel.loadMore() }
             } label: {
-                Label("加载更多评论", systemImage: "chevron.down")
+                Label("评论加载失败，点按重试", systemImage: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
             }
-            .dynamicCommentGlassButtonStyle()
-            .controlSize(.small)
-            .tint(.pink)
+            .buttonStyle(.plain)
+            .accessibilityHint(message)
+        } else if viewModel.hasMoreComments {
+            Color.clear
+                .frame(height: 18)
+                .dynamicCommentLoadMoreTrigger(if: true, id: viewModel.commentItems.last?.id ?? -1) {
+                    await viewModel.loadMore()
+                }
         } else {
             Text("没有更多评论了")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func dynamicCommentLoadMoreTrigger(
+        if shouldAttachTask: Bool,
+        id: Int,
+        action: @escaping () async -> Void
+    ) -> some View {
+        if shouldAttachTask {
+            onAppear {
+                Task {
+                    await action()
+                }
+            }
+            .id(id)
+        } else {
+            self
         }
     }
 }
@@ -208,6 +228,7 @@ private final class DynamicCommentsViewModel: ObservableObject {
     }
     @Published private(set) var commentItems: [DynamicCommentRowItem] = []
     @Published var state: LoadingState = .idle
+    @Published var loadMoreState: LoadingState = .idle
     @Published var selectedSort: CommentSort = .hot
     let replyStore: DynamicCommentReplyStore
 
@@ -248,7 +269,8 @@ private final class DynamicCommentsViewModel: ObservableObject {
         cursor = ""
         commentsEnd = false
         comments = []
-        await loadPage()
+        loadMoreState = .idle
+        await loadPage(presentsErrors: true)
     }
 
     func selectSort(_ sort: CommentSort) async {
@@ -257,14 +279,9 @@ private final class DynamicCommentsViewModel: ObservableObject {
         await reload()
     }
 
-    func loadMoreIfNeeded(current comment: Comment?) async {
-        guard let comment, comments.last?.id == comment.id else { return }
-        await loadMore()
-    }
-
     func loadMore() async {
-        guard !state.isLoading, !commentsEnd else { return }
-        await loadPage()
+        guard !state.isLoading, !loadMoreState.isLoading, !commentsEnd else { return }
+        await loadPage(presentsErrors: false, emptyPageSkipLimit: 2)
     }
 
     private var commentOID: String? {
@@ -275,31 +292,102 @@ private final class DynamicCommentsViewModel: ObservableObject {
         item.commentType
     }
 
-    private func loadPage() async {
+    private func loadPage(presentsErrors: Bool, emptyPageSkipLimit: Int = 0) async {
         guard let oid = commentOID, let type = commentType else {
             state = .failed("这条动态没有返回评论入口")
             commentsEnd = true
             return
         }
 
-        state = .loading
-        do {
-            let page = try await api.fetchComments(oid: oid, type: type, cursor: cursor, sort: selectedSort)
-            let pageComments = comments.isEmpty
-                ? (page.topReplies ?? []) + (page.replies ?? [])
-                : (page.replies ?? [])
-            appendUniqueComments(filteredComments(pageComments))
-            cursor = page.cursor?.next ?? ""
-            commentsEnd = page.cursor?.isEnd ?? true
-            state = .loaded
-        } catch {
-            state = .failed(error.localizedDescription)
+        let isInitialPage = comments.isEmpty && cursor.isEmpty
+        var remainingEmptyPageSkips = emptyPageSkipLimit
+        if isInitialPage {
+            state = .loading
+            loadMoreState = .idle
+        } else {
+            loadMoreState = .loading
+        }
+        while true {
+            let previousCount = comments.count
+            let previousCursor = cursor
+            do {
+                let page = try await fetchCommentsWithTimeout(oid: oid, type: type, cursor: cursor, sort: selectedSort)
+                let pageComments = comments.isEmpty
+                    ? (page.topReplies ?? []) + (page.replies ?? [])
+                    : (page.replies ?? [])
+                appendUniqueComments(filteredComments(pageComments))
+                cursor = page.cursor?.effectiveNext ?? ""
+                commentsEnd = page.cursor?.isEnd ?? (comments.count == previousCount && cursor.isEmpty)
+                state = .loaded
+                loadMoreState = .idle
+
+                let didAppendComments = comments.count > previousCount
+                let canSkipEmptyPage = !didAppendComments
+                    && !commentsEnd
+                    && remainingEmptyPageSkips > 0
+                    && !cursor.isEmpty
+                    && cursor != previousCursor
+                guard canSkipEmptyPage else {
+                    if !isInitialPage, !didAppendComments {
+                        commentsEnd = true
+                    }
+                    return
+                }
+                remainingEmptyPageSkips -= 1
+                if isInitialPage {
+                    state = .loading
+                } else {
+                    loadMoreState = .loading
+                }
+            } catch is CancellationError {
+                if isInitialPage, comments.isEmpty {
+                    state = .idle
+                } else {
+                    state = .loaded
+                    commentsEnd = true
+                }
+                loadMoreState = .idle
+                return
+            } catch {
+                if presentsErrors || comments.isEmpty {
+                    state = .failed(error.localizedDescription)
+                    loadMoreState = .idle
+                } else {
+                    state = .loaded
+                    commentsEnd = true
+                    loadMoreState = .idle
+                }
+                return
+            }
         }
     }
 
     private func appendUniqueComments(_ more: [Comment]) {
         let existing = Set(comments.map(\.id))
         comments.append(contentsOf: more.filter { !existing.contains($0.id) })
+    }
+
+    private func fetchCommentsWithTimeout(
+        oid: String,
+        type: Int,
+        cursor: String,
+        sort: CommentSort
+    ) async throws -> CommentPage {
+        try await withThrowingTaskGroup(of: CommentPage.self) { group in
+            group.addTask(priority: .userInitiated) {
+                try await self.api.fetchComments(oid: oid, type: type, cursor: cursor, sort: sort)
+            }
+            group.addTask(priority: .utility) {
+                try await Task.sleep(nanoseconds: 8_000_000_000)
+                throw BiliAPIError.api(code: -1, message: "评论加载超时，请稍后重试")
+            }
+            guard let page = try await group.next() else {
+                group.cancelAll()
+                throw BiliAPIError.emptyData
+            }
+            group.cancelAll()
+            return page
+        }
     }
 
     private func syncCommentItems() {
@@ -872,9 +960,18 @@ private final class DynamicCommentReplyStore: ObservableObject {
         } catch {
             updateSnapshot {
                 if reset {
-                    $0.replyThreads[comment.id] = filteredComments(comment.replies ?? [])
+                    let fallbackReplies = filteredComments(comment.replies ?? [])
+                    $0.replyThreads[comment.id] = fallbackReplies
+                    if fallbackReplies.isEmpty {
+                        $0.replyStates[comment.id] = .failed(error.localizedDescription)
+                    } else {
+                        $0.replyHasMore[comment.id] = false
+                        $0.replyStates[comment.id] = .loaded
+                    }
+                } else {
+                    $0.replyHasMore[comment.id] = false
+                    $0.replyStates[comment.id] = .loaded
                 }
-                $0.replyStates[comment.id] = .failed(error.localizedDescription)
             }
         }
     }

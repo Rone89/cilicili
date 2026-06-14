@@ -7,6 +7,10 @@ struct DynamicOriginalPreview: View {
     private let video: VideoItem?
     private let live: DynamicLive?
     private let liveRoom: LiveRoom?
+    private let paidContent: DynamicPaidContent?
+    private let paidVideo: VideoItem?
+    private let paidContentRendersAsTextOnly: Bool
+    private let paidChargeURL: URL?
     private let authorOwner: VideoOwner?
     private let imageItems: [DynamicImageItem]
     private let textSegments: [DynamicTextSegment]
@@ -24,6 +28,10 @@ struct DynamicOriginalPreview: View {
         self.video = item.archive?.asVideoItem(author: item.author)
         self.live = item.live
         self.liveRoom = item.live?.asLiveRoom(author: item.author)
+        self.paidContent = item.paidContent
+        self.paidVideo = item.paidContent?.asVideoItem(author: item.author)
+        self.paidContentRendersAsTextOnly = item.paidContent?.isChargeArticleLike == true
+        self.paidChargeURL = item.paidContent?.chargePageURL(author: item.author)
         self.authorOwner = item.author?.owner
         self.imageItems = item.imageItems.filter { $0.normalizedURL != nil }
         self.textSegments = item.textSegments
@@ -83,7 +91,15 @@ struct DynamicOriginalPreview: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if let video {
+                if let paidContent, paidContentRendersAsTextOnly {
+                    DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: paidChargeURL) {
+                        DynamicPaidArticleTextPreview(content: paidContent)
+                    }
+                } else if let paidContent {
+                    DynamicPaidContentRouteLink(content: paidContent, video: paidVideo) {
+                        DynamicPaidContentPreview(content: paidContent, style: .compact)
+                    }
+                } else if let video {
                     VideoRouteLink(video) {
                         DynamicArchivePreview(
                             video: video,
@@ -146,6 +162,262 @@ struct DynamicForwardUnavailableView: View {
         .padding(9)
         .background(Color(.tertiarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+struct DynamicPaidContentRouteLink<Label: View>: View {
+    let content: DynamicPaidContent
+    let video: VideoItem?
+    @ViewBuilder let label: () -> Label
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        if let video {
+            VideoRouteLink(video) {
+                label()
+            }
+        } else if let url = content.normalizedJumpURL {
+            Button {
+                _ = openURL(url)
+            } label: {
+                label()
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+        } else {
+            label()
+                .opacity(0.78)
+        }
+    }
+}
+
+struct DynamicPaidArticleTextRouteLink<Label: View>: View {
+    let content: DynamicPaidContent
+    let chargeURL: URL?
+    @ViewBuilder let label: () -> Label
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        if let chargeURL {
+            Button {
+                _ = openURL(chargeURL)
+            } label: {
+                label()
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+        } else {
+            label()
+        }
+    }
+}
+
+struct DynamicPaidArticleTextPreview: View {
+    let content: DynamicPaidContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(content.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let subtitle = content.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Text(content.badgeText)
+                if content.isLocked {
+                    Text("需解锁")
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.pink)
+            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(content.badgeText) \(content.title)")
+    }
+}
+
+struct DynamicPaidContentPreview: View {
+    enum Style {
+        case large
+        case compact
+    }
+
+    let content: DynamicPaidContent
+    var style: Style = .large
+
+    var body: some View {
+        switch style {
+        case .large:
+            largeContent
+        case .compact:
+            compactContent
+        }
+    }
+
+    private var largeContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            cover
+
+            VStack(alignment: .leading, spacing: 7) {
+                title
+                metadata
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(.separator).opacity(0.10), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(content.badgeText) \(content.title)")
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 10) {
+            cover
+                .frame(width: 118, height: 118 * 9 / 16)
+
+            VStack(alignment: .leading, spacing: 7) {
+                title
+                metadata
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(content.badgeText) \(content.title)")
+    }
+
+    private var cover: some View {
+        FixedAspectPreview(aspectRatio: 16 / 9) {
+            ZStack {
+                BiliMediaPlaceholder(style: .video, iconSize: 17)
+
+                if let coverURLString = content.normalizedCoverURL {
+                    CachedRemoteImage(
+                        url: URL(string: coverURLString.biliCoverThumbnailURL(width: 640, height: 360)),
+                        fallbackURL: URL(string: coverURLString),
+                        targetPixelSize: 640,
+                        animatesAppearance: false
+                    ) { image in
+                        image.resizable().scaledToFill()
+                    } phasePlaceholder: { phase, _ in
+                        BiliMediaPlaceholder(
+                            style: .video,
+                            phase: phase,
+                            iconSize: 17
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                }
+
+                VideoCoverBottomScrim()
+
+                if content.kind == .video {
+                    DynamicVideoPlayBadge(size: style == .large ? 34 : 28, iconSize: style == .large ? 14 : 12)
+                        .padding(style == .large ? 8 : 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
+
+                DynamicPaidContentBadge(content: content)
+                    .padding(style == .large ? 10 : 7)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: style == .large ? 16 : 10, style: .continuous))
+        .mediaShadow(style == .large ? .control : .regular)
+    }
+
+    private var title: some View {
+        Text(content.title)
+            .font(style == .large ? .system(size: 16, weight: .semibold) : .subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var metadata: some View {
+        HStack(spacing: 8) {
+            Label(kindText, systemImage: kindIcon)
+                .foregroundStyle(content.isChargeExclusive ? .pink : .secondary)
+
+            if let subtitle = content.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .lineLimit(1)
+            }
+
+            if content.isLocked {
+                Label("需解锁", systemImage: "lock.fill")
+                    .foregroundStyle(.pink)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    private var kindText: String {
+        switch content.kind {
+        case .video:
+            return "视频"
+        case .article:
+            return "专栏"
+        case .course:
+            return "课程"
+        case .collection:
+            return "合集"
+        case .unknown:
+            return "内容"
+        }
+    }
+
+    private var kindIcon: String {
+        switch content.kind {
+        case .video:
+            return "play.rectangle.fill"
+        case .article:
+            return "doc.text.fill"
+        case .course:
+            return "graduationcap.fill"
+        case .collection:
+            return "rectangle.stack.fill"
+        case .unknown:
+            return "sparkles"
+        }
+    }
+}
+
+private struct DynamicPaidContentBadge: View {
+    let content: DynamicPaidContent
+
+    var body: some View {
+        GlassEffectContainer(spacing: 8) {
+            Label(content.badgeText, systemImage: content.isChargeExclusive ? "bolt.fill" : "sparkles")
+                .font(.caption2.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .biliPlayerClearGlass(interactive: false, in: Capsule())
+        }
     }
 }
 

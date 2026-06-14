@@ -12,6 +12,7 @@ final class VideoDetailCommentsRenderStore: ObservableObject {
     var comments: [Comment] { snapshot.comments }
     var commentItems: [VideoDetailCommentDisplayItem] { snapshot.commentItems }
     var state: LoadingState { snapshot.state }
+    var loadMoreState: LoadingState { snapshot.loadMoreState }
     var selectedSort: CommentSort { snapshot.selectedSort }
     var didCompleteInitialLoad: Bool { snapshot.didCompleteInitialLoad }
     var hasMoreComments: Bool { snapshot.hasMoreComments }
@@ -23,6 +24,7 @@ final class VideoDetailCommentsRenderStore: ObservableObject {
         detail: VideoItem,
         comments: [Comment],
         state: LoadingState,
+        loadMoreState: LoadingState,
         selectedSort: CommentSort,
         didCompleteInitialLoad: Bool,
         hasMoreComments: Bool
@@ -32,6 +34,7 @@ final class VideoDetailCommentsRenderStore: ObservableObject {
                 detail: detail,
                 comments: comments,
                 state: state,
+                loadMoreState: loadMoreState,
                 selectedSort: selectedSort,
                 didCompleteInitialLoad: didCompleteInitialLoad,
                 hasMoreComments: hasMoreComments
@@ -52,6 +55,10 @@ final class VideoDetailCommentsRenderStore: ObservableObject {
 
     func updateState(_ state: LoadingState) {
         updateSnapshot { $0.state = state }
+    }
+
+    func updateLoadMoreState(_ loadMoreState: LoadingState) {
+        updateSnapshot { $0.loadMoreState = loadMoreState }
     }
 
     func updateSelectedSort(_ selectedSort: CommentSort) {
@@ -662,6 +669,7 @@ private struct VideoDetailCommentsRenderSnapshot: Equatable {
     var comments: [Comment]
     var commentItems: [VideoDetailCommentDisplayItem]
     var state: LoadingState
+    var loadMoreState: LoadingState
     var selectedSort: CommentSort
     var didCompleteInitialLoad: Bool
     var hasMoreComments: Bool
@@ -672,6 +680,7 @@ private struct VideoDetailCommentsRenderSnapshot: Equatable {
         detail: VideoItem? = nil,
         comments: [Comment] = [],
         state: LoadingState = .idle,
+        loadMoreState: LoadingState = .idle,
         selectedSort: CommentSort = .hot,
         didCompleteInitialLoad: Bool = false,
         hasMoreComments: Bool = false,
@@ -682,6 +691,7 @@ private struct VideoDetailCommentsRenderSnapshot: Equatable {
         self.commentItems = Self.makeCommentItems(comments)
         self.commentsSignature = VideoDetailCommentListSignature(comments)
         self.state = state
+        self.loadMoreState = loadMoreState
         self.selectedSort = selectedSort
         self.didCompleteInitialLoad = didCompleteInitialLoad
         self.hasMoreComments = hasMoreComments
@@ -694,6 +704,7 @@ private struct VideoDetailCommentsRenderSnapshot: Equatable {
             detailReplyCount: detail?.stat?.reply,
             commentsSignature: commentsSignature,
             state: state,
+            loadMoreState: loadMoreState,
             selectedSort: selectedSort,
             didCompleteInitialLoad: didCompleteInitialLoad,
             hasMoreComments: hasMoreComments,
@@ -740,6 +751,7 @@ nonisolated private struct VideoDetailCommentsRenderChangeSignature: Equatable {
     let detailReplyCount: Int?
     let commentsSignature: VideoDetailCommentListSignature
     let state: LoadingState
+    let loadMoreState: LoadingState
     let selectedSort: CommentSort
     let didCompleteInitialLoad: Bool
     let hasMoreComments: Bool
@@ -1424,6 +1436,20 @@ struct VideoDetailDisplayMetrics: Equatable {
     }
 }
 
+private enum VideoDetailLoadIdentity {
+    case bvid(String)
+    case aid(Int)
+
+    var metricsMessage: String {
+        switch self {
+        case .bvid(let bvid):
+            return "bvid=\(bvid)"
+        case .aid(let aid):
+            return "aid=\(aid)"
+        }
+    }
+}
+
 @MainActor
 final class VideoDetailViewModel: ObservableObject {
     private enum InteractionMutationKind: Equatable {
@@ -1542,6 +1568,11 @@ final class VideoDetailViewModel: ObservableObject {
     private(set) var commentState: LoadingState = .idle {
         didSet {
             commentsRenderStore.updateState(commentState)
+        }
+    }
+    private(set) var commentLoadMoreState: LoadingState = .idle {
+        didSet {
+            commentsRenderStore.updateLoadMoreState(commentLoadMoreState)
         }
     }
     @Published var playURLState: LoadingState = .idle {
@@ -1953,6 +1984,7 @@ final class VideoDetailViewModel: ObservableObject {
             detail: detail,
             comments: comments,
             state: commentState,
+            loadMoreState: commentLoadMoreState,
             selectedSort: selectedCommentSort,
             didCompleteInitialLoad: didCompleteInitialCommentLoad,
             hasMoreComments: hasMoreComments
@@ -2525,11 +2557,12 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func loadFullDetailAndMetadata(priority: TaskPriority = .userInitiated) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
+        let detailIdentity = detailLoadIdentity
         let signpostState = PlayerMetricsLog.beginSignpostedInterval(
             "VideoDetailDetailLoad",
-            message: "bvid=\(detail.bvid) priority=\(String(describing: priority))"
+            message: "\(detailIdentity.metricsMessage) priority=\(String(describing: priority))"
         )
-        var signpostMessage = "bvid=\(detail.bvid) loading"
+        var signpostMessage = "\(detailIdentity.metricsMessage) loading"
         defer {
             PlayerMetricsLog.endSignpostedInterval(
                 "VideoDetailDetailLoad",
@@ -2548,16 +2581,12 @@ final class VideoDetailViewModel: ObservableObject {
         do {
             let fullDetail = try await PlayerMetricsLog.withSignpostedInterval(
                 "VideoDetailDetailFetch",
-                message: "bvid=\(detail.bvid) priority=\(String(describing: priority))"
+                message: "\(detailIdentity.metricsMessage) priority=\(String(describing: priority))"
             ) {
-                try await VideoPreloadCenter.shared.detail(
-                    for: detail.bvid,
-                    api: api,
-                    priority: priority
-                )
+                try await fetchFullDetail(identity: detailIdentity, priority: priority)
             }
             guard !Task.isCancelled, !isPlaybackInvalidatedForNavigation else {
-                signpostMessage = "bvid=\(detail.bvid) cancelled"
+                signpostMessage = "\(detailIdentity.metricsMessage) cancelled"
                 return
             }
             detail = detail.mergingFilledValues(from: fullDetail)
@@ -2578,11 +2607,11 @@ final class VideoDetailViewModel: ObservableObject {
             signpostMessage = "bvid=\(detail.bvid) loaded"
         } catch {
             guard !Task.isCancelled else {
-                signpostMessage = "bvid=\(detail.bvid) cancelled"
+                signpostMessage = "\(detailIdentity.metricsMessage) cancelled"
                 return
             }
             guard !isPlaybackInvalidatedForNavigation else {
-                signpostMessage = "bvid=\(detail.bvid) invalidated"
+                signpostMessage = "\(detailIdentity.metricsMessage) invalidated"
                 return
             }
             if isCurrentDetailTask {
@@ -2593,7 +2622,35 @@ final class VideoDetailViewModel: ObservableObject {
                 state = .failed(error.localizedDescription)
             }
             hasResolvedDetailMetadata = true
-            signpostMessage = "bvid=\(detail.bvid) failed \(error.localizedDescription)"
+            signpostMessage = "\(detailIdentity.metricsMessage) failed \(error.localizedDescription)"
+        }
+    }
+
+    private var detailLoadIdentity: VideoDetailLoadIdentity {
+        if detail.bvid.hasPrefix("av"),
+           let aid = detail.aid,
+           aid > 0 {
+            return .aid(aid)
+        }
+        if !detail.bvid.isEmpty {
+            return .bvid(detail.bvid)
+        }
+        if let aid = detail.aid, aid > 0 {
+            return .aid(aid)
+        }
+        return .bvid(detail.bvid)
+    }
+
+    private func fetchFullDetail(identity: VideoDetailLoadIdentity, priority: TaskPriority) async throws -> VideoItem {
+        switch identity {
+        case .bvid(let bvid):
+            return try await VideoPreloadCenter.shared.detail(
+                for: bvid,
+                api: api,
+                priority: priority
+            )
+        case .aid(let aid):
+            return try await api.fetchVideoDetail(aid: aid)
         }
     }
 
@@ -2650,14 +2707,12 @@ final class VideoDetailViewModel: ObservableObject {
         }
     }
 
-    func loadMoreCommentsIfNeeded(current comment: Comment?) async {
-        guard let comment, comments.last?.id == comment.id, !commentState.isLoading, !commentsEnd else { return }
-        await loadCommentsPage()
-    }
-
     func loadMoreComments() async {
-        guard !commentState.isLoading, !commentsEnd else { return }
-        await loadCommentsPage()
+        guard !commentState.isLoading,
+              !commentLoadMoreState.isLoading,
+              !commentsEnd
+        else { return }
+        await loadCommentsPage(presentsErrors: false, emptyPageSkipLimit: 2)
     }
 
     func retryComments() async {
@@ -3618,12 +3673,14 @@ final class VideoDetailViewModel: ObservableObject {
     ) async throws -> PlayURLData {
         let adaptiveQuality = adaptiveStartupPreferredQuality
         let adaptiveCeiling = adaptiveStartupQualityCeiling
+        let streamSource = libraryStore.playbackStreamSourcePreference
         let key = [
             bvid,
             String(cid),
             page.map(String.init) ?? "-",
             "q\(adaptiveQuality ?? 0)",
-            "ceiling\(adaptiveCeiling ?? 0)"
+            "ceiling\(adaptiveCeiling ?? 0)",
+            streamSource.cachePlatform
         ].joined(separator: "|")
         if startupPlayURLTaskKey == key, let startupPlayURLTask {
             return try await startupPlayURLTask.value
@@ -6653,11 +6710,12 @@ final class VideoDetailViewModel: ObservableObject {
         commentCursor = ""
         commentsEnd = false
         comments = []
+        commentLoadMoreState = .idle
         didCompleteInitialCommentLoad = false
-        await loadCommentsPage()
+        await loadCommentsPage(presentsErrors: true)
     }
 
-    private func loadCommentsPage() async {
+    private func loadCommentsPage(presentsErrors: Bool, emptyPageSkipLimit: Int = 0) async {
         guard let aid = detail.aid else {
             if comments.isEmpty {
                 commentState = .idle
@@ -6665,37 +6723,81 @@ final class VideoDetailViewModel: ObservableObject {
             return
         }
         let isInitialPage = comments.isEmpty && commentCursor.isEmpty
-        commentState = .loading
-        do {
-            let page = try await fetchCommentsWithTimeout(aid: aid, cursor: commentCursor, sort: selectedCommentSort)
-            guard !Task.isCancelled else {
-                resetCommentStateAfterCancellation(isInitialPage: isInitialPage)
+        let isLoadingMore = !isInitialPage
+        var remainingEmptyPageSkips = emptyPageSkipLimit
+        if isLoadingMore {
+            commentLoadMoreState = .loading
+        } else {
+            commentState = .loading
+            commentLoadMoreState = .idle
+        }
+        while true {
+            let previousCount = comments.count
+            let previousCursor = commentCursor
+            do {
+                let page = try await fetchCommentsWithTimeout(aid: aid, cursor: commentCursor, sort: selectedCommentSort)
+                guard !Task.isCancelled else {
+                    resetCommentStateAfterCancellation(isInitialPage: isInitialPage, wasLoadingMore: isLoadingMore)
+                    return
+                }
+                let pageComments = comments.isEmpty
+                    ? (page.topReplies ?? []) + (page.replies ?? [])
+                    : (page.replies ?? [])
+                appendUniqueComments(filteredComments(pageComments))
+                commentCursor = page.cursor?.effectiveNext ?? ""
+                commentsEnd = page.cursor?.isEnd ?? (comments.count == previousCount && commentCursor.isEmpty)
+                if isInitialPage {
+                    didCompleteInitialCommentLoad = true
+                }
+                commentState = .loaded
+                commentLoadMoreState = .idle
+
+                let didAppendComments = comments.count > previousCount
+                let canSkipEmptyPage = !didAppendComments
+                    && !commentsEnd
+                    && remainingEmptyPageSkips > 0
+                    && !commentCursor.isEmpty
+                    && commentCursor != previousCursor
+                guard canSkipEmptyPage else {
+                    if isLoadingMore, !didAppendComments {
+                        commentsEnd = true
+                    }
+                    return
+                }
+                remainingEmptyPageSkips -= 1
+                if isLoadingMore {
+                    commentLoadMoreState = .loading
+                } else {
+                    commentState = .loading
+                }
+            } catch is CancellationError {
+                resetCommentStateAfterCancellation(isInitialPage: isInitialPage, wasLoadingMore: isLoadingMore)
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                if presentsErrors || comments.isEmpty {
+                    commentState = .failed(error.localizedDescription)
+                    commentLoadMoreState = .idle
+                } else {
+                    commentState = .loaded
+                    commentsEnd = true
+                    commentLoadMoreState = .idle
+                }
                 return
             }
-            let pageComments = comments.isEmpty
-                ? (page.topReplies ?? []) + (page.replies ?? [])
-                : (page.replies ?? [])
-            appendUniqueComments(filteredComments(pageComments))
-            commentCursor = page.cursor?.next ?? ""
-            commentsEnd = page.cursor?.isEnd ?? true
-            if isInitialPage {
-                didCompleteInitialCommentLoad = true
-            }
-            commentState = .loaded
-        } catch is CancellationError {
-            resetCommentStateAfterCancellation(isInitialPage: isInitialPage)
-        } catch {
-            guard !Task.isCancelled else { return }
-            commentState = .failed(error.localizedDescription)
         }
     }
 
-    private func resetCommentStateAfterCancellation(isInitialPage: Bool) {
+    private func resetCommentStateAfterCancellation(isInitialPage: Bool, wasLoadingMore: Bool) {
         if comments.isEmpty, isInitialPage, !didCompleteInitialCommentLoad {
             commentState = .idle
         } else {
             commentState = .loaded
+            if wasLoadingMore {
+                commentsEnd = true
+            }
         }
+        commentLoadMoreState = .idle
     }
 
     private func fetchCommentsWithTimeout(aid: Int, cursor: String, sort: CommentSort) async throws -> CommentPage {
@@ -6737,9 +6839,18 @@ final class VideoDetailViewModel: ObservableObject {
             replyThreadStates[comment.id] = .loaded
         } catch {
             if reset {
-                replyThreads[comment.id] = filteredComments(comment.replies ?? [])
+                let fallbackReplies = filteredComments(comment.replies ?? [])
+                replyThreads[comment.id] = fallbackReplies
+                if fallbackReplies.isEmpty {
+                    replyThreadStates[comment.id] = .failed(error.localizedDescription)
+                } else {
+                    replyThreadHasMore[comment.id] = false
+                    replyThreadStates[comment.id] = .loaded
+                }
+            } else {
+                replyThreadHasMore[comment.id] = false
+                replyThreadStates[comment.id] = .loaded
             }
-            replyThreadStates[comment.id] = .failed(error.localizedDescription)
         }
     }
 
@@ -6938,7 +7049,7 @@ final class VideoDetailViewModel: ObservableObject {
 
     private func refreshDetailMetadata() async {
         do {
-            let updated = try await api.fetchVideoDetail(bvid: detail.bvid)
+            let updated = try await fetchCurrentFullDetail()
             detail = updated
             syncCommentsRenderStore()
             if selectedCID == nil {
@@ -6950,6 +7061,21 @@ final class VideoDetailViewModel: ObservableObject {
 
         await loadUploaderProfile()
         await loadInteractionState()
+    }
+
+    private func fetchCurrentFullDetail() async throws -> VideoItem {
+        if detail.bvid.hasPrefix("av"),
+           let aid = detail.aid,
+           aid > 0 {
+            return try await api.fetchVideoDetail(aid: aid)
+        }
+        if !detail.bvid.isEmpty {
+            return try await api.fetchVideoDetail(bvid: detail.bvid)
+        }
+        if let aid = detail.aid, aid > 0 {
+            return try await api.fetchVideoDetail(aid: aid)
+        }
+        throw BiliAPIError.missingPayload
     }
 
     private func interactionFailureMessage(_ error: Error) -> String {

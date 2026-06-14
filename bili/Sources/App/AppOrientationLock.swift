@@ -50,6 +50,22 @@ enum AppOrientationLock {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
+        willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UIWindow.appearance().backgroundColor = LaunchAppearance.backgroundColor
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        LaunchAppearance.applyToConnectedWindows()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
         return AppOrientationLock.supportedOrientations
@@ -61,5 +77,22 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             await PlayURLCache.shared.clearMemoryCache()
             await SubtitleDanmakuResourceCache.shared.clear()
         }
+    }
+}
+
+@MainActor
+enum LaunchAppearance {
+    static let backgroundColor = UIColor(red: 0.965, green: 0.973, blue: 0.984, alpha: 1)
+
+    static func apply(to window: UIWindow?) {
+        guard let window else { return }
+        window.backgroundColor = backgroundColor
+    }
+
+    static func applyToConnectedWindows() {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .forEach(apply(to:))
     }
 }

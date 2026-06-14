@@ -15,8 +15,7 @@ struct QRCodeLoginView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("扫码登录")
-            .navigationBarTitleDisplayMode(.inline)
+            .hiddenInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {

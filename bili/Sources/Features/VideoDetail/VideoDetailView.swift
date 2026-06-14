@@ -913,10 +913,6 @@ struct VideoDetailView: View {
                 guard let viewModel else { return }
                 await viewModel.retryComments()
             },
-            loadMoreCommentsIfNeeded: { [weak viewModel] comment in
-                guard let viewModel else { return }
-                await viewModel.loadMoreCommentsIfNeeded(current: comment)
-            },
             loadMoreComments: { [weak viewModel] in
                 guard let viewModel else { return }
                 await viewModel.loadMoreComments()
@@ -1213,7 +1209,7 @@ private struct VideoDetailInfoTitleText: View {
             .font(.callout.weight(.semibold))
             .lineSpacing(1.5)
             .foregroundStyle(.primary)
-            .lineLimit(isExpanded ? nil : 2)
+            .lineLimit(isExpanded ? nil : 1)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

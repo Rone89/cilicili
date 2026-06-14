@@ -59,6 +59,10 @@ private struct HomeVisibleVideoFramePreferenceKey: PreferenceKey {
     }
 }
 
+private extension Color {
+    static let homeGitHubLikeBackground = Color(red: 0.965, green: 0.973, blue: 0.984)
+}
+
 struct HomeView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @StateObject private var runtimeSettings = HomeRuntimeSettingsStore()
@@ -70,6 +74,7 @@ struct HomeView: View {
     @State private var didAutoOpenDetail = false
     @State private var didTriggerConfiguredPullRefresh = false
     @State private var feedContainerWidth: CGFloat = 0
+    @State private var currentPullRefreshDistance: CGFloat = 0
 
     private let doubleColumns = [
         GridItem(.flexible(), spacing: 14),
@@ -107,7 +112,7 @@ struct HomeView: View {
     private func content(_ viewModel: HomeViewModel) -> some View {
         videoFeed(viewModel)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.homeGitHubLikeBackground)
         .task {
             runtimeSettings.bind(dependencies.libraryStore)
             Task(priority: .utility) {
@@ -178,10 +183,11 @@ struct HomeView: View {
             updateVisiblePreloadFrames(frames)
         }
         .onPreferenceChange(HomePullRefreshDistancePreferenceKey.self) { pullDistance in
+            currentPullRefreshDistance = pullDistance
             handleConfiguredPullRefresh(pullDistance: pullDistance, viewModel: viewModel)
         }
         .scrollBounceBehavior(.always, axes: .vertical)
-        .background(Color(.systemBackground))
+        .background(Color.homeGitHubLikeBackground)
         .nativeTopScrollEdgeEffect()
         .animation(.smooth(duration: 0.24), value: runtimeSettings.homeFeedLayout)
         .overlay {
@@ -192,12 +198,13 @@ struct HomeView: View {
             }
         }
         .overlay(alignment: .top) {
-            if viewModel.isUserRefreshing {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.top, 8)
-                    .transition(.opacity)
-            }
+            HomePullRefreshIndicator(
+                pullDistance: currentPullRefreshDistance,
+                triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
+                isRefreshing: viewModel.isUserRefreshing
+            )
+            .padding(.top, 6)
+            .allowsHitTesting(false)
         }
     }
 
@@ -240,6 +247,49 @@ struct HomeView: View {
             if viewModel.state == .loaded {
                 Haptics.success()
             }
+        }
+    }
+
+    private struct HomePullRefreshIndicator: View {
+        let pullDistance: CGFloat
+        let triggerDistance: CGFloat
+        let isRefreshing: Bool
+
+        private var progress: CGFloat {
+            guard triggerDistance > 0 else { return 0 }
+            return min(max(pullDistance / triggerDistance, 0), 1)
+        }
+
+        private var isVisible: Bool {
+            isRefreshing || progress > 0.08
+        }
+
+        var body: some View {
+            HStack(spacing: 7) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: progress >= 1 ? "checkmark" : "arrow.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .rotationEffect(.degrees(Double(progress) * 180))
+                        .symbolEffect(.bounce, value: progress >= 1)
+                }
+
+                Text(isRefreshing ? "正在刷新" : progress >= 1 ? "松开刷新" : "下拉刷新")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .biliPlayerClearGlass(interactive: false, in: Capsule())
+            .opacity(isVisible ? 1 : 0)
+            .scaleEffect(isVisible ? 1 : 0.82)
+            .offset(y: isVisible ? min(max(pullDistance * 0.18, 0), 14) : -8)
+            .animation(.smooth(duration: 0.18), value: isVisible)
+            .animation(.smooth(duration: 0.18), value: isRefreshing)
+            .accessibilityHidden(!isVisible)
         }
     }
 
@@ -396,7 +446,8 @@ struct HomeView: View {
             YouTubeStyleVideoFeedCardView(
                 display: display,
                 fixedCoverAspectRatio: 16 / 9,
-                fixedCoverSize: singleColumnFixedCoverSize
+                fixedCoverSize: singleColumnFixedCoverSize,
+                coverMaximumPixelLength: 720
             )
                 .equatable()
         case .doubleColumn:
@@ -405,13 +456,15 @@ struct HomeView: View {
                 showsPublishTimeInAuthorRow: true,
                 showsCoverViewCountBadge: false,
                 surfaceStyle: .blended,
-                fixedCoverSize: doubleColumnFixedCoverSize
+                fixedCoverSize: doubleColumnFixedCoverSize,
+                coverMaximumPixelLength: 480
             )
                 .equatable()
         }
     }
 
     private func beginPressedPreloadIfNeeded(for video: VideoItem) {
+        guard !video.bvid.hasPrefix("av") else { return }
         preloadCoordinator.beginPressedPreloadIfNeeded(
             for: video,
             api: dependencies.api,
@@ -425,6 +478,7 @@ struct HomeView: View {
     }
 
     private func registerVisiblePreloadCandidate(_ video: VideoItem, index: Int) {
+        guard !video.bvid.hasPrefix("av") else { return }
         preloadCoordinator.registerVisiblePreloadCandidate(
             video,
             index: index,

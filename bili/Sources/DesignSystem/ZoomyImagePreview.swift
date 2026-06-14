@@ -39,6 +39,11 @@ enum ZoomyImageContentMode {
     }
 }
 
+enum ZoomyImageContentAlignment {
+    case center
+    case top
+}
+
 @MainActor
 final class ZoomyImagePreviewGroup: ObservableObject {
     @Published fileprivate var isPresented = false
@@ -99,6 +104,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
     let viewerTargetPixelSize: Int
     let cornerRadius: CGFloat
     let contentMode: ZoomyImageContentMode
+    let contentAlignment: ZoomyImageContentAlignment
     let onImageLoaded: ((UIImage) -> Void)?
     let onViewerPresentationChange: ((Bool) -> Void)?
     @ViewBuilder let placeholder: (RemoteImageLoadingPhase) -> Placeholder
@@ -121,6 +127,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         viewerTargetPixelSize: Int = 2400,
         cornerRadius: CGFloat,
         contentMode: ZoomyImageContentMode = .fill,
+        contentAlignment: ZoomyImageContentAlignment = .center,
         onImageLoaded: ((UIImage) -> Void)? = nil,
         onViewerPresentationChange: ((Bool) -> Void)? = nil,
         @ViewBuilder placeholder: @escaping () -> Placeholder
@@ -135,6 +142,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         self.viewerTargetPixelSize = viewerTargetPixelSize
         self.cornerRadius = cornerRadius
         self.contentMode = contentMode
+        self.contentAlignment = contentAlignment
         self.onImageLoaded = onImageLoaded
         self.onViewerPresentationChange = onViewerPresentationChange
         self.placeholder = { _ in placeholder() }
@@ -151,6 +159,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         viewerTargetPixelSize: Int = 2400,
         cornerRadius: CGFloat,
         contentMode: ZoomyImageContentMode = .fill,
+        contentAlignment: ZoomyImageContentAlignment = .center,
         onImageLoaded: ((UIImage) -> Void)? = nil,
         onViewerPresentationChange: ((Bool) -> Void)? = nil,
         @ViewBuilder phasePlaceholder: @escaping (RemoteImageLoadingPhase) -> Placeholder
@@ -165,6 +174,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         self.viewerTargetPixelSize = viewerTargetPixelSize
         self.cornerRadius = cornerRadius
         self.contentMode = contentMode
+        self.contentAlignment = contentAlignment
         self.onImageLoaded = onImageLoaded
         self.onViewerPresentationChange = onViewerPresentationChange
         self.placeholder = phasePlaceholder
@@ -183,7 +193,8 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 ZoomyThumbnailImageView(
                     image: loader.image,
                     cornerRadius: cornerRadius,
-                    contentMode: contentMode.uiViewContentMode
+                    contentMode: contentMode.uiViewContentMode,
+                    contentAlignment: contentAlignment
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
@@ -410,14 +421,16 @@ private struct ZoomyThumbnailImageView: UIViewRepresentable {
     let image: UIImage?
     let cornerRadius: CGFloat
     let contentMode: UIView.ContentMode
+    let contentAlignment: ZoomyImageContentAlignment
 
-    func makeUIView(context _: Context) -> UIImageView {
+    func makeUIView(context _: Context) -> ZoomyThumbnailUIImageView {
         let imageView = ZoomyThumbnailUIImageView()
         imageView.backgroundColor = .clear
         imageView.clipsToBounds = true
         imageView.isOpaque = false
         imageView.isUserInteractionEnabled = false
-        imageView.contentMode = contentMode
+        imageView.displayContentMode = contentMode
+        imageView.contentAlignment = contentAlignment
         imageView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         imageView.setContentHuggingPriority(.defaultLow, for: .vertical)
         imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -427,16 +440,79 @@ private struct ZoomyThumbnailImageView: UIViewRepresentable {
         return imageView
     }
 
-    func updateUIView(_ imageView: UIImageView, context _: Context) {
+    func updateUIView(_ imageView: ZoomyThumbnailUIImageView, context _: Context) {
         imageView.image = image
-        imageView.contentMode = contentMode
+        imageView.displayContentMode = contentMode
+        imageView.contentAlignment = contentAlignment
         imageView.layer.cornerRadius = cornerRadius
     }
 }
 
-private final class ZoomyThumbnailUIImageView: UIImageView {
+private final class ZoomyThumbnailUIImageView: UIView {
+    var image: UIImage? {
+        didSet {
+            guard image !== oldValue else { return }
+            setNeedsDisplay()
+        }
+    }
+
+    var displayContentMode: UIView.ContentMode = .scaleAspectFill {
+        didSet {
+            guard displayContentMode != oldValue else { return }
+            setNeedsDisplay()
+        }
+    }
+
+    var contentAlignment: ZoomyImageContentAlignment = .center {
+        didSet {
+            setNeedsDisplay()
+        }
+    }
+
     override var intrinsicContentSize: CGSize {
         .zero
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let image, image.size.width > 0, image.size.height > 0 else { return }
+        UIGraphicsGetCurrentContext()?.interpolationQuality = .high
+        image.draw(in: imageRect(for: image.size, in: bounds))
+    }
+
+    private func imageRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard bounds.width > 0, bounds.height > 0 else { return .zero }
+
+        let widthScale = bounds.width / imageSize.width
+        let heightScale = bounds.height / imageSize.height
+        let scale: CGFloat
+
+        switch displayContentMode {
+        case .scaleAspectFit:
+            scale = min(widthScale, heightScale)
+        case .scaleAspectFill:
+            scale = max(widthScale, heightScale)
+        default:
+            return bounds
+        }
+
+        let scaledSize = CGSize(
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
+        let originX = bounds.midX - scaledSize.width / 2
+        let originY: CGFloat
+        switch contentAlignment {
+        case .center:
+            originY = bounds.midY - scaledSize.height / 2
+        case .top:
+            originY = bounds.minY
+        }
+        return CGRect(origin: CGPoint(x: originX, y: originY), size: scaledSize)
     }
 }
 
@@ -995,24 +1071,6 @@ private struct ZoomyFullScreenImageViewer: View {
                     .allowsHitTesting(false)
             }
 
-            HStack {
-                Spacer()
-                Button {
-                    isPresented = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(.black.opacity(0.46), in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(.white.opacity(0.16), lineWidth: 0.7)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("关闭")
-            }
         }
         .padding(.top, 14)
         .padding(.horizontal, 16)

@@ -11,13 +11,13 @@ struct LiveView: View {
                 LiveFeedView(viewModel: viewModel)
             } else {
                 ScrollView {
-                    LiveFeedSkeletonGrid()
+                    LiveFeedSkeletonList(horizontalPadding: 12, topPadding: 2)
                 }
                 .nativeTopScrollEdgeEffect()
-                    .background(Color(.systemBackground))
-                    .task {
-                        holder.configure(api: dependencies.api)
-                    }
+                .background(Color(.systemBackground))
+                .task {
+                    holder.configure(api: dependencies.api)
+                }
             }
         }
         .rootNavigationTitle("直播")
@@ -28,14 +28,9 @@ struct LiveView: View {
 private struct LiveFeedView: View {
     @ObservedObject var viewModel: LiveViewModel
 
-    private let columns = [
-        GridItem(.flexible(minimum: 0), spacing: 12),
-        GridItem(.flexible(minimum: 0), spacing: 12)
-    ]
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 0) {
                 if viewModel.rooms.isEmpty && viewModel.state.isLoading {
                     loadingState
                 } else if viewModel.rooms.isEmpty {
@@ -44,8 +39,8 @@ private struct LiveFeedView: View {
                     roomGrid
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
             .padding(.bottom, 22)
         }
         .nativeTopScrollEdgeEffect()
@@ -85,7 +80,7 @@ private struct LiveFeedView: View {
     }
 
     private var loadingState: some View {
-        LiveFeedSkeletonGrid(columns: columns, horizontalPadding: 0, topPadding: 0)
+        LiveFeedSkeletonList(horizontalPadding: 0, topPadding: 0)
             .allowsHitTesting(false)
     }
 
@@ -100,12 +95,14 @@ private struct LiveFeedView: View {
     }
 
     private var roomGrid: some View {
-        LazyVGrid(columns: columns, spacing: 16) {
+        LazyVStack(spacing: 0) {
             ForEach(viewModel.rooms) { room in
                 NavigationLink(value: room) {
                     LiveRoomCard(room: room)
                 }
                 .buttonStyle(.plain)
+                .padding(.top, 9)
+                .padding(.bottom, 14)
                 .onAppear {
                     Task { await viewModel.loadMoreIfNeeded(current: room) }
                 }
@@ -118,23 +115,18 @@ private struct LiveFeedView: View {
                 }
             } else if let message = viewModel.loadMoreMessage {
                 LiveFeedFooter(text: message, showsProgress: false)
-                    .gridCellColumns(columns.count)
             }
         }
     }
 }
 
-private struct LiveFeedSkeletonGrid: View {
-    var columns: [GridItem] = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
-    ]
+private struct LiveFeedSkeletonList: View {
     var horizontalPadding: CGFloat = 16
     var topPadding: CGFloat = 10
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 18) {
-            ForEach(0..<6, id: \.self) { _ in
+        LazyVStack(spacing: 0) {
+            ForEach(0..<4, id: \.self) { _ in
                 LiveRoomSkeletonCard()
             }
         }
@@ -146,40 +138,15 @@ private struct LiveFeedSkeletonGrid: View {
 
 private struct LiveRoomCard: View {
     let room: LiveRoom
+    private static let metadataAvatarSide: CGFloat = 34
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             cover
-
-            Text(title)
-                .font(.system(size: 14.5, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .topLeading)
-
-            HStack(spacing: 5) {
-                anchorAvatar
-
-                Text(anchorName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(height: 19, alignment: .leading)
-
-            Group {
-                if let areaText {
-                    Text(areaText)
-                } else {
-                    Text(" ")
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 14, maxHeight: 14, alignment: .leading)
+            metadataRow
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
@@ -191,20 +158,32 @@ private struct LiveRoomCard: View {
             .overlay {
                 coverImage
             }
-            .overlay(alignment: .topLeading) {
-                LiveRoomStatusBadge()
-                    .padding(8)
+            .overlay {
+                LiveRoomCoverOverlay(onlineText: onlineText)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .mediaShadow(.control)
+    }
+
+    private var metadataRow: some View {
+        HStack(alignment: .center, spacing: 9) {
+            anchorAvatar
+
+            VStack(alignment: .leading, spacing: 1) {
+                StableVideoTitleText(title, style: .feedHeadline, lineLimit: 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(metadataText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .overlay(alignment: .bottomTrailing) {
-                if let onlineText {
-                    LiveRoomOnlineBadge(text: onlineText)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .mediaShadow(.control)
+            .frame(height: Self.metadataAvatarSide, alignment: .center)
+        }
+        .frame(height: Self.metadataAvatarSide)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var coverImage: some View {
@@ -251,11 +230,12 @@ private struct LiveRoomCard: View {
     private var anchorAvatar: some View {
         AvatarRemoteImage(urlString: room.face, pixelSize: 56) {
             Image(systemName: "person.crop.circle.fill")
-                .resizable()
-                .foregroundStyle(.secondary.opacity(0.72))
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.tertiary)
         }
-        .frame(width: 19, height: 19)
+        .frame(width: Self.metadataAvatarSide, height: Self.metadataAvatarSide)
         .clipShape(Circle())
+        .mediaShadow(.subtle)
     }
 
     private var coverURL: URL? {
@@ -303,6 +283,15 @@ private struct LiveRoomCard: View {
             .nilIfEmpty
     }
 
+    private var metadataText: String {
+        [anchorName, areaText, onlineText.map { "\($0)人在线" }]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " · ")
+    }
+
     private var accessibilityLabel: String {
         [title, anchorName, areaText, onlineText.map { "\($0)人在线" }]
             .compactMap { $0 }
@@ -310,18 +299,40 @@ private struct LiveRoomCard: View {
     }
 }
 
+private struct LiveRoomCoverOverlay: View {
+    let onlineText: String?
+
+    var body: some View {
+        GlassEffectContainer(spacing: 8) {
+            ZStack {
+                LiveRoomStatusBadge()
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                if let onlineText {
+                    LiveRoomOnlineBadge(text: onlineText)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 private struct LiveRoomStatusBadge: View {
     var body: some View {
         Label("直播中", systemImage: "dot.radiowaves.left.and.right")
             .font(.system(size: 10.5, weight: .bold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(.white)
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
             .allowsTightening(true)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .glassEffect(.regular, in: Capsule())
+            .biliPlayerClearGlass(interactive: false, in: Capsule())
+            .videoCoverControlShadow()
             .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: 76, alignment: .leading)
             .clipped()
@@ -334,17 +345,25 @@ private struct LiveRoomOnlineBadge: View {
     var body: some View {
         Label(text, systemImage: "person.2.fill")
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(.white)
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .minimumScaleFactor(0.72)
             .allowsTightening(true)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .glassEffect(.regular, in: Capsule())
+            .biliPlayerClearGlass(interactive: false, in: Capsule())
+            .videoCoverControlShadow()
             .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: 86, alignment: .leading)
             .clipped()
+    }
+}
+
+private extension View {
+    func videoCoverControlShadow() -> some View {
+        shadow(color: .black.opacity(0.28), radius: 8, x: 0, y: 4)
+            .shadow(color: .black.opacity(0.16), radius: 2, x: 0, y: 1)
     }
 }
 

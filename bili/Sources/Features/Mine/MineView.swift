@@ -309,7 +309,7 @@ struct MineView: View {
             }
 
             Section {
-                ForEach(AppTab.defaultVisibleTabs) { tab in
+                ForEach(AppTab.defaultVisibleTabs.filter(\.participatesInRootTabVisibilitySettings)) { tab in
                     Toggle(isOn: Binding(
                         get: { libraryStore.visibleRootTabs.contains(tab) },
                         set: { libraryStore.setRootTab(tab, isVisible: $0) }
@@ -327,7 +327,7 @@ struct MineView: View {
             } header: {
                 Text("底部 Tab")
             } footer: {
-                Text("首页和我的固定显示，避免隐藏设置入口。")
+                Text("首页和我的固定显示，搜索使用系统独立搜索按钮。")
             }
 
             Section("首页") {
@@ -341,6 +341,18 @@ struct MineView: View {
                 } label: {
                     Label("首页布局", systemImage: "rectangle.grid.1x2")
                 }
+
+                Picker(selection: Binding(
+                    get: { libraryStore.homeRecommendFeedSourcePreference },
+                    set: { libraryStore.setHomeRecommendFeedSourcePreference($0) }
+                )) {
+                    ForEach(HomeRecommendFeedSourcePreference.allCases) { source in
+                        Text(source.title).tag(source)
+                    }
+                } label: {
+                    Label("首页推荐内容来源", systemImage: "sparkles.tv")
+                }
+                .pickerStyle(.navigationLink)
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -391,8 +403,7 @@ struct MineView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("显示与首页")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
     }
 
     private var playbackSettingsPage: some View {
@@ -422,6 +433,18 @@ struct MineView: View {
                     }
                 } label: {
                     Label("默认画质", systemImage: "play.rectangle")
+                }
+                .pickerStyle(.navigationLink)
+
+                Picker(selection: Binding(
+                    get: { libraryStore.playbackStreamSourcePreference },
+                    set: { libraryStore.setPlaybackStreamSourcePreference($0) }
+                )) {
+                    ForEach(PlaybackStreamSourcePreference.allCases) { source in
+                        Text(source.title).tag(source)
+                    }
+                } label: {
+                    Label("播放取流来源", systemImage: "antenna.radiowaves.left.and.right")
                 }
                 .pickerStyle(.navigationLink)
 
@@ -564,8 +587,7 @@ struct MineView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("播放偏好")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .task {
             refreshPlaybackURLPreferenceSnapshots()
             refreshPlaybackCDNProbeIfNeeded()
@@ -619,8 +641,7 @@ struct MineView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("内容过滤")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
     }
 
     private var privacySettingsPage: some View {
@@ -646,12 +667,14 @@ struct MineView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("隐私")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
     }
 
     private var visibleTabSummary: String {
-        libraryStore.visibleRootTabs.map(\.title).joined(separator: "、")
+        libraryStore.visibleRootTabs
+            .filter(\.participatesInRootTabVisibilitySettings)
+            .map(\.title)
+            .joined(separator: "、")
     }
 
     private var privacySummary: String {
@@ -768,6 +791,10 @@ struct MineView: View {
                 MinePlaybackPreferenceChip(
                     title: LibraryStore.videoQualityTitle(libraryStore.preferredVideoQuality),
                     systemImage: "play.rectangle"
+                )
+                MinePlaybackPreferenceChip(
+                    title: libraryStore.playbackStreamSourcePreference.title,
+                    systemImage: "antenna.radiowaves.left.and.right"
                 )
                 MinePlaybackPreferenceChip(
                     title: libraryStore.playbackCDNPreference.title,
@@ -1146,8 +1173,7 @@ private struct AccountLibraryListPage: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle(kind.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -1265,8 +1291,7 @@ private struct FavoriteFolderContentPage: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle(folder.displayTitle)
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -1480,8 +1505,7 @@ private struct PlayerPerformanceLogView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("播放性能")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("清空") {
@@ -1519,6 +1543,8 @@ private struct PlayerPerformanceLogView: View {
 }
 
 private struct ResourceCacheManagementView: View {
+    @AppStorage(ResourceCacheLimitSettings.isEnabledKey) private var isCacheLimitEnabled = ResourceCacheLimitSettings.defaultIsEnabled
+    @AppStorage(ResourceCacheLimitSettings.megabytesKey) private var cacheLimitMegabytes = ResourceCacheLimitSettings.defaultLimitMegabytes
     @State private var summary: ResourceCacheSummary?
     @State private var isWorking = false
 
@@ -1526,14 +1552,48 @@ private struct ResourceCacheManagementView: View {
         List {
             Section("统计") {
                 if let summary {
+                    cacheRow("总缓存", formatBytes(summary.managedBytes), cacheLimitSubtitle)
                     cacheRow("PlayURL", "\(summary.playURL.count)/\(summary.playURL.capacity)", "命中 \(summary.playURL.hits) · 未命中 \(summary.playURL.misses)")
                     cacheRow("图片", "\(summary.image.memoryEntryCount) 张", "磁盘 \(formatBytes(summary.image.diskUsage)) / \(formatBytes(summary.image.diskCapacity))")
                     cacheRow("API", formatBytes(summary.api.diskUsage), "内存 \(formatBytes(summary.api.memoryUsage))")
-                    cacheRow("播放片段", "\(summary.progressiveMedia.entryCount) 段", "\(formatBytes(summary.progressiveMedia.estimatedBytes)) / \(formatBytes(summary.progressiveMedia.byteCapacity))")
+                    cacheRow("视频分片", "\(summary.videoRangeMedia.entryCount) 段", "\(formatBytes(summary.videoRangeMedia.estimatedBytes)) / \(formatBytes(summary.videoRangeMedia.byteCapacity))")
+                    cacheRow("播放小片段", "\(summary.progressiveMedia.entryCount) 段", "\(formatBytes(summary.progressiveMedia.estimatedBytes)) / \(formatBytes(summary.progressiveMedia.byteCapacity))")
                     cacheRow("字幕/弹幕", "\(summary.subtitlesAndDanmaku.subtitleCount + summary.subtitlesAndDanmaku.danmakuSegmentCount) 项", "\(formatBytes(summary.subtitlesAndDanmaku.estimatedBytes)) / \(formatBytes(summary.subtitlesAndDanmaku.byteCapacity))")
                 } else {
                     ProgressView()
                 }
+            }
+
+            Section {
+                Toggle("启用缓存上限", isOn: $isCacheLimitEnabled)
+
+                Stepper(
+                    value: cacheLimitBinding,
+                    in: ResourceCacheLimitSettings.minimumLimitMegabytes...ResourceCacheLimitSettings.maximumLimitMegabytes,
+                    step: ResourceCacheLimitSettings.limitStepMegabytes
+                ) {
+                    HStack {
+                        Text("缓存上限")
+                        Spacer()
+                        Text(formatMegabytes(ResourceCacheLimitSettings.clampedMegabytes(cacheLimitMegabytes)))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .disabled(!isCacheLimitEnabled)
+
+                Button {
+                    performClear {
+                        await ResourceCacheCenter.enforceConfiguredLimit()
+                    }
+                } label: {
+                    Label("立即应用上限", systemImage: "gauge.with.dots.needle.50percent")
+                }
+                .disabled(!isCacheLimitEnabled)
+            } header: {
+                Text("缓存上限")
+            } footer: {
+                Text("超过上限时会自动优先清理视频分片和图片磁盘缓存，再清理 API、字幕/弹幕等可重新获取的缓存。")
             }
 
             Section("清理") {
@@ -1587,8 +1647,7 @@ private struct ResourceCacheManagementView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("资源缓存")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .disabled(isWorking)
         .task {
             await reload()
@@ -1596,6 +1655,29 @@ private struct ResourceCacheManagementView: View {
         .refreshable {
             await reload()
         }
+        .onChange(of: isCacheLimitEnabled) { _, _ in
+            scheduleCacheLimitApply()
+        }
+        .onChange(of: cacheLimitMegabytes) { _, value in
+            let clamped = ResourceCacheLimitSettings.clampedMegabytes(value)
+            if clamped != value {
+                cacheLimitMegabytes = clamped
+            }
+            scheduleCacheLimitApply()
+        }
+    }
+
+    private var cacheLimitBinding: Binding<Int> {
+        Binding(
+            get: { ResourceCacheLimitSettings.clampedMegabytes(cacheLimitMegabytes) },
+            set: { cacheLimitMegabytes = ResourceCacheLimitSettings.clampedMegabytes($0) }
+        )
+    }
+
+    private var cacheLimitSubtitle: String {
+        isCacheLimitEnabled
+            ? "上限 \(formatMegabytes(ResourceCacheLimitSettings.clampedMegabytes(cacheLimitMegabytes)))"
+            : "未启用自动上限"
     }
 
     private func cacheRow(_ title: String, _ value: String, _ subtitle: String) -> some View {
@@ -1632,6 +1714,17 @@ private struct ResourceCacheManagementView: View {
 
     private func formatBytes(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private func formatMegabytes(_ megabytes: Int) -> String {
+        formatBytes(megabytes * 1024 * 1024)
+    }
+
+    private func scheduleCacheLimitApply() {
+        ResourceCacheAutoTrim.schedule()
+        Task {
+            await reload()
+        }
     }
 }
 

@@ -91,6 +91,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var preferredVideoQuality: Int?
     @Published private(set) var playbackAutoOptimizationMode: PlaybackAutoOptimizationMode
+    @Published private(set) var playbackStreamSourcePreference: PlaybackStreamSourcePreference
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
     @Published private(set) var playbackCDNProbeRefreshPolicy: PlaybackCDNProbeRefreshPolicy
     @Published private(set) var playbackCDNProbeRefreshIntervalMinutes: Int
@@ -112,6 +113,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var homeRefreshTriggerDistance: Double
     @Published private(set) var homeFeedLayout: HomeFeedLayout
+    @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
 
     private let userDefaults: UserDefaults
@@ -119,6 +121,7 @@ final class LibraryStore: ObservableObject {
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
     private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
     private static let playbackAutoOptimizationModeKey = "cc.bili.playback.autoOptimizationMode.v1"
+    private static let playbackStreamSourcePreferenceKey = "cc.bili.playback.streamSourcePreference.v1"
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
     private static let playbackCDNProbeRefreshPolicyKey = "cc.bili.playback.cdnProbeRefreshPolicy.v1"
     private static let playbackCDNProbeRefreshIntervalMinutesKey = "cc.bili.playback.cdnProbeRefreshIntervalMinutes.v1"
@@ -141,9 +144,12 @@ final class LibraryStore: ObservableObject {
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
+    private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
     static let defaultPreferredVideoQuality = 112
+    static let defaultPlaybackStreamSourcePreference: PlaybackStreamSourcePreference = .web
+    static let defaultHomeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference = .web
     static let supportedVideoQualities = [129, 127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
     static let playbackCDNProbeRefreshIntervalRange: ClosedRange<Int> = 15...1440
     static let defaultPlaybackCDNProbeRefreshIntervalMinutes = 120
@@ -216,6 +222,9 @@ final class LibraryStore: ObservableObject {
         self.playbackAutoOptimizationMode = PlaybackAutoOptimizationMode(
             rawValue: userDefaults.string(forKey: Self.playbackAutoOptimizationModeKey) ?? ""
         ) ?? .automatic
+        self.playbackStreamSourcePreference = PlaybackStreamSourcePreference(
+            rawValue: userDefaults.string(forKey: Self.playbackStreamSourcePreferenceKey) ?? ""
+        ) ?? Self.defaultPlaybackStreamSourcePreference
         self.playbackCDNPreference = PlaybackCDNPreference(
             rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
         ) ?? .automatic
@@ -274,6 +283,9 @@ final class LibraryStore: ObservableObject {
         self.homeFeedLayout = HomeFeedLayout(
             rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
         ) ?? .singleColumn
+        self.homeRecommendFeedSourcePreference = HomeRecommendFeedSourcePreference(
+            rawValue: userDefaults.string(forKey: Self.homeRecommendFeedSourcePreferenceKey) ?? ""
+        ) ?? Self.defaultHomeRecommendFeedSourcePreference
         self.showsHotSearches = userDefaults.object(forKey: Self.showsHotSearchesKey) as? Bool ?? true
     }
 
@@ -301,6 +313,16 @@ final class LibraryStore: ObservableObject {
     func setPlaybackAutoOptimizationMode(_ mode: PlaybackAutoOptimizationMode) {
         playbackAutoOptimizationMode = mode
         userDefaults.set(mode.rawValue, forKey: Self.playbackAutoOptimizationModeKey)
+    }
+
+    func setPlaybackStreamSourcePreference(_ preference: PlaybackStreamSourcePreference) {
+        playbackStreamSourcePreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.playbackStreamSourcePreferenceKey)
+    }
+
+    func setHomeRecommendFeedSourcePreference(_ preference: HomeRecommendFeedSourcePreference) {
+        homeRecommendFeedSourcePreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.homeRecommendFeedSourcePreferenceKey)
     }
 
     func setPlaybackCDNPreference(_ preference: PlaybackCDNPreference) {

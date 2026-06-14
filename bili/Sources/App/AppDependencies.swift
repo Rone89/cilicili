@@ -35,6 +35,16 @@ final class AppDependencies: ObservableObject {
                 }
             }
             .store(in: &sessionCancellables)
+        libraryStore.$playbackStreamSourcePreference
+            .removeDuplicates()
+            .dropFirst()
+            .sink { _ in
+                Task {
+                    await PlayURLCache.shared.clearMemoryCache()
+                    await VideoPreloadCenter.shared.clearPlayURLCache()
+                }
+            }
+            .store(in: &sessionCancellables)
         NotificationCenter.default.publisher(for: .biliPlaybackNetworkClassDidChange)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -51,6 +61,7 @@ final class AppDependencies: ObservableObject {
             .store(in: &sessionCancellables)
         Task(priority: .utility) { [api] in
             await RemoteImageCache.shared.applyAdaptiveBudget()
+            await ResourceCacheCenter.enforceConfiguredLimit()
             async let startupResources: Void = api.prewarmStartupResources()
             async let dynamicFeed: Void = DynamicFeedWarmCache.shared.prewarm(api: api)
             _ = await (startupResources, dynamicFeed)

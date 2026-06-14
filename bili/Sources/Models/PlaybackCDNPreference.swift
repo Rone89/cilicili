@@ -54,6 +54,74 @@ enum PlaybackCDNProbeRefreshPolicy: String, CaseIterable, Identifiable, Codable,
     }
 }
 
+enum PlaybackStreamSourcePreference: String, CaseIterable, Identifiable, Codable, Sendable {
+    case web
+    case app
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated var title: String {
+        switch self {
+        case .web:
+            return "网页端"
+        case .app:
+            return "App 端"
+        }
+    }
+
+    nonisolated var detail: String {
+        switch self {
+        case .web:
+            return "使用网页播放接口参数，兼容性最好。"
+        case .app:
+            return "使用移动端播放参数和移动端 User-Agent 请求播放源。"
+        }
+    }
+
+    nonisolated var playURLPlatform: String {
+        switch self {
+        case .web:
+            return "pc"
+        case .app:
+            return "iphone"
+        }
+    }
+
+    nonisolated var cachePlatform: String {
+        switch self {
+        case .web:
+            return "web-pc"
+        case .app:
+            return "app-iphone"
+        }
+    }
+}
+
+enum HomeRecommendFeedSourcePreference: String, CaseIterable, Identifiable, Codable, Sendable {
+    case web
+    case app
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated var title: String {
+        switch self {
+        case .web:
+            return "网页端"
+        case .app:
+            return "App 端"
+        }
+    }
+
+    nonisolated var detail: String {
+        switch self {
+        case .web:
+            return "使用网页推荐接口，稳定且兼容性最好。"
+        case .app:
+            return "使用移动端推荐接口，更接近官方 App 推荐流。"
+        }
+    }
+}
+
 enum PlaybackNetworkAddressFamily: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
     case ipv4
     case ipv6

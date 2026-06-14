@@ -5,6 +5,10 @@ struct DynamicFeedCardDisplayModel {
     let videoDisplay: VideoCardDisplayModel?
     let live: DynamicLive?
     let liveRoom: LiveRoom?
+    let paidContent: DynamicPaidContent?
+    let paidVideo: VideoItem?
+    let paidContentRendersAsTextOnly: Bool
+    let paidChargeURL: URL?
     let authorOwner: VideoOwner?
     let authorAvatarURLString: String?
     let authorName: String
@@ -27,12 +31,16 @@ struct DynamicFeedCardDisplayModel {
     init(item: DynamicFeedItem) {
         let video = item.archive?.asVideoItem(author: item.author)
         let live = item.live
+        let paidContent = item.paidContent
+        let paidVideo = paidContent?.asVideoItem(author: item.author)
+        let paidContentRendersAsTextOnly = paidContent?.isChargeArticleLike == true
         let imageItems = item.imageItems.filter { $0.normalizedURL != nil }
         let textSegments = item.textSegments
         let topLevelDisplayText = DynamicTextSegment.displayText(from: textSegments)
         let authorName = item.author?.name ?? "Unknown"
         let isPureTextDynamic = video == nil
             && live == nil
+            && paidContent == nil
             && imageItems.isEmpty
             && item.original == nil
             && !item.isForward
@@ -42,6 +50,10 @@ struct DynamicFeedCardDisplayModel {
         self.videoDisplay = video.map(VideoCardDisplayModel.init(video:))
         self.live = live
         self.liveRoom = live?.asLiveRoom(author: item.author)
+        self.paidContent = paidContent
+        self.paidVideo = paidVideo
+        self.paidContentRendersAsTextOnly = paidContentRendersAsTextOnly
+        self.paidChargeURL = paidContent?.chargePageURL(author: item.author)
         self.authorOwner = item.author?.owner
         self.authorAvatarURLString = item.author?.face?.normalizedBiliURL()
         self.authorName = authorName
@@ -51,7 +63,10 @@ struct DynamicFeedCardDisplayModel {
         self.expandedTextInput = .dynamicFeedHeadline(segments: textSegments, emoteSize: 23, maxLines: nil)
         self.topLevelDisplayText = topLevelDisplayText
         self.publishTimeText = Self.publishTime(for: item.author)
-        self.usesHomeVideoCardStyle = video != nil && item.original == nil && !item.isForward
+        self.usesHomeVideoCardStyle = video != nil
+            && paidContent == nil
+            && item.original == nil
+            && !item.isForward
         self.usesSeparatedDynamicLayout = item.original != nil
             || item.isForward
             || (!imageItems.isEmpty && video == nil)
@@ -60,8 +75,8 @@ struct DynamicFeedCardDisplayModel {
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
         self.repostTitle = Self.statTitle(count: item.repostCount, fallback: "转发")
-        self.shareURL = Self.shareURL(item: item, video: video, live: live)
-        self.shareTitle = Self.shareTitle(authorName: authorName, text: topLevelDisplayText, video: video, live: live)
+        self.shareURL = Self.shareURL(item: item, video: video, live: live, paidContent: paidContent)
+        self.shareTitle = Self.shareTitle(authorName: authorName, text: topLevelDisplayText, video: video, live: live, paidContent: paidContent)
         self.shareMessage = "\(authorName)：\(self.shareTitle)"
     }
 
@@ -92,7 +107,7 @@ struct DynamicFeedCardDisplayModel {
         return false
     }
 
-    private static func shareURL(item: DynamicFeedItem, video: VideoItem?, live: DynamicLive?) -> URL? {
+    private static func shareURL(item: DynamicFeedItem, video: VideoItem?, live: DynamicLive?, paidContent: DynamicPaidContent?) -> URL? {
         if let dynamicID = validShareID(item.idStr) {
             return URL(string: "https://t.bilibili.com/\(dynamicID)")
         }
@@ -105,14 +120,18 @@ struct DynamicFeedCardDisplayModel {
         if let roomID = live?.roomID, roomID > 0 {
             return URL(string: "https://live.bilibili.com/\(roomID)")
         }
+        if let paidURL = paidContent?.normalizedJumpURL {
+            return paidURL
+        }
         return nil
     }
 
-    private static func shareTitle(authorName: String, text: String?, video: VideoItem?, live: DynamicLive?) -> String {
+    private static func shareTitle(authorName: String, text: String?, video: VideoItem?, live: DynamicLive?, paidContent: DynamicPaidContent?) -> String {
         let candidates = [
             text,
             video?.title,
-            live?.displayTitle
+            live?.displayTitle,
+            paidContent?.title
         ]
         return candidates.compactMap { value in
             let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

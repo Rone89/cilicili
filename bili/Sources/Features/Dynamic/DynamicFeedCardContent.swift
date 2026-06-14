@@ -19,7 +19,16 @@ struct DynamicStandardFeedCardContent: View {
             )
                 .padding(.horizontal, 12)
 
-            if let video = display.video {
+            if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
+                DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: display.paidChargeURL) {
+                    DynamicPaidArticleTextPreview(content: paidContent)
+                }
+                .padding(.horizontal, 12)
+            } else if let paidContent = display.paidContent {
+                DynamicPaidContentRouteLink(content: paidContent, video: display.paidVideo) {
+                    DynamicPaidContentPreview(content: paidContent, style: .large)
+                }
+            } else if let video = display.video {
                 VideoRouteLink(video) {
                     DynamicArchivePreview(video: video, style: .large, showsHeader: false)
                 }
@@ -94,6 +103,16 @@ struct DynamicSeparatedFeedCardContent: View {
                 preferredWidth: textWidth,
                 isTextExpanded: $isTextExpanded
             )
+
+            if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
+                DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: display.paidChargeURL) {
+                    DynamicPaidArticleTextPreview(content: paidContent)
+                }
+            } else if let paidContent = display.paidContent {
+                DynamicPaidContentRouteLink(content: paidContent, video: display.paidVideo) {
+                    DynamicPaidContentPreview(content: paidContent, style: .compact)
+                }
+            }
 
             if !display.imageItems.isEmpty {
                 imageSquareGrid

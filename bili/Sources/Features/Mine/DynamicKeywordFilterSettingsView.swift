@@ -63,8 +63,7 @@ struct DynamicKeywordFilterSettingsView: View {
             }
         }
         .nativeTopScrollEdgeEffect()
-        .navigationTitle("动态关键词")
-        .navigationBarTitleDisplayMode(.inline)
+        .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("完成") {

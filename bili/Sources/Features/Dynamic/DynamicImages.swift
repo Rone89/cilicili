@@ -5,6 +5,10 @@ private struct DynamicImageDisplayItem: Identifiable {
     let index: Int
     let image: DynamicImageItem
     let aspectRatio: CGFloat
+
+    var isLongImage: Bool {
+        aspectRatio < 0.62
+    }
 }
 
 private enum DynamicImageDisplayItems {
@@ -214,7 +218,12 @@ struct DynamicImageThumbnailStrip: View {
             let fullWidth = max(width + horizontalBleed * 2, 1)
             let imageWidth = floor(max(fullWidth * Self.singleImageMaxWidthRatio, Self.minSingleImageWidth))
             let aspectRatio = max(item.aspectRatio, 0.1)
-            let imageHeight = ceil(imageWidth / aspectRatio)
+            let displayMode: DynamicImageCell.DisplayMode = item.isLongImage
+                ? .longImage(cornerRadius: 8)
+                : .single
+            let imageHeight = item.isLongImage
+                ? ceil(imageWidth * 16 / 9)
+                : ceil(imageWidth / aspectRatio)
 
             HStack {
                 DynamicImageButton(
@@ -222,7 +231,7 @@ struct DynamicImageThumbnailStrip: View {
                     previewItems: previewItems,
                     previewItemID: item.id,
                     previewGroup: previewGroup,
-                    displayMode: .single
+                    displayMode: displayMode
                 )
                 .frame(width: imageWidth, height: imageHeight)
                 .accessibilityLabel(accessibilityTitle(for: item.index))
@@ -338,9 +347,14 @@ private struct DynamicImageGrid: View {
         if let item = displayedImages.first {
             let imageWidth = floor(width * 0.82)
             let aspectRatio = item.aspectRatio
-            let imageHeight = min(max(imageWidth / aspectRatio, 150), 360)
+            let displayMode: DynamicImageCell.DisplayMode = item.isLongImage
+                ? .longImage(cornerRadius: 8)
+                : .single
+            let imageHeight = item.isLongImage
+                ? ceil(imageWidth * 16 / 9)
+                : min(max(imageWidth / aspectRatio, 150), 360)
             HStack {
-                imageTile(item, displayMode: .single)
+                imageTile(item, displayMode: displayMode)
                 .frame(width: imageWidth, height: imageHeight)
                 Spacer(minLength: 0)
             }
@@ -641,6 +655,7 @@ private extension DynamicImageButton where Overlay == EmptyView {
 private struct DynamicImageCell: View {
     enum DisplayMode {
         case single
+        case longImage(cornerRadius: CGFloat)
         case square(cornerRadius: CGFloat)
         case hero(aspectRatio: CGFloat, cornerRadius: CGFloat)
         case fixedHeight(height: CGFloat, cornerRadius: CGFloat)
@@ -681,6 +696,17 @@ private struct DynamicImageCell: View {
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .mediaShadow(.regular, opacityScale: thumbnailShadowOpacityScale)
+        case .longImage(let cornerRadius):
+            imageContent
+                .aspectRatio(9 / 16, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .mediaShadow(.regular, opacityScale: thumbnailShadowOpacityScale)
+                .overlay(alignment: .bottomTrailing) {
+                    LongImageBadge()
+                        .padding(8)
+                }
         case .square(let cornerRadius):
             imageContent
                 .aspectRatio(1, contentMode: .fill)
@@ -720,6 +746,7 @@ private struct DynamicImageCell: View {
                 targetPixelSize: thumbnailMaxSide,
                 cornerRadius: displayMode.cornerRadius,
                 contentMode: thumbnailContentMode,
+                contentAlignment: thumbnailContentAlignment,
                 onViewerPresentationChange: updateThumbnailShadowVisibility
             ) { phase in
                 BiliMediaPlaceholder(
@@ -745,8 +772,17 @@ private struct DynamicImageCell: View {
         switch displayMode {
         case .fixedHeight:
             return .fit
-        case .single, .square, .hero:
+        case .single, .longImage, .square, .hero:
             return .fill
+        }
+    }
+
+    private var thumbnailContentAlignment: ZoomyImageContentAlignment {
+        switch displayMode {
+        case .longImage:
+            return .top
+        case .single, .square, .hero, .fixedHeight:
+            return .center
         }
     }
 
@@ -754,6 +790,8 @@ private struct DynamicImageCell: View {
         switch displayMode {
         case .single:
             return imageAspectRatio
+        case .longImage:
+            return 9 / 16
         case .square(_):
             return 1
         case .hero(let aspectRatio, _):
@@ -766,7 +804,7 @@ private struct DynamicImageCell: View {
     private var thumbnailMaxSide: Int {
         let usesCompactImages = PlaybackEnvironment.current.shouldPreferConservativePlayback
         switch displayMode {
-        case .single, .hero(_, _):
+        case .single, .longImage, .hero(_, _):
             return usesCompactImages ? 960 : 1280
         case .square(_), .fixedHeight:
             return usesCompactImages ? 360 : 420
@@ -789,8 +827,23 @@ private extension DynamicImageCell.DisplayMode {
         switch self {
         case .single:
             return 8
-        case .square(let cornerRadius), .hero(_, let cornerRadius), .fixedHeight(_, let cornerRadius):
+        case .longImage(let cornerRadius), .square(let cornerRadius), .hero(_, let cornerRadius), .fixedHeight(_, let cornerRadius):
             return cornerRadius
+        }
+    }
+}
+
+private struct LongImageBadge: View {
+    var body: some View {
+        GlassEffectContainer(spacing: 8) {
+            Label("长图", systemImage: "scroll")
+                .font(.caption2.weight(.semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .biliPlayerClearGlass(interactive: false, in: Capsule())
+                .accessibilityLabel("长图")
         }
     }
 }

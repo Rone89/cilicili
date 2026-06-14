@@ -184,6 +184,7 @@ actor PlayURLCache {
     func playableFallback(
         bvid: String,
         cid: Int,
+        platform: String? = nil,
         scope: PlayURLCacheLoginScope
     ) -> PlayURLData? {
         trimExpired()
@@ -191,6 +192,7 @@ actor PlayURLCache {
             .filter { key, entry in
                 key.bvid == bvid
                     && key.cid == cid
+                    && (platform == nil || key.platform == platform)
                     && entry.scope == scope
                     && entry.data.hasPlayableStreamPayload
             }
@@ -879,6 +881,7 @@ actor BiliAPIResponseMemoryCache {
         )
         estimatedBytes += data.count
         trimIfNeeded(now: now)
+        ResourceCacheAutoTrim.schedule()
     }
 
     func clear() {
@@ -1039,6 +1042,7 @@ actor ProgressiveMediaSegmentCache {
         estimatedBytes += bytes
         stores += 1
         trimIfNeeded()
+        ResourceCacheAutoTrim.schedule()
     }
 
     func clear() {
@@ -1177,6 +1181,7 @@ actor SubtitleDanmakuResourceCache {
         subtitles[key] = SubtitleEntry(data: data, bytes: data.count, storedAt: now, lastAccessedAt: now)
         estimatedBytes += data.count
         trimIfNeeded()
+        ResourceCacheAutoTrim.schedule()
     }
 
     func danmaku(for cid: Int, segmentIndex: Int = 1) -> [DanmakuItem]? {
@@ -1202,6 +1207,7 @@ actor SubtitleDanmakuResourceCache {
         danmakuSegments[key] = DanmakuEntry(items: items, bytes: bytes, storedAt: now, lastAccessedAt: now)
         estimatedBytes += bytes
         trimIfNeeded()
+        ResourceCacheAutoTrim.schedule()
     }
 
     func clear() {
@@ -1347,8 +1353,84 @@ nonisolated struct ResourceCacheSummary: Sendable {
     let image: RemoteImageCacheStatistics
     let api: URLCacheStatistics
     let apiMemory: BiliAPIResponseMemoryCacheStatistics
+    let videoRangeMedia: VideoRangeCacheStatistics
     let progressiveMedia: ProgressiveMediaCacheStatistics
     let subtitlesAndDanmaku: TimedResourceCacheStatistics
+
+    var managedBytes: Int {
+        [
+            image.diskUsage,
+            api.diskUsage,
+            apiMemory.estimatedBytes,
+            videoRangeMedia.estimatedBytes,
+            progressiveMedia.estimatedBytes,
+            subtitlesAndDanmaku.estimatedBytes
+        ].reduce(0) { partial, value in
+            partial + max(0, value)
+        }
+    }
+}
+
+nonisolated enum ResourceCacheLimitSettings {
+    static let isEnabledKey = "ResourceCacheLimitSettings.isEnabled"
+    static let megabytesKey = "ResourceCacheLimitSettings.limitMegabytes"
+    static let defaultIsEnabled = true
+    static let defaultLimitMegabytes = 1024
+    static let minimumLimitMegabytes = 256
+    static let maximumLimitMegabytes = 4096
+    static let limitStepMegabytes = 256
+
+    static var isEnabled: Bool {
+        guard UserDefaults.standard.object(forKey: isEnabledKey) != nil else {
+            return defaultIsEnabled
+        }
+        return UserDefaults.standard.bool(forKey: isEnabledKey)
+    }
+
+    static var limitMegabytes: Int {
+        let stored = UserDefaults.standard.integer(forKey: megabytesKey)
+        let rawValue = stored > 0 ? stored : defaultLimitMegabytes
+        return clampedMegabytes(rawValue)
+    }
+
+    static var limitBytes: Int? {
+        guard isEnabled else { return nil }
+        return limitMegabytes * 1024 * 1024
+    }
+
+    static func clampedMegabytes(_ value: Int) -> Int {
+        min(max(value, minimumLimitMegabytes), maximumLimitMegabytes)
+    }
+}
+
+actor ResourceCacheAutoTrimCoordinator {
+    static let shared = ResourceCacheAutoTrimCoordinator()
+
+    private var scheduledTask: Task<Void, Never>?
+
+    func scheduleIfNeeded() {
+        guard ResourceCacheLimitSettings.isEnabled else { return }
+        guard scheduledTask == nil else { return }
+        scheduledTask = Task(priority: .utility) {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            await ResourceCacheCenter.enforceConfiguredLimit()
+            await ResourceCacheAutoTrimCoordinator.shared.finishScheduledTask()
+        }
+    }
+
+    func finishScheduledTask() {
+        scheduledTask = nil
+    }
+}
+
+nonisolated enum ResourceCacheAutoTrim {
+    static func schedule() {
+        guard ResourceCacheLimitSettings.isEnabled else { return }
+        Task(priority: .utility) {
+            await ResourceCacheAutoTrimCoordinator.shared.scheduleIfNeeded()
+        }
+    }
 }
 
 nonisolated enum RelatedPlaybackPrefetchPolicy {
@@ -1377,6 +1459,7 @@ nonisolated enum ResourceCacheCenter {
         async let playURL = PlayURLCache.shared.statistics()
         async let image = RemoteImageCache.shared.statistics()
         async let apiMemory = BiliAPIResponseMemoryCache.shared.statistics()
+        async let videoRangeMedia = VideoRangeCache.shared.statistics()
         async let progressiveMedia = ProgressiveMediaSegmentCache.shared.statistics()
         async let subtitlesAndDanmaku = SubtitleDanmakuResourceCache.shared.statistics()
         return await ResourceCacheSummary(
@@ -1384,9 +1467,49 @@ nonisolated enum ResourceCacheCenter {
             image: image,
             api: BiliURLSessionFactory.apiCacheStatistics(),
             apiMemory: apiMemory,
+            videoRangeMedia: videoRangeMedia,
             progressiveMedia: progressiveMedia,
             subtitlesAndDanmaku: subtitlesAndDanmaku
         )
+    }
+
+    @discardableResult
+    static func enforceConfiguredLimit() async -> ResourceCacheSummary {
+        guard let limitBytes = ResourceCacheLimitSettings.limitBytes else {
+            return await summary()
+        }
+
+        var current = await summary()
+        guard current.managedBytes > limitBytes else { return current }
+
+        let videoRangeTarget = max(
+            0,
+            current.videoRangeMedia.estimatedBytes - (current.managedBytes - limitBytes)
+        )
+        if videoRangeTarget < current.videoRangeMedia.estimatedBytes {
+            await VideoRangeCache.shared.trim(to: Int64(videoRangeTarget))
+            current = await summary()
+            guard current.managedBytes > limitBytes else { return current }
+        }
+
+        await clearProgressiveMedia()
+        current = await summary()
+        guard current.managedBytes > limitBytes else { return current }
+
+        await clearImages(includeDisk: true)
+        current = await summary()
+        guard current.managedBytes > limitBytes else { return current }
+
+        await clearAPI()
+        current = await summary()
+        guard current.managedBytes > limitBytes else { return current }
+
+        await clearSubtitlesAndDanmaku()
+        current = await summary()
+        guard current.managedBytes > limitBytes else { return current }
+
+        await clearPlayURL()
+        return await summary()
     }
 
     static func clearPlayURL() async {
@@ -1412,6 +1535,7 @@ nonisolated enum ResourceCacheCenter {
 
     static func clearProgressiveMedia() async {
         await ProgressiveMediaSegmentCache.shared.clear()
+        await VideoRangeCache.shared.clear()
     }
 
     static func clearAll() async {

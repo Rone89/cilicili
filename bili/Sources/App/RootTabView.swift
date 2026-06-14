@@ -85,8 +85,8 @@ struct RootTabView: View {
                 }
             }
             .tint(.pink)
-            .tabBarMinimizeBehavior(runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never)
             .tabViewSearchActivation(.searchTabSelection)
+            .tabBarMinimizeBehavior(runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never)
             .restoresRootTabBarWhenRequested(requestID: rootTabBarRestoreRequestID)
             .background(RootTabBarAppearanceInstaller())
 
@@ -346,7 +346,7 @@ struct RootTabView: View {
     }
 
     private func beginPlaybackPreload(for video: VideoItem) {
-        guard !video.bvid.isEmpty else { return }
+        guard !video.bvid.isEmpty, !video.bvid.hasPrefix("av") else { return }
         let now = Date()
         if let lastPreload = recentPlaybackPreloadTimes[video.bvid],
            now.timeIntervalSince(lastPreload) < 1.2 {

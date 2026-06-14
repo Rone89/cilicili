@@ -1,5 +1,12 @@
 import Combine
 import Foundation
+#if DEBUG
+import OSLog
+#endif
+
+#if DEBUG
+private let dynamicDiagnosticsLogger = Logger(subsystem: "cc.bili", category: "DynamicDiagnostics")
+#endif
 
 @MainActor
 final class DynamicViewModel: ObservableObject {
@@ -142,11 +149,18 @@ final class DynamicViewModel: ObservableObject {
 
     private func displayable(_ items: [DynamicFeedItem]?) -> [DynamicFeedItem] {
         (items ?? []).filter { item in
-            item.author != nil
-                || item.displayText?.isEmpty == false
+            let isDisplayable = item.displayText?.isEmpty == false
                 || item.archive != nil
+                || item.live != nil
+                || item.paidContent != nil
                 || !item.imageItems.isEmpty
                 || item.original?.hasDisplayableContent == true
+#if DEBUG
+            if !isDisplayable, item.author != nil {
+                dynamicDiagnosticsLogger.debug("Dropped empty dynamic: \(item.contentDiagnosticSummary, privacy: .public)")
+            }
+#endif
+            return isDisplayable
         }
     }
 
@@ -267,6 +281,12 @@ final class DynamicViewModel: ObservableObject {
 
             if let video = item.archive?.asVideoItem(author: item.author),
                let source = video.pic?.normalizedBiliURL(),
+               let coverURL = URL(string: source.biliCoverThumbnailURL(width: coverTargetPixelSize, height: Int(Double(coverTargetPixelSize) * 9 / 16))),
+               seenURLs.insert(source).inserted {
+                coverSources.append(RemoteImageSource(url: coverURL, fallbackURL: URL(string: source)))
+            }
+
+            if let source = item.paidContent?.normalizedCoverURL,
                let coverURL = URL(string: source.biliCoverThumbnailURL(width: coverTargetPixelSize, height: Int(Double(coverTargetPixelSize) * 9 / 16))),
                seenURLs.insert(source).inserted {
                 coverSources.append(RemoteImageSource(url: coverURL, fallbackURL: URL(string: source)))
