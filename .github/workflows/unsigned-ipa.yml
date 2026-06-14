@@ -34,7 +34,7 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
-      - name: Build app without signing
+      - name: Build Release app without signing
         run: |
           set -euo pipefail
           DERIVED_DATA_PATH="$RUNNER_TEMP/DerivedData"
@@ -42,7 +42,7 @@ jobs:
           xcodebuild \
             -project bili.xcodeproj \
             -scheme bili \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA_PATH" \
@@ -51,9 +51,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            SWIFT_OPTIMIZATION_LEVEL=-Onone \
-            SWIFT_COMPILATION_MODE=singlefile \
-            SWIFT_ENABLE_BATCH_MODE=NO \
+            COPY_PHASE_STRIP=YES \
+            STRIP_INSTALLED_PRODUCT=YES \
+            DEPLOYMENT_POSTPROCESSING=YES \
             build
           APP_PATH="$(find "$DERIVED_DATA_PATH/Build/Products" -maxdepth 2 -name '*.app' -type d | head -n 1)"
           if [ -z "$APP_PATH" ]; then
@@ -62,11 +62,11 @@ jobs:
           fi
           mkdir -p "$BUILD_DIR/Payload"
           cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
-          (cd "$BUILD_DIR" && zip -qry "$GITHUB_WORKSPACE/bili-unsigned.ipa" Payload)
+          (cd "$BUILD_DIR" && zip -qry "$GITHUB_WORKSPACE/cilicili-release-unsigned.ipa" Payload)
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: bili-unsigned-ipa
-          path: bili-unsigned.ipa
+          name: cilicili-release-unsigned-ipa
+          path: cilicili-release-unsigned.ipa
           if-no-files-found: error

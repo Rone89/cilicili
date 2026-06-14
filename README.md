@@ -12,7 +12,7 @@ cilicili 是一个使用 SwiftUI 开发的第三方 iOS 客户端实验项目，
 - 基于 AVPlayer 的 HLS Bridge 播放链路，面向 iOS 26+ 设备优化 HEVC 硬件解码体验。
 - 支持弹幕开关、弹幕样式设置、内容关键词过滤、图片大图预览和组图切换。
 - 支持二维码登录和 Web 登录，登录态存储在本机 Keychain 中。
-- GitHub Actions 可自动构建未签名 IPA。
+- GitHub Actions 可自动构建 Release 未签名 IPA。
 
 ## 环境要求
 
@@ -49,7 +49,7 @@ mkdir -p "$BUILD_DIR/Payload"
 xcodebuild \
   -project bili.xcodeproj \
   -scheme bili \
-  -configuration Debug \
+  -configuration Release \
   -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
@@ -57,16 +57,19 @@ xcodebuild \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
   PROVISIONING_PROFILE_SPECIFIER="" \
+  COPY_PHASE_STRIP=YES \
+  STRIP_INSTALLED_PRODUCT=YES \
+  DEPLOYMENT_POSTPROCESSING=YES \
   build
 
 APP_PATH="$(find "$DERIVED_DATA_PATH/Build/Products" -maxdepth 2 -name '*.app' -type d | head -n 1)"
 cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
-(cd "$BUILD_DIR" && zip -qry cilicili-unsigned.ipa Payload)
+(cd "$BUILD_DIR" && zip -qry cilicili-release-unsigned.ipa Payload)
 ```
 
 ## GitHub Actions
 
-仓库内置 `.github/workflows/unsigned-ipa.yml`，每次推送到 `main` 或手动触发 workflow 时，会构建一个未签名 IPA artifact。
+仓库内置 `.github/workflows/unsigned-ipa.yml`，每次推送到 `main` 或手动触发 workflow 时，会构建一个 Release 未签名 IPA artifact。
 
 ## 隐私与安全
 
