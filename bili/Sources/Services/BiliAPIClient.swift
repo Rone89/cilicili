@@ -113,6 +113,7 @@ nonisolated final class BiliAPIClient {
     private static let supplementalQualityLadder = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
     private static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     private static let webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    private static let recommendLogger = Logger(subsystem: "cc.bili", category: "HomeRecommend")
     private let session: URLSession
     private let sessionStore: SessionStore
     private let libraryStore: LibraryStore
@@ -208,9 +209,17 @@ nonisolated final class BiliAPIClient {
         let task = Task<[VideoItem], Error>(priority: .userInitiated) { [self] in
             switch feedSource {
             case .web:
-                return try await fetchWebRecommendFeed(freshIndex: freshIndex)
+                let videos = try await fetchWebRecommendFeed(freshIndex: freshIndex)
+                Self.recommendLogger.info(
+                    "source=web endpoint=/x/web-interface/wbi/index/top/feed/rcmd freshIndex=\(freshIndex, privacy: .public) count=\(videos.count, privacy: .public)"
+                )
+                return videos
             case .app:
-                return try await fetchAppRecommendFeed(freshIndex: freshIndex, preferredVideoQuality: snapshot.preferredVideoQuality)
+                let videos = try await fetchAppRecommendFeed(freshIndex: freshIndex, preferredVideoQuality: snapshot.preferredVideoQuality)
+                Self.recommendLogger.info(
+                    "source=app endpoint=/x/v2/feed/index host=app.bilibili.com freshIndex=\(freshIndex, privacy: .public) count=\(videos.count, privacy: .public)"
+                )
+                return videos
             }
         }
         await state.setVideoListTask(task, for: taskKey)
@@ -1262,6 +1271,8 @@ nonisolated final class BiliAPIClient {
         ) {
             if !honorsConfiguredQuality
                 || racedStartupData.hasPlayableQuality(requestedQuality)
+                || (racedStartupData.hasPlayableStreamPayload
+                    && !racedStartupData.shouldRefetchForPreferredQuality(requestedQuality))
                 || (allowsUsableFallback && racedStartupData.hasPlayableStreamPayload) {
                 return racedStartupData
             }
@@ -1397,6 +1408,20 @@ nonisolated final class BiliAPIClient {
                     if data.hasPlayableQuality(requestedQuality) {
                         logPlayURLStage(
                             "startupRaceWinner.\(attempt.stage)",
+                            bvid: bvid,
+                            cid: cid,
+                            start: raceStart,
+                            data: data
+                        )
+                        group.cancelAll()
+                        return data
+                    }
+                    let canAcceptUnavailablePreferredFallback =
+                        data.hasPlayableStreamPayload
+                        && !data.shouldRefetchForPreferredQuality(requestedQuality)
+                    if canAcceptUnavailablePreferredFallback {
+                        logPlayURLStage(
+                            "startupRaceUnavailablePreferredFallback.\(attempt.stage)",
                             bvid: bvid,
                             cid: cid,
                             start: raceStart,
@@ -1681,8 +1706,27 @@ nonisolated final class BiliAPIClient {
         case avc
         case av1
 
-        static let primaryPlaybackOrder: [PlayURLCodecPreference] = [.hevc, .automatic]
-        static let extendedPlaybackOrder: [PlayURLCodecPreference] = [.hevc, .automatic, .avc, .av1]
+        static var primaryPlaybackOrder: [PlayURLCodecPreference] {
+            playbackOrder(for: VideoCodecPreference.stored())
+        }
+
+        static var extendedPlaybackOrder: [PlayURLCodecPreference] {
+            playbackOrder(for: VideoCodecPreference.stored())
+        }
+
+        private static func playbackOrder(for preference: VideoCodecPreference) -> [PlayURLCodecPreference] {
+            switch preference {
+            case .auto, .forceAV1:
+                if PlaybackCodecPolicy.canDecodeAV1 {
+                    return [.av1, .hevc, .automatic, .avc]
+                }
+                return [.hevc, .automatic, .avc, .av1]
+            case .forceHEVC:
+                return [.hevc, .automatic, .avc, .av1]
+            case .forceH264:
+                return [.avc, .automatic, .hevc, .av1]
+            }
+        }
 
         var videoCodecid: String? {
             switch self {
@@ -2292,12 +2336,15 @@ nonisolated final class BiliAPIClient {
     }
 
     func fetchHotSearch() async throws -> [HotSearchItem] {
+        let keys = try await fetchWBIKeys(priority: .userInitiated)
+        let signed = WBISigner.sign(["limit": "10"], keys: keys)
         let response: BiliResponse<HotSearchData> = try await get(
             base: baseURL,
             path: "/x/web-interface/wbi/search/square",
-            query: ["limit": "10"],
+            query: signed,
             responseCachePolicy: .short
         )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload?.trending?.list ?? []
     }
 

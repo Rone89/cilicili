@@ -8,9 +8,9 @@ struct DynamicVideoTitleText: View {
         var font: Font {
             switch self {
             case .feed:
-                .system(size: 15, weight: .semibold)
+                FeedTypography.titleFont
             case .compact:
-                .system(size: 14, weight: .semibold)
+                FeedTypography.titleFont
             }
         }
     }

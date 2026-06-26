@@ -66,8 +66,8 @@ extension View {
     }
 
     @ViewBuilder
-    func nativeTopScrollEdgeEffect() -> some View {
-        modifier(TopScrollEdgeEffect())
+    func nativeTopScrollEdgeEffect(hidesRootNavigationTitle: Bool = true) -> some View {
+        modifier(TopScrollEdgeEffect(hidesRootNavigationTitle: hidesRootNavigationTitle))
     }
 
     @ViewBuilder
@@ -121,19 +121,25 @@ extension View {
 
 struct TopScrollEdgeEffect: ViewModifier {
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
+    let hidesRootNavigationTitle: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top > 18
-            } action: { _, isHidden in
-                guard rootNavigationTitleHidden.wrappedValue != isHidden else { return }
-                withAnimation(.smooth(duration: 0.18)) {
-                    rootNavigationTitleHidden.wrappedValue = isHidden
+        if hidesRootNavigationTitle {
+            content
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top > 18
+                } action: { _, isHidden in
+                    guard rootNavigationTitleHidden.wrappedValue != isHidden else { return }
+                    withAnimation(.smooth(duration: 0.18)) {
+                        rootNavigationTitleHidden.wrappedValue = isHidden
+                    }
                 }
-            }
+        } else {
+            content
+                .scrollEdgeEffectStyle(.soft, for: .top)
+        }
     }
 }
 

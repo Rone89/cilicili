@@ -1,0 +1,211 @@
+import SwiftUI
+
+struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
+    @ObservedObject var libraryStore: LibraryStore
+    let playbackPreferenceSummary: AnyView
+    let playbackCDNProbeRefreshIntervalTitle: String
+    let isProbingPlaybackCDN: Bool
+    let playbackCDNProbeMessage: String?
+    let probePlaybackCDN: () -> Void
+    @ViewBuilder let probeSummary: () -> ProbeSummary
+
+    var body: some View {
+        Section {
+            playbackPreferenceSummary
+            playbackAutoOptimizationPicker
+            preferredVideoQualityPicker
+            videoCodecPreferencePicker
+            playbackStreamSourcePicker
+            playerRenderingEnginePicker
+            playbackCDNPicker
+            playbackCDNProbeRefreshPolicyPicker
+            playbackCDNProbeRefreshPolicyDetail
+            playbackNetworkAddressFamilyPicker
+            playbackNetworkAddressFamilyNotice
+            playbackCDNProbeButton
+            playbackCDNProbeMessageText
+            probeSummary()
+            defaultPlaybackRatePicker
+        } header: {
+            Text("播放偏好")
+        } footer: {
+            Text("自动模式会优先保留接口下发的播放地址候选，再根据真实播放记录和启动探测微调排序。测速结果用于诊断和手动推荐；手动选择 CDN 或协议后，播放仍会保留备用地址作为回退。")
+        }
+    }
+
+    private var playbackAutoOptimizationPicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playbackAutoOptimizationMode },
+            set: { libraryStore.setPlaybackAutoOptimizationMode($0) }
+        )) {
+            ForEach(PlaybackAutoOptimizationMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        } label: {
+            Label("播放自动优化", systemImage: "wand.and.stars")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var preferredVideoQualityPicker: some View {
+        Picker(selection: Binding<Int>(
+            get: { libraryStore.preferredVideoQuality ?? 0 },
+            set: { libraryStore.setPreferredVideoQuality($0 == 0 ? nil : $0) }
+        )) {
+            Text(LibraryStore.videoQualityTitle(nil)).tag(0)
+            ForEach(LibraryStore.supportedVideoQualities, id: \.self) { quality in
+                Text(LibraryStore.videoQualityTitle(quality)).tag(quality)
+            }
+        } label: {
+            Label("默认画质", systemImage: "play.rectangle")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var videoCodecPreferencePicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.videoCodecPreference },
+            set: { libraryStore.setVideoCodecPreference($0) }
+        )) {
+            ForEach(VideoCodecPreference.allCases) { preference in
+                Text(preference.title).tag(preference)
+            }
+        } label: {
+            Label("首选编码", systemImage: "film.stack")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var playbackStreamSourcePicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playbackStreamSourcePreference },
+            set: { libraryStore.setPlaybackStreamSourcePreference($0) }
+        )) {
+            ForEach(PlaybackStreamSourcePreference.allCases) { source in
+                Text(source.title).tag(source)
+            }
+        } label: {
+            Label("播放取流来源", systemImage: "antenna.radiowaves.left.and.right")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var playerRenderingEnginePicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playerRenderingEnginePreference },
+            set: { libraryStore.setPlayerRenderingEnginePreference($0) }
+        )) {
+            ForEach(PlayerRenderingEnginePreference.allCases) { preference in
+                Text(preference.title).tag(preference)
+            }
+        } label: {
+            Label("播放内核", systemImage: "cpu")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var playbackCDNPicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playbackCDNPreference },
+            set: { libraryStore.setPlaybackCDNPreference($0) }
+        )) {
+            ForEach(PlaybackCDNPreference.allCases) { preference in
+                Text(preference.title).tag(preference)
+            }
+        } label: {
+            Label("CDN 线路", systemImage: "network")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    private var playbackCDNProbeRefreshPolicyPicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playbackCDNProbeRefreshPolicy },
+            set: { libraryStore.setPlaybackCDNProbeRefreshPolicy($0) }
+        )) {
+            ForEach(PlaybackCDNProbeRefreshPolicy.allCases) { policy in
+                Text(policy.title).tag(policy)
+            }
+        } label: {
+            Label("CDN 自动测速", systemImage: "arrow.triangle.2.circlepath")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    @ViewBuilder
+    private var playbackCDNProbeRefreshPolicyDetail: some View {
+        if libraryStore.playbackCDNProbeRefreshPolicy == .interval {
+            Stepper(
+                value: Binding(
+                    get: { libraryStore.playbackCDNProbeRefreshIntervalMinutes },
+                    set: { libraryStore.setPlaybackCDNProbeRefreshIntervalMinutes($0) }
+                ),
+                in: LibraryStore.playbackCDNProbeRefreshIntervalRange,
+                step: 15
+            ) {
+                Label(
+                    "测速间隔 \(playbackCDNProbeRefreshIntervalTitle)",
+                    systemImage: "timer"
+                )
+            }
+        } else {
+            Label("App 启动或回到前台时会自动测速并更新推荐 CDN。", systemImage: "bolt.horizontal")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var playbackNetworkAddressFamilyPicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.playbackNetworkAddressFamilyPreference },
+            set: { libraryStore.setPlaybackNetworkAddressFamilyPreference($0) }
+        )) {
+            ForEach(PlaybackNetworkAddressFamilyPreference.allCases) { preference in
+                Text(preference.title).tag(preference)
+            }
+        } label: {
+            Label("网络协议", systemImage: "point.3.connected.trianglepath.dotted")
+        }
+        .pickerStyle(.navigationLink)
+    }
+
+    @ViewBuilder
+    private var playbackNetworkAddressFamilyNotice: some View {
+        if libraryStore.playbackNetworkAddressFamilyPreference != .automatic,
+           libraryStore.playbackCDNProbeSnapshotForCurrentContext == nil {
+            Label("网络协议已切换，请重新测速 CDN 以生成匹配的新参考。", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private var playbackCDNProbeButton: some View {
+        Button(action: probePlaybackCDN) {
+            Label(isProbingPlaybackCDN ? "测速中" : "测速并推荐 CDN", systemImage: "speedometer")
+        }
+        .disabled(isProbingPlaybackCDN)
+    }
+
+    @ViewBuilder
+    private var playbackCDNProbeMessageText: some View {
+        if let playbackCDNProbeMessage {
+            Text(playbackCDNProbeMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var defaultPlaybackRatePicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.defaultPlaybackRate },
+            set: { libraryStore.setDefaultPlaybackRate($0) }
+        )) {
+            ForEach(BiliPlaybackRate.allCases) { rate in
+                Text(rate.title).tag(rate.rawValue)
+            }
+        } label: {
+            Label("默认倍速", systemImage: "speedometer")
+        }
+        .pickerStyle(.navigationLink)
+    }
+}

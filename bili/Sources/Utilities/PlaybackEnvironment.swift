@@ -108,11 +108,11 @@ nonisolated struct PlaybackEnvironment: Sendable {
     nonisolated var preferredPlayURLStartupGrace: UInt64 {
         switch networkClass {
         case .wifi:
-            return 90_000_000
-        case .unknown:
-            return 70_000_000
-        case .cellular, .constrained:
             return 50_000_000
+        case .unknown:
+            return 40_000_000
+        case .cellular, .constrained:
+            return 30_000_000
         }
     }
 
@@ -183,7 +183,15 @@ nonisolated enum PlaybackCodecPolicy {
 
     nonisolated static var canDecodeAV1: Bool {
 #if targetEnvironment(simulator)
-        return true
+        return false
+#else
+        VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+#endif
+    }
+
+    nonisolated static var canUseKSPlayerDirectAV1VideoToolbox: Bool {
+#if targetEnvironment(simulator)
+        return false
 #else
         VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
 #endif

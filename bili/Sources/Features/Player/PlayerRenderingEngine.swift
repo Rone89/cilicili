@@ -72,10 +72,30 @@ struct PlayerBufferedRange: Equatable, Sendable {
 
 struct PlayerPlaybackSnapshot: Equatable, Sendable {
     let currentTime: TimeInterval?
+    let renderedVideoTime: TimeInterval?
+    let requiresRenderedVideoTimeForRecovery: Bool
     let duration: TimeInterval?
     let isPlaying: Bool
     let isSeekable: Bool
     let bufferedRanges: [PlayerBufferedRange]
+
+    init(
+        currentTime: TimeInterval?,
+        renderedVideoTime: TimeInterval? = nil,
+        requiresRenderedVideoTimeForRecovery: Bool = false,
+        duration: TimeInterval?,
+        isPlaying: Bool,
+        isSeekable: Bool,
+        bufferedRanges: [PlayerBufferedRange]
+    ) {
+        self.currentTime = currentTime
+        self.renderedVideoTime = renderedVideoTime
+        self.requiresRenderedVideoTimeForRecovery = requiresRenderedVideoTimeForRecovery
+        self.duration = duration
+        self.isPlaying = isPlaying
+        self.isSeekable = isSeekable
+        self.bufferedRanges = bufferedRanges
+    }
 
     func bufferedCoverageProgress(
         around targetTime: TimeInterval,
@@ -269,6 +289,7 @@ protocol PlayerRenderingEngine: AnyObject {
     var hasMedia: Bool { get }
     var needsMediaRecovery: Bool { get }
     var playbackErrorMessage: String? { get }
+    var lastFailureReason: HLSBridgeFailureReason? { get }
     var supportsPictureInPicture: Bool { get }
     var isPictureInPictureActive: Bool { get }
     var usesNativePlaybackControls: Bool { get }
@@ -308,6 +329,7 @@ protocol PlayerRenderingEngine: AnyObject {
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval?
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot
     func currentVideoFrameImage() -> UIImage?
+    func currentSurfaceSnapshotImage() -> UIImage?
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource?
     func togglePictureInPicture()
     func invalidatePictureInPicturePlaybackState()
@@ -330,6 +352,10 @@ extension PlayerRenderingEngine {
         nil
     }
 
+    func currentSurfaceSnapshotImage() -> UIImage? {
+        nil
+    }
+
     func setContentOverlay(_: AnyView?) {}
 
     func setDanmakuControls(isEnabled _: Bool, onToggle _: (() -> Void)?, onShowSettings _: (() -> Void)?) {}
@@ -338,19 +364,54 @@ extension PlayerRenderingEngine {
 }
 
 @MainActor
+extension UIView {
+    func biliRenderedSnapshotImage() -> UIImage? {
+        layoutIfNeeded()
+        guard bounds.width > 1, bounds.height > 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = window?.screen.scale ?? traitCollection.displayScale
+        let renderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
+        return renderer.image { context in
+            UIColor.black.setFill()
+            context.fill(bounds)
+            if !drawHierarchy(in: bounds, afterScreenUpdates: false) {
+                layer.render(in: context.cgContext)
+            }
+        }
+    }
+}
+
+@MainActor
 enum DefaultPlayerRenderingEngine {
     static func make() -> PlayerRenderingEngine {
-        #if targetEnvironment(simulator)
-        AVPlayerHLSBridgeEngine()
-        #else
-        KSPlayerRenderingEngine()
-        #endif
+        make(kernel: PlayerKernelType.stored())
+    }
+
+    static func make(preference: PlayerRenderingEnginePreference) -> PlayerRenderingEngine {
+        switch preference {
+        case .automatic:
+            makeAutomatic()
+        case .avPlayer:
+            make(kernel: .avPlayer)
+        case .ksPlayer:
+            make(kernel: .ksPlayer)
+        }
+    }
+
+    static func make(kernel: PlayerKernelType) -> PlayerRenderingEngine {
+        AdaptivePlayerRenderingEngine(preferredKernel: kernel)
+    }
+
+    private static func makeAutomatic() -> PlayerRenderingEngine {
+        AdaptivePlayerRenderingEngine(preferredKernel: .ksPlayer)
     }
 }
 
 enum PlayerMetricsLog {
     nonisolated static let logger = Logger(subsystem: "cc.bili", category: "PlayerMetrics")
     nonisolated static let signposter = OSSignposter(logger: logger)
+    private static let diagnosticsFileName = "player-diagnostics.log"
 
     nonisolated static func beginSignpostedInterval(
         _ name: StaticString,
@@ -402,6 +463,39 @@ enum PlayerMetricsLog {
     @MainActor
     static func record(_ event: PlayerPerformanceEvent.Kind, metricsID: String, title: String? = nil, message: String? = nil) {
         PlayerPerformanceStore.shared.record(event, metricsID: metricsID, title: title, message: message)
+        diagnostic(
+            [
+                "event=\(event.title)",
+                "metricsID=\(metricsID)",
+                title.map { "title=\(shortTitle($0))" },
+                message.map { "message=\($0)" }
+            ].compactMap { $0 }.joined(separator: " ")
+        )
+    }
+
+    nonisolated static func diagnostic(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "\(timestamp) \(message)"
+        print("[PlayerDiagnostics] \(line)")
+        Task { @MainActor in
+            appendDiagnosticLine(line)
+        }
+    }
+
+    @MainActor
+    private static func appendDiagnosticLine(_ line: String) {
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let data = (line + "\n").data(using: .utf8)
+        else { return }
+        let url = directory.appendingPathComponent(diagnosticsFileName)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            try? data.write(to: url, options: .atomic)
+            return
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { handle.closeFile() }
+        handle.seekToEndOfFile()
+        handle.write(data)
     }
 
     nonisolated static func elapsedMilliseconds(since start: CFTimeInterval) -> Double {
@@ -435,6 +529,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case failed
         case network
         case accessLog
+        case decodeLog
         case mediaCache
         case manifestStage
         case qualitySupplement
@@ -443,6 +538,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case seek
         case seekRecovery
         case speedBoost
+        case playbackRecovery
 
         var title: String {
             switch self {
@@ -453,6 +549,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
             case .seek: return "Seek"
             case .seekRecovery: return "Seek 恢复"
             case .speedBoost: return "倍速"
+            case .playbackRecovery: return "播放恢复"
             case .routeOpen: return "打开视频"
             case .detailLoadStart: return "详情开始"
             case .detailLoaded: return "详情完成"
@@ -469,6 +566,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
             case .failed: return "失败"
             case .network: return "网络"
             case .accessLog: return "AccessLog"
+            case .decodeLog: return "Decode"
             case .mediaCache: return "媒体缓存"
             }
         }
@@ -709,6 +807,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
     var speedBoostCount: Int
     var speedBoostInterruptionCount: Int
     var startupBreakdownMessage: String?
+    var hlsStartupMessage: String?
     var startupQuality: Int?
     var startupTargetQuality: Int?
     var startupDecisionMessage: String?
@@ -731,6 +830,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
     var startupPackageMessage: String?
     var lastSeekBufferReadyCoveragePercent: Int?
     var accessLogMessage: String?
+    var decodeLogMessage: String?
     var observedBitrateKilobitsPerSecond: Int?
     var indicatedBitrateKilobitsPerSecond: Int?
     var accessLogStallCount: Int?
@@ -738,6 +838,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
     var accessLogBytesTransferred: Int64?
     var accessLogMediaRequestCount: Int?
     var failureMessage: String?
+    var recentStartupSamples: [PlayerStartupPerformanceSample]?
 
     init(session: PlayerPerformanceSession) {
         id = session.id
@@ -761,6 +862,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         speedBoostCount = session.speedBoostCount
         speedBoostInterruptionCount = session.speedBoostInterruptionCount
         startupBreakdownMessage = session.startupBreakdownMessage
+        hlsStartupMessage = session.hlsStartupMessage
         startupQuality = session.startupQuality
         startupTargetQuality = session.startupTargetQuality
         startupDecisionMessage = session.startupDecisionMessage
@@ -783,6 +885,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         startupPackageMessage = session.startupPackageMessage
         lastSeekBufferReadyCoveragePercent = session.lastSeekBufferReadyCoveragePercent
         accessLogMessage = session.accessLogMessage
+        decodeLogMessage = session.decodeLogMessage
         observedBitrateKilobitsPerSecond = session.observedBitrateKilobitsPerSecond
         indicatedBitrateKilobitsPerSecond = session.indicatedBitrateKilobitsPerSecond
         accessLogStallCount = session.accessLogStallCount
@@ -790,6 +893,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         accessLogBytesTransferred = session.accessLogBytesTransferred
         accessLogMediaRequestCount = session.accessLogMediaRequestCount
         failureMessage = session.failureMessage
+        recentStartupSamples = session.recentStartupSamples
     }
 
     func makeSession() -> PlayerPerformanceSession {
@@ -814,6 +918,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         session.speedBoostCount = speedBoostCount
         session.speedBoostInterruptionCount = speedBoostInterruptionCount
         session.startupBreakdownMessage = startupBreakdownMessage
+        session.hlsStartupMessage = hlsStartupMessage
         session.startupQuality = startupQuality
         session.startupTargetQuality = startupTargetQuality
         session.startupDecisionMessage = startupDecisionMessage
@@ -836,6 +941,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         session.startupPackageMessage = startupPackageMessage
         session.lastSeekBufferReadyCoveragePercent = lastSeekBufferReadyCoveragePercent
         session.accessLogMessage = accessLogMessage
+        session.decodeLogMessage = decodeLogMessage
         session.observedBitrateKilobitsPerSecond = observedBitrateKilobitsPerSecond
         session.indicatedBitrateKilobitsPerSecond = indicatedBitrateKilobitsPerSecond
         session.accessLogStallCount = accessLogStallCount
@@ -843,7 +949,89 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable {
         session.accessLogBytesTransferred = accessLogBytesTransferred
         session.accessLogMediaRequestCount = accessLogMediaRequestCount
         session.failureMessage = failureMessage
+        session.recentStartupSamples = recentStartupSamples ?? []
         return session
+    }
+}
+
+struct PlayerStartupPerformanceSample: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    let date: Date
+    let firstFrameTotalMilliseconds: Int?
+    let firstFramePlayerMilliseconds: Int?
+    let prepareToFrameMilliseconds: Int?
+    let playToFrameMilliseconds: Int?
+    let endpointMilliseconds: Int?
+    let layerMilliseconds: Int?
+    let readyMilliseconds: Int?
+    let renderMilliseconds: Int?
+    let decodedMilliseconds: Int?
+    let ksRenderMilliseconds: Int?
+    let ffmpegMilliseconds: Int?
+    let ffmpegOpenMilliseconds: Int?
+    let ffmpegFindMilliseconds: Int?
+    let ffmpegReadyMilliseconds: Int?
+    let frameDecodedMilliseconds: Int?
+    let frameFetchedMilliseconds: Int?
+    let displayEnqueueMilliseconds: Int?
+    let metalDrawMilliseconds: Int?
+    let probe: String?
+    let codec: String?
+    let frameRate: String?
+    let resolution: String?
+    let breakdownMessage: String
+
+    init(
+        date: Date = Date(),
+        firstFrameTotalMilliseconds: Int?,
+        firstFramePlayerMilliseconds: Int?,
+        prepareToFrameMilliseconds: Int?,
+        playToFrameMilliseconds: Int?,
+        endpointMilliseconds: Int?,
+        layerMilliseconds: Int?,
+        readyMilliseconds: Int?,
+        renderMilliseconds: Int?,
+        decodedMilliseconds: Int?,
+        ksRenderMilliseconds: Int?,
+        ffmpegMilliseconds: Int?,
+        ffmpegOpenMilliseconds: Int? = nil,
+        ffmpegFindMilliseconds: Int? = nil,
+        ffmpegReadyMilliseconds: Int? = nil,
+        frameDecodedMilliseconds: Int?,
+        frameFetchedMilliseconds: Int?,
+        displayEnqueueMilliseconds: Int?,
+        metalDrawMilliseconds: Int?,
+        probe: String? = nil,
+        codec: String?,
+        frameRate: String? = nil,
+        resolution: String?,
+        breakdownMessage: String
+    ) {
+        id = UUID()
+        self.date = date
+        self.firstFrameTotalMilliseconds = firstFrameTotalMilliseconds
+        self.firstFramePlayerMilliseconds = firstFramePlayerMilliseconds
+        self.prepareToFrameMilliseconds = prepareToFrameMilliseconds
+        self.playToFrameMilliseconds = playToFrameMilliseconds
+        self.endpointMilliseconds = endpointMilliseconds
+        self.layerMilliseconds = layerMilliseconds
+        self.readyMilliseconds = readyMilliseconds
+        self.renderMilliseconds = renderMilliseconds
+        self.decodedMilliseconds = decodedMilliseconds
+        self.ksRenderMilliseconds = ksRenderMilliseconds
+        self.ffmpegMilliseconds = ffmpegMilliseconds
+        self.ffmpegOpenMilliseconds = ffmpegOpenMilliseconds
+        self.ffmpegFindMilliseconds = ffmpegFindMilliseconds
+        self.ffmpegReadyMilliseconds = ffmpegReadyMilliseconds
+        self.frameDecodedMilliseconds = frameDecodedMilliseconds
+        self.frameFetchedMilliseconds = frameFetchedMilliseconds
+        self.displayEnqueueMilliseconds = displayEnqueueMilliseconds
+        self.metalDrawMilliseconds = metalDrawMilliseconds
+        self.probe = probe
+        self.codec = codec
+        self.frameRate = frameRate
+        self.resolution = resolution
+        self.breakdownMessage = breakdownMessage
     }
 }
 
@@ -881,7 +1069,9 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var speedBoostInterruptionCount = 0
     var lastBufferMessage: String?
     var networkMessage: String?
+    var hlsStartupMessage: String?
     var accessLogMessage: String?
+    var decodeLogMessage: String?
     var observedBitrateKilobitsPerSecond: Int?
     var indicatedBitrateKilobitsPerSecond: Int?
     var accessLogStallCount: Int?
@@ -896,6 +1086,9 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var seekMessage: String?
     var seekRecoveryMessage: String?
     var speedBoostMessage: String?
+    var playbackRecoveryCount = 0
+    var playbackRecoveryFailureCount = 0
+    var playbackRecoveryMessage: String?
     var cdnHostMessage: String?
     var selectedQualityMessage: String?
     var detailSourceMessage: String?
@@ -924,7 +1117,244 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var startupPackageMessage: String?
     var lastSeekBufferReadyCoveragePercent: Int?
     var failureMessage: String?
+    var recentStartupSamples: [PlayerStartupPerformanceSample] = []
     var timeline: [PlayerPerformanceTimelineEntry] = []
+}
+
+enum PlayerPerformanceCopyTextFormatter {
+    static func millisecondsText(_ value: Int?) -> String {
+        guard let value else { return "-" }
+        if value >= 1000 {
+            return String(format: "%.2fs", Double(value) / 1000)
+        }
+        return "\(value)ms"
+    }
+
+    static func performanceCopyText(metricsID: String, session: PlayerPerformanceSession?) -> String {
+        guard let session else {
+            return "播放性能\nmetricsID: \(metricsID)\n暂无性能样本"
+        }
+
+        var lines = [
+            "播放性能测试结果",
+            "metricsID: \(metricsID)",
+            "title: \(session.title ?? "-")",
+            "updated: \(copyDateFormatter.string(from: session.lastUpdatedAt))",
+            "current:",
+            "  totalFirstFrame: \(millisecondsText(session.firstFrameTotalMilliseconds))",
+            "  playerFirstFrame: \(millisecondsText(session.firstFramePlayerMilliseconds))",
+            "  detail: \(millisecondsText(session.detailLoadMilliseconds))",
+            "  playURL: \(millisecondsText(session.playURLMilliseconds))",
+            "  prepare: \(millisecondsText(session.prepareMilliseconds))",
+            "  quality: \(session.startupQuality.map(String.init) ?? "-")",
+            "  codec: \(latestSampleValue(session.recentStartupSamples, \.codec) ?? "-")",
+            "  fps: \(latestSampleValue(session.recentStartupSamples, \.frameRate) ?? "-")",
+            "  resolution: \(latestSampleValue(session.recentStartupSamples, \.resolution) ?? "-")"
+        ]
+
+        if let startupBreakdownMessage = session.startupBreakdownMessage {
+            lines.append("startupBreakdown:")
+            lines.append("  \(startupBreakdownMessage)")
+        }
+        if let hlsStartupMessage = session.hlsStartupMessage {
+            lines.append("hlsStartup:")
+            lines.append("  \(hlsStartupMessage)")
+        }
+        if let manifestStageMessage = session.manifestStageMessage {
+            lines.append("manifestStage:")
+            lines.append("  \(manifestStageMessage)")
+        }
+
+        let samples = session.recentStartupSamples
+        let comparableSamples = comparableStartupSamples(from: samples)
+        let stableSamples = stableStartupSamples(from: samples)
+        let ignoredSampleCount = max(samples.count - comparableSamples.count, 0)
+        let coldSampleCount = max(comparableSamples.count - stableSamples.count, 0)
+        let sampleFilter = startupSampleFilterText(for: samples) ?? "-"
+        lines.append(
+            "recentSamples(count=\(samples.count), comparable=\(comparableSamples.count), stable=\(stableSamples.count), filter=\(sampleFilter), ignored=\(ignoredSampleCount), cold=\(coldSampleCount)):"
+        )
+        for summary in startupSampleSummaries(from: stableSamples) {
+            lines.append(
+                "  \(summary.title): min=\(millisecondsText(summary.minimumMilliseconds)) avg=\(millisecondsText(summary.averageMilliseconds)) max=\(millisecondsText(summary.maximumMilliseconds))"
+            )
+        }
+
+        if !samples.isEmpty {
+            lines.append("sampleDetails:")
+            let comparableIDs = Set(comparableSamples.map(\.id))
+            let stableIDs = Set(stableSamples.map(\.id))
+            for (index, sample) in samples.enumerated() {
+                let sampleStatus = stableIDs.contains(sample.id)
+                    ? "stable"
+                    : (comparableIDs.contains(sample.id) ? "cold" : "other")
+                lines.append(
+                    [
+                        "  #\(index + 1)",
+                        copyDateFormatter.string(from: sample.date),
+                        "status=\(sampleStatus)",
+                        "player=\(millisecondsText(sample.firstFramePlayerMilliseconds))",
+                        "total=\(millisecondsText(sample.firstFrameTotalMilliseconds))",
+                        "ready=\(millisecondsText(sample.readyMilliseconds))",
+                        "ffmpeg=\(millisecondsText(sample.ffmpegMilliseconds))",
+                        "open=\(millisecondsText(sample.ffmpegOpenMilliseconds))",
+                        "find=\(millisecondsText(sample.ffmpegFindMilliseconds))",
+                        "ffReady=\(millisecondsText(sample.ffmpegReadyMilliseconds))",
+                        "render=\(millisecondsText(sample.renderMilliseconds))",
+                        "layer=\(millisecondsText(sample.layerMilliseconds))",
+                        "endpoint=\(millisecondsText(sample.endpointMilliseconds))",
+                        "frame=\(millisecondsText(sample.frameDecodedMilliseconds))",
+                        "fetch=\(millisecondsText(sample.frameFetchedMilliseconds))",
+                        "enq=\(millisecondsText(sample.displayEnqueueMilliseconds))",
+                        "metal=\(millisecondsText(sample.metalDrawMilliseconds))",
+                        "probe=\(sample.probe ?? "-")",
+                        "fps=\(sample.frameRate ?? "-")",
+                        "codec=\(sample.codec ?? "-")",
+                        "res=\(sample.resolution ?? "-")"
+                    ].joined(separator: " ")
+                )
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private struct SampleMetricSummary {
+        let id: String
+        let title: String
+        let minimumMilliseconds: Int
+        let averageMilliseconds: Int
+        let maximumMilliseconds: Int
+    }
+
+    private static func latestSampleValue(
+        _ samples: [PlayerStartupPerformanceSample],
+        _ keyPath: KeyPath<PlayerStartupPerformanceSample, String?>
+    ) -> String? {
+        samples.last?[keyPath: keyPath]
+    }
+
+    private static func startupSampleSummaries(
+        from samples: [PlayerStartupPerformanceSample]
+    ) -> [SampleMetricSummary] {
+        [
+            summary(id: "player", title: "播放器", samples: samples, value: \.firstFramePlayerMilliseconds),
+            summary(id: "ready", title: "ready", samples: samples, value: \.readyMilliseconds),
+            summary(id: "ffmpeg", title: "ffmpeg", samples: samples, value: \.ffmpegMilliseconds),
+            summary(id: "ffOpen", title: "open", samples: samples, value: \.ffmpegOpenMilliseconds),
+            summary(id: "ffFind", title: "find", samples: samples, value: \.ffmpegFindMilliseconds),
+            summary(id: "ffReady", title: "ffReady", samples: samples, value: \.ffmpegReadyMilliseconds),
+            summary(id: "render", title: "render", samples: samples, value: \.renderMilliseconds),
+            summary(id: "layer", title: "layer", samples: samples, value: \.layerMilliseconds),
+            summary(id: "endpoint", title: "endpoint", samples: samples, value: \.endpointMilliseconds),
+            summary(id: "frameDone", title: "frame", samples: samples, value: \.frameDecodedMilliseconds),
+            summary(id: "fetch", title: "fetch", samples: samples, value: \.frameFetchedMilliseconds),
+            summary(id: "enqueue", title: "enq", samples: samples, value: \.displayEnqueueMilliseconds)
+        ].compactMap { $0 }
+    }
+
+    private static func comparableStartupSamples(
+        from samples: [PlayerStartupPerformanceSample]
+    ) -> [PlayerStartupPerformanceSample] {
+        guard let latest = samples.last else { return samples }
+        return samples.filter { sample in
+            sample.codec == latest.codec
+                && sample.resolution == latest.resolution
+                && sample.frameRate == latest.frameRate
+                && sample.probe == latest.probe
+        }
+    }
+
+    private static func stableStartupSamples(
+        from samples: [PlayerStartupPerformanceSample]
+    ) -> [PlayerStartupPerformanceSample] {
+        let comparableSamples = comparableStartupSamples(from: samples)
+        guard comparableSamples.count >= 3 else { return comparableSamples }
+
+        let playerLimit = outlierLimit(
+            for: comparableSamples.compactMap(\.firstFramePlayerMilliseconds),
+            minimumHeadroom: 180,
+            multiplier: 2
+        )
+        let readyLimit = outlierLimit(
+            for: comparableSamples.compactMap(\.readyMilliseconds),
+            minimumHeadroom: 180,
+            multiplier: 2
+        )
+        let ffmpegLimit = outlierLimit(
+            for: comparableSamples.compactMap(\.ffmpegMilliseconds),
+            minimumHeadroom: 180,
+            multiplier: 3
+        )
+
+        let stableSamples = comparableSamples.filter { sample in
+            !isAboveOutlierLimit(sample.firstFramePlayerMilliseconds, limit: playerLimit)
+                && !isAboveOutlierLimit(sample.readyMilliseconds, limit: readyLimit)
+                && !isAboveOutlierLimit(sample.ffmpegMilliseconds, limit: ffmpegLimit)
+        }
+
+        return stableSamples.count >= 2 ? stableSamples : comparableSamples
+    }
+
+    private static func startupSampleFilterText(
+        for samples: [PlayerStartupPerformanceSample]
+    ) -> String? {
+        guard let latest = samples.last else { return nil }
+        let codec = latest.codec ?? "-"
+        let resolution = latest.resolution ?? "-"
+        let frameRate = latest.frameRate.map { "\($0)fps" } ?? "-"
+        let probe = latest.probe ?? "-"
+        return "\(codec) \(resolution) \(frameRate) \(probe)"
+    }
+
+    private static var copyDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }
+
+    private static func outlierLimit(
+        for values: [Int],
+        minimumHeadroom: Int,
+        multiplier: Double
+    ) -> Int? {
+        guard let median = medianValue(for: values) else { return nil }
+        let multipliedLimit = Int((Double(median) * multiplier).rounded())
+        return max(multipliedLimit, median + minimumHeadroom)
+    }
+
+    private static func medianValue(for values: [Int]) -> Int? {
+        guard !values.isEmpty else { return nil }
+        let sortedValues = values.sorted()
+        let middle = sortedValues.count / 2
+        if sortedValues.count.isMultiple(of: 2) {
+            return Int((Double(sortedValues[middle - 1] + sortedValues[middle]) / 2).rounded())
+        }
+        return sortedValues[middle]
+    }
+
+    private static func isAboveOutlierLimit(_ value: Int?, limit: Int?) -> Bool {
+        guard let value, let limit else { return false }
+        return value > limit
+    }
+
+    private static func summary(
+        id: String,
+        title: String,
+        samples: [PlayerStartupPerformanceSample],
+        value: KeyPath<PlayerStartupPerformanceSample, Int?>
+    ) -> SampleMetricSummary? {
+        let values = samples.compactMap { $0[keyPath: value] }
+        guard !values.isEmpty else { return nil }
+        let average = Int((Double(values.reduce(0, +)) / Double(values.count)).rounded())
+        return SampleMetricSummary(
+            id: id,
+            title: title,
+            minimumMilliseconds: values.min() ?? average,
+            averageMilliseconds: average,
+            maximumMilliseconds: values.max() ?? average
+        )
+    }
 }
 
 struct PlayerPlaybackAdaptationProfile: Equatable, Sendable {
@@ -1060,6 +1490,7 @@ final class PlayerPerformanceStore: ObservableObject {
 
     private static let persistedSessionsKey = "cc.bili.player.performance.sessions.v2"
     private static let persistedSessionMaxAge: TimeInterval = 7 * 24 * 60 * 60
+    private static let performanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
 
     private(set) var events: [PlayerPerformanceEvent] = []
     private(set) var sessions: [PlayerPerformanceSession] = []
@@ -1068,6 +1499,8 @@ final class PlayerPerformanceStore: ObservableObject {
     private let maxPersistedSessionCount = 48
     private var sessionsByID: [String: PlayerPerformanceSession] = [:]
     private var persistTask: Task<Void, Never>?
+    private var performanceCopyLogTasks: [String: Task<Void, Never>] = [:]
+    private var lastPerformanceCopyLogSignatures: [String: String] = [:]
 
     private init() {
         loadPersistedSessions()
@@ -1177,6 +1610,9 @@ final class PlayerPerformanceStore: ObservableObject {
         objectWillChange.send()
         persistTask?.cancel()
         persistTask = nil
+        performanceCopyLogTasks.values.forEach { $0.cancel() }
+        performanceCopyLogTasks.removeAll()
+        lastPerformanceCopyLogSignatures.removeAll()
         events.removeAll()
         sessions.removeAll()
         sessionsByID.removeAll()
@@ -1324,7 +1760,10 @@ final class PlayerPerformanceStore: ObservableObject {
                 session.firstFramePlayerMilliseconds = playerMilliseconds
             }
         case .startupBreakdown:
-            session.startupBreakdownMessage = event.message ?? session.startupBreakdownMessage
+            session.startupBreakdownMessage = Self.startupBreakdownMessage(
+                baseMessage: event.message ?? session.startupBreakdownMessage,
+                for: session
+            )
             if let message = event.message {
                 let tokens = Self.keyValueTokens(in: message)
                 session.detailLoadMilliseconds = session.detailLoadMilliseconds
@@ -1351,12 +1790,22 @@ final class PlayerPerformanceStore: ObservableObject {
                 if let source = tokens["source"], source != "-" {
                     session.startupSource = source
                 }
+                Self.appendStartupSampleIfNeeded(
+                    event: event,
+                    tokens: tokens,
+                    message: message,
+                    to: &session
+                )
             }
         case .buffering:
             session.bufferCount += 1
             session.lastBufferMessage = event.message ?? session.lastBufferMessage
         case .network:
-            session.networkMessage = event.message ?? session.networkMessage
+            if let message = event.message, message.hasPrefix("HLS ") {
+                session.hlsStartupMessage = message
+            } else {
+                session.networkMessage = event.message ?? session.networkMessage
+            }
             if let message = event.message, let host = Self.host(in: message) {
                 session.cdnHostMessage = host
             }
@@ -1386,13 +1835,18 @@ final class PlayerPerformanceStore: ObservableObject {
                     maxParts: 3
                 )
             }
+        case .decodeLog:
+            session.decodeLogMessage = Self.appendDiagnosticMessage(
+                session.decodeLogMessage,
+                event.message,
+                maxParts: 4
+            )
         case .mediaCache:
             session.mediaCacheMessage = event.message ?? session.mediaCacheMessage
         case .manifestStage:
-            session.manifestStageMessage = Self.appendDiagnosticMessage(
+            session.manifestStageMessage = Self.appendManifestStageMessage(
                 session.manifestStageMessage,
-                event.message,
-                maxParts: 6
+                event.message
             )
             if let message = event.message {
                 Self.updateManifestStartupFields(message, in: &session)
@@ -1466,11 +1920,29 @@ final class PlayerPerformanceStore: ObservableObject {
                 event.message,
                 maxParts: 4
             )
+        case .playbackRecovery:
+            session.playbackRecoveryCount += 1
+            if event.message?.contains("status=failed") == true
+                || event.message?.contains("status=ignored") == true
+                || event.message?.contains("status=exhausted") == true {
+                session.playbackRecoveryFailureCount += 1
+            }
+            session.playbackRecoveryMessage = Self.appendDiagnosticMessage(
+                session.playbackRecoveryMessage,
+                event.message,
+                maxParts: 6
+            )
         case .failed:
             session.failureMessage = event.message
         }
 
         session.startupGapMessage = Self.startupGapMessage(for: session)
+        if session.startupBreakdownMessage != nil {
+            session.startupBreakdownMessage = Self.startupBreakdownMessage(
+                baseMessage: session.startupBreakdownMessage,
+                for: session
+            )
+        }
         appendTimelineEvent(event, to: &session)
 
         sessionsByID[event.metricsID] = session
@@ -1481,6 +1953,112 @@ final class PlayerPerformanceStore: ObservableObject {
         let keptIDs = Set(sessions.map(\.id))
         sessionsByID = sessionsByID.filter { keptIDs.contains($0.key) }
         schedulePersist()
+        schedulePerformanceCopyLogIfNeeded(after: event.kind, for: session)
+    }
+
+    private func schedulePerformanceCopyLogIfNeeded(
+        after kind: PlayerPerformanceEvent.Kind,
+        for session: PlayerPerformanceSession
+    ) {
+        guard Self.shouldSchedulePerformanceCopyLog(after: kind),
+              UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
+              Self.hasPerformanceCopyPayload(session)
+        else { return }
+
+        let metricsID = session.id
+        let signature = Self.performanceCopyLogSignature(for: session)
+        guard lastPerformanceCopyLogSignatures[metricsID] != signature else { return }
+
+        performanceCopyLogTasks[metricsID]?.cancel()
+        performanceCopyLogTasks[metricsID] = Task { @MainActor [weak self, metricsID] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled,
+                  let self,
+                  UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
+                  let latestSession = self.sessionsByID[metricsID],
+                  Self.hasPerformanceCopyPayload(latestSession)
+            else { return }
+
+            let latestSignature = Self.performanceCopyLogSignature(for: latestSession)
+            guard self.lastPerformanceCopyLogSignatures[metricsID] != latestSignature else {
+                self.performanceCopyLogTasks[metricsID] = nil
+                return
+            }
+
+            self.lastPerformanceCopyLogSignatures[metricsID] = latestSignature
+            Self.logPerformanceCopyText(
+                metricsID: metricsID,
+                text: PlayerPerformanceCopyTextFormatter.performanceCopyText(
+                    metricsID: metricsID,
+                    session: latestSession
+                )
+            )
+            self.performanceCopyLogTasks[metricsID] = nil
+        }
+    }
+
+    private static func shouldSchedulePerformanceCopyLog(after kind: PlayerPerformanceEvent.Kind) -> Bool {
+        switch kind {
+        case .firstFrame, .startupBreakdown, .network, .manifestStage, .failed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func hasPerformanceCopyPayload(_ session: PlayerPerformanceSession) -> Bool {
+        session.firstFrameTotalMilliseconds != nil
+            || session.firstFramePlayerMilliseconds != nil
+            || !session.recentStartupSamples.isEmpty
+            || session.failureMessage != nil
+    }
+
+    private static func performanceCopyLogSignature(for session: PlayerPerformanceSession) -> String {
+        var parts: [String] = []
+        parts.append(session.firstFrameAt.map { String($0.timeIntervalSince1970) } ?? "-")
+        parts.append(session.recentStartupSamples.last?.id.uuidString ?? "-")
+        parts.append(session.firstFrameTotalMilliseconds.map { String($0) } ?? "-")
+        parts.append(session.firstFramePlayerMilliseconds.map { String($0) } ?? "-")
+        parts.append(session.playURLMilliseconds.map { String($0) } ?? "-")
+        parts.append(session.prepareMilliseconds.map { String($0) } ?? "-")
+        parts.append(session.startupQuality.map { String($0) } ?? "-")
+        parts.append(session.startupBreakdownMessage ?? "-")
+        parts.append(session.hlsStartupMessage ?? "-")
+        parts.append(session.manifestStageMessage ?? "-")
+        parts.append(session.failureMessage ?? "-")
+        return parts.joined(separator: "\n")
+    }
+
+    private static func logPerformanceCopyText(metricsID: String, text: String) {
+        let lines = text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        PlayerMetricsLog.logger.notice(
+            "perfCopyBegin metricsID=\(metricsID, privacy: .public) lines=\(lines.count, privacy: .public)"
+        )
+        for (lineIndex, line) in lines.enumerated() {
+            let chunks = chunks(for: line, maxLength: 700)
+            for (chunkIndex, chunk) in chunks.enumerated() {
+                PlayerMetricsLog.logger.notice(
+                    "perfCopyLine metricsID=\(metricsID, privacy: .public) line=\(lineIndex + 1, privacy: .public) chunk=\(chunkIndex + 1, privacy: .public)/\(chunks.count, privacy: .public) text=\(chunk, privacy: .public)"
+                )
+            }
+        }
+        PlayerMetricsLog.logger.notice(
+            "perfCopyEnd metricsID=\(metricsID, privacy: .public)"
+        )
+    }
+
+    private static func chunks(for text: String, maxLength: Int) -> [String] {
+        guard text.count > maxLength else { return [text] }
+        var chunks: [String] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text.index(start, offsetBy: maxLength, limitedBy: text.endIndex) ?? text.endIndex
+            chunks.append(String(text[start..<end]))
+            start = end
+        }
+        return chunks
     }
 
     private func loadPersistedSessions() {
@@ -1600,7 +2178,9 @@ final class PlayerPerformanceStore: ObservableObject {
         session.speedBoostInterruptionCount = 0
         session.lastBufferMessage = nil
         session.networkMessage = nil
+        session.hlsStartupMessage = nil
         session.accessLogMessage = nil
+        session.decodeLogMessage = nil
         session.observedBitrateKilobitsPerSecond = nil
         session.indicatedBitrateKilobitsPerSecond = nil
         session.accessLogStallCount = nil
@@ -1615,6 +2195,9 @@ final class PlayerPerformanceStore: ObservableObject {
         session.seekMessage = nil
         session.seekRecoveryMessage = nil
         session.speedBoostMessage = nil
+        session.playbackRecoveryCount = 0
+        session.playbackRecoveryFailureCount = 0
+        session.playbackRecoveryMessage = nil
         session.cdnHostMessage = nil
         session.selectedQualityMessage = nil
         session.detailSourceMessage = nil
@@ -1697,6 +2280,105 @@ final class PlayerPerformanceStore: ObservableObject {
         guard let start, let end else { return }
         let milliseconds = max(Self.milliseconds(from: start, to: end), 0)
         parts.append("\(label) \(milliseconds)ms")
+    }
+
+    private static func appendStartupSampleIfNeeded(
+        event: PlayerPerformanceEvent,
+        tokens: [String: String],
+        message: String,
+        to session: inout PlayerPerformanceSession
+    ) {
+        guard tokenValue(for: "ksStartup", in: tokens) == "firstFrame" else { return }
+        let sample = PlayerStartupPerformanceSample(
+            date: event.date,
+            firstFrameTotalMilliseconds: session.firstFrameTotalMilliseconds,
+            firstFramePlayerMilliseconds: millisecondsValue(for: "firstFrame", in: tokens)
+                ?? session.firstFramePlayerMilliseconds,
+            prepareToFrameMilliseconds: millisecondsValue(for: "prepareToFrame", in: tokens),
+            playToFrameMilliseconds: millisecondsValue(for: "playToFrame", in: tokens),
+            endpointMilliseconds: millisecondsValue(for: "endpoint", in: tokens),
+            layerMilliseconds: millisecondsValue(for: "layer", in: tokens),
+            readyMilliseconds: millisecondsValue(for: "ready", in: tokens),
+            renderMilliseconds: millisecondsValue(for: "renderAfterReady", in: tokens),
+            decodedMilliseconds: millisecondsValue(for: "decodedFrame", in: tokens),
+            ksRenderMilliseconds: millisecondsValue(for: "ksRender", in: tokens),
+            ffmpegMilliseconds: millisecondsValue(for: "ffmpeg", in: tokens),
+            ffmpegOpenMilliseconds: millisecondsValue(for: "ffOpen", in: tokens),
+            ffmpegFindMilliseconds: millisecondsValue(for: "ffFind", in: tokens),
+            ffmpegReadyMilliseconds: millisecondsValue(for: "ffReady", in: tokens),
+            frameDecodedMilliseconds: millisecondsValue(for: "frameDecoded", in: tokens),
+            frameFetchedMilliseconds: millisecondsValue(for: "frameFetched", in: tokens),
+            displayEnqueueMilliseconds: millisecondsValue(for: "displayEnq", in: tokens),
+            metalDrawMilliseconds: millisecondsValue(for: "metalDraw", in: tokens),
+            probe: tokenValue(for: "probe", in: tokens),
+            codec: tokenValue(for: "codec", in: tokens),
+            frameRate: tokenValue(for: "fps", in: tokens),
+            resolution: tokenValue(for: "res", in: tokens),
+            breakdownMessage: message
+        )
+        session.recentStartupSamples.append(sample)
+        if session.recentStartupSamples.count > 5 {
+            session.recentStartupSamples.removeFirst(session.recentStartupSamples.count - 5)
+        }
+    }
+
+    private static func startupBreakdownMessage(baseMessage: String?, for session: PlayerPerformanceSession) -> String? {
+        guard let baseMessage, !baseMessage.isEmpty else { return nil }
+        var tokens = keyValueTokens(in: baseMessage)
+        appendMillisecondsToken(
+            "prepareToPlay",
+            from: session.prepareReturnedAt,
+            to: session.playRequestedAt,
+            tokens: &tokens
+        )
+        appendMillisecondsToken(
+            "playToFrame",
+            from: session.playRequestedAt,
+            to: session.firstFrameAt,
+            tokens: &tokens
+        )
+        appendMillisecondsToken(
+            "prepareToFrame",
+            from: session.prepareReturnedAt,
+            to: session.firstFrameAt,
+            tokens: &tokens
+        )
+        guard !tokens.isEmpty else { return baseMessage }
+
+        let existingKeys = Set(tokens.keys)
+        var orderedKeys = baseMessage
+            .split(separator: " ")
+            .compactMap { token -> String? in
+                let parts = token.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { return nil }
+                return String(parts[0])
+            }
+        for key in ["prepareToPlay", "playToFrame", "prepareToFrame"] where existingKeys.contains(key) {
+            if !orderedKeys.contains(key) {
+                orderedKeys.append(key)
+            }
+        }
+
+        var seenKeys = Set<String>()
+        let orderedParts = orderedKeys.compactMap { key -> String? in
+            guard seenKeys.insert(key).inserted,
+                  let value = tokens[key],
+                  !value.isEmpty
+            else { return nil }
+            return "\(key)=\(value)"
+        }
+        return orderedParts.isEmpty ? baseMessage : orderedParts.joined(separator: " ")
+    }
+
+    private static func appendMillisecondsToken(
+        _ key: String,
+        from start: Date?,
+        to end: Date?,
+        tokens: inout [String: String]
+    ) {
+        guard tokens[key] == nil, let start, let end else { return }
+        let milliseconds = max(Self.milliseconds(from: start, to: end), 0)
+        tokens[key] = "\(milliseconds)ms"
     }
 
     private static func updatePlayURLStartupFields(_ message: String, in session: inout PlayerPerformanceSession) {
@@ -1953,5 +2635,43 @@ final class PlayerPerformanceStore: ObservableObject {
             parts.removeFirst(parts.count - maxParts)
         }
         return parts.joined(separator: " | ")
+    }
+
+    private static func appendManifestStageMessage(_ current: String?, _ next: String?) -> String? {
+        guard let next, !next.isEmpty else { return current }
+        let pinnedKeys: Set<String> = [
+            "startupWarmWait",
+            "startupPrebuild",
+            "ffDemuxWarm",
+            "startupPackage",
+            "prepareWarm"
+        ]
+        let nextKey = diagnosticKey(in: next)
+        var parts = current?.components(separatedBy: " | ") ?? []
+        parts.removeAll { part in
+            if part == next { return true }
+            guard let nextKey, pinnedKeys.contains(nextKey) else { return false }
+            return diagnosticKey(in: part) == nextKey
+        }
+        parts.append(next)
+        while parts.count > 12 {
+            if let removableIndex = parts.firstIndex(where: { part in
+                guard let key = diagnosticKey(in: part) else { return true }
+                return !pinnedKeys.contains(key)
+            }) {
+                parts.remove(at: removableIndex)
+            } else {
+                parts.removeFirst()
+            }
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    private static func diagnosticKey(in message: String) -> String? {
+        guard let firstToken = message.split(separator: " ").first,
+              let key = firstToken.split(separator: "=", maxSplits: 1).first,
+              !key.isEmpty
+        else { return nil }
+        return String(key)
     }
 }

@@ -92,6 +92,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var preferredVideoQuality: Int?
     @Published private(set) var playbackAutoOptimizationMode: PlaybackAutoOptimizationMode
     @Published private(set) var playbackStreamSourcePreference: PlaybackStreamSourcePreference
+    @Published private(set) var playerRenderingEnginePreference: PlayerRenderingEnginePreference
+    @Published private(set) var videoCodecPreference: VideoCodecPreference
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
     @Published private(set) var playbackCDNProbeRefreshPolicy: PlaybackCDNProbeRefreshPolicy
     @Published private(set) var playbackCDNProbeRefreshIntervalMinutes: Int
@@ -110,6 +112,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
+    @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var homeRefreshTriggerDistance: Double
     @Published private(set) var homeFeedLayout: HomeFeedLayout
@@ -122,6 +125,8 @@ final class LibraryStore: ObservableObject {
     private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
     private static let playbackAutoOptimizationModeKey = "cc.bili.playback.autoOptimizationMode.v1"
     private static let playbackStreamSourcePreferenceKey = "cc.bili.playback.streamSourcePreference.v1"
+    private static let playerRenderingEnginePreferenceKey = PlayerRenderingEnginePreference.storageKey
+    private static let videoCodecPreferenceKey = VideoCodecPreference.storageKey
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
     private static let playbackCDNProbeRefreshPolicyKey = "cc.bili.playback.cdnProbeRefreshPolicy.v1"
     private static let playbackCDNProbeRefreshIntervalMinutesKey = "cc.bili.playback.cdnProbeRefreshIntervalMinutes.v1"
@@ -141,20 +146,21 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
+    private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
-    static let defaultPreferredVideoQuality = 112
-    static let defaultPlaybackStreamSourcePreference: PlaybackStreamSourcePreference = .web
-    static let defaultHomeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference = .web
-    static let supportedVideoQualities = [129, 127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
-    static let playbackCDNProbeRefreshIntervalRange: ClosedRange<Int> = 15...1440
-    static let defaultPlaybackCDNProbeRefreshIntervalMinutes = 120
-    static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
-    static let defaultHomeRefreshTriggerDistance = 110.0
+    nonisolated static let defaultPreferredVideoQuality = 112
+    nonisolated static let defaultPlaybackStreamSourcePreference: PlaybackStreamSourcePreference = .app
+    nonisolated static let defaultHomeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference = .app
+    nonisolated static let supportedVideoQualities = BiliVideoQuality.supportedQualities
+    nonisolated static let playbackCDNProbeRefreshIntervalRange: ClosedRange<Int> = 15...1440
+    nonisolated static let defaultPlaybackCDNProbeRefreshIntervalMinutes = 120
+    nonisolated static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
+    nonisolated static let defaultHomeRefreshTriggerDistance = 110.0
     private static let temporaryPlaybackCDNAvoidanceDuration: TimeInterval = 10 * 60
     private var playbackCDNProbeSnapshotsByContext: [String: PlaybackCDNProbeSnapshot] = [:]
     private var temporarilyAvoidedPlaybackCDNPreferences: [PlaybackCDNPreference: Date] = [:]
@@ -225,6 +231,12 @@ final class LibraryStore: ObservableObject {
         self.playbackStreamSourcePreference = PlaybackStreamSourcePreference(
             rawValue: userDefaults.string(forKey: Self.playbackStreamSourcePreferenceKey) ?? ""
         ) ?? Self.defaultPlaybackStreamSourcePreference
+        self.playerRenderingEnginePreference = PlayerRenderingEnginePreference(
+            rawValue: userDefaults.string(forKey: Self.playerRenderingEnginePreferenceKey) ?? ""
+        ) ?? .ksPlayer
+        self.videoCodecPreference = VideoCodecPreference(
+            rawValue: userDefaults.string(forKey: Self.videoCodecPreferenceKey) ?? ""
+        ) ?? .auto
         self.playbackCDNPreference = PlaybackCDNPreference(
             rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
         ) ?? .automatic
@@ -269,11 +281,12 @@ final class LibraryStore: ObservableObject {
         }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
-        self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? true
-        self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? true
+        self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? false
+        self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
+        self.force120HzScrollingEnabled = userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
         )
@@ -318,6 +331,17 @@ final class LibraryStore: ObservableObject {
     func setPlaybackStreamSourcePreference(_ preference: PlaybackStreamSourcePreference) {
         playbackStreamSourcePreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.playbackStreamSourcePreferenceKey)
+    }
+
+    func setPlayerRenderingEnginePreference(_ preference: PlayerRenderingEnginePreference) {
+        playerRenderingEnginePreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.playerRenderingEnginePreferenceKey)
+    }
+
+    func setVideoCodecPreference(_ preference: VideoCodecPreference) {
+        videoCodecPreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.videoCodecPreferenceKey)
+        PlayerSettings.shared.reload()
     }
 
     func setHomeRecommendFeedSourcePreference(_ preference: HomeRecommendFeedSourcePreference) {
@@ -546,6 +570,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
     }
 
+    func setForce120HzScrollingEnabled(_ isEnabled: Bool) {
+        force120HzScrollingEnabled = isEnabled
+        RefreshRateManager.shared.setForce120HzEnabled(isEnabled)
+    }
+
     func setRootTab(_ tab: AppTab, isVisible: Bool) {
         guard tab.canHideFromRootTabBar else { return }
         var tabs = visibleRootTabs
@@ -613,37 +642,7 @@ final class LibraryStore: ObservableObject {
     }
 
     static func videoQualityTitle(_ quality: Int?) -> String {
-        guard let quality else { return "自动（快速开播）" }
-        switch quality {
-        case 129:
-            return "HDR Vivid"
-        case 127:
-            return "超高清 8K"
-        case 126:
-            return "杜比视界"
-        case 125:
-            return "真彩 HDR"
-        case 120:
-            return "超清 4K"
-        case 116:
-            return "1080P 高帧率"
-        case 112:
-            return "1080P 高码率"
-        case 80:
-            return "1080P"
-        case 74:
-            return "720P 高帧率"
-        case 64:
-            return "720P"
-        case 32:
-            return "480P"
-        case 16:
-            return "360P"
-        case 6:
-            return "240P"
-        default:
-            return "清晰度 \(quality)"
-        }
+        BiliVideoQuality.title(for: quality)
     }
 
     private static func normalizedHomeRefreshDistance(_ distance: Double) -> Double {

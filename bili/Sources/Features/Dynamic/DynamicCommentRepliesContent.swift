@@ -1,0 +1,105 @@
+import SwiftUI
+
+struct DynamicCommentRepliesContent: View {
+    let rootComment: Comment
+    @ObservedObject var replyStore: DynamicCommentReplyStore
+    let showDialog: (Comment) -> Void
+
+    var body: some View {
+        let snapshot = replyStore.repliesSnapshot(for: rootComment)
+
+        DynamicCommentRepliesStateContent(
+            snapshot: snapshot,
+            rootComment: rootComment,
+            replyStore: replyStore,
+            showDialog: showDialog
+        )
+    }
+}
+
+private struct DynamicCommentRepliesStateContent: View {
+    let snapshot: DynamicCommentRepliesSnapshot
+    let rootComment: Comment
+    @ObservedObject var replyStore: DynamicCommentReplyStore
+    let showDialog: (Comment) -> Void
+
+    var body: some View {
+        if snapshot.replies.isEmpty && snapshot.state.isLoading {
+            CommentLoadingSkeletonList(count: 3)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+        } else if snapshot.replies.isEmpty, case .failed(let message) = snapshot.state {
+            DynamicCommentErrorView(message: message) {
+                Task { await replyStore.reloadReplies(for: rootComment) }
+            }
+            .padding(16)
+        } else if snapshot.replies.isEmpty {
+            EmptyStateView(title: "暂无回复", systemImage: "bubble.left.and.bubble.right", message: "这条评论还没有可展示的回复。")
+                .padding(16)
+        } else {
+            DynamicCommentRepliesLoadedList(
+                snapshot: snapshot,
+                rootComment: rootComment,
+                replyStore: replyStore,
+                showDialog: showDialog
+            )
+        }
+    }
+}
+
+private struct DynamicCommentRepliesLoadedList: View {
+    let snapshot: DynamicCommentRepliesSnapshot
+    let rootComment: Comment
+    @ObservedObject var replyStore: DynamicCommentReplyStore
+    let showDialog: (Comment) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(snapshot.replyItems) { replyItem in
+                DynamicCommentReplyDetailRow(
+                    item: replyItem,
+                    showDialog: replyItem.canShowDialog ? {
+                        showDialog(replyItem.reply)
+                    } : nil
+                )
+                .padding(.horizontal, 16)
+
+                Divider()
+                    .padding(.leading, 66)
+            }
+
+            DynamicCommentRepliesFooter(
+                snapshot: snapshot,
+                loadMore: loadMoreReplies
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private func loadMoreReplies() {
+        Task { await replyStore.loadMoreReplies(for: rootComment) }
+    }
+}
+
+private struct DynamicCommentRepliesFooter: View {
+    let snapshot: DynamicCommentRepliesSnapshot
+    let loadMore: () -> Void
+
+    var body: some View {
+        if snapshot.hasLoadedReplies, snapshot.state.isLoading {
+            CommentLoadingSkeletonRow()
+        } else if case .failed(let message) = snapshot.state {
+            DynamicCommentErrorView(message: message, retry: loadMore)
+        } else if snapshot.hasMoreReplies {
+            Button(action: loadMore) {
+                Label("查看更多回复", systemImage: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.pink)
+        }
+    }
+}

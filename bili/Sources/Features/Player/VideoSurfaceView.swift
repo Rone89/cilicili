@@ -5,30 +5,59 @@ import UIKit
 struct VideoSurfaceView: UIViewRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
     let prefersNativePlaybackControls: Bool
+    var disablesImplicitLayoutAnimations = false
+    var usesLiveSurfaceDuringLayoutTransition = false
 
     func makeUIView(context _: Context) -> VideoSurfaceContainerView {
         let view = VideoSurfaceContainerView()
         view.backgroundColor = .black
-        view.onBoundsChange = { [weak viewModel] in
-            viewModel?.refreshSurfaceLayout()
-        }
+        view.disablesImplicitLayoutAnimations = disablesImplicitLayoutAnimations
+        view.configureSurfaceHandoff(
+            usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+            isLayoutTransitioning: disablesImplicitLayoutAnimations
+        )
+        view.configureBoundsRefresh(for: viewModel)
         view.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
-        viewModel.attachSurface(view, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        viewModel.attachSurface(
+            view,
+            prefersNativePlaybackControls: prefersNativePlaybackControls,
+            preservesReadinessDuringSurfaceHandoff: view.isLiveSurfaceHandoffActive
+        )
         return view
     }
 
     func updateUIView(_ uiView: VideoSurfaceContainerView, context _: Context) {
-        uiView.onBoundsChange = { [weak viewModel] in
-            viewModel?.refreshSurfaceLayout()
+        uiView.disablesImplicitLayoutAnimations = disablesImplicitLayoutAnimations
+        uiView.configureSurfaceHandoff(
+            usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+            isLayoutTransitioning: disablesImplicitLayoutAnimations
+        )
+        guard !viewModel.isTerminated else {
+            uiView.detachPlayerSurface()
+            return
         }
+        if uiView.isPreparingForSurfaceDetach {
+            guard uiView.cancelPendingSurfaceDetachIfPossible(for: viewModel) else { return }
+        }
+        uiView.configureBoundsRefresh(for: viewModel)
         uiView.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
-        viewModel.attachSurface(uiView, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        viewModel.attachSurface(
+            uiView,
+            prefersNativePlaybackControls: prefersNativePlaybackControls,
+            preservesReadinessDuringSurfaceHandoff: uiView.isLiveSurfaceHandoffActive
+        )
+        viewModel.endSurfaceMigrationHold()
         uiView.setNeedsLayout()
-        uiView.layoutIfNeeded()
-        viewModel.refreshSurfaceLayout()
+        uiView.invalidateVideoLayout()
+        if disablesImplicitLayoutAnimations || usesLiveSurfaceDuringLayoutTransition {
+            uiView.scheduleCoordinatedSurfaceLayoutRefresh(for: viewModel)
+        } else {
+            uiView.cancelCoordinatedSurfaceLayoutRefresh()
+        }
     }
 
     static func dismantleUIView(_ uiView: VideoSurfaceContainerView, coordinator _: ()) {
+        PlayerMetricsLog.diagnostic("surface dismantle view=\(ObjectIdentifier(uiView).hashValue)")
         uiView.detachPlayerSurfaceAfterCurrentTransitionIfNeeded()
     }
 }
@@ -52,13 +81,64 @@ final class VideoSurfaceContainerView: UIView {
     let drawableView = UIView()
     let nativePlayerViewController = AVPlayerViewController()
     var onBoundsChange: (() -> Void)?
+    var disablesImplicitLayoutAnimations = false
 
     private weak var playerViewModel: PlayerStateViewModel?
     private(set) var prefersNativePlaybackControls = true
     private var isNativePlaybackControllerEnabled = false
+    private var usesLiveSurfaceDuringLayoutTransition = false
+    private var isLayoutTransitioningForSurfaceHandoff = false
     private var lastReportedBounds = CGRect.null
+    private var isPendingSurfaceDetach = false
+    private var surfaceBindingGeneration = 0
+    private var coordinatedSurfaceLayoutTask: Task<Void, Never>?
+    private var deferredSurfaceDetachTask: Task<Void, Never>?
+    private var deferredBoundSurfaceLayoutRefreshTask: Task<Void, Never>?
+
+    var isLiveSurfaceHandoffActive: Bool {
+        usesLiveSurfaceDuringLayoutTransition && isLayoutTransitioningForSurfaceHandoff
+    }
+
+    func isBound(to viewModel: PlayerStateViewModel) -> Bool {
+        !isPendingSurfaceDetach && playerViewModel === viewModel && !viewModel.isTerminated
+    }
+
+    var isPreparingForSurfaceDetach: Bool {
+        isPendingSurfaceDetach
+    }
+
+    func cancelPendingSurfaceDetachIfPossible(for viewModel: PlayerStateViewModel) -> Bool {
+        guard playerViewModel === viewModel, !viewModel.isTerminated else { return false }
+        cancelDeferredSurfaceDetach()
+        isPendingSurfaceDetach = false
+        configureBoundsRefresh(for: viewModel)
+        return true
+    }
+
+    func configureSurfaceHandoff(
+        usesLiveSurfaceDuringLayoutTransition: Bool,
+        isLayoutTransitioning: Bool
+    ) {
+        self.usesLiveSurfaceDuringLayoutTransition = usesLiveSurfaceDuringLayoutTransition
+        isLayoutTransitioningForSurfaceHandoff = isLayoutTransitioning
+    }
+
+    func configureBoundsRefresh(for viewModel: PlayerStateViewModel) {
+        onBoundsChange = { [weak self, weak viewModel] in
+            guard let self,
+                  let viewModel,
+                  self.isBound(to: viewModel)
+            else { return }
+            self.scheduleDeferredBoundSurfaceLayoutRefresh(for: viewModel)
+        }
+    }
 
     func setPlayerViewModel(_ viewModel: PlayerStateViewModel, prefersNativePlaybackControls: Bool) {
+        cancelDeferredSurfaceDetach()
+        if playerViewModel !== viewModel || isPendingSurfaceDetach {
+            surfaceBindingGeneration &+= 1
+        }
+        isPendingSurfaceDetach = false
         playerViewModel = viewModel
         self.prefersNativePlaybackControls = prefersNativePlaybackControls
         if !prefersNativePlaybackControls {
@@ -107,22 +187,144 @@ final class VideoSurfaceContainerView: UIView {
         }
     }
 
-    func detachPlayerSurface() {
-        playerViewModel?.detachSurface(self)
+    func detachPlayerSurface(preservingReadinessDuringSurfaceHandoff: Bool = false) {
+        cancelDeferredSurfaceDetach()
+        cancelCoordinatedSurfaceLayoutRefresh()
+        cancelDeferredBoundSurfaceLayoutRefresh()
+        surfaceBindingGeneration &+= 1
+        isPendingSurfaceDetach = true
+        onBoundsChange = nil
+        playerViewModel?.detachSurface(
+            self,
+            preservesReadinessDuringSurfaceHandoff: preservingReadinessDuringSurfaceHandoff
+        )
         setNativePlaybackControllerEnabled(false)
         playerViewModel = nil
     }
 
     func detachPlayerSurfaceAfterCurrentTransitionIfNeeded() {
+        cancelCoordinatedSurfaceLayoutRefresh()
+        cancelDeferredBoundSurfaceLayoutRefresh()
+        surfaceBindingGeneration &+= 1
+        let detachGeneration = surfaceBindingGeneration
+        let pendingPlayerViewModel = playerViewModel
+        let shouldKeepLiveSurfaceForHandoff = (isLiveSurfaceHandoffActive || pendingPlayerViewModel?.hasPresentedPlayback == true)
+            && pendingPlayerViewModel?.hasPresentedPlayback == true
+            && pendingPlayerViewModel?.isTerminated == false
+        PlayerMetricsLog.diagnostic(
+            "surface pendingDetach view=\(ObjectIdentifier(self).hashValue) liveHandoff=\(isLiveSurfaceHandoffActive) keep=\(shouldKeepLiveSurfaceForHandoff)"
+        )
+        isPendingSurfaceDetach = true
+        onBoundsChange = nil
+        if shouldKeepLiveSurfaceForHandoff {
+            pendingPlayerViewModel?.beginSurfaceMigrationHold()
+            deferPlayerSurfaceDetachAfterLayoutHandoff(
+                generation: detachGeneration,
+                pendingPlayerViewModel: pendingPlayerViewModel,
+                delayNanoseconds: Self.liveSurfaceHandoffDetachDelayNanoseconds,
+                preservingReadinessDuringSurfaceHandoff: true
+            )
+            return
+        }
         guard let coordinator = enclosingNavigationController()?.transitionCoordinator else {
-            detachPlayerSurface()
+            deferPlayerSurfaceDetachAfterLayoutHandoff(
+                generation: detachGeneration,
+                pendingPlayerViewModel: pendingPlayerViewModel,
+                delayNanoseconds: Self.deferredSurfaceDetachDelayNanoseconds,
+                preservingReadinessDuringSurfaceHandoff: false
+            )
             return
         }
 
         coordinator.animate(alongsideTransition: nil) { [weak self] context in
-            guard let self, !context.isCancelled else { return }
-            self.detachPlayerSurface()
+            guard let self else { return }
+            guard self.surfaceBindingGeneration == detachGeneration,
+                  self.playerViewModel === pendingPlayerViewModel
+            else { return }
+            if context.isCancelled {
+                self.isPendingSurfaceDetach = false
+                if let playerViewModel = self.playerViewModel,
+                   !playerViewModel.isTerminated {
+                    self.configureBoundsRefresh(for: playerViewModel)
+                    playerViewModel.refreshSurfaceLayout()
+                    self.scheduleCoordinatedSurfaceLayoutRefresh(for: playerViewModel)
+                } else {
+                    self.detachPlayerSurface()
+                }
+            } else {
+                self.detachPlayerSurface()
+            }
         }
+    }
+
+    private func deferPlayerSurfaceDetachAfterLayoutHandoff(
+        generation: Int,
+        pendingPlayerViewModel: PlayerStateViewModel?,
+        delayNanoseconds: UInt64,
+        preservingReadinessDuringSurfaceHandoff: Bool
+    ) {
+        deferredSurfaceDetachTask?.cancel()
+        deferredSurfaceDetachTask = Task { @MainActor [weak pendingPlayerViewModel] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled,
+                  self.surfaceBindingGeneration == generation,
+                  self.playerViewModel === pendingPlayerViewModel
+            else { return }
+            self.detachPlayerSurface(
+                preservingReadinessDuringSurfaceHandoff: preservingReadinessDuringSurfaceHandoff
+            )
+        }
+    }
+
+    func scheduleCoordinatedSurfaceLayoutRefresh(for viewModel: PlayerStateViewModel) {
+        coordinatedSurfaceLayoutTask?.cancel()
+        let refreshGeneration = surfaceBindingGeneration
+        coordinatedSurfaceLayoutTask = Task { @MainActor [weak self, weak viewModel] in
+            for delay in Self.coordinatedSurfaceLayoutRefreshDelays {
+                if delay == 0 {
+                    await Task.yield()
+                } else {
+                    try? await Task.sleep(nanoseconds: delay)
+                }
+                guard let self,
+                      let viewModel,
+                      !Task.isCancelled,
+                      self.surfaceBindingGeneration == refreshGeneration,
+                      self.isBound(to: viewModel)
+                else { return }
+                viewModel.refreshSurfaceLayout()
+            }
+            guard let self,
+                  self.surfaceBindingGeneration == refreshGeneration
+            else { return }
+            self.coordinatedSurfaceLayoutTask = nil
+        }
+    }
+
+    private static let coordinatedSurfaceLayoutRefreshDelays: [UInt64] = [
+        0,
+        80_000_000,
+        180_000_000,
+        320_000_000,
+        520_000_000
+    ]
+
+    private static let deferredSurfaceDetachDelayNanoseconds: UInt64 = 220_000_000
+    private static let liveSurfaceHandoffDetachDelayNanoseconds: UInt64 = 900_000_000
+
+    private func cancelDeferredSurfaceDetach() {
+        deferredSurfaceDetachTask?.cancel()
+        deferredSurfaceDetachTask = nil
+    }
+
+    private func cancelDeferredBoundSurfaceLayoutRefresh() {
+        deferredBoundSurfaceLayoutRefreshTask?.cancel()
+        deferredBoundSurfaceLayoutRefreshTask = nil
+    }
+
+    func cancelCoordinatedSurfaceLayoutRefresh() {
+        coordinatedSurfaceLayoutTask?.cancel()
+        coordinatedSurfaceLayoutTask = nil
     }
 
     func setNativePlaybackControllerEnabled(_ isEnabled: Bool) {
@@ -159,17 +361,83 @@ final class VideoSurfaceContainerView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        deferredSurfaceDetachTask?.cancel()
+        coordinatedSurfaceLayoutTask?.cancel()
+        deferredBoundSurfaceLayoutRefreshTask?.cancel()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        let previousBounds = lastReportedBounds
+        performLayoutUpdates {
+            applyVideoSurfaceLayout()
+        }
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        guard previousBounds != bounds else { return }
+        lastReportedBounds = bounds
+        onBoundsChange?()
+    }
+
+    func invalidateVideoLayout() {
+        performLayoutUpdates {
+            applyVideoSurfaceLayout()
+        }
+        scheduleDeferredBoundSurfaceLayoutRefresh()
+    }
+
+    private func applyVideoSurfaceLayout() {
         drawableView.frame = bounds
         if isNativePlaybackControllerEnabled {
             installNativePlayerViewControllerIfPossible()
             applyNativePlayerLayout()
         }
-        guard bounds.width > 1, bounds.height > 1 else { return }
-        guard lastReportedBounds.size != bounds.size else { return }
-        lastReportedBounds = bounds
-        onBoundsChange?()
+        drawableView.setNeedsLayout()
+    }
+
+    private func scheduleDeferredBoundSurfaceLayoutRefresh(for viewModel: PlayerStateViewModel? = nil) {
+        cancelDeferredBoundSurfaceLayoutRefresh()
+        let refreshGeneration = surfaceBindingGeneration
+        deferredBoundSurfaceLayoutRefreshTask = Task { @MainActor [weak self, weak viewModel] in
+            await Task.yield()
+            guard let self,
+                  !Task.isCancelled,
+                  self.surfaceBindingGeneration == refreshGeneration
+            else { return }
+
+            let resolvedViewModel = viewModel ?? self.playerViewModel
+            guard let resolvedViewModel else {
+                if self.surfaceBindingGeneration == refreshGeneration {
+                    self.deferredBoundSurfaceLayoutRefreshTask = nil
+                }
+                return
+            }
+
+            self.refreshBoundPlayerSurfaceLayout(for: resolvedViewModel)
+            if self.surfaceBindingGeneration == refreshGeneration {
+                self.deferredBoundSurfaceLayoutRefreshTask = nil
+            }
+        }
+    }
+
+    private func refreshBoundPlayerSurfaceLayout(for playerViewModel: PlayerStateViewModel) {
+        guard isBound(to: playerViewModel),
+              bounds.width > 1,
+              bounds.height > 1
+        else { return }
+        playerViewModel.refreshSurfaceLayout()
+    }
+
+    private func performLayoutUpdates(_ updates: () -> Void) {
+        guard disablesImplicitLayoutAnimations else {
+            updates()
+            return
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        UIView.performWithoutAnimation(updates)
+        CATransaction.commit()
     }
 
     override func didMoveToWindow() {

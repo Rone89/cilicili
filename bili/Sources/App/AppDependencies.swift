@@ -10,6 +10,9 @@ final class AppDependencies: ObservableObject {
     let sponsorBlockService: SponsorBlockService
     private let networkMetricsRecorder: BiliNetworkMetricsRecorder
     private var sessionCancellables = Set<AnyCancellable>()
+    private var hasScheduledDeferredStartupWork = false
+    private var hasCompletedDeferredStartupWork = false
+    private var deferredStartupWorkTask: Task<Void, Never>?
 
     init() {
         let sessionStore = SessionStore()
@@ -55,20 +58,14 @@ final class AppDependencies: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+                    self?.handleAppDidBecomeActive()
                 }
             }
             .store(in: &sessionCancellables)
-        Task(priority: .utility) { [api] in
-            await RemoteImageCache.shared.applyAdaptiveBudget()
-            await ResourceCacheCenter.enforceConfiguredLimit()
-            async let startupResources: Void = api.prewarmStartupResources()
-            async let dynamicFeed: Void = DynamicFeedWarmCache.shared.prewarm(api: api)
-            _ = await (startupResources, dynamicFeed)
-        }
-        Task { @MainActor [weak self] in
-            self?.refreshPlaybackCDNProbeOnAppActivationIfNeeded()
-        }
+    }
+
+    deinit {
+        deferredStartupWorkTask?.cancel()
     }
 
     func refreshPlaybackCDNProbeIfNeeded() {
@@ -77,6 +74,39 @@ final class AppDependencies: ObservableObject {
 
     func refreshPlaybackCDNProbeOnAppActivationIfNeeded() {
         PlaybackCDNProbeCoordinator.shared.refreshOnAppActivationIfNeeded(libraryStore: libraryStore)
+    }
+
+    func scheduleDeferredStartupWorkIfNeeded() {
+        guard !hasScheduledDeferredStartupWork else { return }
+        hasScheduledDeferredStartupWork = true
+        deferredStartupWorkTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.runDeferredStartupWork()
+        }
+    }
+
+    private func handleAppDidBecomeActive() {
+        guard hasCompletedDeferredStartupWork else {
+            scheduleDeferredStartupWorkIfNeeded()
+            return
+        }
+        refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+    }
+
+    private func runDeferredStartupWork() {
+        hasCompletedDeferredStartupWork = true
+        refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+        PlaybackEngineWarmupCenter.warmKSPlayerComponentsIfNeeded()
+
+        let api = api
+        Task(priority: .utility) {
+            await RemoteImageCache.shared.applyAdaptiveBudget()
+            await ResourceCacheCenter.enforceConfiguredLimit()
+            async let startupResources: Void = api.prewarmStartupResources()
+            async let dynamicFeed: Void = DynamicFeedWarmCache.shared.prewarm(api: api)
+            _ = await (startupResources, dynamicFeed)
+        }
     }
 
     private func handlePlaybackNetworkClassChange() {

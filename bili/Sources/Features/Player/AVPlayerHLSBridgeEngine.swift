@@ -9,12 +9,31 @@ import UIKit
 @MainActor
 final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private static let interactiveSeekTolerance = CMTime(seconds: 0.35, preferredTimescale: 600)
+    private static let terminalStallDelayNanoseconds: UInt64 = 14_000_000_000
+    private static let itemReadinessTimeoutNanoseconds: UInt64 = 14_000_000_000
+    private static let itemReadinessPollNanoseconds: UInt64 = 50_000_000
+    private static let loadedRangeContinuityTolerance: TimeInterval = 0.12
+
+    private enum PrepareReadinessError: LocalizedError {
+        case itemFailed(String?)
+        case timedOut
+
+        var errorDescription: String? {
+            switch self {
+            case .itemFailed(let message):
+                message ?? PlayerEngineError.unsupportedMedia.localizedDescription
+            case .timedOut:
+                "AVPlayer 等待媒体就绪超时"
+            }
+        }
+    }
 
     private let player = AVPlayer()
     private var backgroundObserver: Any?
     private var foregroundObserver: Any?
     private var itemEndObserver: Any?
     private var itemFailedObserver: Any?
+    private var itemStalledObserver: Any?
     private var itemAccessLogObserver: Any?
     private var playerObservers: [NSKeyValueObservation] = []
     private var itemObservers: [NSKeyValueObservation] = []
@@ -23,10 +42,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var periodicTimeObserver: Any?
     private let videoFrameContext = CIContext()
     private weak var surfaceView: UIView?
-    private weak var playerLayer: AVPlayerLayer?
+    private var playerLayer: AVPlayerLayer?
     private weak var playerViewController: AVPlayerViewController?
     private var playerItem: AVPlayerItem?
     private var videoOutput: AVPlayerItemVideoOutput?
+    private var lastVideoFrameImage: UIImage?
     private var source: PlayerStreamSource?
     private var hlsBridge: LocalHLSBridge?
     private var liveHLSProxy: LocalLiveHLSProxy?
@@ -46,10 +66,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var seekProtectionTargetTime: TimeInterval?
     private var seekProtectionAppliedAt: CFTimeInterval?
     private var startupBitRateLiftTask: Task<Void, Never>?
+    private var terminalStallTask: Task<Void, Never>?
+    private var terminalStallGeneration = 0
     private var didLiftStartupBitRate = false
     private var isStartupFastStartActive = false
     private var manualPreferredPeakBitRate: Double?
     private var lastRecordedAccessLogStallCount = 0
+    private var lastPlaybackFailureReason: HLSBridgeFailureReason?
     private var playbackGeneration = 0
     private var playbackFailureRecoveryAttempts: [String: Int] = [:]
     private var isPlaybackFailureRecoveryInProgress = false
@@ -59,6 +82,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var contentOverlay: AnyView?
     private var contentOverlayHostingController: UIHostingController<AnyView>?
     private weak var contentOverlayContainerView: UIView?
+    private weak var viewModel: PlayerStateViewModel?
+    private var pendingSurfaceDetachTask: Task<Void, Never>?
 
     var hasMedia: Bool {
         !isStopped && player.currentItem != nil
@@ -71,6 +96,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     var playbackErrorMessage: String? {
         player.currentItem?.error?.localizedDescription
+    }
+
+    var lastFailureReason: HLSBridgeFailureReason? {
+        lastPlaybackFailureReason
     }
 
     var supportsPictureInPicture: Bool {
@@ -126,6 +155,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     deinit {
+        pendingSurfaceDetachTask?.cancel()
         itemObservers.removeAll()
         layerReadyForDisplayObserver = nil
         controllerReadyForDisplayObserver = nil
@@ -135,6 +165,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if let itemFailedObserver {
             NotificationCenter.default.removeObserver(itemFailedObserver)
         }
+        if let itemStalledObserver {
+            NotificationCenter.default.removeObserver(itemStalledObserver)
+        }
         if let itemAccessLogObserver {
             NotificationCenter.default.removeObserver(itemAccessLogObserver)
         }
@@ -143,6 +176,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         seekProtectionReleaseTask?.cancel()
         startupBitRateLiftTask?.cancel()
+        terminalStallTask?.cancel()
         if let backgroundObserver {
             NotificationCenter.default.removeObserver(backgroundObserver)
         }
@@ -152,6 +186,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func attachSurface(_ surface: UIView) {
+        pendingSurfaceDetachTask?.cancel()
+        pendingSurfaceDetachTask = nil
         surfaceView = surface
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
@@ -165,11 +201,22 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func detachSurface(_ surface: UIView) {
         guard surfaceView === surface else { return }
-        removePlayerLayer()
+        pendingSurfaceDetachTask?.cancel()
+        let detachedSurface = surface
+        pendingSurfaceDetachTask = Task { @MainActor [weak self, weak detachedSurface] in
+            await Task.yield()
+            guard let self,
+                  !Task.isCancelled,
+                  self.surfaceView == nil || self.surfaceView === detachedSurface
+            else { return }
+            self.removePlayerLayer()
+            self.pendingSurfaceDetachTask = nil
+        }
         surfaceView = nil
     }
 
     func refreshSurfaceLayout() {
+        guard !isStopped else { return }
         AVPlayerLayoutCoordinator.shared.apply(
             playerLayer: playerLayer,
             in: surfaceView,
@@ -178,6 +225,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func recoverSurface() {
+        guard !isStopped else { return }
         configureAudioSession()
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
@@ -194,7 +242,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         layer.setNeedsDisplay()
     }
 
-    func setViewModel(_: PlayerStateViewModel?) {}
+    func setViewModel(_ viewModel: PlayerStateViewModel?) {
+        self.viewModel = viewModel
+    }
 
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
         guard videoGravity != gravity else { return }
@@ -257,6 +307,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         isStartupFastStartActive = false
         manualPreferredPeakBitRate = nil
         lastRecordedAccessLogStallCount = 0
+        lastPlaybackFailureReason = nil
         isSeekProtectionActive = false
         seekProtectionReleaseTask?.cancel()
         seekProtectionReleaseTask = nil
@@ -269,7 +320,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         onLoadingProgressChange?(0.18)
         recordPrepareStage(source: source, stage: "start", startedAt: prepareStart)
         publishPlaybackState(.preparing)
-        let prepared = try await Self.makePlayerItem(source: source)
+        let prepared: PreparedPlayerItem
+        do {
+            prepared = try await Self.makePlayerItem(source: source)
+        } catch {
+            lastPlaybackFailureReason = prepareFailureReason(for: error, source: source)
+            throw error
+        }
         guard !Task.isCancelled, isCurrentPlaybackGeneration(generation) else {
             discardPreparedPlayerItem(prepared)
             signpostMessage = "id=\(source.metricsID) cancelled"
@@ -301,7 +358,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             extra: "buffer=\(String(format: "%.2f", item.preferredForwardBufferDuration))s peak=\(Int(item.preferredPeakBitRate.rounded())) fastStart=\(isStartupFastStartActive)"
         )
         player.automaticallyWaitsToMinimizeStalling = false
-        observeCurrentItem(item)
         ensurePeriodicTimeObserver()
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
@@ -309,27 +365,54 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             ensurePlayerLayer(in: surfaceView).player = player
             refreshSurfaceLayout()
         }
+        onLoadingProgressChange?(0.68)
+        do {
+            try await waitForCurrentItemReadyToPlay(item, generation: generation)
+        } catch {
+            if isCurrentPlayerItem(item), isCurrentPlaybackGeneration(generation) {
+                tearDownCurrentItemForReplacement()
+            }
+            signpostMessage = "id=\(source.metricsID) failed \(error.localizedDescription)"
+            throw error
+        }
+        guard !Task.isCancelled, isCurrentPlaybackGeneration(generation), isCurrentPlayerItem(item) else {
+            signpostMessage = "id=\(source.metricsID) cancelled"
+            return
+        }
+        observeCurrentItem(item)
         onLoadingProgressChange?(0.86)
-        publishPlaybackState(.ready)
+        handleCurrentItemReadyToPlay(item)
         signpostMessage = "id=\(source.metricsID) ready elapsed=\(String(format: "%.1f", PlayerMetricsLog.elapsedMilliseconds(since: prepareStart)))ms"
         recordPrepareStage(source: source, stage: "ready", startedAt: prepareStart)
     }
 
     func play() {
-        guard !isStopped, player.currentItem != nil else { return }
+        guard !isStopped, let item = player.currentItem else { return }
         configureAudioSession()
         applyTargetAudioState()
         wantsPlayback = true
+        guard item.status == .readyToPlay else {
+            onLoadingProgressChange?(0.72)
+            publishPlaybackState(.buffering)
+            return
+        }
         beginPlayback()
+        scheduleTerminalStallWatchdog(reason: "play")
         let currentTime = displayTime(fromPlayerTime: player.currentTime().seconds)
-        onLoadingProgressChange?(0.98)
-        publishPlaybackState(.playing)
+        if player.rate > 0 || player.timeControlStatus == .playing {
+            onLoadingProgressChange?(0.98)
+            publishPlaybackState(.playing)
+        } else {
+            onLoadingProgressChange?(0.86)
+            publishPlaybackState(.buffering)
+        }
         reportFirstFrameIfPossible(currentTime: currentTime)
     }
 
     func pause() {
         guard !isStopped else { return }
         wantsPlayback = false
+        cancelTerminalStallWatchdog()
         player.pause()
         publishPlaybackState(.paused)
     }
@@ -337,6 +420,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func pauseForNavigation() {
         guard !isStopped else { return }
         wantsPlayback = false
+        cancelTerminalStallWatchdog()
         player.rate = 0
         player.pause()
         player.currentItem?.cancelPendingSeeks()
@@ -347,6 +431,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func suspendForNavigation() {
         guard !isStopped else { return }
         wantsPlayback = false
+        cancelTerminalStallWatchdog()
         silencePlayerImmediately()
         player.currentItem?.cancelPendingSeeks()
         publishPlaybackState(.paused)
@@ -356,10 +441,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playbackGeneration &+= 1
         isStopped = true
         wantsPlayback = false
+        cancelTerminalStallWatchdog()
+        pendingSurfaceDetachTask?.cancel()
+        pendingSurfaceDetachTask = nil
         isPlaybackFailureRecoveryInProgress = false
         tearDownCurrentItemForReplacement()
         source = nil
-        playerLayer?.player = nil
+        removePlayerLayer()
         playerViewController?.player = nil
         setContentOverlay(nil)
         layerReadyForDisplayObserver = nil
@@ -415,6 +503,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard !isStopped, player.currentItem != nil else { return nil }
         let target = playerTime(fromDisplayTime: max(time, 0))
         let displayTarget = displayTime(fromPlayerTime: target)
+        let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         if wantsPlayback || isPerformingSeek {
             publishPlaybackState(.buffering)
@@ -427,7 +516,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             toleranceAfter: .zero
         ) { [weak self] finished in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      self.isCurrentPlaybackGeneration(seekPlaybackGeneration)
+                else { return }
                 self.finishSeekTransaction(generation: generation, finished: finished, shouldResume: self.wantsPlayback)
             }
         }
@@ -442,6 +533,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             min(max(progress, 0), 1) * resolvedDuration
         )
         let target = playerTime(fromDisplayTime: displayTarget)
+        let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         if wantsPlayback || isPerformingSeek {
             publishPlaybackState(.buffering)
@@ -455,7 +547,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             toleranceAfter: Self.interactiveSeekTolerance
         ) { [weak self] finished in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      self.isCurrentPlaybackGeneration(seekPlaybackGeneration)
+                else { return }
                 self.finishSeekTransaction(generation: generation, finished: finished, shouldResume: self.wantsPlayback)
             }
         }
@@ -471,6 +565,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let playerTarget = playerTime(fromDisplayTime: target)
         let displayTarget = alignedInteractiveSeekTime(displayTime(fromPlayerTime: playerTarget))
         let alignedPlayerTarget = playerTime(fromDisplayTime: displayTarget)
+        let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         if wantsPlayback || isPerformingSeek {
             publishPlaybackState(.buffering)
@@ -484,7 +579,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             toleranceAfter: CMTime(seconds: 0.35, preferredTimescale: 600)
         ) { [weak self] finished in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      self.isCurrentPlaybackGeneration(seekPlaybackGeneration)
+                else { return }
                 self.finishSeekTransaction(generation: generation, finished: finished, shouldResume: self.wantsPlayback)
             }
         }
@@ -501,6 +598,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let target = playerTime(fromDisplayTime: displayTarget)
         let targetTime = CMTime(seconds: target, preferredTimescale: 600)
         wantsPlayback = true
+        let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         publishPlaybackState(.buffering)
         warmSeekTargetIfNeeded(displayTarget)
@@ -510,6 +608,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 continuation.resume(returning: finished)
             }
         }
+        guard isCurrentPlaybackGeneration(seekPlaybackGeneration) else { return nil }
         finishSeekTransaction(generation: generation, finished: finished, shouldResume: wantsPlayback)
         return finished ? displayTarget : nil
     }
@@ -521,6 +620,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let status = item?.status
         return PlayerPlaybackSnapshot(
             currentTime: currentSeconds.isFinite && currentSeconds >= 0 ? currentSeconds : nil,
+            renderedVideoTime: (isPerformingSeek || isSeekProtectionActive) ? currentRenderedVideoTime() : nil,
             duration: durationSeconds > 0 ? durationSeconds : durationHint,
             isPlaying: player.rate > 0,
             isSeekable: status == .readyToPlay || (durationHint ?? 0) > 0,
@@ -531,7 +631,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func currentVideoFrameImage() -> UIImage? {
         guard let videoOutput,
               player.currentItem === playerItem
-        else { return nil }
+        else { return lastVideoFrameImage }
 
         let hostTime = CACurrentMediaTime()
         let hostItemTime = videoOutput.itemTime(forHostTime: hostTime)
@@ -540,7 +640,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             forItemTime: hostItemTime,
             itemTimeForDisplay: &displayTime
         ) {
-            return makeImage(from: pixelBuffer)
+            return cacheVideoFrameImage(from: pixelBuffer)
         }
 
         let currentItemTime = player.currentTime()
@@ -548,9 +648,36 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             forItemTime: currentItemTime,
             itemTimeForDisplay: nil
         ) else {
+            return lastVideoFrameImage
+        }
+        return cacheVideoFrameImage(from: pixelBuffer)
+    }
+
+    private func currentRenderedVideoTime() -> TimeInterval? {
+        guard let videoOutput,
+              player.currentItem === playerItem
+        else { return nil }
+
+        let hostItemTime = videoOutput.itemTime(forHostTime: CACurrentMediaTime())
+        var itemDisplayTime = CMTime.invalid
+        guard let pixelBuffer = videoOutput.copyPixelBuffer(
+            forItemTime: hostItemTime,
+            itemTimeForDisplay: &itemDisplayTime
+        ) else {
             return nil
         }
-        return makeImage(from: pixelBuffer)
+
+        _ = cacheVideoFrameImage(from: pixelBuffer)
+        let playerTime = itemDisplayTime.isValid && itemDisplayTime.seconds.isFinite
+            ? itemDisplayTime.seconds
+            : hostItemTime.seconds
+        let renderedTime = displayTime(fromPlayerTime: playerTime)
+        guard renderedTime.isFinite, renderedTime >= 0 else { return nil }
+        return renderedTime
+    }
+
+    func currentSurfaceSnapshotImage() -> UIImage? {
+        surfaceView?.biliRenderedSnapshotImage()
     }
 
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? {
@@ -596,6 +723,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             oldItem?.remove(videoOutput)
         }
         videoOutput = nil
+        lastVideoFrameImage = nil
         removeCurrentItemObservers()
         removePeriodicTimeObserver()
         if oldItem != nil {
@@ -620,6 +748,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionAppliedAt = nil
         startupBitRateLiftTask?.cancel()
         startupBitRateLiftTask = nil
+        cancelTerminalStallWatchdog()
         didLiftStartupBitRate = false
         isStartupFastStartActive = false
         manualPreferredPeakBitRate = nil
@@ -645,12 +774,79 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         return UIImage(cgImage: cgImage)
     }
 
+    private func cacheVideoFrameImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+        guard let image = makeImage(from: pixelBuffer) else { return lastVideoFrameImage }
+        lastVideoFrameImage = image
+        return image
+    }
+
     private func isCurrentPlaybackGeneration(_ generation: Int) -> Bool {
         !isStopped && generation == playbackGeneration
     }
 
     private func isCurrentPlayerItem(_ item: AVPlayerItem) -> Bool {
         !isStopped && player.currentItem === item && playerItem === item
+    }
+
+    private func waitForCurrentItemReadyToPlay(_ item: AVPlayerItem, generation: Int) async throws {
+        let startedAt = CACurrentMediaTime()
+        let timeoutSeconds = TimeInterval(Self.itemReadinessTimeoutNanoseconds) / 1_000_000_000
+        while true {
+            try Task.checkCancellation()
+            guard isCurrentPlaybackGeneration(generation), isCurrentPlayerItem(item) else {
+                throw CancellationError()
+            }
+            switch item.status {
+            case .readyToPlay:
+                return
+            case .failed:
+                logPlayerItemFailure(item)
+                lastPlaybackFailureReason = playbackFailureReason(
+                    for: item,
+                    fallback: item.error?.localizedDescription
+                )
+                throw PrepareReadinessError.itemFailed(
+                    normalizedPlaybackFailureMessage(for: item, fallback: item.error?.localizedDescription)
+                )
+            case .unknown:
+                if CACurrentMediaTime() - startedAt >= timeoutSeconds {
+                    throw PrepareReadinessError.timedOut
+                }
+                try await Task.sleep(nanoseconds: Self.itemReadinessPollNanoseconds)
+            @unknown default:
+                if CACurrentMediaTime() - startedAt >= timeoutSeconds {
+                    throw PrepareReadinessError.timedOut
+                }
+                try await Task.sleep(nanoseconds: Self.itemReadinessPollNanoseconds)
+            }
+        }
+    }
+
+    private func handleCurrentItemReadyToPlay(_ item: AVPlayerItem) {
+        guard isCurrentPlayerItem(item) else { return }
+        seekDirectLiveHLSToLiveEdgeIfNeeded(item)
+        if wantsPlayback || player.rate > 0 || player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+            if player.rate > 0 || player.timeControlStatus == .playing {
+                publishPlaybackState(.playing)
+                reportFirstFrameIfPossible()
+                maybeReleaseSeekProtectionIfReady(for: item, reason: "item-ready")
+            } else {
+                publishPlaybackState(.buffering)
+                scheduleTerminalStallWatchdog(reason: "item-ready-waiting")
+            }
+        } else {
+            publishPlaybackState(.ready)
+        }
+    }
+
+    private func isCurrentPlayerLayer(_ identity: ObjectIdentifier) -> Bool {
+        guard let playerLayer else { return false }
+        return ObjectIdentifier(playerLayer) == identity
+    }
+
+    private func isCurrentPlayerViewController(_ identity: ObjectIdentifier) -> Bool {
+        guard let playerViewController else { return false }
+        return ObjectIdentifier(playerViewController) == identity
     }
 
     private func discardPreparedPlayerItem(_ prepared: PreparedPlayerItem) {
@@ -923,9 +1119,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.recoverSurface()
+                guard let self, !self.isStopped else { return }
+                guard self.canRecoverSurfaceFromAppLifecycle else { return }
+                guard self.surfaceView != nil || self.playerViewController != nil else { return }
+                self.recoverSurface()
             }
         }
+    }
+
+    private var canRecoverSurfaceFromAppLifecycle: Bool {
+        guard let viewModel else { return true }
+        return !viewModel.isTerminated && ActivePlaybackCoordinator.shared.isActive(viewModel)
     }
 
     private func observePlayerState() {
@@ -933,7 +1137,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
                 let status = player.timeControlStatus
                 Task { @MainActor [weak self] in
-                    guard let self, !self.isStopped else { return }
+                    guard let self,
+                          !self.isStopped,
+                          player.currentItem === self.playerItem
+                    else { return }
                     self.handleTimeControlStatus(status)
                 }
             },
@@ -945,6 +1152,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 Task { @MainActor [weak self] in
                     guard let self, !self.isStopped, player.currentItem === self.playerItem else { return }
                     if rate > 0 {
+                        self.cancelTerminalStallWatchdog()
                         self.updatePlaybackIntent(true)
                         self.publishPlaybackState(.playing)
                         self.reportFirstFrameIfPossible(
@@ -963,6 +1171,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                               itemStatus == .readyToPlay,
                               timeControlStatus == .waitingToPlayAtSpecifiedRate {
                         self.publishPlaybackState(.buffering)
+                        self.scheduleTerminalStallWatchdog(reason: "rate-waiting")
                     }
                 }
             }
@@ -978,10 +1187,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     guard let self, self.isCurrentPlayerItem(item) else { return }
                     switch status {
                     case .readyToPlay:
-                        self.seekDirectLiveHLSToLiveEdgeIfNeeded(item)
-                        self.publishPlaybackState(.ready)
+                        self.handleCurrentItemReadyToPlay(item)
                     case .failed:
+                        self.cancelTerminalStallWatchdog()
                         self.logPlayerItemFailure(item)
+                        self.lastPlaybackFailureReason = self.playbackFailureReason(
+                            for: item,
+                            fallback: rawErrorMessage
+                        )
                         let errorMessage = self.normalizedPlaybackFailureMessage(for: item, fallback: rawErrorMessage)
                         if await self.recoverFromPlaybackFailureIfPossible(
                             item: item,
@@ -1003,11 +1216,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 Task { @MainActor [weak self] in
                     guard let self, self.wantsPlayback, self.isCurrentPlayerItem(item) else { return }
                     if isPlaybackLikelyToKeepUp {
+                        self.cancelTerminalStallWatchdog()
                         self.beginPlayback()
                         self.publishPlaybackState(.playing)
                         self.maybeReleaseSeekProtectionIfReady(for: item, reason: "keepup")
                     } else {
                         self.publishPlaybackState(.buffering)
+                        self.scheduleTerminalStallWatchdog(reason: "keepup-false")
                     }
                 }
             },
@@ -1026,6 +1241,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                           self.isCurrentPlayerItem(item)
                     else { return }
                     self.publishPlaybackState(.buffering)
+                    self.scheduleTerminalStallWatchdog(reason: "buffer-empty")
                 }
             },
             item.observe(\.seekableTimeRanges, options: [.new]) { [weak self] item, _ in
@@ -1043,6 +1259,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentPlayerItem(item) else { return }
+                self.cancelTerminalStallWatchdog()
                 self.wantsPlayback = false
                 self.publishPlaybackState(.ended)
             }
@@ -1057,7 +1274,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 .localizedDescription
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentPlayerItem(item) else { return }
+                self.cancelTerminalStallWatchdog()
                 self.logPlayerItemFailure(item)
+                self.lastPlaybackFailureReason = self.playbackFailureReason(
+                    for: item,
+                    fallback: rawErrorMessage
+                )
                 let errorMessage = self.normalizedPlaybackFailureMessage(for: item, fallback: rawErrorMessage)
                 if await self.recoverFromPlaybackFailureIfPossible(
                     item: item,
@@ -1067,6 +1289,21 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     return
                 }
                 self.publishPlaybackState(.failed(errorMessage))
+            }
+        }
+
+        itemStalledObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.wantsPlayback,
+                      self.isCurrentPlayerItem(item)
+                else { return }
+                self.publishPlaybackState(.buffering)
+                self.scheduleTerminalStallWatchdog(reason: "playback-stalled")
             }
         }
 
@@ -1098,6 +1335,72 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         return fallback
     }
 
+    private func playbackFailureReason(for item: AVPlayerItem, fallback: String?) -> HLSBridgeFailureReason? {
+        if let statusCode = item.errorLog()?.events.last?.errorStatusCode {
+            return HLSBridgeRemoteFailure.reason(forHTTPStatus: statusCode)
+        }
+        if let error = item.error {
+            return HLSBridgeRemoteFailure.reason(for: error)
+        }
+        guard let fallback, !fallback.isEmpty else { return nil }
+        return HLSBridgeFailureReason(
+            layer: .avPlayerItem,
+            category: .unknown,
+            statusCode: nil,
+            urlHost: nil,
+            rangeDescription: nil,
+            underlyingDescription: fallback
+        )
+    }
+
+    private func prepareFailureReason(for error: Error, source: PlayerStreamSource) -> HLSBridgeFailureReason {
+        if error is CancellationError {
+            return HLSBridgeFailureReason(
+                layer: .local,
+                category: .cancelled,
+                statusCode: nil,
+                urlHost: source.videoURL?.host?.lowercased(),
+                rangeDescription: nil,
+                underlyingDescription: error.localizedDescription
+            )
+        }
+        if let failure = error as? HLSBridgeRemoteFailure {
+            return failure.reason
+        }
+        if let streamError = error as? HLSRangeStreamError {
+            return HLSBridgeRemoteFailure.reason(for: streamError)
+        }
+        if let urlError = error as? URLError {
+            return HLSBridgeFailureReason(
+                layer: .remoteRange,
+                category: HLSBridgeRemoteFailure.reason(for: urlError).category,
+                statusCode: nil,
+                urlHost: source.videoURL?.host?.lowercased(),
+                rangeDescription: nil,
+                underlyingDescription: urlError.localizedDescription
+            )
+        }
+        let category: HLSBridgeRemoteFailureCategory
+        if let engineError = error as? PlayerEngineError {
+            switch engineError {
+            case .missingVideoURL:
+                category = .invalidResponse
+            case .unsupportedMedia:
+                category = .hardwareDecodeRejected
+            }
+        } else {
+            category = HLSBridgeRemoteFailure.reason(for: error).category
+        }
+        return HLSBridgeFailureReason(
+            layer: .local,
+            category: category,
+            statusCode: nil,
+            urlHost: source.videoURL?.host?.lowercased(),
+            rangeDescription: nil,
+            underlyingDescription: error.localizedDescription
+        )
+    }
+
     private func shouldAttemptSameSourceRecovery(item: AVPlayerItem, errorMessage: String?) -> Bool {
         if let statusCode = item.errorLog()?.events.last?.errorStatusCode,
            !HLSBridgeRemoteFailure.allowsSameSourceRecovery(forHTTPStatus: statusCode) {
@@ -1115,10 +1418,19 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         errorMessage: String?,
         reason: String
     ) async -> Bool {
+        guard !isPlaybackFailureRecoveryInProgress else {
+            PlayerMetricsLog.record(
+                .network,
+                metricsID: source?.metricsID ?? "-",
+                title: source?.title,
+                message: "hlsRecover=alreadyInProgress reason=\(reason)"
+            )
+            return true
+        }
         guard isCurrentPlayerItem(item),
-              !isPlaybackFailureRecoveryInProgress,
               let source
         else { return false }
+        let recoveryGeneration = playbackGeneration
         guard source.audioURL != nil || hlsBridge != nil else { return false }
         guard shouldAttemptSameSourceRecovery(item: item, errorMessage: errorMessage) else {
             await recordPlaybackFailureAvoidance(
@@ -1126,6 +1438,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 reason: reason,
                 errorMessage: errorMessage
             )
+            guard isCurrentPlayerItem(item),
+                  recoveryGeneration == playbackGeneration
+            else { return true }
             PlayerMetricsLog.record(
                 .network,
                 metricsID: source.metricsID,
@@ -1153,6 +1468,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             reason: reason,
             errorMessage: errorMessage
         )
+        guard isCurrentPlayerItem(item),
+              recoveryGeneration == playbackGeneration
+        else { return true }
         PlayerMetricsLog.record(
             .network,
             metricsID: source.metricsID,
@@ -1160,9 +1478,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             message: "hlsRecover reason=\(reason) attempt=\(attempt + 1) time=\(String(format: "%.2fs", max(restoreTime, 0)))"
         )
 
+        let preparedRecoveryGeneration = recoveryGeneration &+ 1
         do {
             try await prepare(source: source.withResumeTime(max(restoreTime, 0)))
-            guard !Task.isCancelled, !isStopped else { return true }
+            guard !Task.isCancelled,
+                  !isStopped,
+                  playbackGeneration == preparedRecoveryGeneration
+            else { return true }
             setPlaybackRate(Double(restoreRate))
             if restoreTime > 0.35 {
                 _ = seek(toTime: restoreTime)
@@ -1180,6 +1502,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             )
             return true
         } catch {
+            guard !Task.isCancelled,
+                  !isStopped,
+                  playbackGeneration == preparedRecoveryGeneration
+            else { return true }
             PlayerMetricsLog.logger.error(
                 "hlsRecoverFailed attempt=\(attempt + 1, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
@@ -1322,8 +1648,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func observeLayerReadyForDisplay(_ layer: AVPlayerLayer) {
         layerReadyForDisplayObserver = layer.observe(\.isReadyForDisplay, options: [.new]) { [weak self] layer, _ in
             guard layer.isReadyForDisplay else { return }
+            let layerIdentity = ObjectIdentifier(layer)
             Task { @MainActor [weak self] in
-                self?.reportFirstFrameIfPossible()
+                guard let self,
+                      !self.isStopped,
+                      self.isCurrentPlayerLayer(layerIdentity),
+                      self.player.currentItem === self.playerItem
+                else { return }
+                self.reportFirstFrameIfPossible()
             }
         }
     }
@@ -1332,8 +1664,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard controllerReadyForDisplayObserver == nil else { return }
         controllerReadyForDisplayObserver = controller.observe(\.isReadyForDisplay, options: [.new]) { [weak self] controller, _ in
             guard controller.isReadyForDisplay else { return }
+            let controllerIdentity = ObjectIdentifier(controller)
             Task { @MainActor [weak self] in
-                self?.reportFirstFrameIfPossible()
+                guard let self,
+                      !self.isStopped,
+                      self.isCurrentPlayerViewController(controllerIdentity),
+                      self.player.currentItem === self.playerItem
+                else { return }
+                self.reportFirstFrameIfPossible()
             }
         }
     }
@@ -1346,7 +1684,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         ) { [weak self] time in
             let seconds = time.seconds
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      !self.isStopped,
+                      self.player.currentItem === self.playerItem
+                else { return }
                 self.reportFirstFrameIfPossible(currentTime: self.displayTime(fromPlayerTime: seconds))
             }
         }
@@ -1367,6 +1708,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if let itemFailedObserver {
             NotificationCenter.default.removeObserver(itemFailedObserver)
             self.itemFailedObserver = nil
+        }
+        if let itemStalledObserver {
+            NotificationCenter.default.removeObserver(itemStalledObserver)
+            self.itemStalledObserver = nil
         }
         if let itemAccessLogObserver {
             NotificationCenter.default.removeObserver(itemAccessLogObserver)
@@ -1443,7 +1788,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionReleaseTask?.cancel()
         seekProtectionReleaseTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_600_000_000)
-            guard let self, !Task.isCancelled, generation == self.seekGeneration else { return }
+            guard let self,
+                  !Task.isCancelled,
+                  !self.isStopped,
+                  generation == self.seekGeneration
+            else { return }
             self.releaseSeekProtection(reason: "timeout")
         }
     }
@@ -1468,8 +1817,104 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         )
     }
 
+    private func scheduleTerminalStallWatchdog(reason: String) {
+        guard terminalStallTask == nil,
+              wantsPlayback,
+              !isPerformingSeek,
+              !isSeekProtectionActive,
+              player.rate == 0,
+              player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+              let item = player.currentItem,
+              isCurrentPlayerItem(item),
+              item.status == .readyToPlay,
+              !item.isPlaybackLikelyToKeepUp
+        else { return }
+        terminalStallGeneration &+= 1
+        let stallGeneration = terminalStallGeneration
+        let generation = playbackGeneration
+        let startedAt = CACurrentMediaTime()
+        terminalStallTask = Task { @MainActor [weak self, weak item] in
+            try? await Task.sleep(nanoseconds: Self.terminalStallDelayNanoseconds)
+            guard let self else { return }
+            defer {
+                if self.terminalStallGeneration == stallGeneration {
+                    self.terminalStallTask = nil
+                }
+            }
+            guard let item,
+                  !Task.isCancelled,
+                  self.terminalStallGeneration == stallGeneration,
+                  self.shouldTreatPlaybackAsTerminallyStalled(item: item, generation: generation)
+            else { return }
+            await self.handleTerminalPlaybackStall(item: item, reason: reason, startedAt: startedAt)
+        }
+    }
+
+    private func cancelTerminalStallWatchdog() {
+        terminalStallGeneration &+= 1
+        terminalStallTask?.cancel()
+        terminalStallTask = nil
+    }
+
+    private func shouldTreatPlaybackAsTerminallyStalled(item: AVPlayerItem, generation: Int) -> Bool {
+        guard isCurrentPlaybackGeneration(generation),
+              isCurrentPlayerItem(item),
+              wantsPlayback,
+              !isPerformingSeek,
+              !isSeekProtectionActive,
+              player.rate == 0,
+              player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+              item.status == .readyToPlay,
+              !item.isPlaybackLikelyToKeepUp
+        else { return false }
+        return bufferAhead(for: item) < 0.45
+    }
+
+    private func handleTerminalPlaybackStall(
+        item: AVPlayerItem,
+        reason: String,
+        startedAt: CFTimeInterval
+    ) async {
+        guard isCurrentPlayerItem(item), let source else { return }
+        let elapsedMilliseconds = Int(PlayerMetricsLog.elapsedMilliseconds(since: startedAt).rounded())
+        let message = "播放长时间无进展"
+        lastPlaybackFailureReason = HLSBridgeFailureReason(
+            layer: .avPlayerItem,
+            category: .terminalStall,
+            statusCode: nil,
+            urlHost: nil,
+            rangeDescription: nil,
+            underlyingDescription: message
+        )
+        PlayerMetricsLog.logger.error(
+            "avPlayerTerminalStall reason=\(reason, privacy: .public) elapsedMs=\(elapsedMilliseconds, privacy: .public) id=\(source.metricsID, privacy: .public)"
+        )
+        PlayerMetricsLog.record(
+            .network,
+            metricsID: source.metricsID,
+            title: source.title,
+            message: "terminalStall reason=\(reason) elapsed=\(elapsedMilliseconds)ms buffer=\(String(format: "%.2fs", bufferAhead(for: item)))"
+        )
+        if await recoverFromPlaybackFailureIfPossible(
+            item: item,
+            errorMessage: message,
+            reason: "terminalStall-\(reason)"
+        ) {
+            return
+        }
+        guard isCurrentPlayerItem(item) else { return }
+        publishPlaybackState(.failed(message))
+    }
+
     private func handleLoadedTimeRangesChanged(for item: AVPlayerItem) {
         updateLoadingProgress(for: item)
+        if wantsPlayback,
+           player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+           !item.isPlaybackLikelyToKeepUp {
+            scheduleTerminalStallWatchdog(reason: "buffer-waiting")
+        } else if player.rate > 0 || item.isPlaybackLikelyToKeepUp {
+            cancelTerminalStallWatchdog()
+        }
         maybeReleaseSeekProtectionIfReady(for: item, reason: "buffer")
     }
 
@@ -1504,17 +1949,42 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func updateLoadingProgress(for item: AVPlayerItem) {
         guard player.currentItem === item else { return }
-        let currentSeconds = player.currentTime().seconds
-        guard currentSeconds.isFinite, currentSeconds >= 0 else { return }
-        let bufferedEnd = item.loadedTimeRanges
-            .map(\.timeRangeValue)
-            .map(\.end.seconds)
-            .filter { $0.isFinite }
-            .max() ?? currentSeconds
-        let bufferAhead = max(bufferedEnd - currentSeconds, 0)
+        let bufferAhead = bufferAhead(for: item)
         let targetBuffer = max(item.preferredForwardBufferDuration, 1)
         let progress = min(max(bufferAhead / targetBuffer, item.isPlaybackBufferEmpty ? 0 : 0.12), 1)
         onLoadingProgressChange?(progress)
+    }
+
+    private func bufferAhead(for item: AVPlayerItem) -> TimeInterval {
+        guard player.currentItem === item else { return 0 }
+        let currentSeconds = player.currentTime().seconds
+        guard currentSeconds.isFinite, currentSeconds >= 0 else { return 0 }
+        let ranges = item.loadedTimeRanges
+            .map(\.timeRangeValue)
+            .compactMap { range -> (start: TimeInterval, end: TimeInterval)? in
+                let start = range.start.seconds
+                let end = range.end.seconds
+                guard start.isFinite, end.isFinite, end > start else { return nil }
+                return (start, end)
+            }
+            .sorted { lhs, rhs in
+                if lhs.start == rhs.start {
+                    return lhs.end < rhs.end
+                }
+                return lhs.start < rhs.start
+            }
+        guard !ranges.isEmpty else { return 0 }
+        let tolerance = Self.loadedRangeContinuityTolerance
+        guard let containingIndex = ranges.firstIndex(where: { range in
+            range.start - tolerance <= currentSeconds && currentSeconds <= range.end + tolerance
+        }) else { return 0 }
+
+        var bufferedEnd = max(ranges[containingIndex].end, currentSeconds)
+        for range in ranges[(containingIndex + 1)...] {
+            guard range.start <= bufferedEnd + tolerance else { break }
+            bufferedEnd = max(bufferedEnd, range.end)
+        }
+        return max(bufferedEnd - currentSeconds, 0)
     }
 
     private func bufferedRanges(for item: AVPlayerItem) -> [PlayerBufferedRange] {
@@ -1533,11 +2003,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         switch status {
         case .paused:
             publishPlaybackState((wantsPlayback || isPerformingSeek) ? .buffering : .paused)
+            if !(wantsPlayback || isPerformingSeek) {
+                cancelTerminalStallWatchdog()
+            }
         case .waitingToPlayAtSpecifiedRate:
             if wantsPlayback || isPerformingSeek {
                 publishPlaybackState(.buffering)
+                scheduleTerminalStallWatchdog(reason: "timeControl-waiting")
             }
         case .playing:
+            cancelTerminalStallWatchdog()
             updatePlaybackIntent(true)
             publishPlaybackState(.playing)
             reportFirstFrameIfPossible()
@@ -1560,6 +2035,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             || playerLayer?.isReadyForDisplay == true
         else { return }
         didReportFirstFrame = true
+        cancelTerminalStallWatchdog()
         removePeriodicTimeObserver()
         let resolvedTime = currentTime ?? displayTime(fromPlayerTime: player.currentTime().seconds)
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)
@@ -1597,11 +2073,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
               maximumBandwidth > startupBandwidth
         else { return }
 
+        let generation = playbackGeneration
         startupBitRateLiftTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_350_000_000)
             guard let self, !Task.isCancelled else { return }
             defer { self.startupBitRateLiftTask = nil }
             guard !self.isStopped,
+                  self.isCurrentPlaybackGeneration(generation),
                   !self.isSeekProtectionActive,
                   let item = self.player.currentItem,
                   let source = self.source
@@ -1820,249 +2298,33 @@ private extension URL {
     }
 }
 
-private enum HLSBridgeRemoteFailureCategory: String, Sendable {
-    case urlExpired
-    case rangeUnsupported
-    case rateLimited
-    case serverUnavailable
-    case timeout
-    case network
-    case invalidResponse
-    case cancelled
-    case unknown
-}
-
-private struct HLSBridgeRemoteFailure: LocalizedError, Sendable {
-    let category: HLSBridgeRemoteFailureCategory
-    let statusCode: Int?
-    let urlHost: String?
-    let rangeDescription: String?
-    let underlyingDescription: String?
-
-    var errorDescription: String? {
-        Self.userMessage(for: category)
-    }
-
-    static func httpStatus(_ statusCode: Int, url: URL?, range: HTTPByteRange?) -> HLSBridgeRemoteFailure {
-        HLSBridgeRemoteFailure(
-            category: category(forHTTPStatus: statusCode),
-            statusCode: statusCode,
-            urlHost: normalizedHost(url),
-            rangeDescription: range.map(rangeDescription(for:)),
-            underlyingDescription: "HTTP \(statusCode)"
-        )
-    }
-
-    static func urlSession(_ error: URLError, url: URL?, range: HTTPByteRange?) -> HLSBridgeRemoteFailure {
-        HLSBridgeRemoteFailure(
-            category: category(forURLErrorCode: error.code),
-            statusCode: nil,
-            urlHost: normalizedHost(url),
-            rangeDescription: range.map(rangeDescription(for:)),
-            underlyingDescription: error.localizedDescription
-        )
-    }
-
-    static func invalidRangeResponse(statusCode: Int, url: URL?, range: HTTPByteRange) -> HLSBridgeRemoteFailure {
-        HLSBridgeRemoteFailure(
-            category: .rangeUnsupported,
-            statusCode: statusCode,
-            urlHost: normalizedHost(url),
-            rangeDescription: rangeDescription(for: range),
-            underlyingDescription: "Range ignored by CDN"
-        )
-    }
-
-    static func emptyResponse(url: URL?, range: HTTPByteRange) -> HLSBridgeRemoteFailure {
-        HLSBridgeRemoteFailure(
-            category: .invalidResponse,
-            statusCode: nil,
-            urlHost: normalizedHost(url),
-            rangeDescription: rangeDescription(for: range),
-            underlyingDescription: "Empty range response"
-        )
-    }
-
-    static func playbackMessage(forHTTPStatus statusCode: Int) -> String? {
-        switch statusCode {
-        case 410:
-            userMessage(for: .urlExpired)
-        case 416:
-            userMessage(for: .rangeUnsupported)
-        case 429:
-            userMessage(for: .rateLimited)
-        case 504:
-            userMessage(for: .timeout)
-        case 502:
-            userMessage(for: .serverUnavailable)
-        default:
-            nil
-        }
-    }
-
-    static func allowsSameSourceRecovery(forHTTPStatus statusCode: Int) -> Bool {
-        switch statusCode {
-        case 410, 416, 429:
-            return false
-        default:
-            return true
-        }
-    }
-
-    static func allowsSameSourceRecovery(forPlaybackMessage message: String) -> Bool {
-        !(message.contains(userMessage(for: .urlExpired))
-            || message.contains(userMessage(for: .rangeUnsupported))
-            || message.contains(userMessage(for: .rateLimited)))
-    }
-
-    static func proxyHTTPStatus(for error: Error) -> (statusCode: Int, reason: String) {
-        switch category(for: error) {
-        case .urlExpired:
-            return (410, "Gone")
-        case .rangeUnsupported:
-            return (416, "Range Not Satisfiable")
-        case .rateLimited:
-            return (429, "Too Many Requests")
-        case .timeout:
-            return (504, "Gateway Timeout")
-        case .cancelled:
-            return (499, "Client Closed Request")
-        case .serverUnavailable, .network, .invalidResponse, .unknown:
-            return (502, "Bad Gateway")
-        }
-    }
-
-    static func sourceAvoidanceReason(for error: Error) -> String {
-        let category = category(for: error)
-        let statusSuffix: String
-        if let statusCode = (error as? HLSBridgeRemoteFailure)?.statusCode {
-            statusSuffix = "-\(statusCode)"
-        } else {
-            statusSuffix = ""
-        }
-        return "\(category.rawValue)\(statusSuffix)"
-    }
-
-    static func sourceAvoidancePenaltyMultiplier(for error: Error) -> Int {
-        switch category(for: error) {
-        case .urlExpired, .rateLimited:
-            return 3
-        case .rangeUnsupported, .serverUnavailable:
-            return 2
-        case .timeout, .network, .invalidResponse, .unknown:
-            return 1
-        case .cancelled:
-            return 0
-        }
-    }
-
-    static func shouldRecordSourceFailure(_ error: Error) -> Bool {
-        category(for: error) != .cancelled
-    }
-
-    private static func category(for error: Error) -> HLSBridgeRemoteFailureCategory {
-        if let failure = error as? HLSBridgeRemoteFailure {
-            return failure.category
-        }
-        if let streamError = error as? HLSRangeStreamError {
-            switch streamError {
-            case let .responseAlreadyStarted(underlying):
-                return category(for: underlying)
-            case .notCacheable:
-                return .invalidResponse
-            }
-        }
-        if error is CancellationError {
-            return .cancelled
-        }
-        if let urlError = error as? URLError {
-            return category(forURLErrorCode: urlError.code)
-        }
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain {
-            return category(forURLErrorCode: URLError.Code(rawValue: nsError.code))
-        }
-        return .unknown
-    }
-
-    private static func category(forHTTPStatus statusCode: Int) -> HLSBridgeRemoteFailureCategory {
-        switch statusCode {
-        case 401, 403, 404, 410:
-            return .urlExpired
-        case 416:
-            return .rangeUnsupported
-        case 429:
-            return .rateLimited
-        case 500...599:
-            return .serverUnavailable
-        default:
-            return .invalidResponse
-        }
-    }
-
-    private static func category(forURLErrorCode code: URLError.Code) -> HLSBridgeRemoteFailureCategory {
-        switch code {
-        case .cancelled:
-            return .cancelled
-        case .timedOut:
-            return .timeout
-        case .networkConnectionLost,
-             .notConnectedToInternet,
-             .cannotConnectToHost,
-             .cannotFindHost,
-             .secureConnectionFailed:
-            return .network
-        default:
-            return .network
-        }
-    }
-
-    private static func userMessage(for category: HLSBridgeRemoteFailureCategory) -> String {
-        switch category {
-        case .urlExpired:
-            return "播放地址已过期，请重新获取播放地址"
-        case .rangeUnsupported:
-            return "当前 CDN 不支持分片 Range 请求，正在切换线路"
-        case .rateLimited:
-            return "当前 CDN 请求过于频繁，正在切换线路"
-        case .serverUnavailable:
-            return "当前 CDN 临时不可用，正在切换线路"
-        case .timeout:
-            return "当前 CDN 响应超时，正在切换线路"
-        case .network:
-            return "网络连接中断，正在切换线路"
-        case .invalidResponse:
-            return "CDN 返回异常数据，正在切换线路"
-        case .cancelled:
-            return "播放请求已取消"
-        case .unknown:
-            return PlayerEngineError.unsupportedMedia.localizedDescription
-        }
-    }
-
-    private static func normalizedHost(_ url: URL?) -> String? {
-        guard let host = url?.host?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-              !host.isEmpty
-        else { return nil }
-        return host
-    }
-
-    private static func rangeDescription(for range: HTTPByteRange) -> String {
-        "\(range.start)-\(range.endInclusive)"
-    }
-}
-
 struct LocalHLSBridge: Sendable {
     let masterPlaylistURL: URL
     let mediaTimeOffset: TimeInterval
     let videoClockDelay: TimeInterval
     let videoVariantCount: Int
     let videoVariantQualities: [Int]
+    let routePlanCacheState: String
+    let serverCacheState: String
     private let seekPlanner: HLSBridgeSeekPlanner?
     private let server: LocalHLSProxyServer
 
     nonisolated func updateMetricsID(_ metricsID: String?) {
         server.updateMetricsID(metricsID)
+    }
+
+    nonisolated func withCacheDiagnostics(routePlanState: String, serverState: String) -> LocalHLSBridge {
+        LocalHLSBridge(
+            masterPlaylistURL: masterPlaylistURL,
+            mediaTimeOffset: mediaTimeOffset,
+            videoClockDelay: videoClockDelay,
+            videoVariantCount: videoVariantCount,
+            videoVariantQualities: videoVariantQualities,
+            routePlanCacheState: routePlanState,
+            serverCacheState: serverState,
+            seekPlanner: seekPlanner,
+            server: server
+        )
     }
 
     nonisolated func stop() {
@@ -2121,20 +2383,74 @@ struct LocalHLSBridge: Sendable {
             headers: headers,
             metricsID: metricsID
         )
-        let bridge = try await build(
-            from: plan,
-            headers: headers,
-            metricsID: metricsID
+        let cacheKey = bridgeCacheKey(
+            videoTracks: videoTracks,
+            audioTrack: audioTrack,
+            durationHint: durationHint,
+            headers: headers
         )
+        let bridgeResult: (bridge: LocalHLSBridge, state: LocalHLSBridgeInstanceCache.State)
+        if let cacheKey {
+            bridgeResult = try await LocalHLSBridgeInstanceCache.shared.cachedOrBuild(for: cacheKey) {
+                try await build(
+                    from: plan,
+                    headers: headers,
+                    metricsID: metricsID
+                )
+            }
+        } else {
+            bridgeResult = (
+                try await build(
+                    from: plan,
+                    headers: headers,
+                    metricsID: metricsID
+                ),
+                .miss
+            )
+        }
+        let bridge = bridgeResult.bridge.withCacheDiagnostics(
+            routePlanState: planState,
+            serverState: bridgeResult.state.rawValue
+        )
+        bridge.updateMetricsID(metricsID)
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
         PlayerMetricsLog.logger.info(
-            "hlsBridgeMakeReady routePlan=\(planState, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
+            "hlsBridgeMakeReady routePlan=\(planState, privacy: .public) server=\(bridgeResult.state.rawValue, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
         )
         await recordManifestStage(
             metricsID: metricsID,
-            "bridge=\(planState) total=\(formatMilliseconds(elapsedMilliseconds))"
+            "bridge=\(planState) server=\(bridgeResult.state.rawValue) total=\(formatMilliseconds(elapsedMilliseconds))"
         )
         return bridge
+    }
+
+    @discardableResult
+    nonisolated static func prebuildBridge(
+        videoTracks: [HLSBridgeTrack],
+        audioTrack: HLSBridgeTrack,
+        durationHint: TimeInterval?,
+        headers: [String: String],
+        metricsID: String? = nil
+    ) async -> Bool {
+        do {
+            let bridge = try await make(
+                videoTracks: videoTracks,
+                audioTrack: audioTrack,
+                durationHint: durationHint,
+                headers: headers,
+                metricsID: metricsID
+            )
+            await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
+                bridge.masterPlaylistURL,
+                metricsID: metricsID
+            )
+            return true
+        } catch {
+            PlayerMetricsLog.logger.info(
+                "hlsBridgePrebuildFailed error=\(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
     }
 
     @discardableResult
@@ -2404,6 +2720,8 @@ struct LocalHLSBridge: Sendable {
             videoClockDelay: 0,
             videoVariantCount: videoRenditions.count,
             videoVariantQualities: videoRenditions.compactMap(\.quality),
+            routePlanCacheState: "-",
+            serverCacheState: "-",
             seekPlanner: HLSBridgeSeekPlanner(
                 video: videoRendition.seekMap(includeExtraSegment: true),
                 audio: audioRendition.seekMap(includeExtraSegment: false),
@@ -3054,7 +3372,7 @@ struct LocalHLSBridge: Sendable {
             throw error
         }
         do {
-            try LocalHLSProxyServer.validateRemoteRangeResponse(response, requestedRange: range, url: url)
+            try HLSRemoteRangeResponseValidator.validate(response, requestedRange: range, url: url)
         } catch {
             if let httpResponse = response as? HTTPURLResponse {
                 PlayerMetricsLog.logger.error(
@@ -3332,103 +3650,6 @@ struct LocalHLSBridge: Sendable {
     }
 }
 
-struct HLSBridgeTrack: Sendable {
-    enum MediaType: Sendable {
-        case video
-        case audio
-
-        nonisolated var isVideo: Bool {
-            switch self {
-            case .video:
-                true
-            case .audio:
-                false
-            }
-        }
-
-        nonisolated var logLabel: String {
-            switch self {
-            case .video:
-                "video"
-            case .audio:
-                "audio"
-            }
-        }
-    }
-
-    let url: URL
-    let fallbackURLs: [URL]
-    let stream: DASHStream?
-    let mediaType: MediaType
-    let dynamicRange: BiliVideoDynamicRange
-
-    nonisolated init(
-        url: URL,
-        fallbackURLs: [URL] = [],
-        stream: DASHStream?,
-        mediaType: MediaType,
-        dynamicRange: BiliVideoDynamicRange = .sdr
-    ) {
-        self.url = url
-        self.fallbackURLs = fallbackURLs.filter { $0 != url }
-        self.stream = stream
-        self.mediaType = mediaType
-        self.dynamicRange = switch mediaType {
-        case .video:
-            dynamicRange
-        case .audio:
-            .sdr
-        }
-    }
-
-    nonisolated init(
-        stream: DASHStream,
-        mediaType: MediaType,
-        dynamicRange: BiliVideoDynamicRange = .sdr,
-        cdnPreference: PlaybackCDNPreference = .automatic
-    ) throws {
-        guard let url = stream.playURL(cdnPreference: cdnPreference) else {
-            throw PlayerEngineError.missingVideoURL
-        }
-        self.init(
-            url: url,
-            fallbackURLs: stream.backupPlayURLs(cdnPreference: cdnPreference),
-            stream: stream,
-            mediaType: mediaType,
-            dynamicRange: dynamicRange
-        )
-    }
-
-    nonisolated var cacheIdentity: String {
-        ([url] + fallbackURLs)
-            .map(\.absoluteString)
-            .joined(separator: ",")
-    }
-}
-
-struct HLSBridgeSourceDiagnosticsSnapshot: Identifiable, Equatable, Sendable {
-    let host: String
-    let order: Int
-    let averageMilliseconds: Int?
-    let averageKilobytesPerSecond: Int
-    let successCount: Int
-    let failureCount: Int
-    let isSessionAvoided: Bool
-    let avoidanceReason: String?
-    let avoidanceExpiresAt: Date?
-
-    var id: String { host }
-
-    var attemptCount: Int {
-        successCount + failureCount
-    }
-
-    var failureRatePercent: Int {
-        guard attemptCount > 0 else { return 0 }
-        return Int((Double(failureCount) / Double(attemptCount) * 100).rounded())
-    }
-}
-
 private struct HLSRendition: Sendable {
     let sourceURL: URL
     let fallbackSourceURLs: [URL]
@@ -3623,47 +3844,6 @@ private struct HLSBridgeSeekPlanner: Sendable {
     }
 }
 
-private struct HLSBridgeSeekMap: Sendable {
-    let sourceURLs: [URL]
-    let initialization: HTTPByteRange
-    let segments: [HLSBridgeSeekSegment]
-    let includeExtraSegment: Bool
-
-    nonisolated func alignedSeekTime(near playbackTime: TimeInterval) -> TimeInterval? {
-        guard let segment = segment(near: playbackTime) else { return nil }
-        let offset = playbackTime - segment.startTime
-        guard offset.isFinite, offset >= 0 else { return nil }
-        let alignmentWindow = min(max(segment.duration * 0.45, 0.65), 2.8)
-        guard offset <= alignmentWindow else { return nil }
-        return segment.startTime
-    }
-
-    nonisolated func warmRanges(around playbackTime: TimeInterval) -> [HTTPByteRange] {
-        guard let index = segmentIndex(near: playbackTime) else { return [initialization] }
-        let segmentCount = includeExtraSegment ? 3 : 2
-        let upperBound = min(segments.count, index + segmentCount)
-        return [initialization] + segments[index..<upperBound].map(\.range)
-    }
-
-    private nonisolated func segment(near playbackTime: TimeInterval) -> HLSBridgeSeekSegment? {
-        guard let index = segmentIndex(near: playbackTime) else { return nil }
-        return segments[safe: index]
-    }
-
-    private nonisolated func segmentIndex(near playbackTime: TimeInterval) -> Int? {
-        guard playbackTime.isFinite, playbackTime >= 0, !segments.isEmpty else { return nil }
-        return segments.lastIndex { segment in
-            segment.startTime <= playbackTime
-        } ?? 0
-    }
-}
-
-private struct HLSBridgeSeekSegment: Sendable {
-    let startTime: TimeInterval
-    let duration: TimeInterval
-    let range: HTTPByteRange
-}
-
 private final class LocalLiveHLSProxy: @unchecked Sendable {
     let playlistURL: URL
 
@@ -3817,6 +3997,7 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
     }
 
     private func respond(to connection: NWConnection, requestData: Data) {
+        let connectionID = ObjectIdentifier(connection)
         guard let request = HLSProxyRequest(data: requestData) else {
             sendError(400, reason: "Bad Request", to: connection)
             return
@@ -3837,6 +4018,7 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
                         localPlaylistURL: playlistURL
                     )
                     self.queue.async {
+                        guard self.isConnectionActive(connectionID) else { return }
                         self.segmentRoutes.merge(routes) { _, new in new }
                         self.sendData(
                             playlistData,
@@ -3860,6 +4042,7 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
                         "directLiveHLSPlaylistProxyFailed error=\(error.localizedDescription, privacy: .public)"
                     )
                     self.queue.async {
+                        guard self.isConnectionActive(connectionID) else { return }
                         self.sendError(502, reason: "Bad Gateway", to: connection)
                     }
                 }
@@ -3893,6 +4076,7 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
                     servedRange = nil
                 }
                 self.queue.async {
+                    guard self.isConnectionActive(connectionID) else { return }
                     self.sendData(
                         responseData,
                         contentType: contentType,
@@ -3917,6 +4101,7 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
                     "directLiveHLSSegmentProxyFailed url=\(remoteURL.absoluteString, privacy: .private) error=\(error.localizedDescription, privacy: .public)"
                 )
                 self.queue.async {
+                    guard self.isConnectionActive(connectionID) else { return }
                     self.sendError(502, reason: "Bad Gateway", to: connection)
                 }
             }
@@ -4066,6 +4251,10 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
             }
             self.receiveRequest(from: connection, accumulatedData: Data())
         })
+    }
+
+    private func isConnectionActive(_ identifier: ObjectIdentifier) -> Bool {
+        !isClosed && activeConnections[identifier] != nil
     }
 }
 
@@ -4560,11 +4749,9 @@ private actor LocalHLSBridgeInstanceCache {
                 )
                 return (bridge, .pending)
             } catch HLSCachePendingWaiter.Timeout.timedOut {
-                if pendingBuilds[key]?.id == pendingBuild.id {
-                    logger.info("hlsBridgeCache pending timeout")
-                    pendingBuild.task.cancel()
-                    pendingBuilds[key] = nil
-                }
+                logger.info("hlsBridgeCache pending continue")
+                let bridge = try await pendingBuild.task.value
+                return (bridge, .pending)
             } catch {
                 if pendingBuilds[key]?.id == pendingBuild.id {
                     pendingBuilds[key] = nil
@@ -5081,961 +5268,6 @@ private actor HLSSourcePreferenceCache {
     }
 }
 
-private enum HLSRemoteRangeStreamer {
-    nonisolated static func stream(
-        range: HTTPByteRange,
-        from url: URL,
-        headers: [String: String],
-        responseHeader: Data,
-        connection: NWConnection,
-        cacheLimit: Int64,
-        startupChunkSize: Int = 32 * 1024,
-        transform: HLSMediaSegmentTransform? = nil,
-        onFirstChunkSent: (@Sendable (Int) async -> Void)? = nil
-    ) async throws -> VideoRangeStreamCachePayload? {
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = range.length > 1_500_000 ? 3.2 : 2.0
-        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
-
-        let stream = HLSRemoteRangeStreamingSession.shared.start(request: request)
-        defer {
-            HLSRemoteRangeStreamingSession.shared.finish(task: stream.task)
-        }
-
-        let response: URLResponse
-        do {
-            response = try await stream.handler.response()
-        } catch let error as URLError {
-            throw HLSBridgeRemoteFailure.urlSession(error, url: url, range: range)
-        } catch {
-            throw error
-        }
-        try LocalHLSProxyServer.validateRemoteRangeResponse(response, requestedRange: range, url: url)
-
-        let cacheCollector = VideoRangeStreamCacheCollector(range: range, cacheLimit: cacheLimit)
-        var didStartResponse = false
-        do {
-            let chunkSize = min(max(startupChunkSize, 24 * 1024), 96 * 1024)
-            var chunk = Data()
-            var didNotifyFirstChunk = false
-            var didApplyTransform = false
-            chunk.reserveCapacity(chunkSize)
-            for try await data in stream.handler.chunks {
-                try Task.checkCancellation()
-                try cacheCollector?.append(data)
-                chunk.append(data)
-                if chunk.count >= chunkSize {
-                    let outboundChunk: Data?
-                    if let transform, !didApplyTransform {
-                        let transformResult = transform.applyResult(to: chunk)
-                        if transformResult.didNormalizeTiming {
-                            outboundChunk = transformResult.data
-                            didApplyTransform = true
-                        } else {
-                            outboundChunk = nil
-                        }
-                    } else {
-                        outboundChunk = chunk
-                    }
-                    if let outboundChunk {
-                        if !didStartResponse {
-                            try await send(responseHeader, to: connection)
-                            didStartResponse = true
-                        }
-                        try await send(outboundChunk, to: connection)
-                        if !didNotifyFirstChunk {
-                            didNotifyFirstChunk = true
-                            await onFirstChunkSent?(outboundChunk.count)
-                        }
-                        chunk.removeAll(keepingCapacity: true)
-                    }
-                }
-            }
-            if !chunk.isEmpty {
-                let outboundChunk: Data
-                if let transform, !didApplyTransform {
-                    let transformResult = transform.applyResult(to: chunk)
-                    outboundChunk = transformResult.data
-                    didApplyTransform = true
-                } else {
-                    outboundChunk = chunk
-                }
-                if !didStartResponse {
-                    try await send(responseHeader, to: connection)
-                    didStartResponse = true
-                }
-                try await send(outboundChunk, to: connection)
-                if !didNotifyFirstChunk {
-                    didNotifyFirstChunk = true
-                    await onFirstChunkSent?(outboundChunk.count)
-                }
-            }
-            guard didNotifyFirstChunk else {
-                throw HLSBridgeRemoteFailure.emptyResponse(url: url, range: range)
-            }
-        } catch {
-            stream.task.cancel()
-            cacheCollector?.cancel()
-            guard didStartResponse else { throw error }
-            connection.cancel()
-            throw HLSRangeStreamError.responseAlreadyStarted(error)
-        }
-        connection.cancel()
-        return try cacheCollector?.finish()
-    }
-
-    private nonisolated static func send(_ data: Data, to connection: NWConnection) async throws {
-        guard !data.isEmpty else { return }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            connection.send(content: data, completion: .contentProcessed { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            })
-        }
-    }
-}
-
-nonisolated enum PlaybackRangeStreamingSessionCoordinator {
-    static func refreshForNetworkPathChange() {
-        HLSRemoteRangeStreamingSession.shared.refreshForNetworkPathChange()
-    }
-}
-
-private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    static let shared = HLSRemoteRangeStreamingSession()
-
-    private let lock = NSLock()
-    private let delegateQueue: OperationQueue
-    private lazy var session = URLSession(
-        configuration: BiliURLSessionFactory.makePlaybackStreamingConfiguration(),
-        delegate: self,
-        delegateQueue: delegateQueue
-    )
-    private var handlers: [ObjectIdentifier: HLSRemoteRangeStreamHandler] = [:]
-
-    private override init() {
-        delegateQueue = OperationQueue()
-        delegateQueue.maxConcurrentOperationCount = 2
-        delegateQueue.qualityOfService = .userInitiated
-        super.init()
-    }
-
-    func start(request: URLRequest) -> (task: URLSessionDataTask, handler: HLSRemoteRangeStreamHandler) {
-        let handler = HLSRemoteRangeStreamHandler()
-        lock.lock()
-        let currentSession = session
-        let task = currentSession.dataTask(with: request)
-        handlers[ObjectIdentifier(task)] = handler
-        lock.unlock()
-        task.resume()
-        return (task, handler)
-    }
-
-    func finish(task: URLSessionTask) {
-        lock.lock()
-        handlers[ObjectIdentifier(task)] = nil
-        lock.unlock()
-    }
-
-    func refreshForNetworkPathChange() {
-        let oldSession: URLSession
-        lock.lock()
-        oldSession = session
-        session = URLSession(
-            configuration: BiliURLSessionFactory.makePlaybackStreamingConfiguration(),
-            delegate: self,
-            delegateQueue: delegateQueue
-        )
-        lock.unlock()
-        oldSession.finishTasksAndInvalidate()
-    }
-
-    func urlSession(
-        _: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        guard let handler = handler(for: dataTask) else {
-            completionHandler(.cancel)
-            return
-        }
-        handler.receive(response: response)
-        completionHandler(.allow)
-    }
-
-    func urlSession(
-        _: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive data: Data
-    ) {
-        handler(for: dataTask)?.receive(data: data)
-    }
-
-    func urlSession(
-        _: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        handler(for: task)?.complete(error: error)
-        finish(task: task)
-    }
-
-    private func handler(for task: URLSessionTask) -> HLSRemoteRangeStreamHandler? {
-        lock.lock()
-        let handler = handlers[ObjectIdentifier(task)]
-        lock.unlock()
-        return handler
-    }
-}
-
-private final class HLSRemoteRangeStreamHandler: @unchecked Sendable {
-    let chunks: AsyncThrowingStream<Data, Error>
-
-    private let lock = NSLock()
-    private let chunkContinuation: AsyncThrowingStream<Data, Error>.Continuation
-    private var responseContinuation: CheckedContinuation<URLResponse, Error>?
-    private var responseResult: Result<URLResponse, Error>?
-
-    init() {
-        var continuation: AsyncThrowingStream<Data, Error>.Continuation?
-        self.chunks = AsyncThrowingStream(Data.self, bufferingPolicy: .unbounded) { streamContinuation in
-            continuation = streamContinuation
-        }
-        self.chunkContinuation = continuation!
-    }
-
-    func response() async throws -> URLResponse {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            if let responseResult {
-                lock.unlock()
-                continuation.resume(with: responseResult)
-                return
-            }
-            responseContinuation = continuation
-            lock.unlock()
-        }
-    }
-
-    func receive(response: URLResponse) {
-        completeResponse(.success(response))
-    }
-
-    func receive(data: Data) {
-        chunkContinuation.yield(data)
-    }
-
-    func complete(error: Error?) {
-        if let error {
-            completeResponse(.failure(error))
-            chunkContinuation.finish(throwing: error)
-        } else {
-            completeResponse(.failure(PlayerEngineError.unsupportedMedia))
-            chunkContinuation.finish()
-        }
-    }
-
-    private func completeResponse(_ result: Result<URLResponse, Error>) {
-        lock.lock()
-        guard responseResult == nil else {
-            lock.unlock()
-            return
-        }
-        responseResult = result
-        let continuation = responseContinuation
-        responseContinuation = nil
-        lock.unlock()
-        continuation?.resume(with: result)
-    }
-}
-
-private enum VideoRangeStreamCachePayload: Sendable {
-    case data(Data)
-    case file(URL)
-
-    nonisolated var byteCount: Int {
-        switch self {
-        case let .data(data):
-            return data.count
-        case let .file(url):
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            return size
-        }
-    }
-
-    nonisolated func loadData() throws -> Data {
-        switch self {
-        case let .data(data):
-            return data
-        case let .file(url):
-            return try Data(contentsOf: url, options: .mappedIfSafe)
-        }
-    }
-
-    nonisolated func cleanup() {
-        if case let .file(url) = self {
-            try? FileManager.default.removeItem(at: url)
-        }
-    }
-}
-
-nonisolated private final class VideoRangeStreamCacheCollector: @unchecked Sendable {
-    private let fileURL: URL?
-    private var data: Data?
-    private var handle: FileHandle?
-    private var isFinished = false
-
-    init?(range: HTTPByteRange, cacheLimit: Int64) {
-        guard range.length <= cacheLimit else { return nil }
-        if range.length > 1_500_000 {
-            let directory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("cc.bili.hls-stream-cache", isDirectory: true)
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let candidateURL = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("tmp")
-            FileManager.default.createFile(atPath: candidateURL.path, contents: nil)
-            if let handle = try? FileHandle(forWritingTo: candidateURL) {
-                self.fileURL = candidateURL
-                self.handle = handle
-                self.data = nil
-            } else {
-                self.fileURL = nil
-                self.handle = nil
-                self.data = Data()
-            }
-        } else {
-            self.fileURL = nil
-            self.handle = nil
-            self.data = Data()
-            self.data?.reserveCapacity(Int(range.length))
-        }
-    }
-
-    func append(_ chunk: Data) throws {
-        if let handle {
-            try handle.write(contentsOf: chunk)
-        } else {
-            data?.append(chunk)
-        }
-    }
-
-    func finish() throws -> VideoRangeStreamCachePayload? {
-        guard !isFinished else { return nil }
-        isFinished = true
-        if let handle {
-            try handle.close()
-            self.handle = nil
-        }
-        if let fileURL {
-            return .file(fileURL)
-        }
-        if let data {
-            return .data(data)
-        }
-        return nil
-    }
-
-    func cancel() {
-        guard !isFinished else { return }
-        isFinished = true
-        try? handle?.close()
-        handle = nil
-        if let fileURL {
-            try? FileManager.default.removeItem(at: fileURL)
-        }
-        data = nil
-    }
-
-    deinit {
-        cancel()
-    }
-}
-
-private enum HLSRangeStreamError: LocalizedError {
-    case responseAlreadyStarted(Error)
-    case notCacheable
-
-    nonisolated var isRetryable: Bool {
-        switch self {
-        case .responseAlreadyStarted:
-            false
-        case .notCacheable:
-            true
-        }
-    }
-
-    nonisolated var errorDescription: String? {
-        switch self {
-        case let .responseAlreadyStarted(error):
-            error.localizedDescription
-        case .notCacheable:
-            "range is too large to cache"
-        }
-    }
-}
-
-private actor HLSProxyStartupMetrics {
-    static let shared = HLSProxyStartupMetrics()
-
-    private let maxSessionCount = 36
-    private var sessions: [String: Session] = [:]
-    private var order: [String] = []
-
-    func record(
-        metricsID: String?,
-        path: String,
-        bytes: Int,
-        elapsedMilliseconds: Double,
-        source: String
-    ) async {
-        guard let metricsID, !metricsID.isEmpty,
-              let bucket = StartupBucket(path: path)
-        else { return }
-
-        var session = sessions[metricsID] ?? Session()
-        let didUpdate = session.record(
-            bucket,
-            bytes: bytes,
-            elapsedMilliseconds: elapsedMilliseconds,
-            source: source
-        )
-        guard didUpdate else { return }
-
-        if sessions[metricsID] == nil {
-            order.append(metricsID)
-        }
-        sessions[metricsID] = session
-        trimIfNeeded()
-
-        let message = session.summary
-        PlayerMetricsLog.logger.info(
-            "hlsProxyStartup id=\(metricsID, privacy: .public) path=\(path, privacy: .public) source=\(source, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public) bytes=\(bytes, privacy: .public) summary=\(message, privacy: .public)"
-        )
-        await PlayerMetricsLog.record(.network, metricsID: metricsID, message: message)
-    }
-
-    private func trimIfNeeded() {
-        guard order.count > maxSessionCount else { return }
-        let overflow = order.count - maxSessionCount
-        for key in order.prefix(overflow) {
-            sessions[key] = nil
-        }
-        order.removeFirst(overflow)
-    }
-
-    private struct Session: Sendable {
-        private var entries: [StartupBucket: Entry] = [:]
-
-        var summary: String {
-            [
-                "HLS",
-                "m:\(value(.masterPlaylist))",
-                "v/a:\(value(.videoPlaylist))/\(value(.audioPlaylist))",
-                "init:\(value(.videoInit))/\(value(.audioInit))",
-                "seg0:\(value(.videoSegment0))/\(value(.audioSegment0))",
-                "seg1:\(value(.videoSegment1))/\(value(.audioSegment1))"
-            ].joined(separator: " ")
-        }
-
-        mutating func record(
-            _ bucket: StartupBucket,
-            bytes: Int,
-            elapsedMilliseconds: Double,
-            source: String
-        ) -> Bool {
-            let rounded = max(0, Int(elapsedMilliseconds.rounded()))
-            if let existing = entries[bucket], existing.elapsedMilliseconds <= rounded {
-                return false
-            }
-            entries[bucket] = Entry(
-                bytes: bytes,
-                elapsedMilliseconds: rounded,
-                source: source
-            )
-            return true
-        }
-
-        private func value(_ bucket: StartupBucket) -> String {
-            guard let entry = entries[bucket] else { return "-" }
-            return "\(entry.elapsedMilliseconds)"
-        }
-    }
-
-    private struct Entry: Sendable {
-        let bytes: Int
-        let elapsedMilliseconds: Int
-        let source: String
-    }
-
-    private enum StartupBucket: Hashable, Sendable {
-        case masterPlaylist
-        case videoPlaylist
-        case audioPlaylist
-        case videoInit
-        case audioInit
-        case videoSegment0
-        case audioSegment0
-        case videoSegment1
-        case audioSegment1
-
-        init?(path: String) {
-            switch path {
-            case "/master.m3u8":
-                self = .masterPlaylist
-            case "/video.m3u8":
-                self = .videoPlaylist
-            case "/audio.m3u8":
-                self = .audioPlaylist
-            case "/media/video/init.mp4":
-                self = .videoInit
-            case "/media/audio/init.mp4":
-                self = .audioInit
-            case "/media/video/segment-0.m4s":
-                self = .videoSegment0
-            case "/media/audio/segment-0.m4s":
-                self = .audioSegment0
-            case "/media/video/segment-1.m4s":
-                self = .videoSegment1
-            case "/media/audio/segment-1.m4s":
-                self = .audioSegment1
-            default:
-                return nil
-            }
-        }
-    }
-}
-
-private actor HLSProxyCacheMetrics {
-    static let shared = HLSProxyCacheMetrics()
-
-    private let maxSessionCount = 36
-    private var sessions: [String: Session] = [:]
-    private var order: [String] = []
-    private var updateCounts: [String: Int] = [:]
-
-    func record(
-        metricsID: String?,
-        path: String,
-        source: String,
-        bytes: Int,
-        elapsedMilliseconds: Double
-    ) async {
-        guard let metricsID, !metricsID.isEmpty else { return }
-        var session = sessions[metricsID] ?? Session()
-        if sessions[metricsID] == nil {
-            order.append(metricsID)
-        }
-        session.record(source: source, bytes: bytes, elapsedMilliseconds: elapsedMilliseconds)
-        sessions[metricsID] = session
-        trimIfNeeded()
-
-        let message = session.summary
-        PlayerMetricsLog.logger.info(
-            "hlsProxyCache id=\(metricsID, privacy: .public) path=\(path, privacy: .public) source=\(source, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public) bytes=\(bytes, privacy: .public) summary=\(message, privacy: .public)"
-        )
-        guard shouldPublish(metricsID: metricsID, source: source) else { return }
-        await PlayerMetricsLog.record(.mediaCache, metricsID: metricsID, message: message)
-    }
-
-    private func shouldPublish(metricsID: String, source: String) -> Bool {
-        var count = updateCounts[metricsID] ?? 0
-        count += 1
-        updateCounts[metricsID] = count
-        return count <= 2 || count.isMultiple(of: 12)
-    }
-
-    private func trimIfNeeded() {
-        guard order.count > maxSessionCount else { return }
-        let overflow = order.count - maxSessionCount
-        for key in order.prefix(overflow) {
-            sessions[key] = nil
-            updateCounts[key] = nil
-        }
-        order.removeFirst(overflow)
-    }
-
-    private struct Session: Sendable {
-        private var cacheHits = 0
-        private var remoteFetches = 0
-        private var streamedRanges = 0
-        private var joinedRanges = 0
-        private var totalBytes = 0
-        private var bestElapsedMilliseconds: Int?
-
-        var summary: String {
-            let best = bestElapsedMilliseconds.map { "\($0)ms" } ?? "-"
-            return [
-                "Cache",
-                "hit:\(cacheHits)",
-                "fetch:\(remoteFetches)",
-                "stream:\(streamedRanges)",
-                "join:\(joinedRanges)",
-                "bytes:\(totalBytes / 1024)KB",
-                "best:\(best)"
-            ].joined(separator: " ")
-        }
-
-        mutating func record(source: String, bytes: Int, elapsedMilliseconds: Double) {
-            if source.contains("Cache") || source == "cache" {
-                cacheHits += 1
-            } else if source == "streamJoin" {
-                joinedRanges += 1
-            } else if source == "stream" {
-                streamedRanges += 1
-            } else {
-                remoteFetches += 1
-            }
-            totalBytes += max(bytes, 0)
-            let roundedElapsed = max(0, Int(elapsedMilliseconds.rounded()))
-            if roundedElapsed > 0, bestElapsedMilliseconds.map({ roundedElapsed < $0 }) ?? true {
-                bestElapsedMilliseconds = roundedElapsed
-            }
-        }
-    }
-}
-
-fileprivate enum HLSByteRangeFetchStrategy: Sendable {
-    case sequential
-    case fastFallback
-
-    nonisolated var isFastFallback: Bool {
-        switch self {
-        case .fastFallback:
-            return true
-        case .sequential:
-            return false
-        }
-    }
-
-    nonisolated var logLabel: String {
-        switch self {
-        case .sequential:
-            return "sequential"
-        case .fastFallback:
-            return "fastFallback"
-        }
-    }
-}
-
-private struct HLSBootstrapFetchPolicy: Sendable {
-    let fetchStrategy: HLSByteRangeFetchStrategy
-    let remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
-}
-
-private struct HLSRemoteByteRangeRequestPolicy: Sendable {
-    let attempts: Int
-    let smallRangeTimeout: TimeInterval
-    let largeRangeTimeout: TimeInterval
-    let retryDelayNanoseconds: UInt64
-    let firstFallbackDelayNanoseconds: UInt64
-    let additionalFallbackDelayNanoseconds: UInt64
-
-    nonisolated static func `default`(for range: HTTPByteRange) -> HLSRemoteByteRangeRequestPolicy {
-        HLSRemoteByteRangeRequestPolicy(
-            attempts: 2,
-            smallRangeTimeout: 1.6,
-            largeRangeTimeout: 2.4,
-            retryDelayNanoseconds: 90_000_000,
-            firstFallbackDelayNanoseconds: 55_000_000,
-            additionalFallbackDelayNanoseconds: 45_000_000
-        )
-    }
-
-    nonisolated static func startupIndex(urlCount: Int) -> HLSRemoteByteRangeRequestPolicy {
-        if urlCount > 1 {
-            return HLSRemoteByteRangeRequestPolicy(
-                attempts: 1,
-                smallRangeTimeout: 0.78,
-                largeRangeTimeout: 1.05,
-                retryDelayNanoseconds: 0,
-                firstFallbackDelayNanoseconds: 18_000_000,
-                additionalFallbackDelayNanoseconds: 22_000_000
-            )
-        } else {
-            return HLSRemoteByteRangeRequestPolicy(
-                attempts: 2,
-                smallRangeTimeout: 0.85,
-                largeRangeTimeout: 1.1,
-                retryDelayNanoseconds: 45_000_000,
-                firstFallbackDelayNanoseconds: 55_000_000,
-                additionalFallbackDelayNanoseconds: 45_000_000
-            )
-        }
-    }
-
-    nonisolated func timeoutInterval(for range: HTTPByteRange) -> TimeInterval {
-        range.length > 1_500_000 ? largeRangeTimeout : smallRangeTimeout
-    }
-
-    nonisolated func fastFallbackDelayNanoseconds(forSourceIndex index: Int) -> UInt64 {
-        guard index > 0 else { return 0 }
-        return firstFallbackDelayNanoseconds
-            + UInt64(max(index - 1, 0)) * additionalFallbackDelayNanoseconds
-    }
-}
-
-private extension VideoRangeExternalFetchReservation {
-    nonisolated var isReserved: Bool {
-        if case .reserved = self {
-            return true
-        }
-        return false
-    }
-}
-
-private struct HLSRenditionTimelineOffset: Sendable {
-    let baseMediaDecodeTimeTicks: UInt64
-}
-
-private struct HLSMediaSegmentTransform: Sendable {
-    let baseMediaDecodeTimeOffset: UInt64
-
-    nonisolated func apply(to data: Data) -> Data {
-        applyResult(to: data).data
-    }
-
-    nonisolated func applyResult(to data: Data) -> FMP4TimelineNormalizer.NormalizationResult {
-        guard baseMediaDecodeTimeOffset > 0 else {
-            return FMP4TimelineNormalizer.NormalizationResult(data: data, didNormalizeTiming: true)
-        }
-        return FMP4TimelineNormalizer.normalizedResult(
-            data,
-            subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-        )
-    }
-}
-
-private enum FMP4TimelineNormalizer {
-    struct InitialTiming: Sendable {
-        let baseMediaDecodeTimeTicks: UInt64
-    }
-
-    struct NormalizationResult: Sendable {
-        let data: Data
-        let didNormalizeTiming: Bool
-    }
-
-    nonisolated static func initialTiming(in data: Data) -> InitialTiming? {
-        guard data.count >= 16 else { return nil }
-        let bytes = [UInt8](data)
-        return firstTiming(in: bytes, range: 0..<bytes.count)
-    }
-
-    nonisolated static func normalized(
-        _ data: Data,
-        subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
-    ) -> Data {
-        normalizedResult(
-            data,
-            subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-        ).data
-    }
-
-    nonisolated static func normalizedResult(
-        _ data: Data,
-        subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
-    ) -> NormalizationResult {
-        guard baseMediaDecodeTimeOffset > 0, data.count >= 16 else {
-            return NormalizationResult(data: data, didNormalizeTiming: baseMediaDecodeTimeOffset == 0)
-        }
-        var bytes = [UInt8](data)
-        let didNormalizeTiming = normalizeBoxes(
-            in: &bytes,
-            range: 0..<bytes.count,
-            subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-        )
-        return NormalizationResult(data: Data(bytes), didNormalizeTiming: didNormalizeTiming)
-    }
-
-    private nonisolated static func normalizeBoxes(
-        in bytes: inout [UInt8],
-        range: Range<Int>,
-        subtractingBaseMediaDecodeTime baseMediaDecodeTimeOffset: UInt64
-    ) -> Bool {
-        var didNormalizeTiming = false
-        var cursor = range.lowerBound
-        while cursor + 8 <= range.upperBound {
-            let boxStart = cursor
-            let declaredSize = Int64(readUInt32(bytes, offset: cursor))
-            guard cursor + 8 <= range.upperBound else { return didNormalizeTiming }
-            let typeStart = cursor + 4
-            let typeEnd = cursor + 8
-            let type = String(bytes: bytes[typeStart..<typeEnd], encoding: .ascii)
-            cursor += 8
-
-            let boxEnd: Int
-            if declaredSize == 1 {
-                guard cursor + 8 <= range.upperBound else { return didNormalizeTiming }
-                let largeSize = readUInt64(bytes, offset: cursor)
-                cursor += 8
-                guard largeSize >= 16 else { return didNormalizeTiming }
-                boxEnd = boxStart + Int(min(UInt64(Int.max), largeSize))
-            } else if declaredSize == 0 {
-                boxEnd = range.upperBound
-            } else {
-                guard declaredSize >= 8 else { return didNormalizeTiming }
-                boxEnd = boxStart + Int(declaredSize)
-            }
-
-            guard boxEnd <= range.upperBound, boxEnd > cursor else { return didNormalizeTiming }
-
-            if type == "tfdt" {
-                didNormalizeTiming = normalizeTFDT(
-                    in: &bytes,
-                    payloadStart: cursor,
-                    boxEnd: boxEnd,
-                    subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-                ) || didNormalizeTiming
-            } else if isContainerBox(type) {
-                didNormalizeTiming = normalizeBoxes(
-                    in: &bytes,
-                    range: cursor..<boxEnd,
-                    subtractingBaseMediaDecodeTime: baseMediaDecodeTimeOffset
-                ) || didNormalizeTiming
-            }
-
-            cursor = boxEnd
-        }
-        return didNormalizeTiming
-    }
-
-    private nonisolated static func firstTiming(in bytes: [UInt8], range: Range<Int>) -> InitialTiming? {
-        var baseDecodeTime: UInt64?
-        var cursor = range.lowerBound
-        while cursor + 8 <= range.upperBound {
-            let boxStart = cursor
-            let declaredSize = Int64(readUInt32(bytes, offset: cursor))
-            guard cursor + 8 <= range.upperBound else { return nil }
-            let typeStart = cursor + 4
-            let typeEnd = cursor + 8
-            let type = String(bytes: bytes[typeStart..<typeEnd], encoding: .ascii)
-            cursor += 8
-
-            let boxEnd: Int
-            if declaredSize == 1 {
-                guard cursor + 8 <= range.upperBound else { return nil }
-                let largeSize = readUInt64(bytes, offset: cursor)
-                cursor += 8
-                guard largeSize >= 16 else { return nil }
-                boxEnd = boxStart + Int(min(UInt64(Int.max), largeSize))
-            } else if declaredSize == 0 {
-                boxEnd = range.upperBound
-            } else {
-                guard declaredSize >= 8 else { return nil }
-                boxEnd = boxStart + Int(declaredSize)
-            }
-
-            guard boxEnd <= range.upperBound, boxEnd > cursor else { return nil }
-
-            if type == "tfdt" {
-                baseDecodeTime = readTFDT(in: bytes, payloadStart: cursor, boxEnd: boxEnd)
-            } else if isContainerBox(type), let nested = firstTiming(in: bytes, range: cursor..<boxEnd) {
-                if baseDecodeTime == nil {
-                    baseDecodeTime = nested.baseMediaDecodeTimeTicks
-                }
-            }
-
-            if let baseDecodeTime {
-                return InitialTiming(
-                    baseMediaDecodeTimeTicks: baseDecodeTime
-                )
-            }
-
-            cursor = boxEnd
-        }
-        if let baseDecodeTime {
-            return InitialTiming(
-                baseMediaDecodeTimeTicks: baseDecodeTime
-            )
-        }
-        return nil
-    }
-
-    private nonisolated static func readTFDT(in bytes: [UInt8], payloadStart: Int, boxEnd: Int) -> UInt64? {
-        guard payloadStart + 8 <= boxEnd else { return nil }
-        let version = bytes[payloadStart]
-        let timeOffset = payloadStart + 4
-        if version == 1 {
-            guard timeOffset + 8 <= boxEnd else { return nil }
-            return readUInt64(bytes, offset: timeOffset)
-        } else {
-            guard timeOffset + 4 <= boxEnd else { return nil }
-            return UInt64(readUInt32(bytes, offset: timeOffset))
-        }
-    }
-
-    private nonisolated static func normalizeTFDT(
-        in bytes: inout [UInt8],
-        payloadStart: Int,
-        boxEnd: Int,
-        subtractingBaseMediaDecodeTime offset: UInt64
-    ) -> Bool {
-        guard offset > 0 else { return true }
-        guard payloadStart + 8 <= boxEnd else { return false }
-        let version = bytes[payloadStart]
-        let timeOffset = payloadStart + 4
-        if version == 1 {
-            guard timeOffset + 8 <= boxEnd else { return false }
-            let original = readUInt64(bytes, offset: timeOffset)
-            writeUInt64(original > offset ? original - offset : 0, to: &bytes, offset: timeOffset)
-        } else {
-            guard timeOffset + 4 <= boxEnd else { return false }
-            let original = UInt64(readUInt32(bytes, offset: timeOffset))
-            let normalized = original > offset ? original - offset : 0
-            writeUInt32(UInt32(min(normalized, UInt64(UInt32.max))), to: &bytes, offset: timeOffset)
-        }
-        return true
-    }
-
-    private nonisolated static func isContainerBox(_ type: String?) -> Bool {
-        switch type {
-        case "moof", "traf", "moov", "trak", "mdia", "minf", "stbl", "edts", "dinf", "mvex":
-            return true
-        default:
-            return false
-        }
-    }
-
-    private nonisolated static func readUInt32(_ bytes: [UInt8], offset: Int) -> UInt32 {
-        (UInt32(bytes[offset]) << 24)
-            | (UInt32(bytes[offset + 1]) << 16)
-            | (UInt32(bytes[offset + 2]) << 8)
-            | UInt32(bytes[offset + 3])
-    }
-
-    private nonisolated static func readUInt64(_ bytes: [UInt8], offset: Int) -> UInt64 {
-        (UInt64(readUInt32(bytes, offset: offset)) << 32) | UInt64(readUInt32(bytes, offset: offset + 4))
-    }
-
-    private nonisolated static func writeUInt32(_ value: UInt32, to bytes: inout [UInt8], offset: Int) {
-        bytes[offset] = UInt8((value >> 24) & 0xff)
-        bytes[offset + 1] = UInt8((value >> 16) & 0xff)
-        bytes[offset + 2] = UInt8((value >> 8) & 0xff)
-        bytes[offset + 3] = UInt8(value & 0xff)
-    }
-
-    private nonisolated static func writeUInt64(_ value: UInt64, to bytes: inout [UInt8], offset: Int) {
-        writeUInt32(UInt32((value >> 32) & 0xffff_ffff), to: &bytes, offset: offset)
-        writeUInt32(UInt32(value & 0xffff_ffff), to: &bytes, offset: offset + 4)
-    }
-}
-
-private enum HLSProxyRoute: Sendable {
-    case data(Data, contentType: String)
-    case remoteByteRange(
-        url: URL,
-        fallbackURLs: [URL],
-        range: HTTPByteRange,
-        contentType: String,
-        transform: HLSMediaSegmentTransform?
-    )
-}
-
 private final class LocalHLSProxyServer: @unchecked Sendable {
     nonisolated private static let maxStreamingCacheBytes: Int64 = 24 * 1024 * 1024
 
@@ -6191,6 +5423,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
     }
 
     nonisolated private func respond(to connection: NWConnection, requestData: Data) {
+        let connectionID = ObjectIdentifier(connection)
         let requestStart = CACurrentMediaTime()
         guard let request = HLSProxyRequest(data: requestData) else {
             PlayerMetricsLog.logger.error("hlsProxyBadRequest")
@@ -6245,6 +5478,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     transform: transform,
                     request: request,
                     headers: headers,
+                    connectionID: connectionID,
                     to: connection
                 )
             }
@@ -6259,6 +5493,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
         transform: HLSMediaSegmentTransform?,
         request: HLSProxyRequest,
         headers: [String: String],
+        connectionID: ObjectIdentifier,
         to connection: NWConnection
     ) async {
         let start = CACurrentMediaTime()
@@ -6297,6 +5532,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 source: "cache"
             )
             queue.async {
+                guard self.isConnectionActive(connectionID) else { return }
                 self.sendData(
                     responseData,
                     contentType: contentType,
@@ -6323,6 +5559,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     headers: headers,
                     totalLength: sourceRange.length,
                     servedRange: resolvedRange,
+                    connectionID: connectionID,
                     to: connection
                 )
                 PlayerMetricsLog.logger.info(
@@ -6358,6 +5595,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 source: "fetch"
             )
             queue.async {
+                guard self.isConnectionActive(connectionID) else { return }
                 self.sendData(
                     data,
                     contentType: contentType,
@@ -6374,6 +5612,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 "hlsProxyRemoteFetchFailed path=\(request.path, privacy: .public) range=\(fetchRange.start, privacy: .public)-\(fetchRange.endInclusive, privacy: .public) status=\(proxyFailure.statusCode, privacy: .public) url=\(url.absoluteString, privacy: .private) error=\(error.localizedDescription, privacy: .public)"
             )
             queue.async {
+                guard self.isConnectionActive(connectionID) else { return }
                 self.sendError(proxyFailure.statusCode, reason: proxyFailure.reason, to: connection)
             }
         }
@@ -6495,6 +5734,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
         headers: [String: String],
         totalLength: Int64,
         servedRange: HTTPByteRange?,
+        connectionID: ObjectIdentifier,
         to connection: NWConnection
     ) async throws {
         let canonicalURLs = urls.removingDuplicates()
@@ -6512,6 +5752,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 let cachedStart = CACurrentMediaTime()
                 let responseData = transform?.apply(to: data) ?? data
                 queue.async {
+                    guard self.isConnectionActive(connectionID) else { return }
                     self.sendData(
                         responseData,
                         contentType: contentType,
@@ -6546,6 +5787,7 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                     let data = try await task.value
                     let responseData = transform?.apply(to: data) ?? data
                     queue.async {
+                        guard self.isConnectionActive(connectionID) else { return }
                         self.sendData(
                             responseData,
                             contentType: contentType,
@@ -6825,8 +6067,16 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 connection.cancel()
                 return
             }
+            guard self.isConnectionActive(ObjectIdentifier(connection)) else {
+                connection.cancel()
+                return
+            }
             self.receiveRequest(from: connection, accumulatedData: Data())
         })
+    }
+
+    nonisolated private func isConnectionActive(_ identifier: ObjectIdentifier) -> Bool {
+        !isClosed && activeConnections[identifier] != nil
     }
 
     nonisolated private func sendContent(_ data: Data, to connection: NWConnection) async throws {
@@ -6851,194 +6101,4 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
         return Data(headerText.utf8)
     }
 
-    nonisolated fileprivate static func validateRemoteRangeResponse(
-        _ response: URLResponse,
-        requestedRange: HTTPByteRange,
-        url: URL? = nil
-    ) throws {
-        guard let httpResponse = response as? HTTPURLResponse else { return }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw HLSBridgeRemoteFailure.httpStatus(httpResponse.statusCode, url: url, range: requestedRange)
-        }
-        if httpResponse.statusCode == 200, requestedRange.start > 0 {
-            throw HLSBridgeRemoteFailure.invalidRangeResponse(statusCode: httpResponse.statusCode, url: url, range: requestedRange)
-        }
-    }
-}
-
-private extension Array where Element == URL {
-    nonisolated func removingDuplicates() -> [URL] {
-        var seen = Set<String>()
-        var result = [URL]()
-        for url in self {
-            let key = url.absoluteString
-            guard seen.insert(key).inserted else { continue }
-            result.append(url)
-        }
-        return result
-    }
-}
-
-private extension Array {
-    nonisolated subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
-
-private struct HLSProxyRequest: Sendable {
-    let method: String
-    let path: String
-    let range: HTTPByteRange?
-    let shouldCloseConnection: Bool
-
-    nonisolated init?(data: Data) {
-        guard let rawRequest = String(data: data, encoding: .utf8) else { return nil }
-        let lines = rawRequest.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else { return nil }
-        let requestParts = requestLine.split(separator: " ", maxSplits: 2).map(String.init)
-        guard requestParts.count >= 2 else { return nil }
-
-        method = requestParts[0]
-        let rawPath = requestParts[1]
-        let httpVersion = requestParts.indices.contains(2) ? requestParts[2].lowercased() : "http/1.0"
-        path = URLComponents(string: "http://127.0.0.1\(rawPath)")?.path ?? rawPath
-
-        var parsedRange: HTTPByteRange?
-        var connectionValue: String?
-        for line in lines.dropFirst() {
-            let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { continue }
-            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            switch key {
-            case "range":
-                parsedRange = HTTPByteRange(httpHeaderValue: value)
-            case "connection":
-                connectionValue = value.lowercased()
-            default:
-                break
-            }
-        }
-        range = parsedRange
-        if connectionValue?.contains("close") == true {
-            shouldCloseConnection = true
-        } else if httpVersion == "http/1.1" {
-            shouldCloseConnection = false
-        } else {
-            shouldCloseConnection = connectionValue?.contains("keep-alive") != true
-        }
-    }
-}
-
-private struct SIDXParser {
-    struct Reference {
-        let range: HTTPByteRange
-        let duration: TimeInterval
-        let startTime: TimeInterval
-        let startTimeTicks: UInt64
-        let timescale: UInt32
-    }
-
-    nonisolated static func parseReferences(from data: Data, sidxStartOffset: Int64) throws -> [Reference] {
-        let bytes = [UInt8](data)
-        guard bytes.count >= 12 else { throw PlayerEngineError.unsupportedMedia }
-
-        var offset = 0
-        if String(bytes: bytes[4..<min(8, bytes.count)], encoding: .ascii) != "sidx" {
-            while offset + 8 <= bytes.count {
-                let size = Int(readUInt32(bytes, offset: offset))
-                guard size >= 8, offset + size <= bytes.count else { break }
-                let type = String(bytes: bytes[(offset + 4)..<(offset + 8)], encoding: .ascii)
-                if type == "sidx" {
-                    break
-                }
-                offset += size
-            }
-        }
-
-        guard offset + 12 <= bytes.count,
-              String(bytes: bytes[(offset + 4)..<(offset + 8)], encoding: .ascii) == "sidx"
-        else {
-            throw PlayerEngineError.unsupportedMedia
-        }
-
-        let boxSize = Int64(readUInt32(bytes, offset: offset))
-        let version = bytes[offset + 8]
-        var cursor = offset + 12
-        guard cursor + 8 <= bytes.count else { throw PlayerEngineError.unsupportedMedia }
-        cursor += 4
-        let timescaleValue = readUInt32(bytes, offset: cursor)
-        let timescale = Double(timescaleValue)
-        cursor += 4
-        guard timescale > 0 else { throw PlayerEngineError.unsupportedMedia }
-
-        let firstOffset: Int64
-        let earliestPresentationTime: UInt64
-        if version == 0 {
-            guard cursor + 8 <= bytes.count else { throw PlayerEngineError.unsupportedMedia }
-            earliestPresentationTime = UInt64(readUInt32(bytes, offset: cursor))
-            cursor += 4
-            firstOffset = Int64(readUInt32(bytes, offset: cursor))
-            cursor += 4
-        } else {
-            guard cursor + 16 <= bytes.count else { throw PlayerEngineError.unsupportedMedia }
-            earliestPresentationTime = readUInt64(bytes, offset: cursor)
-            cursor += 8
-            firstOffset = Int64(readUInt64(bytes, offset: cursor))
-            cursor += 8
-        }
-
-        cursor += 2
-        guard cursor + 2 <= bytes.count else { throw PlayerEngineError.unsupportedMedia }
-        let referenceCount = Int(readUInt16(bytes, offset: cursor))
-        cursor += 2
-
-        var mediaOffset = sidxStartOffset + boxSize + firstOffset
-        var presentationTime = TimeInterval(earliestPresentationTime) / timescale
-        var elapsedTicks: UInt64 = 0
-        var references = [Reference]()
-        references.reserveCapacity(referenceCount)
-
-        for _ in 0..<referenceCount {
-            guard cursor + 12 <= bytes.count else { break }
-            let typeAndSize = readUInt32(bytes, offset: cursor)
-            cursor += 4
-            let isSubsegment = (typeAndSize & 0x8000_0000) != 0
-            let size = Int64(typeAndSize & 0x7fff_ffff)
-            let durationOffset = cursor
-            let durationTicks = readUInt32(bytes, offset: durationOffset)
-            let duration = TimeInterval(durationTicks) / timescale
-            cursor += 4
-            cursor += 4
-            guard !isSubsegment, size > 0 else { continue }
-            references.append(Reference(
-                range: HTTPByteRange(start: mediaOffset, endInclusive: mediaOffset + size - 1),
-                duration: duration,
-                startTime: presentationTime,
-                startTimeTicks: earliestPresentationTime + elapsedTicks,
-                timescale: timescaleValue
-            ))
-            mediaOffset += size
-            elapsedTicks += UInt64(durationTicks)
-            presentationTime += duration
-        }
-
-        return references
-    }
-
-    private nonisolated static func readUInt16(_ bytes: [UInt8], offset: Int) -> UInt16 {
-        (UInt16(bytes[offset]) << 8) | UInt16(bytes[offset + 1])
-    }
-
-    private nonisolated static func readUInt32(_ bytes: [UInt8], offset: Int) -> UInt32 {
-        (UInt32(bytes[offset]) << 24)
-            | (UInt32(bytes[offset + 1]) << 16)
-            | (UInt32(bytes[offset + 2]) << 8)
-            | UInt32(bytes[offset + 3])
-    }
-
-    private nonisolated static func readUInt64(_ bytes: [UInt8], offset: Int) -> UInt64 {
-        (UInt64(readUInt32(bytes, offset: offset)) << 32)
-            | UInt64(readUInt32(bytes, offset: offset + 4))
-    }
 }

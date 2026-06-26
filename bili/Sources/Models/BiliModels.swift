@@ -1,6 +1,77 @@
 import CoreGraphics
 import Foundation
 
+enum BiliVideoQuality {
+    nonisolated static let supportedQualities = [129, 127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
+
+    nonisolated static func title(for quality: Int?) -> String {
+        guard let quality else { return "自动（快速开播）" }
+        switch quality {
+        case 129:
+            return "HDR Vivid"
+        case 127:
+            return "8K"
+        case 126:
+            return "杜比视界"
+        case 125:
+            return "真彩 HDR"
+        case 120:
+            return "4K"
+        case 116:
+            return "1080P 高帧率"
+        case 112:
+            return "1080P 高码率"
+        case 80:
+            return "1080P"
+        case 74:
+            return "720P 高帧率"
+        case 64:
+            return "720P"
+        case 32:
+            return "480P"
+        case 16:
+            return "360P"
+        case 6:
+            return "240P"
+        default:
+            return "清晰度 \(quality)"
+        }
+    }
+
+    nonisolated static func compactTitle(for quality: Int, fallback: String) -> String {
+        switch quality {
+        case 129:
+            return "HDR Vivid"
+        case 127:
+            return "8K"
+        case 126:
+            return "杜比视界"
+        case 125:
+            return "HDR"
+        case 120:
+            return "4K"
+        case 116:
+            return "1080P60"
+        case 112:
+            return "1080P+"
+        case 80:
+            return "1080P"
+        case 74:
+            return "720P60"
+        case 64:
+            return "720P"
+        case 32:
+            return "480P"
+        case 16:
+            return "360P"
+        case 6:
+            return "240P"
+        default:
+            return fallback.isEmpty ? "清晰度 \(quality)" : fallback
+        }
+    }
+}
+
 enum BiliVideoDynamicRange: String, Hashable, Sendable {
     case sdr
     case hdr10
@@ -637,6 +708,17 @@ nonisolated struct PlayURLData: Decodable, Sendable {
     }
 
     nonisolated func playVariants(cdnPreference: PlaybackCDNPreference) -> [PlayVariant] {
+        playVariants(
+            cdnPreference: cdnPreference,
+            codecPreference: VideoCodecPreference.stored()
+        )
+    }
+
+    nonisolated func playVariants(
+        cdnPreference: PlaybackCDNPreference,
+        codecPreference: VideoCodecPreference
+    ) -> [PlayVariant] {
+        let preferredKernel = PlayerKernelType.stored()
         let bestAudio = dash?.bestAudioStream
         let videosByQuality = Dictionary(grouping: dash?.video ?? [], by: { $0.id ?? 0 })
         let descriptions = Dictionary(uniqueKeysWithValues: zip(acceptQuality ?? [], acceptDescription ?? []))
@@ -665,7 +747,11 @@ nonisolated struct PlayURLData: Decodable, Sendable {
             let streamCandidates = videoStreams.filter { stream in
                 stream.isHardwareDecodingCompatibleVideo
             }
-            let stream = streamCandidates.sorted(by: DASHStream.preferPlayable).first
+            let stream = DashStreamDispatcher.selectBestStream(
+                from: streamCandidates,
+                preference: codecPreference,
+                kernel: preferredKernel
+            )
             guard let stream,
                   let streamURL = stream.playURL(cdnPreference: cdnPreference),
                   let bestAudio,
@@ -741,6 +827,7 @@ nonisolated struct PlayURLData: Decodable, Sendable {
             supportByQuality: supportByQuality,
             descriptions: descriptions,
             videosByQuality: videosByQuality,
+            codecPreference: codecPreference,
             into: &variants
         )
 
@@ -752,15 +839,21 @@ nonisolated struct PlayURLData: Decodable, Sendable {
         supportByQuality: [Int: PlaySupportFormat],
         descriptions: [Int: String],
         videosByQuality: [Int: [DASHStream]],
+        codecPreference: VideoCodecPreference,
         into variants: inout [PlayVariant]
     ) {
+        let preferredKernel = PlayerKernelType.stored()
         for quality in orderedQualities {
             guard quality > 0,
                   !variants.contains(where: { $0.quality == quality })
             else { continue }
 
             let support = supportByQuality[quality]
-            let representativeStream = videosByQuality[quality]?.sorted(by: DASHStream.preferPlayable).first
+            let representativeStream = DashStreamDispatcher.selectBestStream(
+                from: videosByQuality[quality] ?? [],
+                preference: codecPreference,
+                kernel: preferredKernel
+            )
             variants.append(PlayVariant(
                 quality: quality,
                 title: support?.title ?? descriptions[quality] ?? Self.qualityTitle(quality),
@@ -779,36 +872,7 @@ nonisolated struct PlayURLData: Decodable, Sendable {
     }
 
     nonisolated private static func qualityTitle(_ quality: Int) -> String {
-        switch quality {
-        case 129:
-            return "HDR Vivid"
-        case 127:
-            return "超高清 8K"
-        case 126:
-            return "杜比视界"
-        case 125:
-            return "真彩 HDR"
-        case 120:
-            return "超清 4K"
-        case 116:
-            return "高清 1080P 高帧率"
-        case 112:
-            return "高清 1080P 高码率"
-        case 80:
-            return "高清 1080P"
-        case 74:
-            return "高清 720P 高帧率"
-        case 64:
-            return "高清 720P"
-        case 32:
-            return "清晰 480P"
-        case 16:
-            return "流畅 360P"
-        case 6:
-            return "极速 240P"
-        default:
-            return "清晰度 \(quality)"
-        }
+        BiliVideoQuality.title(for: quality)
     }
 
     nonisolated private static func isHDR(quality: Int, title: String?) -> Bool {
@@ -991,66 +1055,14 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
     }
 
     nonisolated var qualityMenuTitle: String {
-        var parts = [String]()
-        if let playbackExperienceLabel {
-            parts.append(playbackExperienceLabel)
-        }
-        if let resolution {
-            parts.append("画质 \(resolution)")
-        }
-        if let frameRateLabel {
-            parts.append("帧率 \(frameRateLabel)")
-        }
-        if let bitrateLabel {
-            parts.append("码率 \(bitrateLabel)")
-        }
-        if let codec, !codec.isEmpty {
-            parts.append("编码 \(codec)")
-        }
-        if let dynamicRangeMenuLabel {
-            parts.append(dynamicRangeMenuLabel)
-        }
-        if let badge, !badge.isEmpty, !parts.contains(badge), !title.contains(badge) {
-            parts.append(badge)
-        }
-        if !isPlayable {
-            parts.append(unavailableReason)
-        }
-        return parts.isEmpty ? title : "\(title) · \(parts.joined(separator: " · "))"
+        let title = BiliVideoQuality.title(for: quality)
+        guard !isPlayable else { return title }
+        return "\(title)（\(unavailableReason)）"
     }
 
     nonisolated var compactAccessoryTitle: String {
         let normalizedTitle = title.replacingOccurrences(of: " ", with: "")
-        switch quality {
-        case 129:
-            return "HDR Vivid"
-        case 127:
-            return "8K超高清"
-        case 126:
-            return "杜比视界"
-        case 125:
-            return "HDR真彩"
-        case 120:
-            return "4K超清"
-        case 116:
-            return "1080P高帧"
-        case 112:
-            return "1080P高码率"
-        case 80:
-            return "1080P高清"
-        case 74:
-            return "720P高帧"
-        case 64:
-            return "720P准高清"
-        case 32:
-            return "480P清晰"
-        case 16:
-            return "360P流畅"
-        case 6:
-            return "240P极速"
-        default:
-            return normalizedTitle
-        }
+        return BiliVideoQuality.compactTitle(for: quality, fallback: normalizedTitle)
     }
 
     nonisolated private var unavailableReason: String {

@@ -11,6 +11,8 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
     private let callbackQueue = DispatchQueue(label: "cc.bili.progressive-resource-loader")
     private let lock = NSLock()
     private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
+    private var cacheLookupTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var activeRequests: Set<ObjectIdentifier> = []
     private lazy var session: URLSession = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 6
@@ -27,6 +29,12 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
     }
 
     deinit {
+        lock.lock()
+        let lookupTasks = Array(cacheLookupTasks.values)
+        activeRequests.removeAll()
+        cacheLookupTasks.removeAll()
+        lock.unlock()
+        lookupTasks.forEach { $0.cancel() }
         session.invalidateAndCancel()
     }
 
@@ -39,18 +47,29 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
             url: originalURL.absoluteString,
             rangeHeader: rangeHeader ?? "bytes=0-"
         )
-        Task { [weak self, weak loadingRequest] in
+        let identifier = ObjectIdentifier(loadingRequest)
+        storeActiveRequest(identifier)
+        let lookupTask = Task { [weak self, weak loadingRequest] in
             guard let self, let loadingRequest else { return }
             if let cached = await ProgressiveMediaSegmentCache.shared.response(for: cacheKey) {
-                self.finish(loadingRequest, with: cached)
+                guard !Task.isCancelled,
+                      self.isRequestActive(identifier)
+                else { return }
+                self.removeCacheLookupTask(for: identifier)
+                self.finish(loadingRequest, identifier: identifier, with: cached)
                 return
             }
+            guard !Task.isCancelled,
+                  self.isRequestActive(identifier)
+            else { return }
+            self.removeCacheLookupTask(for: identifier)
             self.startNetworkRequest(
                 loadingRequest,
                 rangeHeader: rangeHeader,
                 cacheKey: cacheKey
             )
         }
+        storeCacheLookupTask(lookupTask, for: identifier)
         return true
     }
 
@@ -71,19 +90,23 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
         let task = session.dataTask(with: request) { [weak self, weak loadingRequest] data, response, error in
             guard let self = self, let loadingRequest = loadingRequest else { return }
             self.removeTask(for: identifier)
+            guard self.isRequestActive(identifier) else { return }
 
             if let error = error {
                 loadingRequest.finishLoading(with: error)
+                self.removeActiveRequest(identifier)
                 return
             }
             guard let httpResponse = response as? HTTPURLResponse, let data else {
                 loadingRequest.finishLoading(with: Self.error(message: "Empty progressive video response."))
+                self.removeActiveRequest(identifier)
                 return
             }
             guard 200..<300 ~= httpResponse.statusCode else {
                 let message = "Progressive video HTTP \(httpResponse.statusCode)."
                 PlayerMetricsLog.logger.error("progressiveProxyHTTPError status=\(httpResponse.statusCode, privacy: .public)")
                 loadingRequest.finishLoading(with: Self.error(code: httpResponse.statusCode, message: message))
+                self.removeActiveRequest(identifier)
                 return
             }
 
@@ -96,12 +119,16 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
             self.fillContentInformation(loadingRequest.contentInformationRequest, cachedResponse: cachedResponse)
             loadingRequest.dataRequest?.respond(with: cachedResponse.data)
             loadingRequest.finishLoading()
+            self.removeActiveRequest(identifier)
             Task {
                 await ProgressiveMediaSegmentCache.shared.store(cachedResponse, for: cacheKey)
             }
         }
-        store(task, for: identifier)
-        task.resume()
+        if store(task, for: identifier) {
+            task.resume()
+        } else {
+            task.cancel()
+        }
     }
 
     func resourceLoader(
@@ -111,8 +138,11 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
         let identifier = ObjectIdentifier(loadingRequest)
         lock.lock()
         let task = tasks.removeValue(forKey: identifier)
+        let lookupTask = cacheLookupTasks.removeValue(forKey: identifier)
+        activeRequests.remove(identifier)
         lock.unlock()
         task?.cancel()
+        lookupTask?.cancel()
     }
 
     private func rangeHeader(for loadingRequest: AVAssetResourceLoadingRequest) -> String? {
@@ -143,12 +173,15 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
 
     private func finish(
         _ loadingRequest: AVAssetResourceLoadingRequest,
+        identifier: ObjectIdentifier,
         with cachedResponse: ProgressiveMediaCacheResponse
     ) {
         callbackQueue.async {
+            guard self.isRequestActive(identifier) else { return }
             self.fillContentInformation(loadingRequest.contentInformationRequest, cachedResponse: cachedResponse)
             loadingRequest.dataRequest?.respond(with: cachedResponse.data)
             loadingRequest.finishLoading()
+            self.removeActiveRequest(identifier)
         }
     }
 
@@ -179,16 +212,52 @@ final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
         return Int64(dataLength)
     }
 
-    private func store(_ task: URLSessionDataTask, for identifier: ObjectIdentifier) {
+    private func store(_ task: URLSessionDataTask, for identifier: ObjectIdentifier) -> Bool {
         lock.lock()
+        guard activeRequests.contains(identifier) else {
+            lock.unlock()
+            return false
+        }
         tasks[identifier] = task
         lock.unlock()
+        return true
     }
 
     private func removeTask(for identifier: ObjectIdentifier) {
         lock.lock()
         tasks.removeValue(forKey: identifier)
         lock.unlock()
+    }
+
+    private func storeCacheLookupTask(_ task: Task<Void, Never>, for identifier: ObjectIdentifier) {
+        lock.lock()
+        cacheLookupTasks[identifier] = task
+        lock.unlock()
+    }
+
+    private func removeCacheLookupTask(for identifier: ObjectIdentifier) {
+        lock.lock()
+        cacheLookupTasks.removeValue(forKey: identifier)
+        lock.unlock()
+    }
+
+    private func storeActiveRequest(_ identifier: ObjectIdentifier) {
+        lock.lock()
+        activeRequests.insert(identifier)
+        lock.unlock()
+    }
+
+    private func removeActiveRequest(_ identifier: ObjectIdentifier) {
+        lock.lock()
+        activeRequests.remove(identifier)
+        lock.unlock()
+    }
+
+    private func isRequestActive(_ identifier: ObjectIdentifier) -> Bool {
+        lock.lock()
+        let isActive = activeRequests.contains(identifier)
+        lock.unlock()
+        return isActive
     }
 
     private static func error(code: Int = -1, message: String) -> NSError {

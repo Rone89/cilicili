@@ -32,7 +32,8 @@ enum BiliHLSManifestBuilderError: LocalizedError {
 enum BiliHLSManifestBuilder {
     static func make(
         source: PlayerStreamSource,
-        shouldValidateHardwareDecoding: Bool = true
+        shouldValidateHardwareDecoding: Bool = true,
+        includesAlternateVideoRenditions: Bool = true
     ) async throws -> BiliHLSPlaybackManifest {
         guard let videoURL = source.videoURL else {
             PlayerMetricsLog.logger.error("hlsManifestRejected reason=missingVideoURL")
@@ -59,15 +60,17 @@ enum BiliHLSManifestBuilder {
                 mediaType: .video,
                 dynamicRange: source.dynamicRange
             )
-            let alternateVideoTracks = source.alternateVideoRenditions.map { rendition in
-                HLSBridgeTrack(
-                    url: rendition.videoURL,
-                    fallbackURLs: rendition.videoStream.backupPlayURLs(cdnPreference: source.cdnPreference),
-                    stream: rendition.videoStream,
-                    mediaType: .video,
-                    dynamicRange: rendition.dynamicRange
-                )
-            }
+            let alternateVideoTracks = includesAlternateVideoRenditions
+                ? source.alternateVideoRenditions.map { rendition in
+                    HLSBridgeTrack(
+                        url: rendition.videoURL,
+                        fallbackURLs: rendition.videoStream.backupPlayURLs(cdnPreference: source.cdnPreference),
+                        stream: rendition.videoStream,
+                        mediaType: .video,
+                        dynamicRange: rendition.dynamicRange
+                    )
+                }
+                : []
             bridge = try await LocalHLSBridge.make(
                 videoTracks: [primaryVideoTrack] + alternateVideoTracks,
                 audioTrack: HLSBridgeTrack(

@@ -110,6 +110,7 @@ final class SearchViewModel: ObservableObject {
     @Published var suggestions: [SearchSuggestItem] = []
     @Published var results: [SearchResultItem] = []
     @Published var state: LoadingState = .idle
+    @Published var hotSearchState: LoadingState = .idle
     @Published private(set) var hotSearchesRevision = 0
     @Published private(set) var suggestionsRevision = 0
     @Published private(set) var resultsRevision = 0
@@ -137,10 +138,13 @@ final class SearchViewModel: ObservableObject {
     }
 
     func loadHotSearch() async {
+        guard !hotSearchState.isLoading else { return }
+        hotSearchState = .loading
         do {
             updateHotSearches(try await api.fetchHotSearch())
+            hotSearchState = .loaded
         } catch {
-            updateHotSearches([])
+            hotSearchState = .failed(error.localizedDescription)
         }
     }
 

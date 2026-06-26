@@ -1,0 +1,26 @@
+import SwiftUI
+
+struct MineContentView: View {
+    @ObservedObject var viewModel: MineViewModel
+    @ObservedObject var sessionStore: SessionStore
+    @ObservedObject var libraryStore: LibraryStore
+    let onQRCodeLogin: () -> Void
+    let onWebLogin: () -> Void
+
+    var body: some View {
+        Form {
+            MineAccountSection(
+                viewModel: viewModel,
+                sessionStore: sessionStore,
+                onQRCodeLogin: onQRCodeLogin,
+                onWebLogin: onWebLogin
+            )
+
+            MineAccountLibrarySection(viewModel: viewModel)
+
+            MineSettingsSection(libraryStore: libraryStore)
+        }
+        .formStyle(.grouped)
+        .nativeTopScrollEdgeEffect()
+    }
+}

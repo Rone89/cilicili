@@ -1,0 +1,20 @@
+import Foundation
+
+extension HomeUniqueRecommendRefreshAccumulator {
+    mutating func append(_ page: [VideoItem]) {
+        for video in page where !video.id.isEmpty {
+            guard !excludedIDs.contains(video.id),
+                  freshIDs.insert(video.id).inserted
+            else { continue }
+            freshVideos.append(video)
+            if hasEnoughFreshVideos {
+                break
+            }
+        }
+    }
+
+    func resolvedPage(lastRawPage: [VideoItem]) -> [VideoItem] {
+        guard !freshVideos.isEmpty else { return lastRawPage }
+        return Array(freshVideos.prefix(minimumFreshCount))
+    }
+}

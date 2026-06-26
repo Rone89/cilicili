@@ -10,6 +10,7 @@ final class UploaderViewModel: ObservableObject {
         didSet { videosRevision &+= 1 }
     }
     @Published var state: LoadingState = .idle
+    @Published private(set) var profileState: LoadingState = .idle
     @Published private(set) var isFollowing = false
     @Published private(set) var followerCount: Int?
     @Published private(set) var isMutatingFollow = false
@@ -20,6 +21,7 @@ final class UploaderViewModel: ObservableObject {
     let seedOwner: VideoOwner
 
     private let api: BiliAPIClient
+    private let uploaderVideosTimeoutNanoseconds: UInt64 = 8_000_000_000
     private var page = 1
 
     init(seedOwner: VideoOwner, api: BiliAPIClient) {
@@ -28,19 +30,35 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadInitial() async {
-        guard videos.isEmpty, profile == nil else { return }
+        if profile == nil, !profileState.isLoading {
+            Task { await loadProfile() }
+        }
+        guard videos.isEmpty, !state.isLoading else { return }
         await refresh()
     }
 
     func refresh() async {
         state = .loading
         page = 1
+        if profile == nil, !profileState.isLoading {
+            Task { await loadProfile() }
+        }
         do {
-            applyProfile(try await api.fetchUploaderProfile(mid: seedOwner.mid))
-            videos = try await api.fetchUploaderVideos(mid: seedOwner.mid, page: page)
+            videos = try await fetchUploaderVideosWithTimeout(page: page)
             state = .loaded
         } catch {
             state = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadProfile() async {
+        guard !profileState.isLoading else { return }
+        profileState = .loading
+        do {
+            applyProfile(try await api.fetchUploaderProfile(mid: seedOwner.mid))
+            profileState = .loaded
+        } catch {
+            profileState = .failed(error.localizedDescription)
         }
     }
 
@@ -49,11 +67,33 @@ final class UploaderViewModel: ObservableObject {
         state = .loading
         page += 1
         do {
-            appendUnique(try await api.fetchUploaderVideos(mid: seedOwner.mid, page: page))
+            appendUnique(try await fetchUploaderVideosWithTimeout(page: page))
             state = .loaded
         } catch {
             page = max(1, page - 1)
             state = .failed(error.localizedDescription)
+        }
+    }
+
+    private func fetchUploaderVideosWithTimeout(page: Int) async throws -> [VideoItem] {
+        try await withThrowingTaskGroup(of: [VideoItem].self) { group in
+            let mid = seedOwner.mid
+            let timeout = uploaderVideosTimeoutNanoseconds
+
+            group.addTask(priority: .userInitiated) {
+                try await self.api.fetchUploaderVideos(mid: mid, page: page)
+            }
+            group.addTask(priority: .utility) {
+                try await Task.sleep(nanoseconds: timeout)
+                throw BiliAPIError.api(code: -1, message: "投稿加载超时，请稍后重试")
+            }
+
+            guard let videos = try await group.next() else {
+                group.cancelAll()
+                throw BiliAPIError.emptyData
+            }
+            group.cancelAll()
+            return videos
         }
     }
 

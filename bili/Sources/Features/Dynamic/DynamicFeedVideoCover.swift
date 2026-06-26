@@ -3,7 +3,7 @@ import SwiftUI
 struct DynamicFeedVideoCover: View {
     let video: VideoItem
     let display: VideoCardDisplayModel
-    @State private var loadedCoverIdentity: String?
+    @State private var coverLoadedState = VideoCoverLoadedState()
 
     var body: some View {
         FixedAspectPreview(aspectRatio: 16 / 9) {
@@ -14,11 +14,11 @@ struct DynamicFeedVideoCover: View {
                     display: display,
                     style: .maxSide,
                     onPhaseChange: { phase in
-                        updateLoadedCoverIdentity(for: phase)
+                        coverLoadedState.update(phase: phase, identity: display.coverLoadIdentity)
                     }
                 )
 
-                if isCurrentCoverLoaded {
+                if coverLoadedState.isLoaded(identity: display.coverLoadIdentity) {
                     VideoCoverBottomScrim()
 
                     DynamicVideoPlayBadge(size: 34, iconSize: 14)
@@ -35,20 +35,5 @@ struct DynamicFeedVideoCover: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .mediaShadow(.control)
-    }
-
-    private var isCurrentCoverLoaded: Bool {
-        loadedCoverIdentity == display.coverLoadIdentity
-    }
-
-    private func updateLoadedCoverIdentity(for phase: RemoteImageLoadingPhase) {
-        switch phase {
-        case .loaded:
-            loadedCoverIdentity = display.coverLoadIdentity
-        case .idle, .loading, .failed:
-            if loadedCoverIdentity != display.coverLoadIdentity {
-                loadedCoverIdentity = nil
-            }
-        }
     }
 }

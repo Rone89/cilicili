@@ -1,0 +1,36 @@
+import SwiftUI
+
+struct DynamicPaidArticleTextPreview: View {
+    let content: DynamicPaidContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(content.title)
+                .font(FeedTypography.titleFont)
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let subtitle = content.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(FeedTypography.bodyFont)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Text(content.badgeText)
+                if content.isLocked {
+                    Text("需解锁")
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.pink)
+            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(content.badgeText) \(content.title)")
+    }
+}

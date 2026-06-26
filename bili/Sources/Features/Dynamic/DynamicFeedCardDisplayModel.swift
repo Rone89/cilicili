@@ -59,8 +59,8 @@ struct DynamicFeedCardDisplayModel {
         self.authorName = authorName
         self.imageItems = imageItems
         self.textSegments = textSegments
-        self.collapsedTextInput = .dynamicFeedHeadline(segments: textSegments, emoteSize: 23, maxLines: 6)
-        self.expandedTextInput = .dynamicFeedHeadline(segments: textSegments, emoteSize: 23, maxLines: nil)
+        self.collapsedTextInput = .dynamicFeedBody(segments: textSegments, emoteSize: 23, maxLines: 6)
+        self.expandedTextInput = .dynamicFeedBody(segments: textSegments, emoteSize: 23, maxLines: nil)
         self.topLevelDisplayText = topLevelDisplayText
         self.publishTimeText = Self.publishTime(for: item.author)
         self.usesHomeVideoCardStyle = video != nil

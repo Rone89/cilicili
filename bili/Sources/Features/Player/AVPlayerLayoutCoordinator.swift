@@ -19,6 +19,8 @@ final class AVPlayerLayoutCoordinator {
         playerLayer.videoGravity = gravity
         playerLayer.frame = containerView.bounds
         playerLayer.position = CGPoint(x: containerView.bounds.midX, y: containerView.bounds.midY)
+        playerLayer.setNeedsLayout()
+        playerLayer.setNeedsDisplay()
         CATransaction.commit()
     }
 
@@ -39,11 +41,15 @@ final class AVPlayerLayoutCoordinator {
         bounds: CGRect,
         gravity: AVLayerVideoGravity
     ) {
-        playerController.videoGravity = gravity
-        playerController.view.frame = bounds
-        playerController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        playerController.view.setNeedsLayout()
-        playerController.view.layoutIfNeeded()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        UIView.performWithoutAnimation {
+            playerController.videoGravity = gravity
+            playerController.view.frame = bounds
+            playerController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            playerController.view.setNeedsLayout()
+        }
+        CATransaction.commit()
     }
 
     func transition(

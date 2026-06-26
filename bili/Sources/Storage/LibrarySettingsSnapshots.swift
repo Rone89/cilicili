@@ -123,8 +123,8 @@ final class PlayerRuntimeSettingsStore: ObservableObject {
 
 struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playerPerformanceOverlayEnabled = false
-    var showsNetworkDiagnosticsButton = true
-    var showsPinnedProgressBar = true
+    var showsNetworkDiagnosticsButton = false
+    var showsPinnedProgressBar = false
     var preferredVideoQuality: Int? = LibraryStore.defaultPreferredVideoQuality
     var effectivePlaybackCDNPreference: PlaybackCDNPreference = .automatic
     var playbackAutoOptimizationEnabled = true

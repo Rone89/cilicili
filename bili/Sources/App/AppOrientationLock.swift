@@ -11,38 +11,60 @@ enum AppOrientationLock {
     ) {
         supportedOrientations = orientations
 
-        let targetScenes: [UIWindowScene]
-        if let scene {
-            targetScenes = [scene]
-        } else {
-            targetScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        }
+        let targetScenes = scenes(matching: scene)
+        requestInterfaceUpdates(in: targetScenes)
 
-        targetScenes
+        guard requestsGeometryUpdate else { return }
+        requestGeometryUpdate(to: orientations, in: targetScenes)
+    }
+
+    static func restorePortrait(in scene: UIWindowScene? = nil) {
+        update(to: .portrait, in: scene, requestsGeometryUpdate: true)
+    }
+
+    static func requestGeometryUpdate(
+        to orientations: UIInterfaceOrientationMask,
+        in scene: UIWindowScene?
+    ) {
+        requestGeometryUpdate(to: orientations, in: scenes(matching: scene))
+    }
+
+    private static func scenes(matching scene: UIWindowScene?) -> [UIWindowScene] {
+        if let scene {
+            return [scene]
+        }
+        return UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    }
+
+    private static func requestInterfaceUpdates(in scenes: [UIWindowScene]) {
+        scenes
             .flatMap(\.windows)
+            .filter(\.participatesInAppOrientationChrome)
             .compactMap(\.rootViewController)
             .forEach { controller in
                 controller.setNeedsUpdateOfSupportedInterfaceOrientations()
                 controller.setNeedsStatusBarAppearanceUpdate()
                 controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
             }
+    }
 
-        guard requestsGeometryUpdate else { return }
-        targetScenes.forEach { scene in
+    private static func requestGeometryUpdate(
+        to orientations: UIInterfaceOrientationMask,
+        in scenes: [UIWindowScene]
+    ) {
+        scenes.forEach { scene in
             scene.requestGeometryUpdate(
                 UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientations)
             ) { _ in }
         }
     }
+}
 
-    static func restorePortrait(in scene: UIWindowScene? = nil) {
-        update(to: .portrait, in: scene)
-        let scenes = scene.map { [$0] } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        scenes.forEach { scene in
-            scene.requestGeometryUpdate(
-                UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: .portrait)
-            ) { _ in }
-        }
+private extension UIWindow {
+    var participatesInAppOrientationChrome: Bool {
+        !isHidden
+            && alpha > 0
+            && !(self is PlayerHostWindow)
     }
 }
 
@@ -82,7 +104,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
 @MainActor
 enum LaunchAppearance {
-    static let backgroundColor = UIColor(red: 0.965, green: 0.973, blue: 0.984, alpha: 1)
+    static let backgroundColor = UIColor(named: "CiliciliDynamicLaunchBackground") ?? UIColor { traitCollection in
+        traitCollection.userInterfaceStyle == .dark
+            ? UIColor(red: 0.047, green: 0.051, blue: 0.055, alpha: 1)
+            : UIColor(red: 0.965, green: 0.973, blue: 0.984, alpha: 1)
+    }
 
     static func apply(to window: UIWindow?) {
         guard let window else { return }

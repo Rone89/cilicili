@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 
 @MainActor
 final class VideoDetailViewModelHolder: ObservableObject {
@@ -11,23 +12,40 @@ final class VideoDetailViewModelHolder: ObservableObject {
         libraryStore: LibraryStore,
         sponsorBlockService: SponsorBlockService
     ) {
-        if viewModel == nil {
-            let viewModel = VideoDetailViewModel(
+        guard viewModel == nil else { return }
+        installViewModel(
+            makeViewModel(
                 seedVideo: seedVideo,
                 api: api,
                 libraryStore: libraryStore,
                 sponsorBlockService: sponsorBlockService
             )
-            self.viewModel = viewModel
-            cleanupPlayback = { [weak viewModel] in
-                Task { @MainActor [weak viewModel] in
-                    viewModel?.stopPlaybackForNavigation()
-                }
-            }
-        }
+        )
     }
 
     deinit {
         cleanupPlayback?()
+    }
+
+    private func makeViewModel(
+        seedVideo: VideoItem,
+        api: BiliAPIClient,
+        libraryStore: LibraryStore,
+        sponsorBlockService: SponsorBlockService
+    ) -> VideoDetailViewModel {
+        VideoDetailViewModel(
+            seedVideo: seedVideo,
+            api: api,
+            libraryStore: libraryStore,
+            sponsorBlockService: sponsorBlockService
+        )
+    }
+
+    private func installViewModel(_ viewModel: VideoDetailViewModel) {
+        self.viewModel = viewModel
+        cleanupPlayback = VideoDetailViewModelHolderCleanupActions(
+            viewModel: viewModel
+        )
+        .makeCleanupPlayback()
     }
 }

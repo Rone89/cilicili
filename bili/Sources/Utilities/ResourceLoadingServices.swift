@@ -1379,6 +1379,7 @@ nonisolated enum ResourceCacheLimitSettings {
     static let minimumLimitMegabytes = 256
     static let maximumLimitMegabytes = 4096
     static let limitStepMegabytes = 256
+    static let limitMegabytePresets = [256, 512, 1024, 2048, 4096]
 
     static var isEnabled: Bool {
         guard UserDefaults.standard.object(forKey: isEnabledKey) != nil else {
@@ -1399,7 +1400,14 @@ nonisolated enum ResourceCacheLimitSettings {
     }
 
     static func clampedMegabytes(_ value: Int) -> Int {
-        min(max(value, minimumLimitMegabytes), maximumLimitMegabytes)
+        normalizedLimitMegabytes(value)
+    }
+
+    static func normalizedLimitMegabytes(_ value: Int) -> Int {
+        let clampedValue = min(max(value, minimumLimitMegabytes), maximumLimitMegabytes)
+        return limitMegabytePresets.min { lhs, rhs in
+            abs(lhs - clampedValue) < abs(rhs - clampedValue)
+        } ?? defaultLimitMegabytes
     }
 }
 
