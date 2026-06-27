@@ -105,8 +105,7 @@ struct DynamicArchivePreview: View {
             }
         }
         .background(BiliMediaPlaceholder(style: .video, iconSize: 16))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .mediaShadow(.control)
+        .videoCoverSurface(cornerRadius: 16, shadowLevel: .control)
     }
 
     private var metadata: some View {

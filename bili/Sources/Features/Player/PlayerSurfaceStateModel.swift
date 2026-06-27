@@ -136,6 +136,11 @@ final class PlayerSurfaceStateModel: ObservableObject {
             .sink { _ in refresh() }
             .store(in: &cancellables)
 
+        viewModel.$isPictureInPictureEnabled
+            .removeDuplicates()
+            .sink { _ in refresh() }
+            .store(in: &cancellables)
+
         viewModel.$engineDiagnostics
             .removeDuplicates()
             .sink { _ in refresh() }

@@ -95,6 +95,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playerRenderingEnginePreference: PlayerRenderingEnginePreference
     @Published private(set) var videoCodecPreference: VideoCodecPreference
     @Published private(set) var playbackCDNPreference: PlaybackCDNPreference
+    @Published private(set) var playbackCustomCDNHost: String?
     @Published private(set) var playbackCDNProbeRefreshPolicy: PlaybackCDNProbeRefreshPolicy
     @Published private(set) var playbackCDNProbeRefreshIntervalMinutes: Int
     @Published private(set) var playbackNetworkAddressFamilyPreference: PlaybackNetworkAddressFamilyPreference
@@ -106,6 +107,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
+    @Published private(set) var pictureInPictureEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var showsVideoDetailNetworkDiagnosticsButton: Bool
     @Published private(set) var showsVideoDetailPinnedProgressBar: Bool
@@ -128,6 +130,7 @@ final class LibraryStore: ObservableObject {
     private static let playerRenderingEnginePreferenceKey = PlayerRenderingEnginePreference.storageKey
     private static let videoCodecPreferenceKey = VideoCodecPreference.storageKey
     private static let playbackCDNPreferenceKey = "cc.bili.playback.cdnPreference.v1"
+    private static let playbackCustomCDNHostKey = PlaybackCDNPreference.customHostStorageKey
     private static let playbackCDNProbeRefreshPolicyKey = "cc.bili.playback.cdnProbeRefreshPolicy.v1"
     private static let playbackCDNProbeRefreshIntervalMinutesKey = "cc.bili.playback.cdnProbeRefreshIntervalMinutes.v1"
     private static let playbackNetworkAddressFamilyPreferenceKey = "cc.bili.playback.networkAddressFamilyPreference.v1"
@@ -140,6 +143,7 @@ final class LibraryStore: ObservableObject {
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
+    private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let showsVideoDetailNetworkDiagnosticsButtonKey = "cc.bili.videoDetail.showsNetworkDiagnosticsButton.v1"
     private static let showsVideoDetailPinnedProgressBarKey = "cc.bili.videoDetail.showsPinnedProgressBar.v1"
@@ -240,6 +244,9 @@ final class LibraryStore: ObservableObject {
         self.playbackCDNPreference = PlaybackCDNPreference(
             rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
         ) ?? .automatic
+        self.playbackCustomCDNHost = PlaybackCDNPreference.normalizedCustomHost(
+            userDefaults.string(forKey: Self.playbackCustomCDNHostKey)
+        )
         self.playbackCDNProbeRefreshPolicy = PlaybackCDNProbeRefreshPolicy(
             rawValue: userDefaults.string(forKey: Self.playbackCDNProbeRefreshPolicyKey) ?? ""
         ) ?? .interval
@@ -280,6 +287,7 @@ final class LibraryStore: ObservableObject {
             self.danmakuSettings = .default
         }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
+        self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? false
         self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
@@ -355,6 +363,19 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(preference.rawValue, forKey: Self.playbackCDNPreferenceKey)
     }
 
+    func setPlaybackCustomCDNHost(_ host: String?) {
+        let normalizedHost = PlaybackCDNPreference.normalizedCustomHost(host)
+        guard playbackCustomCDNHost != normalizedHost else { return }
+        playbackCustomCDNHost = normalizedHost
+        clearTemporaryPlaybackCDNAvoidance()
+        clearPlaybackCDNProbeSnapshots()
+        if let normalizedHost {
+            userDefaults.set(normalizedHost, forKey: Self.playbackCustomCDNHostKey)
+        } else {
+            userDefaults.removeObject(forKey: Self.playbackCustomCDNHostKey)
+        }
+    }
+
     func setPlaybackCDNProbeRefreshPolicy(_ policy: PlaybackCDNProbeRefreshPolicy) {
         playbackCDNProbeRefreshPolicy = policy
         userDefaults.set(policy.rawValue, forKey: Self.playbackCDNProbeRefreshPolicyKey)
@@ -421,13 +442,13 @@ final class LibraryStore: ObservableObject {
         var candidates = [PlaybackCDNPreference]()
         func appendCandidate(_ preference: PlaybackCDNPreference?) {
             guard let preference,
-                  snapshot.result(for: preference)?.didSucceed == true,
+                  snapshot.result(for: preference)?.isActionableForPlaybackRecommendation == true,
                   seenPreferences.insert(preference).inserted
             else { return }
             candidates.append(preference)
         }
         appendCandidate(snapshot.recommendedPreference)
-        snapshot.successfulResults.forEach { appendCandidate($0.preference) }
+        snapshot.actionableResults.forEach { appendCandidate($0.preference) }
         return candidates.first { !isPlaybackCDNTemporarilyAvoided($0) }
     }
 
@@ -538,6 +559,11 @@ final class LibraryStore: ObservableObject {
     func setSponsorBlockEnabled(_ isEnabled: Bool) {
         sponsorBlockEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.sponsorBlockEnabledKey)
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        pictureInPictureEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

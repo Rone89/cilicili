@@ -49,7 +49,7 @@ enum PlaybackCDNProbeRefreshPolicy: String, CaseIterable, Identifiable, Codable,
         case .interval:
             return "测速结果过期后自动刷新，可自定义间隔。"
         case .appLaunch:
-            return "App 启动或回到前台时自动测速并更新推荐 CDN。"
+            return "App 启动或回到前台时自动刷新 CDN 参考；没有真实播放地址时不会更新推荐。"
         }
     }
 }
@@ -243,6 +243,7 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
     case automatic
     case baseURL
     case backupURL
+    case custom
     case ali
     case alib
     case alio1
@@ -263,6 +264,8 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
     case hwov
     case hkBCache
 
+    nonisolated static let customHostStorageKey = "cc.bili.playback.customCDNHost.v1"
+
     nonisolated var id: String { rawValue }
 
     nonisolated var title: String {
@@ -273,6 +276,11 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
             return "基础 URL"
         case .backupURL:
             return "备用 URL"
+        case .custom:
+            if let host = Self.customHost {
+                return "自定义 \(host)"
+            }
+            return "自定义 CDN"
         case .ali:
             return "阿里云 ali"
         case .alib:
@@ -322,6 +330,8 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
             return "优先使用接口返回的原始地址"
         case .backupURL:
             return "优先使用接口返回的备用地址"
+        case .custom:
+            return "将可安全改写的媒体播放地址切换到自定义 CDN Host，接口地址不会被替换"
         case .ali, .alib, .alio1:
             return "阿里云 CDN"
         case .cos, .cosb, .coso1, .tfTX:
@@ -337,6 +347,8 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
         switch self {
         case .automatic, .baseURL, .backupURL:
             return nil
+        case .custom:
+            return Self.customHost
         case .ali:
             return "upos-sz-mirrorali.bilivideo.com"
         case .alib:
@@ -382,8 +394,47 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
         host != nil
     }
 
+    nonisolated var cacheKey: String {
+        guard self == .custom else { return rawValue }
+        return [rawValue, host ?? "-"].joined(separator: ":")
+    }
+
+    nonisolated static var customHost: String? {
+        normalizedCustomHost(UserDefaults.standard.string(forKey: customHostStorageKey))
+    }
+
     nonisolated static var manualProbeCandidates: [PlaybackCDNPreference] {
         allCases.filter(\.isManualHost)
+    }
+
+    nonisolated static func normalizedCustomHost(_ rawHost: String?) -> String? {
+        guard var host = rawHost?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !host.isEmpty
+        else { return nil }
+        if let url = URL(string: host), let parsedHost = url.host {
+            host = parsedHost
+        } else if let url = URL(string: "https://\(host)"), let parsedHost = url.host {
+            host = parsedHost
+        }
+        host = host
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        guard !host.isEmpty,
+              host.count <= 253,
+              host.contains(".")
+        else { return nil }
+        let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-.")
+        guard host.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else { return nil }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2 else { return nil }
+        for label in labels {
+            guard !label.isEmpty,
+                  label.count <= 63,
+                  label.first != "-",
+                  label.last != "-"
+            else { return nil }
+        }
+        return host
     }
 
     nonisolated func preferredURLs(primary: URL?, backups: [URL]) -> (primary: URL?, backups: [URL]) {
@@ -465,10 +516,10 @@ private extension URL {
               let host = host?.lowercased()
         else { return false }
         if host.hasPrefix("upos-"), !host.contains("-302.") {
-            return host.contains(".bilivideo.") || host.contains(".akamaized.")
+            return host.isKnownBiliMediaCDNHost
         }
         if host.hasPrefix("upos-tf-") || host.hasPrefix("proxy-tf-") {
-            return host.contains(".bilivideo.") || host.contains(".akamaized.")
+            return host.isKnownBiliMediaCDNHost
         }
         return false
     }
@@ -520,6 +571,15 @@ private extension URL {
         components.host = sourceHost?.isEmpty == false ? sourceHost : fallbackHost
         components.port = 443
         return components.url
+    }
+}
+
+private extension String {
+    nonisolated var isKnownBiliMediaCDNHost: Bool {
+        contains(".bilivideo.")
+            || contains(".acgvideo.")
+            || contains(".akamaized.")
+            || hasSuffix(".edge.mountaintoys.cn")
     }
 }
 

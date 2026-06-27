@@ -149,6 +149,7 @@ final class DynamicFeedResourcePrefetchCoordinator {
             )
             for (index, video) in candidates.enumerated() {
                 guard !Task.isCancelled else { return }
+                let isPrimary = index == 0
                 await VideoPreloadCenter.shared.preloadPlayInfo(
                     video,
                     api: api,
@@ -156,7 +157,8 @@ final class DynamicFeedResourcePrefetchCoordinator {
                     cdnPreference: cdnPreference,
                     priority: .background,
                     warmsMedia: true,
-                    mediaWarmupDelay: index == 0 ? 0.45 : 0.9,
+                    mediaWarmupMode: isPrimary ? .full : .routePlanOnly,
+                    mediaWarmupDelay: isPrimary ? 0.45 : 0.65,
                     playbackAdaptationProfile: playbackAdaptationProfile
                 )
                 if index < candidates.count - 1 {

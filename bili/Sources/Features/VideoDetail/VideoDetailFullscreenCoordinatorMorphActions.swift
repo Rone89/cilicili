@@ -17,7 +17,7 @@ extension VideoDetailFullscreenCoordinator {
         orientation: UIDeviceOrientation
     ) {
         guard playerViewModel?.isTerminated != true else { return }
-        let usesWindowMask = shouldUseWindowSnapshotMask(for: playerViewModel)
+        let usesWindowMask = false
         guard let snapshot = resolvedMorphSnapshot(playerViewModel: playerViewModel) else {
             return
         }
@@ -54,7 +54,7 @@ extension VideoDetailFullscreenCoordinator {
               activeMode.isLandscape,
               playerViewModel?.isTerminated != true
         else { return }
-        let usesWindowMask = shouldUseWindowSnapshotMask(for: playerViewModel)
+        let wantsWindowMask = shouldUseWindowSnapshotMask(for: playerViewModel)
         guard let snapshot = resolvedMorphSnapshot(playerViewModel: playerViewModel) else {
             PlayerMetricsLog.diagnostic("fullscreenExit morphPrepare skipped snapshot=false")
             return
@@ -73,6 +73,11 @@ extension VideoDetailFullscreenCoordinator {
               targetFrame.width > 1, targetFrame.height > 1
         else { return }
 
+        let usesWindowMask = wantsWindowMask
+            && VideoDetailRotationWindowMask.hold(
+                snapshot: snapshot,
+                frame: sourceFrame
+            )
         PlayerMetricsLog.diagnostic(
             "fullscreenExit morphPrepare usesWindowMask=\(usesWindowMask) snapshotVideo=\(snapshot.isVideoFrame) source=\(sourceFrame) target=\(targetFrame)"
         )
@@ -96,7 +101,16 @@ extension VideoDetailFullscreenCoordinator {
             "fullscreenExit morphRun usesWindowMask=\(state.usesWindowMask) snapshotVideo=\(state.snapshot.isVideoFrame)"
         )
         animatePreparedMorph(phase: .exiting)
-        VideoDetailRotationWindowMask.remove()
+        if state.usesWindowMask {
+            _ = VideoDetailRotationWindowMask.animateHeldSnapshot(
+                from: state.sourceFrame,
+                to: state.targetFrame,
+                duration: Self.morphTransitionDuration,
+                releasesOnCompletion: false
+            )
+        } else {
+            VideoDetailRotationWindowMask.remove()
+        }
         // Exits are cleared by finishCompletingExit after the portrait surface is
         // ready, or after its explicit fallback wait. Letting this timer run here
         // can expose a not-yet-ready portrait surface mid-rotation.
@@ -239,6 +253,6 @@ extension VideoDetailFullscreenCoordinator {
     }
 
     private func shouldUseWindowSnapshotMask(for _: PlayerStateViewModel?) -> Bool {
-        return false
+        activeMode?.isLandscape == true
     }
 }

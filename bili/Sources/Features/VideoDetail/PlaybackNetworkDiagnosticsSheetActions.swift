@@ -25,6 +25,9 @@ extension PlaybackNetworkDiagnosticsSheet {
         let token = UUID()
         let metricsID = diagnosticsStore.metricsID
         let addressFamilyPreference = libraryStore.playbackNetworkAddressFamilyPreference
+        let playbackURLs = PlaybackNetworkDiagnosticsURLContext.playbackCDNProbeURLs(
+            variant: runtimeContext.variant
+        )
 
         sheetState.playbackCDNProbeTask?.cancel()
         sheetState.playbackCDNProbeToken = token
@@ -33,7 +36,8 @@ extension PlaybackNetworkDiagnosticsSheet {
 
         sheetState.playbackCDNProbeTask = Task { @MainActor in
             let result = await PlaybackNetworkDiagnosticsProbeAction.run(
-                addressFamilyPreference: addressFamilyPreference
+                addressFamilyPreference: addressFamilyPreference,
+                playbackURLs: playbackURLs
             )
             guard !Task.isCancelled,
                   sheetState.playbackCDNProbeToken == token,

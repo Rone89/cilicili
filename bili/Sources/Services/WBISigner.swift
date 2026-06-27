@@ -51,6 +51,37 @@ nonisolated enum WBISigner {
     }
 }
 
+nonisolated enum BiliAppSigner {
+    private static let appKey = "dfca71928277209b"
+    private static let appSecret = "b5475a8825547a4fc26c7d518eaaa02e"
+
+    static func sign(_ params: [String: String], timestamp: Int = Int(Date().timeIntervalSince1970)) -> [String: String] {
+        var all = params
+        all["appkey"] = appKey
+        all["ts"] = String(timestamp)
+
+        let query = all.keys
+            .sorted()
+            .map { key -> String in
+                "\(appSignValue(key))=\(appSignValue(all[key] ?? ""))"
+            }
+            .joined(separator: "&")
+
+        all["sign"] = md5(query + appSecret)
+        return all
+    }
+
+    private static func appSignValue(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .biliAppQueryValueAllowed) ?? value
+    }
+
+    private static func md5(_ value: String) -> String {
+        let digest = Insecure.MD5.hash(data: Data(value.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 nonisolated private extension CharacterSet {
     static let wbiQueryValueAllowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
+    static let biliAppQueryValueAllowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
 }

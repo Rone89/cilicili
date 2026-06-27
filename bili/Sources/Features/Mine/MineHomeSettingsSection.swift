@@ -28,7 +28,23 @@ struct MineHomeSettingsSection: View {
             }
             .pickerStyle(.navigationLink)
 
+            Text(recommendSourceHint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             MineHomeRefreshDistanceControl(libraryStore: libraryStore)
+        }
+    }
+
+    private var recommendSourceHint: String {
+        switch libraryStore.homeRecommendFeedSourcePreference {
+        case .web:
+            return "网页端更稳定；App 端更接近 B 站 App 的推荐。"
+        case .app:
+            if libraryStore.guestModeEnabled {
+                return "当前是 App 端游客推荐：隐私里的游客推荐模式已开启，不会使用你的账号画像。"
+            }
+            return "当前是 App 端账号推荐：会带登录状态请求移动端推荐，更接近你的账号推荐。"
         }
     }
 }

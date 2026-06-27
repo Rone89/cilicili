@@ -7,6 +7,7 @@ nonisolated struct VideoCardDisplayModel: Identifiable, Equatable {
     let viewText: String
     let durationText: String
     let publishTimeText: String
+    let recommendReasonText: String
     let metadataSummaryText: String
     let coverURL: URL?
     let largeCoverURL: URL?
@@ -22,7 +23,10 @@ nonisolated struct VideoCardDisplayModel: Identifiable, Equatable {
         durationText = BiliFormatters.duration(video.duration)
         let formattedPublishTime = BiliFormatters.relativeTime(video.pubdate)
         publishTimeText = formattedPublishTime.isEmpty ? "投稿" : formattedPublishTime
+        recommendReasonText = video.recommendReason?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         metadataSummaryText = [
+            recommendReasonText.isEmpty ? nil : recommendReasonText,
             authorName,
             viewText.isEmpty ? nil : "\(viewText)次观看",
             publishTimeText

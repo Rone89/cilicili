@@ -35,8 +35,7 @@ struct VideoCardBlendedBody<Cover: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             cover
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .mediaShadow(.control)
+                .videoCoverSurface(cornerRadius: 15, shadowLevel: .control)
 
             VideoCardTextStack(
                 display: display,

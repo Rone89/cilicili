@@ -18,6 +18,10 @@ struct PlaybackNetworkProbeSection: View {
                     title: "测速参考",
                     value: snapshot.recommendedPreference?.title ?? "暂无参考"
                 )
+                PlaybackNetworkDiagnosticRow(
+                    title: "测速模式",
+                    value: snapshot.isWeakReferenceOnly ? "Host 裸探测弱参考" : "真实播放 URL 优先"
+                )
 
                 if let recommendation = snapshot.recommendedPreference,
                    let result = snapshot.result(for: recommendation) {
@@ -27,7 +31,13 @@ struct PlaybackNetworkProbeSection: View {
                     )
                 }
 
-                if !snapshot.successfulResults.isEmpty {
+                if snapshot.isWeakReferenceOnly {
+                    Label("本次没有真实播放地址，只能判断 Host 是否有响应；403/959 是 CDN 拒绝裸探测，不代表真实播放失败。", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if !snapshot.results.isEmpty {
                     DisclosureGroup {
                         ForEach(snapshot.results.prefix(8)) { result in
                             PlaybackNetworkProbeResultRow(result: result)

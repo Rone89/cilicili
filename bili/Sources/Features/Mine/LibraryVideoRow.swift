@@ -27,8 +27,7 @@ private struct LibraryVideoCover: View {
             Color.gray.opacity(0.14)
         }
         .frame(width: 92, height: 58)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .mediaShadow(.subtle)
+        .videoCoverSurface(cornerRadius: 8, shadowLevel: .subtle)
     }
 }
 

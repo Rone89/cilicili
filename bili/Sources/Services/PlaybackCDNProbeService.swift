@@ -1,12 +1,32 @@
 import Foundation
 import Darwin
 
+enum PlaybackCDNProbeMode: String, Codable, Equatable, Sendable {
+    case realPlaybackURL
+    case bareHostFallback
+
+    var title: String {
+        switch self {
+        case .realPlaybackURL:
+            return "真实播放 URL"
+        case .bareHostFallback:
+            return "Host 裸探测"
+        }
+    }
+}
+
 struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
     let preference: PlaybackCDNPreference
     let elapsedMilliseconds: Int?
     let didSucceed: Bool
     let errorDescription: String?
     let addressFamily: PlaybackNetworkAddressFamily?
+    let probeMode: PlaybackCDNProbeMode
+    let httpStatusCode: Int?
+    let hostWasRewritten: Bool
+    let isWeakReference: Bool
+    let probedHost: String?
+    let probePathDescription: String?
 
     private enum CodingKeys: String, CodingKey {
         case preference
@@ -14,6 +34,12 @@ struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
         case didSucceed
         case errorDescription
         case addressFamily
+        case probeMode
+        case httpStatusCode
+        case hostWasRewritten
+        case isWeakReference
+        case probedHost
+        case probePathDescription
     }
 
     init(
@@ -21,13 +47,25 @@ struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
         elapsedMilliseconds: Int?,
         didSucceed: Bool,
         errorDescription: String?,
-        addressFamily: PlaybackNetworkAddressFamily? = nil
+        addressFamily: PlaybackNetworkAddressFamily? = nil,
+        probeMode: PlaybackCDNProbeMode = .bareHostFallback,
+        httpStatusCode: Int? = nil,
+        hostWasRewritten: Bool = false,
+        isWeakReference: Bool = false,
+        probedHost: String? = nil,
+        probePathDescription: String? = nil
     ) {
         self.preference = preference
         self.elapsedMilliseconds = elapsedMilliseconds
         self.didSucceed = didSucceed
         self.errorDescription = errorDescription
         self.addressFamily = addressFamily
+        self.probeMode = probeMode
+        self.httpStatusCode = httpStatusCode
+        self.hostWasRewritten = hostWasRewritten
+        self.isWeakReference = isWeakReference
+        self.probedHost = probedHost
+        self.probePathDescription = probePathDescription
     }
 
     init(from decoder: Decoder) throws {
@@ -37,13 +75,48 @@ struct PlaybackCDNProbeResult: Identifiable, Codable, Equatable, Sendable {
         self.didSucceed = try container.decode(Bool.self, forKey: .didSucceed)
         self.errorDescription = try container.decodeIfPresent(String.self, forKey: .errorDescription)
         self.addressFamily = try container.decodeIfPresent(PlaybackNetworkAddressFamily.self, forKey: .addressFamily)
+        self.probeMode = try container.decodeIfPresent(PlaybackCDNProbeMode.self, forKey: .probeMode) ?? .bareHostFallback
+        self.httpStatusCode = try container.decodeIfPresent(Int.self, forKey: .httpStatusCode)
+        self.hostWasRewritten = try container.decodeIfPresent(Bool.self, forKey: .hostWasRewritten) ?? false
+        self.isWeakReference = try container.decodeIfPresent(Bool.self, forKey: .isWeakReference) ?? false
+        self.probedHost = try container.decodeIfPresent(String.self, forKey: .probedHost)
+        self.probePathDescription = try container.decodeIfPresent(String.self, forKey: .probePathDescription)
     }
 
     var id: PlaybackCDNPreference { preference }
 
+    var isActionableForPlaybackRecommendation: Bool {
+        didSucceed && !isWeakReference && elapsedMilliseconds != nil
+    }
+
     var failureReason: String? {
         guard !didSucceed else { return nil }
         return errorDescription?.isEmpty == false ? errorDescription : "连接失败"
+    }
+
+    var userFacingStatus: String {
+        if didSucceed {
+            switch probeMode {
+            case .realPlaybackURL:
+                return "真实播放 URL 探测成功"
+            case .bareHostFallback:
+                return "Host 可达（弱参考）"
+            }
+        }
+        if probeMode == .bareHostFallback,
+           let httpStatusCode,
+           Self.isBareHostRejectionStatus(httpStatusCode) {
+            return "CDN 拒绝裸探测（弱参考）"
+        }
+        return failureReason ?? "连接失败"
+    }
+
+    var httpStatusTitle: String? {
+        httpStatusCode.map { "HTTP \($0)" }
+    }
+
+    private static func isBareHostRejectionStatus(_ statusCode: Int) -> Bool {
+        statusCode == 403 || statusCode == 959
     }
 }
 
@@ -56,6 +129,14 @@ struct PlaybackCDNProbeSnapshot: Codable, Equatable, Sendable {
 
     var successfulResults: [PlaybackCDNProbeResult] {
         results.filter { $0.didSucceed && $0.elapsedMilliseconds != nil }
+    }
+
+    var actionableResults: [PlaybackCDNProbeResult] {
+        results.filter(\.isActionableForPlaybackRecommendation)
+    }
+
+    var isWeakReferenceOnly: Bool {
+        !results.isEmpty && results.allSatisfy(\.isWeakReference)
     }
 
     func result(for preference: PlaybackCDNPreference) -> PlaybackCDNProbeResult? {
@@ -268,9 +349,11 @@ final class PlaybackCDNProbeCoordinator {
 enum PlaybackCDNProbeService {
     private static let probePath = "/upgcxcode/00/00/1/1.m4s"
     private static let timeout: TimeInterval = 2.2
+    private static let acceptedSmallBodyLimit = 16 * 1024
 
     static func probeAll(
-        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic
+        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic,
+        playbackURLs: [URL] = []
     ) async -> [PlaybackCDNProbeResult] {
         let candidates = PlaybackCDNPreference.manualProbeCandidates
         return await withTaskGroup(of: PlaybackCDNProbeResult.self) { group in
@@ -278,7 +361,8 @@ enum PlaybackCDNProbeService {
                 group.addTask(priority: .utility) {
                     await probe(
                         candidate,
-                        addressFamilyPreference: addressFamilyPreference
+                        addressFamilyPreference: addressFamilyPreference,
+                        playbackURLs: playbackURLs
                     )
                 }
             }
@@ -293,14 +377,16 @@ enum PlaybackCDNProbeService {
 
     static func quickRecommendedSnapshot(
         addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic,
+        playbackURLs: [URL] = [],
         timeout: TimeInterval = 0.55
     ) async -> PlaybackCDNProbeSnapshot {
         let results = await quickProbeResults(
             addressFamilyPreference: addressFamilyPreference,
+            playbackURLs: playbackURLs,
             timeout: timeout
         )
         let recommendation = results.first {
-            $0.didSucceed && $0.elapsedMilliseconds != nil
+            $0.isActionableForPlaybackRecommendation
         }?.preference
         return PlaybackCDNProbeSnapshot(
             probedAt: Date(),
@@ -310,20 +396,26 @@ enum PlaybackCDNProbeService {
     }
 
     static func recommendedPreference(
-        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic
+        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic,
+        playbackURLs: [URL] = []
     ) async -> (preference: PlaybackCDNPreference?, results: [PlaybackCDNProbeResult]) {
-        let results = await probeAll(addressFamilyPreference: addressFamilyPreference)
+        let results = await probeAll(
+            addressFamilyPreference: addressFamilyPreference,
+            playbackURLs: playbackURLs
+        )
         let recommendation = results.first {
-            $0.didSucceed && $0.elapsedMilliseconds != nil
+            $0.isActionableForPlaybackRecommendation
         }?.preference
         return (recommendation, results)
     }
 
     static func recommendedSnapshot(
-        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic
+        addressFamilyPreference: PlaybackNetworkAddressFamilyPreference = .automatic,
+        playbackURLs: [URL] = []
     ) async -> PlaybackCDNProbeSnapshot {
         let recommendation = await recommendedPreference(
-            addressFamilyPreference: addressFamilyPreference
+            addressFamilyPreference: addressFamilyPreference,
+            playbackURLs: playbackURLs
         )
         return PlaybackCDNProbeSnapshot(
             probedAt: Date(),
@@ -335,16 +427,16 @@ enum PlaybackCDNProbeService {
     private static func probe(
         _ preference: PlaybackCDNPreference,
         addressFamilyPreference: PlaybackNetworkAddressFamilyPreference,
+        playbackURLs: [URL],
         timeout: TimeInterval = 2.2
     ) async -> PlaybackCDNProbeResult {
-        guard let host = preference.host,
-              let url = URL(string: "https://\(host)\(probePath)")
-        else {
+        guard let host = preference.host else {
             return PlaybackCDNProbeResult(
                 preference: preference,
                 elapsedMilliseconds: nil,
                 didSucceed: false,
-                errorDescription: "没有可测速 Host"
+                errorDescription: "没有可测速 Host",
+                probeMode: .bareHostFallback
             )
         }
 
@@ -357,7 +449,9 @@ enum PlaybackCDNProbeService {
                         elapsedMilliseconds: nil,
                         didSucceed: false,
                         errorDescription: "未解析到 \(requiredFamily.title) 地址",
-                        addressFamily: nil
+                        addressFamily: nil,
+                        probeMode: playbackURLs.isEmpty ? .bareHostFallback : .realPlaybackURL,
+                        probedHost: host
                     )
                 }
             } catch {
@@ -366,11 +460,31 @@ enum PlaybackCDNProbeService {
                     elapsedMilliseconds: nil,
                     didSucceed: false,
                     errorDescription: dnsFailureDescription(error),
-                    addressFamily: nil
+                    addressFamily: nil,
+                    probeMode: playbackURLs.isEmpty ? .bareHostFallback : .realPlaybackURL,
+                    probedHost: host
                 )
             }
         }
 
+        let target = probeTarget(
+            preference: preference,
+            host: host,
+            playbackURLs: playbackURLs
+        )
+        guard let target else {
+            return PlaybackCDNProbeResult(
+                preference: preference,
+                elapsedMilliseconds: nil,
+                didSucceed: false,
+                errorDescription: playbackURLs.isEmpty ? "没有可测速 Host" : "当前播放 URL 不能安全改写到该 CDN",
+                addressFamily: addressFamilyPreference.requiredFamily,
+                probeMode: playbackURLs.isEmpty ? .bareHostFallback : .realPlaybackURL,
+                probedHost: host
+            )
+        }
+
+        let url = target.url
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -382,20 +496,30 @@ enum PlaybackCDNProbeService {
 
         let start = Date()
         do {
-            let (_, response) = try await BiliNetworkRetry.data(
+            let (data, response) = try await BiliNetworkRetry.data(
                 sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
                 request: request,
                 policy: .playbackProbe
             )
             let elapsed = Int(Date().timeIntervalSince(start) * 1000)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let didSucceed = (200..<400).contains(statusCode) || statusCode == 403
+            let didSucceed = didProbeSucceed(
+                statusCode: statusCode,
+                responseByteCount: data.count,
+                mode: target.mode
+            )
             return PlaybackCDNProbeResult(
                 preference: preference,
                 elapsedMilliseconds: elapsed,
                 didSucceed: didSucceed,
-                errorDescription: didSucceed ? nil : httpFailureDescription(statusCode: statusCode),
-                addressFamily: addressFamilyPreference.requiredFamily
+                errorDescription: didSucceed ? nil : httpFailureDescription(statusCode: statusCode, mode: target.mode),
+                addressFamily: addressFamilyPreference.requiredFamily,
+                probeMode: target.mode,
+                httpStatusCode: statusCode,
+                hostWasRewritten: target.hostWasRewritten,
+                isWeakReference: target.isWeakReference,
+                probedHost: url.host,
+                probePathDescription: pathDescription(for: url)
             )
         } catch {
             let elapsed = Int(Date().timeIntervalSince(start) * 1000)
@@ -404,12 +528,76 @@ enum PlaybackCDNProbeService {
                 elapsedMilliseconds: elapsed,
                 didSucceed: false,
                 errorDescription: networkFailureDescription(error),
-                addressFamily: addressFamilyPreference.requiredFamily
+                addressFamily: addressFamilyPreference.requiredFamily,
+                probeMode: target.mode,
+                hostWasRewritten: target.hostWasRewritten,
+                isWeakReference: target.isWeakReference,
+                probedHost: url.host,
+                probePathDescription: pathDescription(for: url)
             )
         }
     }
 
-    private static func httpFailureDescription(statusCode: Int) -> String {
+    private struct ProbeTarget: Sendable {
+        let url: URL
+        let mode: PlaybackCDNProbeMode
+        let hostWasRewritten: Bool
+        let isWeakReference: Bool
+    }
+
+    private static func probeTarget(
+        preference: PlaybackCDNPreference,
+        host: String,
+        playbackURLs: [URL]
+    ) -> ProbeTarget? {
+        let playbackURLs = playbackURLs.removingDuplicateURLs()
+        if !playbackURLs.isEmpty {
+            let rewritten = preference.preferredURLs(
+                primary: playbackURLs.first,
+                backups: Array(playbackURLs.dropFirst())
+            )
+            let candidates = ([rewritten.primary].compactMap { $0 } + rewritten.backups)
+                .removingDuplicateURLs()
+            if let url = candidates.first(where: {
+                $0.host?.localizedCaseInsensitiveCompare(host) == .orderedSame
+                    && !playbackURLs.contains($0)
+            }) {
+                return ProbeTarget(
+                    url: url,
+                    mode: .realPlaybackURL,
+                    hostWasRewritten: true,
+                    isWeakReference: false
+                )
+            }
+            return nil
+        }
+
+        guard let fallbackURL = URL(string: "https://\(host)\(probePath)") else { return nil }
+        return ProbeTarget(
+            url: fallbackURL,
+            mode: .bareHostFallback,
+            hostWasRewritten: false,
+            isWeakReference: true
+        )
+    }
+
+    private static func didProbeSucceed(
+        statusCode: Int,
+        responseByteCount: Int,
+        mode: PlaybackCDNProbeMode
+    ) -> Bool {
+        if statusCode == 206 { return true }
+        if statusCode == 200 {
+            return responseByteCount <= acceptedSmallBodyLimit
+        }
+        if mode == .realPlaybackURL,
+           (300..<400).contains(statusCode) {
+            return true
+        }
+        return false
+    }
+
+    private static func httpFailureDescription(statusCode: Int, mode: PlaybackCDNProbeMode) -> String {
         switch statusCode {
         case 0:
             return "未收到 HTTP 响应"
@@ -417,6 +605,11 @@ enum PlaybackCDNProbeService {
             return "请求参数异常（HTTP 400）"
         case 401:
             return "需要鉴权（HTTP 401）"
+        case 403:
+            if mode == .bareHostFallback {
+                return "CDN 拒绝裸探测，仅代表 Host 可达性弱参考（HTTP 403）"
+            }
+            return "播放地址被拒绝（HTTP 403）"
         case 404:
             return "探测资源不存在（HTTP 404）"
         case 408:
@@ -425,6 +618,11 @@ enum PlaybackCDNProbeService {
             return "请求过于频繁（HTTP 429）"
         case 500...599:
             return "CDN 服务异常（HTTP \(statusCode)）"
+        case 959:
+            if mode == .bareHostFallback {
+                return "CDN 拒绝裸探测，仅代表 Host 可达性弱参考（HTTP 959）"
+            }
+            return "CDN 拒绝当前播放请求（HTTP 959）"
         default:
             return "HTTP 状态异常（\(statusCode)）"
         }
@@ -480,6 +678,7 @@ enum PlaybackCDNProbeService {
 
     private static func quickProbeResults(
         addressFamilyPreference: PlaybackNetworkAddressFamilyPreference,
+        playbackURLs: [URL],
         timeout: TimeInterval
     ) async -> [PlaybackCDNProbeResult] {
         let clampedTimeout = min(max(timeout, 0.12), Self.timeout)
@@ -489,6 +688,7 @@ enum PlaybackCDNProbeService {
                     await probe(
                         candidate,
                         addressFamilyPreference: addressFamilyPreference,
+                        playbackURLs: playbackURLs,
                         timeout: clampedTimeout
                     )
                 }
@@ -506,7 +706,7 @@ enum PlaybackCDNProbeService {
                     break
                 }
                 results.append(result)
-                if result.didSucceed && result.elapsedMilliseconds != nil {
+                if result.isActionableForPlaybackRecommendation {
                     group.cancelAll()
                     break
                 }
@@ -517,6 +717,9 @@ enum PlaybackCDNProbeService {
 
     private static func sortedResults(_ results: [PlaybackCDNProbeResult]) -> [PlaybackCDNProbeResult] {
         results.sorted { lhs, rhs in
+            if lhs.isActionableForPlaybackRecommendation != rhs.isActionableForPlaybackRecommendation {
+                return lhs.isActionableForPlaybackRecommendation
+            }
             if lhs.didSucceed != rhs.didSucceed {
                 return lhs.didSucceed
             }
@@ -531,6 +734,21 @@ enum PlaybackCDNProbeService {
                 return lhs.preference.title < rhs.preference.title
             }
         }
+    }
+
+    private static func pathDescription(for url: URL) -> String {
+        let path = url.path.lowercased()
+        if path.contains("/upgcxcode/") {
+            return "upgcxcode 媒体片段"
+        }
+        if path.range(of: #"^/v\d+/resource"#, options: .regularExpression) != nil {
+            return "MCDN resource"
+        }
+        let ext = url.pathExtension
+        if !ext.isEmpty {
+            return "\(ext.lowercased()) 媒体路径"
+        }
+        return "媒体路径"
     }
 
     private static func resolvedAddressFamilies(for host: String) throws -> Set<PlaybackNetworkAddressFamily> {
@@ -569,6 +787,15 @@ enum PlaybackCDNProbeService {
             pointer = current.pointee.ai_next
         }
         return families
+    }
+}
+
+private extension Array where Element == URL {
+    func removingDuplicateURLs() -> [URL] {
+        var seen = Set<String>()
+        return filter { url in
+            seen.insert(url.absoluteString).inserted
+        }
     }
 }
 

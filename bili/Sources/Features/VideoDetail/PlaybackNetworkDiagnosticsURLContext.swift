@@ -34,4 +34,21 @@ enum PlaybackNetworkDiagnosticsURLContext {
         }
         return urls
     }
+
+    static func playbackCDNProbeURLs(variant: PlayVariant?) -> [URL] {
+        guard let variant else { return [] }
+        var urls: [URL] = []
+        var seen = Set<String>()
+
+        func append(_ url: URL?) {
+            guard let url,
+                  seen.insert(url.absoluteString).inserted
+            else { return }
+            urls.append(url)
+        }
+
+        append(variant.videoURL)
+        append(variant.audioURL)
+        return urls
+    }
 }

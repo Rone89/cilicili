@@ -5,8 +5,12 @@ enum HomeFeedMergePolicy {
         fresh: [VideoItem],
         previousVideos: [VideoItem],
         mode: HomeFeedMode,
-        preservesExistingRecommendations: Bool
+        preservesExistingRecommendations: Bool,
+        usesNativeReplacement: Bool = false
     ) -> [VideoItem] {
+        if usesNativeReplacement {
+            return fresh
+        }
         if preservesExistingRecommendations {
             return prependFreshVideos(fresh, to: previousVideos, mode: mode)
         }

@@ -79,11 +79,41 @@ nonisolated struct PlaybackEnvironment: Sendable {
     }
 
     nonisolated var preferredForwardBufferDuration: TimeInterval {
-        shouldPreferConservativePlayback ? 0.35 : 0.55
+        if shouldPreferConservativePlayback {
+            switch networkClass {
+            case .wifi, .unknown:
+                return 0.55
+            case .cellular, .constrained:
+                return 0.45
+            }
+        }
+        switch networkClass {
+        case .wifi:
+            return 1.15
+        case .unknown:
+            return 0.9
+        case .cellular, .constrained:
+            return 0.45
+        }
     }
 
     nonisolated var separatedTrackForwardBufferDuration: TimeInterval {
-        shouldPreferConservativePlayback ? 0.45 : 0.75
+        if shouldPreferConservativePlayback {
+            switch networkClass {
+            case .wifi, .unknown:
+                return 0.75
+            case .cellular, .constrained:
+                return 0.6
+            }
+        }
+        switch networkClass {
+        case .wifi:
+            return 1.35
+        case .unknown:
+            return 1.0
+        case .cellular, .constrained:
+            return 0.6
+        }
     }
 
     nonisolated var startupForwardBufferDuration: TimeInterval {
@@ -108,11 +138,11 @@ nonisolated struct PlaybackEnvironment: Sendable {
     nonisolated var preferredPlayURLStartupGrace: UInt64 {
         switch networkClass {
         case .wifi:
-            return 50_000_000
+            return 180_000_000
         case .unknown:
-            return 40_000_000
+            return 140_000_000
         case .cellular, .constrained:
-            return 30_000_000
+            return 80_000_000
         }
     }
 

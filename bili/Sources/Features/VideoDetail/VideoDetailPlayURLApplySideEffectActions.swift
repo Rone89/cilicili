@@ -4,9 +4,9 @@ import QuartzCore
 extension VideoDetailViewModel {
     private static var startupPackageWarmupPlayerCreationWait: TimeInterval { 0.14 }
     private static var slowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.32 }
-    private static var av1StartupPackageWarmupPlayerCreationWait: TimeInterval { 0.56 }
+    private static var av1StartupPackageWarmupPlayerCreationWait: TimeInterval { 0.84 }
     private static var av1ConservativeStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.34 }
-    private static var av1SlowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.68 }
+    private static var av1SlowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.84 }
     private static var slowPlayURLWarmupThresholdMilliseconds: Int { 350 }
 
     func schedulePostPlayURLApplicationWork(
@@ -19,6 +19,12 @@ extension VideoDetailViewModel {
     ) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
         cancelFastStartUpgradeTask()
+        await prebuildAV1StartupPackageBeforePlayerCreationIfNeeded(
+            selectedVariant,
+            targetVariant: targetVariant,
+            cid: cid,
+            page: page
+        )
         scheduleSelectedStartupPackageWarmupAfterFirstFrame(selectedVariant, cid: cid, page: page)
         await waitForStartupPackageWarmupBeforePlayerCreationIfNeeded(
             selectedVariant,
@@ -45,6 +51,68 @@ extension VideoDetailViewModel {
                 page: page
             )
         }
+    }
+
+    private func prebuildAV1StartupPackageBeforePlayerCreationIfNeeded(
+        _ selectedVariant: PlayVariant?,
+        targetVariant: PlayVariant?,
+        cid: Int?,
+        page: Int?
+    ) async {
+        guard stablePlayerViewModel == nil,
+              !isPlaybackInvalidatedForNavigation,
+              libraryStore.isPlaybackAutoOptimizationEnabled,
+              let cid,
+              let selectedVariant,
+              selectedVariant.isPlayable,
+              Self.isAV1StartupVariant(selectedVariant)
+        else { return }
+
+        let environment = PlaybackEnvironment.current
+        guard !environment.shouldPreferConservativePlayback else { return }
+        switch environment.networkClass {
+        case .wifi, .unknown:
+            break
+        case .cellular, .constrained:
+            return
+        }
+
+        let bvid = detail.bvid
+        let selectedVariantID = selectedVariant.id
+        let result = await VideoPreloadCenter.shared.prebuildStartupPackageAndWait(
+            variant: selectedVariant,
+            targetVariant: targetVariant,
+            bvid: bvid,
+            cid: cid,
+            page: page,
+            durationHint: detail.duration.map(TimeInterval.init),
+            cdnPreference: libraryStore.effectivePlaybackCDNPreference,
+            timeout: 0
+        )
+        guard !isPlaybackInvalidatedForNavigation,
+              detail.bvid == bvid,
+              selectedCID == cid,
+              selectedPlayVariant?.id == selectedVariantID
+        else { return }
+
+        let state: String
+        switch result {
+        case .ready:
+            state = "ready"
+        case .timeout:
+            state = "queued"
+        case .missing:
+            state = "missing"
+        }
+        PlayerMetricsLog.record(
+            .manifestStage,
+            metricsID: bvid,
+            message: [
+                "av1EarlyWarmup=\(state)",
+                "variant=q\(selectedVariant.quality)",
+                "network=\(environment.networkClass.performanceSampleKey)"
+            ].joined(separator: " ")
+        )
     }
 
     private func waitForStartupPackageWarmupBeforePlayerCreationIfNeeded(

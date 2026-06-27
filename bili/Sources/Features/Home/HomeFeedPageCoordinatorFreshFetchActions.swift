@@ -10,6 +10,9 @@ extension HomeFeedPageCoordinator {
         case .popular:
             return try await api.fetchPopularVideos(page: popularPage)
         case .recommend:
+            if usesNativeAppRecommendSource(for: mode) {
+                return try await api.fetchRecommendFeed(freshIndex: freshIndex)
+            }
             if usesGuestRecommendDiversity(for: mode) {
                 return try await fetchGuestRecommendPage(
                     excluding: Set(previousIDs),

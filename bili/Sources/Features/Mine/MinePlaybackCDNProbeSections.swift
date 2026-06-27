@@ -6,7 +6,7 @@ extension MinePlaybackSettingsView {
             return PlaybackCDNProbeSnapshot(
                 probedAt: Date(),
                 recommendedPreference: playbackCDNProbeResults.first {
-                    $0.didSucceed && $0.elapsedMilliseconds != nil
+                    $0.isActionableForPlaybackRecommendation
                 }?.preference,
                 results: playbackCDNProbeResults
             )
@@ -42,6 +42,12 @@ extension MinePlaybackSettingsView {
                 Text("上次测速 \(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(isPlaybackCDNProbeSnapshotExpired(snapshot) ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
+
+                if snapshot.isWeakReferenceOnly {
+                    Label("本次没有真实播放地址，只是 Host 连通性弱参考；403/959 不代表真实播放失败。", systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
 
                 if libraryStore.playbackCDNPreference == .automatic,
                    let activeRecommendation = libraryStore.automaticPlaybackCDNRecommendation {
@@ -102,10 +108,26 @@ extension MinePlaybackSettingsView {
             }
             .font(.caption)
 
-            if let failureReason = result.failureReason {
-                Label(failureReason, systemImage: "exclamationmark.triangle")
+            HStack(spacing: 6) {
+                Text(result.userFacingStatus)
+                if let httpStatusTitle = result.httpStatusTitle {
+                    Text(httpStatusTitle)
+                }
+                if result.hostWasRewritten {
+                    Text("已重写 Host")
+                }
+                if result.isWeakReference {
+                    Text("弱参考")
+                }
+            }
+            .font(.caption2)
+            .lineLimit(2)
+
+            if let probedHost = result.probedHost {
+                Text([probedHost, result.probePathDescription].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption2)
                     .lineLimit(2)
+                    .foregroundStyle(.tertiary)
             }
         }
         .foregroundStyle(result.didSucceed ? .secondary : .tertiary)

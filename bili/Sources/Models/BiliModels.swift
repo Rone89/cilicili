@@ -133,10 +133,11 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     let dimension: VideoDimension?
     let historyResumeTime: TimeInterval?
     let historyCID: Int?
+    let recommendReason: String?
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, desc, duration, pubdate, owner, stat, cid, pages, dimension
-        case historyResumeTime, historyCID
+        case historyResumeTime, historyCID, recommendReason
     }
 
     init(
@@ -153,7 +154,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         pages: [VideoPage]?,
         dimension: VideoDimension?,
         historyResumeTime: TimeInterval? = nil,
-        historyCID: Int? = nil
+        historyCID: Int? = nil,
+        recommendReason: String? = nil
     ) {
         self.bvid = bvid
         self.aid = aid
@@ -169,6 +171,7 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         self.dimension = dimension
         self.historyResumeTime = historyResumeTime
         self.historyCID = historyCID
+        self.recommendReason = recommendReason
     }
 
     nonisolated func mergingFilledValues(from fullDetail: VideoItem) -> VideoItem {
@@ -186,7 +189,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             pages: fullDetail.pages ?? pages,
             dimension: fullDetail.dimension ?? dimension,
             historyResumeTime: historyResumeTime ?? fullDetail.historyResumeTime,
-            historyCID: historyCID ?? fullDetail.historyCID
+            historyCID: historyCID ?? fullDetail.historyCID,
+            recommendReason: recommendReason ?? fullDetail.recommendReason
         )
     }
 }
@@ -380,6 +384,26 @@ nonisolated struct RecommendFeedData: Decodable, Sendable {
     }
 }
 
+nonisolated struct RecommendFeedReason: Decodable, Hashable, Sendable {
+    let content: String?
+
+    enum CodingKeys: String, CodingKey {
+        case content, text, reason
+    }
+
+    init(from decoder: Decoder) throws {
+        if let value = try? decoder.singleValueContainer().decode(String.self) {
+            content = value
+            return
+        }
+
+        let container = try? decoder.container(keyedBy: CodingKeys.self)
+        content = container?.decodeLossyStringIfPresent(forKey: .content)
+            ?? container?.decodeLossyStringIfPresent(forKey: .text)
+            ?? container?.decodeLossyStringIfPresent(forKey: .reason)
+    }
+}
+
 nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendable {
     nonisolated var id: String { bvid ?? String(aid ?? 0) }
 
@@ -401,15 +425,22 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let ownerInfo: VideoOwner?
     let args: RecommendFeedItemArgs?
     let descButton: RecommendFeedDescButton?
+    let desc: String?
+    let recommendReason: RecommendFeedReason?
+    let bottomRecommendReason: RecommendFeedReason?
+    let topRecommendReason: RecommendFeedReason?
     let stat: VideoStat?
     let dimension: VideoDimension?
 
     enum CodingKeys: String, CodingKey {
-        case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, stat, dimension
+        case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension
         case idValue = "id"
         case cardGoto = "card_goto"
         case ownerInfo = "owner_info"
         case descButton = "desc_button"
+        case recommendReason = "rcmd_reason"
+        case bottomRecommendReason = "bottom_rcmd_reason"
+        case topRecommendReason = "top_rcmd_reason"
         case pubDate = "pub_date"
         case publishTime = "publish_time"
         case coverLeftText1 = "cover_left_text_1"
@@ -453,6 +484,10 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         ownerInfo = try container.decodeIfPresent(VideoOwner.self, forKey: .ownerInfo)
         args = try container.decodeIfPresent(RecommendFeedItemArgs.self, forKey: .args)
         descButton = try container.decodeIfPresent(RecommendFeedDescButton.self, forKey: .descButton)
+        desc = container.decodeLossyStringIfPresent(forKey: .desc)
+        recommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .recommendReason)
+        bottomRecommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .bottomRecommendReason)
+        topRecommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .topRecommendReason)
         stat = (try container.decodeIfPresent(VideoStat.self, forKey: .stat))
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText1))
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText2))
@@ -470,16 +505,36 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
             aid: idValue ?? aid,
             title: title,
             pic: (pic ?? cover)?.normalizedBiliURL(),
-            desc: nil,
+            desc: desc,
             duration: duration,
             pubdate: pubdate,
             owner: owner ?? ownerInfo ?? args?.owner ?? descButton?.owner,
             stat: stat,
             cid: cid,
             pages: nil,
-            dimension: dimension
+            dimension: dimension,
+            recommendReason: sanitizedRecommendReason
         )
     }
+
+    private nonisolated var sanitizedRecommendReason: String? {
+        let value = [
+            recommendReason?.content,
+            bottomRecommendReason?.content,
+            topRecommendReason?.content
+        ]
+        .compactMap { raw -> String? in
+            guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty,
+                  !Self.hiddenRecommendReasons.contains(trimmed)
+            else { return nil }
+            return trimmed
+        }
+        .first
+        return value
+    }
+
+    private nonisolated static let hiddenRecommendReasons: Set<String> = ["已关注", "新关注"]
 
     private nonisolated static func videoIdentity(bvid: String?, uri: String?, aid: Int?) -> (bvid: String, isSynthetic: Bool)? {
         if let bvid, !bvid.isEmpty {

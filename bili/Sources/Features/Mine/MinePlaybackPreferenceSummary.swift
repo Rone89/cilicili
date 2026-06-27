@@ -28,20 +28,8 @@ extension MinePlaybackSettingsView {
                     systemImage: "film.stack"
                 )
                 MinePlaybackPreferenceChip(
-                    title: libraryStore.playbackStreamSourcePreference.title,
-                    systemImage: "antenna.radiowaves.left.and.right"
-                )
-                MinePlaybackPreferenceChip(
-                    title: libraryStore.playerRenderingEnginePreference.title,
-                    systemImage: "cpu"
-                )
-                MinePlaybackPreferenceChip(
-                    title: libraryStore.playbackCDNPreference.title,
-                    systemImage: "network"
-                )
-                MinePlaybackPreferenceChip(
-                    title: libraryStore.playbackNetworkAddressFamilyPreference.title,
-                    systemImage: "point.3.connected.trianglepath.dotted"
+                    title: BiliPlaybackRate(rawValue: libraryStore.defaultPlaybackRate)?.title ?? "\(libraryStore.defaultPlaybackRate)x",
+                    systemImage: "speedometer"
                 )
             }
         }

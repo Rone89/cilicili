@@ -20,6 +20,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
     let historyCID: Int?
     let historyDuration: TimeInterval?
     let configuration: BiliPlayerViewConfiguration
+    let isPictureInPictureEnabled: Bool
     let videoGravity: AVLayerVideoGravity
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
@@ -54,6 +55,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
             progressReporter: progressReporter,
             progressContext: progressContext,
             configuration: configuration,
+            isPictureInPictureEnabled: isPictureInPictureEnabled,
             defaultPlaybackRate: libraryStore.defaultPlaybackRate,
             videoGravity: videoGravity
         ).actions
@@ -68,6 +70,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
             rotationFallbackCoverURL: rotationFallbackCoverURL,
             speedBoostModel: speedBoostModel,
             configuration: configuration,
+            isPictureInPictureEnabled: isPictureInPictureEnabled,
             prepareUserSeekWarmup: prepareUserSeekWarmup,
             resetPreparedScrubProgress: resetPreparedScrubProgress
         )

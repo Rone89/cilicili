@@ -15,8 +15,7 @@ struct LiveRoomCardCover: View {
             .overlay {
                 LiveRoomCoverOverlay(onlineText: onlineText)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .mediaShadow(.control)
+            .videoCoverSurface(cornerRadius: 18, shadowLevel: .control)
     }
 
     private var coverImage: some View {

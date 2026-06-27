@@ -323,6 +323,7 @@ protocol PlayerRenderingEngine: AnyObject {
     func setVolume(_ volume: Float)
     func setMuted(_ isMuted: Bool)
     func setTemporaryAudioSuppressed(_ isSuppressed: Bool)
+    func setPictureInPictureEnabled(_ isEnabled: Bool)
     func seek(toTime time: TimeInterval) -> TimeInterval?
     func seek(toProgress progress: Double, duration: TimeInterval?) -> TimeInterval?
     func seek(by interval: TimeInterval, from currentTime: TimeInterval, duration: TimeInterval?) -> TimeInterval?
@@ -332,10 +333,18 @@ protocol PlayerRenderingEngine: AnyObject {
     func currentSurfaceSnapshotImage() -> UIImage?
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource?
     func togglePictureInPicture()
+    func stopPictureInPictureIfNeeded()
     func invalidatePictureInPicturePlaybackState()
 }
 
 extension PlayerRenderingEngine {
+    func setPictureInPictureEnabled(_: Bool) {}
+
+    func stopPictureInPictureIfNeeded() {
+        guard isPictureInPictureActive else { return }
+        togglePictureInPicture()
+    }
+
     func suspendForNavigation() {
         pauseForNavigation()
         setTemporaryAudioSuppressed(true)
@@ -1145,6 +1154,9 @@ enum PlayerPerformanceCopyTextFormatter {
             "  playerFirstFrame: \(millisecondsText(session.firstFramePlayerMilliseconds))",
             "  detail: \(millisecondsText(session.detailLoadMilliseconds))",
             "  playURL: \(millisecondsText(session.playURLMilliseconds))",
+            "  startupSource: \(session.startupSource ?? "-")",
+            "  playURLSource: \(session.startupPlayURLSource ?? "-")",
+            "  playURLVariants: \(session.startupPlayURLVariantCount.map(String.init) ?? "-")",
             "  prepare: \(millisecondsText(session.prepareMilliseconds))",
             "  quality: \(session.startupQuality.map(String.init) ?? "-")",
             "  codec: \(latestSampleValue(session.recentStartupSamples, \.codec) ?? "-")",
@@ -1164,6 +1176,12 @@ enum PlayerPerformanceCopyTextFormatter {
             lines.append("manifestStage:")
             lines.append("  \(manifestStageMessage)")
         }
+        appendDiagnosticSection("cdnHost", session.cdnHostMessage, to: &lines)
+        appendDiagnosticSection("playbackFeedback", session.networkMessage, to: &lines)
+        appendDiagnosticSection("accessLog", session.accessLogMessage, to: &lines)
+        appendDiagnosticSection("mediaCache", session.mediaCacheMessage, to: &lines)
+        appendDiagnosticSection("playbackRecovery", session.playbackRecoveryMessage, to: &lines)
+        appendDiagnosticSection("failure", session.failureMessage, to: &lines)
 
         let samples = session.recentStartupSamples
         let comparableSamples = comparableStartupSamples(from: samples)
@@ -1232,6 +1250,20 @@ enum PlayerPerformanceCopyTextFormatter {
         _ keyPath: KeyPath<PlayerStartupPerformanceSample, String?>
     ) -> String? {
         samples.last?[keyPath: keyPath]
+    }
+
+    private static func appendDiagnosticSection(
+        _ title: String,
+        _ message: String?,
+        to lines: inout [String]
+    ) {
+        guard let message,
+              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        lines.append("\(title):")
+        for line in message.components(separatedBy: .newlines) {
+            lines.append("  \(line)")
+        }
     }
 
     private static func startupSampleSummaries(
@@ -1804,7 +1836,11 @@ final class PlayerPerformanceStore: ObservableObject {
             if let message = event.message, message.hasPrefix("HLS ") {
                 session.hlsStartupMessage = message
             } else {
-                session.networkMessage = event.message ?? session.networkMessage
+                session.networkMessage = Self.appendDiagnosticMessage(
+                    session.networkMessage,
+                    event.message,
+                    maxParts: 4
+                )
             }
             if let message = event.message, let host = Self.host(in: message) {
                 session.cdnHostMessage = host

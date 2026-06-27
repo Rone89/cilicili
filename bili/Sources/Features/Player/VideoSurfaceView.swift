@@ -5,6 +5,7 @@ import UIKit
 struct VideoSurfaceView: UIViewRepresentable {
     @ObservedObject var viewModel: PlayerStateViewModel
     let prefersNativePlaybackControls: Bool
+    let isPictureInPictureEnabled: Bool
     var disablesImplicitLayoutAnimations = false
     var usesLiveSurfaceDuringLayoutTransition = false
 
@@ -17,7 +18,9 @@ struct VideoSurfaceView: UIViewRepresentable {
             isLayoutTransitioning: disablesImplicitLayoutAnimations
         )
         view.configureBoundsRefresh(for: viewModel)
+        view.setPictureInPictureEnabled(isPictureInPictureEnabled)
         view.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         viewModel.attachSurface(
             view,
             prefersNativePlaybackControls: prefersNativePlaybackControls,
@@ -40,7 +43,9 @@ struct VideoSurfaceView: UIViewRepresentable {
             guard uiView.cancelPendingSurfaceDetachIfPossible(for: viewModel) else { return }
         }
         uiView.configureBoundsRefresh(for: viewModel)
+        uiView.setPictureInPictureEnabled(isPictureInPictureEnabled)
         uiView.setPlayerViewModel(viewModel, prefersNativePlaybackControls: prefersNativePlaybackControls)
+        viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         viewModel.attachSurface(
             uiView,
             prefersNativePlaybackControls: prefersNativePlaybackControls,
@@ -85,6 +90,7 @@ final class VideoSurfaceContainerView: UIView {
 
     private weak var playerViewModel: PlayerStateViewModel?
     private(set) var prefersNativePlaybackControls = true
+    private var isPictureInPictureEnabled = false
     private var isNativePlaybackControllerEnabled = false
     private var usesLiveSurfaceDuringLayoutTransition = false
     private var isLayoutTransitioningForSurfaceHandoff = false
@@ -144,6 +150,15 @@ final class VideoSurfaceContainerView: UIView {
         if !prefersNativePlaybackControls {
             setNativePlaybackControllerEnabled(false)
         }
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        guard isPictureInPictureEnabled != isEnabled else {
+            configureNativePlayerViewController()
+            return
+        }
+        isPictureInPictureEnabled = isEnabled
+        configureNativePlayerViewController()
     }
 
     func makePlaybackTransitionSnapshotView() -> UIView? {
@@ -464,8 +479,10 @@ final class VideoSurfaceContainerView: UIView {
     private func configureNativePlayerViewController() {
         nativePlayerViewController.showsPlaybackControls = false
         nativePlayerViewController.videoGravity = .resizeAspect
-        nativePlayerViewController.allowsPictureInPicturePlayback = true
-        nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline = true
+        nativePlayerViewController.allowsPictureInPicturePlayback = isPictureInPictureEnabled
+            && AVPictureInPictureController.isPictureInPictureSupported()
+        nativePlayerViewController.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureEnabled
+            && AVPictureInPictureController.isPictureInPictureSupported()
         nativePlayerViewController.requiresLinearPlayback = false
         nativePlayerViewController.updatesNowPlayingInfoCenter = false
         nativePlayerViewController.view.backgroundColor = .black

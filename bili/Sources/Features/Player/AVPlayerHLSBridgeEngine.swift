@@ -79,6 +79,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var isStopped = true
     private var targetVolume: Float = 1
     private var targetMuted = false
+    private var isPictureInPictureEnabled = false
     private var contentOverlay: AnyView?
     private var contentOverlayHostingController: UIHostingController<AnyView>?
     private weak var contentOverlayContainerView: UIView?
@@ -267,6 +268,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         configureNativePlaybackController(controller)
         installContentOverlayIfPossible()
         removePlayerLayer()
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        isPictureInPictureEnabled = isEnabled
+        if let playerViewController {
+            configureNativePlaybackController(playerViewController)
+        }
     }
 
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
@@ -889,8 +897,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if controller.videoGravity != videoGravity {
             controller.videoGravity = videoGravity
         }
-        controller.allowsPictureInPicturePlayback = AVPictureInPictureController.isPictureInPictureSupported()
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        let isPictureInPictureAllowed = isPictureInPictureEnabled
+            && AVPictureInPictureController.isPictureInPictureSupported()
+        controller.allowsPictureInPicturePlayback = isPictureInPictureAllowed
+        controller.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureAllowed
         controller.requiresLinearPlayback = false
         controller.updatesNowPlayingInfoCenter = false
         controller.view.backgroundColor = .black
@@ -1107,6 +1117,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             Task { @MainActor [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.configureAudioSession()
+                guard self.isPictureInPictureEnabled else {
+                    if self.wantsPlayback {
+                        self.pause()
+                    }
+                    return
+                }
                 if self.wantsPlayback {
                     self.beginPlayback()
                 }
@@ -2430,7 +2446,8 @@ struct LocalHLSBridge: Sendable {
         audioTrack: HLSBridgeTrack,
         durationHint: TimeInterval?,
         headers: [String: String],
-        metricsID: String? = nil
+        metricsID: String? = nil,
+        waitsForDemuxWarmup: Bool = true
     ) async -> Bool {
         do {
             let bridge = try await make(
@@ -2440,10 +2457,18 @@ struct LocalHLSBridge: Sendable {
                 headers: headers,
                 metricsID: metricsID
             )
-            await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
-                bridge.masterPlaylistURL,
-                metricsID: metricsID
-            )
+            if waitsForDemuxWarmup {
+                return await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
+                    bridge.masterPlaylistURL,
+                    metricsID: metricsID
+                )
+            }
+            Task.detached(priority: .utility) {
+                await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
+                    bridge.masterPlaylistURL,
+                    metricsID: metricsID
+                )
+            }
             return true
         } catch {
             PlayerMetricsLog.logger.info(

@@ -5,6 +5,8 @@ extension HomeViewModel {
         resetCursor shouldResetCursor: Bool = false,
         preservingExistingRecommendations shouldPreserveExistingRecommendations: Bool = false
     ) async {
+        let usesNativeAppRecommend = pageCoordinator.usesNativeAppRecommendSource(for: mode)
+        let preservesExistingRecommendations = shouldPreserveExistingRecommendations && !usesNativeAppRecommend
         let previousVideos = videos
         let previousIDs = previousVideos.map(\.id)
         requestRevision += 1
@@ -16,7 +18,7 @@ extension HomeViewModel {
                 isRefreshing = false
             }
         }
-        if shouldResetCursor {
+        if shouldResetCursor || usesNativeAppRecommend {
             pageCoordinator.resetCursor(for: mode)
         } else {
             pageCoordinator.advanceRefreshCursor(for: mode)
@@ -25,7 +27,7 @@ extension HomeViewModel {
             let refreshedVideos = try await pageCoordinator.fetchFreshPage(
                 for: mode,
                 replacing: previousIDs,
-                minimumFreshCount: shouldPreserveExistingRecommendations ? Self.userRefreshRecommendationCount : nil
+                minimumFreshCount: preservesExistingRecommendations ? Self.userRefreshRecommendationCount : nil
             )
             guard revision == requestRevision else { return }
             if previousVideos.isEmpty {
@@ -34,7 +36,7 @@ extension HomeViewModel {
             replaceVideos(
                 refreshedVideos,
                 previousVideos: previousVideos,
-                preservingExistingRecommendations: shouldPreserveExistingRecommendations
+                preservingExistingRecommendations: preservesExistingRecommendations
             )
             snapshotCoordinator.save(videos: videos, mode: mode)
             state = .loaded

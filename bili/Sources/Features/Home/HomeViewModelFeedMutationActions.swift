@@ -10,7 +10,8 @@ extension HomeViewModel {
             fresh: newVideos,
             previousVideos: previousVideos,
             mode: mode,
-            preservesExistingRecommendations: shouldPreserveExistingRecommendations
+            preservesExistingRecommendations: shouldPreserveExistingRecommendations,
+            usesNativeReplacement: pageCoordinator.usesNativeAppRecommendSource(for: mode)
         )
         updateFeed(mergedVideos)
         exposureRecorder.recordIfNeeded(mergedVideos, mode: mode)

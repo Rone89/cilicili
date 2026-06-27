@@ -43,13 +43,10 @@ struct VideoCompactCover: View, Equatable {
             }
         }
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay {
-            if showsBorder {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.quaternary, lineWidth: 0.7)
-            }
-        }
-        .mediaShadow(.subtle)
+        .videoCoverSurface(
+            cornerRadius: cornerRadius,
+            shadowLevel: .subtle,
+            emphasizesBorder: showsBorder
+        )
     }
 }

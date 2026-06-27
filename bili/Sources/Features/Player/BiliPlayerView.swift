@@ -35,6 +35,7 @@ struct BiliPlayerView: View {
             historyCID: historyCID,
             historyDuration: historyDuration,
             configuration: configuration,
+            isPictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             videoGravity: videoGravity,
             prepareUserSeekWarmup: prepareUserSeekWarmupIfNeeded,
             resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 }
@@ -283,6 +284,7 @@ struct BiliPlayerView: View {
             playerSurface: BiliPlayerViewRenderer(context: context.renderContext),
             title: viewModel.title,
             configuration: configuration,
+            isPictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             lifecycleActions: context.lifecycleActions
         )
     }

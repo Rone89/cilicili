@@ -33,7 +33,6 @@ struct DynamicFeedVideoCover: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .mediaShadow(.control)
+        .videoCoverSurface(cornerRadius: 20, shadowLevel: .control)
     }
 }

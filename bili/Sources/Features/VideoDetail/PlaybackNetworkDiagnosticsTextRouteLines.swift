@@ -40,6 +40,18 @@ extension PlaybackNetworkDiagnosticsTextBuilder {
         guard let snapshot = libraryStore.playbackCDNProbeSnapshotForCurrentContext else { return }
         lines.append("测速时间：\(snapshot.probedAt.formatted(date: .abbreviated, time: .shortened))")
         lines.append("测速参考：\(snapshot.recommendedPreference?.title ?? "暂无参考")")
+        lines.append("测速模式：\(snapshot.isWeakReferenceOnly ? "Host 裸探测弱参考" : "真实播放 URL 优先")")
         lines.append("测速是否过期：\(snapshot.isExpired(freshnessInterval: libraryStore.playbackCDNProbeRefreshInterval) ? "是" : "否")")
+        if snapshot.isWeakReferenceOnly {
+            lines.append("测速说明：403/959 表示 CDN 拒绝裸探测，不代表真实播放失败；弱参考不会更新自动推荐。")
+        }
+        lines.append("测速结果：")
+        lines.append(contentsOf: snapshot.results.prefix(8).map { result in
+            let status = result.httpStatusTitle ?? "无 HTTP"
+            let elapsed = result.elapsedMilliseconds.map { "\($0) ms" } ?? "无耗时"
+            let rewrite = result.hostWasRewritten ? "已重写 Host" : "未重写 Host"
+            let weak = result.isWeakReference ? "弱参考" : "可推荐"
+            return "  \(result.preference.title) · \(result.probeMode.title) · \(status) · \(elapsed) · \(rewrite) · \(weak) · \(result.userFacingStatus)"
+        })
     }
 }

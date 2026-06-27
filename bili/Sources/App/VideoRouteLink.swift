@@ -33,14 +33,12 @@ struct VideoRouteLink<Label: View>: View {
 
     var body: some View {
         if let openVideo {
-            Button {
-                openVideo(video)
-            } label: {
-                label()
-            }
-            .buttonStyle(VideoRoutePrewarmButtonStyle {
-                prewarmVideoRoute?(video)
-            })
+            VideoRouteTapLink(
+                video: video,
+                openVideo: openVideo,
+                prewarmVideoRoute: prewarmVideoRoute,
+                label: label
+            )
         } else {
             NavigationLink(value: video) {
                 label()
@@ -49,6 +47,28 @@ struct VideoRouteLink<Label: View>: View {
                 prewarmVideoRoute?(video)
             })
         }
+    }
+}
+
+private struct VideoRouteTapLink<Label: View>: View {
+    let video: VideoItem
+    let openVideo: (VideoItem) -> Void
+    let prewarmVideoRoute: ((VideoItem) -> Void)?
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        label()
+            .contentShape(Rectangle())
+            .onTapGesture(perform: open)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                open()
+            }
+    }
+
+    private func open() {
+        prewarmVideoRoute?(video)
+        openVideo(video)
     }
 }
 
