@@ -169,6 +169,7 @@ struct RootTabView: View {
                     homeViewModelHolder.configure(
                         api: dependencies.api,
                         libraryStore: dependencies.libraryStore,
+                        sessionStore: dependencies.sessionStore,
                         initialMode: .recommend
                     )
                 }

@@ -6,9 +6,19 @@ import UIKit
 final class RootHomeViewModelHolder: ObservableObject {
     @Published var viewModel: HomeViewModel?
 
-    func configure(api: BiliAPIClient, libraryStore: LibraryStore, initialMode: HomeFeedMode) {
+    func configure(
+        api: BiliAPIClient,
+        libraryStore: LibraryStore,
+        sessionStore: SessionStore,
+        initialMode: HomeFeedMode
+    ) {
         if viewModel == nil {
-            let viewModel = HomeViewModel(api: api, libraryStore: libraryStore, initialMode: initialMode)
+            let viewModel = HomeViewModel(
+                api: api,
+                libraryStore: libraryStore,
+                sessionStore: sessionStore,
+                initialMode: initialMode
+            )
             self.viewModel = viewModel
         }
     }

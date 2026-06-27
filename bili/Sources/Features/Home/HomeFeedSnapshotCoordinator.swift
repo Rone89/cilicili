@@ -3,12 +3,16 @@ import Foundation
 @MainActor
 struct HomeFeedSnapshotCoordinator {
     let libraryStore: LibraryStore
+    let sessionStore: SessionStore
 
     func load(mode: HomeFeedMode) -> [VideoItem]? {
         HomeFeedSnapshotCache.load(
             mode: mode,
             guestModeEnabled: libraryStore.guestModeEnabled,
-            recommendSource: libraryStore.homeRecommendFeedSourcePreference
+            recommendSource: libraryStore.homeRecommendFeedSourcePreference,
+            accountIdentityKey: sessionStore.recommendCacheIdentityKey(
+                guestModeEnabled: libraryStore.guestModeEnabled
+            )
         )
     }
 
@@ -17,7 +21,10 @@ struct HomeFeedSnapshotCoordinator {
             videos: Array(videos.prefix(48)),
             mode: mode,
             guestModeEnabled: libraryStore.guestModeEnabled,
-            recommendSource: libraryStore.homeRecommendFeedSourcePreference
+            recommendSource: libraryStore.homeRecommendFeedSourcePreference,
+            accountIdentityKey: sessionStore.recommendCacheIdentityKey(
+                guestModeEnabled: libraryStore.guestModeEnabled
+            )
         )
     }
 }

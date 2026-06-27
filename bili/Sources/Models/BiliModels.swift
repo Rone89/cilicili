@@ -369,18 +369,35 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
 nonisolated struct RecommendFeedData: Decodable, Sendable {
     let item: [RecommendFeedItem]?
     let items: [RecommendFeedItem]?
+    let config: RecommendFeedConfig?
 
     nonisolated var feedItems: [RecommendFeedItem] {
         item ?? items ?? []
     }
 
     nonisolated func appNextIndex(after requestedIndex: Int) -> Int? {
+        if let configIndex = config?.idx, configIndex > 0 {
+            return configIndex
+        }
         let positiveIndexes = feedItems.compactMap(\.idx).filter { $0 > 0 }
         if let lastIndex = positiveIndexes.last {
             return lastIndex
         }
         guard !feedItems.isEmpty else { return nil }
         return requestedIndex + 1
+    }
+}
+
+nonisolated struct RecommendFeedConfig: Decodable, Hashable, Sendable {
+    let idx: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case idx
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        idx = container.decodeLossyIntIfPresent(forKey: .idx)
     }
 }
 
@@ -431,6 +448,15 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let topRecommendReason: RecommendFeedReason?
     let stat: VideoStat?
     let dimension: VideoDimension?
+
+    nonisolated var resolvedCardKind: String {
+        goto ?? cardGoto ?? "-"
+    }
+
+    nonisolated var isVideoCard: Bool {
+        let target = goto ?? cardGoto
+        return target == nil || target == "av" || target == "video"
+    }
 
     enum CodingKeys: String, CodingKey {
         case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension
@@ -495,8 +521,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     }
 
     nonisolated func asVideoItem() -> VideoItem? {
-        let target = goto ?? cardGoto
-        guard target == nil || target == "av" || target == "video" else { return nil }
+        guard isVideoCard else { return nil }
         guard let title,
               let identity = Self.videoIdentity(bvid: bvid, uri: uri, aid: idValue ?? aid)
         else { return nil }

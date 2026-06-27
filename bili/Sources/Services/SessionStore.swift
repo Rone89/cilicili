@@ -4,10 +4,12 @@ import Combine
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessdata: String?
+    @Published private(set) var accessKey: String?
     @Published private(set) var user: NavUserInfo?
 
     private let keychain: KeychainStore
     private let sessdataKey = "SESSDATA"
+    private let accessKeyKey = "ACCESS_KEY"
     private let loginCookieHeaderKey = "LOGIN_COOKIE_HEADER"
     private let buvidKey = "buvid3"
     private var loginCookieHeader: String?
@@ -16,6 +18,7 @@ final class SessionStore: ObservableObject {
         let keychain = keychain ?? KeychainStore()
         self.keychain = keychain
         self.sessdata = try? keychain.read(sessdataKey)
+        self.accessKey = try? keychain.read(accessKeyKey)
         self.loginCookieHeader = try? keychain.read(loginCookieHeaderKey)
     }
 
@@ -41,6 +44,26 @@ final class SessionStore: ObservableObject {
 
     func anonymousCookieHeader() -> String {
         "buvid3=\(buvid3())"
+    }
+
+    func appAccessKey() -> String? {
+        guard let accessKey = accessKey?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accessKey.isEmpty
+        else { return nil }
+        return accessKey
+    }
+
+    func recommendCacheIdentityKey(guestModeEnabled: Bool) -> String {
+        if guestModeEnabled {
+            return "guest-\(buvid3())"
+        }
+        if let mid = Self.cookieValue(named: "DedeUserID", in: cookieHeader()) {
+            return "mid-\(mid)"
+        }
+        if isLoggedIn {
+            return "auth-cookie"
+        }
+        return "anon-\(buvid3())"
     }
 
     func saveBuvid3(_ value: String) {
@@ -104,6 +127,10 @@ final class SessionStore: ObservableObject {
             try keychain.save(sessdata, for: sessdataKey)
             self.sessdata = sessdata
         }
+        if let accessKey = cookies["access_key"], !accessKey.isEmpty {
+            try keychain.save(accessKey, for: accessKeyKey)
+            self.accessKey = accessKey
+        }
         if !header.isEmpty {
             try keychain.save(header, for: loginCookieHeaderKey)
             loginCookieHeader = header
@@ -116,8 +143,10 @@ final class SessionStore: ObservableObject {
 
     func logout() throws {
         try keychain.delete(sessdataKey)
+        try keychain.delete(accessKeyKey)
         try keychain.delete(loginCookieHeaderKey)
         sessdata = nil
+        accessKey = nil
         loginCookieHeader = nil
         user = nil
     }
@@ -129,5 +158,18 @@ final class SessionStore: ObservableObject {
         let newValue = UUID().uuidString.lowercased() + "infoc"
         UserDefaults.standard.set(newValue, forKey: buvidKey)
         return newValue
+    }
+
+    private nonisolated static func cookieValue(named name: String, in header: String) -> String? {
+        header
+            .split(separator: ";")
+            .compactMap { item -> String? in
+                let pair = item.split(separator: "=", maxSplits: 1).map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard pair.count == 2, pair[0] == name, !pair[1].isEmpty else { return nil }
+                return pair[1]
+            }
+            .first
     }
 }

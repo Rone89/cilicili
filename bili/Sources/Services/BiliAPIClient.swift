@@ -111,8 +111,7 @@ nonisolated final class BiliAPIClient {
     private let liveURL = URL(string: "https://api.live.bilibili.com")!
     private let commentURL = URL(string: "https://comment.bilibili.com")!
     private static let supplementalQualityLadder = [127, 126, 125, 120, 116, 112, 80, 74, 64, 32, 16, 6]
-    private static let piliPlusRecommendUserAgent = "Mozilla/5.0 BiliDroid/2.0.1 (bbcallen@gmail.com) os/android model/android_hd mobi_app/android_hd build/2001100 channel/master innerVer/2001100 osVer/15 network/2"
-    private static let piliPlusRecommendStatistics = #"{"appId":5,"platform":3,"version":"2.0.1","abtest":""}"#
+    private static let appRecommendProfile: BiliAppSigner.Profile = .androidPhone
     private static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     private static let webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     private static let recommendLogger = Logger(subsystem: "cc.bili", category: "HomeRecommend")
@@ -125,6 +124,8 @@ nonisolated final class BiliAPIClient {
     private struct RequestSnapshot: Sendable {
         let cookieHeader: String
         let anonymousCookieHeader: String
+        let appAccessKey: String?
+        let homeRecommendIdentityKey: String
         let isLoggedIn: Bool
         let csrfToken: String?
         let currentUserMID: Int?
@@ -151,6 +152,10 @@ nonisolated final class BiliAPIClient {
         RequestSnapshot(
             cookieHeader: sessionStore.cookieHeader(),
             anonymousCookieHeader: sessionStore.anonymousCookieHeader(),
+            appAccessKey: sessionStore.appAccessKey(),
+            homeRecommendIdentityKey: sessionStore.recommendCacheIdentityKey(
+                guestModeEnabled: libraryStore.guestModeEnabled
+            ),
             isLoggedIn: sessionStore.isLoggedIn,
             csrfToken: sessionStore.csrfToken(),
             currentUserMID: sessionStore.user?.mid,
@@ -201,10 +206,21 @@ nonisolated final class BiliAPIClient {
         _ = await (keys, nav)
     }
 
+    func resetHomeRecommendState() async {
+        await state.clearHomeRecommendState()
+    }
+
     func fetchRecommendFeed(freshIndex: Int = 0) async throws -> [VideoItem] {
         let snapshot = await requestSnapshot()
         let feedSource = snapshot.homeRecommendFeedSourcePreference
-        let taskKey = "recommend|\(feedSource.rawValue)|\(freshIndex)|guest-\(snapshot.guestModeEnabled ? "1" : "0")"
+        let taskKey = [
+            "recommend",
+            feedSource.rawValue,
+            "idx-\(freshIndex)",
+            "guest-\(snapshot.guestModeEnabled ? "1" : "0")",
+            "identity-\(snapshot.homeRecommendIdentityKey)",
+            "accessKey-\(snapshot.appAccessKey == nil ? "0" : "1")"
+        ].joined(separator: "|")
         if let task = await state.videoListTask(for: taskKey) {
             return try await task.value
         }
@@ -219,7 +235,7 @@ nonisolated final class BiliAPIClient {
             case .app:
                 let videos = try await fetchAppRecommendFeed(freshIndex: freshIndex)
                 Self.recommendLogger.info(
-                    "source=app profile=piliplus-android-hd signed=1 endpoint=/x/v2/feed/index host=app.bilibili.com freshIndex=\(freshIndex, privacy: .public) count=\(videos.count, privacy: .public)"
+                    "source=app profile=\(Self.appRecommendProfile.displayName, privacy: .public) signed=1 endpoint=/x/v2/feed/index host=app.bilibili.com freshIndex=\(freshIndex, privacy: .public) count=\(videos.count, privacy: .public)"
                 )
                 return videos
             }
@@ -263,8 +279,10 @@ nonisolated final class BiliAPIClient {
     private func fetchAppRecommendFeed(freshIndex: Int) async throws -> [VideoItem] {
         let snapshot = await requestSnapshot()
         let cookieHeader = snapshot.guestModeEnabled ? snapshot.anonymousCookieHeader : snapshot.cookieHeader
+        let accessKey = snapshot.guestModeEnabled ? nil : snapshot.appAccessKey
         let authDiagnostics = Self.recommendAuthDiagnostics(
             cookieHeader: cookieHeader,
+            accessKey: accessKey,
             isLoggedIn: snapshot.isLoggedIn,
             guestModeEnabled: snapshot.guestModeEnabled
         )
@@ -275,17 +293,24 @@ nonisolated final class BiliAPIClient {
         } else {
             requestedIndex = await state.appRecommendFeedIndex(defaulting: freshIndex)
         }
-        let query = Self.piliPlusAppRecommendQuery(freshIndex: requestedIndex)
-        let headerContext = Self.piliPlusAppRecommendHeaders(cookieHeader: cookieHeader)
+        let query = Self.piliPodStyleAppRecommendQuery(
+            freshIndex: requestedIndex,
+            accessKey: accessKey,
+            profile: Self.appRecommendProfile
+        )
+        let headerContext = Self.piliPodStyleAppRecommendHeaders(
+            cookieHeader: cookieHeader,
+            profile: Self.appRecommendProfile
+        )
         Self.recommendLogger.info(
-            "source=app request endpoint=/x/v2/feed/index host=app.bilibili.com profile=piliplus-android-hd signed=1 auth=\(authDiagnostics.mode, privacy: .public) loggedIn=\(authDiagnostics.isLoggedIn, privacy: .public) hasSESSDATA=\(authDiagnostics.hasSESSDATA, privacy: .public) hasDedeUserID=\(authDiagnostics.hasDedeUserID, privacy: .public) hasBuvid=\(authDiagnostics.hasBuvid, privacy: .public) hasBuvidFP=\(authDiagnostics.hasBuvidFP, privacy: .public) idx=\(requestedIndex, privacy: .public) pull=\(requestedIndex == 0 ? "true" : "false", privacy: .public) fp=\(headerContext.fingerprintSource, privacy: .public) session=\(headerContext.sessionSource, privacy: .public) trace=per-request cache=snapshot-bypassed"
+            "source=app request endpoint=/x/v2/feed/index host=app.bilibili.com profile=\(Self.appRecommendProfile.displayName, privacy: .public) signed=1 auth=\(authDiagnostics.mode, privacy: .public) loggedIn=\(authDiagnostics.isLoggedIn, privacy: .public) hasAccessKey=\(authDiagnostics.hasAccessKey, privacy: .public) hasSESSDATA=\(authDiagnostics.hasSESSDATA, privacy: .public) hasDedeUserID=\(authDiagnostics.hasDedeUserID, privacy: .public) hasBuvid=\(authDiagnostics.hasBuvid, privacy: .public) hasBuvidFP=\(authDiagnostics.hasBuvidFP, privacy: .public) idx=\(requestedIndex, privacy: .public) pull=\(requestedIndex == 0 ? "true" : "false", privacy: .public) fp=\(headerContext.fingerprintSource, privacy: .public) session=\(headerContext.sessionSource, privacy: .public) cacheIdentity=\(snapshot.homeRecommendIdentityKey, privacy: .public) trace=per-request cache=snapshot-bypassed"
         )
         let response: BiliResponse<RecommendFeedData> = try await get(
             base: appURL,
             path: "/x/v2/feed/index",
-            query: BiliAppSigner.sign(query),
+            query: BiliAppSigner.sign(query, profile: Self.appRecommendProfile),
             referer: "https://www.bilibili.com",
-            userAgent: Self.piliPlusRecommendUserAgent,
+            userAgent: Self.appRecommendProfile.userAgent,
             cookieHeader: cookieHeader,
             additionalHeaders: headerContext.headers,
             cachePolicy: .reloadIgnoringLocalCacheData
@@ -294,44 +319,40 @@ nonisolated final class BiliAPIClient {
         guard let payload = response.payload else { return [] }
         let videos = payload.feedItems.compactMap { $0.asVideoItem() }
         let nextIndex = payload.appNextIndex(after: requestedIndex)
+        let videoCardCount = payload.feedItems.filter(\.isVideoCard).count
+        let liveCardCount = payload.feedItems.filter {
+            let kind = $0.resolvedCardKind
+            return kind == "live" || kind == "live_room" || kind == "live_room_rcmd"
+        }.count
+        let droppedCardCount = max(0, payload.feedItems.count - videoCardCount)
         let recommendReasonCount = videos.filter { $0.recommendReason?.isEmpty == false }.count
         await state.setAppRecommendFeedIndex(nextIndex)
         Self.recommendLogger.info(
-            "source=app response endpoint=/x/v2/feed/index auth=\(authDiagnostics.mode, privacy: .public) idx=\(requestedIndex, privacy: .public) nextIdx=\(nextIndex ?? -1, privacy: .public) rawCount=\(payload.feedItems.count, privacy: .public) videoCount=\(videos.count, privacy: .public) recommendReasonCount=\(recommendReasonCount, privacy: .public)"
+            "source=app response endpoint=/x/v2/feed/index auth=\(authDiagnostics.mode, privacy: .public) profile=\(Self.appRecommendProfile.displayName, privacy: .public) idx=\(requestedIndex, privacy: .public) nextIdx=\(nextIndex ?? -1, privacy: .public) nextIdxSource=\(payload.config?.idx == nil ? "items" : "config", privacy: .public) rawCount=\(payload.feedItems.count, privacy: .public) videoCardCount=\(videoCardCount, privacy: .public) videoCount=\(videos.count, privacy: .public) liveCardCount=\(liveCardCount, privacy: .public) droppedCardCount=\(droppedCardCount, privacy: .public) recommendReasonCount=\(recommendReasonCount, privacy: .public)"
         )
         return await hydrateAppRecommendFeedIfNeeded(videos)
     }
 
-    private static func piliPlusAppRecommendQuery(freshIndex: Int) -> [String: String] {
-        [
-            "build": "2001100",
-            "c_locale": "zh_CN",
-            "channel": "master",
-            "column": "4",
-            "device": "pad",
-            "device_name": "android",
-            "device_type": "0",
-            "disable_rcmd": "0",
-            "flush": "5",
-            "fnval": "976",
-            "fnver": "0",
-            "force_host": "2",
-            "fourk": "1",
-            "guidance": "0",
-            "https_url_req": "0",
+    private static func piliPodStyleAppRecommendQuery(
+        freshIndex: Int,
+        accessKey: String?,
+        profile: BiliAppSigner.Profile
+    ) -> [String: String] {
+        var query = [
             "idx": String(freshIndex),
-            "mobi_app": "android_hd",
-            "network": "wifi",
-            "platform": "android",
-            "player_net": "1",
+            "flush": "5",
             "pull": freshIndex == 0 ? "true" : "false",
-            "qn": "32",
-            "recsys_mode": "0",
-            "s_locale": "zh_CN",
-            "splash_id": "",
-            "statistics": piliPlusRecommendStatistics,
-            "voice_balance": "0"
+            "device": profile.device,
+            "login_event": accessKey == nil ? "0" : "1",
+            "network": "wifi",
+            "mobi_app": profile.mobiApp,
+            "platform": "android",
+            "build": profile.build
         ]
+        if let accessKey {
+            query["access_key"] = accessKey
+        }
+        return query
     }
 
     private struct AppRecommendHeaderContext {
@@ -344,12 +365,16 @@ nonisolated final class BiliAPIClient {
         let mode: String
         let isLoggedIn: Bool
         let hasSESSDATA: Bool
+        let hasAccessKey: Bool
         let hasDedeUserID: Bool
         let hasBuvid: Bool
         let hasBuvidFP: Bool
     }
 
-    private static func piliPlusAppRecommendHeaders(cookieHeader: String) -> AppRecommendHeaderContext {
+    private static func piliPodStyleAppRecommendHeaders(
+        cookieHeader: String,
+        profile: BiliAppSigner.Profile
+    ) -> AppRecommendHeaderContext {
         let buvid = cookieValue(named: "buvid3", in: cookieHeader)
             ?? cookieValue(named: "buvid4", in: cookieHeader)
             ?? "11111111111111111111111111111111"
@@ -365,7 +390,7 @@ nonisolated final class BiliAPIClient {
             "fp_remote": fingerprint,
             "session_id": sessionID,
             "env": "prod",
-            "app-key": "android_hd",
+            "app-key": profile.mobiApp,
             "x-bili-trace-id": piliPlusTraceID(),
             "x-bili-aurora-eid": "",
             "x-bili-aurora-zone": "",
@@ -380,9 +405,11 @@ nonisolated final class BiliAPIClient {
 
     private static func recommendAuthDiagnostics(
         cookieHeader: String,
+        accessKey: String?,
         isLoggedIn: Bool,
         guestModeEnabled: Bool
     ) -> RecommendAuthDiagnostics {
+        let hasAccessKey = accessKey?.isEmpty == false
         let hasSESSDATA = cookieValue(named: "SESSDATA", in: cookieHeader) != nil
         let hasDedeUserID = cookieValue(named: "DedeUserID", in: cookieHeader) != nil
         let hasBuvid = cookieValue(named: "buvid3", in: cookieHeader) != nil
@@ -392,8 +419,10 @@ nonisolated final class BiliAPIClient {
         let mode: String
         if guestModeEnabled {
             mode = "guest"
+        } else if hasAccessKey {
+            mode = "app-access-key"
         } else if hasSESSDATA {
-            mode = "auth"
+            mode = "cookie-only"
         } else {
             mode = "anon"
         }
@@ -401,6 +430,7 @@ nonisolated final class BiliAPIClient {
             mode: mode,
             isLoggedIn: isLoggedIn,
             hasSESSDATA: hasSESSDATA,
+            hasAccessKey: hasAccessKey,
             hasDedeUserID: hasDedeUserID,
             hasBuvid: hasBuvid,
             hasBuvidFP: hasBuvidFP
@@ -3693,6 +3723,13 @@ private actor BiliAPIClientState {
 
     func clearVideoListTask(for key: String) {
         videoListTasks[key] = nil
+    }
+
+    func clearHomeRecommendState() {
+        appRecommendFeedIndex = nil
+        videoListTasks = videoListTasks.filter { key, _ in
+            !key.hasPrefix("recommend|")
+        }
     }
 
     func appRecommendFeedIndex(defaulting defaultIndex: Int) -> Int {

@@ -35,14 +35,18 @@ final class AppDependencies: ObservableObject {
                 Self.applyPictureInPicturePreference(isEnabled)
             }
             .store(in: &sessionCancellables)
-        sessionStore.$sessdata
-            .removeDuplicates()
+        Publishers.CombineLatest(sessionStore.$sessdata, sessionStore.$accessKey)
+            .removeDuplicates { lhs, rhs in
+                lhs.0 == rhs.0 && lhs.1 == rhs.1
+            }
             .dropFirst()
-            .sink { _ in
+            .sink { [weak self] _ in
                 Task {
                     await PlayURLCache.shared.invalidateForLoginStateChange()
                     await VideoPreloadCenter.shared.clearPlayURLCache()
                     await DynamicFeedWarmCache.shared.clear()
+                    await self?.api.resetHomeRecommendState()
+                    HomeFeedSnapshotCache.clearAll()
                 }
             }
             .store(in: &sessionCancellables)
