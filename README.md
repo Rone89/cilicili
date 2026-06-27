@@ -96,4 +96,6 @@ cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
 
 本项目采用 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html)（GPL-3.0-only）开源。你可以在遵守协议的前提下学习、复制、修改和分发本项目代码；分发修改版本或基于本项目的作品时，需要保留版权与许可声明，并以同一协议开放对应源代码。
 
+当前项目的播放相关依赖包含 GPL 版 KSPlayer/FFmpegKit，因此发布源码或二进制产物时，请按 GPLv3 要求一并提供对应源代码、许可文本和必要的构建说明。
+
 本项目引用或参考的第三方项目保留各自版权与许可，使用时请同时遵循对应项目的开源协议和服务条款。
