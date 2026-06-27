@@ -4,6 +4,12 @@ cilicili 是一个使用 SwiftUI 开发的第三方 iOS 客户端实验项目，
 
 > 本项目仅用于学习、研究和个人使用。项目不隶属于哔哩哔哩，也不包含任何账号凭据、签名证书或私有接口密钥。请遵守目标平台服务条款和当地法律法规。
 
+## 开源与支持
+
+cilicili 现作为开源项目维护。如果这个项目对你有帮助，欢迎通过 Star、Fork、Issue、Pull Request 或分享给更多同好来支持项目继续改进。
+
+官方 Telegram 频道：[@cilicili89](https://t.me/cilicili89)
+
 ## 功能概览
 
 - 首页推荐、搜索、UP 主空间、视频详情和相关推荐。
@@ -77,6 +83,17 @@ cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
 - 登录态仅保存在本机 Keychain，不应提交到 Git。
 - 如果 fork 或二次开发，请自行检查是否引入了个人账号、token、证书或本地路径。
 
+## 致谢
+
+感谢以下开源项目与社区实现带来的启发和支持：
+
+- [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)
+- [MiniBili](https://github.com/ResistanceTo/MiniBili-WEB)
+- [PiliPod](https://github.com/BPTPW/PiliPod)
+- [KSPlayer](https://github.com/kingslay/KSPlayer)
+
 ## 许可证
 
-当前仓库尚未声明开源许可证。默认情况下，未经作者许可不授予复制、分发或商用权利。
+本项目采用 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html)（GPL-3.0-only）开源。你可以在遵守协议的前提下学习、复制、修改和分发本项目代码；分发修改版本或基于本项目的作品时，需要保留版权与许可声明，并以同一协议开放对应源代码。
+
+本项目引用或参考的第三方项目保留各自版权与许可，使用时请同时遵循对应项目的开源协议和服务条款。
