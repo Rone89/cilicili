@@ -6,7 +6,9 @@ extension HomeViewModel {
         updateLastSeenMarkerIndex(nil)
         updateFeed([])
         restoreCachedVideosIfAvailable()
-        state = .loading
+        if videos.isEmpty {
+            state = .loading
+        }
         await refresh(resetCursor: true)
     }
 

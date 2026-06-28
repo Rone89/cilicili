@@ -58,7 +58,7 @@ struct MineLoginPanelView: View {
                 )
 
                 LoginOptionButton(
-                    title: "扫码登录",
+                    title: "App 扫码登录",
                     subtitle: "更稳定；当前更适合配合网页端推荐",
                     badge: "稳定",
                     systemImage: "qrcode",

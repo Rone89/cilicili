@@ -392,21 +392,85 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
     }
 }
 
+nonisolated struct AppRecommendNextIndexResult: Hashable, Sendable {
+    let value: Int?
+    let source: String?
+}
+
 nonisolated struct RecommendFeedData: Decodable, Sendable {
     let item: [RecommendFeedItem]?
     let items: [RecommendFeedItem]?
+    let config: RecommendFeedConfig?
 
     nonisolated var feedItems: [RecommendFeedItem] {
         item ?? items ?? []
     }
 
     nonisolated func appNextIndex(after requestedIndex: Int) -> Int? {
+        appNextIndexResult(after: requestedIndex).value
+    }
+
+    nonisolated func appNextIndexResult(after requestedIndex: Int) -> AppRecommendNextIndexResult {
+        if let configIndex = config?.preferredNextIndex {
+            return configIndex
+        }
         let positiveIndexes = feedItems.compactMap(\.idx).filter { $0 > 0 }
         if let lastIndex = positiveIndexes.last {
-            return lastIndex
+            return AppRecommendNextIndexResult(value: lastIndex, source: "item.idx")
         }
-        guard !feedItems.isEmpty else { return nil }
-        return requestedIndex + 1
+        guard !feedItems.isEmpty else {
+            return AppRecommendNextIndexResult(value: nil, source: nil)
+        }
+        return AppRecommendNextIndexResult(value: requestedIndex + 1, source: "synthetic")
+    }
+}
+
+nonisolated struct RecommendFeedConfig: Decodable, Hashable, Sendable {
+    let idx: Int?
+    let nextIdx: Int?
+    let nextIndex: Int?
+    let freshIdx: Int?
+    let feedIdx: Int?
+    let offset: Int?
+
+    nonisolated var preferredNextIndex: AppRecommendNextIndexResult? {
+        [
+            (idx, "config.idx"),
+            (nextIdx, "config.next_idx"),
+            (nextIndex, "config.next_index"),
+            (freshIdx, "config.fresh_idx"),
+            (feedIdx, "config.feed_idx"),
+            (offset, "config.offset")
+        ]
+        .compactMap { candidate -> AppRecommendNextIndexResult? in
+            let (value, source) = candidate
+            guard let value, value > 0 else { return nil }
+            return AppRecommendNextIndexResult(value: value, source: source)
+        }
+        .first
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case idx
+        case nextIdx = "next_idx"
+        case nextIndex = "next_index"
+        case freshIdx = "fresh_idx"
+        case freshIndex = "fresh_index"
+        case feedIdx = "feed_idx"
+        case feedIndex = "feed_index"
+        case offset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        idx = container.decodeLossyIntIfPresent(forKey: .idx)
+        nextIdx = container.decodeLossyIntIfPresent(forKey: .nextIdx)
+        nextIndex = container.decodeLossyIntIfPresent(forKey: .nextIndex)
+        freshIdx = container.decodeLossyIntIfPresent(forKey: .freshIdx)
+            ?? container.decodeLossyIntIfPresent(forKey: .freshIndex)
+        feedIdx = container.decodeLossyIntIfPresent(forKey: .feedIdx)
+            ?? container.decodeLossyIntIfPresent(forKey: .feedIndex)
+        offset = container.decodeLossyIntIfPresent(forKey: .offset)
     }
 }
 
@@ -455,8 +519,20 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let recommendReason: RecommendFeedReason?
     let bottomRecommendReason: RecommendFeedReason?
     let topRecommendReason: RecommendFeedReason?
+    let recommendReasonStyle: RecommendFeedReason?
+    let bottomRecommendReasonStyle: RecommendFeedReason?
+    let topRecommendReasonStyle: RecommendFeedReason?
     let stat: VideoStat?
     let dimension: VideoDimension?
+
+    nonisolated var resolvedCardKind: String {
+        goto ?? cardGoto ?? "-"
+    }
+
+    nonisolated var isVideoCard: Bool {
+        let target = goto ?? cardGoto
+        return target == nil || target == "av" || target == "video"
+    }
 
     enum CodingKeys: String, CodingKey {
         case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension
@@ -467,6 +543,9 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         case recommendReason = "rcmd_reason"
         case bottomRecommendReason = "bottom_rcmd_reason"
         case topRecommendReason = "top_rcmd_reason"
+        case recommendReasonStyle = "rcmd_reason_style"
+        case bottomRecommendReasonStyle = "bottom_rcmd_reason_style"
+        case topRecommendReasonStyle = "top_rcmd_reason_style"
         case pubDate = "pub_date"
         case publishTime = "publish_time"
         case coverLeftText1 = "cover_left_text_1"
@@ -514,6 +593,9 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         recommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .recommendReason)
         bottomRecommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .bottomRecommendReason)
         topRecommendReason = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .topRecommendReason)
+        recommendReasonStyle = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .recommendReasonStyle)
+        bottomRecommendReasonStyle = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .bottomRecommendReasonStyle)
+        topRecommendReasonStyle = try container.decodeIfPresent(RecommendFeedReason.self, forKey: .topRecommendReasonStyle)
         stat = (try container.decodeIfPresent(VideoStat.self, forKey: .stat))
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText1))
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText2))
@@ -521,8 +603,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     }
 
     nonisolated func asVideoItem() -> VideoItem? {
-        let target = goto ?? cardGoto
-        guard target == nil || target == "av" || target == "video" else { return nil }
+        guard isVideoCard else { return nil }
         guard let title,
               let identity = Self.videoIdentity(bvid: bvid, uri: uri, aid: idValue ?? aid)
         else { return nil }
@@ -547,7 +628,10 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
         let value = [
             recommendReason?.content,
             bottomRecommendReason?.content,
-            topRecommendReason?.content
+            topRecommendReason?.content,
+            recommendReasonStyle?.content,
+            bottomRecommendReasonStyle?.content,
+            topRecommendReasonStyle?.content
         ]
         .compactMap { raw -> String? in
             guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -5254,6 +5338,17 @@ nonisolated struct QRCodeLoginInfo: Decodable, Hashable {
         case url
         case qrcodeKey = "qrcode_key"
     }
+
+    init(url: String, qrcodeKey: String) {
+        self.url = url
+        self.qrcodeKey = qrcodeKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(String.self, forKey: .url)
+        qrcodeKey = try container.decode(String.self, forKey: .qrcodeKey)
+    }
 }
 
 nonisolated struct QRCodeLoginPollData: Decodable, Hashable {
@@ -5303,6 +5398,20 @@ struct QRCodeLoginPollResult {
     let cookies: [HTTPCookie]
 }
 
+nonisolated struct AppQRCodeLoginAuthInfo: Decodable, Hashable, Sendable {
+    let authCode: String
+    let url: String
+
+    enum CodingKeys: String, CodingKey {
+        case authCode = "auth_code"
+        case url
+    }
+
+    var qrCodeInfo: QRCodeLoginInfo {
+        QRCodeLoginInfo(url: url, qrcodeKey: authCode)
+    }
+}
+
 nonisolated struct AppQRCodeLoginPollData: Decodable, Hashable, Sendable {
     let accessToken: String?
     let refreshToken: String?
@@ -5317,7 +5426,11 @@ nonisolated struct AppQRCodeLoginPollData: Decodable, Hashable, Sendable {
     }
 
     var resolvedAccessKey: String? {
-        [accessToken, tokenInfo?.accessToken]
+        let candidates = [
+            accessToken,
+            tokenInfo?.accessToken
+        ]
+        return candidates
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }
@@ -5355,6 +5468,12 @@ nonisolated struct AppLoginCookieInfo: Decodable, Hashable, Sendable {
 nonisolated struct AppLoginCookie: Decodable, Hashable, Sendable {
     let name: String
     let value: String
+}
+
+nonisolated struct AppQRCodeLoginPollResult: Sendable {
+    let status: QRCodeLoginPollStatus
+    let message: String?
+    let loginData: AppQRCodeLoginPollData?
 }
 
 nonisolated struct AppSMSCodeInfo: Decodable, Hashable, Sendable {

@@ -22,24 +22,30 @@ enum HomeFeedSnapshotCache {
             accountIdentityKey: accountIdentityKey
         ) {
             logger.info(
-                "snapshot hit=1 storage=disk mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) count=\(snapshot.videos.count, privacy: .public) ageSeconds=\(Int(Date().timeIntervalSince(snapshot.savedAt)), privacy: .public)"
+                "snapshot hit=1 storage=disk mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) identity=\(accountIdentityKey, privacy: .public) count=\(snapshot.videos.count, privacy: .public) ageSeconds=\(Int(Date().timeIntervalSince(snapshot.savedAt)), privacy: .public)"
             )
             return HomeFeedSnapshotRestore(
                 videos: snapshot.videos.map(\.videoItem),
                 lastSeenMarkerIndex: snapshot.lastSeenMarkerIndex
             )
         }
+        guard mode != .recommend else {
+            logger.info(
+                "snapshot hit=0 mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) identity=\(accountIdentityKey, privacy: .public)"
+            )
+            return nil
+        }
         guard let data = UserDefaults.standard.data(forKey: legacyKey(mode: mode, guestModeEnabled: guestModeEnabled)),
               let snapshot = try? JSONDecoder().decode(HomeFeedSnapshot.self, from: data),
               Date().timeIntervalSince(snapshot.savedAt) < maxAge
         else {
             logger.info(
-                "snapshot hit=0 mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public)"
+                "snapshot hit=0 mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) identity=\(accountIdentityKey, privacy: .public)"
             )
             return nil
         }
         logger.info(
-            "snapshot hit=1 storage=legacy mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) count=\(snapshot.videos.count, privacy: .public) ageSeconds=\(Int(Date().timeIntervalSince(snapshot.savedAt)), privacy: .public)"
+            "snapshot hit=1 storage=legacy mode=\(mode.rawValue, privacy: .public) source=\(recommendSource.rawValue, privacy: .public) guest=\(guestModeEnabled, privacy: .public) identity=\(accountIdentityKey, privacy: .public) count=\(snapshot.videos.count, privacy: .public) ageSeconds=\(Int(Date().timeIntervalSince(snapshot.savedAt)), privacy: .public)"
         )
         save(
             snapshot: snapshot,

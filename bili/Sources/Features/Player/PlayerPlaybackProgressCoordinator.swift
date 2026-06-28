@@ -25,14 +25,21 @@ final class PlayerPlaybackProgressCoordinator: ObservableObject {
     ) {
         guard !context.libraryStore.incognitoModeEnabled else { return }
         guard time.isFinite, time >= 5 else { return }
-        guard let aid = context.historyVideo?.aid else { return }
+        guard let historyVideo = context.historyVideo,
+              let aid = historyVideo.aid else { return }
+        let duration = context.historyDuration ?? context.durationHint ?? context.playerDuration
+        HomeRecommendFeedbackCenter.shared.recordPlayProgress(
+            video: historyVideo,
+            progress: time,
+            duration: duration
+        )
         progressSaveTask?.cancel()
         progressSaveTask = Task {
             try? await context.dependencies.api.reportVideoHistory(
                 aid: aid,
-                cid: context.historyCID ?? context.historyVideo?.cid,
+                cid: context.historyCID ?? historyVideo.cid,
                 progress: time,
-                duration: context.historyDuration ?? context.durationHint ?? context.playerDuration
+                duration: duration
             )
         }
     }

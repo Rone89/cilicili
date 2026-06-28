@@ -122,11 +122,19 @@ nonisolated enum BiliAppSigner {
         }
 
         var platform: String {
-            "android"
+            switch self {
+            case .androidPhone, .androidHD, .androidLogin, .androidTV:
+                return "android"
+            }
         }
 
         var channel: String {
-            "master"
+            switch self {
+            case .androidLogin:
+                return "master"
+            case .androidPhone, .androidHD, .androidTV:
+                return "master"
+            }
         }
 
         var statistics: String {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct QRCodeLoginContent: View {
     let state: QRCodeLoginState
@@ -58,6 +59,8 @@ private struct QRCodeLoginActiveState: View {
     let info: QRCodeLoginInfo
     let refresh: () -> Void
 
+    @State private var copiedURL = false
+
     private var statusIcon: String {
         if case .scanned = state {
             return "checkmark.circle"
@@ -70,6 +73,14 @@ private struct QRCodeLoginActiveState: View {
             return appTintColor
         }
         return .secondary
+    }
+
+    private var bilibiliOpenURL: URL? {
+        var components = URLComponents()
+        components.scheme = "bilibili"
+        components.host = "browser"
+        components.queryItems = [URLQueryItem(name: "url", value: info.url)]
+        return components.url
     }
 
     var body: some View {
@@ -85,8 +96,28 @@ private struct QRCodeLoginActiveState: View {
                 .foregroundStyle(statusColor)
                 .multilineTextAlignment(.center)
 
-            Button(action: refresh) {
-                Label("刷新二维码", systemImage: "arrow.clockwise")
+            HStack(spacing: 12) {
+                Button {
+                    if let bilibiliOpenURL {
+                        UIApplication.shared.open(bilibiliOpenURL)
+                    }
+                } label: {
+                    Label("用 B 站打开", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.pink)
+
+                Button(action: refresh) {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Button {
+                UIPasteboard.general.string = info.url
+                copiedURL = true
+            } label: {
+                Label(copiedURL ? "已复制链接" : "复制登录链接", systemImage: copiedURL ? "checkmark" : "doc.on.doc")
             }
             .buttonStyle(.bordered)
         }

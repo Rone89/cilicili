@@ -119,6 +119,7 @@ enum BiliWebCookieStore {
         "DedeUserID",
         "DedeUserID__ckMd5",
         "SESSDATA",
+        "access_key",
         "bili_jct",
         "sid",
         "CURRENT_FNVAL",
