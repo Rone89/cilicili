@@ -31,6 +31,8 @@ struct LiveRoomAnchorInfoRow: View {
 }
 
 private struct LiveRoomAnchorNameRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let anchorName: String
     let isFollowingAnchor: Bool
 
@@ -44,10 +46,10 @@ private struct LiveRoomAnchorNameRow: View {
             if isFollowingAnchor {
                 Text("已关注")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.pink.opacity(0.12))
+                    .background(appTintColor.opacity(0.12))
                     .clipShape(Capsule())
             }
         }
@@ -55,6 +57,8 @@ private struct LiveRoomAnchorNameRow: View {
 }
 
 private struct LiveRoomAnchorStatusRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let isLive: Bool
     let onlineText: String
 
@@ -64,7 +68,7 @@ private struct LiveRoomAnchorStatusRow: View {
                 isLive ? "直播中" : "未开播",
                 systemImage: isLive ? "dot.radiowaves.left.and.right" : "pause.circle"
             )
-            .foregroundStyle(isLive ? .pink : .secondary)
+            .foregroundStyle(isLive ? appTintColor : .secondary)
 
             Text(onlineText)
         }

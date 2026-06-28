@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ErrorStateView: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let title: String
     let message: String
     var retry: (() -> Void)?
@@ -19,7 +20,7 @@ struct ErrorStateView: View {
                 .font(.subheadline.weight(.semibold))
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
-                .tint(.pink)
+                .tint(appTintColor)
             }
         }
     }

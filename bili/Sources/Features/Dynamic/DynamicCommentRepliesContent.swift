@@ -83,6 +83,8 @@ private struct DynamicCommentRepliesLoadedList: View {
 }
 
 private struct DynamicCommentRepliesFooter: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let snapshot: DynamicCommentRepliesSnapshot
     let loadMore: () -> Void
 
@@ -99,7 +101,7 @@ private struct DynamicCommentRepliesFooter: View {
                     .padding(.vertical, 8)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.pink)
+            .foregroundStyle(appTintColor)
         }
     }
 }

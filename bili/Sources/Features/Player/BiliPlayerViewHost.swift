@@ -4,6 +4,7 @@ struct BiliPlayerViewHost<PlayerSurface: View>: View {
     let playerSurface: PlayerSurface
     let title: String
     let configuration: BiliPlayerViewConfiguration
+    let isPictureInPictureEnabled: Bool
     let lifecycleActions: BiliPlayerLifecycleActions
 
     var body: some View {
@@ -13,6 +14,7 @@ struct BiliPlayerViewHost<PlayerSurface: View>: View {
                 presentation: configuration.presentation,
                 isLayoutTransitioning: configuration.isLayoutTransitioning,
                 isSecondaryControlsPresented: configuration.isSecondaryControlsPresented,
+                isPictureInPictureEnabled: isPictureInPictureEnabled,
                 actions: lifecycleActions
             )
     }

@@ -14,7 +14,7 @@ extension MinePlaybackSettingsView {
     func startPlaybackCDNProbe(isAutomatic: Bool) {
         guard !isProbingPlaybackCDN else { return }
         isProbingPlaybackCDN = true
-        playbackCDNProbeMessage = isAutomatic ? "CDN 测速已过期，正在自动刷新..." : "正在测试 CDN 线路..."
+        playbackCDNProbeMessage = isAutomatic ? "CDN 测速已过期，正在刷新 Host 连通性参考..." : "正在测试 CDN Host 连通性..."
         if !isAutomatic {
             playbackCDNProbeResults = []
         }
@@ -32,7 +32,9 @@ extension MinePlaybackSettingsView {
                 guard !Task.isCancelled else { return }
                 playbackCDNProbeResults = snapshot.results
                 libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
-                if let preference = snapshot.recommendedPreference,
+                if snapshot.isWeakReferenceOnly {
+                    playbackCDNProbeMessage = "设置页没有当前播放地址，本次只做 Host 弱参考；403/959 不代表真实播放失败，也不会更新自动推荐。"
+                } else if let preference = snapshot.recommendedPreference,
                    let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
                     if !isAutomatic {
                         libraryStore.setPlaybackCDNPreference(preference)

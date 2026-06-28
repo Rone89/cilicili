@@ -17,6 +17,8 @@ struct DynamicReplyPreviewRow: View {
 }
 
 struct DynamicCommentReplyPreviewContainer<Content: View>: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -26,7 +28,7 @@ struct DynamicCommentReplyPreviewContainer<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.pink.opacity(0.42))
+                .fill(appTintColor.opacity(0.42))
                 .frame(width: 3)
                 .padding(.vertical, 2)
 

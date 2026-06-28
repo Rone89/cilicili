@@ -103,6 +103,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     @Published var isBuffering = false
     @Published var errorMessage: String?
     @Published var isPictureInPictureActive = false
+    @Published private(set) var isPictureInPictureEnabled = false
     @Published var volume: Float = 1
     @Published var isMuted = false
     @Published private(set) var loadingProgress = 0.08
@@ -326,9 +327,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     var isPictureInPictureSupported: Bool {
-        engine.supportsPictureInPicture
+        isPictureInPictureEnabled
+            && (engine.supportsPictureInPicture
             || (AVPictureInPictureController.isPictureInPictureSupported()
-                && (pictureInPictureController != nil || engine.pictureInPictureContentSource() != nil))
+                && (pictureInPictureController != nil || engine.pictureInPictureContentSource() != nil)))
     }
 
     var usesNativePlaybackControls: Bool {
@@ -508,6 +510,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if usesNativePlaybackControls {
             nativePlaybackController = view.nativePlayerViewController
             engine.attachNativePlaybackController(view.nativePlayerViewController)
+            applyPictureInPicturePreferenceToNativePlaybackController()
         } else {
             if let nativePlaybackController {
                 engine.detachNativePlaybackController(nativePlaybackController)
@@ -518,6 +521,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if isNewSurface || shouldAttachDirectSurface {
             engine.attachSurface(view.drawableView)
         }
+        view.setPictureInPictureEnabled(isPictureInPictureEnabled)
         configurePictureInPictureIfNeeded()
         if (isNewSurface || shouldAttachDirectSurface), engine.hasMedia {
             engine.refreshSurfaceLayout()
@@ -535,6 +539,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         nativePlaybackController = controller
         engine.attachNativePlaybackController(controller)
+        applyPictureInPicturePreferenceToNativePlaybackController()
         configurePictureInPictureIfNeeded()
         if engine.hasMedia {
             engine.refreshSurfaceLayout()
@@ -992,6 +997,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func cancelTransientSystemOverlayPlaybackPreservation() {
         shouldResumeAfterTransientSystemOverlay = false
+    }
+
+    func pauseForAppBackground() {
+        guard !isTerminated else { return }
+        cancelTransientSystemOverlayPlaybackPreservation()
+        stopPictureInPictureIfNeeded()
+        pause()
     }
 
     private func schedulePlaybackRecoveryWatchdog(reason: PlaybackRecoveryWatchdogReason) {
@@ -1821,6 +1833,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func togglePictureInPicture() {
+        guard isPictureInPictureEnabled else {
+            stopPictureInPictureIfNeeded()
+            return
+        }
         configurePictureInPictureIfNeeded()
         if pictureInPictureController == nil, engine.supportsPictureInPicture {
             engine.togglePictureInPicture()
@@ -1854,6 +1870,45 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        guard isPictureInPictureEnabled != isEnabled else {
+            engine.setPictureInPictureEnabled(isEnabled)
+            surfaceView?.setPictureInPictureEnabled(isEnabled)
+            applyPictureInPicturePreferenceToNativePlaybackController()
+            return
+        }
+        isPictureInPictureEnabled = isEnabled
+        cancelPictureInPictureStartRetryTask()
+        engine.setPictureInPictureEnabled(isEnabled)
+        pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = isEnabled
+        surfaceView?.setPictureInPictureEnabled(isEnabled)
+        applyPictureInPicturePreferenceToNativePlaybackController()
+        if !isEnabled {
+            stopPictureInPictureIfNeeded()
+        } else {
+            configurePictureInPictureIfNeeded()
+        }
+        invalidatePictureInPicturePlaybackState()
+    }
+
+    func stopPictureInPictureIfNeeded() {
+        cancelPictureInPictureStartRetryTask()
+        if pictureInPictureController?.isPictureInPictureActive == true {
+            pictureInPictureController?.stopPictureInPicture()
+        }
+        engine.stopPictureInPictureIfNeeded()
+        syncPictureInPictureState()
+    }
+
+    func restoreInlinePlaybackFromPictureInPictureIfNeeded() async -> Bool {
+        syncPictureInPictureState()
+        guard isPictureInPictureActive else { return false }
+        let didRestore = await restoreUserInterfaceForPictureInPictureStop?() ?? true
+        guard didRestore else { return false }
+        stopPictureInPictureIfNeeded()
+        return true
     }
 
     private func prepareMediaAndPlay() {
@@ -3550,7 +3605,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func configurePictureInPictureIfNeeded() {
-        guard !didConfigurePictureInPicture,
+        guard isPictureInPictureEnabled,
+              !didConfigurePictureInPicture,
               !engine.supportsPictureInPicture,
               AVPictureInPictureController.isPictureInPictureSupported(),
               let contentSource = engine.pictureInPictureContentSource()
@@ -3561,6 +3617,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         pictureInPictureController = controller
         didConfigurePictureInPicture = true
+    }
+
+    private func applyPictureInPicturePreferenceToNativePlaybackController() {
+        guard let nativePlaybackController else { return }
+        let isSupportedAndEnabled = isPictureInPictureEnabled
+            && AVPictureInPictureController.isPictureInPictureSupported()
+        nativePlaybackController.allowsPictureInPicturePlayback = isSupportedAndEnabled
+        nativePlaybackController.canStartPictureInPictureAutomaticallyFromInline = isSupportedAndEnabled
     }
 
     private func invalidatePictureInPicturePlaybackState() {

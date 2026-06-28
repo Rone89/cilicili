@@ -20,11 +20,10 @@ struct SearchPosterCover: View {
             SearchImagePlaceholder(systemImage: placeholderSystemImage)
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.quaternary, lineWidth: 0.7)
-        }
-        .mediaShadow(.subtle)
+        .videoCoverSurface(
+            cornerRadius: 10,
+            shadowLevel: .subtle,
+            emphasizesBorder: true
+        )
     }
 }

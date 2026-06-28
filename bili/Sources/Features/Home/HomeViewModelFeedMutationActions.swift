@@ -6,16 +6,23 @@ extension HomeViewModel {
         previousVideos: [VideoItem],
         preservingExistingRecommendations shouldPreserveExistingRecommendations: Bool = false
     ) {
-        let mergedVideos = HomeFeedMergePolicy.refreshedVideos(
+        let mergedFeed = HomeFeedMergePolicy.refreshedFeed(
             fresh: newVideos,
             previousVideos: previousVideos,
             mode: mode,
-            preservesExistingRecommendations: shouldPreserveExistingRecommendations
+            preservesExistingRecommendations: shouldPreserveExistingRecommendations,
+            usesNativeReplacement: pageCoordinator.usesNativeAppRecommendSource(for: mode)
         )
-        updateFeed(mergedVideos)
-        exposureRecorder.recordIfNeeded(mergedVideos, mode: mode)
-        mediaPreloadCoordinator.scheduleImagePrefetch(for: mergedVideos)
+        updateFeed(mergedFeed.videos)
+        updateLastSeenMarkerIndex(mergedFeed.lastSeenMarkerIndex)
+        exposureRecorder.recordIfNeeded(mergedFeed.videos, mode: mode)
+        mediaPreloadCoordinator.scheduleImagePrefetch(for: mergedFeed.videos)
         mediaPreloadCoordinator.schedulePlaybackPreload(for: newVideos, initialDelay: 0.75)
+        scheduleRecommendMetadataHydration(
+            for: mergedFeed.videos,
+            revision: requestRevision,
+            reason: "refresh"
+        )
     }
 
     func appendUnique(_ more: [VideoItem]) {
@@ -23,19 +30,30 @@ extension HomeViewModel {
         guard !unique.isEmpty else { return }
         updateFeed(videos + unique)
         exposureRecorder.recordIfNeeded(unique, mode: mode)
-        snapshotCoordinator.save(videos: videos, mode: mode)
+        updateLastSeenMarkerIndex(lastSeenMarkerIndex)
+        snapshotCoordinator.save(
+            videos: videos,
+            mode: mode,
+            lastSeenMarkerIndex: lastSeenMarkerIndex
+        )
         mediaPreloadCoordinator.scheduleImagePrefetch(for: Array(unique.prefix(8)))
         mediaPreloadCoordinator.schedulePlaybackPreload(for: unique, initialDelay: 1.2)
+        scheduleRecommendMetadataHydration(
+            for: unique,
+            revision: requestRevision,
+            reason: "append"
+        )
     }
 
     func restoreCachedVideosIfAvailable() {
         guard videos.isEmpty else { return }
-        guard let cachedVideos = snapshotCoordinator.load(mode: mode),
-              !cachedVideos.isEmpty
+        guard let snapshot = snapshotCoordinator.load(mode: mode),
+              !snapshot.videos.isEmpty
         else { return }
-        updateFeed(cachedVideos)
+        updateFeed(snapshot.videos)
+        updateLastSeenMarkerIndex(snapshot.lastSeenMarkerIndex)
         state = .loaded
-        mediaPreloadCoordinator.scheduleImagePrefetch(for: Array(cachedVideos.prefix(8)))
+        mediaPreloadCoordinator.scheduleImagePrefetch(for: Array(snapshot.videos.prefix(8)))
     }
 
 }

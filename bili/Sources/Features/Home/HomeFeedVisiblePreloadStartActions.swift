@@ -14,7 +14,7 @@ extension HomeFeedPreloadCoordinator {
 
         visiblePreloadRegistry.markPreloadStarted(for: bvid)
         let mediaWarmupMode: VideoPreloadMediaWarmupMode = isPrimary ? .full : .routePlanOnly
-        let mediaWarmupDelay: TimeInterval = isPrimary ? 0.05 : 0.25
+        let mediaWarmupDelay: TimeInterval = isPrimary ? 0 : 0.18
         Task(priority: .utility) {
             await VideoPreloadCenter.shared.preloadPlayInfo(
                 video,

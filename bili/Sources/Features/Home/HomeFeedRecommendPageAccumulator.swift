@@ -3,6 +3,7 @@ import Foundation
 nonisolated struct HomeGuestRecommendPageAccumulator {
     let excludedIDs: Set<String>
     let minimumFreshCount: Int
+    let maximumFreshCount: Int?
     var exposureIDs: Set<String>
     var freshVideos = [VideoItem]()
     var freshIDs = Set<String>()
@@ -12,10 +13,12 @@ nonisolated struct HomeGuestRecommendPageAccumulator {
     init(
         excludedIDs: Set<String>,
         recentExposureIDs: Set<String>,
-        minimumFreshCount: Int
+        minimumFreshCount: Int,
+        maximumFreshCount: Int? = nil
     ) {
         self.excludedIDs = excludedIDs
         self.minimumFreshCount = minimumFreshCount
+        self.maximumFreshCount = maximumFreshCount
         self.exposureIDs = recentExposureIDs.union(excludedIDs)
     }
 
@@ -27,12 +30,14 @@ nonisolated struct HomeGuestRecommendPageAccumulator {
 nonisolated struct HomeUniqueRecommendRefreshAccumulator {
     let excludedIDs: Set<String>
     let minimumFreshCount: Int
+    let maximumFreshCount: Int?
     var freshVideos = [VideoItem]()
     var freshIDs = Set<String>()
 
-    init(excludedIDs: Set<String>, minimumFreshCount: Int) {
+    init(excludedIDs: Set<String>, minimumFreshCount: Int, maximumFreshCount: Int? = nil) {
         self.excludedIDs = excludedIDs
         self.minimumFreshCount = minimumFreshCount
+        self.maximumFreshCount = maximumFreshCount
     }
 
     var hasEnoughFreshVideos: Bool {

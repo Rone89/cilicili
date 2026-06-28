@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentRepliesFooter: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let snapshot: VideoDetailCommentThreadRepliesSnapshot
     let actions: CommentRepliesFooterActions
 
@@ -33,7 +35,7 @@ struct CommentRepliesFooter: View {
                     .padding(.vertical, 9)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.pink)
+            .foregroundStyle(appTintColor)
         }
     }
 }

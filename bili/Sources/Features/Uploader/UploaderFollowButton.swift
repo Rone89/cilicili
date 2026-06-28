@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UploaderFollowButton: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let owner: VideoOwner
     let viewModel: UploaderViewModel
 
@@ -20,7 +21,7 @@ struct UploaderFollowButton: View {
         }
         .buttonBorderShape(.capsule)
         .controlSize(.small)
-        .tint(.pink)
+        .tint(appTintColor)
         .disabled(viewModel.isMutatingFollow || owner.mid <= 0)
     }
 

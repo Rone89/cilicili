@@ -39,19 +39,23 @@ private struct FavoriteFolderCover: View {
 }
 
 private struct FavoriteFolderPlaceholder: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     var body: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(.pink.opacity(0.12))
+            .fill(appTintColor.opacity(0.12))
             .frame(width: 54, height: 54)
             .overlay {
                 Image(systemName: "folder.fill")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
             }
     }
 }
 
 private struct FavoriteFolderInfo: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let folder: FavoriteFolder
 
     var body: some View {
@@ -65,7 +69,7 @@ private struct FavoriteFolderInfo: View {
                 Label("\(folder.mediaCount ?? 0) 个内容", systemImage: "play.rectangle.stack")
                 if folder.isFavorited {
                     Label("已收藏当前视频", systemImage: "star.fill")
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(appTintColor)
                 }
             }
             .font(.caption)

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsNavigationRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let title: String
     let subtitle: String
     let systemImage: String
@@ -9,7 +10,7 @@ struct SettingsNavigationRow: View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 2) {

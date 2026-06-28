@@ -6,7 +6,7 @@ extension HomeFeedMediaPreloadCoordinator {
         let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
             isEnabled: libraryStore.isPlaybackAutoOptimizationEnabled
         )
-        let candidateLimit = max(0, min(1, playbackAdaptationProfile.backgroundRoutePlanPreloadLimit))
+        let candidateLimit = max(0, min(2, playbackAdaptationProfile.backgroundRoutePlanPreloadLimit))
         guard candidateLimit > 0 else {
             playbackPreloadTask = nil
             return
@@ -22,10 +22,11 @@ extension HomeFeedMediaPreloadCoordinator {
         let preferredQuality = libraryStore.preferredVideoQuality
         let cdnPreference = libraryStore.effectivePlaybackCDNPreference
         playbackPreloadTask = Task(priority: .utility) { [api, cdnPreference] in
-            let startupDelay = max(0.12, min(initialDelay, 0.35))
+            let startupDelay = max(0.05, min(initialDelay, 0.24))
             try? await Task.sleep(nanoseconds: UInt64(startupDelay * 1_000_000_000))
             for (index, video) in candidates.enumerated() {
                 guard !Task.isCancelled else { return }
+                let isPrimary = index == 0
                 await VideoPreloadCenter.shared.updatePlaybackPreferences(
                     preferredQuality: preferredQuality,
                     cdnPreference: cdnPreference,
@@ -38,8 +39,8 @@ extension HomeFeedMediaPreloadCoordinator {
                     cdnPreference: cdnPreference,
                     priority: .utility,
                     warmsMedia: true,
-                    mediaWarmupMode: .full,
-                    mediaWarmupDelay: 0.08,
+                    mediaWarmupMode: isPrimary ? .full : .routePlanOnly,
+                    mediaWarmupDelay: isPrimary ? 0 : 0.14,
                     playbackAdaptationProfile: playbackAdaptationProfile
                 )
                 if index < candidates.count - 1 {

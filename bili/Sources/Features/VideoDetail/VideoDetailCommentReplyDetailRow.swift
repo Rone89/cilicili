@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentReplyDetailRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let item: VideoDetailCommentReplyDisplayItem
     let showDialog: (() -> Void)?
 
@@ -54,7 +56,7 @@ struct CommentReplyDetailRow: View {
                             .frame(height: 26)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
                     .padding(.top, 2)
                 }
             }

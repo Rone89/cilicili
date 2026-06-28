@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentReplyPreviewContainer<Content: View>: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let replyCount: Int
     let showsPreview: Bool
     let content: Content
@@ -16,7 +18,7 @@ struct CommentReplyPreviewContainer<Content: View>: View {
             if showsPreview {
                 HStack(alignment: .top, spacing: 8) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(Color.pink.opacity(0.42))
+                        .fill(appTintColor.opacity(0.42))
                         .frame(width: 3)
                         .padding(.vertical, 2)
 
@@ -30,7 +32,7 @@ struct CommentReplyPreviewContainer<Content: View>: View {
             Label("\(replyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
                 .font(.caption.weight(.semibold))
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }

@@ -101,6 +101,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private var lastDiagnostics: PlayerEngineDiagnostics = .empty
     private var playbackGeneration = 0
     private var isStopped = true
+    private var isPictureInPictureEnabled = false
 
     var hasMedia: Bool {
         !isStopped && playerLayer != nil
@@ -119,6 +120,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     var supportsPictureInPicture: Bool {
+        guard isPictureInPictureEnabled else { return false }
         if #available(iOS 15.0, tvOS 15.0, *) {
             return playerLayer?.player.pipController != nil
         }
@@ -126,7 +128,11 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     var isPictureInPictureActive: Bool {
-        playerLayer?.isPipActive == true
+        if #available(iOS 15.0, tvOS 15.0, *) {
+            return playerLayer?.isPipActive == true
+                || playerLayer?.player.pipController?.isPictureInPictureActive == true
+        }
+        return playerLayer?.isPipActive == true
     }
 
     var usesNativePlaybackControls: Bool {
@@ -500,12 +506,53 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     func togglePictureInPicture() {
+        guard isPictureInPictureEnabled else {
+            stopPictureInPictureIfNeeded()
+            return
+        }
+        if #available(iOS 15.0, tvOS 15.0, *),
+           playerLayer?.isPipActive != true,
+           playerLayer?.player.pipController?.isPictureInPictureActive == true {
+            stopPictureInPictureIfNeeded()
+            return
+        }
         playerLayer?.isPipActive.toggle()
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        if !isEnabled {
+            stopPictureInPictureIfNeeded()
+        }
+        isPictureInPictureEnabled = isEnabled
+        KSOptions.canStartPictureInPictureAutomaticallyFromInline = isEnabled
+        applyPictureInPicturePreferenceToPlayerLayer()
     }
 
     func invalidatePictureInPicturePlaybackState() {
         if #available(iOS 15.0, tvOS 15.0, *) {
             playerLayer?.player.pipController?.invalidatePlaybackState()
+        }
+    }
+
+    private func applyPictureInPicturePreferenceToPlayerLayer() {
+        guard let playerLayer else { return }
+        playerLayer.options.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureEnabled
+        if !isPictureInPictureEnabled {
+            playerLayer.isPipActive = false
+        }
+        if #available(iOS 15.0, tvOS 15.0, *) {
+            playerLayer.player.pipController?.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureEnabled
+        }
+    }
+
+    func stopPictureInPictureIfNeeded() {
+        if #available(iOS 15.0, tvOS 15.0, *),
+           let pipController = playerLayer?.player.pipController,
+           pipController.isPictureInPictureActive {
+            pipController.stopPictureInPicture()
+        }
+        if playerLayer?.isPipActive == true {
+            playerLayer?.isPipActive = false
         }
     }
 
@@ -567,6 +614,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         layer.player.playbackVolume = currentVolume
         layer.player.isMuted = currentMuted
         playerLayer = layer
+        applyPictureInPicturePreferenceToPlayerLayer()
         didRecordCurrentLayerTiming = false
         configureFirstFrameRenderCallback(for: layer)
         let viewInstallStart = CACurrentMediaTime()
@@ -605,6 +653,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         startupProbeMode: StartupProbeMode = .optimized
     ) -> KSOptions {
         let options = KSOptions()
+        options.canStartPictureInPictureAutomaticallyFromInline = isPictureInPictureEnabled
         options.userAgent = source.httpHeaders["User-Agent"] ?? options.userAgent
         options.referer = source.referer
         options.appendHeader(source.httpHeaders)

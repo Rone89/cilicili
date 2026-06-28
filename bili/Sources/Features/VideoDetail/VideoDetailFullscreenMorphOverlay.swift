@@ -4,7 +4,7 @@ struct VideoDetailFullscreenMorphOverlay: View {
     let state: VideoDetailFullscreenMorphState?
 
     var body: some View {
-        if let state, state.isActive {
+        if let state, state.isActive, !state.usesWindowMask {
             ZStack {
                 Color.black
                     .opacity(backdropOpacity(for: state))

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct InitialCommentsSection: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 8) {
@@ -14,8 +16,8 @@ struct InitialCommentsSection: View {
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .background(Color.pink.opacity(0.14))
-                        .foregroundStyle(.pink)
+                        .background(appTintColor.opacity(0.14))
+                        .foregroundStyle(appTintColor)
                         .clipShape(Capsule())
                     Text("最新")
                         .font(.caption.weight(.semibold))

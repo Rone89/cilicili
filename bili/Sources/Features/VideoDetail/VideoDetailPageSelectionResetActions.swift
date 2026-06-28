@@ -7,7 +7,7 @@ extension VideoDetailViewModel {
         selectedPlayVariant = nil
         playURLElapsedMilliseconds = nil
         lastPlayURLSource = nil
-        didSelectPlayVariantManually = false
+        clearManualPlayVariantSelection()
         failedPlayVariantIDs.removeAll()
         playbackRecoveryAttemptCount = 0
         playbackRecoveryCoordinator.reset()
@@ -36,5 +36,10 @@ extension VideoDetailViewModel {
         sponsorBlockSegments = []
         sponsorBlockIdentity = nil
         playURLState = .idle
+    }
+
+    func clearManualPlayVariantSelection() {
+        didSelectPlayVariantManually = false
+        manuallySelectedPlayVariantQuality = nil
     }
 }

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicOriginalPreview: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let item: DynamicOriginalItem
     let parentID: String
     let contentWidth: CGFloat?
@@ -52,7 +54,7 @@ struct DynamicOriginalPreview: View {
         .background(Color(.secondarySystemGroupedBackground).opacity(0.78))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color.pink.opacity(0.58))
+                .fill(appTintColor.opacity(0.58))
                 .frame(width: 3)
                 .padding(.vertical, 10)
                 .padding(.leading, 6)

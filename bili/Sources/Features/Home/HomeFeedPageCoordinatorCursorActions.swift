@@ -4,7 +4,11 @@ extension HomeFeedPageCoordinator {
     func resetCursor(for mode: HomeFeedMode) {
         switch mode {
         case .recommend:
-            freshIndex = usesGuestRecommendDiversity(for: mode) ? HomeGuestRecommendState.nextFreshIndex() : 0
+            if usesNativeAppRecommendSource(for: mode) {
+                freshIndex = 0
+            } else {
+                freshIndex = usesGuestRecommendDiversity(for: mode) ? HomeGuestRecommendState.nextFreshIndex() : 0
+            }
         case .popular:
             popularPage = 1
         }
@@ -13,7 +17,9 @@ extension HomeFeedPageCoordinator {
     func advanceRefreshCursor(for mode: HomeFeedMode) {
         switch mode {
         case .recommend:
-            if usesGuestRecommendDiversity(for: mode) {
+            if usesNativeAppRecommendSource(for: mode) {
+                freshIndex = 0
+            } else if usesGuestRecommendDiversity(for: mode) {
                 freshIndex = max(freshIndex + 1, HomeGuestRecommendState.nextFreshIndex())
             } else {
                 freshIndex += 1
@@ -26,7 +32,9 @@ extension HomeFeedPageCoordinator {
     func advanceCursor(for mode: HomeFeedMode) {
         switch mode {
         case .recommend:
-            if usesGuestRecommendDiversity(for: mode) {
+            if usesNativeAppRecommendSource(for: mode) {
+                freshIndex += 1
+            } else if usesGuestRecommendDiversity(for: mode) {
                 freshIndex = max(freshIndex + 1, HomeGuestRecommendState.nextFreshIndex())
             } else {
                 freshIndex += 1

@@ -25,6 +25,7 @@ nonisolated struct HomeVideoCellSignature: Equatable {
     let width: Int?
     let height: Int?
     let rotate: Int?
+    let recommendReason: String?
 
     init(video: VideoItem) {
         bvid = video.bvid
@@ -39,6 +40,7 @@ nonisolated struct HomeVideoCellSignature: Equatable {
         width = video.dimension?.width
         height = video.dimension?.height
         rotate = video.dimension?.rotate
+        recommendReason = video.recommendReason
     }
 }
 

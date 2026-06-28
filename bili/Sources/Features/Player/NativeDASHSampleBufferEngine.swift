@@ -22,6 +22,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     private var currentMuted = false
     private var currentRate: Double = 1
     private var preferredPeakBitRate: Double?
+    private var isPictureInPictureEnabled = false
     private var wantsPlayback = false
     private var currentSource: PlayerStreamSource?
     private var didFallbackFromNativeDASHForCurrentSource = false
@@ -123,6 +124,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     func attachNativePlaybackController(_ controller: AVPlayerViewController) {
         nativeController = controller
         activeEngine.attachNativePlaybackController(controller)
+        activeEngine.setPictureInPictureEnabled(isPictureInPictureEnabled)
     }
 
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
@@ -130,6 +132,11 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         if nativeController === controller {
             nativeController = nil
         }
+    }
+
+    func setPictureInPictureEnabled(_ isEnabled: Bool) {
+        isPictureInPictureEnabled = isEnabled
+        activeEngine.setPictureInPictureEnabled(isEnabled)
     }
 
     func prepare(source: PlayerStreamSource) async throws {
@@ -365,6 +372,11 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         activeEngine.togglePictureInPicture()
     }
 
+    func stopPictureInPictureIfNeeded() {
+        guard !isStopped else { return }
+        activeEngine.stopPictureInPictureIfNeeded()
+    }
+
     func invalidatePictureInPicturePlaybackState() {
         guard !isStopped else { return }
         activeEngine.invalidatePictureInPicturePlaybackState()
@@ -395,6 +407,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         engine.setMuted(currentMuted)
         engine.setPlaybackRate(currentRate)
         engine.setPreferredPeakBitRate(preferredPeakBitRate)
+        engine.setPictureInPictureEnabled(isPictureInPictureEnabled)
         engine.setContentOverlay(contentOverlay)
         engine.setDanmakuControls(
             isEnabled: isDanmakuEnabled,

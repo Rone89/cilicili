@@ -25,6 +25,7 @@ struct BiliPlayerViewContent: View {
         VideoSurfaceView(
             viewModel: context.viewModel,
             prefersNativePlaybackControls: false,
+            isPictureInPictureEnabled: context.isPictureInPictureEnabled,
             disablesImplicitLayoutAnimations: context.configuration.isLayoutTransitioning,
             usesLiveSurfaceDuringLayoutTransition: context.configuration.usesLiveSurfaceDuringLayoutTransition
         )

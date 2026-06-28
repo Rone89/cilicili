@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DanmakuSettingsHeaderSectionContent: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let isDanmakuEnabled: Bool
     let settings: DanmakuSettings
     let summary: String
@@ -11,7 +13,7 @@ struct DanmakuSettingsHeaderSectionContent: View {
             HStack(spacing: 8) {
                 Label("弹幕", systemImage: isDanmakuEnabled ? "text.bubble.fill" : "text.bubble")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isDanmakuEnabled ? .pink : .secondary)
+                    .foregroundStyle(isDanmakuEnabled ? appTintColor : .secondary)
 
                 Spacer(minLength: 8)
 

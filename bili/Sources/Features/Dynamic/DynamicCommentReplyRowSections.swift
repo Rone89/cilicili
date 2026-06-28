@@ -25,12 +25,14 @@ struct DynamicCommentReplyAuthorLine: View {
 }
 
 private struct DynamicCommentReplyLikeLabel: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let display: DynamicCommentRowDisplayModel
 
     var body: some View {
         Label(display.likeText, systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
             .font(.caption)
-            .foregroundStyle(display.isLiked ? .pink : .secondary)
+            .foregroundStyle(display.isLiked ? appTintColor : .secondary)
             .labelStyle(.titleAndIcon)
     }
 }

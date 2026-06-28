@@ -9,6 +9,7 @@ struct BiliPlayerViewRenderContext {
     let rotationFallbackCoverURL: URL?
     let speedBoostModel: PlayerSpeedBoostModel
     let configuration: BiliPlayerViewConfiguration
+    let isPictureInPictureEnabled: Bool
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
 }

@@ -2,6 +2,8 @@ import SwiftUI
 import UIKit
 
 struct BiliEmoteText: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let content: CommentContent?
     let font: Font
     let textColor: Color
@@ -37,7 +39,7 @@ struct BiliEmoteText: View {
                 content: content,
                 baseFont: resolvedUIFont,
                 textColor: UIColor(textColor),
-                accentColor: .systemPink,
+                accentColor: UIColor(appTintColor),
                 leadingName: leadingName,
                 leadingNameColor: UIColor(leadingNameColor),
                 emoteSize: emoteSize,
@@ -57,6 +59,8 @@ struct BiliEmoteText: View {
 }
 
 struct BiliLinkedText: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let text: String
     let font: UIFont
     let textColor: Color
@@ -83,7 +87,7 @@ struct BiliLinkedText: View {
                 plainText: text,
                 baseFont: font,
                 textColor: UIColor(textColor),
-                accentColor: .systemPink,
+                accentColor: UIColor(appTintColor),
                 leadingName: nil,
                 leadingNameColor: .secondaryLabel,
                 emoteSize: font.lineHeight,

@@ -77,7 +77,7 @@ enum VideoCodecPreference: String, CaseIterable, Identifiable, Codable, Sendable
     nonisolated var detail: String {
         switch self {
         case .auto:
-            return "AV1 > HEVC > H.264"
+            return "普通视频优先 AV1，高帧率优先 HEVC。"
         case .forceAV1:
             return "请求 AV1，不可用时降级到 HEVC / H.264。"
         case .forceHEVC:
@@ -202,7 +202,12 @@ nonisolated enum DashStreamDispatcher {
             .filter { _, stream in stream.url != nil }
         guard !playableStreams.isEmpty else { return nil }
 
-        let codecOrder = effectiveCodecOrder(for: preference, kernel: kernel)
+        let streams = playableStreams.map(\.element)
+        let codecOrder = effectiveCodecOrder(
+            for: preference,
+            kernel: kernel,
+            streams: streams
+        )
         return playableStreams
             .min { lhs, rhs in
                 rankingTuple(
@@ -222,12 +227,42 @@ nonisolated enum DashStreamDispatcher {
 
     private static func effectiveCodecOrder(
         for preference: VideoCodecPreference,
-        kernel: PlayerKernelType
+        kernel: PlayerKernelType,
+        streams: [DashStream] = []
     ) -> [VideoCodecFamily] {
+        if preference == .auto,
+           shouldPreferHEVCForHighFrameRateStartup(streams, kernel: kernel) {
+            return prioritizingHEVC(in: preference.codecOrder)
+        }
         guard PlayerKernelPlaybackSupport.shouldPreferAV1Selection(on: kernel) else {
             return demotingAV1(in: preference.codecOrder)
         }
         return preference.codecOrder
+    }
+
+    private static func shouldPreferHEVCForHighFrameRateStartup(
+        _ streams: [DashStream],
+        kernel: PlayerKernelType
+    ) -> Bool {
+        guard PlaybackCodecPolicy.canDecodeHEVC else { return false }
+        let hasHighFrameAV1 = streams.contains {
+            $0.isAV1VideoCodec && playbackFrameRate($0) >= 50
+        }
+        guard hasHighFrameAV1 else { return false }
+        return streams.contains {
+            $0.isHEVCVideoCodec
+                && playbackFrameRate($0) >= 50
+                && PlayerKernelPlaybackSupport.prefersHardwareDecodedPlayback(
+                    for: $0,
+                    on: kernel
+                )
+        }
+    }
+
+    private static func prioritizingHEVC(in order: [VideoCodecFamily]) -> [VideoCodecFamily] {
+        var adjusted = order.filter { $0 != .hevc }
+        adjusted.insert(.hevc, at: 0)
+        return adjusted
     }
 
     private static func demotingAV1(in order: [VideoCodecFamily]) -> [VideoCodecFamily] {
@@ -259,6 +294,16 @@ nonisolated enum DashStreamDispatcher {
             negativeBandwidth: -(stream.bandwidth ?? 0),
             originalIndex: originalIndex
         )
+    }
+
+    private static func playbackFrameRate(_ stream: DashStream) -> Double {
+        if let frameRate = DASHStream.numericFrameRate(from: stream.frameRate) {
+            return frameRate
+        }
+        if [116, 74].contains(stream.id ?? 0) {
+            return 60
+        }
+        return 0
     }
 }
 

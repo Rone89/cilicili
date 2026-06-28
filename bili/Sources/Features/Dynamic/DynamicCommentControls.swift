@@ -17,6 +17,8 @@ struct DynamicCommentImageGrid: View {
 }
 
 struct DynamicCommentInlineActionPill: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -32,6 +34,6 @@ struct DynamicCommentInlineActionPill: View {
                 .frame(height: 26)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.pink)
+        .foregroundStyle(appTintColor)
     }
 }

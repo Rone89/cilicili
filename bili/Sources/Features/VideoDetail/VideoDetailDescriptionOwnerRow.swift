@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct VideoDescriptionOwnerRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let owner: VideoOwner?
     let fanCountText: String
     let isFollowing: Bool
@@ -36,8 +38,8 @@ struct VideoDescriptionOwnerRow: View {
                     .frame(minWidth: 58)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(isFollowing ? Color(.tertiarySystemFill) : Color.pink.opacity(0.12))
-                    .foregroundStyle(isFollowing ? Color.secondary : Color.pink)
+                    .background(isFollowing ? Color(.tertiarySystemFill) : appTintColor.opacity(0.12))
+                    .foregroundStyle(isFollowing ? Color.secondary : appTintColor)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)

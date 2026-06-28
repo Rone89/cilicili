@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import KSPlayer
 import UIKit
 
 @MainActor
@@ -27,8 +28,17 @@ final class AppDependencies: ObservableObject {
             libraryStore: libraryStore
         )
         self.sponsorBlockService = SponsorBlockService()
-        sessionStore.$sessdata
+        Self.applyPictureInPicturePreference(libraryStore.pictureInPictureEnabled)
+        libraryStore.$pictureInPictureEnabled
             .removeDuplicates()
+            .sink { isEnabled in
+                Self.applyPictureInPicturePreference(isEnabled)
+            }
+            .store(in: &sessionCancellables)
+        Publishers.CombineLatest(sessionStore.$sessdata, sessionStore.$accessKey)
+            .removeDuplicates { lhs, rhs in
+                lhs.0 == rhs.0 && lhs.1 == rhs.1
+            }
             .dropFirst()
             .sink { _ in
                 Task {
@@ -117,5 +127,9 @@ final class AppDependencies: ObservableObject {
             PlaybackRangeStreamingSessionCoordinator.refreshForNetworkPathChange()
             PlaybackCDNProbeCoordinator.shared.refreshIfNeeded(libraryStore: libraryStore)
         }
+    }
+
+    private static func applyPictureInPicturePreference(_ isEnabled: Bool) {
+        KSOptions.canStartPictureInPictureAutomaticallyFromInline = isEnabled
     }
 }

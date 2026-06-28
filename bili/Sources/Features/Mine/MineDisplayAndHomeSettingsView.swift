@@ -10,6 +10,7 @@ struct MineDisplayAndHomeSettingsView: View {
             MineHomeSettingsSection(libraryStore: libraryStore)
             MineSearchSettingsSection(libraryStore: libraryStore)
         }
+        .tint(libraryStore.appTintColor)
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
     }

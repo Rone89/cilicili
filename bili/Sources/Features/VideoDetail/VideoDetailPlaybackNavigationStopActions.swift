@@ -68,6 +68,7 @@ extension VideoDetailViewModel {
 
     private func resetPlaybackRecoveryStateForNavigation() {
         playbackFallbackMessage = nil
+        clearManualPlayVariantSelection()
         failedPlayVariantIDs.removeAll()
         playbackRecoveryAttemptCount = 0
         playbackRecoveryCoordinator.reset()

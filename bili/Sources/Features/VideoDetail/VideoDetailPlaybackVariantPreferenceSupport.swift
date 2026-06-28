@@ -33,7 +33,7 @@ extension VideoDetailViewModel {
     private func storedPreferredVariant(in playableVariants: [PlayVariant], preferredQuality: Int?) -> PlayVariant? {
         guard let preferredQuality = preferredQuality
                 ?? (didSelectPlayVariantManually
-                    ? libraryStore.preferredVideoQuality
+                    ? manuallySelectedPlayVariantQuality
                     : targetPlaybackPreferredQuality)
         else { return nil }
         let sortedVariants = sortedPlayVariants(playableVariants)

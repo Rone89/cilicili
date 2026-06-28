@@ -11,6 +11,7 @@ struct BiliPlayerLifecycleActions {
     let onPresentationChanged: () -> Void
     let onLayoutTransitionChanged: (Bool) -> Void
     let onSecondaryControlsPresentedChanged: (Bool) -> Void
+    let onPictureInPictureEnabledChanged: (Bool) -> Void
 }
 
 private struct BiliPlayerLifecycleHostModifier: ViewModifier {
@@ -21,6 +22,7 @@ private struct BiliPlayerLifecycleHostModifier: ViewModifier {
     let presentation: BiliPlayerPresentation
     let isLayoutTransitioning: Bool
     let isSecondaryControlsPresented: Bool
+    let isPictureInPictureEnabled: Bool
     let actions: BiliPlayerLifecycleActions
 
     func body(content: Content) -> some View {
@@ -50,6 +52,9 @@ private struct BiliPlayerLifecycleHostModifier: ViewModifier {
             }
             .onChange(of: isSecondaryControlsPresented) { _, isPresented in
                 actions.onSecondaryControlsPresentedChanged(isPresented)
+            }
+            .onChange(of: isPictureInPictureEnabled) { _, isEnabled in
+                actions.onPictureInPictureEnabledChanged(isEnabled)
             }
     }
 
@@ -89,6 +94,7 @@ extension View {
         presentation: BiliPlayerPresentation,
         isLayoutTransitioning: Bool,
         isSecondaryControlsPresented: Bool,
+        isPictureInPictureEnabled: Bool,
         actions: BiliPlayerLifecycleActions
     ) -> some View {
         modifier(
@@ -97,6 +103,7 @@ extension View {
                 presentation: presentation,
                 isLayoutTransitioning: isLayoutTransitioning,
                 isSecondaryControlsPresented: isSecondaryControlsPresented,
+                isPictureInPictureEnabled: isPictureInPictureEnabled,
                 actions: actions
             )
         )

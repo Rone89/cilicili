@@ -15,4 +15,8 @@ final class HomeFeedPageCoordinator {
     func usesGuestRecommendDiversity(for mode: HomeFeedMode) -> Bool {
         mode == .recommend && libraryStore.guestModeEnabled
     }
+
+    func usesNativeAppRecommendSource(for mode: HomeFeedMode) -> Bool {
+        mode == .recommend && libraryStore.homeRecommendFeedSourcePreference == .app
+    }
 }

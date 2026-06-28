@@ -14,7 +14,10 @@ extension HomeUniqueRecommendRefreshAccumulator {
     }
 
     func resolvedPage(lastRawPage: [VideoItem]) -> [VideoItem] {
-        guard !freshVideos.isEmpty else { return lastRawPage }
-        return Array(freshVideos.prefix(minimumFreshCount))
+        let limit = maximumFreshCount ?? minimumFreshCount
+        guard !freshVideos.isEmpty else {
+            return Array(lastRawPage.prefix(limit))
+        }
+        return Array(freshVideos.prefix(limit))
     }
 }

@@ -34,6 +34,8 @@ struct MineView: View {
                     }
                 case .qrCode:
                     QRCodeLoginView(viewModel: viewModel)
+                case .sms:
+                    SMSLoginView(viewModel: viewModel)
                 }
             }
         }
@@ -46,6 +48,7 @@ struct MineView: View {
             sessionStore: sessionStore,
             libraryStore: libraryStore,
             onQRCodeLogin: { loginSheet = .qrCode },
+            onSMSLogin: { loginSheet = .sms },
             onWebLogin: { loginSheet = .web }
         )
         .task {
@@ -66,6 +69,7 @@ struct MineView: View {
 
 private enum LoginSheet: Identifiable, Hashable {
     case qrCode
+    case sms
     case web
 
     var id: Self { self }

@@ -62,6 +62,7 @@ enum VideoDetailRotationWindowMask {
         from sourceFrame: CGRect? = nil,
         to targetFrame: CGRect,
         duration: TimeInterval,
+        releasesOnCompletion: Bool = true,
         fadeOutDelay: TimeInterval = 0.24,
         fadeOutDuration: TimeInterval = 0.14
     ) -> Bool {
@@ -110,6 +111,7 @@ enum VideoDetailRotationWindowMask {
         } completion: { _ in
             Task { @MainActor in
                 guard animationGeneration == generation else { return }
+                guard releasesOnCompletion else { return }
                 UIView.animate(
                     withDuration: fadeOutDuration,
                     delay: fadeOutDelay,

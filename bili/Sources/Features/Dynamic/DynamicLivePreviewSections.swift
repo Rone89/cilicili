@@ -47,8 +47,7 @@ struct DynamicLiveCover: View {
             }
         }
         .background(BiliMediaPlaceholder(style: .video, iconSize: 17))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .mediaShadow(.regular)
+        .videoCoverSurface(cornerRadius: 12, shadowLevel: .regular)
     }
 }
 
@@ -66,12 +65,14 @@ struct DynamicLiveTitle: View {
 }
 
 struct DynamicLiveMetadata: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let live: DynamicLive
 
     var body: some View {
         HStack(spacing: 10) {
             Label(live.statusText, systemImage: "dot.radiowaves.left.and.right")
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
 
             if let viewerText = live.viewerText {
                 Text(viewerText)

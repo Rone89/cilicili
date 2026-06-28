@@ -71,6 +71,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
 }
 
 struct AccountLibraryButtonRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let title: String
     let systemImage: String
 
@@ -78,7 +80,7 @@ struct AccountLibraryButtonRow: View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
                 .frame(width: 28, height: 28)
 
             Text(title)

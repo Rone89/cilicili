@@ -27,8 +27,7 @@ private struct LibraryVideoCover: View {
             Color.gray.opacity(0.14)
         }
         .frame(width: 92, height: 58)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .mediaShadow(.subtle)
+        .videoCoverSurface(cornerRadius: 8, shadowLevel: .subtle)
     }
 }
 
@@ -64,6 +63,8 @@ private struct LibraryVideoInfo: View {
 }
 
 private struct LibraryVideoProgress: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let resumeTime: Double
     let progress: Double?
 
@@ -71,11 +72,11 @@ private struct LibraryVideoProgress: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("看到 \(BiliFormatters.duration(Int(resumeTime)))")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
 
             if let progress {
                 ProgressView(value: progress)
-                    .tint(.pink)
+                    .tint(appTintColor)
             }
         }
     }

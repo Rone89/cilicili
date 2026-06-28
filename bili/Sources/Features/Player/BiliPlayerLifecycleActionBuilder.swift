@@ -11,6 +11,7 @@ struct BiliPlayerLifecycleActionBuilder {
     let progressReporter: PlayerPlaybackProgressReporter
     let progressContext: PlayerPlaybackProgressContext
     let configuration: BiliPlayerViewConfiguration
+    let isPictureInPictureEnabled: Bool
     let defaultPlaybackRate: Double
     let videoGravity: AVLayerVideoGravity
 
@@ -23,7 +24,8 @@ struct BiliPlayerLifecycleActionBuilder {
             onFullscreenActiveChanged: handleFullscreenActiveChange,
             onPresentationChanged: handlePresentationChange,
             onLayoutTransitionChanged: handleLayoutTransitionChange,
-            onSecondaryControlsPresentedChanged: handleSecondaryControlsPresentedChange
+            onSecondaryControlsPresentedChanged: handleSecondaryControlsPresentedChange,
+            onPictureInPictureEnabledChanged: handlePictureInPictureEnabledChange
         )
     }
 
@@ -48,6 +50,7 @@ struct BiliPlayerLifecycleActionBuilder {
         guard allowsPlaybackActivation else { return }
         surfaceState.bind(viewModel: viewModel)
         visibilityActions.syncSecondaryControlsPresentation(configuration.isSecondaryControlsPresented)
+        viewModel.setPictureInPictureEnabled(isPictureInPictureEnabled)
         applyVideoGravity()
         applyPlaybackDefaults()
         if viewModel.wantsAutoplay {
@@ -69,12 +72,17 @@ struct BiliPlayerLifecycleActionBuilder {
             guard allowsPlaybackActivation else { return }
             viewModel.recoverPlaybackAfterTransientSystemOverlayIfNeeded()
             viewModel.recoverPlaybackAfterAppResume()
+            restoreInlinePlaybackFromPictureInPictureIfNeeded()
         } else if phase == .inactive {
             guard allowsPlaybackActivation else { return }
             viewModel.preservePlaybackThroughTransientSystemOverlay()
         } else if phase == .background {
             if allowsPlaybackActivation {
-                viewModel.preservePlaybackThroughTransientSystemOverlay()
+                if isPictureInPictureEnabled {
+                    viewModel.preservePlaybackThroughTransientSystemOverlay()
+                } else {
+                    viewModel.pauseForAppBackground()
+                }
             }
             speedBoostActions.end(reason: "background")
             Task {
@@ -92,6 +100,7 @@ struct BiliPlayerLifecycleActionBuilder {
         guard allowsPlaybackActivation else { return }
         viewModel.recoverPlaybackAfterTransientSystemOverlayIfNeeded()
         viewModel.recoverPlaybackAfterAppResume()
+        restoreInlinePlaybackFromPictureInPictureIfNeeded()
     }
 
     private func handleDisappear() {
@@ -157,6 +166,13 @@ struct BiliPlayerLifecycleActionBuilder {
         visibilityActions.syncSecondaryControlsPresentation(isPresented)
     }
 
+    private func handlePictureInPictureEnabledChange(_ isEnabled: Bool) {
+        guard !viewModel.isTerminated else { return }
+        viewModel.setPictureInPictureEnabled(isEnabled)
+        guard !isEnabled else { return }
+        viewModel.stopPictureInPictureIfNeeded()
+    }
+
     private var allowsPlaybackActivation: Bool {
         configuration.allowsPlaybackActivation?() ?? true
     }
@@ -179,6 +195,13 @@ struct BiliPlayerLifecycleActionBuilder {
                     ?? viewModel.makeCurrentVideoFrameTransitionSnapshot()
             }
         )
+    }
+
+    private func restoreInlinePlaybackFromPictureInPictureIfNeeded() {
+        guard isPictureInPictureEnabled else { return }
+        Task { @MainActor [viewModel] in
+            _ = await viewModel.restoreInlinePlaybackFromPictureInPictureIfNeeded()
+        }
     }
 
 }

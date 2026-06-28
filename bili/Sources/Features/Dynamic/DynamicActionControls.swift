@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicActionButton: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let title: String
     let systemImage: String
     let isSelected: Bool
@@ -11,7 +12,7 @@ struct DynamicActionButton: View {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.semibold))
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(isSelected ? .pink : .secondary)
+                .foregroundStyle(isSelected ? appTintColor : .secondary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
                 .contentShape(Rectangle())
@@ -21,6 +22,7 @@ struct DynamicActionButton: View {
 }
 
 struct DynamicActionPill: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let title: String
     let systemImage: String
     let isSelected: Bool
@@ -39,7 +41,7 @@ struct DynamicActionPill: View {
         }
         .biliGlassButtonStyle(prominent: isSelected)
         .controlSize(.small)
-        .tint(isSelected ? .pink : .secondary)
+        .tint(isSelected ? appTintColor : .secondary)
     }
 }
 

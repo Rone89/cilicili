@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct LiveActionStrip: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     @ObservedObject var viewModel: LiveRoomViewModel
     let contentWidth: CGFloat
 
@@ -36,7 +38,7 @@ struct LiveActionStrip: View {
                 LiveActionContent(
                     title: viewModel.isLive ? "直播中" : "未开播",
                     systemImage: viewModel.isLive ? "dot.radiowaves.left.and.right" : "pause.circle",
-                    foregroundStyle: viewModel.isLive ? .pink : .secondary
+                    foregroundStyle: viewModel.isLive ? appTintColor : .secondary
                 )
                 .frame(width: columnWidth, height: 25)
             }

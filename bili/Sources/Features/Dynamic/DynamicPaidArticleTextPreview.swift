@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicPaidArticleTextPreview: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let content: DynamicPaidContent
 
     var body: some View {
@@ -26,7 +28,7 @@ struct DynamicPaidArticleTextPreview: View {
                 }
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.pink)
+            .foregroundStyle(appTintColor)
             .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

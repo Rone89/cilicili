@@ -32,6 +32,8 @@ struct FollowedLiveStrip: View {
 }
 
 private struct FollowedLiveAvatar: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let room: LiveRoom
 
     var body: some View {
@@ -46,7 +48,7 @@ private struct FollowedLiveAvatar: View {
                 .clipShape(Circle())
                 .overlay {
                     Circle()
-                        .stroke(Color.pink.opacity(0.72), lineWidth: 1.5)
+                        .stroke(appTintColor.opacity(0.72), lineWidth: 1.5)
                 }
                 .mediaShadow(.regular)
 

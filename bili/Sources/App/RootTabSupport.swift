@@ -6,9 +6,19 @@ import UIKit
 final class RootHomeViewModelHolder: ObservableObject {
     @Published var viewModel: HomeViewModel?
 
-    func configure(api: BiliAPIClient, libraryStore: LibraryStore, initialMode: HomeFeedMode) {
+    func configure(
+        api: BiliAPIClient,
+        libraryStore: LibraryStore,
+        sessionStore: SessionStore,
+        initialMode: HomeFeedMode
+    ) {
         if viewModel == nil {
-            let viewModel = HomeViewModel(api: api, libraryStore: libraryStore, initialMode: initialMode)
+            let viewModel = HomeViewModel(
+                api: api,
+                libraryStore: libraryStore,
+                sessionStore: sessionStore,
+                initialMode: initialMode
+            )
             self.viewModel = viewModel
         }
     }
@@ -100,15 +110,20 @@ struct NavigationChromeInstaller: UIViewControllerRepresentable {
 }
 
 struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
+    let tintColorHex: String
+
     func makeUIViewController(context _: Context) -> Controller {
         Controller()
     }
 
     func updateUIViewController(_ controller: Controller, context _: Context) {
+        controller.selectedColor = AppThemeTintColor.uiColor(for: tintColorHex)
         controller.applySoon()
     }
 
     final class Controller: UIViewController {
+        var selectedColor = AppThemeTintColor.uiColor(for: AppThemeTintColor.defaultHex)
+
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             applyAppearance()
@@ -139,7 +154,6 @@ struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
             appearance.shadowColor = UIColor.label.withAlphaComponent(0.04)
 
             let normalColor = UIColor.secondaryLabel.withAlphaComponent(0.82)
-            let selectedColor = UIColor.systemPink
             configure(appearance.stackedLayoutAppearance, normalColor: normalColor, selectedColor: selectedColor)
             configure(appearance.inlineLayoutAppearance, normalColor: normalColor, selectedColor: selectedColor)
             configure(appearance.compactInlineLayoutAppearance, normalColor: normalColor, selectedColor: selectedColor)

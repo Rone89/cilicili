@@ -1,7 +1,14 @@
+import Combine
 import SwiftUI
 
 @MainActor
-final class HomeFeedScrollActions {
+final class HomeFeedScrollActions: ObservableObject {
+    @Published private(set) var topScrollRequestID = 0
+
+    func requestScrollToTop() {
+        topScrollRequestID &+= 1
+    }
+
     func updateFeedContainerWidth(
         _ width: CGFloat,
         state: HomeFeedViewportState

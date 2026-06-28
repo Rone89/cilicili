@@ -1,7 +1,10 @@
+import Foundation
 import SwiftUI
 
 struct RootTabView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var dependencies: AppDependencies
+    @EnvironmentObject var libraryStore: LibraryStore
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
     @StateObject var homeViewModelHolder = RootHomeViewModelHolder()
     @State var selectedTab = Self.initialTab.appTab
@@ -79,11 +82,11 @@ struct RootTabView: View {
                 }
                 .tabPlacement(.pinned)
             }
-            .tint(.pink)
+            .tint(libraryStore.appTintColor)
             .tabViewSearchActivation(.searchTabSelection)
             .tabBarMinimizeBehavior(runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never)
             .restoresRootTabBarWhenRequested(requestID: rootTabBarRestoreRequestID)
-            .background(RootTabBarAppearanceInstaller())
+            .background(RootTabBarAppearanceInstaller(tintColorHex: libraryStore.appTintColorHex))
 
             if bottomMode == .video {
                 videoNavigationHost()
@@ -95,6 +98,7 @@ struct RootTabView: View {
         .environment(\.openVideoAction, openVideo)
         .environment(\.prewarmVideoRouteAction, beginPlaybackPreload)
         .environment(\.openAppURLAction, openAppURL)
+        .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
             openAppURL(url)
@@ -121,6 +125,29 @@ struct RootTabView: View {
         .onChange(of: runtimeSettings.visibleRootTabs) { _, tabs in
             repairSelectedTabIfNeeded(visibleTabs: tabs)
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background else { return }
+            Task {
+                await VideoPreloadCenter.shared.cancelMediaWarmups(clearCache: false)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
+            cancelMediaWarmupsIfEnvironmentConstrained()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)) { _ in
+            cancelMediaWarmupsIfEnvironmentConstrained()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .biliPlaybackNetworkClassDidChange)) { _ in
+            cancelMediaWarmupsIfEnvironmentConstrained()
+        }
+    }
+
+    private func cancelMediaWarmupsIfEnvironmentConstrained() {
+        let environment = PlaybackEnvironment.current
+        guard environment.shouldPreferConservativePlayback || environment.isThermallyElevated else { return }
+        Task {
+            await VideoPreloadCenter.shared.cancelMediaWarmups(clearCache: false)
+        }
     }
 
     @ViewBuilder
@@ -144,6 +171,7 @@ struct RootTabView: View {
                     homeViewModelHolder.configure(
                         api: dependencies.api,
                         libraryStore: dependencies.libraryStore,
+                        sessionStore: dependencies.sessionStore,
                         initialMode: .recommend
                     )
                 }

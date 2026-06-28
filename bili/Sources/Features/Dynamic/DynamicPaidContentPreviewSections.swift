@@ -41,8 +41,10 @@ struct DynamicPaidContentCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: style == .large ? 16 : 10, style: .continuous))
-        .mediaShadow(style == .large ? .control : .regular)
+        .videoCoverSurface(
+            cornerRadius: style == .large ? 16 : 10,
+            shadowLevel: style == .large ? .control : .regular
+        )
     }
 }
 
@@ -60,12 +62,14 @@ struct DynamicPaidContentTitle: View {
 }
 
 struct DynamicPaidContentMetadata: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let content: DynamicPaidContent
 
     var body: some View {
         HStack(spacing: 8) {
             Label(kindText, systemImage: kindIcon)
-                .foregroundStyle(content.isChargeExclusive ? .pink : .secondary)
+                .foregroundStyle(content.isChargeExclusive ? appTintColor : .secondary)
 
             if let subtitle = content.subtitle, !subtitle.isEmpty {
                 Text(subtitle)
@@ -74,7 +78,7 @@ struct DynamicPaidContentMetadata: View {
 
             if content.isLocked {
                 Label("需解锁", systemImage: "lock.fill")
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
             }
         }
         .font(.caption)

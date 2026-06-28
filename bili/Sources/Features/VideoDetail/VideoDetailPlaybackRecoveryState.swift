@@ -2,6 +2,7 @@ import Foundation
 
 struct VideoDetailPlaybackRecoveryState {
     var didSelectPlayVariantManually = false
+    var manuallySelectedPlayVariantQuality: Int?
     var failedPlayVariantIDs = Set<String>()
     var playbackRecoveryAttemptCount = 0
     var playbackRecoveryCoordinator = VideoDetailPlaybackRecoveryCoordinator()
@@ -16,6 +17,11 @@ extension VideoDetailViewModel {
     var didSelectPlayVariantManually: Bool {
         get { playbackRecoveryState.didSelectPlayVariantManually }
         set { playbackRecoveryState.didSelectPlayVariantManually = newValue }
+    }
+
+    var manuallySelectedPlayVariantQuality: Int? {
+        get { playbackRecoveryState.manuallySelectedPlayVariantQuality }
+        set { playbackRecoveryState.manuallySelectedPlayVariantQuality = newValue }
     }
 
     var failedPlayVariantIDs: Set<String> {

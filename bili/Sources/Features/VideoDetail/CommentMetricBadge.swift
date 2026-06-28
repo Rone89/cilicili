@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentMetricBadge: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let text: String
     let systemImage: String
     let isHighlighted: Bool
@@ -11,7 +13,7 @@ struct CommentMetricBadge: View {
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .minimumScaleFactor(0.82)
-            .foregroundStyle(isHighlighted ? .pink : .secondary)
+            .foregroundStyle(isHighlighted ? appTintColor : .secondary)
             .frame(height: 24)
     }
 }

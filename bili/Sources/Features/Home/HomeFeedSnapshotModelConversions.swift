@@ -12,6 +12,7 @@ extension HomeFeedCachedVideo {
         owner = video.owner.map(HomeFeedCachedOwner.init(owner:))
         stat = video.stat.map(HomeFeedCachedStat.init(stat:))
         cid = video.cid
+        recommendReason = video.recommendReason
     }
 
     @MainActor var videoItem: VideoItem {
@@ -27,7 +28,8 @@ extension HomeFeedCachedVideo {
             stat: stat?.videoStat,
             cid: cid,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            recommendReason: recommendReason
         )
     }
 }

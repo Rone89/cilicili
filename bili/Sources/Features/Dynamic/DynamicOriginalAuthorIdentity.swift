@@ -1,13 +1,15 @@
 import SwiftUI
 
 struct DynamicOriginalAuthorIdentity: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let author: DynamicAuthor
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "quote.opening")
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(appTintColor)
 
             Text("转发自")
                 .font(.caption.weight(.semibold))

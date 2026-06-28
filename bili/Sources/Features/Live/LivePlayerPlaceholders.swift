@@ -41,6 +41,7 @@ private struct LivePlayerLoadingContent: View {
 }
 
 struct LivePlayerFailurePlaceholder: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let message: String
     let retry: () -> Void
 
@@ -67,7 +68,7 @@ struct LivePlayerFailurePlaceholder: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .tint(.pink)
+            .tint(appTintColor)
         }
     }
 }

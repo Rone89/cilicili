@@ -56,6 +56,8 @@ private struct LiveRoomDescriptionMetadata: View {
 }
 
 struct LiveRoomDescriptionAnchorRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     @ObservedObject var viewModel: LiveRoomViewModel
 
     var body: some View {
@@ -73,7 +75,7 @@ struct LiveRoomDescriptionAnchorRow: View {
 
                 Text(viewModel.isLive ? "直播中" : "未开播")
                     .font(.caption)
-                    .foregroundStyle(viewModel.isLive ? .pink : .secondary)
+                    .foregroundStyle(viewModel.isLive ? appTintColor : .secondary)
             }
 
             Spacer(minLength: 0)
@@ -84,6 +86,8 @@ struct LiveRoomDescriptionAnchorRow: View {
 }
 
 private struct LiveRoomDescriptionAnchorName: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     @ObservedObject var viewModel: LiveRoomViewModel
 
     var body: some View {
@@ -96,10 +100,10 @@ private struct LiveRoomDescriptionAnchorName: View {
             if viewModel.isFollowingAnchor {
                 Text("已关注")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.pink.opacity(0.12))
+                    .background(appTintColor.opacity(0.12))
                     .clipShape(Capsule())
             }
         }

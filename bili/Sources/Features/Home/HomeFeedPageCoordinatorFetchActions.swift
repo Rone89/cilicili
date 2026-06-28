@@ -7,6 +7,9 @@ extension HomeFeedPageCoordinator {
     ) async throws -> [VideoItem] {
         switch mode {
         case .recommend:
+            if usesNativeAppRecommendSource(for: mode) {
+                return try await api.fetchRecommendFeed(freshIndex: freshIndex)
+            }
             if usesGuestRecommendDiversity(for: mode) {
                 return try await fetchGuestRecommendPage(
                     excluding: existingIDs,

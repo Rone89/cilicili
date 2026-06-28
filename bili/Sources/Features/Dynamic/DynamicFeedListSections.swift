@@ -34,6 +34,7 @@ struct DynamicFeedItemsList: View {
 }
 
 struct DynamicFeedFooter: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     @ObservedObject var viewModel: DynamicViewModel
 
     var body: some View {
@@ -54,7 +55,7 @@ struct DynamicFeedFooter: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
-                .tint(.pink)
+                .tint(appTintColor)
                 .padding(.top, 10)
             } else {
                 Text("没有更多动态了")

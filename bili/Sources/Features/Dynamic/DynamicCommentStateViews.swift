@@ -32,6 +32,7 @@ struct DynamicCommentPlainEmptyStateView: View {
 }
 
 struct DynamicCommentErrorView: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let message: String
     let retry: () -> Void
 
@@ -56,7 +57,7 @@ struct DynamicCommentErrorView: View {
             .dynamicCommentGlassButtonStyle()
             .controlSize(.small)
             .buttonBorderShape(.capsule)
-            .tint(.pink)
+            .tint(appTintColor)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(13)

@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeFeedContentSectionResolver: View {
     let metrics: HomeFeedLayoutMetrics
     let cells: [HomeVideoCellModel]
+    let lastSeenMarkerIndex: Int?
     let isLoadingMore: Bool
     let actions: HomeFeedContentActions
 
@@ -14,6 +15,7 @@ struct HomeFeedContentSectionResolver: View {
                 HomeFeedSingleColumnContent(
                     metrics: metrics,
                     cells: cells,
+                    lastSeenMarkerIndex: lastSeenMarkerIndex,
                     isLoadingMore: isLoadingMore,
                     actions: actions
                 )
@@ -21,6 +23,7 @@ struct HomeFeedContentSectionResolver: View {
                 HomeFeedDoubleColumnContent(
                     metrics: metrics,
                     cells: cells,
+                    lastSeenMarkerIndex: lastSeenMarkerIndex,
                     isLoadingMore: isLoadingMore,
                     actions: actions
                 )

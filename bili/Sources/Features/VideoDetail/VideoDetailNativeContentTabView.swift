@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
@@ -34,7 +35,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 Label(VideoDetailContentTab.comments.title, systemImage: VideoDetailContentTab.comments.systemImage)
             }
         }
-        .tint(.pink)
+        .tint(appTintColor)
         .tabBarMinimizeBehavior(minimizesTabBarOnScroll ? .onScrollDown : .never)
         .background(VideoDetailTheme.background)
     }

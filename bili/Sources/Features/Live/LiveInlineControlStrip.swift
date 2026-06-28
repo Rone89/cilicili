@@ -26,6 +26,8 @@ struct LiveInlineControlStrip: View {
 }
 
 private struct LiveInlineDanmakuButton: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     @ObservedObject var viewModel: LiveRoomViewModel
 
     var body: some View {
@@ -38,11 +40,13 @@ private struct LiveInlineDanmakuButton: View {
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(viewModel.isDanmakuEnabled ? .pink : .secondary)
+        .foregroundStyle(viewModel.isDanmakuEnabled ? appTintColor : .secondary)
     }
 }
 
 private struct LiveInlineDanmakuDiagnosticsButton: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     @ObservedObject var viewModel: LiveRoomViewModel
 
     var body: some View {
@@ -55,6 +59,6 @@ private struct LiveInlineDanmakuDiagnosticsButton: View {
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(viewModel.isLiveDanmakuDiagnosticsEnabled ? .pink : .secondary)
+        .foregroundStyle(viewModel.isLiveDanmakuDiagnosticsEnabled ? appTintColor : .secondary)
     }
 }

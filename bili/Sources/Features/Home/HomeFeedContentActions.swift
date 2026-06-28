@@ -7,4 +7,5 @@ struct HomeFeedContentActions {
     let onVisibleFrame: (VideoItem, Int) -> Void
     let onInvisibleFrame: (VideoItem) -> Void
     let onLoadMore: (VideoItem) async -> Void
+    let onRefreshFromLastSeenMarker: () async -> Void
 }

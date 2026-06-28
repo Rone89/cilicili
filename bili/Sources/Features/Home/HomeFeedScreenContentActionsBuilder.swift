@@ -15,7 +15,8 @@ struct HomeFeedScreenContentActionsBuilder {
             onVideoPress: beginPressedPreload,
             onVisibleFrame: registerVisiblePreloadCandidate,
             onInvisibleFrame: unregisterVisiblePreloadCandidate,
-            onLoadMore: loadMoreIfNeeded
+            onLoadMore: loadMoreIfNeeded,
+            onRefreshFromLastSeenMarker: refreshFromLastSeenMarker
         )
     }
 
@@ -57,6 +58,12 @@ struct HomeFeedScreenContentActionsBuilder {
             current: video,
             viewModel: viewModel
         )
+    }
+
+    private func refreshFromLastSeenMarker() async {
+        actionStore.scroll.requestScrollToTop()
+        await viewModel.refreshFromUserPull()
+        actionStore.scroll.requestScrollToTop()
     }
 
     private func appendDetailPath(_ video: VideoItem) {

@@ -434,6 +434,8 @@ struct AppLinkButton<Label: View>: View {
 }
 
 struct AppLinkButtons: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let urls: [URL]
     var limit = 3
     var maxButtonWidth: CGFloat = 176
@@ -453,16 +455,16 @@ struct AppLinkButtons: View {
                             Label(AppLinkRouter.displayTitle(for: url), systemImage: "link")
                                 .font(.caption.weight(.semibold))
                                 .labelStyle(.titleAndIcon)
-                                .foregroundStyle(.pink)
+                                .foregroundStyle(appTintColor)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .padding(.horizontal, 9)
                                 .frame(maxWidth: maxButtonWidth, alignment: .leading)
                                 .frame(height: 24)
-                                .background(Color.pink.opacity(0.10), in: Capsule())
+                                .background(appTintColor.opacity(0.10), in: Capsule())
                                 .overlay {
                                     Capsule()
-                                        .stroke(Color.pink.opacity(0.22), lineWidth: 0.5)
+                                        .stroke(appTintColor.opacity(0.22), lineWidth: 0.5)
                                 }
                         }
                         .accessibilityLabel("打开链接")

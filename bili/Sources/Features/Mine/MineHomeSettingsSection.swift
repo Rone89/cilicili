@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MineHomeSettingsSection: View {
+    @EnvironmentObject private var sessionStore: SessionStore
     @ObservedObject var libraryStore: LibraryStore
 
     var body: some View {
@@ -28,7 +29,35 @@ struct MineHomeSettingsSection: View {
             }
             .pickerStyle(.navigationLink)
 
+            Text(recommendSourceHint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             MineHomeRefreshDistanceControl(libraryStore: libraryStore)
+        }
+    }
+
+    private var recommendSourceHint: String {
+        switch libraryStore.homeRecommendFeedSourcePreference {
+        case .web:
+            return "网页端更稳定；App 端更接近 B 站 App 的推荐。"
+        case .app:
+            if libraryStore.guestModeEnabled {
+                return "当前是 App 端游客推荐：隐私里的游客推荐模式已开启，不会使用你的账号画像。"
+            }
+            if sessionStore.appAccessKey() != nil {
+                return "当前是 App 端账号推荐：已带移动端凭证，更接近官方客户端推荐。"
+            }
+            switch sessionStore.loginCredentialKind {
+            case .web:
+                return "当前是网页登录：App 端推荐缺少 access_key，建议改用 App 短信验证码登录。"
+            case .appQRCodeTV:
+                return "当前是扫码登录：如 App 推荐不准，建议改用 App 短信验证码登录。"
+            case .appSMS:
+                return "当前是短信登录，但缺少 access_key；可重新登录后再刷新首页。"
+            case .unknown:
+                return "当前 App 端推荐缺少 access_key，可能不是完整账号推荐。"
+            }
         }
     }
 }

@@ -10,22 +10,23 @@ extension HomeGuestRecommendPageAccumulator {
 
     func resolvedPage(lastRawPage: [VideoItem]) -> [VideoItem] {
         guard !freshVideos.isEmpty else {
-            return fallbackVideos.isEmpty ? lastRawPage : fallbackVideos
+            return limited(fallbackVideos.isEmpty ? lastRawPage : fallbackVideos)
         }
         let targetCount = max(minimumFreshCount, min(20, fallbackVideos.count))
-        guard freshVideos.count < targetCount else {
-            return freshVideos
+        let resolvedTargetCount = maximumFreshCount.map { min(targetCount, $0) } ?? targetCount
+        guard freshVideos.count < resolvedTargetCount else {
+            return limited(freshVideos)
         }
 
         var merged = freshVideos
         var mergedIDs = Set(freshVideos.map(\.id))
         for video in fallbackVideos where mergedIDs.insert(video.id).inserted {
             merged.append(video)
-            if merged.count >= targetCount {
+            if merged.count >= resolvedTargetCount {
                 break
             }
         }
-        return merged
+        return limited(merged)
     }
 
     mutating func appendFallbackIfNeeded(_ video: VideoItem) {
@@ -41,5 +42,12 @@ extension HomeGuestRecommendPageAccumulator {
         else { return }
         freshVideos.append(video)
         exposureIDs.insert(video.id)
+    }
+
+    private func limited(_ videos: [VideoItem]) -> [VideoItem] {
+        guard let maximumFreshCount, videos.count > maximumFreshCount else {
+            return videos
+        }
+        return Array(videos.prefix(maximumFreshCount))
     }
 }

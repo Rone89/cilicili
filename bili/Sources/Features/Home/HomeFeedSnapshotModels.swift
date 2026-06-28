@@ -2,7 +2,13 @@ import Foundation
 
 nonisolated struct HomeFeedSnapshot: Codable {
     let savedAt: Date
+    let lastSeenMarkerIndex: Int?
     let videos: [HomeFeedCachedVideo]
+}
+
+nonisolated struct HomeFeedSnapshotRestore {
+    let videos: [VideoItem]
+    let lastSeenMarkerIndex: Int?
 }
 
 nonisolated struct HomeFeedCachedVideo: Codable {
@@ -16,6 +22,7 @@ nonisolated struct HomeFeedCachedVideo: Codable {
     let owner: HomeFeedCachedOwner?
     let stat: HomeFeedCachedStat?
     let cid: Int?
+    let recommendReason: String?
 }
 
 nonisolated struct HomeFeedCachedOwner: Codable {

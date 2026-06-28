@@ -106,8 +106,8 @@ final class MineViewModel: ObservableObject {
     func completeWebLogin(with cookies: [HTTPCookie]) async {
         do {
             cancelQRCodeLogin()
-            try sessionStore.saveLoginCookies(cookies)
-            loginMessage = "登录成功"
+            try sessionStore.saveLoginCookies(cookies, credentialKind: .web)
+            loginMessage = "网页登录成功，首页推荐建议优先选择网页端。"
             await refreshUser()
         } catch {
             loginMessage = error.localizedDescription
@@ -151,6 +151,47 @@ final class MineViewModel: ObservableObject {
         qrLoginTask = nil
     }
 
+    func sendAppSMSCode(phone: String, countryCode: String) async throws -> String {
+        cancelQRCodeLogin()
+        let info = try await api.sendAppSMSCode(
+            phone: Self.normalizedPhone(phone),
+            countryCode: Self.normalizedCountryCode(countryCode)
+        )
+        guard let captchaKey = info.captchaKey, !captchaKey.isEmpty else {
+            throw BiliAPIError.missingPayload
+        }
+        return captchaKey
+    }
+
+    func completeAppSMSLogin(
+        phone: String,
+        countryCode: String,
+        code: String,
+        captchaKey: String
+    ) async throws {
+        cancelQRCodeLogin()
+        let loginData = try await api.loginWithAppSMS(
+            phone: Self.normalizedPhone(phone),
+            countryCode: Self.normalizedCountryCode(countryCode),
+            code: code.trimmingCharacters(in: .whitespacesAndNewlines),
+            captchaKey: captchaKey
+        )
+        let cookieValues = loginData.loginCookieValues
+        guard !cookieValues.isEmpty else {
+            throw BiliAPIError.missingPayload
+        }
+        try sessionStore.saveLoginCookies(cookieValues, credentialKind: .appSMS)
+        guard sessionStore.isLoggedIn else {
+            throw BiliAPIError.missingSESSDATA
+        }
+        if sessionStore.appAccessKey() == nil {
+            loginMessage = "登录成功，但没有拿到 access_key"
+        } else {
+            loginMessage = "短信登录成功，App 端推荐会更接近官方客户端。"
+        }
+        await refreshUser()
+    }
+
     private func pollQRCodeLogin(_ info: QRCodeLoginInfo) async {
         while !Task.isCancelled {
             do {
@@ -174,14 +215,14 @@ final class MineViewModel: ObservableObject {
                     return
                 case .confirmed:
                     if !result.cookies.isEmpty {
-                        try sessionStore.saveLoginCookies(result.cookies)
+                        try sessionStore.saveLoginCookies(result.cookies, credentialKind: .web)
                     } else {
                         let cookieValues = result.data.cookieValuesFromURL
                         guard !cookieValues.isEmpty else {
                             qrLoginState = .failed("登录成功但没有拿到 Cookie，请改用网页登录。")
                             return
                         }
-                        try sessionStore.saveLoginCookies(cookieValues)
+                        try sessionStore.saveLoginCookies(cookieValues, credentialKind: .web)
                     }
                     guard sessionStore.isLoggedIn else {
                         qrLoginState = .failed("登录成功但没有拿到 Cookie，请改用网页登录。")
@@ -203,6 +244,17 @@ final class MineViewModel: ObservableObject {
                 return
             }
         }
+    }
+
+    private nonisolated static func normalizedPhone(_ value: String) -> String {
+        value
+            .filter { $0.isNumber }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func normalizedCountryCode(_ value: String) -> String {
+        let digits = value.filter { $0.isNumber }
+        return digits.isEmpty ? "86" : digits
     }
 }
 

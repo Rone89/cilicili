@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct VideoDetailActionStripButtonRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let model: VideoDetailActionStripModel
     let layout: VideoDetailActionStripLayout
     let onFollow: () -> Void
@@ -25,7 +27,7 @@ struct VideoDetailActionStripButtonRow: View {
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "点赞",
                 systemImage: "hand.thumbsup.fill",
-                foregroundStyle: model.isLiked ? .pink : .primary,
+                foregroundStyle: model.isLiked ? appTintColor : .primary,
                 isDisabled: model.isMutatingLike,
                 action: onLike
             )
@@ -34,7 +36,7 @@ struct VideoDetailActionStripButtonRow: View {
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "投币",
                 systemImage: "bitcoinsign.circle.fill",
-                foregroundStyle: model.isCoined ? .pink : .primary,
+                foregroundStyle: model.isCoined ? appTintColor : .primary,
                 isDisabled: model.isMutatingCoin || model.coinCount >= 2,
                 action: onCoin
             )
@@ -43,7 +45,7 @@ struct VideoDetailActionStripButtonRow: View {
             VideoDetailActionStripIconButton(
                 accessibilityTitle: model.isFavorited ? "已收藏" : "收藏",
                 systemImage: "star.fill",
-                foregroundStyle: model.isFavorited ? .pink : .primary,
+                foregroundStyle: model.isFavorited ? appTintColor : .primary,
                 isDisabled: model.isMutatingFavorite || !model.canFavorite,
                 action: onFavorite
             )

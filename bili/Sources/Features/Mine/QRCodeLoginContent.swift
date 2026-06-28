@@ -52,6 +52,8 @@ private struct QRCodeLoginLoadingState: View {
 }
 
 private struct QRCodeLoginActiveState: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let state: QRCodeLoginState
     let info: QRCodeLoginInfo
     let refresh: () -> Void
@@ -65,7 +67,7 @@ private struct QRCodeLoginActiveState: View {
 
     private var statusColor: Color {
         if case .scanned = state {
-            return .pink
+            return appTintColor
         }
         return .secondary
     }
@@ -92,6 +94,7 @@ private struct QRCodeLoginActiveState: View {
 }
 
 private struct QRCodeLoginRetryState: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let systemImage: String
     let title: String
     let message: String
@@ -115,7 +118,7 @@ private struct QRCodeLoginRetryState: View {
                 Label("重新生成", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
-            .tint(.pink)
+            .tint(appTintColor)
         }
     }
 }

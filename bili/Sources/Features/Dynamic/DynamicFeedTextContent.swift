@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicFeedTextContent: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let collapsedInput: DynamicAttributedTextInput
     let expandedInput: DynamicAttributedTextInput
     let preferredWidth: CGFloat?
@@ -27,7 +29,7 @@ struct DynamicFeedTextContent: View {
                             .font(.caption2.weight(.bold))
                     }
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
                     .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
                     .contentShape(Rectangle())
                 }

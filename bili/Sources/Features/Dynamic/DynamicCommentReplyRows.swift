@@ -24,6 +24,8 @@ struct DynamicCommentReplyRootView: View {
 }
 
 struct DynamicCommentReplyDetailRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
 
@@ -54,7 +56,7 @@ struct DynamicCommentReplyDetailRow: View {
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(appTintColor)
                     .padding(.top, 2)
                 }
             }
@@ -66,6 +68,8 @@ struct DynamicCommentReplyDetailRow: View {
 }
 
 struct DynamicCommentDialogRow: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let item: DynamicCommentDialogItem
     let isFocused: Bool
 
@@ -95,7 +99,7 @@ struct DynamicCommentDialogRow: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, isFocused ? 10 : 0)
-        .background(isFocused ? Color.pink.opacity(0.06) : Color.clear)
+        .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

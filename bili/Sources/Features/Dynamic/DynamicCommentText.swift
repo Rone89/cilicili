@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicCommentText: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+
     let content: CommentContent?
     let font: Font
     let textColor: Color
@@ -64,14 +66,16 @@ struct DynamicCommentText: View {
                 message: message,
                 font: font,
                 contentColor: textColor,
-                nameColor: leadingNameColor
+                nameColor: leadingNameColor,
+                replyTargetColor: appTintColor
             )
         }
 
         return DynamicCommentTextBuilder.replyMessage(
             message,
             font: font,
-            contentColor: textColor
+            contentColor: textColor,
+            replyTargetColor: appTintColor
         )
     }
 
@@ -96,16 +100,27 @@ enum DynamicCommentTextBuilder {
         message: String,
         font: Font,
         contentColor: Color,
-        nameColor: Color = .secondary
+        nameColor: Color = .secondary,
+        replyTargetColor: Color
     ) -> AttributedString {
         var user = AttributedString("\(name)：")
         user.font = font.weight(.semibold)
         user.foregroundColor = nameColor
 
-        return user + replyMessage(message, font: font, contentColor: contentColor)
+        return user + replyMessage(
+            message,
+            font: font,
+            contentColor: contentColor,
+            replyTargetColor: replyTargetColor
+        )
     }
 
-    static func replyMessage(_ message: String, font: Font, contentColor: Color) -> AttributedString {
+    static func replyMessage(
+        _ message: String,
+        font: Font,
+        contentColor: Color,
+        replyTargetColor: Color = .secondary
+    ) -> AttributedString {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let split = replyPrefixSplit(in: text) else {
             var content = AttributedString(text)
@@ -120,7 +135,7 @@ enum DynamicCommentTextBuilder {
 
         var target = AttributedString(split.target)
         target.font = font.weight(.semibold)
-        target.foregroundColor = .pink
+        target.foregroundColor = replyTargetColor
 
         var separator = AttributedString(split.separator)
         separator.font = font
