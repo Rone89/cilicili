@@ -20,6 +20,7 @@ struct HomeFeedScreenContentActionsBuilder {
     }
 
     private func openVideo(_ video: VideoItem) {
+        viewModel.recordRecommendClick(video)
         actionStore.card.openVideo(
             video,
             onVideoSelect: launchConfiguration.onVideoSelect,
@@ -37,6 +38,7 @@ struct HomeFeedScreenContentActionsBuilder {
     }
 
     private func registerVisiblePreloadCandidate(_ video: VideoItem, index: Int) {
+        viewModel.recordRecommendExposure(video, index: index)
         actionStore.card.registerVisiblePreloadCandidate(
             video,
             index: index,

@@ -4,6 +4,7 @@ struct MineAccountSection: View {
     @ObservedObject var viewModel: MineViewModel
     @ObservedObject var sessionStore: SessionStore
     let onQRCodeLogin: () -> Void
+    let onSMSLogin: () -> Void
     let onWebLogin: () -> Void
 
     var body: some View {
@@ -24,6 +25,7 @@ struct MineAccountSection: View {
                 MineLoginPanelView(
                     message: viewModel.loginMessage,
                     onQRCodeLogin: onQRCodeLogin,
+                    onSMSLogin: onSMSLogin,
                     onWebLogin: onWebLogin
                 )
             }

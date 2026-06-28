@@ -4,7 +4,10 @@ extension HomeViewModel {
     func loadInitial() async {
         guard videos.isEmpty else { return }
         updateFeed([])
-        state = .loading
+        restoreCachedVideosIfAvailable()
+        if videos.isEmpty {
+            state = .loading
+        }
         await refresh(resetCursor: true)
     }
 

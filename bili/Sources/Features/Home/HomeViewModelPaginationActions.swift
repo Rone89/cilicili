@@ -21,7 +21,7 @@ extension HomeViewModel {
         } catch {
             guard revision == requestRevision else { return }
             pageCoordinator.rollbackCursor(for: mode)
-            state = .failed(error.localizedDescription)
+            state = videos.isEmpty ? .failed(error.localizedDescription) : .loaded
         }
     }
 }

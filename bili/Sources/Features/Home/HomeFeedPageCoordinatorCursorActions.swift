@@ -18,7 +18,7 @@ extension HomeFeedPageCoordinator {
         switch mode {
         case .recommend:
             if usesNativeAppRecommendSource(for: mode) {
-                freshIndex = 0
+                freshIndex += 1
             } else if usesGuestRecommendDiversity(for: mode) {
                 freshIndex = max(freshIndex + 1, HomeGuestRecommendState.nextFreshIndex())
             } else {

@@ -1,16 +1,25 @@
 import Foundation
 import Combine
 
+nonisolated enum LoginCredentialKind: String, Codable, Sendable {
+    case unknown
+    case web
+    case appQRCodeTV
+    case appSMS
+}
+
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessdata: String?
     @Published private(set) var accessKey: String?
+    @Published private(set) var loginCredentialKind: LoginCredentialKind
     @Published private(set) var user: NavUserInfo?
 
     private let keychain: KeychainStore
     private let sessdataKey = "SESSDATA"
     private let accessKeyKey = "ACCESS_KEY"
     private let loginCookieHeaderKey = "LOGIN_COOKIE_HEADER"
+    private let loginCredentialKindKey = "LOGIN_CREDENTIAL_KIND"
     private let buvidKey = "buvid3"
     private var loginCookieHeader: String?
 
@@ -20,6 +29,12 @@ final class SessionStore: ObservableObject {
         self.sessdata = try? keychain.read(sessdataKey)
         self.accessKey = try? keychain.read(accessKeyKey)
         self.loginCookieHeader = try? keychain.read(loginCookieHeaderKey)
+        if let rawKind = try? keychain.read(loginCredentialKindKey),
+           let kind = LoginCredentialKind(rawValue: rawKind) {
+            self.loginCredentialKind = kind
+        } else {
+            self.loginCredentialKind = .unknown
+        }
     }
 
     var isLoggedIn: Bool {
@@ -57,11 +72,12 @@ final class SessionStore: ObservableObject {
         if guestModeEnabled {
             return "guest-\(buvid3())"
         }
+        let credentialSuffix = "login-\(loginCredentialKind.rawValue)"
         if let mid = Self.cookieValue(named: "DedeUserID", in: cookieHeader()) {
-            return "mid-\(mid)"
+            return "mid-\(mid)|\(credentialSuffix)"
         }
         if isLoggedIn {
-            return "auth-cookie"
+            return "auth-cookie|\(credentialSuffix)"
         }
         return "anon-\(buvid3())"
     }
@@ -90,14 +106,14 @@ final class SessionStore: ObservableObject {
         sessdata = value
     }
 
-    func saveLoginCookies(_ cookies: [HTTPCookie]) throws {
+    func saveLoginCookies(_ cookies: [HTTPCookie], credentialKind: LoginCredentialKind? = nil) throws {
         let values = cookies.reduce(into: [String: String]()) { result, cookie in
             result[cookie.name] = cookie.value
         }
-        try saveLoginCookies(values)
+        try saveLoginCookies(values, credentialKind: credentialKind)
     }
 
-    func saveLoginCookies(_ cookies: [String: String]) throws {
+    func saveLoginCookies(_ cookies: [String: String], credentialKind: LoginCredentialKind? = nil) throws {
         let allowedNames = [
             "buvid3",
             "buvid4",
@@ -135,6 +151,10 @@ final class SessionStore: ObservableObject {
             try keychain.save(header, for: loginCookieHeaderKey)
             loginCookieHeader = header
         }
+        if let credentialKind {
+            try keychain.save(credentialKind.rawValue, for: loginCredentialKindKey)
+            self.loginCredentialKind = credentialKind
+        }
     }
 
     func updateUser(_ user: NavUserInfo?) {
@@ -145,9 +165,11 @@ final class SessionStore: ObservableObject {
         try keychain.delete(sessdataKey)
         try keychain.delete(accessKeyKey)
         try keychain.delete(loginCookieHeaderKey)
+        try keychain.delete(loginCredentialKindKey)
         sessdata = nil
         accessKey = nil
         loginCookieHeader = nil
+        loginCredentialKind = .unknown
         user = nil
     }
 

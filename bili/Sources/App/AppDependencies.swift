@@ -7,6 +7,7 @@ import UIKit
 final class AppDependencies: ObservableObject {
     let sessionStore: SessionStore
     let libraryStore: LibraryStore
+    let homeRecommendDiagnosticsStore: HomeRecommendDiagnosticsStore
     let api: BiliAPIClient
     let sponsorBlockService: SponsorBlockService
     private let networkMetricsRecorder: BiliNetworkMetricsRecorder
@@ -18,14 +19,17 @@ final class AppDependencies: ObservableObject {
     init() {
         let sessionStore = SessionStore()
         let libraryStore = LibraryStore()
+        let homeRecommendDiagnosticsStore = HomeRecommendDiagnosticsStore.shared
         let networkMetricsRecorder = BiliNetworkMetricsRecorder()
         self.sessionStore = sessionStore
         self.libraryStore = libraryStore
+        self.homeRecommendDiagnosticsStore = homeRecommendDiagnosticsStore
         self.networkMetricsRecorder = networkMetricsRecorder
         self.api = BiliAPIClient(
             session: BiliURLSessionFactory.makeAPISession(delegate: networkMetricsRecorder),
             sessionStore: sessionStore,
-            libraryStore: libraryStore
+            libraryStore: libraryStore,
+            homeRecommendDiagnosticsStore: homeRecommendDiagnosticsStore
         )
         self.sponsorBlockService = SponsorBlockService()
         Self.applyPictureInPicturePreference(libraryStore.pictureInPictureEnabled)
@@ -46,6 +50,8 @@ final class AppDependencies: ObservableObject {
                     await VideoPreloadCenter.shared.clearPlayURLCache()
                     await DynamicFeedWarmCache.shared.clear()
                     await self?.api.resetHomeRecommendState()
+                    self?.homeRecommendDiagnosticsStore.reset()
+                    HomeRecommendFeedbackCenter.shared.reset()
                     HomeFeedSnapshotCache.clearAll()
                 }
             }

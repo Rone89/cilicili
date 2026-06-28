@@ -65,4 +65,21 @@ final class HomeViewModel: ObservableObject {
         videos = newVideos
     }
 
+    func recordRecommendExposure(_ video: VideoItem, index: Int) {
+        guard mode == .recommend else { return }
+        HomeRecommendFeedbackCenter.shared.recordExposure(
+            video: video,
+            index: index,
+            source: libraryStore.homeRecommendFeedSourcePreference
+        )
+    }
+
+    func recordRecommendClick(_ video: VideoItem) {
+        guard mode == .recommend else { return }
+        HomeRecommendFeedbackCenter.shared.recordClick(
+            video: video,
+            source: libraryStore.homeRecommendFeedSourcePreference
+        )
+    }
+
 }

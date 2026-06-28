@@ -18,7 +18,7 @@ extension HomeViewModel {
                 isRefreshing = false
             }
         }
-        if shouldResetCursor || usesNativeAppRecommend {
+        if shouldResetCursor {
             pageCoordinator.resetCursor(for: mode)
         } else {
             pageCoordinator.advanceRefreshCursor(for: mode)
@@ -30,6 +30,13 @@ extension HomeViewModel {
                 minimumFreshCount: preservesExistingRecommendations ? Self.userRefreshRecommendationCount : nil
             )
             guard revision == requestRevision else { return }
+            guard !refreshedVideos.isEmpty else {
+                if previousVideos.isEmpty {
+                    restoreCachedVideosIfAvailable()
+                }
+                state = videos.isEmpty ? .failed("暂无内容") : .loaded
+                return
+            }
             if previousVideos.isEmpty {
                 await mediaPreloadCoordinator.prewarmInitialImagesBeforePublishing(refreshedVideos)
             }
@@ -42,7 +49,10 @@ extension HomeViewModel {
             state = .loaded
         } catch {
             guard revision == requestRevision else { return }
-            state = .failed(error.localizedDescription)
+            if videos.isEmpty {
+                restoreCachedVideosIfAvailable()
+            }
+            state = videos.isEmpty ? .failed(error.localizedDescription) : .loaded
         }
     }
 }

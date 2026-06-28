@@ -49,5 +49,6 @@ private struct MainInterfaceHost: View {
             .environmentObject(dependencies)
             .environmentObject(dependencies.sessionStore)
             .environmentObject(dependencies.libraryStore)
+            .environmentObject(dependencies.homeRecommendDiagnosticsStore)
     }
 }

@@ -106,8 +106,8 @@ final class MineViewModel: ObservableObject {
     func completeWebLogin(with cookies: [HTTPCookie]) async {
         do {
             cancelQRCodeLogin()
-            try sessionStore.saveLoginCookies(cookies)
-            loginMessage = "登录成功"
+            try sessionStore.saveLoginCookies(cookies, credentialKind: .web)
+            loginMessage = "网页登录成功，首页推荐建议优先选择网页端。"
             await refreshUser()
         } catch {
             loginMessage = error.localizedDescription
@@ -135,9 +135,21 @@ final class MineViewModel: ObservableObject {
         loginMessage = ""
 
         do {
-            let info = try await api.generateQRCodeLogin()
+            let info = try await api.generateAppQRCodeLogin()
             guard !Task.isCancelled else { return }
-            qrLoginState = .waiting(info, "请使用 B 站客户端扫码")
+            let autoConfirmMessage: String
+            do {
+                try await api.confirmAppQRCodeLoginWithCurrentSession(authCode: info.qrcodeKey)
+                autoConfirmMessage = ""
+            } catch {
+                autoConfirmMessage = error.localizedDescription
+            }
+            guard !Task.isCancelled else { return }
+            if autoConfirmMessage.isEmpty {
+                qrLoginState = .scanned(info, "已用当前账号确认，正在获取移动端凭证")
+            } else {
+                qrLoginState = .waiting(info, "自动确认未完成：\(autoConfirmMessage)。可用 B 站扫码或打开确认")
+            }
             qrLoginTask = Task { [weak self] in
                 await self?.pollQRCodeLogin(info)
             }
@@ -151,57 +163,124 @@ final class MineViewModel: ObservableObject {
         qrLoginTask = nil
     }
 
+    func sendAppSMSCode(phone: String, countryCode: String) async throws -> String {
+        cancelQRCodeLogin()
+        let info = try await api.sendAppSMSCode(
+            phone: Self.normalizedPhone(phone),
+            countryCode: Self.normalizedCountryCode(countryCode)
+        )
+        guard let captchaKey = info.captchaKey, !captchaKey.isEmpty else {
+            throw BiliAPIError.missingPayload
+        }
+        return captchaKey
+    }
+
+    func completeAppSMSLogin(
+        phone: String,
+        countryCode: String,
+        code: String,
+        captchaKey: String
+    ) async throws {
+        cancelQRCodeLogin()
+        let loginData = try await api.loginWithAppSMS(
+            phone: Self.normalizedPhone(phone),
+            countryCode: Self.normalizedCountryCode(countryCode),
+            code: code.trimmingCharacters(in: .whitespacesAndNewlines),
+            captchaKey: captchaKey
+        )
+        let cookieValues = loginData.loginCookieValues
+        guard !cookieValues.isEmpty else {
+            throw BiliAPIError.missingPayload
+        }
+        try sessionStore.saveLoginCookies(cookieValues, credentialKind: .appSMS)
+        guard sessionStore.isLoggedIn else {
+            throw BiliAPIError.missingSESSDATA
+        }
+        if sessionStore.appAccessKey() == nil {
+            loginMessage = "登录成功，但没有拿到 access_key"
+        } else {
+            loginMessage = "短信登录成功，App 端推荐会更接近官方客户端。"
+        }
+        await refreshUser()
+    }
+
     private func pollQRCodeLogin(_ info: QRCodeLoginInfo) async {
         while !Task.isCancelled {
             do {
-                try await Task.sleep(for: .seconds(2))
+                try await Task.sleep(for: .seconds(1))
             } catch {
                 return
             }
 
             do {
-                let result = try await api.pollQRCodeLogin(qrcodeKey: info.qrcodeKey)
-                switch result.data.status {
+                let result = try await api.pollAppQRCodeLogin(authCode: info.qrcodeKey)
+                switch result.status {
                 case .waitingForScan:
                     if case .waiting = qrLoginState {
                         break
                     }
-                    qrLoginState = .waiting(info, result.data.message ?? "请使用 B 站客户端扫码")
+                    qrLoginState = .waiting(info, result.message ?? "请使用 B 站客户端扫码")
                 case .waitingForConfirm:
-                    qrLoginState = .scanned(info, result.data.message ?? "已扫码，请在手机上确认")
+                    qrLoginState = .scanned(info, result.message ?? "已扫码，请在手机上确认")
                 case .expired:
-                    qrLoginState = .expired(result.data.message ?? "二维码已过期")
+                    qrLoginState = .expired(result.message ?? "二维码已过期")
                     return
                 case .confirmed:
-                    if !result.cookies.isEmpty {
-                        try sessionStore.saveLoginCookies(result.cookies)
-                    } else {
-                        let cookieValues = result.data.cookieValuesFromURL
-                        guard !cookieValues.isEmpty else {
-                            qrLoginState = .failed("登录成功但没有拿到 Cookie，请改用网页登录。")
-                            return
-                        }
-                        try sessionStore.saveLoginCookies(cookieValues)
+                    guard let loginData = result.loginData else {
+                        qrLoginState = .failed("登录成功但没有拿到移动端凭证，请改用网页登录。")
+                        return
                     }
+                    let cookieValues = loginData.loginCookieValues
+                    guard !cookieValues.isEmpty else {
+                        qrLoginState = .failed("登录成功但没有拿到 Cookie，请改用网页登录。")
+                        return
+                    }
+                    try sessionStore.saveLoginCookies(cookieValues, credentialKind: .appQRCodeTV)
                     guard sessionStore.isLoggedIn else {
                         qrLoginState = .failed("登录成功但没有拿到 Cookie，请改用网页登录。")
                         return
                     }
-                    loginMessage = "登录成功"
-                    qrLoginState = .succeeded("登录成功")
+                    if sessionStore.appAccessKey() == nil {
+                        loginMessage = "登录成功，但没有拿到 access_key"
+                        qrLoginState = .succeeded("登录成功，但移动端凭证缺失")
+                    } else {
+                        loginMessage = "扫码登录成功；如 App 端推荐不准，可改用短信登录或网页端推荐。"
+                        qrLoginState = .succeeded("扫码登录成功")
+                    }
                     await refreshUser()
                     return
                 case .unknown(let code):
-                    let message = result.data.message ?? "未知状态"
-                    qrLoginState = .failed("二维码登录失败：\(message) (\(code))")
-                    return
+                    let message = result.message ?? "未知状态"
+                    qrLoginState = .waiting(info, "\(message) (\(code))")
                 }
             } catch {
-                if !Task.isCancelled {
-                    qrLoginState = .failed(error.localizedDescription)
+                if !Task.isCancelled, !Self.isTransientQRCodePollingError(error) {
+                    qrLoginState = .waiting(info, error.localizedDescription)
                 }
-                return
             }
+        }
+    }
+
+    private nonisolated static func normalizedPhone(_ value: String) -> String {
+        value
+            .filter { $0.isNumber }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func normalizedCountryCode(_ value: String) -> String {
+        let digits = value.filter { $0.isNumber }
+        return digits.isEmpty ? "86" : digits
+    }
+
+    private nonisolated static func isTransientQRCodePollingError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSURLErrorDomain else { return false }
+        let code = URLError.Code(rawValue: nsError.code)
+        switch code {
+        case .networkConnectionLost, .notConnectedToInternet, .timedOut, .cancelled:
+            return true
+        default:
+            return false
         }
     }
 }

@@ -5,6 +5,7 @@ struct MineContentView: View {
     @ObservedObject var sessionStore: SessionStore
     @ObservedObject var libraryStore: LibraryStore
     let onQRCodeLogin: () -> Void
+    let onSMSLogin: () -> Void
     let onWebLogin: () -> Void
 
     var body: some View {
@@ -13,6 +14,7 @@ struct MineContentView: View {
                 viewModel: viewModel,
                 sessionStore: sessionStore,
                 onQRCodeLogin: onQRCodeLogin,
+                onSMSLogin: onSMSLogin,
                 onWebLogin: onWebLogin
             )
 
