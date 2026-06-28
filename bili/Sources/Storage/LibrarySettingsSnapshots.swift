@@ -4,6 +4,7 @@ import SwiftUI
 struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
     var minimizesTabBarOnScroll = true
+    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference = .soft
     var visibleRootTabs: [AppTab] = AppTab.defaultVisibleTabs
 }
 
@@ -15,6 +16,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
+    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference { snapshot.scrollEdgeEffectPreference }
     var visibleRootTabs: [AppTab] { snapshot.visibleRootTabs }
 
     func bind(_ libraryStore: LibraryStore) {
@@ -36,6 +38,7 @@ final class RootRuntimeSettingsStore: ObservableObject {
         let next = RootRuntimeSettingsSnapshot(
             appearanceMode: libraryStore.appearanceMode,
             minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
+            scrollEdgeEffectPreference: libraryStore.scrollEdgeEffectPreference,
             visibleRootTabs: libraryStore.visibleRootTabs
         )
         guard next != snapshot else { return }

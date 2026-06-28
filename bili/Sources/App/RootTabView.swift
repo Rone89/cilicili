@@ -99,6 +99,7 @@ struct RootTabView: View {
         .environment(\.prewarmVideoRouteAction, beginPlaybackPreload)
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
+        .environment(\.scrollEdgeEffectPreference, runtimeSettings.scrollEdgeEffectPreference)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
             openAppURL(url)

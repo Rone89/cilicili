@@ -115,6 +115,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
+    @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var homeRefreshTriggerDistance: Double
@@ -154,6 +155,7 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
+    private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
@@ -317,6 +319,9 @@ final class LibraryStore: ObservableObject {
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
+        self.scrollEdgeEffectPreference = AppScrollEdgeEffectPreference(
+            rawValue: userDefaults.string(forKey: Self.scrollEdgeEffectPreferenceKey) ?? ""
+        ) ?? .soft
         self.force120HzScrollingEnabled = userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
@@ -636,6 +641,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
     }
 
+    func setScrollEdgeEffectPreference(_ preference: AppScrollEdgeEffectPreference) {
+        scrollEdgeEffectPreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.scrollEdgeEffectPreferenceKey)
+    }
+
     func setForce120HzScrollingEnabled(_ isEnabled: Bool) {
         force120HzScrollingEnabled = isEnabled
         RefreshRateManager.shared.setForce120HzEnabled(isEnabled)
@@ -787,6 +797,25 @@ enum AppAppearanceMode: String, CaseIterable, Identifiable {
             return .light
         case .dark:
             return .dark
+        }
+    }
+}
+
+enum AppScrollEdgeEffectPreference: String, CaseIterable, Identifiable {
+    case soft
+    case hard
+    case automatic
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .soft:
+            return "Soft"
+        case .hard:
+            return "Hard"
+        case .automatic:
+            return "Automatic"
         }
     }
 }

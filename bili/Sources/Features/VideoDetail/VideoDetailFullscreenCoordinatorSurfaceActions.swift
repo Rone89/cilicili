@@ -78,7 +78,9 @@ extension VideoDetailFullscreenCoordinator {
             coordinatedWithSwiftUILayout: true,
             isCurrentPlayer: isCurrentPlayer
         )
-        finishExitMorphAfterSurfaceSettle()
+        if !isCompletingExit {
+            finishExitMorphAfterSurfaceSettle()
+        }
     }
 
     func schedulePortraitExitSurfaceSettleFinish(
@@ -177,7 +179,9 @@ extension VideoDetailFullscreenCoordinator {
                 coordinatedWithSwiftUILayout: true,
                 isCurrentPlayer: isCurrentPlayer
             )
-            self.finishExitMorphAfterSurfaceSettle()
+            if !self.isCompletingExit {
+                self.finishExitMorphAfterSurfaceSettle()
+            }
         }
     }
 }

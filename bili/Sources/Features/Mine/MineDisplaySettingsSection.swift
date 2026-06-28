@@ -26,6 +26,18 @@ struct MineDisplaySettingsSection: View {
                 Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
             }
 
+            Picker(selection: Binding(
+                get: { libraryStore.scrollEdgeEffectPreference },
+                set: { libraryStore.setScrollEdgeEffectPreference($0) }
+            )) {
+                ForEach(AppScrollEdgeEffectPreference.allCases) { preference in
+                    Text(preference.title).tag(preference)
+                }
+            } label: {
+                Label("滚动边缘效果", systemImage: "rectangle.topthird.inset.filled")
+            }
+            .pickerStyle(.navigationLink)
+
             Toggle(isOn: Binding(
                 get: { libraryStore.force120HzScrollingEnabled },
                 set: { libraryStore.setForce120HzScrollingEnabled($0) }

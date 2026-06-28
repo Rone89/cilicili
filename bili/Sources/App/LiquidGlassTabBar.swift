@@ -11,6 +11,17 @@ private extension EnvironmentValues {
     }
 }
 
+private struct ScrollEdgeEffectPreferenceKey: EnvironmentKey {
+    static let defaultValue: AppScrollEdgeEffectPreference = .soft
+}
+
+extension EnvironmentValues {
+    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference {
+        get { self[ScrollEdgeEffectPreferenceKey.self] }
+        set { self[ScrollEdgeEffectPreferenceKey.self] = newValue }
+    }
+}
+
 extension View {
     @ViewBuilder
     func rootFloatingTabBarContentPadding(extra: CGFloat = 0) -> some View {
@@ -121,13 +132,13 @@ extension View {
 
 struct TopScrollEdgeEffect: ViewModifier {
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
+    @Environment(\.scrollEdgeEffectPreference) private var scrollEdgeEffectPreference
     let hidesRootNavigationTitle: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if hidesRootNavigationTitle {
-            content
-                .scrollEdgeEffectStyle(.soft, for: .top)
+            styledContent(content)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.contentInsets.top > 18
                 } action: { _, isHidden in
@@ -137,8 +148,19 @@ struct TopScrollEdgeEffect: ViewModifier {
                     }
                 }
         } else {
-            content
-                .scrollEdgeEffectStyle(.soft, for: .top)
+            styledContent(content)
+        }
+    }
+
+    @ViewBuilder
+    private func styledContent(_ content: Content) -> some View {
+        switch scrollEdgeEffectPreference {
+        case .soft:
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        case .hard:
+            content.scrollEdgeEffectStyle(.hard, for: .top)
+        case .automatic:
+            content.scrollEdgeEffectStyle(.automatic, for: .top)
         }
     }
 }

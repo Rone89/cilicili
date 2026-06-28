@@ -35,8 +35,9 @@ extension VideoDetailFullscreenCoordinator {
             return
         }
         let isRotationTriggered = trigger == .rotation
+        let needsPortraitRotationTransition = activeMode.isLandscape
         PlayerMetricsLog.diagnostic(
-            "fullscreenExit begin activeMode=\(activeMode) rotation=\(isRotationTriggered) playerFrame=\(latestPlayerSurfaceFrame) inlineFrame=\(latestInlinePlayerSurfaceFrame)"
+            "fullscreenExit begin activeMode=\(activeMode) rotation=\(isRotationTriggered) portraitRotation=\(needsPortraitRotationTransition) playerFrame=\(latestPlayerSurfaceFrame) inlineFrame=\(latestInlinePlayerSurfaceFrame)"
         )
         advanceStateRevision()
         let transitionGeneration = advanceFullscreenTransitionGeneration()
@@ -45,11 +46,18 @@ extension VideoDetailFullscreenCoordinator {
         prepareExitMorph(playerViewModel: playerViewModel)
         exitingMode = activeMode
         isCompletingExit = true
+        if needsPortraitRotationTransition {
+            isSystemRotationLayoutTransitioning = true
+            scheduleRotationLayoutTransitionFallbackFinish(
+                playerViewModel: playerViewModel,
+                isCurrentPlayer: isCurrentPlayer
+            )
+        }
         runPreparedExitMorph()
         setMode(
             nil,
             trigger: .none,
-            animated: !isRotationTriggered,
+            animated: !isRotationTriggered && !needsPortraitRotationTransition,
             playerViewModel: playerViewModel,
             isCurrentPlayer: isCurrentPlayer
         )
