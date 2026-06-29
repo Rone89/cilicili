@@ -5,11 +5,13 @@ extension VideoDetailViewModel {
         let bvid = capturedBVID ?? detail.bvid
         guard let aid = capturedAID ?? detail.aid else { return }
         do {
-            var state = try await api.fetchVideoInteractionState(aid: aid)
+            var state = try await api.fetchVideoInteractionState(aid: aid, bvid: bvid)
             guard !Task.isCancelled,
                   isCurrentVideoContext(aid: aid, bvid: bvid)
             else { return }
-            state.isFollowing = uploaderProfile?.following == true
+            if let isFollowing = uploaderProfile?.following {
+                state.isFollowing = isFollowing
+            }
             interactionState = state
             if state.isFavorited {
                 let favoriteFolderTask = Task { @MainActor [weak self, aid, bvid = detail.bvid] in

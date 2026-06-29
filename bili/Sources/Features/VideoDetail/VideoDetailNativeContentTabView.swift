@@ -37,6 +37,8 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         }
         .tint(appTintColor)
         .tabBarMinimizeBehavior(minimizesTabBarOnScroll ? .onScrollDown : .never)
+        .toolbarBackground(.automatic, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .background(VideoDetailTheme.background)
     }
 }

@@ -12,10 +12,10 @@ struct UploaderView: View {
                 UploaderContentView(owner: owner, viewModel: viewModel)
             } else {
                 ProgressView()
-                    .task {
-                        holder.configure(owner: owner, api: dependencies.api)
-                    }
             }
+        }
+        .task(id: owner.mid) {
+            holder.configure(owner: owner, api: dependencies.api)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

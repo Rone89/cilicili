@@ -116,6 +116,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
+    @Published private(set) var videoCoverOverlayStyle: VideoCoverOverlayStyle
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var homeRefreshTriggerDistance: Double
@@ -156,6 +157,7 @@ final class LibraryStore: ObservableObject {
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
     private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
+    private static let videoCoverOverlayStyleKey = VideoCoverOverlayStyle.storageKey
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
@@ -322,6 +324,9 @@ final class LibraryStore: ObservableObject {
         self.scrollEdgeEffectPreference = AppScrollEdgeEffectPreference(
             rawValue: userDefaults.string(forKey: Self.scrollEdgeEffectPreferenceKey) ?? ""
         ) ?? .soft
+        self.videoCoverOverlayStyle = VideoCoverOverlayStyle.normalized(
+            rawValue: userDefaults.string(forKey: Self.videoCoverOverlayStyleKey)
+        )
         self.force120HzScrollingEnabled = userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
@@ -644,6 +649,11 @@ final class LibraryStore: ObservableObject {
     func setScrollEdgeEffectPreference(_ preference: AppScrollEdgeEffectPreference) {
         scrollEdgeEffectPreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.scrollEdgeEffectPreferenceKey)
+    }
+
+    func setVideoCoverOverlayStyle(_ style: VideoCoverOverlayStyle) {
+        videoCoverOverlayStyle = style
+        userDefaults.set(style.rawValue, forKey: Self.videoCoverOverlayStyleKey)
     }
 
     func setForce120HzScrollingEnabled(_ isEnabled: Bool) {

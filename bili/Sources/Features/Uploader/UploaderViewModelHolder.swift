@@ -8,18 +8,17 @@ final class UploaderViewModelHolder: ObservableObject {
     private var lastSnapshot: UploaderRenderSnapshot?
 
     func configure(owner: VideoOwner, api: BiliAPIClient) {
-        if viewModel == nil {
-            let viewModel = UploaderViewModel(seedOwner: owner, api: api)
-            self.viewModel = viewModel
-            lastSnapshot = UploaderRenderSnapshot(viewModel)
-            cancellable = viewModel.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor [weak self, weak viewModel] in
-                    guard let self, let viewModel else { return }
-                    let snapshot = UploaderRenderSnapshot(viewModel)
-                    guard snapshot != self.lastSnapshot else { return }
-                    self.lastSnapshot = snapshot
-                    self.objectWillChange.send()
-                }
+        guard viewModel?.seedOwner.mid != owner.mid else { return }
+        let viewModel = UploaderViewModel(seedOwner: owner, api: api)
+        self.viewModel = viewModel
+        lastSnapshot = UploaderRenderSnapshot(viewModel)
+        cancellable = viewModel.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self, weak viewModel] in
+                guard let self, let viewModel else { return }
+                let snapshot = UploaderRenderSnapshot(viewModel)
+                guard snapshot != self.lastSnapshot else { return }
+                self.lastSnapshot = snapshot
+                self.objectWillChange.send()
             }
         }
     }
@@ -35,6 +34,9 @@ private struct UploaderRenderSnapshot: Equatable {
     let lastVideoID: String?
     let isFollowing: Bool
     let followerCount: Int?
+    let followingCount: Int?
+    let likeCount: Int?
+    let archiveCount: Int?
     let isMutatingFollow: Bool
     let followMessage: String?
 
@@ -48,6 +50,9 @@ private struct UploaderRenderSnapshot: Equatable {
         lastVideoID = viewModel.videos.last?.id
         isFollowing = viewModel.isFollowing
         followerCount = viewModel.followerCount
+        followingCount = viewModel.followingCount
+        likeCount = viewModel.likeCount
+        archiveCount = viewModel.archiveCount
         isMutatingFollow = viewModel.isMutatingFollow
         followMessage = viewModel.followMessage
     }

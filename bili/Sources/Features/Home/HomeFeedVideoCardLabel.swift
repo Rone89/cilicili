@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeFeedVideoCardLabel: View {
     let metrics: HomeFeedLayoutMetrics
     let display: VideoCardDisplayModel
+    var showsAuthorIdentity = true
 
     var body: some View {
         switch metrics.mode {
@@ -18,6 +19,7 @@ struct HomeFeedVideoCardLabel: View {
             VideoCardView(
                 display: display,
                 showsPublishTimeInAuthorRow: true,
+                showsAuthorIdentity: showsAuthorIdentity,
                 showsCoverViewCountBadge: false,
                 surfaceStyle: .blended,
                 fixedCoverSize: metrics.doubleColumnFixedCoverSize,

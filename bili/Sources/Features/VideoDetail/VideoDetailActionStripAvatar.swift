@@ -20,6 +20,7 @@ struct VideoDetailActionStripOwnerAvatar: View {
 }
 
 private struct VideoDetailActionStripAvatarImage: View {
+    @Environment(\.colorScheme) private var colorScheme
     let urlString: String?
 
     var body: some View {
@@ -32,11 +33,34 @@ private struct VideoDetailActionStripAvatarImage: View {
         .clipShape(Circle())
         .overlay {
             Circle()
-                .stroke(.white.opacity(0.24), lineWidth: 0.7)
+                .strokeBorder(outerStrokeColor, lineWidth: 1.0)
+        }
+        .overlay {
+            Circle()
+                .inset(by: 1)
+                .strokeBorder(innerStrokeColor, lineWidth: 0.6)
         }
         .shadow(color: .black.opacity(0.24), radius: 5, x: 0, y: 2.2)
         .shadow(color: .black.opacity(0.10), radius: 1.2, x: 0, y: 0.6)
         .frame(width: VideoDetailActionStrip.Metrics.avatarSide, height: VideoDetailActionStrip.Metrics.avatarSide)
         .contentShape(Circle())
+    }
+
+    private var outerStrokeColor: Color {
+        switch colorScheme {
+        case .dark:
+            return .white.opacity(0.22)
+        default:
+            return .black.opacity(0.12)
+        }
+    }
+
+    private var innerStrokeColor: Color {
+        switch colorScheme {
+        case .dark:
+            return .white.opacity(0.12)
+        default:
+            return .white.opacity(0.46)
+        }
     }
 }

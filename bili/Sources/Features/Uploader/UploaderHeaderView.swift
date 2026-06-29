@@ -13,6 +13,7 @@ struct UploaderHeaderView: View {
             UploaderIdentityRow(owner: owner, card: card, viewModel: viewModel)
             UploaderSignatureText(sign: card?.sign)
             UploaderFollowMessage(message: viewModel.followMessage, isFollowing: viewModel.isFollowing)
+            UploaderProfileStatusMessage(state: viewModel.profileState)
             UploaderStatsRow(viewModel: viewModel, card: card)
         }
         .padding()

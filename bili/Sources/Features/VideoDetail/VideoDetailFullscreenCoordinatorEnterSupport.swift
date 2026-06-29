@@ -27,11 +27,14 @@ extension VideoDetailFullscreenCoordinator {
         } else {
             orientation = preferredLandscapeDeviceOrientation()
         }
-        prepareEnterMorph(playerViewModel: playerViewModel, orientation: orientation)
+        prepareEnterMorph(
+            playerViewModel: playerViewModel,
+            orientation: orientation,
+            usesWindowMask: isRotationTriggered && targetMode.isLandscape
+        )
         if isRotationTriggered, !isSystemRotationLayoutTransitioning {
             isSystemRotationLayoutTransitioning = true
         }
-        runPreparedEnterMorph()
         setMode(
             targetMode,
             trigger: trigger,
@@ -40,5 +43,6 @@ extension VideoDetailFullscreenCoordinator {
             isCurrentPlayer: isCurrentPlayer
         )
         requestInlineFullscreenGeometryAfterLayout(for: targetMode)
+        runPreparedEnterMorphAfterLayout()
     }
 }

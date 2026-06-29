@@ -605,7 +605,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         )
         let target = playerTime(fromDisplayTime: displayTarget)
         let targetTime = CMTime(seconds: target, preferredTimescale: 600)
-        wantsPlayback = true
+        wantsPlayback = false
         let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         publishPlaybackState(.buffering)
@@ -617,7 +617,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             }
         }
         guard isCurrentPlaybackGeneration(seekPlaybackGeneration) else { return nil }
-        finishSeekTransaction(generation: generation, finished: finished, shouldResume: wantsPlayback)
+        finishSeekTransaction(generation: generation, finished: finished, shouldResume: false)
         return finished ? displayTarget : nil
     }
 

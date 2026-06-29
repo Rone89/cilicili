@@ -24,31 +24,48 @@ struct VideoDetailPlayerQualityControl: View {
             .biliPlayerCompactGlassCapsule(metrics: controlMetrics)
             .foregroundStyle(.white)
             .accessibilityLabel("清晰度")
-            .confirmationDialog(
-                "清晰度",
-                isPresented: $isShowingQualityDialog,
-                titleVisibility: .visible
-            ) {
-                if store.isSwitchingPlayQuality {
-                    Button {} label: {
-                        Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .disabled(true)
-                }
-
-                ForEach(store.qualityMenuItems) { item in
-                    Button {
-                        selectPlayVariant(item.variant)
-                    } label: {
-                        Label(item.title, systemImage: item.systemImage)
-                    }
-                    .disabled(item.isDisabled)
-                }
+            .sheet(isPresented: $isShowingQualityDialog) {
+                VideoDetailQualitySelectionSheet(
+                    store: store,
+                    selectPlayVariant: selectPlayVariant
+                )
             }
             .videoDetailPlayerQualityControlLifecycle(
                 isShowingQualityDialog: isShowingQualityDialog,
                 onPresentationChange: onPresentationChange
             )
         }
+    }
+}
+
+private struct VideoDetailQualitySelectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: VideoDetailQualityControlRenderStore
+    let selectPlayVariant: (PlayVariant) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if store.isSwitchingPlayQuality {
+                    Label("正在切换清晰度", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(store.qualityMenuItems) { item in
+                    Button {
+                        selectPlayVariant(item.variant)
+                        dismiss()
+                    } label: {
+                        Label(item.title, systemImage: item.systemImage)
+                    }
+                    .disabled(item.isDisabled)
+                }
+            }
+            .foregroundStyle(.primary)
+            .navigationTitle("清晰度")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }

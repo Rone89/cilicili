@@ -78,7 +78,12 @@ extension VideoDetailFullscreenCoordinator {
             coordinatedWithSwiftUILayout: true,
             isCurrentPlayer: isCurrentPlayer
         )
-        if !isCompletingExit {
+        if morphState?.phase == .entering {
+            finishEnterMorphAfterSurfaceReady(
+                playerViewModel: playerViewModel,
+                isCurrentPlayer: isCurrentPlayer
+            )
+        } else if !isCompletingExit {
             finishExitMorphAfterSurfaceSettle()
         }
     }
@@ -179,7 +184,12 @@ extension VideoDetailFullscreenCoordinator {
                 coordinatedWithSwiftUILayout: true,
                 isCurrentPlayer: isCurrentPlayer
             )
-            if !self.isCompletingExit {
+            if self.morphState?.phase == .entering {
+                self.finishEnterMorphAfterSurfaceReady(
+                    playerViewModel: playerViewModel,
+                    isCurrentPlayer: isCurrentPlayer
+                )
+            } else if !self.isCompletingExit {
                 self.finishExitMorphAfterSurfaceSettle()
             }
         }

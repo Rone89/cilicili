@@ -23,6 +23,17 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                     .zIndex(3)
             }
 
+            if state.showsSeekSnapshot {
+                PlayerRotationTransitionSnapshotView(
+                    snapshot: state.seekSnapshot,
+                    fallbackCoverURL: nil,
+                    constrainsToVideoAspect: false
+                )
+                .background(Color.black)
+                .opacity(state.seekSnapshotDisplayOpacity)
+                .zIndex(5)
+            }
+
             if state.showsRotationSnapshot {
                 PlayerRotationTransitionSnapshotView(
                     snapshot: state.rotationSnapshot,
@@ -38,8 +49,12 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 PlayerInlineLoadingIndicator(
                     message: state.isUserSeeking ? "正在定位" : "正在缓冲"
                 )
-                .padding(.top, state.presentation == .embedded ? 10 : 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, state.isUserSeeking ? 0 : (state.presentation == .embedded ? 10 : 16))
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: state.isUserSeeking ? .center : .top
+                )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .zIndex(6)
             }
@@ -58,6 +73,14 @@ struct BiliPlayerSurfaceOverlayLayer: View {
 }
 
 private extension BiliPlayerSurfaceChromeState {
+    var showsSeekSnapshot: Bool {
+        seekSnapshot != nil && (isUserSeeking || seekSnapshotOpacity > 0)
+    }
+
+    var seekSnapshotDisplayOpacity: Double {
+        isUserSeeking ? 1 : seekSnapshotOpacity
+    }
+
     var showsRotationSnapshot: Bool {
         rotationSnapshotOpacity > 0
             && rotationSnapshot != nil

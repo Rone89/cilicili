@@ -13,6 +13,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
     let surfaceState: PlayerSurfaceStateModel
     let playbackControlsVisibility: PlayerPlaybackControlsVisibilityModel
     let rotationTransitionSnapshotModel: PlayerRotationTransitionSnapshotModel
+    let seekTransitionSnapshotModel: PlayerRotationTransitionSnapshotModel
     let speedBoostModel: PlayerSpeedBoostModel
     let playbackProgressCoordinator: PlayerPlaybackProgressCoordinator
     let progressReporter: PlayerPlaybackProgressReporter
@@ -67,6 +68,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
             surfaceState: surfaceState,
             playbackControlsVisibility: playbackControlsVisibility,
             rotationTransitionSnapshotModel: rotationTransitionSnapshotModel,
+            seekTransitionSnapshotModel: seekTransitionSnapshotModel,
             rotationFallbackCoverURL: rotationFallbackCoverURL,
             speedBoostModel: speedBoostModel,
             configuration: configuration,

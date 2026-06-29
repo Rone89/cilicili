@@ -14,10 +14,10 @@ extension VideoDetailFullscreenCoordinator {
 
     func prepareEnterMorph(
         playerViewModel: PlayerStateViewModel?,
-        orientation: UIDeviceOrientation
+        orientation: UIDeviceOrientation,
+        usesWindowMask wantsWindowMask: Bool = false
     ) {
         guard playerViewModel?.isTerminated != true else { return }
-        let usesWindowMask = false
         guard let snapshot = resolvedMorphSnapshot(playerViewModel: playerViewModel) else {
             return
         }
@@ -28,6 +28,14 @@ extension VideoDetailFullscreenCoordinator {
               targetFrame.width > 1, targetFrame.height > 1
         else { return }
 
+        let usesWindowMask = wantsWindowMask
+            && VideoDetailRotationWindowMask.hold(
+                snapshot: snapshot,
+                frame: sourceFrame
+            )
+        PlayerMetricsLog.diagnostic(
+            "fullscreenEnter morphPrepare usesWindowMask=\(usesWindowMask) snapshotVideo=\(snapshot.isVideoFrame) source=\(sourceFrame) target=\(targetFrame)"
+        )
         cancelPendingMorphTransitionTask()
         morphState = VideoDetailFullscreenMorphState(
             phase: .entering,
@@ -43,10 +51,36 @@ extension VideoDetailFullscreenCoordinator {
     }
 
     func runPreparedEnterMorph() {
+        guard let state = morphState, state.phase == .entering else { return }
+        PlayerMetricsLog.diagnostic(
+            "fullscreenEnter morphRun usesWindowMask=\(state.usesWindowMask) snapshotVideo=\(state.snapshot.isVideoFrame)"
+        )
         animatePreparedMorph(phase: .entering)
-        VideoDetailRotationWindowMask.remove()
-        // 进入也等 surface 稳定后再结束过渡态；没有 window mask 时只用于维持系统 chrome 隐藏。
-        scheduleMorphFade(after: Self.exitMorphFallbackFadeDelayNanoseconds)
+        if state.usesWindowMask {
+            _ = VideoDetailRotationWindowMask.animateHeldSnapshot(
+                from: state.sourceFrame,
+                to: state.targetFrame,
+                duration: Self.morphTransitionDuration,
+                releasesOnCompletion: false
+            )
+        } else {
+            VideoDetailRotationWindowMask.remove()
+        }
+        // 进入全屏的淡出由系统旋转完成/兜底完成后统一触发；
+        // 先确认横屏 surface 已经可显示，避免过早露出黑帧。
+    }
+
+    func runPreparedEnterMorphAfterLayout() {
+        let revision = stateRevision
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  self.isCurrentStateRevision(revision),
+                  self.morphState?.phase == .entering,
+                  self.mode?.isLandscape == true
+            else { return }
+            self.runPreparedEnterMorph()
+        }
     }
 
     func prepareExitMorph(playerViewModel: PlayerStateViewModel?) {
@@ -125,6 +159,17 @@ extension VideoDetailFullscreenCoordinator {
         scheduleMorphFade(after: max(requestedDelay, remainingMorphCompletionDelayNanoseconds()))
     }
 
+    func finishEnterMorphAfterSurfaceReady(
+        playerViewModel: PlayerStateViewModel?,
+        isCurrentPlayer: PlayerCurrentPredicate? = nil
+    ) {
+        guard morphState?.phase == .entering else { return }
+        scheduleEnterMorphFadeAfterSurfaceReady(
+            playerViewModel: playerViewModel,
+            isCurrentPlayer: isCurrentPlayer
+        )
+    }
+
     func clearMorph(immediate: Bool = false) {
         cancelPendingMorphTransitionTask()
         PlayerMetricsLog.diagnostic("fullscreenMorph clear immediate=\(immediate)")
@@ -180,6 +225,99 @@ extension VideoDetailFullscreenCoordinator {
             self.morphState = nil
             self.morphStartedAtNanoseconds = nil
         }
+    }
+
+    private func scheduleEnterMorphFadeAfterSurfaceReady(
+        playerViewModel: PlayerStateViewModel?,
+        isCurrentPlayer: PlayerCurrentPredicate?
+    ) {
+        cancelPendingMorphTransitionTask()
+        let generation = advanceMorphTransitionGeneration()
+        let transitionGeneration = fullscreenTransitionGeneration
+        pendingMorphTransitionTask = Task { @MainActor [weak self, weak playerViewModel, isCurrentPlayer] in
+            defer {
+                self?.clearPendingMorphTransitionTaskIfCurrent(generation: generation)
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.morphTransitionGeneration == generation,
+                  self.fullscreenTransitionGeneration == transitionGeneration,
+                  self.morphState?.phase == .entering,
+                  self.mode?.isLandscape == true
+            else { return }
+
+            let isReady = await self.waitForEnterSurfaceReadiness(
+                playerViewModel: playerViewModel,
+                isCurrentPlayer: isCurrentPlayer
+            )
+            PlayerMetricsLog.diagnostic(
+                "fullscreenEnter readiness ready=\(isReady) playerReady=\(playerViewModel?.isCurrentPlaybackSurfaceReadyForDisplay == true)"
+            )
+            guard !Task.isCancelled,
+                  self.morphTransitionGeneration == generation,
+                  self.fullscreenTransitionGeneration == transitionGeneration,
+                  self.morphState?.phase == .entering,
+                  self.mode?.isLandscape == true
+            else { return }
+
+            let delay = max(
+                Self.enterMorphSurfaceSettleDelayNanoseconds,
+                self.remainingMorphCompletionDelayNanoseconds()
+            )
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled,
+                  self.morphTransitionGeneration == generation,
+                  self.fullscreenTransitionGeneration == transitionGeneration,
+                  self.morphState?.phase == .entering,
+                  self.mode?.isLandscape == true
+            else { return }
+            VideoDetailRotationWindowMask.release(
+                after: 0,
+                fadeDuration: Self.morphFadeDurationNanoseconds
+            )
+            withAnimation(.easeOut(duration: Self.morphFadeDuration)) {
+                self.morphState?.opacity = 0
+            }
+            try? await Task.sleep(nanoseconds: Self.morphClearDelayNanoseconds)
+            guard !Task.isCancelled,
+                  self.morphTransitionGeneration == generation,
+                  self.fullscreenTransitionGeneration == transitionGeneration
+            else { return }
+            self.morphState = nil
+            self.morphStartedAtNanoseconds = nil
+        }
+    }
+
+    private func waitForEnterSurfaceReadiness(
+        playerViewModel: PlayerStateViewModel?,
+        isCurrentPlayer: PlayerCurrentPredicate?
+    ) async -> Bool {
+        guard let playerViewModel,
+              canRefreshSurface(for: playerViewModel, isCurrentPlayer: isCurrentPlayer)
+        else { return false }
+
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        var stableReadySamples = 0
+        while DispatchTime.now().uptimeNanoseconds - startedAt < Self.enterSurfaceReadinessMaximumWaitNanoseconds {
+            refreshActivePlayerSurfaceLayout(
+                playerViewModel: playerViewModel,
+                coordinatedWithSwiftUILayout: false,
+                isCurrentPlayer: isCurrentPlayer
+            )
+            if playerViewModel.validateCurrentPlaybackSurfaceReadyForDisplay() {
+                stableReadySamples += 1
+                if stableReadySamples >= Self.enterSurfaceRequiredStableSamples {
+                    return true
+                }
+            } else {
+                stableReadySamples = 0
+            }
+            try? await Task.sleep(nanoseconds: Self.enterSurfaceReadinessPollDelayNanoseconds)
+            guard !Task.isCancelled,
+                  canRefreshSurface(for: playerViewModel, isCurrentPlayer: isCurrentPlayer)
+            else { return false }
+        }
+        return false
     }
 
     private func animatePreparedMorph(phase: VideoDetailFullscreenMorphState.Phase) {

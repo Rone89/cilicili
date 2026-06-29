@@ -128,6 +128,7 @@ nonisolated final class BiliAPIClient {
     private let homeRecommendDiagnosticsStore: HomeRecommendDiagnosticsStore
     private let playURLCache: PlayURLCache
     private let state = BiliAPIClientState()
+    private static let uploaderLogger = Logger(subsystem: "cc.bili", category: "Uploader")
 
     private struct RequestSnapshot: Sendable {
         let cookieHeader: String
@@ -1116,18 +1117,48 @@ nonisolated final class BiliAPIClient {
     }
 
     func fetchUploaderProfile(mid: Int) async throws -> UploaderProfile {
+        guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
         if let task = await state.uploaderProfileTask(for: mid) {
             return try await task.value
         }
         let task = Task<UploaderProfile, Error>(priority: .utility) { [self] in
-            let response: BiliResponse<UploaderProfile> = try await get(
-                base: baseURL,
-                path: "/x/web-interface/card",
-                query: ["mid": String(mid)],
-                responseCachePolicy: .detail
+            async let cardProfile = uploaderProfileResult("card") {
+                try await fetchUploaderCardProfile(mid: mid)
+            }
+            async let appSpaceProfile = uploaderProfileResult("appSpace") {
+                try await fetchUploaderAppSpaceProfile(mid: mid)
+            }
+            async let spaceProfile = uploaderProfileResult("spaceInfo") {
+                try await fetchUploaderSpaceProfile(mid: mid)
+            }
+            async let relationStat = uploaderProfileResult("relationStat") {
+                try await fetchUploaderRelationStat(mid: mid)
+            }
+            async let upStat = uploaderProfileResult("upStat") {
+                try await fetchUploaderUpStat(mid: mid)
+            }
+            async let viewerRelation = uploaderProfileResult("viewerRelation") {
+                try await fetchUploaderViewerRelation(mid: mid)
+            }
+
+            let card = await cardProfile
+            let appSpace = await appSpaceProfile
+            let space = await spaceProfile
+            guard let base = card ?? appSpace ?? space else {
+                throw BiliAPIError.missingPayload
+            }
+            let relation = await relationStat
+            let up = await upStat
+            let viewer = await viewerRelation
+            let profile = base
+                .merged(with: appSpace)
+                .merged(with: space)
+                .merged(with: relation?.profilePatch)
+                .merged(with: up?.profilePatch)
+                .merged(with: viewer?.profilePatch)
+            Self.uploaderLogger.info(
+                "profileMerged mid=\(mid, privacy: .public) follower=\(profile.follower ?? -1, privacy: .public) followingCount=\(profile.card?.attention ?? -1, privacy: .public) like=\(profile.likeNum ?? -1, privacy: .public) archive=\(profile.archiveCount ?? -1, privacy: .public) following=\(profile.following == true ? "true" : profile.following == false ? "false" : "nil", privacy: .public)"
             )
-            guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-            guard let profile = response.payload else { throw BiliAPIError.missingPayload }
             return profile
         }
         await state.setUploaderProfileTask(task, for: mid)
@@ -1141,8 +1172,214 @@ nonisolated final class BiliAPIClient {
         }
     }
 
-    func fetchVideoInteractionState(aid: Int) async throws -> VideoInteractionState {
-        guard await isLoggedIn() else {
+    private func uploaderProfileResult<T>(
+        _ source: String,
+        operation: () async throws -> T
+    ) async -> T? {
+        do {
+            let value = try await operation()
+            Self.uploaderLogger.info("profileSource source=\(source, privacy: .public) status=ok")
+            return value
+        } catch {
+            Self.uploaderLogger.error("profileSource source=\(source, privacy: .public) status=failed error=\(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    private func fetchUploaderCardProfile(mid: Int) async throws -> UploaderProfile {
+        let response: BiliResponse<UploaderProfile> = try await get(
+            base: baseURL,
+            path: "/x/web-interface/card",
+            query: [
+                "mid": String(mid),
+                "photo": "false"
+            ],
+            userAgent: Self.webUserAgent,
+            responseCachePolicy: .detail
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let profile = response.payload else { throw BiliAPIError.missingPayload }
+        return profile
+    }
+
+    private func fetchUploaderAppSpaceProfile(mid: Int) async throws -> UploaderProfile {
+        let profile = BiliAppSigner.Profile.androidLogin
+        let snapshot = await requestSnapshot()
+        var fields = [
+            "build": profile.build,
+            "version": profile.appVersion,
+            "c_locale": "zh_CN",
+            "channel": profile.channel,
+            "mobi_app": profile.mobiApp,
+            "platform": profile.platform,
+            "s_locale": "zh_CN",
+            "statistics": profile.statistics,
+            "vmid": String(mid)
+        ]
+        if let accessKey = snapshot.appAccessKey, !accessKey.isEmpty {
+            fields["access_key"] = accessKey
+        }
+        let query = BiliAppSigner.sign(fields, profile: profile)
+        let headerContext = Self.piliPodStyleAppRecommendHeaders(
+            cookieHeader: snapshot.cookieHeader,
+            profile: profile
+        )
+        let response: BiliResponse<UploaderProfile> = try await get(
+            base: appURL,
+            path: "/x/v2/space",
+            query: query,
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: profile.userAgent,
+            cookieHeader: snapshot.cookieHeader,
+            additionalHeaders: headerContext.headers,
+            responseCachePolicy: .detail
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let profile = response.payload else { throw BiliAPIError.missingPayload }
+        return profile
+    }
+
+    private func fetchUploaderSpaceProfile(mid: Int) async throws -> UploaderProfile {
+        let keys = try await fetchWBIKeys(priority: .utility)
+        let signed = WBISigner.sign([
+            "mid": String(mid),
+            "token": "",
+            "platform": "web",
+            "web_location": "1550101"
+        ], keys: keys)
+        let response: BiliResponse<UploaderProfile> = try await get(
+            base: baseURL,
+            path: "/x/space/wbi/acc/info",
+            query: signed,
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: Self.webUserAgent,
+            responseCachePolicy: .detail
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let profile = response.payload else { throw BiliAPIError.missingPayload }
+        return profile
+    }
+
+    private func fetchUploaderRelationStat(mid: Int) async throws -> UploaderRelationStat {
+        let response: BiliResponse<UploaderRelationStat> = try await get(
+            base: baseURL,
+            path: "/x/relation/stat",
+            query: ["vmid": String(mid)],
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: Self.webUserAgent,
+            responseCachePolicy: .detail
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let stat = response.payload else { throw BiliAPIError.missingPayload }
+        return stat
+    }
+
+    private func fetchUploaderUpStat(mid: Int) async throws -> UploaderUpStat {
+        let response: BiliResponse<UploaderUpStat> = try await get(
+            base: baseURL,
+            path: "/x/space/upstat",
+            query: ["mid": String(mid)],
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: Self.webUserAgent,
+            responseCachePolicy: .detail
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let stat = response.payload else { throw BiliAPIError.missingPayload }
+        return stat
+    }
+
+    private func fetchUploaderViewerRelation(mid: Int) async throws -> UploaderViewerRelation {
+        let snapshot = await requestSnapshot()
+        if snapshot.isLoggedIn, !snapshot.cookieHeader.isEmpty {
+            do {
+                return try await fetchUploaderViewerRelationWithWeb(mid: mid, cookieHeader: snapshot.cookieHeader)
+            } catch {
+                if snapshot.appAccessKey?.isEmpty != false {
+                    throw error
+                }
+            }
+        }
+        if let accessKey = snapshot.appAccessKey, !accessKey.isEmpty {
+            return try await fetchUploaderViewerRelationWithAppAccessKey(
+                mid: mid,
+                accessKey: accessKey,
+                cookieHeader: snapshot.cookieHeader
+            )
+        }
+        throw BiliAPIError.missingSESSDATA
+    }
+
+    private func fetchUploaderViewerRelationWithWeb(mid: Int, cookieHeader: String) async throws -> UploaderViewerRelation {
+        let response: BiliResponse<UploaderViewerRelation> = try await get(
+            base: baseURL,
+            path: "/x/relation",
+            query: ["fid": String(mid)],
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: Self.webUserAgent,
+            cookieHeader: cookieHeader,
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let relation = response.payload else { throw BiliAPIError.missingPayload }
+        return relation
+    }
+
+    private func fetchUploaderViewerRelationWithAppAccessKey(
+        mid: Int,
+        accessKey: String,
+        cookieHeader: String
+    ) async throws -> UploaderViewerRelation {
+        let profile = BiliAppSigner.Profile.androidLogin
+        let headerContext = Self.piliPodStyleAppRecommendHeaders(
+            cookieHeader: cookieHeader,
+            profile: profile
+        )
+        let query = BiliAppSigner.sign([
+            "access_key": accessKey,
+            "build": profile.build,
+            "c_locale": "zh_CN",
+            "channel": profile.channel,
+            "fid": String(mid),
+            "mobi_app": profile.mobiApp,
+            "platform": profile.platform,
+            "s_locale": "zh_CN",
+            "statistics": profile.statistics
+        ], profile: profile)
+        let response: BiliResponse<UploaderViewerRelation> = try await get(
+            base: baseURL,
+            path: "/x/relation",
+            query: query,
+            referer: "https://space.bilibili.com/\(mid)",
+            userAgent: profile.userAgent,
+            cookieHeader: cookieHeader,
+            additionalHeaders: headerContext.headers,
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let relation = response.payload else { throw BiliAPIError.missingPayload }
+        return relation
+    }
+
+    func fetchVideoInteractionState(aid: Int, bvid: String?) async throws -> VideoInteractionState {
+        let snapshot = await requestSnapshot()
+        guard snapshot.isLoggedIn || snapshot.appAccessKey?.isEmpty == false else {
+            throw BiliAPIError.missingSESSDATA
+        }
+
+        do {
+            let relationState = try await fetchVideoArchiveRelationState(
+                aid: aid,
+                bvid: bvid,
+                snapshot: snapshot
+            )
+            return relationState.interactionState
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Older web endpoints are a reliable fallback for cookie-based accounts.
+        }
+
+        guard snapshot.isLoggedIn else {
             throw BiliAPIError.missingSESSDATA
         }
 
@@ -1177,6 +1414,34 @@ nonisolated final class BiliAPIClient {
             isFavorited: favoriteResponse.payload?.favoured ?? false,
             isFollowing: false
         )
+    }
+
+    private func fetchVideoArchiveRelationState(
+        aid: Int,
+        bvid: String?,
+        snapshot: RequestSnapshot
+    ) async throws -> VideoArchiveRelationState {
+        var query = ["aid": String(aid)]
+        if let bvid, !bvid.isEmpty {
+            query["bvid"] = bvid
+        }
+        if !snapshot.isLoggedIn,
+           let accessKey = snapshot.appAccessKey,
+           !accessKey.isEmpty {
+            query["access_key"] = accessKey
+        }
+
+        let response: BiliResponse<VideoArchiveRelationState> = try await get(
+            base: baseURL,
+            path: "/x/web-interface/archive/relation",
+            query: query,
+            priority: .utility
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        guard let state = response.payload else { throw BiliAPIError.missingPayload }
+        return state
     }
 
     func toggleVideoLike(aid: Int, liked: Bool) async throws {
@@ -1395,7 +1660,24 @@ nonisolated final class BiliAPIClient {
     }
 
     func setUploaderFollowing(mid: Int, following: Bool) async throws {
-        let csrf = try await requireCSRF()
+        let snapshot = await requestSnapshot()
+        if let csrf = snapshot.csrfToken, snapshot.isLoggedIn {
+            try await setUploaderFollowingWithWeb(mid: mid, following: following, csrf: csrf)
+            return
+        }
+        if let accessKey = snapshot.appAccessKey, !accessKey.isEmpty {
+            try await setUploaderFollowingWithAppAccessKey(
+                mid: mid,
+                following: following,
+                accessKey: accessKey,
+                cookieHeader: snapshot.cookieHeader
+            )
+            return
+        }
+        throw BiliAPIError.missingSESSDATA
+    }
+
+    private func setUploaderFollowingWithWeb(mid: Int, following: Bool, csrf: String) async throws {
         let response: BiliResponse<EmptyBiliPayload> = try await postForm(
             base: baseURL,
             path: "/x/relation/modify",
@@ -1411,7 +1693,34 @@ nonisolated final class BiliAPIClient {
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
     }
 
-    func fetchUploaderVideos(mid: Int, page: Int = 1) async throws -> [VideoItem] {
+    private func setUploaderFollowingWithAppAccessKey(
+        mid: Int,
+        following: Bool,
+        accessKey: String,
+        cookieHeader: String
+    ) async throws {
+        let profile = BiliAppSigner.Profile.androidLogin
+        let headerContext = Self.piliPodStyleAppRecommendHeaders(
+            cookieHeader: cookieHeader,
+            profile: profile
+        )
+        let response: BiliResponse<EmptyBiliPayload> = try await postSignedAPIForm(
+            path: "/x/relation/modify",
+            fields: [
+                "access_key": accessKey,
+                "fid": String(mid),
+                "act": following ? "1" : "2",
+                "re_src": "11",
+                "gaia_source": "app_normal"
+            ],
+            profile: profile,
+            cookieHeader: cookieHeader,
+            additionalHeaders: headerContext.headers
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+    }
+
+    func fetchUploaderVideoPage(mid: Int, page: Int = 1) async throws -> UploaderVideoPageResult {
         let keys = try await fetchWBIKeys()
         let signed = WBISigner.sign([
             "mid": String(mid),
@@ -1433,12 +1742,21 @@ nonisolated final class BiliAPIClient {
             path: "/x/space/wbi/arc/search",
             query: signed,
             referer: "https://space.bilibili.com/\(mid)/video",
+            userAgent: Self.webUserAgent,
             responseCachePolicy: .short
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        return response.payload?.list?.vlist?
+        let videos = response.payload?.list?.vlist?
             .filter { !$0.bvid.isEmpty }
             .map { $0.asVideoItem(defaultMID: mid) } ?? []
+        return UploaderVideoPageResult(
+            videos: videos,
+            totalCount: response.payload?.page?.count
+        )
+    }
+
+    func fetchUploaderVideos(mid: Int, page: Int = 1) async throws -> [VideoItem] {
+        try await fetchUploaderVideoPage(mid: mid, page: page).videos
     }
 
     func fetchPlayURL(
@@ -3915,6 +4233,31 @@ nonisolated final class BiliAPIClient {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.formBody(from: fields)
+        let (data, _) = try await data(for: request, priority: .userInitiated)
+        guard !data.isEmpty else { throw BiliAPIError.emptyData }
+        return try await Self.decode(data, priority: .userInitiated)
+    }
+
+    private func postSignedAPIForm<T: Decodable>(
+        path: String,
+        fields: [String: String],
+        profile: BiliAppSigner.Profile,
+        cookieHeader: String,
+        additionalHeaders: [String: String]
+    ) async throws -> T {
+        var request = try await makeRequest(
+            base: baseURL,
+            path: path,
+            query: [:],
+            referer: "https://space.bilibili.com",
+            userAgent: profile.userAgent,
+            cookieHeader: cookieHeader,
+            additionalHeaders: additionalHeaders,
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.formBody(from: BiliAppSigner.sign(fields, profile: profile))
         let (data, _) = try await data(for: request, priority: .userInitiated)
         guard !data.isEmpty else { throw BiliAPIError.emptyData }
         return try await Self.decode(data, priority: .userInitiated)

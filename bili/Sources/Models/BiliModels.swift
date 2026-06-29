@@ -288,17 +288,105 @@ nonisolated struct UploaderProfile: Decodable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case card, follower, following
+        case fans, relation, likes, archive
+        case isFollowed = "is_followed"
         case likeNum = "like_num"
         case archiveCount = "archive_count"
+    }
+
+    init(
+        card: UploaderCard?,
+        follower: Int?,
+        following: Bool?,
+        likeNum: Int?,
+        archiveCount: Int?
+    ) {
+        self.card = card
+        self.follower = follower
+        self.following = following
+        self.likeNum = likeNum
+        self.archiveCount = archiveCount
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         card = try container.decodeIfPresent(UploaderCard.self, forKey: .card)
+            ?? UploaderCard(from: decoder)
         follower = container.decodeLossyIntIfPresent(forKey: .follower)
-        following = container.decodeLossyBoolIfPresent(forKey: .following)
+            ?? container.decodeLossyIntIfPresent(forKey: .fans)
+            ?? card?.fans
+        if let cardFollowing = card?.relation?.isFollowing {
+            following = cardFollowing
+        } else if let relation = try? container.decodeIfPresent(UploaderRelationState.self, forKey: .relation),
+           let relationFollowing = relation.isFollowing {
+            following = relationFollowing
+        } else if let isFollowed = container.decodeLossyBoolIfPresent(forKey: .isFollowed) {
+            following = isFollowed
+        } else {
+            following = container.decodeLossyBoolIfPresent(forKey: .following)
+        }
+        let likes = try container.decodeIfPresent(UploaderLikes.self, forKey: .likes)
         likeNum = container.decodeLossyIntIfPresent(forKey: .likeNum)
-        archiveCount = container.decodeLossyIntIfPresent(forKey: .archiveCount)
+            ?? likes?.likeNum
+            ?? card?.likes?.likeNum
+        if let archive = try container.decodeIfPresent(UploaderArchiveStats.self, forKey: .archive) {
+            archiveCount = container.decodeLossyIntIfPresent(forKey: .archiveCount)
+                ?? archive.count
+        } else {
+            archiveCount = container.decodeLossyIntIfPresent(forKey: .archiveCount)
+        }
+    }
+
+    init(from card: UploaderCard, archiveCount: Int? = nil) {
+        self.card = card
+        follower = card.fans
+        following = card.relation?.isFollowing
+        likeNum = card.likes?.likeNum
+        self.archiveCount = archiveCount
+    }
+
+    func merged(with other: UploaderProfile?) -> UploaderProfile {
+        guard let other else { return self }
+        return UploaderProfile(
+            card: card?.merged(with: other.card) ?? other.card,
+            follower: other.follower ?? follower,
+            following: other.following ?? following,
+            likeNum: other.likeNum ?? likeNum,
+            archiveCount: other.archiveCount ?? archiveCount
+        )
+    }
+}
+
+nonisolated struct UploaderViewerRelation: Decodable, Hashable {
+    let following: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case attribute, special
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let attribute = container.decodeLossyIntIfPresent(forKey: .attribute)
+        let special = container.decodeLossyIntIfPresent(forKey: .special)
+        if let attribute {
+            following = attribute > 0 && attribute != 128
+        } else if let special {
+            following = special > 0
+        } else {
+            following = nil
+        }
+    }
+}
+
+extension UploaderViewerRelation {
+    nonisolated var profilePatch: UploaderProfile {
+        UploaderProfile(
+            card: nil,
+            follower: nil,
+            following: following,
+            likeNum: nil,
+            archiveCount: nil
+        )
     }
 }
 
@@ -309,9 +397,31 @@ nonisolated struct UploaderCard: Decodable, Hashable {
     let sign: String?
     let fans: Int?
     let attention: Int?
+    let relation: UploaderRelationState?
+    let likes: UploaderLikes?
 
     enum CodingKeys: String, CodingKey {
-        case mid, name, face, sign, fans, attention
+        case mid, name, face, sign, fans, attention, relation, likes
+    }
+
+    init(
+        mid: Int?,
+        name: String?,
+        face: String?,
+        sign: String?,
+        fans: Int?,
+        attention: Int?,
+        relation: UploaderRelationState? = nil,
+        likes: UploaderLikes? = nil
+    ) {
+        self.mid = mid
+        self.name = name
+        self.face = face
+        self.sign = sign
+        self.fans = fans
+        self.attention = attention
+        self.relation = relation
+        self.likes = likes
     }
 
     init(from decoder: Decoder) throws {
@@ -322,15 +432,203 @@ nonisolated struct UploaderCard: Decodable, Hashable {
         sign = try container.decodeIfPresent(String.self, forKey: .sign)
         fans = container.decodeLossyIntIfPresent(forKey: .fans)
         attention = container.decodeLossyIntIfPresent(forKey: .attention)
+        relation = try container.decodeIfPresent(UploaderRelationState.self, forKey: .relation)
+        likes = try container.decodeIfPresent(UploaderLikes.self, forKey: .likes)
+    }
+
+    func merged(with other: UploaderCard?) -> UploaderCard {
+        guard let other else { return self }
+        return UploaderCard(
+            mid: mid ?? other.mid,
+            name: name ?? other.name,
+            face: face ?? other.face,
+            sign: sign ?? other.sign,
+            fans: other.fans ?? fans,
+            attention: other.attention ?? attention,
+            relation: other.relation ?? relation,
+            likes: other.likes ?? likes
+        )
+    }
+}
+
+nonisolated struct UploaderRelationState: Decodable, Hashable {
+    let isFollowing: Bool?
+    let isFollowedByUploader: Bool?
+    let status: Int?
+    let attribute: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case isFollow = "is_follow"
+        case isFollowed = "is_followed"
+        case status, attribute
+    }
+
+    init(isFollowing: Bool?) {
+        self.isFollowing = isFollowing
+        isFollowedByUploader = nil
+        status = nil
+        attribute = nil
+    }
+
+    init(from decoder: Decoder) throws {
+        if let single = try? decoder.singleValueContainer() {
+            if let value = try? single.decode(Int.self) {
+                isFollowing = value > 0 && value != 128
+                isFollowedByUploader = nil
+                status = value
+                attribute = nil
+                return
+            }
+            if let value = try? single.decode(Bool.self) {
+                isFollowing = value
+                isFollowedByUploader = nil
+                status = nil
+                attribute = nil
+                return
+            }
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedStatus = container.decodeLossyIntIfPresent(forKey: .status)
+        let decodedAttribute = container.decodeLossyIntIfPresent(forKey: .attribute)
+        let decodedIsFollowed = container.decodeLossyBoolIfPresent(forKey: .isFollowed)
+        status = decodedStatus
+        attribute = decodedAttribute
+        isFollowedByUploader = decodedIsFollowed
+        if let isFollow = container.decodeLossyBoolIfPresent(forKey: .isFollow) {
+            isFollowing = isFollow
+        } else if let decodedStatus {
+            isFollowing = decodedStatus > 0 && decodedStatus != 128
+        } else if let decodedAttribute {
+            isFollowing = decodedAttribute > 0 && decodedAttribute != 128
+        } else {
+            isFollowing = decodedIsFollowed
+        }
+    }
+}
+
+nonisolated struct UploaderLikes: Decodable, Hashable {
+    let likeNum: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case likeNum = "like_num"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        likeNum = container.decodeLossyIntIfPresent(forKey: .likeNum)
+    }
+}
+
+nonisolated struct UploaderArchiveStats: Decodable, Hashable {
+    let count: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case count
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        count = container.decodeLossyIntIfPresent(forKey: .count)
+    }
+}
+
+nonisolated struct UploaderRelationStat: Decodable, Hashable {
+    let following: Int?
+    let follower: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case following
+        case follower
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        following = container.decodeLossyIntIfPresent(forKey: .following)
+        follower = container.decodeLossyIntIfPresent(forKey: .follower)
+    }
+}
+
+extension UploaderRelationStat {
+    nonisolated var profilePatch: UploaderProfile {
+        UploaderProfile(
+            card: UploaderCard(
+                mid: nil,
+                name: nil,
+                face: nil,
+                sign: nil,
+                fans: follower,
+                attention: following
+            ),
+            follower: follower,
+            following: nil,
+            likeNum: nil,
+            archiveCount: nil
+        )
+    }
+}
+
+nonisolated struct UploaderUpStat: Decodable, Hashable {
+    let likes: Int?
+    let archiveCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case likes
+        case archive
+    }
+
+    enum ArchiveCodingKeys: String, CodingKey {
+        case count
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        likes = container.decodeLossyIntIfPresent(forKey: .likes)
+        if let archive = try? container.nestedContainer(keyedBy: ArchiveCodingKeys.self, forKey: .archive) {
+            archiveCount = archive.decodeLossyIntIfPresent(forKey: .count)
+        } else {
+            archiveCount = nil
+        }
+    }
+}
+
+extension UploaderUpStat {
+    nonisolated var profilePatch: UploaderProfile {
+        UploaderProfile(
+            card: nil,
+            follower: nil,
+            following: nil,
+            likeNum: likes,
+            archiveCount: archiveCount
+        )
     }
 }
 
 nonisolated struct UploaderVideoData: Decodable {
     let list: UploaderVideoList?
+    let page: UploaderVideoPageInfo?
 }
 
 nonisolated struct UploaderVideoList: Decodable {
     let vlist: [UploaderVideoItem]?
+}
+
+nonisolated struct UploaderVideoPageInfo: Decodable, Hashable {
+    let count: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case count
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        count = container.decodeLossyIntIfPresent(forKey: .count)
+    }
+}
+
+nonisolated struct UploaderVideoPageResult: Hashable {
+    let videos: [VideoItem]
+    let totalCount: Int?
 }
 
 nonisolated struct UploaderVideoItem: Decodable, Hashable {
@@ -342,11 +640,12 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
     let pic: String?
     let description: String?
     let length: String?
+    let pubdate: Int?
     let play: Int?
     let comment: Int?
 
     enum CodingKeys: String, CodingKey {
-        case bvid, aid, author, mid, title, pic, description, length, play, comment
+        case bvid, aid, author, mid, title, pic, description, length, pubdate, created, ctime, play, comment
     }
 
     init(from decoder: Decoder) throws {
@@ -359,6 +658,9 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
         pic = try container.decodeIfPresent(String.self, forKey: .pic)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         length = try container.decodeIfPresent(String.self, forKey: .length)
+        pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
+            ?? container.decodeLossyIntIfPresent(forKey: .created)
+            ?? container.decodeLossyIntIfPresent(forKey: .ctime)
         play = container.decodeLossyIntIfPresent(forKey: .play)
         comment = container.decodeLossyIntIfPresent(forKey: .comment)
     }
@@ -371,7 +673,7 @@ nonisolated struct UploaderVideoItem: Decodable, Hashable {
             pic: pic?.normalizedBiliURL(),
             desc: description,
             duration: length.flatMap(Self.durationSeconds),
-            pubdate: nil,
+            pubdate: pubdate,
             owner: VideoOwner(mid: mid ?? defaultMID, name: author ?? "", face: nil),
             stat: VideoStat(view: play, reply: comment, like: nil, coin: nil, favorite: nil),
             cid: nil,
@@ -2315,6 +2617,37 @@ struct VideoInteractionState: Hashable {
 
     var isCoined: Bool {
         coinCount > 0
+    }
+}
+
+nonisolated struct VideoArchiveRelationState: Decodable, Hashable {
+    let isLiked: Bool
+    let coinCount: Int
+    let isFavorited: Bool
+    let isFollowing: Bool
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isLiked = container.decodeLossyBoolIfPresent(forKey: .like) ?? false
+        coinCount = container.decodeLossyIntIfPresent(forKey: .coin) ?? 0
+        isFavorited = container.decodeLossyBoolIfPresent(forKey: .favorite) ?? false
+        isFollowing = container.decodeLossyBoolIfPresent(forKey: .attention) ?? false
+    }
+
+    var interactionState: VideoInteractionState {
+        VideoInteractionState(
+            isLiked: isLiked,
+            coinCount: coinCount,
+            isFavorited: isFavorited,
+            isFollowing: isFollowing
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case like
+        case coin
+        case favorite
+        case attention
     }
 }
 

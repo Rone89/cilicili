@@ -154,12 +154,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var startupResumeRetryGeneration = 0
     private var resumeRecoveryWatchdogTask: Task<Void, Never>?
     private var deferredBufferingIndicatorTask: Task<Void, Never>?
-    private var scrubSeekUIReleaseTask: Task<Void, Never>?
     private var playbackRecoveryWatchdogTask: Task<Void, Never>?
     private var seekRecoveryWatchdogTask: Task<Void, Never>?
     private var speedBoostRecoveryTask: Task<Void, Never>?
     private var surfaceReadinessResetTask: Task<Void, Never>?
     private var shouldResumeAfterTransientSystemOverlay = false
+    private var shouldResumePlaybackAfterUserScrub = false
     private var surfaceReadinessConfirmationTask: Task<Void, Never>?
     private var surfaceLayoutStabilizationTask: Task<Void, Never>?
     private var surfaceMigrationTask: Task<Void, Never>?
@@ -181,6 +181,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pendingStartupResume: PendingStartupResume?
     private var pendingResumeRecoveryMetric: PendingStartupResumeRecoveryMetric?
     private var pendingSeekRecoveryMetric: PendingSeekRecoveryMetric?
+    private var lastRecoveredSeekMetricID: UUID?
     private var lastSeekBufferReadyMetricID: UUID?
     private var navigationAudioSuspension: NavigationAudioSuspension?
     private var lastUsablePlaybackSnapshotImage: UIImage?
@@ -196,10 +197,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let sponsorBlockTailTolerance: TimeInterval = 0.12
     private let forcedPlaybackTimeGuardDuration: TimeInterval = 3.5
     private let forcedPlaybackTimeGuardTolerance: TimeInterval = 2.0
+    private let forcedPlaybackTimeRollbackTolerance: TimeInterval = 0.08
+    private let forcedPlaybackTimeSettleAdvance: TimeInterval = 0.16
+    private let forcedPlaybackTimeForwardJumpTolerance: TimeInterval = 2.0
     private let maximumPlaybackRecoveryAttempts = 2
     private let deferredBufferingIndicatorDelayNanoseconds: UInt64 = 750_000_000
-    private let seekCoalescingDelayNanoseconds: UInt64 = 90_000_000
-    private let seekUIReleaseDelayNanoseconds: UInt64 = 420_000_000
+    private let seekCoalescingDelayNanoseconds: UInt64 = 45_000_000
     private let resumeRecoveryWatchdogDelayNanoseconds: UInt64 = 2_400_000_000
     private let seekRecoveryWatchdogDelayNanoseconds: UInt64 = 1_100_000_000
     private static let currentSurfaceReadinessConfirmationDelays: [UInt64] = [
@@ -300,8 +303,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         surfaceLayoutStabilizationTask = nil
         surfaceMigrationTask?.cancel()
         surfaceMigrationTask = nil
-        scrubSeekUIReleaseTask?.cancel()
-        scrubSeekUIReleaseTask = nil
         pictureInPictureStartRetryTask?.cancel()
         pictureInPictureStartRetryTask = nil
         pictureInPictureStartRetryGeneration &+= 1
@@ -387,6 +388,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         ) else { return nil }
         rememberUsablePlaybackSnapshotImage(image)
         return PlaybackTransitionSnapshot(image: image, isVideoFrame: false)
+    }
+
+    func isSeekRecoverySnapshotReadyForReveal() -> Bool {
+        guard !isTerminated else { return false }
+        guard let pending = pendingSeekRecoveryMetric else {
+            return makeCurrentVisibleSurfaceTransitionSnapshot() != nil
+        }
+        let snapshot = engine.snapshot(durationHint: durationHint)
+        return hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot)
+            || hasSeekRecoveryPausedTargetFrameForReveal(pending: pending, snapshot: snapshot)
     }
 
     func makePlaybackTransitionSnapshotView() -> UIView? {
@@ -654,8 +665,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         playbackRecoveryWatchdogTask?.cancel()
         playbackRecoveryWatchdogTask = nil
-        scrubSeekUIReleaseTask?.cancel()
-        scrubSeekUIReleaseTask = nil
         if !isTerminated {
             engine.setContentOverlay(nil)
             engine.setDanmakuControls(isEnabled: false, onToggle: nil, onShowSettings: nil)
@@ -1488,8 +1497,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func cancelTransientInteractionTasks() {
-        scrubSeekUIReleaseTask?.cancel()
-        scrubSeekUIReleaseTask = nil
         speedBoostRecoveryTask?.cancel()
         speedBoostRecoveryTask = nil
     }
@@ -1498,10 +1505,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         scrubSeekGeneration &+= 1
         scrubSeekTask?.cancel()
         scrubSeekTask = nil
-        scrubSeekUIReleaseTask?.cancel()
-        scrubSeekUIReleaseTask = nil
         if resetUserSeeking, isUserSeeking {
             isUserSeeking = false
+            shouldResumePlaybackAfterUserScrub = false
+            engine.setTemporaryAudioSuppressed(false)
         }
     }
 
@@ -1565,8 +1572,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
-        wantsAutoplay = true
         cancelStartupResumeCorrectionAfterUserSeek()
+        let initialSnapshot = engine.snapshot(durationHint: durationHint)
+        let shouldResumeAfterSeek = shouldResumePlaybackAfterUserScrub
+            || wantsAutoplay
+            || isPlaying
+            || initialSnapshot.isPlaying
+        shouldResumePlaybackAfterUserScrub = shouldResumeAfterSeek
+        wantsAutoplay = false
         scrubSeekGeneration &+= 1
         let generation = scrubSeekGeneration
         let targetProgress = min(max(progress, 0), 1)
@@ -1582,6 +1595,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         isBuffering = true
         loadingProgress = hasPresentedPlayback ? 0.22 : max(loadingProgress, 0.78)
         playbackPhase = .seeking
+        engine.pause()
+        engine.setTemporaryAudioSuppressed(true)
         if let optimisticTargetTime {
             _ = updatePlaybackTime(optimisticTargetTime, force: true, countsAsNaturalPlayback: false)
             beginSeekRecoveryTracking(
@@ -1592,12 +1607,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 engineElapsedMilliseconds: nil
             )
         }
-        scheduleScrubSeekUIReleaseIfNeeded(
-            generation: generation,
-            targetTime: optimisticTargetTime,
-            targetProgress: targetProgress,
-            startedAt: userSeekStart
-        )
         rescheduleTimeObserverIfNeeded(force: true)
         scrubSeekTask?.cancel()
         scrubSeekTask = Task(priority: .userInitiated) { @MainActor [weak self] in
@@ -1633,7 +1642,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 toProgress: targetProgress,
                 duration: resolvedDuration > 0 ? resolvedDuration : self.duration
             )
-            var seekReason = "scrub"
+            var seekReason = "scrub-engine"
             if appliedTime == nil,
                let fallbackTarget = optimisticTargetTime ?? (self.currentTime > 0 ? self.currentTime : nil) {
                 appliedTime = self.engine.seek(toTime: fallbackTarget)
@@ -1652,8 +1661,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             }
             if let appliedTime {
                 self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
-                self.isUserSeeking = false
-                self.isBuffering = self.hasPresentedPlayback && self.wantsAutoplay
                 self.beginSeekRecoveryTracking(
                     reason: seekReason,
                     targetTime: appliedTime,
@@ -1662,6 +1669,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     engineElapsedMilliseconds: engineElapsed
                 )
             }
+            self.engine.pause()
             self.recordSeekTransition(
                 reason: seekReason,
                 targetTime: appliedTime,
@@ -1670,8 +1678,44 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 engineElapsedMilliseconds: engineElapsed
             )
             signpostMessage = "mode=scrub target=\(String(format: "%.3f", targetProgress)) applied=\(String(format: "%.2f", appliedTime ?? 0)) total=\(String(format: "%.1f", totalElapsed))ms engine=\(String(format: "%.1f", engineElapsed))ms reason=\(seekReason)"
-            self.resumePlaybackAfterUserSeek()
+            self.playbackRecoveryWatchdogTask?.cancel()
+            self.playbackRecoveryWatchdogTask = nil
+            if self.isUserSeeking {
+                self.isUserSeeking = false
+            }
+            self.isBuffering = false
+            self.isPreparing = false
+            self.shouldResumePlaybackAfterUserScrub = false
+            if shouldResumeAfterSeek {
+                self.engine.setTemporaryAudioSuppressed(false)
+                self.resumePlaybackAfterUserSeek()
+            } else {
+                self.wantsAutoplay = false
+                self.isPlaying = false
+                self.playbackPhase = .paused
+                self.refreshPlaybackState()
+                self.engine.setTemporaryAudioSuppressed(false)
+            }
         }
+    }
+
+    func beginUserScrubInteraction() {
+        guard !isTerminated else { return }
+        guard engine.hasMedia else { return }
+        markUserSeekIntent()
+        let snapshot = engine.snapshot(durationHint: durationHint)
+        shouldResumePlaybackAfterUserScrub = wantsAutoplay || isPlaying || snapshot.isPlaying
+        guard hasPresentedPlayback else { return }
+        wantsAutoplay = false
+        if !isUserSeeking {
+            isUserSeeking = true
+        }
+        isPlaying = false
+        isBuffering = true
+        loadingProgress = max(loadingProgress, 0.22)
+        playbackPhase = .seeking
+        engine.pause()
+        engine.setTemporaryAudioSuppressed(true)
     }
 
     func seek(by interval: TimeInterval) {
@@ -2468,6 +2512,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if isPlaying != shouldDisplayPlaying {
             isPlaying = shouldDisplayPlaying
         }
+        clearUserSeekOverlayAfterPlaybackStartsIfNeeded(snapshot: snapshot)
         updatePhaseFromSnapshot(snapshot)
         if isSeekable != snapshot.isSeekable {
             isSeekable = snapshot.isSeekable
@@ -2832,13 +2877,23 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             forcedPlaybackTimeGuard = nil
             return false
         }
-        if abs(time - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance {
+        let lowerBound = forcedPlaybackGuardLowerBound(for: guardState.targetTime)
+        let upperBound = forcedPlaybackGuardUpperBound(for: guardState.targetTime)
+        if isForcedPlaybackTimeSettled(time, for: guardState.targetTime) {
             forcedPlaybackTimeGuard = nil
             return false
         }
-        guard abs(currentTime - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance else {
+
+        guard currentTime >= lowerBound,
+              currentTime <= upperBound
+        else {
             return false
         }
+
+        guard time < lowerBound || time > upperBound else {
+            return false
+        }
+
         PlayerMetricsLog.logger.info(
             "ignoredStalePlaybackTimeAfterSeek id=\(self.metricsID, privacy: .public) target=\(guardState.targetTime, format: .fixed(precision: 2), privacy: .public) current=\(self.currentTime, format: .fixed(precision: 2), privacy: .public) candidate=\(time, format: .fixed(precision: 2), privacy: .public)"
         )
@@ -2847,10 +2902,29 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func clearForcedPlaybackTimeGuardIfSatisfied(by time: TimeInterval) {
         guard let guardState = forcedPlaybackTimeGuard else { return }
-        if abs(time - guardState.targetTime) <= forcedPlaybackTimeGuardTolerance
+        if isForcedPlaybackTimeSettled(time, for: guardState.targetTime)
             || CACurrentMediaTime() > guardState.expiresAt {
             forcedPlaybackTimeGuard = nil
         }
+    }
+
+    private func isForcedPlaybackTimeSettled(_ time: TimeInterval, for targetTime: TimeInterval) -> Bool {
+        let lowerBound = forcedPlaybackGuardLowerBound(for: targetTime)
+        let upperBound = forcedPlaybackGuardUpperBound(for: targetTime)
+        if let displayDuration,
+           targetTime >= max(displayDuration - 0.35, 0) {
+            return time >= lowerBound && time <= upperBound
+        }
+        return time >= targetTime + forcedPlaybackTimeSettleAdvance
+            && time <= upperBound
+    }
+
+    private func forcedPlaybackGuardLowerBound(for targetTime: TimeInterval) -> TimeInterval {
+        max(targetTime - forcedPlaybackTimeRollbackTolerance, 0)
+    }
+
+    private func forcedPlaybackGuardUpperBound(for targetTime: TimeInterval) -> TimeInterval {
+        targetTime + forcedPlaybackTimeForwardJumpTolerance
     }
 
     private func shouldIgnoreStartupPlaybackTimeOutlier(_ time: TimeInterval) -> Bool {
@@ -2944,6 +3018,24 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 schedulePlaybackRecoveryWatchdog(reason: .firstFrame)
             }
         case .playing:
+            if isUserSeeking {
+                if wantsAutoplay {
+                    clearUserSeekOverlayAfterPlaybackStartsIfNeeded(
+                        snapshot: engine.snapshot(durationHint: durationHint)
+                    )
+                } else {
+                    wantsAutoplay = false
+                    isPlaying = false
+                    isPreparing = false
+                    isBuffering = true
+                    playbackPhase = .seeking
+                    loadingProgress = max(loadingProgress, 0.22)
+                    engine.pause()
+                    engine.setTemporaryAudioSuppressed(true)
+                    rescheduleTimeObserverIfNeeded(force: true)
+                    return
+                }
+            }
             cancelDeferredBufferingIndicator()
             isPlaying = true
             errorMessage = nil
@@ -2975,9 +3067,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 return
             }
             cancelDeferredBufferingIndicator()
-            if isUserSeeking && wantsAutoplay {
+            if isUserSeeking {
                 isBuffering = true
-                isPlaying = true
+                isPlaying = false
                 playbackPhase = .seeking
             } else {
                 isBuffering = false
@@ -3019,7 +3111,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func handleEnginePlaybackIntentChange(_ wantsPlayback: Bool) {
         guard !isTerminated else { return }
-        if isUserSeeking, !wantsPlayback {
+        if isUserSeeking {
             return
         }
         if !wantsPlayback, shouldPreservePlaybackDuringTransientSystemOverlay {
@@ -3042,6 +3134,23 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    private func clearUserSeekOverlayAfterPlaybackStartsIfNeeded(snapshot: PlayerPlaybackSnapshot) {
+        guard isUserSeeking,
+              wantsAutoplay,
+              snapshot.isPlaying,
+              !shouldResumePlaybackAfterUserScrub
+        else { return }
+        if let pending = pendingSeekRecoveryMetric {
+            guard hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) else { return }
+        }
+        engine.setTemporaryAudioSuppressed(false)
+        isUserSeeking = false
+        isBuffering = false
+        shouldResumePlaybackAfterUserScrub = false
+        playbackRecoveryWatchdogTask?.cancel()
+        playbackRecoveryWatchdogTask = nil
+    }
+
     private var shouldPreservePlaybackDuringTransientSystemOverlay: Bool {
         shouldResumeAfterTransientSystemOverlay
             && wantsAutoplay
@@ -3059,7 +3168,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         startedAt: CFTimeInterval,
         engineElapsedMilliseconds: Double?
     ) {
-        guard wantsAutoplay || isPlaying else { return }
+        guard wantsAutoplay || isPlaying || isUserSeeking else { return }
         seekRecoveryWatchdogTask?.cancel()
         let metric = PendingSeekRecoveryMetric(
             reason: reason,
@@ -3069,6 +3178,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             engineElapsedMilliseconds: engineElapsedMilliseconds
         )
         pendingSeekRecoveryMetric = metric
+        lastRecoveredSeekMetricID = nil
         lastSeekBufferReadyMetricID = nil
         let baselineSurfaceGeneration = surfaceAttachmentGeneration
         seekRecoveryWatchdogTask = Task { @MainActor [weak self] in
@@ -3084,7 +3194,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             if let snapshotTime = snapshot.currentTime,
                snapshot.isPlaying,
                self.isSeekRecoveryMatch(currentTime: snapshotTime, pending: pending),
-               self.hasVisibleSeekRecoveryFrame(pending: pending, snapshot: snapshot) {
+               self.hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) {
                 self.finishSeekRecoveryMetric(
                     pending,
                     recovered: true,
@@ -3141,7 +3251,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard let pending = pendingSeekRecoveryMetric else { return }
         guard isSeekRecoveryMatch(currentTime: currentTime, pending: pending) else { return }
         let snapshot = engine.snapshot(durationHint: durationHint)
-        guard hasVisibleSeekRecoveryFrame(pending: pending, snapshot: snapshot) else { return }
+        guard hasStableSeekRecoveryFrameForReveal(pending: pending, snapshot: snapshot) else { return }
         finishSeekRecoveryMetric(
             pending,
             recovered: true,
@@ -3160,6 +3270,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
         pendingSeekRecoveryMetric = nil
+        lastRecoveredSeekMetricID = recovered ? pending.id : nil
         lastSeekBufferReadyMetricID = nil
         PlayerMetricsLog.record(
             .seekRecovery,
@@ -3405,6 +3516,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
         pendingSeekRecoveryMetric = nil
+        lastRecoveredSeekMetricID = nil
         lastSeekBufferReadyMetricID = nil
     }
 
@@ -3442,48 +3554,45 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         pictureInPictureStartRetryTask = nil
     }
 
-    private func scheduleScrubSeekUIReleaseIfNeeded(
-        generation: Int,
-        targetTime: TimeInterval?,
-        targetProgress: Double,
-        startedAt: CFTimeInterval
-    ) {
-        scrubSeekUIReleaseTask?.cancel()
-        let baselineSurfaceGeneration = surfaceAttachmentGeneration
-        scrubSeekUIReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: self?.seekUIReleaseDelayNanoseconds ?? 1_150_000_000)
-            guard let self,
-                  !Task.isCancelled,
-                  !self.isTerminated,
-                  self.scrubSeekGeneration == generation,
-                  self.hasCurrentSurface(generation: baselineSurfaceGeneration),
-                  self.isUserSeeking
-            else { return }
+    private func hasSeekRecoveryPausedTargetFrameForReveal(
+        pending: PendingSeekRecoveryMetric,
+        snapshot: PlayerPlaybackSnapshot
+    ) -> Bool {
+        guard !snapshot.isPlaying,
+              let targetTime = pending.targetTime,
+              let playbackTime = snapshot.currentTime,
+              playbackTime.isFinite,
+              isSeekRecoveryMatch(currentTime: playbackTime, pending: pending),
+              hasVisibleSeekRecoveryFrame(pending: pending, snapshot: snapshot)
+        else { return false }
 
-            self.isUserSeeking = false
-            self.playbackRecoveryWatchdogTask?.cancel()
-            self.playbackRecoveryWatchdogTask = nil
-            if self.wantsAutoplay,
-               self.canActivatePlayback(generation: baselineSurfaceGeneration) {
-                self.engine.recoverSurface()
-                self.refreshSurfaceLayout()
-                self.engine.play()
-                self.engine.setPlaybackRate(self.playbackRate.rawValue)
-            }
-            if self.hasPresentedPlayback {
-                self.isBuffering = self.wantsAutoplay
-                self.playbackPhase = self.wantsAutoplay ? .buffering : .paused
-            }
-            self.resumePlaybackAfterUserSeek()
-            self.recordSeekTransition(
-                reason: "scrub-timeout",
-                targetTime: targetTime,
-                targetProgress: targetProgress,
-                totalElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: startedAt),
-                engineElapsedMilliseconds: nil
-            )
-            self.scrubSeekUIReleaseTask = nil
+        let lowerBound = max(targetTime, 0)
+        let resolvedDuration = snapshot.duration ?? duration ?? durationHint
+        if let resolvedDuration,
+           targetTime >= max(resolvedDuration - 0.35, 0) {
+            return playbackTime >= max(targetTime - 0.08, 0)
         }
+        return playbackTime >= lowerBound && playbackTime <= targetTime + 0.5
+    }
+
+    private func hasStableSeekRecoveryFrameForReveal(
+        pending: PendingSeekRecoveryMetric,
+        snapshot: PlayerPlaybackSnapshot
+    ) -> Bool {
+        guard hasVisibleSeekRecoveryFrame(pending: pending, snapshot: snapshot) else {
+            return false
+        }
+        guard let targetTime = pending.targetTime else {
+            return true
+        }
+        let revealTime = snapshot.renderedVideoTime ?? snapshot.currentTime
+        guard let revealTime, revealTime.isFinite else { return false }
+        let resolvedDuration = snapshot.duration ?? duration ?? durationHint
+        if let resolvedDuration,
+           targetTime >= max(resolvedDuration - 0.35, 0) {
+            return true
+        }
+        return revealTime >= targetTime
     }
 
     private func handleEngineLoadingProgress(_ progress: Double) {

@@ -22,9 +22,12 @@ final class VideoDetailFullscreenCoordinator: ObservableObject {
     static let inlineTransitionDuration: TimeInterval = 0.24
     static let inlineTransitionCompletionDelayNanoseconds: UInt64 = 260_000_000
     static let portraitExitSurfaceSettleDelayNanoseconds: UInt64 = 260_000_000
+    static let enterSurfaceReadinessPollDelayNanoseconds: UInt64 = 34_000_000
+    static let enterSurfaceReadinessMaximumWaitNanoseconds: UInt64 = 620_000_000
+    static let enterSurfaceRequiredStableSamples = 1
     static let inlineTransitionAnimation = Animation.smooth(duration: inlineTransitionDuration)
     static let rotationPortraitExitOverlayDuration: TimeInterval = 0.46
-    static let morphTransitionDuration: TimeInterval = 0.52
+    static let morphTransitionDuration: TimeInterval = 0.50
     static let morphTransitionAnimation = Animation.timingCurve(
         0.22,
         0.72,
@@ -32,14 +35,15 @@ final class VideoDetailFullscreenCoordinator: ObservableObject {
         1,
         duration: morphTransitionDuration
     )
-    static let morphTransitionCompletionDelayNanoseconds: UInt64 = 560_000_000
-    static let morphFadeDuration: TimeInterval = 0.18
-    static let morphFadeDurationNanoseconds: UInt64 = 180_000_000
-    static let morphClearDelayNanoseconds: UInt64 = 210_000_000
+    static let morphTransitionCompletionDelayNanoseconds: UInt64 = 540_000_000
+    static let morphFadeDuration: TimeInterval = 0.14
+    static let morphFadeDurationNanoseconds: UInt64 = 140_000_000
+    static let morphClearDelayNanoseconds: UInt64 = 170_000_000
     // 快照在 surface「布局刷新」后再停留一段，覆盖到视频帧真正渲染到新尺寸为止。
     // 布局刷新 ≠ 出帧，软解引擎(KSPlayer/DASH)重建首帧偏慢，故留足时间。
     // 快照是静止当前帧，多停留数百毫秒用户基本无感，远好于黑闪。
-    static let exitMorphSurfaceSettleDelayNanoseconds: UInt64 = 360_000_000
+    static let enterMorphSurfaceSettleDelayNanoseconds: UInt64 = 90_000_000
+    static let exitMorphSurfaceSettleDelayNanoseconds: UInt64 = 320_000_000
     static let exitMorphFallbackFadeDelayNanoseconds: UInt64 = 900_000_000
 
     var pendingRotationLandscapeOrientation: UIDeviceOrientation?

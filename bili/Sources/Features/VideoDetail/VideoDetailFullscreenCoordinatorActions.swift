@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 extension VideoDetailFullscreenCoordinator {
-    private static let exitSurfaceReadinessPollDelayNanoseconds: UInt64 = 16_000_000
+    private static let exitSurfaceReadinessPollDelayNanoseconds: UInt64 = 34_000_000
     private static let exitSurfaceReadinessMaximumWaitNanoseconds: UInt64 = 820_000_000
     private static let exitSurfaceRequiredStableSamples = 2
 

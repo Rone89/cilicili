@@ -98,17 +98,19 @@ enum VideoDetailRotationWindowMask {
         overlay.isHidden = false
 
         image.layer.removeAllAnimations()
-        image.frame = sourceFrame?.isUsable == true ? sourceFrame! : (image.frame.isUsable ? image.frame : window.bounds)
+        let resolvedSourceFrame = sourceFrame?.isUsable == true
+            ? sourceFrame!
+            : (image.frame.isUsable ? image.frame : window.bounds)
+        image.frame = resolvedSourceFrame
         image.alpha = 1
         image.contentMode = .scaleAspectFit
 
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: [.beginFromCurrentState, .curveEaseInOut, .allowUserInteraction]
+        animateImage(
+            image,
+            from: resolvedSourceFrame,
+            to: targetFrame,
+            duration: duration
         ) {
-            image.frame = targetFrame
-        } completion: { _ in
             Task { @MainActor in
                 guard animationGeneration == generation else { return }
                 guard releasesOnCompletion else { return }
@@ -176,13 +178,12 @@ enum VideoDetailRotationWindowMask {
         overlayView = overlay
         imageView = image
 
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: [.beginFromCurrentState, .curveEaseInOut, .allowUserInteraction]
+        animateImage(
+            image,
+            from: sourceFrame,
+            to: targetFrame,
+            duration: duration
         ) {
-            image.frame = targetFrame
-        } completion: { _ in
             Task { @MainActor in
                 guard animationGeneration == generation else { return }
                 UIView.animate(
@@ -254,7 +255,32 @@ enum VideoDetailRotationWindowMask {
         imageView.clipsToBounds = true
         imageView.isOpaque = true
         imageView.autoresizingMask = []
+        imageView.layer.magnificationFilter = .linear
+        imageView.layer.minificationFilter = .trilinear
+        imageView.layer.allowsEdgeAntialiasing = true
         return imageView
+    }
+
+    private static func animateImage(
+        _ image: UIImageView,
+        from sourceFrame: CGRect,
+        to targetFrame: CGRect,
+        duration: TimeInterval,
+        completion: @escaping () -> Void
+    ) {
+        image.center = CGPoint(x: sourceFrame.midX, y: sourceFrame.midY)
+        image.bounds = CGRect(origin: .zero, size: sourceFrame.size)
+        let animator = UIViewPropertyAnimator(duration: duration, dampingRatio: 1)
+        animator.addAnimations {
+            image.center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+            image.bounds = CGRect(origin: .zero, size: targetFrame.size)
+        }
+        animator.addCompletion { _ in
+            image.center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+            image.bounds = CGRect(origin: .zero, size: targetFrame.size)
+            completion()
+        }
+        animator.startAnimation()
     }
 }
 

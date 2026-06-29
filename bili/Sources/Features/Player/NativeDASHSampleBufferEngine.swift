@@ -320,7 +320,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
 
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval? {
         guard !isStopped else { return nil }
-        wantsPlayback = true
+        wantsPlayback = false
         let engine = activeEngine
         let generation = playbackGeneration
         let appliedTime = await engine.seekAfterUserScrub(toProgress: progress, duration: duration)
@@ -1481,7 +1481,6 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
         guard !isStopped, let source else { return nil }
         guard !Self.candidatePairs(for: source).isEmpty else { return nil }
         let clampedTime = min(max(time, 0), duration ?? time)
-        let shouldResume = wantsPlayback
         seekTask?.cancel()
         seekTask = nil
         cancelFirstFrameWatchdog()
@@ -1510,11 +1509,7 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
             }
             session = preparedSession
             synchronizer.setRate(0, time: CMTime(seconds: clampedTime, preferredTimescale: 600))
-            if shouldResume {
-                play()
-            } else {
-                publish(.paused)
-            }
+            publish(.paused)
             return clampedTime
         } catch {
             guard !Task.isCancelled,

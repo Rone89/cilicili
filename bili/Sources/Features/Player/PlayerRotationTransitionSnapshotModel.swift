@@ -4,16 +4,21 @@ import SwiftUI
 private enum PlayerRotationTransitionSnapshotTiming {
     static let releaseHoldDelayNanoseconds: UInt64 = 90_000_000
     static let stableSurfaceReleaseHoldDelayNanoseconds: UInt64 = 140_000_000
+    static let seekReleaseHoldDelayNanoseconds: UInt64 = 60_000_000
     static let liveSurfaceReleaseHoldDelayNanoseconds: UInt64 = 34_000_000
     static let readinessPollDelayNanoseconds: UInt64 = 16_000_000
     static let maximumReadinessWaitNanoseconds: UInt64 = 720_000_000
     static let requiredStableReadySamples = 2
+    static let requiredSeekReadySamples = 3
     static let fadeDuration: TimeInterval = 0.16
     static let stableSurfaceMaximumReadinessWaitNanoseconds: UInt64 = 1_200_000_000
+    static let seekMaximumReadinessWaitNanoseconds: UInt64 = 900_000_000
     static let stableSurfaceFadeDuration: TimeInterval = 0.12
+    static let seekFadeDuration: TimeInterval = 0
     static let liveSurfaceFadeDuration: TimeInterval = 0.12
     static let removalDelayNanoseconds: UInt64 = 110_000_000
     static let stableSurfaceRemovalDelayNanoseconds: UInt64 = 180_000_000
+    static let seekRemovalDelayNanoseconds: UInt64 = 90_000_000
     static let liveSurfaceRemovalDelayNanoseconds: UInt64 = 140_000_000
 }
 
@@ -79,6 +84,7 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
         maximumReadinessWaitNanoseconds: UInt64,
         fadeDuration: TimeInterval,
         removalDelayNanoseconds: UInt64,
+        requiresReadinessBeforeFade: Bool = false,
         isReadyForReveal: @escaping @MainActor () -> Bool,
         makeRevealSnapshot: (@MainActor () -> PlaybackTransitionSnapshot?)?
     ) {
@@ -115,16 +121,29 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
 
             let waitStartedAt = DispatchTime.now().uptimeNanoseconds
             var stableReadySamples = 0
-            while stableReadySamples < requiredStableReadySamples,
-                  DispatchTime.now().uptimeNanoseconds - waitStartedAt < maximumReadinessWaitNanoseconds {
+            var didLogExtendedWait = false
+            while stableReadySamples < requiredStableReadySamples {
+                let elapsed = DispatchTime.now().uptimeNanoseconds - waitStartedAt
+                if !requiresReadinessBeforeFade,
+                   elapsed >= maximumReadinessWaitNanoseconds {
+                    break
+                }
                 if isReadyForReveal() {
                     stableReadySamples += 1
                 } else {
                     stableReadySamples = 0
                 }
                 guard stableReadySamples < requiredStableReadySamples else { break }
+                if requiresReadinessBeforeFade,
+                   !didLogExtendedWait,
+                   elapsed >= maximumReadinessWaitNanoseconds {
+                    didLogExtendedWait = true
+                    PlayerMetricsLog.diagnostic("rotationSnapshot release waitsForReadiness")
+                }
                 try? await Task.sleep(
-                    nanoseconds: readinessPollDelayNanoseconds
+                    nanoseconds: didLogExtendedWait
+                        ? max(readinessPollDelayNanoseconds, 80_000_000)
+                        : readinessPollDelayNanoseconds
                 )
                 guard !Task.isCancelled,
                       self.releaseGeneration == generation
@@ -172,6 +191,24 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
             maximumReadinessWaitNanoseconds: PlayerRotationTransitionSnapshotTiming.stableSurfaceMaximumReadinessWaitNanoseconds,
             fadeDuration: PlayerRotationTransitionSnapshotTiming.stableSurfaceFadeDuration,
             removalDelayNanoseconds: PlayerRotationTransitionSnapshotTiming.stableSurfaceRemovalDelayNanoseconds,
+            isReadyForReveal: isReadyForReveal,
+            makeRevealSnapshot: makeRevealSnapshot
+        )
+    }
+
+    func releaseForSeekTransition(
+        isReadyForReveal: @escaping @MainActor () -> Bool,
+        makeRevealSnapshot: (@MainActor () -> PlaybackTransitionSnapshot?)? = nil
+    ) {
+        release(
+            immediate: false,
+            holdDelayNanoseconds: PlayerRotationTransitionSnapshotTiming.seekReleaseHoldDelayNanoseconds,
+            requiredStableReadySamples: PlayerRotationTransitionSnapshotTiming.requiredSeekReadySamples,
+            readinessPollDelayNanoseconds: PlayerRotationTransitionSnapshotTiming.readinessPollDelayNanoseconds,
+            maximumReadinessWaitNanoseconds: PlayerRotationTransitionSnapshotTiming.seekMaximumReadinessWaitNanoseconds,
+            fadeDuration: PlayerRotationTransitionSnapshotTiming.seekFadeDuration,
+            removalDelayNanoseconds: PlayerRotationTransitionSnapshotTiming.seekRemovalDelayNanoseconds,
+            requiresReadinessBeforeFade: true,
             isReadyForReveal: isReadyForReveal,
             makeRevealSnapshot: makeRevealSnapshot
         )

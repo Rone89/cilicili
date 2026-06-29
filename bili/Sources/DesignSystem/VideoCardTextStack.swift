@@ -3,6 +3,7 @@ import SwiftUI
 struct VideoCardTextStack: View {
     let display: VideoCardDisplayModel
     let showsPublishTimeInAuthorRow: Bool
+    let showsAuthorIdentity: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -19,22 +20,26 @@ struct VideoCardTextStack: View {
 
     private var authorRow: some View {
         HStack(spacing: 4) {
-            AvatarRemoteImage(urlString: display.avatarURLString, pixelSize: 48) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(width: 14, height: 14)
-            .clipShape(Circle())
-            .mediaShadow(.subtle)
+            if showsAuthorIdentity {
+                AvatarRemoteImage(urlString: display.avatarURLString, pixelSize: 48) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(width: 14, height: 14)
+                .clipShape(Circle())
+                .mediaShadow(.subtle)
 
-            Text(display.authorName)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                Text(display.authorName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             if showsPublishTimeInAuthorRow {
-                Spacer(minLength: 6)
+                if showsAuthorIdentity {
+                    Spacer(minLength: 6)
+                }
 
                 Text(display.publishTimeText)
                     .font(.caption2)

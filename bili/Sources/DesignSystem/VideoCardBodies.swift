@@ -4,6 +4,7 @@ struct VideoCardElevatedBody<Cover: View>: View {
     let display: VideoCardDisplayModel
     let cover: Cover
     let showsPublishTimeInAuthorRow: Bool
+    let showsAuthorIdentity: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -11,7 +12,8 @@ struct VideoCardElevatedBody<Cover: View>: View {
 
             VideoCardTextStack(
                 display: display,
-                showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow
+                showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow,
+                showsAuthorIdentity: showsAuthorIdentity
             )
             .padding(.horizontal, 8)
             .padding(.top, 7)
@@ -31,6 +33,7 @@ struct VideoCardBlendedBody<Cover: View>: View {
     let display: VideoCardDisplayModel
     let cover: Cover
     let showsPublishTimeInAuthorRow: Bool
+    let showsAuthorIdentity: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -39,7 +42,8 @@ struct VideoCardBlendedBody<Cover: View>: View {
 
             VideoCardTextStack(
                 display: display,
-                showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow
+                showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow,
+                showsAuthorIdentity: showsAuthorIdentity
             )
             .padding(.horizontal, 2)
         }

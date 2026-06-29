@@ -2,13 +2,13 @@ import SwiftUI
 
 struct VideoDetailActionStrip: View, Equatable {
     enum Metrics {
-        static let columnSpacing: CGFloat = 4
-        static let rowHeight: CGFloat = 25
-        static let actionLabelSide: CGFloat = 25
-        static let avatarImageSide: CGFloat = 32
+        static let columnSpacing: CGFloat = 7
+        static let rowHeight: CGFloat = 32
+        static let actionLabelSide: CGFloat = 28
+        static let avatarImageSide: CGFloat = 34
         static let avatarSide: CGFloat = avatarImageSide
         static let followHeight: CGFloat = actionLabelSide
-        static let iconSize: CGFloat = 12
+        static let iconSize: CGFloat = 13
         static let avatarPixelSize = 112
     }
 

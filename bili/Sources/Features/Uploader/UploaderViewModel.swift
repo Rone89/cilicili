@@ -13,6 +13,9 @@ final class UploaderViewModel: ObservableObject {
     @Published private(set) var profileState: LoadingState = .idle
     @Published private(set) var isFollowing = false
     @Published private(set) var followerCount: Int?
+    @Published private(set) var followingCount: Int?
+    @Published private(set) var likeCount: Int?
+    @Published private(set) var archiveCount: Int?
     @Published private(set) var isMutatingFollow = false
     @Published var followMessage: String?
     @Published private(set) var profileRevision = 0
@@ -40,19 +43,21 @@ final class UploaderViewModel: ObservableObject {
     func refresh() async {
         state = .loading
         page = 1
-        if profile == nil, !profileState.isLoading {
-            Task { await loadProfile() }
-        }
+        Task { await loadProfile(force: true) }
         do {
-            videos = try await fetchUploaderVideosWithTimeout(page: page)
+            let pageResult = try await fetchUploaderVideosWithTimeout(page: page)
+            videos = pageResult.videos
+            if let totalCount = pageResult.totalCount {
+                archiveCount = totalCount
+            }
             state = .loaded
         } catch {
             state = .failed(error.localizedDescription)
         }
     }
 
-    func loadProfile() async {
-        guard !profileState.isLoading else { return }
+    func loadProfile(force: Bool = false) async {
+        guard force || !profileState.isLoading else { return }
         profileState = .loading
         do {
             applyProfile(try await api.fetchUploaderProfile(mid: seedOwner.mid))
@@ -67,7 +72,11 @@ final class UploaderViewModel: ObservableObject {
         state = .loading
         page += 1
         do {
-            appendUnique(try await fetchUploaderVideosWithTimeout(page: page))
+            let pageResult = try await fetchUploaderVideosWithTimeout(page: page)
+            appendUnique(pageResult.videos)
+            if let totalCount = pageResult.totalCount {
+                archiveCount = totalCount
+            }
             state = .loaded
         } catch {
             page = max(1, page - 1)
@@ -75,25 +84,25 @@ final class UploaderViewModel: ObservableObject {
         }
     }
 
-    private func fetchUploaderVideosWithTimeout(page: Int) async throws -> [VideoItem] {
-        try await withThrowingTaskGroup(of: [VideoItem].self) { group in
+    private func fetchUploaderVideosWithTimeout(page: Int) async throws -> UploaderVideoPageResult {
+        try await withThrowingTaskGroup(of: UploaderVideoPageResult.self) { group in
             let mid = seedOwner.mid
             let timeout = uploaderVideosTimeoutNanoseconds
 
             group.addTask(priority: .userInitiated) {
-                try await self.api.fetchUploaderVideos(mid: mid, page: page)
+                try await self.api.fetchUploaderVideoPage(mid: mid, page: page)
             }
             group.addTask(priority: .utility) {
                 try await Task.sleep(nanoseconds: timeout)
                 throw BiliAPIError.api(code: -1, message: "投稿加载超时，请稍后重试")
             }
 
-            guard let videos = try await group.next() else {
+            guard let pageResult = try await group.next() else {
                 group.cancelAll()
                 throw BiliAPIError.emptyData
             }
             group.cancelAll()
-            return videos
+            return pageResult
         }
     }
 
@@ -119,6 +128,7 @@ final class UploaderViewModel: ObservableObject {
             try await api.setUploaderFollowing(mid: seedOwner.mid, following: targetState)
             followMessage = targetState ? "已关注" : "已取消关注"
             isMutatingFollow = false
+            Task { await loadProfile(force: true) }
             return true
         } catch {
             isFollowing = previousState
@@ -136,8 +146,13 @@ final class UploaderViewModel: ObservableObject {
 
     private func applyProfile(_ profile: UploaderProfile) {
         self.profile = profile
-        isFollowing = profile.following == true
-        followerCount = profile.follower ?? profile.card?.fans
+        if let isFollowing = profile.following {
+            self.isFollowing = isFollowing
+        }
+        followerCount = profile.follower ?? profile.card?.fans ?? followerCount
+        followingCount = profile.card?.attention ?? followingCount
+        likeCount = profile.likeNum ?? likeCount
+        archiveCount = profile.archiveCount ?? archiveCount
         followMessage = nil
     }
 

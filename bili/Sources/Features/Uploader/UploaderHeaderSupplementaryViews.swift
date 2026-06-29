@@ -26,6 +26,18 @@ struct UploaderFollowMessage: View {
     }
 }
 
+struct UploaderProfileStatusMessage: View {
+    let state: LoadingState
+
+    var body: some View {
+        if case .failed(let message) = state {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct UploaderStatsRow: View {
     let viewModel: UploaderViewModel
     let card: UploaderCard?
@@ -33,10 +45,14 @@ struct UploaderStatsRow: View {
     var body: some View {
         HStack(spacing: 14) {
             UploaderStatItem(title: "粉丝", value: viewModel.followerCount ?? card?.fans)
-            UploaderStatItem(title: "关注", value: card?.attention)
-            UploaderStatItem(title: "获赞", value: viewModel.profile?.likeNum)
-            UploaderStatItem(title: "投稿", value: viewModel.profile?.archiveCount)
+            UploaderStatItem(title: "关注", value: viewModel.followingCount ?? card?.attention)
+            UploaderStatItem(title: "获赞", value: viewModel.likeCount)
+            UploaderStatItem(title: "投稿", value: viewModel.archiveCount ?? loadedVideoCount)
         }
+    }
+
+    private var loadedVideoCount: Int? {
+        viewModel.videos.isEmpty ? nil : viewModel.videos.count
     }
 }
 

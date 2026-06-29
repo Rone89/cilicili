@@ -17,6 +17,15 @@ struct BiliPlayerControlsOverlayLayer: View {
                     .zIndex(8)
             }
 
+            if state.showsActivePlaybackControls, let topTrailingControlsAccessory = state.topTrailingControlsAccessory {
+                topTrailingControlsAccessory
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, topControlsPadding + safeAreaInsets.top)
+                    .padding(.trailing, horizontalControlsPadding + safeAreaInsets.trailing)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                    .zIndex(8)
+            }
+
             if state.showsActivePlaybackControls {
                 BiliPlayerControlsBottomScrim(
                     presentation: state.presentation,

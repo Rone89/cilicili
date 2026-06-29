@@ -8,6 +8,7 @@ struct VideoCardView: View, Equatable {
 
     let display: VideoCardDisplayModel
     private let showsPublishTimeInAuthorRow: Bool
+    private let showsAuthorIdentity: Bool
     private let showsCoverViewCountBadge: Bool
     private let surfaceStyle: SurfaceStyle
     private let fixedCoverSize: CGSize?
@@ -17,6 +18,7 @@ struct VideoCardView: View, Equatable {
     init(
         video: VideoItem,
         showsPublishTimeInAuthorRow: Bool = false,
+        showsAuthorIdentity: Bool = true,
         showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
         fixedCoverSize: CGSize? = nil,
@@ -24,6 +26,7 @@ struct VideoCardView: View, Equatable {
     ) {
         self.display = VideoCardDisplayModel(video: video)
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
+        self.showsAuthorIdentity = showsAuthorIdentity
         self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
@@ -33,6 +36,7 @@ struct VideoCardView: View, Equatable {
     init(
         display: VideoCardDisplayModel,
         showsPublishTimeInAuthorRow: Bool = false,
+        showsAuthorIdentity: Bool = true,
         showsCoverViewCountBadge: Bool = true,
         surfaceStyle: SurfaceStyle = .elevated,
         fixedCoverSize: CGSize? = nil,
@@ -40,6 +44,7 @@ struct VideoCardView: View, Equatable {
     ) {
         self.display = display
         self.showsPublishTimeInAuthorRow = showsPublishTimeInAuthorRow
+        self.showsAuthorIdentity = showsAuthorIdentity
         self.showsCoverViewCountBadge = showsCoverViewCountBadge
         self.surfaceStyle = surfaceStyle
         self.fixedCoverSize = fixedCoverSize
@@ -49,6 +54,7 @@ struct VideoCardView: View, Equatable {
     static func == (lhs: VideoCardView, rhs: VideoCardView) -> Bool {
         lhs.display == rhs.display
             && lhs.showsPublishTimeInAuthorRow == rhs.showsPublishTimeInAuthorRow
+            && lhs.showsAuthorIdentity == rhs.showsAuthorIdentity
             && lhs.showsCoverViewCountBadge == rhs.showsCoverViewCountBadge
             && lhs.surfaceStyle == rhs.surfaceStyle
             && lhs.fixedCoverSize == rhs.fixedCoverSize
@@ -72,7 +78,8 @@ struct VideoCardView: View, Equatable {
         VideoCardElevatedBody(
             display: display,
             cover: cover,
-            showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow
+            showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow,
+            showsAuthorIdentity: showsAuthorIdentity
         )
     }
 
@@ -80,7 +87,8 @@ struct VideoCardView: View, Equatable {
         VideoCardBlendedBody(
             display: display,
             cover: cover,
-            showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow
+            showsPublishTimeInAuthorRow: showsPublishTimeInAuthorRow,
+            showsAuthorIdentity: showsAuthorIdentity
         )
     }
 

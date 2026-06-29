@@ -8,6 +8,7 @@ struct BiliPlayerView: View {
     @StateObject private var surfaceState: PlayerSurfaceStateModel
     @StateObject private var playbackControlsVisibility = PlayerPlaybackControlsVisibilityModel()
     @StateObject private var rotationTransitionSnapshotModel = PlayerRotationTransitionSnapshotModel()
+    @StateObject private var seekTransitionSnapshotModel = PlayerRotationTransitionSnapshotModel()
     @StateObject private var speedBoostModel = PlayerSpeedBoostModel()
     @StateObject private var playbackProgressCoordinator = PlayerPlaybackProgressCoordinator()
     @State private var lastPreparedScrubProgress = -1.0
@@ -28,6 +29,7 @@ struct BiliPlayerView: View {
             surfaceState: surfaceState,
             playbackControlsVisibility: playbackControlsVisibility,
             rotationTransitionSnapshotModel: rotationTransitionSnapshotModel,
+            seekTransitionSnapshotModel: seekTransitionSnapshotModel,
             speedBoostModel: speedBoostModel,
             playbackProgressCoordinator: playbackProgressCoordinator,
             progressReporter: progressReporter,
@@ -287,6 +289,9 @@ struct BiliPlayerView: View {
             isPictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             lifecycleActions: context.lifecycleActions
         )
+        .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
+            updateSeekTransitionSnapshot(isUserSeeking: isUserSeeking)
+        }
     }
 
     private var videoGravity: AVLayerVideoGravity {
@@ -352,5 +357,25 @@ struct BiliPlayerView: View {
         guard force || abs(clampedProgress - lastPreparedScrubProgress) >= 0.015 else { return }
         lastPreparedScrubProgress = clampedProgress
         configuration.onPrepareForUserSeek?(clampedProgress)
+    }
+
+    private func updateSeekTransitionSnapshot(isUserSeeking: Bool) {
+        if isUserSeeking {
+            seekTransitionSnapshotModel.hold(
+                hasPresentedPlayback: surfaceState.hasPresentedPlayback,
+                surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration
+            ) {
+                viewModel.makePlaybackTransitionSnapshot()
+            }
+        } else {
+            seekTransitionSnapshotModel.releaseForSeekTransition(
+                isReadyForReveal: {
+                    viewModel.isSeekRecoverySnapshotReadyForReveal()
+                },
+                makeRevealSnapshot: {
+                    viewModel.makeCurrentVideoFrameTransitionSnapshot()
+                }
+            )
+        }
     }
 }

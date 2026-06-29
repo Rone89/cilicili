@@ -30,8 +30,7 @@ struct BiliPlayerViewRenderState {
             && context.playbackControlsVisibility.isVisible
         showsPlayerLoadingChrome = Self.makeShowsPlayerLoadingChrome(context: context)
         showsInlineLoadingProgress = context.surfaceState.hasPresentedPlayback
-            && context.surfaceState.isBuffering
-            && !context.surfaceState.isUserSeeking
+            && (context.surfaceState.isBuffering || context.surfaceState.isUserSeeking)
     }
 
     private static func makeControlMetrics(

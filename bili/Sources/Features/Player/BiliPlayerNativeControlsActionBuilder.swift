@@ -11,9 +11,13 @@ struct BiliPlayerNativeControlsActionBuilder {
         PlayerNativePlaybackControlsActions(
             onScrubStart: { _ in
                 guard !viewModel.isTerminated else { return }
+                viewModel.beginUserScrubInteraction()
                 visibilityActions.markInteraction(keepsVisible: true)
             },
-            onScrubChanged: { _ in },
+            onScrubChanged: { progress in
+                guard !viewModel.isTerminated else { return }
+                prepareUserSeekWarmup(progress, false)
+            },
             onScrubEnded: { progress in
                 guard !viewModel.isTerminated else {
                     resetPreparedScrubProgress()

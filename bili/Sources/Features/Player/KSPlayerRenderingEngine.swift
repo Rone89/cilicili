@@ -13,6 +13,12 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         let mediaTimeOffset: TimeInterval
     }
 
+    private struct RenderedSeekGuard {
+        let lowerBound: TimeInterval
+        let settleTime: TimeInterval
+        let expiresAt: CFTimeInterval
+    }
+
     private struct StartupProbeProfile {
         let name: String
         let probeSize: Int64
@@ -80,6 +86,8 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     private var currentMuted = false
     private var wantsPlayback = false
     private var didReportFirstFrame = false
+    private var lastRenderedVideoTime: TimeInterval?
+    private var renderedSeekGuard: RenderedSeekGuard?
     private var firstDecodedFrameSeenAt: CFTimeInterval?
     private var firstNonBlackDecodedFrameSeenAt: CFTimeInterval?
     private var firstFrameProbeTask: Task<Void, Never>?
@@ -310,6 +318,8 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     func pause() {
         guard !isStopped else { return }
         wantsPlayback = false
+        seekResumeTask?.cancel()
+        seekResumeTask = nil
         onPlaybackIntentChange?(false)
         playerLayer?.pause()
         publishPlaybackState(.paused)
@@ -318,6 +328,8 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     func pauseForNavigation() {
         guard !isStopped else { return }
         wantsPlayback = false
+        seekResumeTask?.cancel()
+        seekResumeTask = nil
         onPlaybackIntentChange?(false)
         playerLayer?.pause()
         publishPlaybackState(.paused)
@@ -373,6 +385,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         if wantsPlayback {
             publishPlaybackState(.buffering)
         }
+        installRenderedSeekGuard(for: displayTarget, duration: resolvedDuration(durationHint: nil))
         warmSeekTargetIfNeeded(displayTarget)
         playerLayer.seek(time: target, autoPlay: wantsPlayback) { [weak self, weak playerLayer] finished in
             guard let self, finished else { return }
@@ -394,7 +407,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
             }
         }
         if wantsPlayback {
-            primeVideoOutputAfterInteractiveSeek(on: playerLayer, shouldFlush: false, readCount: 2)
+            primeVideoOutputAfterInteractiveSeek(on: playerLayer, shouldFlush: true, readCount: 2)
             resumePlaybackAfterInteractiveSeek(
                 layer: playerLayer,
                 generation: generation,
@@ -429,8 +442,9 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         let displayTarget = alignedInteractiveSeekTime(min(max(progress, 0), 1) * resolvedDuration)
         let seekTarget = playerTime(fromDisplayTime: adjustedInteractiveSeekDisplayTime(displayTarget))
         let generation = playbackGeneration
-        wantsPlayback = true
+        wantsPlayback = false
         seekResumeTask?.cancel()
+        installRenderedSeekGuard(for: displayTarget, duration: resolvedDuration)
         publishPlaybackState(.buffering)
         warmSeekTargetIfNeeded(displayTarget)
         let finished = await attemptInteractiveSeek(
@@ -442,16 +456,9 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
               playerLayer === self.playerLayer,
               isCurrentPlaybackGeneration(generation)
         else { return nil }
-        if wantsPlayback {
-            primeVideoOutputAfterInteractiveSeek(on: playerLayer, shouldFlush: false, readCount: 2)
-            resumePlaybackAfterInteractiveSeek(
-                layer: playerLayer,
-                generation: generation,
-                targetTime: seekTarget,
-                displayTarget: displayTarget,
-                allowsFollowUpSeek: !finished
-            )
-        }
+        primeVideoOutputAfterInteractiveSeek(on: playerLayer, shouldFlush: true, readCount: 2)
+        playerLayer.pause()
+        publishPlaybackState(.paused)
         if !finished {
             PlayerMetricsLog.record(
                 .seekRecovery,
@@ -1009,6 +1016,8 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         playerView = nil
         playerPrepareStartTime = nil
         didReportFirstFrame = false
+        lastRenderedVideoTime = nil
+        renderedSeekGuard = nil
         firstDecodedFrameSeenAt = nil
         firstNonBlackDecodedFrameSeenAt = nil
         didRecordCurrentLayerTiming = false
@@ -1352,8 +1361,8 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         generation: Int
     ) async -> Bool {
         let attempts: [(delay: UInt64, timeout: UInt64)] = [
-            (0, 420_000_000),
-            (70_000_000, 620_000_000)
+            (0, 260_000_000),
+            (50_000_000, 420_000_000)
         ]
 
         for attempt in attempts {
@@ -1375,7 +1384,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
                     continuation.resume(returning: value)
                 }
 
-                layer.seek(time: targetTime, autoPlay: true) { finished in
+                layer.seek(time: targetTime, autoPlay: false) { finished in
                     Task { @MainActor in
                         resume(finished)
                     }
@@ -1403,18 +1412,23 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         seekResumeTask?.cancel()
         let recoveryStartedAt = CACurrentMediaTime()
         seekResumeTask = Task { @MainActor [weak self, weak layer] in
-            let delays: [UInt64] = [
-                0,
-                16_000_000,
-                34_000_000,
-                70_000_000,
-                120_000_000,
-                210_000_000,
-                360_000_000,
-                620_000_000,
-                950_000_000,
-                1_200_000_000
-            ]
+            let delays: [UInt64] = allowsFollowUpSeek
+                ? [
+                    0,
+                    16_000_000,
+                    34_000_000,
+                    70_000_000,
+                    120_000_000,
+                    210_000_000,
+                    360_000_000,
+                    620_000_000,
+                    950_000_000,
+                    1_200_000_000
+                ]
+                : [
+                    0,
+                    90_000_000
+                ]
             var previousDelay: UInt64 = 0
             var didFollowUpSeek = false
             var didRecordRenderReady = false
@@ -1468,6 +1482,9 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
                         targetDelay: targetDelay
                     )
                 }
+                if hasVisibleTargetFrame, !allowsFollowUpSeek {
+                    break
+                }
 
                 if allowsFollowUpSeek,
                    !didFollowUpSeek,
@@ -1490,7 +1507,7 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
                             else { return }
                             self.primeVideoOutputAfterInteractiveSeek(
                                 on: layer,
-                                shouldFlush: false,
+                                shouldFlush: true,
                                 readCount: 2
                             )
                             layer.play()
@@ -1560,12 +1577,16 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
         callbackThread: String
     ) {
         guard let layer,
-              !didReportFirstFrame,
               !isStopped,
               layer === playerLayer
         else { return }
-        startupTiming?.renderCallbackThread = callbackThread
         let currentTime = displayTime(fromPlayerTime: playerTime)
+        if currentTime.isFinite, currentTime >= 0 {
+            guard shouldAcceptRenderedFrameTime(currentTime) else { return }
+            lastRenderedVideoTime = currentTime
+        }
+        guard !didReportFirstFrame else { return }
+        startupTiming?.renderCallbackThread = callbackThread
         recordRenderedFrameStage(currentTime: currentTime)
         _ = hasDecodedVideoFrame
         reportFirstFrameIfPossible(currentTime: currentTime)
@@ -1650,10 +1671,51 @@ final class KSPlayerRenderingEngine: NSObject, PlayerRenderingEngine {
     }
 
     private func currentRenderedVideoTime(for player: MediaPlayerProtocol) -> TimeInterval? {
+        if player is KSMEPlayer {
+            guard let renderedTime = lastRenderedVideoTime,
+                  renderedTime.isFinite,
+                  renderedTime >= 0
+            else { return nil }
+            return renderedTime
+        }
         guard hasCurrentDecodedVideoFrame else { return nil }
         let renderedTime = displayTime(fromPlayerTime: player.currentPlaybackTime)
         guard renderedTime.isFinite, renderedTime >= 0 else { return nil }
         return renderedTime
+    }
+
+    private func installRenderedSeekGuard(for targetTime: TimeInterval, duration: TimeInterval?) {
+        guard targetTime.isFinite, targetTime >= 0 else { return }
+        let lowerBound = max(targetTime - 0.08, 0)
+        let endTolerance = duration.map { targetTime >= max($0 - 0.35, 0) } ?? false
+        renderedSeekGuard = RenderedSeekGuard(
+            lowerBound: lowerBound,
+            settleTime: endTolerance ? lowerBound : targetTime + 0.16,
+            expiresAt: CACurrentMediaTime() + 3.5
+        )
+        lastRenderedVideoTime = nil
+        lastVideoFrameImage = nil
+    }
+
+    private func shouldAcceptRenderedFrameTime(_ time: TimeInterval) -> Bool {
+        guard let guardState = renderedSeekGuard else { return true }
+        if CACurrentMediaTime() > guardState.expiresAt {
+            renderedSeekGuard = nil
+            return true
+        }
+        guard time >= guardState.lowerBound else {
+            PlayerMetricsLog.record(
+                .seekRecovery,
+                metricsID: source?.metricsID ?? "-",
+                title: source?.title,
+                message: "ksSeek=ignoredOldRenderedFrame frame=\(String(format: "%.2fs", time)) lower=\(String(format: "%.2fs", guardState.lowerBound))"
+            )
+            return false
+        }
+        if time >= guardState.settleTime {
+            lastVideoFrameImage = nil
+        }
+        return true
     }
 
     private func isRenderedTime(_ renderedTime: TimeInterval, closeTo targetTime: TimeInterval) -> Bool {

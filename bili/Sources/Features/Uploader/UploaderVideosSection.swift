@@ -2,12 +2,7 @@ import SwiftUI
 
 struct UploaderVideosSection: View {
     @ObservedObject var viewModel: UploaderViewModel
-    let gridCoverSize: CGSize?
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
-    ]
+    let metrics: HomeFeedLayoutMetrics
 
     var body: some View {
         if viewModel.videos.isEmpty && viewModel.state.isLoading {
@@ -22,11 +17,11 @@ struct UploaderVideosSection: View {
     }
 
     private var videoGrid: some View {
-        LazyVGrid(columns: columns, spacing: 16) {
+        LazyVGrid(columns: metrics.feedColumns, spacing: metrics.feedSpacing) {
             ForEach(viewModel.videos) { video in
                 UploaderVideoGridItem(
                     video: video,
-                    gridCoverSize: gridCoverSize
+                    metrics: metrics
                 ) {
                     await viewModel.loadMoreIfNeeded(current: video)
                 }
@@ -35,11 +30,12 @@ struct UploaderVideosSection: View {
             if viewModel.state.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .gridCellColumns(2)
+                    .gridCellColumns(metrics.feedColumns.count)
                     .padding()
             }
         }
-        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, metrics.feedHorizontalPadding)
     }
 }
 
@@ -59,15 +55,15 @@ private struct UploaderVideosLoadingState: View {
 
 private struct UploaderVideoGridItem: View {
     let video: VideoItem
-    let gridCoverSize: CGSize?
+    let metrics: HomeFeedLayoutMetrics
     let loadMoreIfNeeded: () async -> Void
 
     var body: some View {
         VideoRouteLink(video) {
-            VideoCardView(
-                video: video,
-                showsCoverViewCountBadge: false,
-                fixedCoverSize: gridCoverSize
+            HomeFeedVideoCardLabel(
+                metrics: metrics,
+                display: VideoCardDisplayModel(video: video),
+                showsAuthorIdentity: false
             )
         }
         .task {

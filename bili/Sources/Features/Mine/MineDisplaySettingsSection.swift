@@ -19,6 +19,22 @@ struct MineDisplaySettingsSection: View {
 
             MineThemeColorControl(libraryStore: libraryStore)
 
+            Picker(selection: Binding(
+                get: { libraryStore.videoCoverOverlayStyle },
+                set: { libraryStore.setVideoCoverOverlayStyle($0) }
+            )) {
+                ForEach(VideoCoverOverlayStyle.allCases) { style in
+                    VStack(alignment: .leading) {
+                        Text(style.title)
+                        Text(style.subtitle)
+                    }
+                    .tag(style)
+                }
+            } label: {
+                Label("视频封面遮罩", systemImage: "rectangle.on.rectangle")
+            }
+            .pickerStyle(.navigationLink)
+
             Toggle(isOn: Binding(
                 get: { libraryStore.minimizesTabBarOnScroll },
                 set: { libraryStore.setMinimizesTabBarOnScroll($0) }

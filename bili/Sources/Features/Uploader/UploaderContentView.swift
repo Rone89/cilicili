@@ -39,15 +39,10 @@ struct UploaderContentView: View {
     }
 
     private var videoContent: some View {
-        UploaderVideosSection(viewModel: viewModel, gridCoverSize: gridCoverSize)
-    }
-
-    private var gridCoverSize: CGSize? {
-        let gridHorizontalPadding: CGFloat = 24
-        let columnSpacing: CGFloat = 12
-        let width = (contentWidth - gridHorizontalPadding - columnSpacing) / 2
-        guard width > 0 else { return nil }
-        return CGSize(width: width, height: width * 9 / 16)
+        UploaderVideosSection(
+            viewModel: viewModel,
+            metrics: HomeFeedLayoutMetrics(mode: .doubleColumn, containerWidth: contentWidth)
+        )
     }
 
     private func updateContentWidth(_ width: CGFloat) {
