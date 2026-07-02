@@ -16,9 +16,12 @@ struct BiliPlayerSurfaceChromeState {
     let isUserSeeking: Bool
     let isSpeedBoostActive: Bool
     let showsActivePlaybackControls: Bool
+    let playbackControlsOpacity: Double
+    let playbackControlsAllowsHitTesting: Bool
     let topLeadingControlsAccessory: AnyView?
     let topTrailingControlsAccessory: AnyView?
     let isFullscreenActive: Bool
     let controlsBottomLift: CGFloat
+    let contentInsets: EdgeInsets
     let errorMessage: String?
 }

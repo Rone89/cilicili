@@ -262,12 +262,8 @@ final class LibraryStore: ObservableObject {
         self.playbackStreamSourcePreference = PlaybackStreamSourcePreference(
             rawValue: userDefaults.string(forKey: Self.playbackStreamSourcePreferenceKey) ?? ""
         ) ?? Self.defaultPlaybackStreamSourcePreference
-        self.playerRenderingEnginePreference = PlayerRenderingEnginePreference(
-            rawValue: userDefaults.string(forKey: Self.playerRenderingEnginePreferenceKey) ?? ""
-        ) ?? .ksPlayer
-        self.videoCodecPreference = VideoCodecPreference(
-            rawValue: userDefaults.string(forKey: Self.videoCodecPreferenceKey) ?? ""
-        ) ?? .auto
+        self.playerRenderingEnginePreference = PlayerRenderingEnginePreference.stored(in: userDefaults)
+        self.videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         self.playbackCDNPreference = PlaybackCDNPreference(
             rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
         ) ?? .automatic
@@ -392,13 +388,16 @@ final class LibraryStore: ObservableObject {
     }
 
     func setPlayerRenderingEnginePreference(_ preference: PlayerRenderingEnginePreference) {
-        playerRenderingEnginePreference = preference
-        userDefaults.set(preference.rawValue, forKey: Self.playerRenderingEnginePreferenceKey)
+        let normalizedPreference = preference.normalizedForFormalPlayback
+        playerRenderingEnginePreference = normalizedPreference
+        userDefaults.set(normalizedPreference.rawValue, forKey: Self.playerRenderingEnginePreferenceKey)
+        PlayerSettings.shared.reload()
     }
 
     func setVideoCodecPreference(_ preference: VideoCodecPreference) {
-        videoCodecPreference = preference
-        userDefaults.set(preference.rawValue, forKey: Self.videoCodecPreferenceKey)
+        let normalizedPreference = preference.normalizedForPlayback
+        videoCodecPreference = normalizedPreference
+        userDefaults.set(normalizedPreference.rawValue, forKey: Self.videoCodecPreferenceKey)
         PlayerSettings.shared.reload()
     }
 

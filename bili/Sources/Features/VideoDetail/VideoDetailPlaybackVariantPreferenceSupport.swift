@@ -37,7 +37,7 @@ extension VideoDetailViewModel {
                     : targetPlaybackPreferredQuality)
         else { return nil }
         let sortedVariants = sortedPlayVariants(playableVariants)
-        if let exactVariant = sortedVariants.first(where: { $0.quality == preferredQuality }) {
+        if let exactVariant = sortedVariants.first(where: { $0.satisfiesPreferredQuality(preferredQuality) }) {
             return exactVariant
         }
 

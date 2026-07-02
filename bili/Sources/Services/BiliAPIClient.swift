@@ -2461,8 +2461,7 @@ nonisolated final class BiliAPIClient {
 
     private nonisolated static func playURLCodecCachePolicyToken(requestedQuality: Int?) -> String {
         let preference = VideoCodecPreference.stored()
-        let isHighFrameRateQuality = requestedQuality.map { [116, 74].contains($0) } ?? false
-        let policy = preference == .auto && isHighFrameRateQuality ? "hfrHevcV2" : "v2"
+        let policy = requestedQuality == 126 ? "dolbyHEVCFirstNoAV1V1" : "hevcFirstNoAV1V1"
         return "codec-\(preference.rawValue)-\(policy)"
     }
 
@@ -2661,7 +2660,6 @@ nonisolated final class BiliAPIClient {
         case hevc
         case automatic
         case avc
-        case av1
 
         static func primaryPlaybackOrder(requestedQuality: Int?) -> [PlayURLCodecPreference] {
             playbackOrder(for: VideoCodecPreference.stored(), requestedQuality: requestedQuality)
@@ -2673,35 +2671,16 @@ nonisolated final class BiliAPIClient {
 
         private static func playbackOrder(
             for preference: VideoCodecPreference,
-            requestedQuality: Int?
+            requestedQuality _: Int?
         ) -> [PlayURLCodecPreference] {
             switch preference {
-            case .auto:
-                if shouldPreferHEVCForStartupQuality(requestedQuality),
-                   PlaybackCodecPolicy.canDecodeHEVC {
-                    return PlaybackCodecPolicy.canDecodeAV1
-                        ? [.hevc, .av1, .automatic, .avc]
-                        : [.hevc, .automatic, .avc, .av1]
-                }
-                if PlaybackCodecPolicy.canDecodeAV1 {
-                    return [.av1, .hevc, .automatic, .avc]
-                }
-                return [.hevc, .automatic, .avc, .av1]
-            case .forceAV1:
-                if PlaybackCodecPolicy.canDecodeAV1 {
-                    return [.av1, .hevc, .automatic, .avc]
-                }
-                return [.hevc, .automatic, .avc, .av1]
+            case .auto, .forceAV1:
+                return [.hevc, .avc, .automatic]
             case .forceHEVC:
-                return [.hevc, .automatic, .avc, .av1]
+                return [.hevc]
             case .forceH264:
-                return [.avc, .automatic, .hevc, .av1]
+                return [.avc]
             }
-        }
-
-        private static func shouldPreferHEVCForStartupQuality(_ quality: Int?) -> Bool {
-            guard let quality else { return false }
-            return [116, 74].contains(quality)
         }
 
         var videoCodecid: String? {
@@ -2712,8 +2691,6 @@ nonisolated final class BiliAPIClient {
                 return nil
             case .avc:
                 return "7"
-            case .av1:
-                return "13"
             }
         }
 
@@ -2725,8 +2702,6 @@ nonisolated final class BiliAPIClient {
                 return "AutoCodec"
             case .avc:
                 return "AVC"
-            case .av1:
-                return "AV1"
             }
         }
     }

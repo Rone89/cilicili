@@ -13,7 +13,6 @@ extension VideoDetailViewModel {
             guard let candidate,
                   candidate.isPlayable,
                   candidate.videoURL != nil,
-                  candidate.dynamicRange != .dolbyVision,
                   candidate.videoStream?.isHardwareDecodingCompatibleVideo == true,
                   seen.insert(candidate.id).inserted
             else { return }

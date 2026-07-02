@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import KSPlayer
 import UIKit
 
 @MainActor
@@ -32,13 +31,6 @@ final class AppDependencies: ObservableObject {
             homeRecommendDiagnosticsStore: homeRecommendDiagnosticsStore
         )
         self.sponsorBlockService = SponsorBlockService()
-        Self.applyPictureInPicturePreference(libraryStore.pictureInPictureEnabled)
-        libraryStore.$pictureInPictureEnabled
-            .removeDuplicates()
-            .sink { isEnabled in
-                Self.applyPictureInPicturePreference(isEnabled)
-            }
-            .store(in: &sessionCancellables)
         Publishers.CombineLatest(sessionStore.$sessdata, sessionStore.$accessKey)
             .removeDuplicates { lhs, rhs in
                 lhs.0 == rhs.0 && lhs.1 == rhs.1
@@ -115,7 +107,6 @@ final class AppDependencies: ObservableObject {
     private func runDeferredStartupWork() {
         hasCompletedDeferredStartupWork = true
         refreshPlaybackCDNProbeOnAppActivationIfNeeded()
-        PlaybackEngineWarmupCenter.warmKSPlayerComponentsIfNeeded()
 
         let api = api
         Task(priority: .utility) {
@@ -137,7 +128,4 @@ final class AppDependencies: ObservableObject {
         }
     }
 
-    private static func applyPictureInPicturePreference(_ isEnabled: Bool) {
-        KSOptions.canStartPictureInPictureAutomaticallyFromInline = isEnabled
-    }
 }

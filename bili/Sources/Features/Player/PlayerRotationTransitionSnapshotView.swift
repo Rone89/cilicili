@@ -8,14 +8,16 @@ struct PlayerRotationTransitionSnapshotView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let stageSize = snapshotStageSize(in: proxy.size)
             ZStack {
                 snapshotContent
                     .frame(
-                        width: snapshotStageSize(in: proxy.size).width,
-                        height: snapshotStageSize(in: proxy.size).height
+                        width: stageSize.width,
+                        height: stageSize.height
                     )
                     .clipped()
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()

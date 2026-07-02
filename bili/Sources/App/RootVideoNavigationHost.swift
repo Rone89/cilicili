@@ -4,6 +4,7 @@ struct RootVideoNavigationHost: View {
     @Binding var path: NavigationPath
     let isClosingVideo: Bool
     let onRequestClose: () -> Void
+    let onPopOne: () -> Void
     let onCancelledClose: () -> Void
     let onCompletedClose: () -> Void
     let onPathEmptied: () -> Void
@@ -20,7 +21,8 @@ struct RootVideoNavigationHost: View {
                     VideoDetailView(
                         seedVideo: video,
                         hidesRootTabBar: false,
-                        onRequestClose: onRequestClose
+                        onRequestClose: onRequestClose,
+                        onPopOne: onPopOne
                     )
                     .id(video.id)
                 }

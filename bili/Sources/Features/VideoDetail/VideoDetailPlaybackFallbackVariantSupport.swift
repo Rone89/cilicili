@@ -2,9 +2,9 @@ import Foundation
 
 extension VideoDetailViewModel {
     func playbackFallbackVariant(excluding failedVariant: PlayVariant) -> PlayVariant? {
-        if failedVariant.dynamicRange == .dolbyVision,
-           let dolbyFallback = dolbyPlaybackFallbackVariant(excluding: failedVariant) {
-            return dolbyFallback
+        if failedVariant.dynamicRange.isHDR,
+           let hdrFallback = sdrPlaybackFallbackVariant(excluding: failedVariant) {
+            return hdrFallback
         }
 
         let candidates = sortedPlayVariants(playVariants)
@@ -26,16 +26,16 @@ extension VideoDetailViewModel {
             ?? candidates.first
     }
 
-    private func dolbyPlaybackFallbackVariant(excluding failedVariant: PlayVariant) -> PlayVariant? {
+    private func sdrPlaybackFallbackVariant(excluding failedVariant: PlayVariant) -> PlayVariant? {
         let candidates = sortedPlayVariants(playVariants)
             .filter {
                 $0.isPlayable
                     && $0.id != failedVariant.id
                     && !failedPlayVariantIDs.contains($0.id)
-                    && $0.dynamicRange != .dolbyVision
+                    && $0.dynamicRange == .sdr
                     && !$0.isProgressiveFastStart
             }
-        let preferredFallbackQualities = [112, 116, 120, 80, 74, 64, 32]
+        let preferredFallbackQualities = [116, 112, 80, 120, 74, 64, 32]
         for quality in preferredFallbackQualities {
             if let variant = candidates.first(where: { $0.quality == quality }) {
                 return variant
@@ -45,7 +45,7 @@ extension VideoDetailViewModel {
             ?? sortedPlayVariants(playVariants).first {
                 $0.isPlayable
                     && $0.id != failedVariant.id
-                    && $0.dynamicRange != .dolbyVision
+                    && $0.dynamicRange == .sdr
             }
     }
 }

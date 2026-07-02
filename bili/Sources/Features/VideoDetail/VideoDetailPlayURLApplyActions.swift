@@ -70,10 +70,6 @@ extension VideoDetailViewModel {
     private func shouldSkipWarmCacheForTargetQuality(_ data: PlayURLData) -> Bool {
         guard let preferredQuality = targetPlaybackPreferredQuality else { return false }
         let variants = data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference)
-        return !variants.contains {
-            $0.isPlayable
-                && $0.quality == preferredQuality
-                && (![116, 74].contains(preferredQuality) || variantFrameRate($0) >= 50)
-        }
+        return !variants.contains { $0.satisfiesPreferredQuality(preferredQuality) }
     }
 }

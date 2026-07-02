@@ -14,7 +14,6 @@ extension VideoDetailViewModel {
         }
 
         append(likelySupplementalWarmupVariant())
-        append(dolbyVisionWarmupVariant())
         return result
     }
 
@@ -35,12 +34,4 @@ extension VideoDetailViewModel {
             .max(by: { $0.quality < $1.quality })
     }
 
-    func dolbyVisionWarmupVariant() -> PlayVariant? {
-        sortedPlayVariants(playVariants)
-            .first {
-                $0.isPlayable
-                    && !$0.isProgressiveFastStart
-                    && $0.dynamicRange == .dolbyVision
-            }
-    }
 }

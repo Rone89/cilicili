@@ -37,7 +37,9 @@ struct PlayerNativePlaybackControls: View {
                     actions: actions
                 )
             }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
         .foregroundStyle(.white)
         .controlSize(.mini)
     }

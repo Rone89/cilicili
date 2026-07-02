@@ -200,13 +200,6 @@ class RenderingEngineVideoPlayerAdapter: VideoPlayerProtocol {
 }
 
 @MainActor
-final class KSPlayerAdapter: RenderingEngineVideoPlayerAdapter {
-    init() {
-        super.init(kernelType: .ksPlayer, engine: KSPlayerRenderingEngine())
-    }
-}
-
-@MainActor
 final class AVPlayerAdapter: RenderingEngineVideoPlayerAdapter {
     init() {
         super.init(kernelType: .avPlayer, engine: AVPlayerHLSBridgeEngine())
@@ -233,10 +226,8 @@ final class CoreVideoPlayerManager {
     }
 
     func makePlayer(kernel: PlayerKernelType) -> VideoPlayerProtocol {
-        switch kernel {
-        case .ksPlayer:
-            return KSPlayerAdapter()
-        case .avPlayer:
+        switch normalizedKernel(kernel) {
+        case .ksPlayer, .avPlayer:
             return AVPlayerAdapter()
         }
     }
@@ -246,10 +237,8 @@ final class CoreVideoPlayerManager {
     }
 
     func makeRenderingEngine(kernel: PlayerKernelType) -> PlayerRenderingEngine {
-        switch kernel {
-        case .ksPlayer:
-            return KSPlayerRenderingEngine()
-        case .avPlayer:
+        switch normalizedKernel(kernel) {
+        case .ksPlayer, .avPlayer:
             return AVPlayerHLSBridgeEngine()
         }
     }
@@ -276,7 +265,7 @@ final class CoreVideoPlayerManager {
         resumeTime: TimeInterval? = nil
     ) async throws -> VideoPlayerProtocol {
         let previousPlayer = activePlayer
-        let player = makePlayer(kernel: kernel)
+        let player = makePlayer(kernel: normalizedKernel(kernel))
         let nextSource = resumeTime.map(source.withResumeTime) ?? source
         do {
             try await player.prepare(source: nextSource)
@@ -295,6 +284,10 @@ final class CoreVideoPlayerManager {
             player.play()
         }
         return player
+    }
+
+    private func normalizedKernel(_ kernel: PlayerKernelType) -> PlayerKernelType {
+        kernel.normalizedForFormalPlayback
     }
 
     nonisolated static func selectBestStream(

@@ -57,7 +57,17 @@ extension VideoDetailViewModel {
                   self.stablePlayerViewModel === playerViewModel
             else { return }
             self.finishPlaybackStartupWaiters(with: .firstFrame)
+            self.clearTransientPlaybackRecoveryMessageAfterFirstFrame()
             self.releasePlaybackTransitionPlayer(after: Self.playbackTransitionReleaseDelayNanoseconds)
         }
+    }
+
+    private func clearTransientPlaybackRecoveryMessageAfterFirstFrame() {
+        guard let message = playbackFallbackMessage, !message.isEmpty else { return }
+        guard message.hasPrefix("当前线路播放失败")
+                || message.hasPrefix("杜比视界当前不可播放")
+                || message.hasPrefix("HDR 当前不可播放")
+        else { return }
+        playbackFallbackMessage = nil
     }
 }

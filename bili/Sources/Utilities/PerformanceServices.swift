@@ -79,7 +79,7 @@ actor VideoPreloadCenter {
         else { return false }
         let playableVariants = cached.playVariants.filter(\.isPlayable)
         guard !playableVariants.isEmpty else { return false }
-        return !playableVariants.contains(where: { $0.quality == preferredQuality })
+        return !playableVariants.contains(where: { $0.satisfiesPreferredQuality(preferredQuality) })
     }
 
     func preload(
@@ -872,24 +872,27 @@ actor VideoPreloadCenter {
     ) -> PlayURLData? {
         trimExpiredPlayURLs()
         let effectivePage = normalizedPage(page)
-        if let entry = playURLCache[cacheKey(
-            bvid: bvid,
-            cid: cid,
-            page: effectivePage,
-            preferredQuality: preferredQuality
-        )] {
-            return entry.data
+        var keys = [cacheKey(bvid: bvid, cid: cid, page: effectivePage, preferredQuality: preferredQuality)]
+        if preferredQuality == nil {
+            keys.append(cacheKey(bvid: bvid, cid: cid, page: effectivePage))
         }
-        if let entry = playURLCache[cacheKey(bvid: bvid, cid: cid, page: effectivePage)] {
-            return entry.data
+        if effectivePage != nil {
+            keys.append(cacheKey(bvid: bvid, cid: cid, page: nil, preferredQuality: preferredQuality))
+            if preferredQuality == nil {
+                keys.append(cacheKey(bvid: bvid, cid: cid, page: nil))
+            }
         }
-        guard effectivePage != nil else { return nil }
-        return playURLCache[cacheKey(
-            bvid: bvid,
-            cid: cid,
-            page: nil,
-            preferredQuality: preferredQuality
-        )]?.data ?? playURLCache[cacheKey(bvid: bvid, cid: cid, page: nil)]?.data
+
+        var seen = Set<String>()
+        for key in keys where seen.insert(key).inserted {
+            guard let data = playURLCache[key]?.data else { continue }
+            if let preferredQuality,
+               data.shouldRefetchForPreferredQuality(preferredQuality) {
+                continue
+            }
+            return data
+        }
+        return nil
     }
 
     func cachedPlayablePlayURL(
@@ -1809,10 +1812,9 @@ actor VideoPreloadCenter {
         ].joined(separator: "|")
     }
 
-    private nonisolated static func playURLCodecCachePolicyToken(preferredQuality: Int?) -> String {
+    private nonisolated static func playURLCodecCachePolicyToken(preferredQuality _: Int?) -> String {
         let preference = VideoCodecPreference.stored()
-        let isHighFrameRateQuality = preferredQuality.map { [116, 74].contains($0) } ?? false
-        let policy = preference == .auto && isHighFrameRateQuality ? "hfrHevcV2" : "v2"
+        let policy = "hevcFirstNoAV1V1"
         return "codec-\(preference.rawValue)-\(policy)"
     }
 
@@ -2628,7 +2630,7 @@ actor VideoPreloadCenter {
         let playableVariants = sortedPlayableVariants(variants)
 
         if let preferredQuality {
-            if let exact = playableVariants.first(where: { $0.quality == preferredQuality }) {
+            if let exact = playableVariants.first(where: { $0.satisfiesPreferredQuality(preferredQuality) }) {
                 return exact
             }
             let fallbackQualities = [112, 80, 116, 120, 74, 64, 32, 16, 6]

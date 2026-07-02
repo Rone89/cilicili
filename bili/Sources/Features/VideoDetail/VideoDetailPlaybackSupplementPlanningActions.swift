@@ -33,12 +33,7 @@ extension VideoDetailViewModel {
         guard let preferredQuality = targetPlaybackPreferredQuality else { return false }
         let playableVariants = variants.filter(\.isPlayable)
         guard !playableVariants.isEmpty else { return false }
-        if [116, 74].contains(preferredQuality) {
-            return !playableVariants.contains {
-                $0.quality == preferredQuality && variantFrameRate($0) >= 50
-            }
-        }
-        return !playableVariants.contains { $0.quality == preferredQuality }
+        return !playableVariants.contains { $0.satisfiesPreferredQuality(preferredQuality) }
     }
 
     private func playVariantsNeedSupplementalFrameRateUpgrade(_ variants: [PlayVariant]) -> Bool {
@@ -46,8 +41,6 @@ extension VideoDetailViewModel {
         guard !playableVariants.isEmpty else { return false }
         guard let preferredQuality = libraryStore.preferredVideoQuality else { return false }
         guard [116, 74].contains(preferredQuality) else { return false }
-        return !playableVariants.contains {
-            $0.quality == preferredQuality && variantFrameRate($0) >= 50
-        }
+        return !playableVariants.contains { $0.satisfiesPreferredQuality(preferredQuality) }
     }
 }

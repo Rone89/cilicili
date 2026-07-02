@@ -10,7 +10,9 @@ extension VideoDetailViewModel {
               player.hasPresentedPlayback,
               !player.isTerminated
         else {
-            clearPlaybackTransitionPlayer()
+            if playbackTransitionPlayerViewModel == nil {
+                clearPlaybackTransitionPlayer()
+            }
             return
         }
         if let transitionPlayer = playbackTransitionPlayerViewModel,

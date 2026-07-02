@@ -94,11 +94,22 @@ extension RootTabView {
             path: $videoNavigationPath,
             isClosingVideo: isClosingVideo,
             onRequestClose: closeVideo,
+            onPopOne: popOneVideoLevel,
             onCancelledClose: cancelCloseVideoIfNeeded,
             onCompletedClose: completeCloseVideoIfNeeded
         ) {
             guard bottomMode == .video else { return }
             scheduleCloseVideo()
+        }
+    }
+
+    /// 详情页返回按钮：只 pop 一层（回到上一个详情页或来源页），
+    /// 而非 closeVideo 的清空整栈。count==1 时 removeLast 会清空到 0，
+    /// 触发 onPathEmptied → scheduleCloseVideo，正好回到来源页。
+    func popOneVideoLevel() {
+        guard bottomMode == .video, !videoNavigationPath.isEmpty else { return }
+        withAnimation(.smooth(duration: 0.28)) {
+            videoNavigationPath.removeLast()
         }
     }
 

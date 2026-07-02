@@ -1,6 +1,59 @@
 import Foundation
 
 extension VideoDetailViewModel {
+    func scheduleSelectedStartupPackageWarmupBeforeFirstFrame(
+        _ variant: PlayVariant?,
+        targetVariant: PlayVariant?,
+        cid: Int?,
+        page: Int?
+    ) {
+        guard !isPlaybackInvalidatedForNavigation,
+              let cid,
+              let variant,
+              variant.isPlayable,
+              !variant.isProgressiveFastStart
+        else { return }
+
+        let bvid = detail.bvid
+        let variantID = variant.id
+        let durationHint = detail.duration.map(TimeInterval.init)
+        let cdnPreference = libraryStore.effectivePlaybackCDNPreference
+        trackBackgroundTask(
+            Task(priority: .userInitiated) { [weak self, variant, targetVariant] in
+                guard let self,
+                      !Task.isCancelled,
+                      !self.isPlaybackInvalidatedForNavigation,
+                      self.detail.bvid == bvid,
+                      self.selectedCID == cid,
+                      self.selectedPlayVariant?.id == variantID
+                else { return }
+
+                let result = await VideoPreloadCenter.shared.prebuildStartupPackageAndWait(
+                    variant: variant,
+                    targetVariant: targetVariant,
+                    bvid: bvid,
+                    cid: cid,
+                    page: page,
+                    durationHint: durationHint,
+                    cdnPreference: cdnPreference,
+                    timeout: 0
+                )
+                guard !Task.isCancelled,
+                      !self.isPlaybackInvalidatedForNavigation,
+                      self.detail.bvid == bvid,
+                      self.selectedCID == cid,
+                      self.selectedPlayVariant?.id == variantID
+                else { return }
+                PlayerMetricsLog.record(
+                    .manifestStage,
+                    metricsID: bvid,
+                    title: self.detail.title,
+                    message: "startupWarmEarly=\(result.rawValue) q\(variant.quality)"
+                )
+            }
+        )
+    }
+
     func scheduleSelectedStartupPackageWarmupAfterFirstFrame(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
               let cid,

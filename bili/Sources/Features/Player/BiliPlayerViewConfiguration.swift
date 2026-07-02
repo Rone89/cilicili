@@ -21,6 +21,8 @@ struct BiliPlayerViewConfiguration {
     let fullscreenMode: PlayerFullscreenMode?
     let isLayoutTransitioning: Bool
     let usesLiveSurfaceDuringLayoutTransition: Bool
+    let disablesSurfaceImplicitLayoutAnimations: Bool
+    let showsRotationTransitionSnapshot: Bool
     let onPrepareForUserSeek: ((Double) -> Void)?
     let onRequestFullscreen: (() -> Void)?
     let onExitFullscreen: (() -> Void)?
@@ -58,6 +60,8 @@ struct BiliPlayerViewConfiguration {
         fullscreenMode: PlayerFullscreenMode?,
         isLayoutTransitioning: Bool,
         usesLiveSurfaceDuringLayoutTransition: Bool,
+        disablesSurfaceImplicitLayoutAnimations: Bool,
+        showsRotationTransitionSnapshot: Bool,
         onPrepareForUserSeek: ((Double) -> Void)?,
         onRequestFullscreen: (() -> Void)?,
         onExitFullscreen: (() -> Void)?,
@@ -83,6 +87,8 @@ struct BiliPlayerViewConfiguration {
         self.fullscreenMode = fullscreenMode
         self.isLayoutTransitioning = isLayoutTransitioning
         self.usesLiveSurfaceDuringLayoutTransition = usesLiveSurfaceDuringLayoutTransition
+        self.disablesSurfaceImplicitLayoutAnimations = disablesSurfaceImplicitLayoutAnimations
+        self.showsRotationTransitionSnapshot = showsRotationTransitionSnapshot
         self.onPrepareForUserSeek = onPrepareForUserSeek
         self.onRequestFullscreen = onRequestFullscreen
         self.onExitFullscreen = onExitFullscreen

@@ -39,6 +39,7 @@ struct BiliPlayerView: View {
             configuration: configuration,
             isPictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             videoGravity: videoGravity,
+            holdCurrentFrameForSeek: holdCurrentFrameForSeek,
             prepareUserSeekWarmup: prepareUserSeekWarmupIfNeeded,
             resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 }
         ).context
@@ -68,6 +69,8 @@ struct BiliPlayerView: View {
         fullscreenMode: PlayerFullscreenMode? = nil,
         isLayoutTransitioning: Bool = false,
         usesLiveSurfaceDuringLayoutTransition: Bool = false,
+        disablesSurfaceImplicitLayoutAnimations: Bool = false,
+        showsRotationTransitionSnapshot: Bool = true,
         onPrepareForUserSeek: ((Double) -> Void)? = nil,
         onRequestFullscreen: (() -> Void)? = nil,
         onExitFullscreen: (() -> Void)? = nil,
@@ -98,6 +101,8 @@ struct BiliPlayerView: View {
                 fullscreenMode: fullscreenMode,
                 isLayoutTransitioning: isLayoutTransitioning,
                 usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+                disablesSurfaceImplicitLayoutAnimations: disablesSurfaceImplicitLayoutAnimations,
+                showsRotationTransitionSnapshot: showsRotationTransitionSnapshot,
                 onPrepareForUserSeek: onPrepareForUserSeek,
                 onRequestFullscreen: onRequestFullscreen,
                 onExitFullscreen: onExitFullscreen,
@@ -130,6 +135,8 @@ struct BiliPlayerView: View {
         fullscreenMode: PlayerFullscreenMode? = nil,
         isLayoutTransitioning: Bool = false,
         usesLiveSurfaceDuringLayoutTransition: Bool = false,
+        disablesSurfaceImplicitLayoutAnimations: Bool = false,
+        showsRotationTransitionSnapshot: Bool = true,
         onPrepareForUserSeek: ((Double) -> Void)? = nil,
         onRequestFullscreen: (() -> Void)? = nil,
         onExitFullscreen: (() -> Void)? = nil,
@@ -166,6 +173,8 @@ struct BiliPlayerView: View {
                 fullscreenMode: fullscreenMode,
                 isLayoutTransitioning: isLayoutTransitioning,
                 usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+                disablesSurfaceImplicitLayoutAnimations: disablesSurfaceImplicitLayoutAnimations,
+                showsRotationTransitionSnapshot: showsRotationTransitionSnapshot,
                 onPrepareForUserSeek: onPrepareForUserSeek,
                 onRequestFullscreen: onRequestFullscreen,
                 onExitFullscreen: onExitFullscreen,
@@ -202,6 +211,8 @@ struct BiliPlayerView: View {
         fullscreenMode: PlayerFullscreenMode? = nil,
         isLayoutTransitioning: Bool = false,
         usesLiveSurfaceDuringLayoutTransition: Bool = false,
+        disablesSurfaceImplicitLayoutAnimations: Bool = false,
+        showsRotationTransitionSnapshot: Bool = true,
         onPrepareForUserSeek: ((Double) -> Void)? = nil,
         onRequestFullscreen: (() -> Void)? = nil,
         onExitFullscreen: (() -> Void)? = nil,
@@ -241,6 +252,8 @@ struct BiliPlayerView: View {
                 fullscreenMode: fullscreenMode,
                 isLayoutTransitioning: isLayoutTransitioning,
                 usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+                disablesSurfaceImplicitLayoutAnimations: disablesSurfaceImplicitLayoutAnimations,
+                showsRotationTransitionSnapshot: showsRotationTransitionSnapshot,
                 onPrepareForUserSeek: onPrepareForUserSeek,
                 onRequestFullscreen: onRequestFullscreen,
                 onExitFullscreen: onExitFullscreen,
@@ -319,6 +332,8 @@ struct BiliPlayerView: View {
         fullscreenMode: PlayerFullscreenMode?,
         isLayoutTransitioning: Bool,
         usesLiveSurfaceDuringLayoutTransition: Bool,
+        disablesSurfaceImplicitLayoutAnimations: Bool,
+        showsRotationTransitionSnapshot: Bool,
         onPrepareForUserSeek: ((Double) -> Void)?,
         onRequestFullscreen: (() -> Void)?,
         onExitFullscreen: (() -> Void)?,
@@ -345,6 +360,8 @@ struct BiliPlayerView: View {
             fullscreenMode: fullscreenMode,
             isLayoutTransitioning: isLayoutTransitioning,
             usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+            disablesSurfaceImplicitLayoutAnimations: disablesSurfaceImplicitLayoutAnimations,
+            showsRotationTransitionSnapshot: showsRotationTransitionSnapshot,
             onPrepareForUserSeek: onPrepareForUserSeek,
             onRequestFullscreen: onRequestFullscreen,
             onExitFullscreen: onExitFullscreen,
@@ -354,26 +371,30 @@ struct BiliPlayerView: View {
 
     private func prepareUserSeekWarmupIfNeeded(_ progress: Double, force: Bool = false) {
         let clampedProgress = min(max(progress, 0), 1)
-        guard force || abs(clampedProgress - lastPreparedScrubProgress) >= 0.015 else { return }
+        guard force || abs(clampedProgress - lastPreparedScrubProgress) >= 0.008 else { return }
         lastPreparedScrubProgress = clampedProgress
         configuration.onPrepareForUserSeek?(clampedProgress)
     }
 
+    private func holdCurrentFrameForSeek() {
+        seekTransitionSnapshotModel.hold(
+            hasPresentedPlayback: surfaceState.hasPresentedPlayback,
+            surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration
+        ) {
+            viewModel.makePlaybackTransitionSnapshot()
+        }
+    }
+
     private func updateSeekTransitionSnapshot(isUserSeeking: Bool) {
         if isUserSeeking {
-            seekTransitionSnapshotModel.hold(
-                hasPresentedPlayback: surfaceState.hasPresentedPlayback,
-                surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration
-            ) {
-                viewModel.makePlaybackTransitionSnapshot()
-            }
+            holdCurrentFrameForSeek()
         } else {
             seekTransitionSnapshotModel.releaseForSeekTransition(
                 isReadyForReveal: {
                     viewModel.isSeekRecoverySnapshotReadyForReveal()
                 },
-                makeRevealSnapshot: {
-                    viewModel.makeCurrentVideoFrameTransitionSnapshot()
+                onReleased: {
+                    viewModel.finishUserSeekVisualReveal()
                 }
             )
         }

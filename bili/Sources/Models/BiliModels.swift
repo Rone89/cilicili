@@ -1167,7 +1167,7 @@ nonisolated struct PlayURLData: Decodable, Sendable {
     }
 
     nonisolated func hasPlayableQuality(_ quality: Int) -> Bool {
-        playVariants.contains { $0.isPlayable && $0.quality == quality }
+        playVariants.contains { $0.satisfiesPreferredQuality(quality) }
     }
 
     nonisolated func shouldRefetchForPreferredQuality(_ quality: Int) -> Bool {
@@ -1425,10 +1425,11 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
     }
 
     nonisolated var isPlayable: Bool {
-        videoURL != nil
+        videoURL != nil && isDynamicRangePlaybackCompatible
     }
 
     nonisolated var isHardwareDecodingCompatible: Bool {
+        guard isDynamicRangePlaybackCompatible else { return false }
         if let videoStream {
             guard videoStream.isHardwareDecodingCompatibleVideo else { return false }
         } else if audioURL != nil {
@@ -1442,8 +1443,24 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
         return videoURL != nil
     }
 
+    nonisolated private var isDynamicRangePlaybackCompatible: Bool {
+        PlaybackCodecPolicy.canDecode(dynamicRange: dynamicRange)
+    }
+
     nonisolated var isProgressiveFastStart: Bool {
         audioURL == nil && videoStream == nil
+    }
+
+    nonisolated func satisfiesPreferredQuality(_ preferredQuality: Int) -> Bool {
+        guard isPlayable, quality == preferredQuality else { return false }
+        guard [116, 74].contains(preferredQuality) else { return true }
+        if let frameRate = DASHStream.numericFrameRate(from: frameRate) {
+            return frameRate >= 50
+        }
+        return title.contains("高帧")
+            || title.contains("60")
+            || badge?.contains("高帧") == true
+            || badge?.contains("60") == true
     }
 
     nonisolated func replacingPlaybackURLs(videoURL: URL?, audioURL: URL?) -> PlayVariant {
@@ -1546,6 +1563,10 @@ nonisolated struct PlayVariant: Identifiable, Hashable, Sendable {
     }
 
     nonisolated private var unavailableReason: String {
+        if videoURL != nil,
+           let dynamicRangeReason = PlaybackCodecPolicy.unsupportedDynamicRangeReason(for: dynamicRange) {
+            return dynamicRangeReason
+        }
         if let videoStream, !videoStream.isHardwareDecodingCompatibleVideo {
             return "当前设备暂不可播"
         }
@@ -1934,6 +1955,9 @@ nonisolated struct DASHStream: Decodable, Hashable, Sendable {
 
     nonisolated private static func codecRank(_ stream: DASHStream) -> Int {
         if let codecs = stream.codecs?.lowercased() {
+            if codecs.contains("av01") {
+                return 1
+            }
             if codecs.contains("hvc1") || codecs.contains("hev1") {
                 return 4
             }
@@ -1943,17 +1967,14 @@ nonisolated struct DASHStream: Decodable, Hashable, Sendable {
             if codecs.contains("avc1") || codecs.contains("avc3") {
                 return 3
             }
-            if codecs.contains("av01") {
-                return 1
-            }
         }
         switch stream.codecid {
+        case 13:
+            return 1
         case 12:
             return 4
         case 7:
             return 3
-        case 13:
-            return 1
         default:
             return 0
         }

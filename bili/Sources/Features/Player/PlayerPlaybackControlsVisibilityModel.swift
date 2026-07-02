@@ -4,9 +4,13 @@ import SwiftUI
 @MainActor
 final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
     @Published var isVisible = true
+    @Published private(set) var opacity = 1.0
+    @Published private(set) var acceptsHitTesting = true
 
     private var isAutoHideSuspended = false
     private var autoHideTask: Task<Void, Never>?
+    private var hideCompletionTask: Task<Void, Never>?
+    private let hideAnimationDuration: UInt64 = 350_000_000
 
     func syncSecondaryControlsPresentation(
         _ isPresented: Bool,
@@ -58,8 +62,8 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         isLayoutTransitioning: Bool
     ) {
         guard showsPlaybackControls else { return }
-        if isVisible {
-            hide(animated: true, duration: 0.18)
+        if isVisible, opacity > 0.5 {
+            hide(animated: true)
         } else {
             showAndSchedule(
                 showsPlaybackControls: showsPlaybackControls,
@@ -68,11 +72,41 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         }
     }
 
-    func hide(animated: Bool, duration: TimeInterval) {
+    func hide(animated: Bool) {
         cancelAutoHide()
-        let update = { self.isVisible = false }
+        hideCompletionTask?.cancel()
+        let update = { self.opacity = 0 }
         if animated {
-            withAnimation(.easeInOut(duration: duration), update)
+            isVisible = true
+            acceptsHitTesting = true
+            withAnimation(.default, update)
+            hideCompletionTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: self?.hideAnimationDuration ?? 350_000_000)
+                guard let self, !Task.isCancelled else { return }
+                self.isVisible = false
+                self.acceptsHitTesting = false
+                self.hideCompletionTask = nil
+            }
+        } else {
+            update()
+            isVisible = false
+            acceptsHitTesting = false
+            hideCompletionTask = nil
+        }
+    }
+
+    private func cancelPendingHide() {
+        hideCompletionTask?.cancel()
+        hideCompletionTask = nil
+    }
+
+    private func showNow(animated: Bool) {
+        cancelPendingHide()
+        isVisible = true
+        acceptsHitTesting = true
+        let update = { self.opacity = 1 }
+        if animated {
+            withAnimation(.default, update)
         } else {
             update()
         }
@@ -85,14 +119,7 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         isLayoutTransitioning: Bool = false
     ) {
         guard showsPlaybackControls else { return }
-        if !isVisible {
-            let update = { self.isVisible = true }
-            if animated {
-                withAnimation(.easeInOut(duration: 0.18), update)
-            } else {
-                update()
-            }
-        }
+        showNow(animated: animated)
         if scheduleAutoHide {
             self.scheduleAutoHide(
                 showsPlaybackControls: showsPlaybackControls,
@@ -113,10 +140,8 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard let self, !Task.isCancelled else { return }
             guard !self.isAutoHideSuspended else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.isVisible = false
-            }
             self.autoHideTask = nil
+            self.hide(animated: true)
         }
     }
 
@@ -127,5 +152,6 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
 
     deinit {
         autoHideTask?.cancel()
+        hideCompletionTask?.cancel()
     }
 }

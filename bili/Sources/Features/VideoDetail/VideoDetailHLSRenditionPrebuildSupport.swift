@@ -27,7 +27,6 @@ extension VideoDetailViewModel {
                 $0.isPlayable
                     && $0.id != startupVariant.id
                     && $0.audioURL == startupAudioURL
-                    && $0.dynamicRange != .dolbyVision
                     && $0.videoStream?.isHardwareDecodingCompatibleVideo == true
                     && $0.videoURL != nil
             }

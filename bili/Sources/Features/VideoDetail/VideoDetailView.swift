@@ -6,6 +6,7 @@ struct VideoDetailView: View {
     let seedVideo: VideoItem
     private let hidesRootTabBar: Bool
     private let onRequestClose: (() -> Void)?
+    private let onPopOne: (() -> Void)?
 
     @StateObject private var holder = VideoDetailViewModelHolder()
     @StateObject private var runtimeSettings = VideoDetailRuntimeSettingsStore()
@@ -16,11 +17,13 @@ struct VideoDetailView: View {
     init(
         seedVideo: VideoItem,
         hidesRootTabBar: Bool = true,
-        onRequestClose: (() -> Void)? = nil
+        onRequestClose: (() -> Void)? = nil,
+        onPopOne: (() -> Void)? = nil
     ) {
         self.seedVideo = seedVideo
         self.hidesRootTabBar = hidesRootTabBar
         self.onRequestClose = onRequestClose
+        self.onPopOne = onPopOne
     }
 
     var body: some View {
@@ -34,7 +37,7 @@ struct VideoDetailView: View {
             isShowingDanmakuSettings: $presentationState.isShowingDanmakuSettings,
             isShowingFavoriteFolders: $presentationState.isShowingFavoriteFolders,
             isShowingNetworkDiagnostics: $presentationState.isShowingNetworkDiagnostics,
-            onNavigateBack: dismissVideoDetail,
+            onNavigateBack: popOneVideoLevel,
             lifecycleActions: contentLifecycleActions
         )
         .videoDetailViewChrome(hidesRootTabBar: hidesRootTabBar)
@@ -64,12 +67,17 @@ struct VideoDetailView: View {
             holder: holder,
             fullscreenCoordinator: fullscreenCoordinator,
             dismiss: dismiss,
-            onRequestClose: onRequestClose
+            onRequestClose: onRequestClose,
+            onPopOne: onPopOne
         )
         .actions
     }
 
     private func dismissVideoDetail() {
         viewActions.dismissVideoDetail(presentationState: $presentationState)
+    }
+
+    private func popOneVideoLevel() {
+        viewActions.popOneVideoLevel(presentationState: $presentationState)
     }
 }

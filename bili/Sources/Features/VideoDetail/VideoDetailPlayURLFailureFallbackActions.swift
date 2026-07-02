@@ -43,6 +43,26 @@ extension VideoDetailViewModel {
         selectedPlayVariant = nil
         isSupplementingPlayQualities = false
         playURLElapsedMilliseconds = elapsedMilliseconds(since: playURLLoadStartTime)
-        playURLState = .failed(error.localizedDescription)
+        playURLState = .failed(playURLFailureMessage(for: error))
+    }
+
+    private func playURLFailureMessage(for error: Error) -> String {
+        if shouldShowCodecUnavailableMessage(for: error) {
+            return codecUnavailableMessage()
+        }
+        return error.localizedDescription
+    }
+
+    private func shouldShowCodecUnavailableMessage(for error: Error) -> Bool {
+        guard libraryStore.videoCodecPreference.forcedUnavailableMessage != nil else { return false }
+        if let apiError = error as? BiliAPIError {
+            switch apiError {
+            case .emptyPlayURL, .unsupportedHardwarePlayback:
+                return true
+            case .invalidURL, .emptyData, .api, .missingPayload, .missingSESSDATA, .missingCSRF:
+                return false
+            }
+        }
+        return false
     }
 }

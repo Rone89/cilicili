@@ -11,6 +11,7 @@ struct BiliPlayerViewRenderContext {
     let speedBoostModel: PlayerSpeedBoostModel
     let configuration: BiliPlayerViewConfiguration
     let isPictureInPictureEnabled: Bool
+    let holdCurrentFrameForSeek: () -> Void
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
 }

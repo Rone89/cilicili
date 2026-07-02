@@ -40,7 +40,7 @@ final class VideoDetailFullscreenCoordinator: ObservableObject {
     static let morphFadeDurationNanoseconds: UInt64 = 140_000_000
     static let morphClearDelayNanoseconds: UInt64 = 170_000_000
     // 快照在 surface「布局刷新」后再停留一段，覆盖到视频帧真正渲染到新尺寸为止。
-    // 布局刷新 ≠ 出帧，软解引擎(KSPlayer/DASH)重建首帧偏慢，故留足时间。
+    // 布局刷新 ≠ 出帧，AVPlayer/本地 DASH 重新出帧仍需要留足时间。
     // 快照是静止当前帧，多停留数百毫秒用户基本无感，远好于黑闪。
     static let enterMorphSurfaceSettleDelayNanoseconds: UInt64 = 90_000_000
     static let exitMorphSurfaceSettleDelayNanoseconds: UInt64 = 320_000_000

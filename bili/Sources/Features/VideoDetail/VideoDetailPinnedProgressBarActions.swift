@@ -44,6 +44,7 @@ struct VideoDetailPinnedProgressBarActions {
         let progress = progress(at: locationX, in: width)
         if !isScrubbing {
             prepareSeekWarmupIfNeeded(progress, force: true)
+            playerViewModel.beginUserScrubInteraction()
         }
         isScrubbing = true
         scrubProgress = progress
@@ -57,7 +58,7 @@ struct VideoDetailPinnedProgressBarActions {
         }
         isScrubbing = false
         Haptics.light()
-        seek(to: progress(at: locationX, in: width))
+        seek(to: progress(at: locationX, in: width), beginsInteraction: false)
     }
 
     func progress(at locationX: CGFloat, in width: CGFloat) -> Double {
@@ -65,19 +66,22 @@ struct VideoDetailPinnedProgressBarActions {
         return Self.clamped(Double(locationX / width))
     }
 
-    func seek(to progress: Double) {
+    func seek(to progress: Double, beginsInteraction: Bool = true) {
         guard canInteractWithPlayer else { return }
         let clampedProgress = Self.clamped(progress)
         scrubProgress = clampedProgress
         prepareSeekWarmupIfNeeded(clampedProgress, force: true)
-        playerViewModel.seekAfterUserScrub(to: clampedProgress)
+        if beginsInteraction {
+            playerViewModel.beginUserScrubInteraction()
+        }
+        playerViewModel.seekAfterSliderCommit(to: clampedProgress)
         lastPreparedProgress = -1
     }
 
     func prepareSeekWarmupIfNeeded(_ progress: Double, force: Bool = false) {
         guard canInteractWithPlayer else { return }
         let clampedProgress = Self.clamped(progress)
-        guard force || abs(clampedProgress - lastPreparedProgress) >= 0.015 else { return }
+        guard force || abs(clampedProgress - lastPreparedProgress) >= 0.008 else { return }
         lastPreparedProgress = clampedProgress
         onPrepareSeek(clampedProgress)
     }

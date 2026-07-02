@@ -100,7 +100,8 @@ extension VideoDetailViewModel {
         updateStablePlayerViewModelIfNeeded(
             resumeTimeOverride: resumeTime,
             shouldResumePlayback: shouldResumePlayback,
-            playbackRateOverride: playbackRate
+            playbackRateOverride: playbackRate,
+            preservesPreviousPlayerUntilFirstFrame: true
         )
     }
 

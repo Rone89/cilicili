@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailViewContentResolver: View {
+    @EnvironmentObject private var dependencies: AppDependencies
     let seedVideo: VideoItem
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var fullscreenCoordinator: VideoDetailFullscreenCoordinator
@@ -13,16 +14,27 @@ struct VideoDetailViewContentResolver: View {
     let onNavigateBack: () -> Void
 
     var body: some View {
-        VideoDetailLoadedPlaybackContent(
+        VideoDetailShellRepresentable(
             viewModel: viewModel,
-            runtimeSettings: runtimeSettings,
             fullscreenCoordinator: fullscreenCoordinator,
+            runtimeSettings: runtimeSettings,
             selectedContentTab: $selectedContentTab,
             replySheetComment: $replySheetComment,
             isShowingDanmakuSettings: $isShowingDanmakuSettings,
             isShowingFavoriteFolders: $isShowingFavoriteFolders,
             isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics,
             onNavigateBack: onNavigateBack
+        )
+        .ignoresSafeArea()
+        .videoDetailSheets(
+            viewModel: viewModel,
+            libraryStore: dependencies.libraryStore,
+            sheetState: VideoDetailSheetState(
+                replySheetComment: $replySheetComment,
+                isShowingFavoriteFolders: $isShowingFavoriteFolders,
+                isShowingDanmakuSettings: $isShowingDanmakuSettings,
+                isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics
+            )
         )
     }
 }

@@ -10,7 +10,7 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
     var body: some View {
         content
             .contentShape(Rectangle())
-            .gesture(
+            .simultaneousGesture(
                 TapGesture(count: 2)
                     .exclusively(before: TapGesture(count: 1))
                     .onEnded { value in

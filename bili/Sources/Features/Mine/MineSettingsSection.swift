@@ -66,6 +66,6 @@ struct MineSettingsSection: View {
     }
 
     private var playbackSettingsSummary: String {
-        "\(libraryStore.playbackAutoOptimizationMode.title) · \(libraryStore.playerRenderingEnginePreference.title)"
+        "\(libraryStore.playbackAutoOptimizationMode.title) · \(libraryStore.videoCodecPreference.title)"
     }
 }

@@ -21,6 +21,8 @@ struct BiliPlayerViewOptions {
     let fullscreenMode: PlayerFullscreenMode?
     let isLayoutTransitioning: Bool
     let usesLiveSurfaceDuringLayoutTransition: Bool
+    let disablesSurfaceImplicitLayoutAnimations: Bool
+    let showsRotationTransitionSnapshot: Bool
     let onPrepareForUserSeek: ((Double) -> Void)?
     let onRequestFullscreen: (() -> Void)?
     let onExitFullscreen: (() -> Void)?
@@ -47,6 +49,8 @@ struct BiliPlayerViewOptions {
         fullscreenMode: PlayerFullscreenMode? = nil,
         isLayoutTransitioning: Bool = false,
         usesLiveSurfaceDuringLayoutTransition: Bool = false,
+        disablesSurfaceImplicitLayoutAnimations: Bool = false,
+        showsRotationTransitionSnapshot: Bool = true,
         onPrepareForUserSeek: ((Double) -> Void)? = nil,
         onRequestFullscreen: (() -> Void)? = nil,
         onExitFullscreen: (() -> Void)? = nil,
@@ -72,6 +76,8 @@ struct BiliPlayerViewOptions {
         self.fullscreenMode = fullscreenMode
         self.isLayoutTransitioning = isLayoutTransitioning
         self.usesLiveSurfaceDuringLayoutTransition = usesLiveSurfaceDuringLayoutTransition
+        self.disablesSurfaceImplicitLayoutAnimations = disablesSurfaceImplicitLayoutAnimations
+        self.showsRotationTransitionSnapshot = showsRotationTransitionSnapshot
         self.onPrepareForUserSeek = onPrepareForUserSeek
         self.onRequestFullscreen = onRequestFullscreen
         self.onExitFullscreen = onExitFullscreen
@@ -100,6 +106,8 @@ struct BiliPlayerViewOptions {
             fullscreenMode: fullscreenMode,
             isLayoutTransitioning: isLayoutTransitioning,
             usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
+            disablesSurfaceImplicitLayoutAnimations: disablesSurfaceImplicitLayoutAnimations,
+            showsRotationTransitionSnapshot: showsRotationTransitionSnapshot,
             onPrepareForUserSeek: onPrepareForUserSeek,
             onRequestFullscreen: onRequestFullscreen,
             onExitFullscreen: onExitFullscreen,

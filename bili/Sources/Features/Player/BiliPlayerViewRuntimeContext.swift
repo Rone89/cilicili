@@ -23,6 +23,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
     let configuration: BiliPlayerViewConfiguration
     let isPictureInPictureEnabled: Bool
     let videoGravity: AVLayerVideoGravity
+    let holdCurrentFrameForSeek: () -> Void
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
 
@@ -73,6 +74,7 @@ struct BiliPlayerViewRuntimeContextBuilder {
             speedBoostModel: speedBoostModel,
             configuration: configuration,
             isPictureInPictureEnabled: isPictureInPictureEnabled,
+            holdCurrentFrameForSeek: holdCurrentFrameForSeek,
             prepareUserSeekWarmup: prepareUserSeekWarmup,
             resetPreparedScrubProgress: resetPreparedScrubProgress
         )

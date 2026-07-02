@@ -9,22 +9,17 @@ import UIKit
 @MainActor
 final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private static let interactiveSeekTolerance = CMTime(seconds: 0.35, preferredTimescale: 600)
+    private static let seekProtectionReleaseDelayNanoseconds: UInt64 = 900_000_000
+    private static let dolbyVisionFirstFrameTimeoutNanoseconds: UInt64 = 11_000_000_000
     private static let terminalStallDelayNanoseconds: UInt64 = 14_000_000_000
     private static let itemReadinessTimeoutNanoseconds: UInt64 = 14_000_000_000
-    private static let itemReadinessPollNanoseconds: UInt64 = 50_000_000
     private static let loadedRangeContinuityTolerance: TimeInterval = 0.12
 
     private enum PrepareReadinessError: LocalizedError {
-        case itemFailed(String?)
         case timedOut
 
         var errorDescription: String? {
-            switch self {
-            case .itemFailed(let message):
-                message ?? PlayerEngineError.unsupportedMedia.localizedDescription
-            case .timedOut:
-                "AVPlayer 等待媒体就绪超时"
-            }
+            "AVPlayer 等待媒体就绪超时"
         }
     }
 
@@ -35,6 +30,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var itemFailedObserver: Any?
     private var itemStalledObserver: Any?
     private var itemAccessLogObserver: Any?
+    private var itemReadinessTimeoutTask: Task<Void, Never>?
+    private var firstFrameWatchdogTask: Task<Void, Never>?
+    private var firstFrameWatchdogGeneration = 0
     private var playerObservers: [NSKeyValueObservation] = []
     private var itemObservers: [NSKeyValueObservation] = []
     private var layerReadyForDisplayObserver: NSKeyValueObservation?
@@ -62,9 +60,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var isPerformingSeek = false
     private var seekGeneration = 0
     private var isSeekProtectionActive = false
+    private var lastSeekFinishedAt: CFTimeInterval?
     private var seekProtectionReleaseTask: Task<Void, Never>?
     private var seekProtectionTargetTime: TimeInterval?
     private var seekProtectionAppliedAt: CFTimeInterval?
+    private var automaticallyWaitsBeforeSeekProtection: Bool?
     private var startupBitRateLiftTask: Task<Void, Never>?
     private var terminalStallTask: Task<Void, Never>?
     private var terminalStallGeneration = 0
@@ -79,6 +79,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var isStopped = true
     private var targetVolume: Float = 1
     private var targetMuted = false
+    private var isTemporaryAudioSuppressed = false
     private var isPictureInPictureEnabled = false
     private var contentOverlay: AnyView?
     private var contentOverlayHostingController: UIHostingController<AnyView>?
@@ -132,6 +133,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             maxBufferDuration: nil,
             asynchronousDecompressionEnabled: false,
             hardwareDecodeRequested: true,
+            isHardwareDecodeCompatible: source?.videoStream?.isHardwareDecodingCompatibleVideo,
             environmentSummary: PlaybackEnvironment.current.diagnosticSummary
         )
     }
@@ -178,6 +180,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionReleaseTask?.cancel()
         startupBitRateLiftTask?.cancel()
         terminalStallTask?.cancel()
+        itemReadinessTimeoutTask?.cancel()
+        firstFrameWatchdogTask?.cancel()
         if let backgroundObserver {
             NotificationCenter.default.removeObserver(backgroundObserver)
         }
@@ -321,8 +325,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionReleaseTask = nil
         seekProtectionTargetTime = nil
         seekProtectionAppliedAt = nil
+        automaticallyWaitsBeforeSeekProtection = nil
+        lastSeekFinishedAt = nil
         startupBitRateLiftTask?.cancel()
         startupBitRateLiftTask = nil
+        cancelFirstFrameWatchdog()
         configureAudioSession()
         applyTargetAudioState()
         onLoadingProgressChange?(0.18)
@@ -373,25 +380,19 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             ensurePlayerLayer(in: surfaceView).player = player
             refreshSurfaceLayout()
         }
-        onLoadingProgressChange?(0.68)
-        do {
-            try await waitForCurrentItemReadyToPlay(item, generation: generation)
-        } catch {
-            if isCurrentPlayerItem(item), isCurrentPlaybackGeneration(generation) {
-                tearDownCurrentItemForReplacement()
-            }
-            signpostMessage = "id=\(source.metricsID) failed \(error.localizedDescription)"
-            throw error
-        }
+        observeCurrentItem(item)
+        scheduleItemReadinessTimeout(for: item, generation: generation)
+        onLoadingProgressChange?(0.72)
         guard !Task.isCancelled, isCurrentPlaybackGeneration(generation), isCurrentPlayerItem(item) else {
             signpostMessage = "id=\(source.metricsID) cancelled"
             return
         }
-        observeCurrentItem(item)
-        onLoadingProgressChange?(0.86)
-        handleCurrentItemReadyToPlay(item)
-        signpostMessage = "id=\(source.metricsID) ready elapsed=\(String(format: "%.1f", PlayerMetricsLog.elapsedMilliseconds(since: prepareStart)))ms"
-        recordPrepareStage(source: source, stage: "ready", startedAt: prepareStart)
+        if item.status == .readyToPlay {
+            onLoadingProgressChange?(0.86)
+            handleCurrentItemReadyToPlay(item)
+        }
+        signpostMessage = "id=\(source.metricsID) installed elapsed=\(String(format: "%.1f", PlayerMetricsLog.elapsedMilliseconds(since: prepareStart)))ms"
+        recordPrepareStage(source: source, stage: "installed-ready-deferred", startedAt: prepareStart)
     }
 
     func play() {
@@ -400,6 +401,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         applyTargetAudioState()
         wantsPlayback = true
         guard item.status == .readyToPlay else {
+            if item.status == .unknown {
+                beginPlayback()
+            }
             onLoadingProgressChange?(0.72)
             publishPlaybackState(.buffering)
             return
@@ -490,15 +494,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func setVolume(_ volume: Float) {
         targetVolume = min(max(volume, 0), 1)
-        player.volume = targetVolume
+        applyTargetAudioState()
     }
 
     func setMuted(_ isMuted: Bool) {
         targetMuted = isMuted
-        player.isMuted = targetMuted
+        applyTargetAudioState()
     }
 
     func setTemporaryAudioSuppressed(_ isSuppressed: Bool) {
+        isTemporaryAudioSuppressed = isSuppressed
         if isSuppressed {
             player.isMuted = true
             player.volume = 0
@@ -600,9 +605,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard !isStopped, player.currentItem != nil else { return nil }
         let resolvedDuration = resolvedDuration(durationHint: duration)
         guard resolvedDuration > 0 else { return nil }
-        let displayTarget = alignedInteractiveSeekTime(
-            min(max(progress, 0), 1) * resolvedDuration
-        )
+        let requestedDisplayTarget = min(max(progress, 0), 1) * resolvedDuration
+        let displayTarget = alignedInteractiveSeekTime(requestedDisplayTarget)
         let target = playerTime(fromDisplayTime: displayTarget)
         let targetTime = CMTime(seconds: target, preferredTimescale: 600)
         wantsPlayback = false
@@ -612,7 +616,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         warmSeekTargetIfNeeded(displayTarget)
         player.currentItem?.cancelPendingSeeks()
         let finished = await withCheckedContinuation { continuation in
-            player.seek(to: targetTime, toleranceBefore: Self.interactiveSeekTolerance, toleranceAfter: Self.interactiveSeekTolerance) { finished in
+            player.seek(
+                to: targetTime,
+                toleranceBefore: Self.interactiveSeekTolerance,
+                toleranceAfter: Self.interactiveSeekTolerance
+            ) { finished in
                 continuation.resume(returning: finished)
             }
         }
@@ -628,7 +636,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let status = item?.status
         return PlayerPlaybackSnapshot(
             currentTime: currentSeconds.isFinite && currentSeconds >= 0 ? currentSeconds : nil,
-            renderedVideoTime: (isPerformingSeek || isSeekProtectionActive) ? currentRenderedVideoTime() : nil,
+            renderedVideoTime: shouldReportRenderedVideoTimeForSeekRecovery ? currentRenderedVideoTime() : nil,
+            requiresRenderedVideoTimeForRecovery: shouldReportRenderedVideoTimeForSeekRecovery,
             duration: durationSeconds > 0 ? durationSeconds : durationHint,
             isPlaying: player.rate > 0,
             isSeekable: status == .readyToPlay || (durationHint ?? 0) > 0,
@@ -708,6 +717,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func applyTargetAudioState() {
+        guard !isTemporaryAudioSuppressed else {
+            player.volume = 0
+            player.isMuted = true
+            return
+        }
         player.volume = targetVolume
         player.isMuted = targetMuted
     }
@@ -730,6 +744,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if let videoOutput {
             oldItem?.remove(videoOutput)
         }
+        itemReadinessTimeoutTask?.cancel()
+        itemReadinessTimeoutTask = nil
+        cancelFirstFrameWatchdog()
         videoOutput = nil
         lastVideoFrameImage = nil
         removeCurrentItemObservers()
@@ -754,9 +771,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionReleaseTask = nil
         seekProtectionTargetTime = nil
         seekProtectionAppliedAt = nil
+        automaticallyWaitsBeforeSeekProtection = nil
+        lastSeekFinishedAt = nil
         startupBitRateLiftTask?.cancel()
         startupBitRateLiftTask = nil
         cancelTerminalStallWatchdog()
+        cancelFirstFrameWatchdog()
         didLiftStartupBitRate = false
         isStartupFastStartActive = false
         manualPreferredPeakBitRate = nil
@@ -796,42 +816,35 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         !isStopped && player.currentItem === item && playerItem === item
     }
 
-    private func waitForCurrentItemReadyToPlay(_ item: AVPlayerItem, generation: Int) async throws {
-        let startedAt = CACurrentMediaTime()
-        let timeoutSeconds = TimeInterval(Self.itemReadinessTimeoutNanoseconds) / 1_000_000_000
-        while true {
-            try Task.checkCancellation()
-            guard isCurrentPlaybackGeneration(generation), isCurrentPlayerItem(item) else {
-                throw CancellationError()
-            }
-            switch item.status {
-            case .readyToPlay:
-                return
-            case .failed:
-                logPlayerItemFailure(item)
-                lastPlaybackFailureReason = playbackFailureReason(
-                    for: item,
-                    fallback: item.error?.localizedDescription
-                )
-                throw PrepareReadinessError.itemFailed(
-                    normalizedPlaybackFailureMessage(for: item, fallback: item.error?.localizedDescription)
-                )
-            case .unknown:
-                if CACurrentMediaTime() - startedAt >= timeoutSeconds {
-                    throw PrepareReadinessError.timedOut
-                }
-                try await Task.sleep(nanoseconds: Self.itemReadinessPollNanoseconds)
-            @unknown default:
-                if CACurrentMediaTime() - startedAt >= timeoutSeconds {
-                    throw PrepareReadinessError.timedOut
-                }
-                try await Task.sleep(nanoseconds: Self.itemReadinessPollNanoseconds)
-            }
+    private func scheduleItemReadinessTimeout(for item: AVPlayerItem, generation: Int) {
+        itemReadinessTimeoutTask?.cancel()
+        itemReadinessTimeoutTask = Task { @MainActor [weak self, weak item] in
+            try? await Task.sleep(nanoseconds: Self.itemReadinessTimeoutNanoseconds)
+            guard let self,
+                  let item,
+                  !Task.isCancelled,
+                  self.isCurrentPlaybackGeneration(generation),
+                  self.isCurrentPlayerItem(item),
+                  item.status == .unknown
+            else { return }
+            let message = PrepareReadinessError.timedOut.localizedDescription
+            self.lastPlaybackFailureReason = HLSBridgeFailureReason(
+                layer: .avPlayerItem,
+                category: .timeout,
+                statusCode: nil,
+                urlHost: nil,
+                rangeDescription: nil,
+                underlyingDescription: message
+            )
+            self.publishPlaybackState(.failed(message))
         }
     }
 
     private func handleCurrentItemReadyToPlay(_ item: AVPlayerItem) {
         guard isCurrentPlayerItem(item) else { return }
+        itemReadinessTimeoutTask?.cancel()
+        itemReadinessTimeoutTask = nil
+        scheduleFirstFrameWatchdogIfNeeded(reason: "item-ready")
         seekDirectLiveHLSToLiveEdgeIfNeeded(item)
         if wantsPlayback || player.rate > 0 || player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
             if player.rate > 0 || player.timeControlStatus == .playing {
@@ -839,6 +852,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 reportFirstFrameIfPossible()
                 maybeReleaseSeekProtectionIfReady(for: item, reason: "item-ready")
             } else {
+                if wantsPlayback {
+                    beginPlayback()
+                }
                 publishPlaybackState(.buffering)
                 scheduleTerminalStallWatchdog(reason: "item-ready-waiting")
             }
@@ -1205,6 +1221,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     case .readyToPlay:
                         self.handleCurrentItemReadyToPlay(item)
                     case .failed:
+                        self.itemReadinessTimeoutTask?.cancel()
+                        self.itemReadinessTimeoutTask = nil
                         self.cancelTerminalStallWatchdog()
                         self.logPlayerItemFailure(item)
                         self.lastPlaybackFailureReason = self.playbackFailureReason(
@@ -1754,6 +1772,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard !isStopped else { return }
         guard generation == seekGeneration else { return }
         isPerformingSeek = false
+        if finished {
+            lastSeekFinishedAt = CACurrentMediaTime()
+        }
         if let item = player.currentItem {
             updateLoadingProgress(for: item)
         }
@@ -1772,6 +1793,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private var shouldReportRenderedVideoTimeForSeekRecovery: Bool {
+        if isPerformingSeek || isSeekProtectionActive {
+            return true
+        }
+        guard let lastSeekFinishedAt else { return false }
+        return CACurrentMediaTime() - lastSeekFinishedAt <= 1.2
+    }
+
     private func applySeekProtection(
         to item: AVPlayerItem,
         source: PlayerStreamSource,
@@ -1785,10 +1814,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekProtectionReleaseTask = nil
         let environment = PlaybackEnvironment.current
         let currentBuffer = preferredForwardBufferDuration(for: source, environment: environment)
-        let protectedBuffer = min(max(currentBuffer + 1.6, 3.2), 7.0)
+        let protectedBuffer = min(max(currentBuffer + 0.8, 1.4), 3.0)
         item.preferredForwardBufferDuration = protectedBuffer
+        if !wasActive {
+            automaticallyWaitsBeforeSeekProtection = player.automaticallyWaitsToMinimizeStalling
+        }
+        player.automaticallyWaitsToMinimizeStalling = false
         if let bandwidth = source.videoStream?.bandwidth, bandwidth > 0 {
-            let multiplier: Double = currentRate >= 1.75 ? 0.78 : 0.88
+            let multiplier: Double = currentRate >= 1.75 ? 0.9 : 1.0
             item.preferredPeakBitRate = Double(bandwidth) * multiplier
         }
         guard shouldRecordMetric, !wasActive else { return }
@@ -1803,7 +1836,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func scheduleSeekProtectionRelease(generation: Int) {
         seekProtectionReleaseTask?.cancel()
         seekProtectionReleaseTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            try? await Task.sleep(nanoseconds: Self.seekProtectionReleaseDelayNanoseconds)
             guard let self,
                   !Task.isCancelled,
                   !self.isStopped,
@@ -1822,6 +1855,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             .map { Int(PlayerMetricsLog.elapsedMilliseconds(since: $0).rounded()) }
         seekProtectionTargetTime = nil
         seekProtectionAppliedAt = nil
+        if let automaticallyWaitsBeforeSeekProtection {
+            player.automaticallyWaitsToMinimizeStalling = automaticallyWaitsBeforeSeekProtection
+            self.automaticallyWaitsBeforeSeekProtection = nil
+        } else {
+            player.automaticallyWaitsToMinimizeStalling = !isStartupFastStartActive && !isDirectLiveHLS
+        }
         guard let item = player.currentItem, let source else { return }
         configureStartupBuffering(for: item, source: source)
         applyRateAwareBuffering()
@@ -1948,7 +1987,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         guard let targetTime = seekProtectionTargetTime else { return }
         let coverage = seekProtectionBufferCoverage(for: resolvedItem, around: targetTime)
-        guard coverage >= 0.86 else { return }
+        guard coverage >= 0.62 else { return }
         releaseSeekProtection(reason: "\(reason)-coverage\(Int((coverage * 100).rounded()))")
     }
 
@@ -2052,11 +2091,78 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         else { return }
         didReportFirstFrame = true
         cancelTerminalStallWatchdog()
+        cancelFirstFrameWatchdog()
         removePeriodicTimeObserver()
         let resolvedTime = currentTime ?? displayTime(fromPlayerTime: player.currentTime().seconds)
         onFirstFrame?(resolvedTime.isFinite ? max(resolvedTime, 0) : 0)
         restoreSteadyStateBufferingAfterFirstFrame()
         scheduleStartupBitRateLiftIfNeeded()
+    }
+
+    private func scheduleFirstFrameWatchdogIfNeeded(reason: String) {
+        guard firstFrameWatchdogTask == nil,
+              !didReportFirstFrame,
+              wantsPlayback,
+              source?.dynamicRange == .dolbyVision,
+              let item = player.currentItem,
+              isCurrentPlayerItem(item)
+        else { return }
+        firstFrameWatchdogGeneration &+= 1
+        let generation = playbackGeneration
+        let watchdogGeneration = firstFrameWatchdogGeneration
+        let startedAt = CACurrentMediaTime()
+        firstFrameWatchdogTask = Task { @MainActor [weak self, weak item] in
+            try? await Task.sleep(nanoseconds: Self.dolbyVisionFirstFrameTimeoutNanoseconds)
+            guard let self else { return }
+            defer {
+                if self.firstFrameWatchdogGeneration == watchdogGeneration {
+                    self.firstFrameWatchdogTask = nil
+                }
+            }
+            guard let item,
+                  !Task.isCancelled,
+                  !self.didReportFirstFrame,
+                  self.wantsPlayback,
+                  self.isCurrentPlaybackGeneration(generation),
+                  self.isCurrentPlayerItem(item),
+                  self.source?.dynamicRange == .dolbyVision
+            else { return }
+            self.handleDolbyVisionFirstFrameTimeout(item: item, reason: reason, startedAt: startedAt)
+        }
+    }
+
+    private func cancelFirstFrameWatchdog() {
+        firstFrameWatchdogGeneration &+= 1
+        firstFrameWatchdogTask?.cancel()
+        firstFrameWatchdogTask = nil
+    }
+
+    private func handleDolbyVisionFirstFrameTimeout(
+        item: AVPlayerItem,
+        reason: String,
+        startedAt: CFTimeInterval
+    ) {
+        guard isCurrentPlayerItem(item), let source else { return }
+        let elapsedMilliseconds = Int(PlayerMetricsLog.elapsedMilliseconds(since: startedAt).rounded())
+        let message = "杜比视界首帧超时"
+        lastPlaybackFailureReason = HLSBridgeFailureReason(
+            layer: .avPlayerItem,
+            category: .decoderFailed,
+            statusCode: nil,
+            urlHost: source.videoURL?.host?.lowercased(),
+            rangeDescription: nil,
+            underlyingDescription: message
+        )
+        PlayerMetricsLog.logger.error(
+            "avPlayerDolbyVisionFirstFrameTimeout reason=\(reason, privacy: .public) elapsedMs=\(elapsedMilliseconds, privacy: .public) id=\(source.metricsID, privacy: .public)"
+        )
+        PlayerMetricsLog.record(
+            .network,
+            metricsID: source.metricsID,
+            title: source.title,
+            message: "dolbyFirstFrameTimeout reason=\(reason) elapsed=\(elapsedMilliseconds)ms status=\(item.status.rawValue) keepUp=\(item.isPlaybackLikelyToKeepUp) buffer=\(String(format: "%.2fs", bufferAhead(for: item)))"
+        )
+        publishPlaybackState(.failed(message))
     }
 
     private func restoreSteadyStateBufferingAfterFirstFrame() {
@@ -2113,6 +2219,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func publishPlaybackState(_ state: PlayerEnginePlaybackState) {
+        switch state {
+        case .buffering, .playing:
+            scheduleFirstFrameWatchdogIfNeeded(reason: "state")
+        default:
+            break
+        }
         guard state != lastPlaybackState else { return }
         lastPlaybackState = state
         onPlaybackStateChange?(state)
@@ -2447,28 +2559,16 @@ struct LocalHLSBridge: Sendable {
         durationHint: TimeInterval?,
         headers: [String: String],
         metricsID: String? = nil,
-        waitsForDemuxWarmup: Bool = true
+        waitsForDemuxWarmup _: Bool = true
     ) async -> Bool {
         do {
-            let bridge = try await make(
+            _ = try await make(
                 videoTracks: videoTracks,
                 audioTrack: audioTrack,
                 durationHint: durationHint,
                 headers: headers,
                 metricsID: metricsID
             )
-            if waitsForDemuxWarmup {
-                return await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
-                    bridge.masterPlaylistURL,
-                    metricsID: metricsID
-                )
-            }
-            Task.detached(priority: .utility) {
-                await FFmpegDemuxWarmupCenter.shared.warmLocalHLSMaster(
-                    bridge.masterPlaylistURL,
-                    metricsID: metricsID
-                )
-            }
             return true
         } catch {
             PlayerMetricsLog.logger.info(
@@ -2692,10 +2792,16 @@ struct LocalHLSBridge: Sendable {
             let routePrefix = videoRoutePrefix(for: index)
             let playlistURL = baseURL.appendingPathComponent("\(routePrefix).m3u8")
             return """
-            #EXT-X-STREAM-INF:BANDWIDTH=\(rendition.bandwidth),CODECS="\(rendition.codec),\(audioRendition.codec)",AUDIO="audio"\(rendition.hlsResolutionAttribute)\(rendition.hlsVideoRangeAttribute)\(rendition.hlsAdvertisedSupplementalCodecAttribute)
+            #EXT-X-STREAM-INF:BANDWIDTH=\(rendition.bandwidth),CODECS="\(rendition.hlsAdvertisedCodec),\(audioRendition.codec)",AUDIO="audio"\(rendition.hlsResolutionAttribute)\(rendition.hlsVideoRangeAttribute)\(rendition.hlsAdvertisedSupplementalCodecAttribute)
             \(playlistURL.absoluteString)
             """
         }.joined(separator: "\n")
+        let dolbyVisionManifestSummary = videoRenditions
+            .filter { $0.dynamicRange == .dolbyVision }
+            .map { rendition in
+                "q\(rendition.quality ?? -1) source=\(rendition.codec) hls=\(rendition.hlsAdvertisedCodec) range=\(rendition.hlsVideoRangeValue ?? "-") supplemental=\(rendition.hlsAdvertisedSupplementalCodec ?? "-")"
+            }
+            .joined(separator: ";")
         let masterPlaylist = """
         #EXTM3U
         #EXT-X-VERSION:\(plan.masterPlaylistVersion)
@@ -2721,6 +2827,11 @@ struct LocalHLSBridge: Sendable {
         PlayerMetricsLog.logger.info(
             "hlsBridgeServerReady elapsedMs=\(serverMilliseconds, format: .fixed(precision: 1), privacy: .public) dynamicRange=\(videoRendition.dynamicRange.rawValue, privacy: .public) codec=\(videoRendition.codec, privacy: .public) version=\(plan.masterPlaylistVersion, privacy: .public) variants=\(videoRenditions.count, privacy: .public) routes=\(routes.count, privacy: .public)"
         )
+        if !dolbyVisionManifestSummary.isEmpty {
+            PlayerMetricsLog.logger.info(
+                "hlsBridgeDolbyVisionManifest \(dolbyVisionManifestSummary, privacy: .public)"
+            )
+        }
         await recordManifestStage(
             metricsID: metricsID,
             "server=\(formatMilliseconds(serverMilliseconds)) routes=\(routes.count) variants=\(videoRenditions.count) codec=\(videoRendition.codec)"
@@ -2976,12 +3087,19 @@ struct LocalHLSBridge: Sendable {
                 from: sourceURLs,
                 headers: headers
             )
+            let initializationData = try await resolvedInitializationData(
+                bootstrapPayload.initializationData,
+                for: track,
+                initialization: initialization,
+                from: sourceURLs,
+                headers: headers
+            )
             await recordManifestStage(
                 metricsID: metricsID,
                 "\(mediaType)Boot=\(bootstrapPayload.mode) \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)))"
             )
             PlayerMetricsLog.logger.info(
-                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(bootstrapPayload.mode, privacy: .public) bytes=\(bootstrapPayload.indexData.count, privacy: .public) initBytes=\(bootstrapPayload.initializationData?.count ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
+                "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(bootstrapPayload.mode, privacy: .public) bytes=\(bootstrapPayload.indexData.count, privacy: .public) initBytes=\(initializationData?.count ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
             )
             let parseStart = CACurrentMediaTime()
             let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
@@ -2997,10 +3115,10 @@ struct LocalHLSBridge: Sendable {
             PlayerMetricsLog.logger.info(
                 "hlsBridgeIndexParsed media=\(mediaType, privacy: .public) refs=\(references.count, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: parseStart), format: .fixed(precision: 1), privacy: .public)"
             )
-            return makeRendition(
+            return try makeRendition(
                 for: track,
                 initialization: initialization,
-                initializationData: bootstrapPayload.initializationData,
+                initializationData: initializationData,
                 references: references,
                 durationHint: durationHint,
                 timelineOffsetOverride: resolvedTimelineOffset
@@ -3485,6 +3603,13 @@ struct LocalHLSBridge: Sendable {
                     from: sourceURLs,
                     headers: headers
                 )
+                let initializationData = try await resolvedInitializationData(
+                    bootstrapPayload.initializationData,
+                    for: track,
+                    initialization: initialization,
+                    from: sourceURLs,
+                    headers: headers
+                )
                 let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
                 guard !references.isEmpty else {
                     throw PlayerEngineError.unsupportedMedia
@@ -3495,10 +3620,10 @@ struct LocalHLSBridge: Sendable {
                     headers: headers,
                     metricsID: nil
                 )
-                return makeRendition(
+                return try makeRendition(
                     for: track,
                     initialization: initialization,
-                    initializationData: bootstrapPayload.initializationData,
+                    initializationData: initializationData,
                     references: references,
                     durationHint: nil,
                     timelineOffsetOverride: resolvedTimelineOffset
@@ -3555,7 +3680,7 @@ struct LocalHLSBridge: Sendable {
         references: [SIDXParser.Reference],
         durationHint: TimeInterval?,
         timelineOffsetOverride: HLSRenditionTimelineOffset?
-    ) -> HLSRendition {
+    ) throws -> HLSRendition {
         let timelineOffset = timelineOffsetOverride ?? HLSRenditionTimelineOffset(
             baseMediaDecodeTimeTicks: references.first?.startTimeTicks ?? 0
         )
@@ -3564,13 +3689,19 @@ struct LocalHLSBridge: Sendable {
         let mediaTimeOffset = timescale > 0
             ? TimeInterval(mediaTimeOffsetTicks) / TimeInterval(timescale)
             : references.first?.startTime ?? 0
-        return HLSRendition(
+        let dolbyVisionConfiguration = try dolbyVisionConfiguration(
+            for: track,
+            initializationData: initializationData
+        )
+        let initializationNormalization = dolbyVisionConfiguration?.normalizedInitializationDataForHLS(initializationData)
+        let normalizedInitializationData = initializationNormalization?.data ?? initializationData
+        let rendition = HLSRendition(
             sourceURL: track.url,
             fallbackSourceURLs: track.fallbackURLs,
             mediaType: track.mediaType,
             quality: track.stream?.id,
             initialization: initialization,
-            initializationData: initializationData,
+            initializationData: normalizedInitializationData,
             references: references,
             targetDuration: max(references.map(\.duration).max() ?? durationHint ?? 1, 1),
             bandwidth: max(track.stream?.bandwidth ?? 0, 128_000),
@@ -3578,8 +3709,50 @@ struct LocalHLSBridge: Sendable {
             mediaTimeOffset: mediaTimeOffset,
             baseMediaDecodeTimeOffsetTicks: timelineOffset.baseMediaDecodeTimeTicks,
             dynamicRange: track.dynamicRange,
+            dolbyVisionConfiguration: dolbyVisionConfiguration,
             dimensions: track.stream?.hlsDimensions
         )
+        if let dolbyVisionConfiguration {
+            PlayerMetricsLog.logger.info(
+                "hlsBridgeDolbyVisionConfigured q=\(track.stream?.id ?? -1, privacy: .public) sourceCodec=\(rendition.codec, privacy: .public) box=\(dolbyVisionConfiguration.boxType, privacy: .public) profile=\(dolbyVisionConfiguration.profile, privacy: .public) level=\(dolbyVisionConfiguration.level, privacy: .public) compatibility=\(dolbyVisionConfiguration.baseLayerSignalCompatibilityID, privacy: .public) sampleEntry=\(initializationNormalization?.originalSampleEntryType ?? "-", privacy: .public) hlsSampleEntry=\(initializationNormalization?.hlsSampleEntryType ?? "-", privacy: .public) initRewrite=\(initializationNormalization?.didRewriteSampleEntry == true, privacy: .public) hlsCodec=\(rendition.hlsAdvertisedCodec, privacy: .public) videoRange=\(rendition.hlsVideoRangeValue ?? "-", privacy: .public) supplemental=\(rendition.hlsAdvertisedSupplementalCodec ?? "-", privacy: .public)"
+            )
+        }
+        return rendition
+    }
+
+    private nonisolated static func resolvedInitializationData(
+        _ existingData: Data?,
+        for track: HLSBridgeTrack,
+        initialization: HTTPByteRange,
+        from sourceURLs: [URL],
+        headers: [String: String]
+    ) async throws -> Data? {
+        guard existingData == nil,
+              track.mediaType.isVideo,
+              track.dynamicRange == .dolbyVision
+        else { return existingData }
+        return try await fetchByteRange(
+            initialization,
+            from: sourceURLs,
+            headers: headers,
+            policy: bootstrapFetchStrategy(urlCount: sourceURLs.count)
+        )
+    }
+
+    private nonisolated static func dolbyVisionConfiguration(
+        for track: HLSBridgeTrack,
+        initializationData: Data?
+    ) throws -> DolbyVisionCodecConfiguration? {
+        guard track.mediaType.isVideo,
+              track.dynamicRange == .dolbyVision
+        else { return nil }
+        guard let configuration = DolbyVisionCodecConfiguration.parse(from: initializationData) else {
+            PlayerMetricsLog.logger.error(
+                "hlsBridgeDolbyVisionRejected reason=missingConfiguration codec=\(track.stream?.codecs ?? "-", privacy: .public) q=\(track.stream?.id ?? -1, privacy: .public)"
+            )
+            throw PlayerEngineError.unsupportedMedia
+        }
+        return configuration
     }
 
     private nonisolated static func startupTimelineOffset(
@@ -3610,7 +3783,7 @@ struct LocalHLSBridge: Sendable {
             "video"
         }
         return [
-            "timeline-v9-bootstrap-init",
+            "timeline-v11-dv-init-normalize",
             mediaType,
             track.cacheIdentity,
             "\(initialization.start)-\(initialization.endInclusive)",
@@ -3642,7 +3815,7 @@ struct LocalHLSBridge: Sendable {
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: "&")
         return [
-            "route-plan-v1",
+            "route-plan-v3-dv-init-normalize",
             videoKeys.joined(separator: "@@"),
             audioKey,
             durationKey,
@@ -3689,27 +3862,43 @@ private struct HLSRendition: Sendable {
     let mediaTimeOffset: TimeInterval
     let baseMediaDecodeTimeOffsetTicks: UInt64
     let dynamicRange: BiliVideoDynamicRange
+    let dolbyVisionConfiguration: DolbyVisionCodecConfiguration?
     let dimensions: CGSize?
 
-    nonisolated var hlsAdvertisedSupplementalCodecAttribute: String {
-        guard dynamicRange != .dolbyVision else { return "" }
-        return hlsSupplementalCodecAttribute
+    nonisolated var hlsAdvertisedCodec: String {
+        guard dynamicRange == .dolbyVision,
+              let dolbyVisionConfiguration
+        else { return codec }
+        return dolbyVisionConfiguration.hlsAdvertisedCodec(baseLayerCodec: codec)
     }
 
-    nonisolated var hlsSupplementalCodecAttribute: String {
-        guard dynamicRange == .dolbyVision,
-              !codec.localizedCaseInsensitiveContains("dvh"),
-              !codec.localizedCaseInsensitiveContains("dvhe")
-        else { return "" }
+    nonisolated var hlsAdvertisedSupplementalCodecAttribute: String {
+        guard let hlsAdvertisedSupplementalCodec else { return "" }
+        return ",SUPPLEMENTAL-CODECS=\"\(hlsAdvertisedSupplementalCodec)\""
+    }
 
-        return ",SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\""
+    nonisolated var hlsAdvertisedSupplementalCodec: String? {
+        guard dynamicRange == .dolbyVision,
+              let dolbyVisionConfiguration,
+              dolbyVisionConfiguration.usesSupplementalCodecsAttribute
+        else { return nil }
+        return dolbyVisionConfiguration.supplementalCodecString
     }
 
     nonisolated var hlsVideoRangeAttribute: String {
+        guard let hlsVideoRangeValue else { return "" }
+        return ",VIDEO-RANGE=\(hlsVideoRangeValue)"
+    }
+
+    nonisolated var hlsVideoRangeValue: String? {
+        if dynamicRange == .dolbyVision {
+            guard let dolbyVisionConfiguration else { return nil }
+            return dolbyVisionConfiguration.hlsVideoRangeAttribute
+        }
         guard dynamicRange != .dolbyVision,
               let videoRange = dynamicRange.hlsVideoRangeAttribute
-        else { return "" }
-        return ",VIDEO-RANGE=\(videoRange)"
+        else { return nil }
+        return videoRange
     }
 
     nonisolated var hlsResolutionAttribute: String {
@@ -4486,6 +4675,7 @@ private actor HLSRenditionCache {
         let mediaType: String
         let quality: Int?
         let initialization: PersistedRange
+        let initializationData: Data?
         let references: [PersistedReference]
         let targetDuration: TimeInterval
         let bandwidth: Int
@@ -4493,6 +4683,7 @@ private actor HLSRenditionCache {
         let mediaTimeOffset: TimeInterval
         let baseMediaDecodeTimeOffsetTicks: UInt64
         let dynamicRange: String
+        let dolbyVisionConfiguration: PersistedDolbyVisionConfiguration?
         let dimensionsWidth: Double?
         let dimensionsHeight: Double?
 
@@ -4502,6 +4693,7 @@ private actor HLSRenditionCache {
             self.mediaType = rendition.mediaType.logLabel
             self.quality = rendition.quality
             self.initialization = PersistedRange(range: rendition.initialization)
+            self.initializationData = rendition.initializationData
             self.references = rendition.references.map(PersistedReference.init(reference:))
             self.targetDuration = rendition.targetDuration
             self.bandwidth = rendition.bandwidth
@@ -4509,6 +4701,7 @@ private actor HLSRenditionCache {
             self.mediaTimeOffset = rendition.mediaTimeOffset
             self.baseMediaDecodeTimeOffsetTicks = rendition.baseMediaDecodeTimeOffsetTicks
             self.dynamicRange = rendition.dynamicRange.rawValue
+            self.dolbyVisionConfiguration = rendition.dolbyVisionConfiguration.map(PersistedDolbyVisionConfiguration.init(configuration:))
             self.dimensionsWidth = rendition.dimensions.map { Double($0.width) }
             self.dimensionsHeight = rendition.dimensions.map { Double($0.height) }
         }
@@ -4528,7 +4721,7 @@ private actor HLSRenditionCache {
                 mediaType: resolvedMediaType,
                 quality: quality,
                 initialization: initialization.makeRange(),
-                initializationData: nil,
+                initializationData: initializationData,
                 references: references.map(\.makeReference),
                 targetDuration: targetDuration,
                 bandwidth: bandwidth,
@@ -4536,7 +4729,40 @@ private actor HLSRenditionCache {
                 mediaTimeOffset: mediaTimeOffset,
                 baseMediaDecodeTimeOffsetTicks: baseMediaDecodeTimeOffsetTicks,
                 dynamicRange: BiliVideoDynamicRange(rawValue: dynamicRange) ?? .sdr,
+                dolbyVisionConfiguration: dolbyVisionConfiguration?.makeConfiguration(),
                 dimensions: dimensions
+            )
+        }
+    }
+
+    private struct PersistedDolbyVisionConfiguration: Codable {
+        let boxType: String
+        let profile: Int
+        let level: Int
+        let rpuPresent: Bool
+        let enhancementLayerPresent: Bool
+        let baseLayerPresent: Bool
+        let baseLayerSignalCompatibilityID: Int
+
+        init(configuration: DolbyVisionCodecConfiguration) {
+            self.boxType = configuration.boxType
+            self.profile = configuration.profile
+            self.level = configuration.level
+            self.rpuPresent = configuration.rpuPresent
+            self.enhancementLayerPresent = configuration.enhancementLayerPresent
+            self.baseLayerPresent = configuration.baseLayerPresent
+            self.baseLayerSignalCompatibilityID = configuration.baseLayerSignalCompatibilityID
+        }
+
+        func makeConfiguration() -> DolbyVisionCodecConfiguration {
+            DolbyVisionCodecConfiguration(
+                boxType: boxType,
+                profile: profile,
+                level: level,
+                rpuPresent: rpuPresent,
+                enhancementLayerPresent: enhancementLayerPresent,
+                baseLayerPresent: baseLayerPresent,
+                baseLayerSignalCompatibilityID: baseLayerSignalCompatibilityID
             )
         }
     }
@@ -4743,97 +4969,17 @@ private actor LocalHLSBridgeInstanceCache {
     static let shared = LocalHLSBridgeInstanceCache()
 
     enum State: String, Sendable {
-        case hit
-        case pending
         case miss
     }
 
-    private let logger = Logger(subsystem: "cc.bili", category: "PlayerMetrics")
-    private let ttl: TimeInterval = 90
-    private let maxCount = 8
-    private var cache: [String: Entry] = [:]
-    private let pendingJoinTimeoutNanoseconds: UInt64 = 160_000_000
-    private var pendingBuilds: [String: PendingBuild] = [:]
-
     func cachedOrBuild(
-        for key: String,
+        for _: String,
         builder: @escaping @Sendable () async throws -> LocalHLSBridge
     ) async throws -> (bridge: LocalHLSBridge, state: State) {
-        trimExpired()
-        if let entry = cache[key] {
-            cache[key] = Entry(bridge: entry.bridge, date: Date())
-            logger.info("hlsBridgeCache hit")
-            return (entry.bridge, .hit)
-        }
-        if let pendingBuild = pendingBuilds[key] {
-            logger.info("hlsBridgeCache pending")
-            do {
-                let bridge = try await HLSCachePendingWaiter.value(
-                    of: pendingBuild.task,
-                    timeout: pendingJoinTimeoutNanoseconds
-                )
-                return (bridge, .pending)
-            } catch HLSCachePendingWaiter.Timeout.timedOut {
-                logger.info("hlsBridgeCache pending continue")
-                let bridge = try await pendingBuild.task.value
-                return (bridge, .pending)
-            } catch {
-                if pendingBuilds[key]?.id == pendingBuild.id {
-                    pendingBuilds[key] = nil
-                }
-                throw error
-            }
-        }
-
-        logger.info("hlsBridgeCache miss")
-        let pendingBuild = PendingBuild(task: Task.detached(priority: .userInitiated) {
-            try await builder()
-        })
-        pendingBuilds[key] = pendingBuild
-        do {
-            let bridge = try await pendingBuild.task.value
-            pendingBuilds[key] = nil
-            cache[key] = Entry(bridge: bridge, date: Date())
-            trimIfNeeded()
-            return (bridge, .miss)
-        } catch {
-            pendingBuilds[key] = nil
-            throw error
-        }
+        (try await builder(), .miss)
     }
 
-    func removeAll() {
-        pendingBuilds.values.forEach { $0.task.cancel() }
-        pendingBuilds.removeAll()
-        cache.removeAll()
-    }
-
-    private func trimExpired() {
-        let expiry = Date().addingTimeInterval(-ttl)
-        cache = cache.filter { $0.value.date >= expiry }
-    }
-
-    private func trimIfNeeded() {
-        trimExpired()
-        guard cache.count > maxCount else { return }
-        let keptKeys = Set(
-            cache
-                .sorted { $0.value.date > $1.value.date }
-                .prefix(maxCount)
-                .map(\.key)
-        )
-        cache = cache.filter { keptKeys.contains($0.key) }
-    }
-
-    private struct Entry {
-        let bridge: LocalHLSBridge
-        let date: Date
-    }
-
-    private struct PendingBuild {
-        let id = UUID()
-        let task: Task<LocalHLSBridge, Error>
-    }
+    func removeAll() {}
 }
 
 private actor HLSSourcePreferenceCache {

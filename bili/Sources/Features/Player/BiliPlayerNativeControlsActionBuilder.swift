@@ -4,15 +4,17 @@ struct BiliPlayerNativeControlsActionBuilder {
     let viewModel: PlayerStateViewModel
     let configuration: BiliPlayerViewConfiguration
     let visibilityActions: BiliPlayerPlaybackControlsVisibilityActions
+    let holdCurrentFrameForSeek: () -> Void
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
 
     var actions: PlayerNativePlaybackControlsActions {
         PlayerNativePlaybackControlsActions(
-            onScrubStart: { _ in
+            onScrubStart: { progress in
                 guard !viewModel.isTerminated else { return }
-                viewModel.beginUserScrubInteraction()
                 visibilityActions.markInteraction(keepsVisible: true)
+                prepareUserSeekWarmup(progress, true)
+                viewModel.beginUserScrubInteraction()
             },
             onScrubChanged: { progress in
                 guard !viewModel.isTerminated else { return }
@@ -24,7 +26,8 @@ struct BiliPlayerNativeControlsActionBuilder {
                     return
                 }
                 prepareUserSeekWarmup(progress, true)
-                viewModel.seekAfterUserScrub(to: progress)
+                holdCurrentFrameForSeek()
+                viewModel.seekAfterSliderCommit(to: progress)
                 resetPreparedScrubProgress()
                 visibilityActions.markInteraction()
             },

@@ -18,6 +18,12 @@ struct VideoDetailPlayerBackButton: View {
                 )
         }
         .biliPlayerCompactGlassCircle(metrics: controlMetrics)
+        .frame(width: 44, height: controlMetrics.controlHeight, alignment: .leading)
+        .biliPlayerExpandedHitTarget(horizontal: 0, vertical: verticalHitPadding)
         .accessibilityLabel("返回")
+    }
+
+    private var verticalHitPadding: CGFloat {
+        max((44 - controlMetrics.controlHeight) / 2, 8)
     }
 }

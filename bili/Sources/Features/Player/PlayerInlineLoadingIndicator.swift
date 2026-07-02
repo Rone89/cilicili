@@ -17,11 +17,8 @@ struct PlayerInlineLoadingIndicator: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.black.opacity(0.58), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(.white.opacity(0.10), lineWidth: 0.5)
-        }
+        .frame(height: 30)
+        .biliPlayerClearGlass(interactive: false, in: Capsule())
         .allowsHitTesting(false)
     }
 }

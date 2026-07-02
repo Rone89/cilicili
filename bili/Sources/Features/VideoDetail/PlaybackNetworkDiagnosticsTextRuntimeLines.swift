@@ -14,10 +14,19 @@ extension PlaybackNetworkDiagnosticsTextBuilder {
         lines.append("播放器状态：\(playerStateTitle)")
         lines.append("播放器引擎：\(playerViewModel?.engineDiagnostics.engineName ?? "未知")")
         lines.append("解码路径：\(playerViewModel?.engineDiagnostics.decodePath.title ?? "未知")")
-        lines.append("异步硬解：\(playerViewModel?.engineDiagnostics.asynchronousDecompressionEnabled == true ? "开启" : "关闭")")
-        if let diagnostics = playerViewModel?.engineDiagnostics,
-           diagnostics.hlsVideoVariantCount > 0 {
-            lines.append("HLS 档位：\(PlaybackNetworkDiagnosticFormat.hlsVariantText(diagnostics))")
+        if let diagnostics = playerViewModel?.engineDiagnostics {
+            lines.append("实际编码：\(diagnostics.codec ?? "未知")")
+            lines.append("请求硬解：\(diagnostics.hardwareDecodeRequested ? "是" : "否")")
+            lines.append("硬解兼容：\(PlaybackNetworkPlayerDiagnosticSnapshot.hardwareCompatibilityTitle(diagnostics.isHardwareDecodeCompatible))")
+            lines.append("异步硬解：\(diagnostics.asynchronousDecompressionEnabled ? "开启" : "关闭")")
+            if diagnostics.hlsVideoVariantCount > 0 {
+                lines.append("HLS 档位：\(PlaybackNetworkDiagnosticFormat.hlsVariantText(diagnostics))")
+            }
+        } else {
+            lines.append("实际编码：未知")
+            lines.append("请求硬解：未知")
+            lines.append("硬解兼容：未知")
+            lines.append("异步硬解：未知")
         }
         lines.append("准备耗时：\(PlaybackNetworkDiagnosticFormat.formattedMilliseconds(playerViewModel?.prepareElapsedMilliseconds))")
         lines.append("首帧耗时：\(PlaybackNetworkDiagnosticFormat.formattedMilliseconds(playerViewModel?.firstFrameElapsedMilliseconds))")

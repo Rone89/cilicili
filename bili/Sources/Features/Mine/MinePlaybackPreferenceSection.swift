@@ -30,7 +30,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             advancedPlaybackSettingsToggle
             if showsAdvancedPlaybackSettings {
                 playbackStreamSourcePicker
-                playerRenderingEnginePicker
                 playbackCDNPicker
                 playbackCustomCDNHostEditor
                 playbackCDNProbeRefreshPolicyPicker
@@ -141,20 +140,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             }
         } label: {
             Label("播放取流来源", systemImage: "antenna.radiowaves.left.and.right")
-        }
-        .pickerStyle(.navigationLink)
-    }
-
-    private var playerRenderingEnginePicker: some View {
-        Picker(selection: Binding(
-            get: { libraryStore.playerRenderingEnginePreference },
-            set: { libraryStore.setPlayerRenderingEnginePreference($0) }
-        )) {
-            ForEach(PlayerRenderingEnginePreference.allCases) { preference in
-                Text(preference.title).tag(preference)
-            }
-        } label: {
-            Label("播放内核", systemImage: "cpu")
         }
         .pickerStyle(.navigationLink)
     }

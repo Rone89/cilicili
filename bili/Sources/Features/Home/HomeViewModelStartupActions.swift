@@ -5,7 +5,9 @@ extension HomeViewModel {
         guard videos.isEmpty else { return }
         updateLastSeenMarkerIndex(nil)
         updateFeed([])
-        restoreCachedVideosIfAvailable()
+        if mode != .recommend {
+            restoreCachedVideosIfAvailable()
+        }
         if videos.isEmpty {
             state = .loading
         }

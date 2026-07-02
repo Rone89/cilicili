@@ -2,7 +2,7 @@ import XCTest
 @testable import bili
 
 final class DashStreamDispatcherTests: XCTestCase {
-    func testAutoPrefersAV1OverHEVCAndH264() {
+    func testAutoPrefersHEVCOverH264AndAV1() {
         let h264 = stream(codecs: "avc1.64002a", bandwidth: 8_000)
         let hevc = stream(codecs: "hev1.1.6.L120.90", bandwidth: 12_000)
         let av1 = stream(codecs: "av01.0.08M.08", bandwidth: 6_000)
@@ -13,10 +13,10 @@ final class DashStreamDispatcherTests: XCTestCase {
             kernel: .ksPlayer
         )
 
-        XCTAssertEqual(selected?.codecs, av1.codecs)
+        XCTAssertEqual(selected?.codecs, hevc.codecs)
     }
 
-    func testAutoPrefersAV1WhenAVPlayerKernelIsRequested() {
+    func testAutoPrefersHEVCWhenAVPlayerKernelIsRequested() {
         let h264 = stream(codecs: "avc1.64002a", bandwidth: 8_000)
         let hevc = stream(codecs: "hev1.1.6.L120.90", bandwidth: 12_000)
         let av1 = stream(codecs: "av01.0.08M.08", bandwidth: 6_000)
@@ -27,33 +27,24 @@ final class DashStreamDispatcherTests: XCTestCase {
             kernel: .avPlayer
         )
 
-        XCTAssertEqual(selected?.codecs, av1.codecs)
-    }
-
-    func testForceAV1FallsBackToHEVCThenH264() {
-        let h264 = stream(codecs: "avc1.64002a")
-        let hevc = stream(codecs: "hvc1.1.6.L120.90")
-
-        let selected = CoreVideoPlayerManager.selectBestStream(
-            from: [h264, hevc],
-            preference: .forceAV1
-        )
-
         XCTAssertEqual(selected?.codecs, hevc.codecs)
     }
 
-    func testForceAV1FallsBackToH264WhenOnlyH264Exists() {
+    func testAV1IsNotSelectedWhenItIsTheOnlyStream() {
         let h264 = stream(codecs: "avc1.64002a")
+        let av1 = stream(codecs: "av01.0.08M.08")
 
         let selected = CoreVideoPlayerManager.selectBestStream(
-            from: [h264],
-            preference: .forceAV1
+            from: [av1],
+            preference: .auto
         )
 
-        XCTAssertEqual(selected?.codecs, h264.codecs)
+        XCTAssertNil(selected)
+        XCTAssertEqual(VideoCodecPreference.forceAV1.normalizedForPlayback, .auto)
+        XCTAssertEqual(CoreVideoPlayerManager.selectBestStream(from: [h264, av1], preference: .forceAV1)?.codecs, h264.codecs)
     }
 
-    func testForceHEVCFallsBackToH264BeforeAV1() {
+    func testForceHEVCRejectsOtherCodecs() {
         let h264 = stream(codecs: "avc1.64002a")
         let av1 = stream(codecs: "av01.0.08M.08")
 
@@ -62,10 +53,10 @@ final class DashStreamDispatcherTests: XCTestCase {
             preference: .forceHEVC
         )
 
-        XCTAssertEqual(selected?.codecs, h264.codecs)
+        XCTAssertNil(selected)
     }
 
-    func testForceH264FallsBackToHEVCBeforeAV1() {
+    func testForceH264RejectsOtherCodecs() {
         let hevc = stream(codecs: "hev1.1.6.L120.90")
         let av1 = stream(codecs: "av01.0.08M.08")
 
@@ -74,12 +65,12 @@ final class DashStreamDispatcherTests: XCTestCase {
             preference: .forceH264
         )
 
-        XCTAssertEqual(selected?.codecs, hevc.codecs)
+        XCTAssertNil(selected)
     }
 
     func testSameCodecChoosesHigherBandwidth() {
-        let lower = stream(codecs: "av01.0.08M.08", bandwidth: 4_000)
-        let higher = stream(codecs: "av01.0.08M.08", bandwidth: 8_000)
+        let lower = stream(codecs: "hev1.1.6.L120.90", bandwidth: 4_000)
+        let higher = stream(codecs: "hev1.1.6.L120.90", bandwidth: 8_000)
 
         let selected = CoreVideoPlayerManager.selectBestStream(
             from: [lower, higher],

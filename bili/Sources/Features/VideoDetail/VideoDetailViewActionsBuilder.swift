@@ -8,6 +8,7 @@ struct VideoDetailViewActionsBuilder {
     let fullscreenCoordinator: VideoDetailFullscreenCoordinator
     let dismiss: DismissAction
     let onRequestClose: (() -> Void)?
+    let onPopOne: (() -> Void)?
 
     var actions: VideoDetailViewActions {
         VideoDetailViewActions(
@@ -29,7 +30,8 @@ struct VideoDetailViewActionsBuilder {
             holder: holder,
             fullscreenCoordinator: fullscreenCoordinator,
             dismiss: dismiss,
-            onRequestClose: onRequestClose
+            onRequestClose: onRequestClose,
+            onPopOne: onPopOne
         )
     }
 }

@@ -4,22 +4,9 @@ import OSLog
 extension VideoDetailViewModel {
     func shouldRefetchForPreferredQuality(_ data: PlayURLData) -> Bool {
         guard let preferredQuality = targetPlaybackPreferredQuality else { return false }
-        if [116, 74].contains(preferredQuality) {
-            let variants = data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference)
-            if variants.contains(where: {
-                $0.isPlayable
-                    && $0.quality == preferredQuality
-                    && variantFrameRate($0) >= 50
-            }) {
-                return false
-            }
-            let advertisesPreferredQuality = data.acceptQuality?.contains(preferredQuality) == true
-                || data.supportFormats?.contains(where: { $0.quality == preferredQuality }) == true
-                || data.dash?.video?.contains(where: { $0.id == preferredQuality }) == true
-                || data.quality == preferredQuality
-            if advertisesPreferredQuality {
-                return true
-            }
+        let variants = data.playVariants(cdnPreference: libraryStore.effectivePlaybackCDNPreference)
+        if variants.contains(where: { $0.satisfiesPreferredQuality(preferredQuality) }) {
+            return false
         }
         return data.shouldRefetchForPreferredQuality(preferredQuality)
     }

@@ -13,7 +13,7 @@ struct BiliPlayerSpeedBoostActions {
             isSurfacePlaying: surfaceState.isPlaying
         ) {
             visibilityActions.cancelAutoHide()
-            visibilityActions.playbackControlsVisibility.hide(animated: true, duration: 0.12)
+            visibilityActions.playbackControlsVisibility.hide(animated: true)
         }
     }
 

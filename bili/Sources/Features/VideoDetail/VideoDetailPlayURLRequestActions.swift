@@ -57,9 +57,7 @@ extension VideoDetailViewModel {
                 )
             }
             guard isCurrentPlaybackContext(bvid: bvid, cid: cid, page: page) else { return data }
-            guard !shouldRefetchForPreferredQuality(supplemented)
-                    || supplemented.highestPlayableQuality > data.highestPlayableQuality
-            else { return data }
+            guard !shouldRefetchForPreferredQuality(supplemented) else { return data }
             PlayerMetricsLog.record(
                 .qualitySupplement,
                 metricsID: detail.bvid,

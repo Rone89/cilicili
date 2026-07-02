@@ -103,6 +103,7 @@ enum PlayerRenderingEnginePreference: String, CaseIterable, Identifiable, Codabl
     case ksPlayer
 
     nonisolated static let storageKey = "cc.bili.playback.renderingEnginePreference.v1"
+    nonisolated static let defaultValue: PlayerRenderingEnginePreference = .avPlayer
 
     nonisolated var id: String { rawValue }
 
@@ -120,18 +121,26 @@ enum PlayerRenderingEnginePreference: String, CaseIterable, Identifiable, Codabl
     nonisolated var detail: String {
         switch self {
         case .automatic:
-            return "默认使用 KSPlayer，保留 AVPlayer 作为系统解码兜底。"
+            return "使用系统 AVPlayer 硬解播放路径。"
         case .avPlayer:
-            return "强制使用系统 AVPlayer 播放内核，不执行 KSPlayer 自动回退。"
+            return "使用系统 AVPlayer 播放内核，不执行 KSPlayer 自动回退。"
         case .ksPlayer:
-            return "强制使用 KSPlayer 播放内核，适合验证自定义解码路径。"
+            return "旧版自定义内核，当前正式播放路径已停用。"
+        }
+    }
+
+    nonisolated var normalizedForFormalPlayback: PlayerRenderingEnginePreference {
+        switch self {
+        case .automatic, .avPlayer, .ksPlayer:
+            return .avPlayer
         }
     }
 
     nonisolated static func stored(in userDefaults: UserDefaults = .standard) -> PlayerRenderingEnginePreference {
-        PlayerRenderingEnginePreference(
+        let preference = PlayerRenderingEnginePreference(
             rawValue: userDefaults.string(forKey: storageKey) ?? ""
-        ) ?? .ksPlayer
+        ) ?? defaultValue
+        return preference.normalizedForFormalPlayback
     }
 }
 

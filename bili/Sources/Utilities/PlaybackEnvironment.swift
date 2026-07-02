@@ -212,18 +212,32 @@ nonisolated enum PlaybackCodecPolicy {
     }
 
     nonisolated static var canDecodeAV1: Bool {
+        return false
+    }
+
+    nonisolated static var canDecodeHDRVideo: Bool {
 #if targetEnvironment(simulator)
         return false
 #else
-        VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+        return canDecodeHEVC
 #endif
     }
 
-    nonisolated static var canUseKSPlayerDirectAV1VideoToolbox: Bool {
+    nonisolated static func canDecode(dynamicRange: BiliVideoDynamicRange) -> Bool {
+        switch dynamicRange {
+        case .sdr:
+            return true
+        case .hdr10, .hlg, .dolbyVision:
+            return canDecodeHDRVideo
+        }
+    }
+
+    nonisolated static func unsupportedDynamicRangeReason(for dynamicRange: BiliVideoDynamicRange) -> String? {
+        guard !canDecode(dynamicRange: dynamicRange) else { return nil }
 #if targetEnvironment(simulator)
-        return false
+        return "模拟器暂不支持 HDR/Dolby"
 #else
-        VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+        return "当前设备暂不可播"
 #endif
     }
 

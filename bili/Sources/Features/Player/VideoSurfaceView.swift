@@ -8,6 +8,7 @@ struct VideoSurfaceView: UIViewRepresentable {
     let isPictureInPictureEnabled: Bool
     var disablesImplicitLayoutAnimations = false
     var usesLiveSurfaceDuringLayoutTransition = false
+    var isLayoutTransitioningForSurfaceHandoff: Bool?
 
     func makeUIView(context _: Context) -> VideoSurfaceContainerView {
         let view = VideoSurfaceContainerView()
@@ -15,7 +16,7 @@ struct VideoSurfaceView: UIViewRepresentable {
         view.disablesImplicitLayoutAnimations = disablesImplicitLayoutAnimations
         view.configureSurfaceHandoff(
             usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
-            isLayoutTransitioning: disablesImplicitLayoutAnimations
+            isLayoutTransitioning: isLayoutTransitioningForSurfaceHandoff ?? disablesImplicitLayoutAnimations
         )
         view.configureBoundsRefresh(for: viewModel)
         view.setPictureInPictureEnabled(isPictureInPictureEnabled)
@@ -33,7 +34,7 @@ struct VideoSurfaceView: UIViewRepresentable {
         uiView.disablesImplicitLayoutAnimations = disablesImplicitLayoutAnimations
         uiView.configureSurfaceHandoff(
             usesLiveSurfaceDuringLayoutTransition: usesLiveSurfaceDuringLayoutTransition,
-            isLayoutTransitioning: disablesImplicitLayoutAnimations
+            isLayoutTransitioning: isLayoutTransitioningForSurfaceHandoff ?? disablesImplicitLayoutAnimations
         )
         guard !viewModel.isTerminated else {
             uiView.detachPlayerSurface()

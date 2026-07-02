@@ -7,45 +7,42 @@ struct BiliPlayerControlsOverlayLayer: View {
 
     var body: some View {
         let safeAreaInsets = PlayerControlsSafeAreaInsets.current(isFullscreenActive: state.isFullscreenActive)
+        let topInset = max(safeAreaInsets.top, state.contentInsets.top)
+        let leadingInset = max(safeAreaInsets.leading, state.contentInsets.leading)
+        let bottomInset = max(safeAreaInsets.bottom, state.contentInsets.bottom)
+        let trailingInset = max(safeAreaInsets.trailing, state.contentInsets.trailing)
         ZStack(alignment: .bottom) {
             if state.showsActivePlaybackControls, let topLeadingControlsAccessory = state.topLeadingControlsAccessory {
                 topLeadingControlsAccessory
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, topControlsPadding + safeAreaInsets.top)
-                    .padding(.leading, horizontalControlsPadding + safeAreaInsets.leading)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+                    .padding(.top, topControlsPadding + topInset)
+                    .padding(.leading, horizontalControlsPadding + leadingInset)
+                    .transition(.opacity)
                     .zIndex(8)
             }
 
             if state.showsActivePlaybackControls, let topTrailingControlsAccessory = state.topTrailingControlsAccessory {
                 topTrailingControlsAccessory
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, topControlsPadding + safeAreaInsets.top)
-                    .padding(.trailing, horizontalControlsPadding + safeAreaInsets.trailing)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                    .padding(.top, topControlsPadding + topInset)
+                    .padding(.trailing, horizontalControlsPadding + trailingInset)
+                    .transition(.opacity)
                     .zIndex(8)
             }
 
             if state.showsActivePlaybackControls {
-                BiliPlayerControlsBottomScrim(
-                    presentation: state.presentation,
-                    isFullscreenActive: state.isFullscreenActive,
-                    safeAreaBottomInset: safeAreaInsets.bottom,
-                    bottomLift: state.controlsBottomLift
-                )
-                .transition(.opacity)
-                .zIndex(6)
-
                 playbackControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.leading, horizontalControlsPadding + safeAreaInsets.leading)
-                    .padding(.trailing, horizontalControlsPadding + safeAreaInsets.trailing)
-                    .padding(.bottom, bottomControlsPadding + state.controlsBottomLift + safeAreaInsets.bottom)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .padding(.leading, horizontalControlsPadding + leadingInset)
+                    .padding(.trailing, horizontalControlsPadding + trailingInset)
+                    .padding(.bottom, bottomControlsPadding + state.controlsBottomLift + bottomInset)
+                    .transition(.opacity)
                     .zIndex(7)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(state.playbackControlsOpacity)
+        .allowsHitTesting(state.playbackControlsAllowsHitTesting)
     }
 
     private var usesFullscreenChromeSpacing: Bool {
@@ -62,33 +59,6 @@ struct BiliPlayerControlsOverlayLayer: View {
 
     private var bottomControlsPadding: CGFloat {
         usesFullscreenChromeSpacing ? 14 : 8
-    }
-}
-
-private struct BiliPlayerControlsBottomScrim: View {
-    let presentation: BiliPlayerPresentation
-    let isFullscreenActive: Bool
-    let safeAreaBottomInset: CGFloat
-    let bottomLift: CGFloat
-
-    private var height: CGFloat {
-        let baseHeight: CGFloat = (presentation == .embedded && !isFullscreenActive) ? 44 : 52
-        return baseHeight + max(bottomLift, 0) + safeAreaBottomInset
-    }
-
-    var body: some View {
-        LinearGradient(
-            colors: [
-                .clear,
-                .black.opacity(0.20)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: height)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 

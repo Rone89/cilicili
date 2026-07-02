@@ -48,7 +48,7 @@ struct HLSBridgeFailureReason: Sendable, Equatable {
         }
     }
 
-    var allowsAVPlayerToKSFallback: Bool {
+    var isRecoverableByRebuild: Bool {
         switch category {
         case .cancelled, .authDenied, .urlExpired, .rateLimited:
             return false

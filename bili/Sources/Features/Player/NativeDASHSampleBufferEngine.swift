@@ -22,18 +22,17 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     private var currentMuted = false
     private var currentRate: Double = 1
     private var preferredPeakBitRate: Double?
+    private var isTemporaryAudioSuppressed = false
     private var isPictureInPictureEnabled = false
     private var wantsPlayback = false
     private var currentSource: PlayerStreamSource?
     private var didFallbackFromNativeDASHForCurrentSource = false
-    private var didFallbackFromKSPlayerForCurrentSource = false
-    private var didFallbackFromAVPlayerForCurrentSource = false
     private var runtimeFallbackTask: Task<Void, Never>?
     private var playbackGeneration = 0
     private var isStopped = true
 
     private enum AVPlayerFallbackDecision: String {
-        case fallbackToKSPlayer = "ksPlayer"
+        case failAVPlayerOnly = "avPlayerOnly"
         case skipCancelled = "cancelled"
         case skipRefreshPlayURL = "refreshPlayURL"
         case skipAuthRefresh = "authRefresh"
@@ -45,22 +44,15 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     var onLoadingProgressChange: (@MainActor (Double) -> Void)?
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)?
 
-    init(preferredKernel: PlayerKernelType = .ksPlayer) {
-        self.preferredKernel = preferredKernel
-        activeEngine = Self.makeEngine(for: preferredKernel)
+    init(preferredKernel: PlayerKernelType = .avPlayer) {
+        self.preferredKernel = preferredKernel.normalizedForFormalPlayback
+        activeEngine = Self.makeEngine(for: self.preferredKernel)
         bind(activeEngine)
     }
 
     var hasMedia: Bool { !isStopped && activeEngine.hasMedia }
     var needsMediaRecovery: Bool { !isStopped && activeEngine.needsMediaRecovery }
-    var playbackErrorMessage: String? {
-        if activeEngine is AVPlayerHLSBridgeEngine,
-           didFallbackFromAVPlayerForCurrentSource,
-           runtimeFallbackTask != nil {
-            return nil
-        }
-        return activeEngine.playbackErrorMessage
-    }
+    var playbackErrorMessage: String? { activeEngine.playbackErrorMessage }
     var lastFailureReason: HLSBridgeFailureReason? { activeEngine.lastFailureReason }
     var supportsPictureInPicture: Bool { activeEngine.supportsPictureInPicture }
     var isPictureInPictureActive: Bool { activeEngine.isPictureInPictureActive }
@@ -145,71 +137,36 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         isStopped = false
         currentSource = source
         didFallbackFromNativeDASHForCurrentSource = false
-        didFallbackFromKSPlayerForCurrentSource = false
-        didFallbackFromAVPlayerForCurrentSource = false
         runtimeFallbackTask?.cancel()
         runtimeFallbackTask = nil
 
         let effectiveKernel = preferredKernel(for: source)
 
-        switch effectiveKernel {
-        case .ksPlayer:
-            if !(activeEngine is KSPlayerRenderingEngine) {
-                switchActiveEngine(to: KSPlayerRenderingEngine())
+        if !(activeEngine is AVPlayerHLSBridgeEngine) {
+            switchActiveEngine(to: AVPlayerHLSBridgeEngine())
+        }
+        PlayerMetricsLog.logger.info(
+            "adaptiveEngineSelected path=avPlayer reason=\(self.selectionReason(for: source, effectiveKernel: effectiveKernel), privacy: .public) id=\(source.metricsID, privacy: .public)"
+        )
+        do {
+            try await activeEngine.prepare(source: source)
+            guard !Task.isCancelled, generation == playbackGeneration else {
+                throw CancellationError()
             }
-            PlayerMetricsLog.logger.info(
-                "adaptiveEngineSelected path=ksPlayer reason=\(self.selectionReason(for: source, effectiveKernel: effectiveKernel), privacy: .public) id=\(source.metricsID, privacy: .public)"
+        } catch {
+            guard !Task.isCancelled, generation == playbackGeneration else {
+                throw CancellationError()
+            }
+            try await fallbackFromAVPlayerPrepareFailure(
+                source: source,
+                error: error,
+                generation: generation
             )
-            do {
-                try await activeEngine.prepare(source: source)
-                guard !Task.isCancelled, generation == playbackGeneration else {
-                    throw CancellationError()
-                }
-            } catch {
-                guard !Task.isCancelled, generation == playbackGeneration else {
-                    throw CancellationError()
-                }
-                try await fallbackFromKSPlayerPrepareFailure(
-                    source: source,
-                    error: error,
-                    generation: generation
-                )
-            }
-        case .avPlayer:
-            if !(activeEngine is AVPlayerHLSBridgeEngine) {
-                switchActiveEngine(to: AVPlayerHLSBridgeEngine())
-            }
-            PlayerMetricsLog.logger.info(
-                "adaptiveEngineSelected path=avPlayer reason=\(self.selectionReason(for: source, effectiveKernel: effectiveKernel), privacy: .public) id=\(source.metricsID, privacy: .public)"
-            )
-            do {
-                try await activeEngine.prepare(source: source)
-                guard !Task.isCancelled, generation == playbackGeneration else {
-                    throw CancellationError()
-                }
-            } catch {
-                guard !Task.isCancelled, generation == playbackGeneration else {
-                    throw CancellationError()
-                }
-                try await fallbackFromAVPlayerPrepareFailure(
-                    source: source,
-                    error: error,
-                    generation: generation
-                )
-            }
         }
     }
 
-    private func preferredKernel(for source: PlayerStreamSource) -> PlayerKernelType {
-        guard preferredKernel == .ksPlayer,
-              let stream = source.videoStream
-        else {
-            return preferredKernel
-        }
-        return PlayerKernelPlaybackSupport.preferredDirectKernel(
-            for: stream,
-            requestedKernel: preferredKernel
-        )
+    private func preferredKernel(for _: PlayerStreamSource) -> PlayerKernelType {
+        .avPlayer
     }
 
     private func selectionReason(
@@ -217,19 +174,11 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         effectiveKernel: PlayerKernelType
     ) -> String {
         guard let stream = source.videoStream else { return "preferredKernel" }
-        if preferredKernel == .ksPlayer,
-           effectiveKernel == .avPlayer,
-           stream.isAV1VideoCodec
-        {
-            return "av1SystemPipeline"
+        if effectiveKernel == .avPlayer,
+           stream.isAV1VideoCodec {
+            return "av1AVPlayerHardwarePipeline"
         }
-        if preferredKernel == .ksPlayer,
-           effectiveKernel == .ksPlayer,
-           stream.isAV1VideoCodec
-        {
-            return "av1KSPlayerVideoToolbox"
-        }
-        return "preferredKernel"
+        return "avPlayerOnly"
     }
 
     func play() {
@@ -263,7 +212,6 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         runtimeFallbackTask = nil
         currentSource = nil
         didFallbackFromNativeDASHForCurrentSource = false
-        didFallbackFromAVPlayerForCurrentSource = false
         isStopped = true
         activeEngine.stop()
     }
@@ -279,13 +227,19 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func setVolume(_ volume: Float) {
-        currentVolume = volume
-        activeEngine.setVolume(volume)
+        currentVolume = min(max(volume, 0), 1)
+        activeEngine.setVolume(currentVolume)
+        if isTemporaryAudioSuppressed {
+            activeEngine.setTemporaryAudioSuppressed(true)
+        }
     }
 
     func setMuted(_ isMuted: Bool) {
         currentMuted = isMuted
         activeEngine.setMuted(isMuted)
+        if isTemporaryAudioSuppressed {
+            activeEngine.setTemporaryAudioSuppressed(true)
+        }
     }
 
     func setQualityControls(_ controls: PlayerQualityControls?) {
@@ -294,6 +248,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func setTemporaryAudioSuppressed(_ isSuppressed: Bool) {
+        isTemporaryAudioSuppressed = isSuppressed
         activeEngine.setTemporaryAudioSuppressed(isSuppressed)
     }
 
@@ -332,22 +287,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
             updateCurrentSourceResumeTime(appliedTime)
             return appliedTime
         }
-        guard engine === activeEngine,
-              engine is KSPlayerRenderingEngine,
-              let currentSource,
-              let fallbackTargetTime = interactiveSeekFallbackTargetTime(
-                  toProgress: progress,
-                  duration: duration,
-                  source: currentSource
-              )
-        else {
-            return nil
-        }
-        return await fallbackFromKSPlayerInteractiveSeekFailure(
-            source: currentSource,
-            targetDisplayTime: fallbackTargetTime,
-            generation: generation
-        )
+        return nil
     }
 
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot {
@@ -405,6 +345,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         engine.setVideoGravity(videoGravity)
         engine.setVolume(currentVolume)
         engine.setMuted(currentMuted)
+        engine.setTemporaryAudioSuppressed(isTemporaryAudioSuppressed)
         engine.setPlaybackRate(currentRate)
         engine.setPreferredPeakBitRate(preferredPeakBitRate)
         engine.setPictureInPictureEnabled(isPictureInPictureEnabled)
@@ -446,7 +387,6 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
             else { return }
             if case .failed(let message) = state,
                (self.fallbackFromNativeRuntimeFailure(message: message)
-                || self.fallbackFromKSPlayerRuntimeFailure(message: message)
                 || self.fallbackFromAVPlayerRuntimeFailure(message: message)) {
                 return
             }
@@ -479,141 +419,9 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         }
     }
 
-    private func interactiveSeekFallbackTargetTime(
-        toProgress progress: Double,
-        duration: TimeInterval?,
-        source: PlayerStreamSource
-    ) -> TimeInterval? {
-        let clampedProgress = progress.isFinite ? min(max(progress, 0), 1) : 0
-        let snapshot = activeEngine.snapshot(durationHint: source.durationHint)
-        let resolvedDuration = duration ?? snapshot.duration ?? source.durationHint
-        if let resolvedDuration,
-           resolvedDuration.isFinite,
-           resolvedDuration > 0
-        {
-            return clampedProgress * resolvedDuration
-        }
-        if let snapshotTime = snapshot.currentTime,
-           snapshotTime.isFinite,
-           snapshotTime >= 0
-        {
-            return snapshotTime
-        }
-        guard source.resumeTime.isFinite else { return nil }
-        return max(source.resumeTime, 0)
-    }
-
-    private func fallbackFromKSPlayerInteractiveSeekFailure(
-        source: PlayerStreamSource,
-        targetDisplayTime: TimeInterval,
-        generation: Int
-    ) async -> TimeInterval? {
-        guard targetDisplayTime.isFinite, targetDisplayTime >= 0 else { return nil }
-        let fallbackSource = source.withResumeTime(targetDisplayTime)
-        let startedAt = CACurrentMediaTime()
-        currentSource = fallbackSource
-        didFallbackFromKSPlayerForCurrentSource = true
-        runtimeFallbackTask?.cancel()
-        runtimeFallbackTask = nil
-
-        PlayerMetricsLog.logger.error(
-            "ksPlayerInteractiveSeekFailed fallback=avPlayer id=\(fallbackSource.metricsID, privacy: .public) target=\(targetDisplayTime, format: .fixed(precision: 2), privacy: .public) wantsPlayback=\(self.wantsPlayback, privacy: .public)"
-        )
-        PlayerMetricsLog.record(
-            .network,
-            metricsID: fallbackSource.metricsID,
-            title: fallbackSource.title,
-            message: "fallback ksPlayer->avPlayer interactiveSeek target=\(String(format: "%.2fs", targetDisplayTime)) codec=\(fallbackSource.videoStream?.codecLabel ?? "-")"
-        )
-        onPlaybackStateChange?(.buffering)
-        switchActiveEngine(to: AVPlayerHLSBridgeEngine())
-
-        do {
-            try await activeEngine.prepare(source: fallbackSource)
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else { return nil }
-            if wantsPlayback {
-                activeEngine.play()
-            }
-            updateCurrentSourceResumeTime(targetDisplayTime)
-            recordInteractiveSeekFallbackRecovery(
-                source: fallbackSource,
-                targetDisplayTime: targetDisplayTime,
-                elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: startedAt),
-                recoverySource: "ksplayer->avplayer"
-            )
-            return targetDisplayTime
-        } catch {
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else { return nil }
-            do {
-                try await fallbackFromAVPlayerPrepareFailure(
-                    source: fallbackSource,
-                    error: error,
-                    generation: generation
-                )
-                guard !Task.isCancelled,
-                      !isStopped,
-                      generation == playbackGeneration
-                else { return nil }
-                if wantsPlayback {
-                    activeEngine.play()
-                }
-                updateCurrentSourceResumeTime(targetDisplayTime)
-                let recoverySource = activeEngine is KSPlayerRenderingEngine
-                    ? "ksplayer->avplayer->ksplayer"
-                    : "ksplayer->avplayer"
-                recordInteractiveSeekFallbackRecovery(
-                    source: fallbackSource,
-                    targetDisplayTime: targetDisplayTime,
-                    elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: startedAt),
-                    recoverySource: recoverySource
-                )
-                return targetDisplayTime
-            } catch {
-                guard !Task.isCancelled,
-                      !isStopped,
-                      generation == playbackGeneration
-                else { return nil }
-                PlayerMetricsLog.logger.error(
-                    "ksPlayerInteractiveSeekFallbackFailed id=\(fallbackSource.metricsID, privacy: .public) target=\(targetDisplayTime, format: .fixed(precision: 2), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-                PlayerMetricsLog.record(
-                    .seekRecovery,
-                    metricsID: fallbackSource.metricsID,
-                    title: fallbackSource.title,
-                    message: "scrub-kernel-fallback recovered=false target=\(String(format: "%.2fs", targetDisplayTime)) current=\(String(format: "%.2fs", source.resumeTime)) total=\(String(format: "%.0fms", PlayerMetricsLog.elapsedMilliseconds(since: startedAt))) source=ksplayer->avplayer"
-                )
-                return nil
-            }
-        }
-    }
-
-    private func recordInteractiveSeekFallbackRecovery(
-        source: PlayerStreamSource,
-        targetDisplayTime: TimeInterval,
-        elapsedMilliseconds: Double,
-        recoverySource: String
-    ) {
-        let elapsedMessage = String(format: "%.0fms", elapsedMilliseconds)
-        let targetMessage = String(format: "%.2fs", targetDisplayTime)
-        PlayerMetricsLog.record(
-            .seekRecovery,
-            metricsID: source.metricsID,
-            title: source.title,
-            message: "scrub-kernel-fallback recovered=true target=\(targetMessage) current=\(targetMessage) total=\(elapsedMessage) engine=\(elapsedMessage) source=\(recoverySource)"
-        )
-    }
-
     private static func makeEngine(for kernel: PlayerKernelType) -> PlayerRenderingEngine {
         switch kernel {
-        case .ksPlayer:
-            return KSPlayerRenderingEngine()
-        case .avPlayer:
+        case .ksPlayer, .avPlayer:
             return AVPlayerHLSBridgeEngine()
         }
     }
@@ -688,186 +496,18 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
     private func fallbackFromAVPlayerRuntimeFailure(message: String?) -> Bool {
         guard !isStopped,
               activeEngine is AVPlayerHLSBridgeEngine,
-              !didFallbackFromAVPlayerForCurrentSource,
               let currentSource
         else { return false }
         let failureReason = activeEngine.lastFailureReason
         let decision = avPlayerFallbackDecision(for: failureReason)
-        guard decision == .fallbackToKSPlayer else {
-            recordAVPlayerFallbackDecision(
-                decision,
-                source: currentSource,
-                origin: "runtime",
-                reason: failureReason,
-                message: message
-            )
-            return false
-        }
-        didFallbackFromAVPlayerForCurrentSource = true
-        let fallbackSnapshot = activeEngine.snapshot(durationHint: currentSource.durationHint)
-        let fallbackTime = fallbackSnapshot.currentTime.flatMap { time -> TimeInterval? in
-            guard time.isFinite, time > 0.35 else { return nil }
-            return time
-        } ?? currentSource.resumeTime
-        let fallbackSource = currentSource.withResumeTime(fallbackTime)
-        self.currentSource = fallbackSource
-        let generation = playbackGeneration
-        runtimeFallbackTask?.cancel()
-        runtimeFallbackTask = Task { @MainActor [weak self] in
-            guard let self,
-                  !Task.isCancelled,
-                  !self.isStopped,
-                  generation == self.playbackGeneration
-            else { return }
-            defer { self.runtimeFallbackTask = nil }
-            PlayerMetricsLog.logger.error(
-                "avPlayerRuntimeFailed fallback=ksPlayer id=\(fallbackSource.metricsID, privacy: .public) time=\(fallbackTime, format: .fixed(precision: 2), privacy: .public) wantsPlayback=\(self.wantsPlayback, privacy: .public) error=\((message ?? "-"), privacy: .public)"
-            )
-            PlayerMetricsLog.record(
-                .network,
-                metricsID: fallbackSource.metricsID,
-                title: fallbackSource.title,
-                message: "fallback avPlayer->ksPlayer runtime time=\(String(format: "%.2fs", fallbackTime)) \(self.failureReasonDescription(failureReason)) error=\(message ?? "-")"
-            )
-            self.onPlaybackStateChange?(.buffering)
-            self.switchActiveEngine(to: KSPlayerRenderingEngine())
-            do {
-                try await self.activeEngine.prepare(source: fallbackSource)
-                guard !Task.isCancelled,
-                      !self.isStopped,
-                      generation == self.playbackGeneration
-                else { return }
-                if self.wantsPlayback {
-                    self.activeEngine.play()
-                }
-            } catch {
-                guard !Task.isCancelled,
-                      !self.isStopped,
-                      generation == self.playbackGeneration
-                else { return }
-                PlayerMetricsLog.logger.error(
-                    "ksPlayerFallbackPrepareFailed origin=avPlayerRuntime id=\(fallbackSource.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-                PlayerMetricsLog.record(
-                    .failed,
-                    metricsID: fallbackSource.metricsID,
-                    title: fallbackSource.title,
-                    message: "fallback ksPlayer failed \(error.localizedDescription)"
-                )
-                self.onPlaybackStateChange?(.failed(error.localizedDescription))
-            }
-        }
-        return true
-    }
-
-    private func fallbackFromKSPlayerRuntimeFailure(message: String?) -> Bool {
-        guard !isStopped,
-              activeEngine is KSPlayerRenderingEngine,
-              !didFallbackFromKSPlayerForCurrentSource,
-              let currentSource
-        else { return false }
-        didFallbackFromKSPlayerForCurrentSource = true
-        let fallbackSnapshot = activeEngine.snapshot(durationHint: currentSource.durationHint)
-        let fallbackTime = fallbackSnapshot.currentTime.flatMap { time -> TimeInterval? in
-            guard time.isFinite, time > 0.35 else { return nil }
-            return time
-        } ?? currentSource.resumeTime
-        let fallbackSource = currentSource.withResumeTime(fallbackTime)
-        self.currentSource = fallbackSource
-        let generation = playbackGeneration
-        runtimeFallbackTask?.cancel()
-        runtimeFallbackTask = Task { @MainActor [weak self] in
-            guard let self,
-                  !Task.isCancelled,
-                  !self.isStopped,
-                  generation == self.playbackGeneration
-            else { return }
-            defer { self.runtimeFallbackTask = nil }
-            PlayerMetricsLog.logger.error(
-                "ksPlayerRuntimeFailed fallback=avPlayer id=\(fallbackSource.metricsID, privacy: .public) time=\(fallbackTime, format: .fixed(precision: 2), privacy: .public) wantsPlayback=\(self.wantsPlayback, privacy: .public) error=\((message ?? "-"), privacy: .public)"
-            )
-            PlayerMetricsLog.record(
-                .network,
-                metricsID: fallbackSource.metricsID,
-                title: fallbackSource.title,
-                message: "fallback ksPlayer->avPlayer runtime time=\(String(format: "%.2fs", fallbackTime)) error=\(message ?? "-")"
-            )
-            self.onPlaybackStateChange?(.buffering)
-            self.switchActiveEngine(to: AVPlayerHLSBridgeEngine())
-            do {
-                try await self.activeEngine.prepare(source: fallbackSource)
-                guard !Task.isCancelled,
-                      !self.isStopped,
-                      generation == self.playbackGeneration
-                else { return }
-                if self.wantsPlayback {
-                    self.activeEngine.play()
-                }
-            } catch {
-                guard !Task.isCancelled,
-                      !self.isStopped,
-                      generation == self.playbackGeneration
-                else { return }
-                PlayerMetricsLog.logger.error(
-                    "avPlayerFallbackPrepareFailed origin=ksPlayerRuntime id=\(fallbackSource.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-                PlayerMetricsLog.record(
-                    .failed,
-                    metricsID: fallbackSource.metricsID,
-                    title: fallbackSource.title,
-                    message: "fallback avPlayer failed \(error.localizedDescription)"
-                )
-                self.onPlaybackStateChange?(.failed(error.localizedDescription))
-            }
-        }
-        return true
-    }
-
-    private func fallbackFromKSPlayerPrepareFailure(
-        source: PlayerStreamSource,
-        error: Error,
-        generation: Int
-    ) async throws {
-        guard !didFallbackFromKSPlayerForCurrentSource else {
-            throw error
-        }
-        didFallbackFromKSPlayerForCurrentSource = true
-        PlayerMetricsLog.logger.error(
-            "ksPlayerPrepareFailed fallback=avPlayer id=\(source.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+        recordAVPlayerFallbackDecision(
+            decision,
+            source: currentSource,
+            origin: "runtime",
+            reason: failureReason,
+            message: message
         )
-        PlayerMetricsLog.record(
-            .network,
-            metricsID: source.metricsID,
-            title: source.title,
-            message: "fallback ksPlayer->avPlayer prepare error=\(error.localizedDescription)"
-        )
-        switchActiveEngine(to: AVPlayerHLSBridgeEngine())
-        do {
-            try await activeEngine.prepare(source: source)
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else {
-                throw CancellationError()
-            }
-        } catch {
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else {
-                throw CancellationError()
-            }
-            PlayerMetricsLog.logger.error(
-                "avPlayerFallbackPrepareFailed origin=ksPlayerPrepare id=\(source.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
-            PlayerMetricsLog.record(
-                .failed,
-                metricsID: source.metricsID,
-                title: source.title,
-                message: "fallback avPlayer failed \(error.localizedDescription)"
-            )
-            throw error
-        }
+        return false
     }
 
     private func fallbackFromAVPlayerPrepareFailure(
@@ -875,65 +515,26 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         error: Error,
         generation: Int
     ) async throws {
-        guard !didFallbackFromAVPlayerForCurrentSource else {
-            throw error
-        }
         let failureReason = activeEngine.lastFailureReason ?? HLSBridgeRemoteFailure.reason(for: error)
         let decision = avPlayerFallbackDecision(for: failureReason)
-        guard decision == .fallbackToKSPlayer else {
-            recordAVPlayerFallbackDecision(
-                decision,
-                source: source,
-                origin: "prepare",
-                reason: failureReason,
-                message: error.localizedDescription
-            )
-            throw error
-        }
-        didFallbackFromAVPlayerForCurrentSource = true
-        PlayerMetricsLog.logger.error(
-            "avPlayerPrepareFailed fallback=ksPlayer id=\(source.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+        recordAVPlayerFallbackDecision(
+            decision,
+            source: source,
+            origin: "prepare",
+            reason: failureReason,
+            message: error.localizedDescription
         )
-        PlayerMetricsLog.record(
-            .network,
-            metricsID: source.metricsID,
-            title: source.title,
-            message: "fallback avPlayer->ksPlayer prepare \(failureReasonDescription(failureReason)) error=\(error.localizedDescription)"
-        )
-        switchActiveEngine(to: KSPlayerRenderingEngine())
-        do {
-            try await activeEngine.prepare(source: source)
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else {
-                throw CancellationError()
-            }
-        } catch {
-            guard !Task.isCancelled,
-                  !isStopped,
-                  generation == playbackGeneration
-            else {
-                throw CancellationError()
-            }
-            PlayerMetricsLog.logger.error(
-                "ksPlayerFallbackPrepareFailed origin=avPlayerPrepare id=\(source.metricsID, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
-            PlayerMetricsLog.record(
-                .failed,
-                metricsID: source.metricsID,
-                title: source.title,
-                message: "fallback ksPlayer failed \(error.localizedDescription)"
-            )
-            throw error
+        guard !Task.isCancelled,
+              !isStopped,
+              generation == playbackGeneration
+        else {
+            throw CancellationError()
         }
+        throw error
     }
 
     private func avPlayerFallbackDecision(for reason: HLSBridgeFailureReason?) -> AVPlayerFallbackDecision {
-        guard let reason else { return .fallbackToKSPlayer }
-        if reason.allowsAVPlayerToKSFallback {
-            return .fallbackToKSPlayer
-        }
+        guard let reason else { return .failAVPlayerOnly }
         switch reason.category {
         case .authDenied:
             return .skipAuthRefresh
@@ -946,7 +547,7 @@ final class AdaptivePlayerRenderingEngine: PlayerRenderingEngine {
         case .serverUnavailable, .timeout, .network, .invalidResponse,
              .codecUnsupported, .hardwareDecodeRejected, .decoderFailed,
              .terminalStall, .rangeUnsupported, .unknown:
-            return .fallbackToKSPlayer
+            return .failAVPlayerOnly
         }
     }
 
@@ -1027,6 +628,7 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
     private var sessionGeneration = 0
     private var targetVolume: Float = 1
     private var targetMuted = false
+    private var isTemporaryAudioSuppressed = false
     private var pendingRestartTime: TimeInterval?
 
     var onPlaybackStateChange: (@MainActor (PlayerEnginePlaybackState) -> Void)?
@@ -1123,6 +725,7 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
             maxBufferDuration: nil,
             asynchronousDecompressionEnabled: false,
             hardwareDecodeRequested: true,
+            isHardwareDecodeCompatible: source?.videoStream?.isHardwareDecodingCompatibleVideo,
             environmentSummary: nativeDiagnosticSummary
         )
     }
@@ -1357,15 +960,16 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
 
     func setVolume(_ volume: Float) {
         targetVolume = min(max(volume, 0), 1)
-        audioRenderer.volume = targetVolume
+        applyTargetAudioState()
     }
 
     func setMuted(_ isMuted: Bool) {
         targetMuted = isMuted
-        audioRenderer.isMuted = targetMuted
+        applyTargetAudioState()
     }
 
     func setTemporaryAudioSuppressed(_ isSuppressed: Bool) {
+        isTemporaryAudioSuppressed = isSuppressed
         if isSuppressed {
             audioRenderer.isMuted = true
             audioRenderer.volume = 0
@@ -1643,6 +1247,11 @@ final class NativeDASHSampleBufferEngine: PlayerRenderingEngine {
     }
 
     private func applyTargetAudioState() {
+        guard !isTemporaryAudioSuppressed else {
+            audioRenderer.volume = 0
+            audioRenderer.isMuted = true
+            return
+        }
         audioRenderer.volume = targetVolume
         audioRenderer.isMuted = targetMuted
     }

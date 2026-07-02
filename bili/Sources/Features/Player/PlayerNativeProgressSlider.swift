@@ -9,6 +9,7 @@ struct PlayerNativeProgressSlider: View {
     let onScrubEnded: (Double) -> Void
 
     @State private var scrubbingState = PlayerNativeProgressScrubbingState()
+    private let scrubChangeReportDelta = 0.004
 
     private var progressBinding: Binding<Double> {
         Binding(
@@ -21,7 +22,7 @@ struct PlayerNativeProgressSlider: View {
                     beginScrub(at: clampedValue)
                 }
                 scrubbingState.editingProgress = clampedValue
-                onScrubChanged(clampedValue)
+                reportScrubChanged(clampedValue)
             }
         )
     }
@@ -44,13 +45,13 @@ struct PlayerNativeProgressSlider: View {
             .labelsHidden()
             .tint(.white)
             .opacity(scrubbingState.isEditing ? 1 : 0.001)
-            .allowsHitTesting(effectiveCanSeek)
+            .allowsHitTesting(false)
 
             PlayerNativeProgressGestureCaptureLayer(
                 isEnabled: effectiveCanSeek,
                 onScrubChanged: { progress in
                     beginScrub(at: progress)
-                    onScrubChanged(progress)
+                    reportScrubChanged(progress)
                 },
                 onScrubEnded: { progress in
                     finishScrub(at: progress)
@@ -90,5 +91,13 @@ struct PlayerNativeProgressSlider: View {
             canSeek: effectiveCanSeek,
             onScrubEnded: onScrubEnded
         )
+    }
+
+    private func reportScrubChanged(_ progress: Double) {
+        guard scrubbingState.shouldReportChange(
+            at: progress,
+            minimumDelta: scrubChangeReportDelta
+        ) else { return }
+        onScrubChanged(progress)
     }
 }

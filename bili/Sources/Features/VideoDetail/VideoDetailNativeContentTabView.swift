@@ -5,6 +5,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
+    var scrollAdjustment: VideoDetailScrollAdjustment?
     let minimizesTabBarOnScroll: Bool
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
     let content: (VideoDetailContentTab) -> Content
@@ -16,6 +17,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                     tab: .detail,
                     layoutWidth: layoutWidth,
                     topInset: topInset,
+                    scrollAdjustment: scrollAdjustment,
                     onScrollOffsetChange: onScrollOffsetChange,
                     content: content
                 )
@@ -28,6 +30,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                     tab: .comments,
                     layoutWidth: layoutWidth,
                     topInset: topInset,
+                    scrollAdjustment: scrollAdjustment,
                     onScrollOffsetChange: onScrollOffsetChange,
                     content: content
                 )

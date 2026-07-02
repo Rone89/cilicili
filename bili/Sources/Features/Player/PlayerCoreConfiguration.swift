@@ -8,7 +8,7 @@ enum PlayerKernelType: String, CaseIterable, Identifiable, Codable, Sendable {
     case avPlayer
 
     nonisolated static let storageKey = PlayerRenderingEnginePreference.storageKey
-    nonisolated static let defaultValue: PlayerKernelType = .ksPlayer
+    nonisolated static let defaultValue: PlayerKernelType = .avPlayer
 
     nonisolated var id: String { rawValue }
 
@@ -21,30 +21,25 @@ enum PlayerKernelType: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    nonisolated var renderingEnginePreference: PlayerRenderingEnginePreference {
+    nonisolated var normalizedForFormalPlayback: PlayerKernelType {
         switch self {
-        case .ksPlayer:
-            return .ksPlayer
-        case .avPlayer:
+        case .ksPlayer, .avPlayer:
             return .avPlayer
         }
     }
 
-    nonisolated init(preference: PlayerRenderingEnginePreference) {
-        switch preference {
-        case .ksPlayer:
-            self = .ksPlayer
-        case .avPlayer:
-            self = .avPlayer
-        case .automatic:
-            self = Self.defaultValue
-        }
+    nonisolated var renderingEnginePreference: PlayerRenderingEnginePreference {
+        .avPlayer
+    }
+
+    nonisolated init(preference _: PlayerRenderingEnginePreference) {
+        self = .avPlayer
     }
 
     nonisolated static func stored(in userDefaults: UserDefaults = .standard) -> PlayerKernelType {
         if let rawValue = userDefaults.string(forKey: storageKey),
            let kernel = PlayerKernelType(rawValue: rawValue) {
-            return kernel
+            return kernel.normalizedForFormalPlayback
         }
         return defaultValue
     }
@@ -58,50 +53,73 @@ enum VideoCodecPreference: String, CaseIterable, Identifiable, Codable, Sendable
 
     nonisolated static let storageKey = "cc.bili.playback.videoCodecPreference.v1"
     nonisolated static let defaultValue: VideoCodecPreference = .auto
+    nonisolated static let allCases: [VideoCodecPreference] = [.auto, .forceHEVC, .forceH264]
 
     nonisolated var id: String { rawValue }
 
     nonisolated var title: String {
         switch self {
-        case .auto:
-            return "自动"
-        case .forceAV1:
-            return "优先 AV1"
+        case .auto, .forceAV1:
+            return "自动（HEVC 优先）"
         case .forceHEVC:
-            return "优先 HEVC"
+            return "仅 HEVC"
         case .forceH264:
-            return "优先 H.264"
+            return "仅 H.264"
         }
     }
 
     nonisolated var detail: String {
         switch self {
-        case .auto:
-            return "普通视频优先 AV1，高帧率优先 HEVC。"
-        case .forceAV1:
-            return "请求 AV1，不可用时降级到 HEVC / H.264。"
+        case .auto, .forceAV1:
+            return "按 HEVC、H.264 的顺序选择可硬解视频流。"
         case .forceHEVC:
-            return "请求 HEVC，不可用时优先降级到 H.264。"
+            return "只请求和选择 HEVC；不可用时提示播放失败。"
         case .forceH264:
-            return "请求 H.264，不可用时选择可用视频轨避免黑屏。"
+            return "只请求和选择 H.264；不可用时提示播放失败。"
         }
     }
 
     nonisolated var codecOrder: [VideoCodecFamily] {
         switch self {
         case .auto, .forceAV1:
-            return [.av1, .hevc, .h264, .unknown]
+            return [.hevc, .h264, .unknown]
         case .forceHEVC:
-            return [.hevc, .h264, .av1, .unknown]
+            return [.hevc]
         case .forceH264:
-            return [.h264, .hevc, .av1, .unknown]
+            return [.h264]
         }
+    }
+
+    nonisolated var forcedCodecFamily: VideoCodecFamily? {
+        switch self {
+        case .auto, .forceAV1:
+            return nil
+        case .forceHEVC:
+            return .hevc
+        case .forceH264:
+            return .h264
+        }
+    }
+
+    nonisolated var forcedUnavailableMessage: String? {
+        switch self {
+        case .auto, .forceAV1:
+            return nil
+        case .forceHEVC:
+            return "当前视频没有可硬解 HEVC 播放地址，可在设置中切换为自动或 H.264。"
+        case .forceH264:
+            return "当前视频没有可硬解 H.264 播放地址，可在设置中切换为自动或 HEVC。"
+        }
+    }
+
+    nonisolated var normalizedForPlayback: VideoCodecPreference {
+        self == .forceAV1 ? .auto : self
     }
 
     nonisolated static func stored(in userDefaults: UserDefaults = .standard) -> VideoCodecPreference {
         if let rawValue = userDefaults.string(forKey: storageKey),
            let preference = VideoCodecPreference(rawValue: rawValue) {
-            return preference
+            return preference.normalizedForPlayback
         }
         return defaultValue
     }
@@ -128,26 +146,11 @@ enum VideoCodecFamily: Int, CaseIterable, Sendable {
 }
 
 nonisolated enum PlayerKernelPlaybackSupport {
-    static func shouldPreferAV1Selection(on kernel: PlayerKernelType) -> Bool {
-        switch kernel {
-        case .avPlayer:
-            return PlaybackCodecPolicy.canDecodeAV1
-        case .ksPlayer:
-            return PlaybackCodecPolicy.canUseKSPlayerDirectAV1VideoToolbox
-        }
-    }
-
     static func preferredDirectKernel(
-        for stream: DashStream,
-        requestedKernel: PlayerKernelType
+        for _: DashStream,
+        requestedKernel _: PlayerKernelType
     ) -> PlayerKernelType {
-        switch requestedKernel {
-        case .avPlayer:
-            return .avPlayer
-        case .ksPlayer:
-            guard stream.isAV1VideoCodec else { return .ksPlayer }
-            return PlaybackCodecPolicy.canUseKSPlayerDirectAV1VideoToolbox ? .ksPlayer : .avPlayer
-        }
+        .avPlayer
     }
 
     static func prefersHardwareDecodedPlayback(
@@ -157,12 +160,7 @@ nonisolated enum PlayerKernelPlaybackSupport {
         guard stream.isHardwareDecodingCompatibleVideo else { return false }
 
         switch preferredDirectKernel(for: stream, requestedKernel: kernel) {
-        case .avPlayer:
-            return true
-        case .ksPlayer:
-            if stream.isAV1VideoCodec {
-                return PlaybackCodecPolicy.canUseKSPlayerDirectAV1VideoToolbox
-            }
+        case .avPlayer, .ksPlayer:
             return true
         }
     }
@@ -172,10 +170,8 @@ nonisolated enum PlayerKernelPlaybackSupport {
         on kernel: PlayerKernelType
     ) -> Bool {
         switch kernel {
-        case .avPlayer:
+        case .avPlayer, .ksPlayer:
             return false
-        case .ksPlayer:
-            return stream.isAV1VideoCodec && !PlaybackCodecPolicy.canUseKSPlayerDirectAV1VideoToolbox
         }
     }
 
@@ -184,10 +180,8 @@ nonisolated enum PlayerKernelPlaybackSupport {
         on kernel: PlayerKernelType
     ) -> Bool {
         switch kernel {
-        case .avPlayer:
+        case .avPlayer, .ksPlayer:
             return false
-        case .ksPlayer:
-            return stream.isAV1VideoCodec
         }
     }
 }
@@ -199,7 +193,15 @@ nonisolated enum DashStreamDispatcher {
         kernel: PlayerKernelType = PlayerKernelType.stored()
     ) -> DashStream? {
         let playableStreams = streams.enumerated()
-            .filter { _, stream in stream.url != nil }
+            .filter { _, stream in
+                guard stream.url != nil else { return false }
+                guard stream.videoCodecFamily != .av1 else { return false }
+                if let forcedCodecFamily = preference.forcedCodecFamily,
+                   stream.videoCodecFamily != forcedCodecFamily {
+                    return false
+                }
+                return true
+            }
         guard !playableStreams.isEmpty else { return nil }
 
         let streams = playableStreams.map(\.element)
@@ -227,54 +229,10 @@ nonisolated enum DashStreamDispatcher {
 
     private static func effectiveCodecOrder(
         for preference: VideoCodecPreference,
-        kernel: PlayerKernelType,
-        streams: [DashStream] = []
+        kernel _: PlayerKernelType,
+        streams _: [DashStream] = []
     ) -> [VideoCodecFamily] {
-        if preference == .auto,
-           shouldPreferHEVCForHighFrameRateStartup(streams, kernel: kernel) {
-            return prioritizingHEVC(in: preference.codecOrder)
-        }
-        guard PlayerKernelPlaybackSupport.shouldPreferAV1Selection(on: kernel) else {
-            return demotingAV1(in: preference.codecOrder)
-        }
         return preference.codecOrder
-    }
-
-    private static func shouldPreferHEVCForHighFrameRateStartup(
-        _ streams: [DashStream],
-        kernel: PlayerKernelType
-    ) -> Bool {
-        guard PlaybackCodecPolicy.canDecodeHEVC else { return false }
-        let hasHighFrameAV1 = streams.contains {
-            $0.isAV1VideoCodec && playbackFrameRate($0) >= 50
-        }
-        guard hasHighFrameAV1 else { return false }
-        return streams.contains {
-            $0.isHEVCVideoCodec
-                && playbackFrameRate($0) >= 50
-                && PlayerKernelPlaybackSupport.prefersHardwareDecodedPlayback(
-                    for: $0,
-                    on: kernel
-                )
-        }
-    }
-
-    private static func prioritizingHEVC(in order: [VideoCodecFamily]) -> [VideoCodecFamily] {
-        var adjusted = order.filter { $0 != .hevc }
-        adjusted.insert(.hevc, at: 0)
-        return adjusted
-    }
-
-    private static func demotingAV1(in order: [VideoCodecFamily]) -> [VideoCodecFamily] {
-        guard let av1Index = order.firstIndex(of: .av1) else { return order }
-        var adjusted = order
-        adjusted.remove(at: av1Index)
-        if let unknownIndex = adjusted.firstIndex(of: .unknown) {
-            adjusted.insert(.av1, at: unknownIndex)
-        } else {
-            adjusted.append(.av1)
-        }
-        return adjusted
     }
 
     private static func rankingTuple(
@@ -296,15 +254,6 @@ nonisolated enum DashStreamDispatcher {
         )
     }
 
-    private static func playbackFrameRate(_ stream: DashStream) -> Double {
-        if let frameRate = DASHStream.numericFrameRate(from: stream.frameRate) {
-            return frameRate
-        }
-        if [116, 74].contains(stream.id ?? 0) {
-            return 60
-        }
-        return 0
-    }
 }
 
 nonisolated private struct StreamRankingTuple: Comparable {
@@ -388,15 +337,21 @@ final class PlayerSettings: ObservableObject {
     }
 
     func setPreferredKernel(_ kernel: PlayerKernelType) {
-        guard preferredKernel != kernel else { return }
-        preferredKernel = kernel
-        userDefaults.set(kernel.rawValue, forKey: PlayerKernelType.storageKey)
+        let normalizedKernel = kernel.normalizedForFormalPlayback
+        guard preferredKernel != normalizedKernel
+            || userDefaults.string(forKey: PlayerKernelType.storageKey) != normalizedKernel.rawValue
+        else { return }
+        preferredKernel = normalizedKernel
+        userDefaults.set(normalizedKernel.rawValue, forKey: PlayerKernelType.storageKey)
     }
 
     func setVideoCodecPreference(_ preference: VideoCodecPreference) {
-        guard videoCodecPreference != preference else { return }
-        videoCodecPreference = preference
-        userDefaults.set(preference.rawValue, forKey: VideoCodecPreference.storageKey)
+        let normalizedPreference = preference.normalizedForPlayback
+        guard videoCodecPreference != normalizedPreference
+            || userDefaults.string(forKey: VideoCodecPreference.storageKey) != normalizedPreference.rawValue
+        else { return }
+        videoCodecPreference = normalizedPreference
+        userDefaults.set(normalizedPreference.rawValue, forKey: VideoCodecPreference.storageKey)
     }
 
     func reload() {

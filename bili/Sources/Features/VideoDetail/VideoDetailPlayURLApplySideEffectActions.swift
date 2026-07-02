@@ -2,11 +2,11 @@ import Foundation
 import QuartzCore
 
 extension VideoDetailViewModel {
-    private static var startupPackageWarmupPlayerCreationWait: TimeInterval { 0.14 }
-    private static var slowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.32 }
-    private static var av1StartupPackageWarmupPlayerCreationWait: TimeInterval { 0.84 }
-    private static var av1ConservativeStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.34 }
-    private static var av1SlowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.84 }
+    private static var startupPackageWarmupPlayerCreationWait: TimeInterval { 0.08 }
+    private static var slowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.16 }
+    private static var av1StartupPackageWarmupPlayerCreationWait: TimeInterval { 0.22 }
+    private static var av1ConservativeStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.16 }
+    private static var av1SlowPlayURLStartupPackageWarmupPlayerCreationWait: TimeInterval { 0.24 }
     private static var slowPlayURLWarmupThresholdMilliseconds: Int { 350 }
 
     func schedulePostPlayURLApplicationWork(
@@ -20,6 +20,12 @@ extension VideoDetailViewModel {
         guard !isPlaybackInvalidatedForNavigation else { return }
         cancelFastStartUpgradeTask()
         await prebuildAV1StartupPackageBeforePlayerCreationIfNeeded(
+            selectedVariant,
+            targetVariant: targetVariant,
+            cid: cid,
+            page: page
+        )
+        scheduleSelectedStartupPackageWarmupBeforeFirstFrame(
             selectedVariant,
             targetVariant: targetVariant,
             cid: cid,

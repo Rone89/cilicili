@@ -14,4 +14,10 @@ struct VideoDetailViewActions {
     ) {
         close.dismissVideoDetail(presentationState: presentationState)
     }
+
+    func popOneVideoLevel(
+        presentationState: Binding<VideoDetailViewPresentationState>
+    ) {
+        close.popOneVideoLevel(presentationState: presentationState)
+    }
 }

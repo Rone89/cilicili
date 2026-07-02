@@ -52,6 +52,7 @@ struct PlayerNativeControlButtonRow: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity)
         .frame(height: metrics.controlHeight)
     }
 }

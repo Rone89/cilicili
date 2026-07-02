@@ -118,7 +118,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         case unknown
         case avPlayer
         case sampleBuffer
-        case ksPlayer
 
         var title: String {
             switch self {
@@ -128,8 +127,6 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
                 return "AVPlayer / 系统解码"
             case .sampleBuffer:
                 return "SampleBuffer / 系统硬解"
-            case .ksPlayer:
-                return "KSPlayer / FFmpeg"
             }
         }
     }
@@ -149,6 +146,7 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
     var maxBufferDuration: TimeInterval?
     var asynchronousDecompressionEnabled: Bool
     var hardwareDecodeRequested: Bool
+    var isHardwareDecodeCompatible: Bool?
     var environmentSummary: String?
 
     static let empty = PlayerEngineDiagnostics(
@@ -167,6 +165,7 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         maxBufferDuration: nil,
         asynchronousDecompressionEnabled: false,
         hardwareDecodeRequested: false,
+        isHardwareDecodeCompatible: nil,
         environmentSummary: nil
     )
 
@@ -183,6 +182,12 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         }
         if asynchronousDecompressionEnabled {
             parts.append("AsyncVT")
+        }
+        if hardwareDecodeRequested {
+            parts.append("硬解")
+        }
+        if let isHardwareDecodeCompatible {
+            parts.append(isHardwareDecodeCompatible ? "硬解兼容" : "硬解不兼容")
         }
         if usesLocalHLSBridge {
             parts.append("HLSBridge")
@@ -398,22 +403,11 @@ enum DefaultPlayerRenderingEngine {
     }
 
     static func make(preference: PlayerRenderingEnginePreference) -> PlayerRenderingEngine {
-        switch preference {
-        case .automatic:
-            makeAutomatic()
-        case .avPlayer:
-            make(kernel: .avPlayer)
-        case .ksPlayer:
-            make(kernel: .ksPlayer)
-        }
+        make(kernel: PlayerKernelType(preference: preference))
     }
 
     static func make(kernel: PlayerKernelType) -> PlayerRenderingEngine {
-        AdaptivePlayerRenderingEngine(preferredKernel: kernel)
-    }
-
-    private static func makeAutomatic() -> PlayerRenderingEngine {
-        AdaptivePlayerRenderingEngine(preferredKernel: .ksPlayer)
+        AdaptivePlayerRenderingEngine(preferredKernel: kernel.normalizedForFormalPlayback)
     }
 }
 

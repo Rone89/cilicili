@@ -137,18 +137,22 @@ struct BiliPlayerLifecycleActionBuilder {
         guard !viewModel.isTerminated else { return }
         guard allowsPlaybackActivation else { return }
         if isTransitioning {
-            // Even when the live surface is kept during handoff, real devices can
-            // briefly expose a blank drawable while AVPlayerLayer/KSPlayer relayouts.
-            // Keep a component-level video frame over the player only; do not use a
-            // window-level black mask that hides the system rotation animation.
-            rotationTransitionSnapshotModel.hold(
-                hasPresentedPlayback: viewModel.hasPresentedPlayback,
-                surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration,
-                makeSnapshot: { [viewModel] in
-                    viewModel.makeCurrentVideoFrameTransitionSnapshot()
-                        ?? viewModel.makePlaybackTransitionSnapshot()
-                }
-            )
+            if configuration.showsRotationTransitionSnapshot {
+                // Even when the live surface is kept during handoff, real devices can
+                // briefly expose a blank drawable while the player surface relayouts.
+                // Keep a component-level video frame over the player only; do not use a
+                // window-level black mask that hides the system rotation animation.
+                rotationTransitionSnapshotModel.hold(
+                    hasPresentedPlayback: viewModel.hasPresentedPlayback,
+                    surfaceLayoutGeneration: viewModel.surfaceLayoutGeneration,
+                    makeSnapshot: { [viewModel] in
+                        viewModel.makeCurrentVideoFrameTransitionSnapshot()
+                            ?? viewModel.makePlaybackTransitionSnapshot()
+                    }
+                )
+            } else {
+                rotationTransitionSnapshotModel.release(immediate: true)
+            }
             viewModel.stabilizeSurfaceLayoutAfterGeometryChange()
             visibilityActions.cancelAutoHide()
             visibilityActions.show(scheduleAutoHide: false, animated: false)

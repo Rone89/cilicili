@@ -36,8 +36,10 @@ struct BiliPlayerViewContent: View {
             viewModel: context.viewModel,
             prefersNativePlaybackControls: false,
             isPictureInPictureEnabled: context.isPictureInPictureEnabled,
-            disablesImplicitLayoutAnimations: context.configuration.isLayoutTransitioning,
-            usesLiveSurfaceDuringLayoutTransition: context.configuration.usesLiveSurfaceDuringLayoutTransition
+            disablesImplicitLayoutAnimations: context.configuration.isLayoutTransitioning
+                || context.configuration.disablesSurfaceImplicitLayoutAnimations,
+            usesLiveSurfaceDuringLayoutTransition: context.configuration.usesLiveSurfaceDuringLayoutTransition,
+            isLayoutTransitioningForSurfaceHandoff: context.configuration.isLayoutTransitioning
         )
     }
 
@@ -65,10 +67,13 @@ struct BiliPlayerViewContent: View {
             isUserSeeking: context.surfaceState.isUserSeeking,
             isSpeedBoostActive: context.speedBoostModel.isActive,
             showsActivePlaybackControls: renderState.showsActivePlaybackControls,
+            playbackControlsOpacity: context.playbackControlsVisibility.opacity,
+            playbackControlsAllowsHitTesting: context.playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
             topTrailingControlsAccessory: AnyView(moreControlsButton),
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,
+            contentInsets: EdgeInsets(),
             errorMessage: context.surfaceState.errorMessage
         )
     }
@@ -91,6 +96,7 @@ private struct BiliPlayerMoreControlsButton: View {
         Button(action: open) {
             Image(systemName: "ellipsis")
                 .font(.system(size: metrics.iconSize, weight: .semibold))
+                .foregroundStyle(.white)
                 .frame(width: metrics.controlHeight, height: metrics.controlHeight)
         }
         .biliPlayerCompactGlassCircle(metrics: metrics)
@@ -145,7 +151,10 @@ private struct BiliPlayerMoreControlsSheet: View {
                         }
                     }
 
-                    Label("解码格式：\(decodeTitle)", systemImage: "cpu")
+                    Label("视频格式：\(videoFormatTitle)", systemImage: "film")
+                        .foregroundStyle(.secondary)
+
+                    Label("解码：\(decodeTitle)", systemImage: "cpu")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -166,7 +175,60 @@ private struct BiliPlayerMoreControlsSheet: View {
     }
 
     private var decodeTitle: String {
+        let diagnostics = viewModel.engineDiagnostics
+        var parts = [diagnostics.decodePath.title]
+        if diagnostics.hardwareDecodeRequested {
+            parts.append("硬解")
+        }
+        if let isHardwareDecodeCompatible = diagnostics.isHardwareDecodeCompatible {
+            parts.append(isHardwareDecodeCompatible ? "硬解兼容" : "硬解不兼容")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var videoFormatTitle: String {
+        let diagnostics = viewModel.engineDiagnostics
+        var parts = [String]()
+        if let codec = diagnostics.codec, !codec.isEmpty {
+            parts.append(codecDisplayName(codec))
+        }
+        if let resolution = diagnostics.resolution, !resolution.isEmpty {
+            parts.append(resolution)
+        }
+        if let frameRate = diagnostics.frameRate, !frameRate.isEmpty {
+            parts.append(frameRate)
+        }
+        if let dynamicRangeTitle {
+            parts.append(dynamicRangeTitle)
+        }
+        if !parts.isEmpty {
+            return parts.joined(separator: " · ")
+        }
         let description = viewModel.engineDiagnostics.compactDescription
         return description.isEmpty ? "未知" : description
+    }
+
+    private var dynamicRangeTitle: String? {
+        switch viewModel.engineDiagnostics.dynamicRange {
+        case .sdr:
+            return nil
+        case .hdr10:
+            return "HDR"
+        case .hlg:
+            return "HLG"
+        case .dolbyVision:
+            return "杜比视界"
+        }
+    }
+
+    private func codecDisplayName(_ codec: String) -> String {
+        switch codec.uppercased() {
+        case "AVC":
+            return "H.264 / AVC"
+        case "HEVC":
+            return "HEVC / H.265"
+        default:
+            return codec
+        }
     }
 }

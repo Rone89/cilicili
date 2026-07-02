@@ -4,6 +4,7 @@ struct VideoDetailNativeContentTabPage<Content: View>: View {
     let tab: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
+    var scrollAdjustment: VideoDetailScrollAdjustment?
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
     let content: (VideoDetailContentTab) -> Content
 
@@ -12,6 +13,7 @@ struct VideoDetailNativeContentTabPage<Content: View>: View {
             tab: tab,
             layoutWidth: layoutWidth,
             topInset: topInset,
+            scrollAdjustment: scrollAdjustment,
             onScrollOffsetChange: onScrollOffsetChange,
             content: content
         )

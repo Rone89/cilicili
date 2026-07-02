@@ -6,49 +6,49 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         assertHTTPStatus(
             401,
             category: .authDenied,
-            allowsAVPlayerToKSFallback: false,
+            isRecoverableByRebuild: false,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 403
         )
         assertHTTPStatus(
             403,
             category: .authDenied,
-            allowsAVPlayerToKSFallback: false,
+            isRecoverableByRebuild: false,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 403
         )
         assertHTTPStatus(
             404,
             category: .urlExpired,
-            allowsAVPlayerToKSFallback: false,
+            isRecoverableByRebuild: false,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 410
         )
         assertHTTPStatus(
             410,
             category: .urlExpired,
-            allowsAVPlayerToKSFallback: false,
+            isRecoverableByRebuild: false,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 410
         )
         assertHTTPStatus(
             416,
             category: .rangeUnsupported,
-            allowsAVPlayerToKSFallback: true,
+            isRecoverableByRebuild: true,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 416
         )
         assertHTTPStatus(
             429,
             category: .rateLimited,
-            allowsAVPlayerToKSFallback: false,
+            isRecoverableByRebuild: false,
             allowsSameSourceRecovery: false,
             proxyStatusCode: 429
         )
         assertHTTPStatus(
             503,
             category: .serverUnavailable,
-            allowsAVPlayerToKSFallback: true,
+            isRecoverableByRebuild: true,
             allowsSameSourceRecovery: true,
             proxyStatusCode: 502
         )
@@ -57,25 +57,25 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
     func testURLErrorReasonMatrix() {
         let cancelled = HLSBridgeRemoteFailure.reason(for: URLError(.cancelled))
         XCTAssertEqual(cancelled.category, .cancelled)
-        XCTAssertFalse(cancelled.allowsAVPlayerToKSFallback)
+        XCTAssertFalse(cancelled.isRecoverableByRebuild)
         XCTAssertFalse(cancelled.shouldRecordSourceFailure)
         XCTAssertEqual(cancelled.proxyHTTPStatus.statusCode, 499)
 
         let timedOut = HLSBridgeRemoteFailure.reason(for: URLError(.timedOut))
         XCTAssertEqual(timedOut.category, .timeout)
-        XCTAssertTrue(timedOut.allowsAVPlayerToKSFallback)
+        XCTAssertTrue(timedOut.isRecoverableByRebuild)
         XCTAssertTrue(timedOut.allowsSameSourceRecovery)
         XCTAssertEqual(timedOut.proxyHTTPStatus.statusCode, 504)
     }
 
-    func testUnknownErrorFallsBackToKSPlayer() {
+    func testUnknownErrorIsRecoverableByRebuild() {
         let reason = HLSBridgeRemoteFailure.reason(for: NSError(
             domain: "HLSBridgeRemoteFailureTests",
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "boom"]
         ))
         XCTAssertEqual(reason.category, .unknown)
-        XCTAssertTrue(reason.allowsAVPlayerToKSFallback)
+        XCTAssertTrue(reason.isRecoverableByRebuild)
         XCTAssertTrue(reason.allowsSameSourceRecovery)
         XCTAssertEqual(reason.proxyHTTPStatus.statusCode, 502)
     }
@@ -83,7 +83,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
     private func assertHTTPStatus(
         _ statusCode: Int,
         category: HLSBridgeRemoteFailureCategory,
-        allowsAVPlayerToKSFallback: Bool,
+        isRecoverableByRebuild: Bool,
         allowsSameSourceRecovery: Bool,
         proxyStatusCode: Int,
         file: StaticString = #filePath,
@@ -94,7 +94,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
             return
         }
         XCTAssertEqual(reason.category, category, file: file, line: line)
-        XCTAssertEqual(reason.allowsAVPlayerToKSFallback, allowsAVPlayerToKSFallback, file: file, line: line)
+        XCTAssertEqual(reason.isRecoverableByRebuild, isRecoverableByRebuild, file: file, line: line)
         XCTAssertEqual(reason.allowsSameSourceRecovery, allowsSameSourceRecovery, file: file, line: line)
         XCTAssertEqual(reason.proxyHTTPStatus.statusCode, proxyStatusCode, file: file, line: line)
     }

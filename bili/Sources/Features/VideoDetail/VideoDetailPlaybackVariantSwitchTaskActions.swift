@@ -37,7 +37,8 @@ extension VideoDetailViewModel {
             self.updateStablePlayerViewModelIfNeeded(
                 resumeTimeOverride: resumeTime,
                 shouldResumePlayback: shouldResumePlayback,
-                playbackRateOverride: playbackRate
+                playbackRateOverride: playbackRate,
+                preservesPreviousPlayerUntilFirstFrame: true
             )
         }
     }

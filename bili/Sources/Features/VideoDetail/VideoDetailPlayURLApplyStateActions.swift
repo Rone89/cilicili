@@ -12,6 +12,7 @@ extension VideoDetailViewModel {
         guard !variants.isEmpty else {
             playVariants = []
             selectedPlayVariant = nil
+            playURLState = .failed(codecUnavailableMessage())
             return nil
         }
 
@@ -21,6 +22,11 @@ extension VideoDetailViewModel {
         selectedPlayVariant = selectedVariant
         logSelectedPlayVariant(selectedVariant, availableVariants: variants, source: source)
         return (selectedVariant, targetVariant)
+    }
+
+    func codecUnavailableMessage() -> String {
+        libraryStore.videoCodecPreference.forcedUnavailableMessage
+            ?? "当前视频没有可硬解的播放地址，可稍后重试或调整播放设置。"
     }
 
     func clearSupplementalPlayURLState() {
