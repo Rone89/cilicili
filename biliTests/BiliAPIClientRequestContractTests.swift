@@ -1628,6 +1628,147 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    func testFetchPlayURLUsesPreferredQualityBuildsSignedRequestAndDecodesDASH() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let requestExpectation = expectation(description: "video play URL request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: Self.playableDASHResponse(quality: 80))
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache()
+        )
+        let data = try await api.fetchPlayURL(
+            bvid: "BV1videoContract",
+            cid: 24_680,
+            qn: 112,
+            preferredQuality: 80
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(data.quality, 80)
+        XCTAssertEqual(data.dash?.video?.first?.id, 80)
+        XCTAssertEqual(data.dash?.bestAudioStream?.id, 30_280)
+        let request = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/x/player/wbi/playurl" })
+        )
+        let query = queryValues(for: request)
+        XCTAssertEqual(query["bvid"], "BV1videoContract")
+        XCTAssertEqual(query["cid"], "24680")
+        XCTAssertEqual(query["qn"], "80")
+        XCTAssertEqual(query["fnval"], "4048")
+        XCTAssertEqual(query["video_codecid"], "7")
+        XCTAssertNotNil(query["w_rid"])
+        XCTAssertNotNil(query["wts"])
+    }
+
+    func testFetchPlayURLReusesMemoryCacheForSameKey() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            return Self.response(for: request, body: Self.playableDASHResponse(quality: 80))
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache()
+        )
+        _ = try await api.fetchPlayURL(bvid: "BV1videoCache", cid: 24_681, preferredQuality: 80)
+        _ = try await api.fetchPlayURL(bvid: "BV1videoCache", cid: 24_681, preferredQuality: 80)
+
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/x/player/wbi/playurl" }.count,
+            1
+        )
+    }
+
+    func testFetchPlayURLMergesConcurrentRequestsForSameKey() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+            return Self.response(for: request, body: Self.playableDASHResponse(quality: 80))
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache()
+        )
+        async let first = api.fetchPlayURL(bvid: "BV1videoPending", cid: 24_682, preferredQuality: 80)
+        async let second = api.fetchPlayURL(bvid: "BV1videoPending", cid: 24_682, preferredQuality: 80)
+        let results = try await [first, second]
+
+        XCTAssertEqual(results.map(\.quality), [80, 80])
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/x/player/wbi/playurl" }.count,
+            1
+        )
+    }
+
     func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1809,7 +1950,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=transport-session")
     }
 
-    private func makeAPI(cookieHeader: String, accessKey: String? = nil) throws -> BiliAPIClient {
+    private func makeAPI(
+        cookieHeader: String,
+        accessKey: String? = nil,
+        playURLCache: PlayURLCache = .shared
+    ) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
         let cookieValues = cookieHeader.split(separator: ";").reduce(into: [String: String]()) { values, item in
@@ -1840,7 +1985,8 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             session: session,
             sessionStore: sessionStore,
             libraryStore: libraryStore,
-            homeRecommendDiagnosticsStore: .shared
+            homeRecommendDiagnosticsStore: .shared,
+            playURLCache: playURLCache
         )
     }
 
@@ -1852,6 +1998,10 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             headerFields: ["Content-Type": "application/json"]
         )!
         return (response, Data(body.utf8))
+    }
+
+    private static func playableDASHResponse(quality: Int) -> String {
+        #"{"code":0,"data":{"quality":\#(quality),"accept_quality":[\#(quality)],"dash":{"video":[{"id":\#(quality),"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}"#
     }
 
     private func cookieValues(in header: String?) -> [String: String] {

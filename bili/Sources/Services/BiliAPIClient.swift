@@ -249,13 +249,17 @@ nonisolated final class BiliAPIClient {
         )
     }
 
-    func pgcPlaybackRequestContext() async -> PGCPlaybackRequestContext {
+    func playbackAPIRequestContext() async -> PlaybackAPIRequestContext {
         let snapshot = await requestSnapshot(purpose: .playback)
-        return PGCPlaybackRequestContext(
+        return PlaybackAPIRequestContext(
             cookieHeader: snapshot.cookieHeader,
+            anonymousCookieHeader: snapshot.anonymousCookieHeader,
             effectivePreferredVideoQuality: snapshot.effectivePreferredVideoQuality,
             playbackStreamSourcePreference: snapshot.playbackStreamSourcePreference,
-            currentUserMID: snapshot.currentUserMID
+            isLoggedIn: snapshot.isLoggedIn,
+            currentUserMID: snapshot.currentUserMID,
+            guestModeEnabled: snapshot.guestModeEnabled,
+            playbackCredentialVersion: snapshot.playbackCredentialVersion
         )
     }
 
@@ -1586,71 +1590,6 @@ nonisolated final class BiliAPIClient {
         return try BiliListenerPlaylistCodec.decodeResponse(responseMessage)
     }
 
-    func fetchPlayURL(
-        bvid: String,
-        cid: Int,
-        qn: Int = 112,
-        page: Int? = nil,
-        preferredQuality: Int? = nil
-    ) async throws -> PlayURLData {
-        let snapshot = await requestSnapshot(purpose: .playback)
-        let requestedQuality = preferredQuality ?? snapshot.effectivePreferredVideoQuality ?? qn
-        let key = PlayURLCacheKey(
-            bvid: bvid,
-            cid: cid,
-            requestedQuality: requestedQuality,
-            audioLanguage: "default",
-            fnval: "4048",
-            fnver: "0",
-            platform: Self.playURLCachePlatform(
-                snapshot.playbackStreamSourcePreference.cachePlatform,
-                requestedQuality: requestedQuality
-            )
-        )
-        let scope = PlayURLCacheLoginScope(
-            isLoggedIn: snapshot.isLoggedIn,
-            userMID: snapshot.currentUserMID,
-            guestModeEnabled: snapshot.guestModeEnabled,
-            credentialVersion: snapshot.playbackCredentialVersion
-        )
-        if let cached = await playURLCache.value(
-            for: key,
-            scope: scope,
-            requiredQuality: requestedQuality
-        ) {
-            PlayerMetricsLog.logger.info(
-                "playURLMemoryCacheHit bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) qn=\(requestedQuality, privacy: .public)"
-            )
-            return await applyingConfiguredHistoryAccount(
-                to: cached,
-                playbackUserMID: snapshot.currentUserMID
-            )
-        }
-
-        let data = try await fetchPlayURLWithPendingRequest(
-            cacheKey: key,
-            scope: scope,
-            bvid: bvid,
-            cid: cid,
-            requestedQuality: requestedQuality,
-            source: "playURL",
-            cachePlatform: snapshot.playbackStreamSourcePreference.cachePlatform,
-            isStartup: false
-        ) { [self] in
-            try await fetchPlayURLUncached(
-                bvid: bvid,
-                cid: cid,
-                qn: qn,
-                page: page,
-                preferredQuality: preferredQuality
-            )
-        }
-        return await applyingConfiguredHistoryAccount(
-            to: data,
-            playbackUserMID: snapshot.currentUserMID
-        )
-    }
-
     func clearCachedPlayURLFailures(bvid: String) async {
         await state.clearPlayURLFailuresAndTasks(containing: bvid)
     }
@@ -1691,7 +1630,7 @@ nonisolated final class BiliAPIClient {
         return data
     }
 
-    private func fetchPlayURLUncached(
+    func fetchPlayURLUncached(
         bvid: String,
         cid: Int,
         qn: Int = 112,
@@ -2204,7 +2143,19 @@ nonisolated final class BiliAPIClient {
         )
     }
 
-    private func fetchPlayURLWithPendingRequest(
+    func cachedPlayURL(
+        for key: PlayURLCacheKey,
+        scope: PlayURLCacheLoginScope,
+        requiredQuality: Int
+    ) async -> PlayURLData? {
+        await playURLCache.value(
+            for: key,
+            scope: scope,
+            requiredQuality: requiredQuality
+        )
+    }
+
+    func fetchPlayURLWithPendingRequest(
         cacheKey: PlayURLCacheKey,
         scope: PlayURLCacheLoginScope,
         bvid: String,
@@ -3598,7 +3549,7 @@ nonisolated final class BiliAPIClient {
         return rhsQuality > lhsQuality ? rhs : lhs
     }
 
-    private nonisolated static func playURLCachePlatform(
+    nonisolated static func playURLCachePlatform(
         _ basePlatform: String,
         requestedQuality: Int?,
         isStartup: Bool = false

@@ -1,10 +1,14 @@
 import Foundation
 
-nonisolated struct PGCPlaybackRequestContext: Sendable {
+nonisolated struct PlaybackAPIRequestContext: Sendable {
     let cookieHeader: String
+    let anonymousCookieHeader: String
     let effectivePreferredVideoQuality: Int?
     let playbackStreamSourcePreference: PlaybackStreamSourcePreference
+    let isLoggedIn: Bool
     let currentUserMID: Int?
+    let guestModeEnabled: Bool
+    let playbackCredentialVersion: Int
 }
 
 extension BiliAPIClient {
@@ -58,7 +62,7 @@ extension BiliAPIClient {
         qn: Int = 112,
         preferredQuality: Int? = nil
     ) async throws -> PlayURLData {
-        let context = await pgcPlaybackRequestContext()
+        let context = await playbackAPIRequestContext()
         let requestedQuality = preferredQuality ?? context.effectivePreferredVideoQuality ?? qn
         let streamSource = context.playbackStreamSourcePreference
         let keys = try await fetchWBIKeys(priority: URLSessionTask.highPriority)
