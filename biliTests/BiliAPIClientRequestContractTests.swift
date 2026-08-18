@@ -102,6 +102,169 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/web-interface/wbi/search/square")
     }
 
+    func testMainCommentsBuildsRequestAndDecodesPaginationAndComments() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "main comments request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"replies":[{"rpid":12345}],"top_replies":[],"cursor":{"next":"next-cursor","is_end":false}}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value")
+        let cursor = "cursor/with+symbols"
+        let page = try await api.fetchComments(oid: "456", type: 11, cursor: cursor, sort: .hot)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(page.replies?.map(\.id), [12345])
+        let request = try XCTUnwrap(recorder.request)
+        let url = try XCTUnwrap(request.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(url.path, "/x/v2/reply/main")
+        var query = queryValues(in: components)
+        let pagination = try XCTUnwrap(query.removeValue(forKey: "pagination_str"))
+        let paginationObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(pagination.utf8)) as? [String: String]
+        )
+        XCTAssertEqual(paginationObject, ["offset": cursor])
+        XCTAssertEqual(
+            query,
+            [
+                "oid": "456",
+                "type": "11",
+                "mode": "3",
+                "plat": "1",
+            ]
+        )
+    }
+
+    func testCommentRepliesBuildsPagingAndTimeSortRequestAndDecodes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "comment replies request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"replies":[{"rpid":67890}],"top_replies":[]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value")
+        let page = try await api.fetchCommentReplies(
+            oid: "456",
+            type: 11,
+            root: 987,
+            page: 3,
+            sort: .time
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(page.replies?.map(\.id), [67890])
+        let request = try XCTUnwrap(recorder.request)
+        let url = try XCTUnwrap(request.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(url.path, "/x/v2/reply/reply")
+        XCTAssertEqual(
+            queryValues(in: components),
+            [
+                "oid": "456",
+                "type": "11",
+                "root": "987",
+                "pn": "3",
+                "ps": "20",
+                "sort": "1",
+            ]
+        )
+    }
+
+    func testCommentDialogBuildsRequestAndDecodesResponse() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "comment dialog request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"replies":[{"rpid":24680}],"top_replies":[]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value")
+        let page = try await api.fetchCommentDialog(oid: "321", type: 1, root: 654, dialog: 987, size: 12)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(page.replies?.map(\.id), [24680])
+        let request = try XCTUnwrap(recorder.request)
+        let url = try XCTUnwrap(request.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(url.path, "/x/v2/reply/dialog/cursor")
+        XCTAssertEqual(
+            queryValues(in: components),
+            [
+                "oid": "321",
+                "type": "1",
+                "root": "654",
+                "dialog": "987",
+                "size": "12",
+            ]
+        )
+    }
+
+    func testCommentDialogPropagatesAPIError() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "comment dialog error captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":-404,"message":"评论不存在","data":null}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value")
+        do {
+            _ = try await api.fetchCommentDialog(oid: "999", type: 1, root: 1000, dialog: 1001)
+            XCTFail("Expected the API error to be propagated")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -404)
+            XCTAssertEqual(message, "评论不存在")
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        XCTAssertEqual(recorder.request?.url?.path, "/x/v2/reply/dialog/cursor")
+    }
+
     private func makeAPI(cookieHeader: String) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -148,6 +311,12 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             values[String(pair[0]).trimmingCharacters(in: .whitespaces)] = String(pair[1])
                 .trimmingCharacters(in: .whitespaces)
         }
+    }
+
+    private func queryValues(in components: URLComponents) -> [String: String] {
+        components.queryItems?.reduce(into: [:]) { values, item in
+            values[item.name] = item.value ?? ""
+        } ?? [:]
     }
 }
 
