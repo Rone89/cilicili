@@ -1050,6 +1050,268 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(relationRequests.contains { self.queryValues(for: $0)["access_key"] == "app-access-key" })
     }
 
+    func testUploaderWebVideoPageBuildsSignedRequestAndDecodesPagination() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/web-interface/nav":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"wbi_img":{"img_url":"https://i0.hdslb.com/bfs/wbi/abcdef.png","sub_url":"https://i0.hdslb.com/bfs/wbi/ghijkl.png"}}}
+                        """
+                )
+            case "/x/space/wbi/arc/search":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"list":{"vlist":[{"bvid":"BV1test123","aid":101,"author":"测试UP","mid":321,"title":"测试投稿","length":"01:02"}]},"page":{"count":61}}}
+                        """
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let result = try await api.fetchUploaderVideoPage(mid: 321, page: 2, order: .pubdate)
+
+        XCTAssertEqual(result.videos.map(\.bvid), ["BV1test123"])
+        XCTAssertEqual(result.totalCount, 61)
+        XCTAssertTrue(result.hasMore)
+        XCTAssertEqual(result.nextCursor, UploaderVideoPageCursor(aid: "101", next: nil))
+
+        let request = try XCTUnwrap(recorder.requests.last)
+        XCTAssertEqual(request.url?.path, "/x/space/wbi/arc/search")
+        let query = queryValues(for: request)
+        XCTAssertEqual(query["mid"], "321")
+        XCTAssertEqual(query["pn"], "2")
+        XCTAssertEqual(query["ps"], "30")
+        XCTAssertEqual(query["order"], UploaderVideoOrder.pubdate.rawValue)
+        XCTAssertEqual(query["platform"], "web")
+        XCTAssertEqual(query["web_location"], "333.1387")
+        XCTAssertEqual(query["order_avoided"], "true")
+        XCTAssertNotNil(query["wts"])
+        XCTAssertNotNil(query["w_rid"])
+    }
+
+    func testUploaderVideoPageFallsBackToSignedAppArchiveWithCursor() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/web-interface/nav":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"wbi_img":{"img_url":"https://i0.hdslb.com/bfs/wbi/abcdef.png","sub_url":"https://i0.hdslb.com/bfs/wbi/ghijkl.png"}}}
+                        """
+                )
+            case "/x/space/wbi/arc/search":
+                return Self.response(for: request, body: "{\"code\":-352,\"message\":\"web failed\",\"data\":null}")
+            case "/x/v2/space/archive/cursor":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"count":42,"has_next":true,"next":77,"item":[{"bvid":"BV1fallback","param":"456","title":"App 投稿","author":"测试UP"}]}}
+                        """
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let result = try await api.fetchUploaderVideoPage(
+            mid: 321,
+            cursor: UploaderVideoPageCursor(aid: "123", next: 45),
+            order: .click
+        )
+
+        XCTAssertEqual(result.videos.map(\.bvid), ["BV1fallback"])
+        XCTAssertEqual(result.totalCount, 42)
+        XCTAssertTrue(result.hasMore)
+        XCTAssertEqual(result.nextCursor, UploaderVideoPageCursor(aid: "456", next: 77))
+
+        let appRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/v2/space/archive/cursor" }
+        )
+        let query = queryValues(for: appRequest)
+        XCTAssertEqual(appRequest.url?.host, "app.bilibili.com")
+        XCTAssertEqual(query["vmid"], "321")
+        XCTAssertEqual(query["aid"], "123")
+        XCTAssertEqual(query["next"], "45")
+        XCTAssertEqual(query["order"], UploaderVideoOrder.click.rawValue)
+        XCTAssertNotNil(query["appkey"])
+        XCTAssertNotNil(query["ts"])
+        XCTAssertNotNil(query["sign"])
+    }
+
+    func testUploaderSeasonSeriesBuildsRequestAndDecodesItems() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"items_lists":{"page":{"page_num":2,"page_size":5,"total":9},"seasons_list":[{"meta":{"season_id":11,"name":"测试合集"}}],"series_list":[{"meta":{"series_id":12,"name":"测试列表"}}]}}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "")
+        let result = try await api.fetchUploaderSeasonSeries(mid: 321, page: 2, pageSize: 5)
+
+        XCTAssertEqual(result.page?.total, 9)
+        XCTAssertEqual(result.items.map(\.title), ["测试合集", "测试列表"])
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/polymer/web-space/seasons_series_list")
+        XCTAssertEqual(
+            queryValues(for: request),
+            ["mid": "321", "page_num": "2", "page_size": "5"]
+        )
+    }
+
+    func testUploaderSeasonAndSeriesArchivePagesPreservePathsSortAndPagination() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/polymer/web-space/seasons_archives_list":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"archives":[{"aid":101,"bvid":"BV1season","title":"合集投稿"}],"page":{"page_num":2,"page_size":30,"total":61}}}
+                        """
+                )
+            case "/x/series/archives":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"archives":[{"aid":102,"bvid":"BV1series","title":"列表投稿"}],"page":{"page_num":2,"page_size":20,"total":40}}}
+                        """
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "")
+        let owner = VideoOwner(mid: 321, name: "测试UP", face: nil)
+        let season = try await api.fetchUploaderSeasonSeriesArchivePage(
+            mid: 321,
+            owner: owner,
+            kind: .season(11),
+            page: 2,
+            pageSize: 30,
+            sort: .asc
+        )
+        let series = try await api.fetchUploaderSeasonSeriesArchivePage(
+            mid: 321,
+            owner: owner,
+            kind: .series(12),
+            page: 2,
+            pageSize: 20,
+            sort: .desc
+        )
+
+        XCTAssertEqual(season.videos.map(\.bvid), ["BV1season"])
+        XCTAssertEqual(season.totalCount, 61)
+        XCTAssertTrue(season.hasMore)
+        XCTAssertEqual(series.videos.map(\.bvid), ["BV1series"])
+        XCTAssertEqual(series.totalCount, 40)
+        XCTAssertFalse(series.hasMore)
+
+        let seasonRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/polymer/web-space/seasons_archives_list" }
+        )
+        XCTAssertEqual(
+            queryValues(for: seasonRequest),
+            [
+                "mid": "321",
+                "season_id": "11",
+                "sort_reverse": "true",
+                "page_size": "30",
+                "page_num": "2",
+                "web_location": "333.1387",
+            ]
+        )
+        let seriesRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/series/archives" }
+        )
+        XCTAssertEqual(
+            queryValues(for: seriesRequest),
+            [
+                "mid": "321",
+                "series_id": "12",
+                "sort": "desc",
+                "ps": "20",
+                "pn": "2",
+                "web_location": "333.1387",
+            ]
+        )
+    }
+
+    func testUploaderSeasonSeriesRejectsInvalidMIDAndMissingPayload() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: "{\"code\":0,\"data\":null}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "")
+        let owner = VideoOwner(mid: 321, name: "测试UP", face: nil)
+        do {
+            _ = try await api.fetchUploaderSeasonSeries(mid: 0)
+            XCTFail("Expected invalid uploader UID to fail")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -1)
+            XCTAssertEqual(message, "UP 主 UID 无效")
+        }
+        do {
+            _ = try await api.fetchUploaderSeasonSeriesArchivePage(
+                mid: -1,
+                owner: owner,
+                kind: .season(11)
+            )
+            XCTFail("Expected invalid uploader UID to fail")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -1)
+            XCTAssertEqual(message, "UP 主 UID 无效")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        do {
+            _ = try await api.fetchUploaderSeasonSeries(mid: 321)
+            XCTFail("Expected missing payload to fail")
+        } catch let error as BiliAPIError {
+            guard case .missingPayload = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+        XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-space/seasons_series_list")
+    }
+
     private func makeAPI(cookieHeader: String, accessKey: String? = nil) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
