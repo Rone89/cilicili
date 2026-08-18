@@ -36,7 +36,6 @@ nonisolated final class BiliAPIClient {
     private static let primaryAppRecommendProfile: BiliAppSigner.Profile = .androidHD
     private static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     private static let webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    private static let uploaderDynamicWebUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15"
     private static let recommendLogger = Logger(subsystem: "cc.bili", category: "HomeRecommend")
     private let session: URLSession
     private let sessionStore: SessionStore
@@ -232,6 +231,25 @@ nonisolated final class BiliAPIClient {
     private func cookieHeader() async -> String {
         let snapshot = await requestSnapshot()
         return snapshot.cookieHeader
+    }
+
+    func dynamicFeedRequestContext() async -> (
+        cookieHeader: String,
+        anonymousCookieHeader: String,
+        isLoggedIn: Bool,
+        currentUserMID: Int?
+    ) {
+        let snapshot = await requestSnapshot(purpose: .dynamicFeed)
+        return (
+            cookieHeader: snapshot.cookieHeader,
+            anonymousCookieHeader: snapshot.anonymousCookieHeader,
+            isLoggedIn: snapshot.isLoggedIn,
+            currentUserMID: snapshot.currentUserMID
+        )
+    }
+
+    func clearWBIKeysForDynamicFeed() async {
+        await state.clearWBIKeys()
     }
 
     private func anonymousCookieHeader(
@@ -5926,182 +5944,6 @@ nonisolated final class BiliAPIClient {
         return nil
     }
 
-    func fetchDynamicFeed(offset: String? = nil) async throws -> DynamicFeedData {
-        let snapshot = await requestSnapshot(purpose: .dynamicFeed)
-        guard snapshot.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        var query = [
-            "type": "all",
-            "platform": "web",
-            "features": "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
-            "web_location": "333.1365"
-        ]
-        if let offset, !offset.isEmpty {
-            query["offset"] = offset
-        }
-
-        let isInitialRequest = offset?.isEmpty != false
-        let diskSnapshotIdentity = isInitialRequest
-            && ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot)
-            ? DynamicFeedDiskSnapshotStore.accountIdentity(for: snapshot.currentUserMID)
-            : nil
-        if let diskSnapshotIdentity,
-           let cachedData = await DynamicFeedDiskSnapshotStore.shared.freshData(
-               for: diskSnapshotIdentity
-           ) {
-            if let cachedResponse: BiliResponse<DynamicFeedData> = try? await Self.decode(
-                cachedData,
-                priority: .utility
-            ),
-               cachedResponse.code == 0,
-               let cachedPage = cachedResponse.payload {
-                Task(priority: .utility) { [weak self] in
-                    guard let self,
-                          ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot)
-                    else { return }
-                    _ = try? await self.fetchDynamicFeedFromNetwork(
-                        query: query,
-                        snapshot: snapshot,
-                        diskSnapshotIdentity: diskSnapshotIdentity
-                    )
-                }
-                return cachedPage
-            }
-            await DynamicFeedDiskSnapshotStore.shared.removeData(for: diskSnapshotIdentity)
-        }
-
-        return try await fetchDynamicFeedFromNetwork(
-            query: query,
-            snapshot: snapshot,
-            diskSnapshotIdentity: diskSnapshotIdentity
-        )
-    }
-
-    private func fetchDynamicFeedFromNetwork(
-        query: [String: String],
-        snapshot: RequestSnapshot,
-        diskSnapshotIdentity: String?
-    ) async throws -> DynamicFeedData {
-        let responseDataObserver: (@Sendable (Data) -> Void)?
-        if let diskSnapshotIdentity {
-            responseDataObserver = { data in
-                guard ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot),
-                      Self.isSuccessfulDynamicFeedResponse(data)
-                else { return }
-                Task(priority: .utility) {
-                    await DynamicFeedDiskSnapshotStore.shared.store(
-                        data,
-                        for: diskSnapshotIdentity
-                    )
-                }
-            }
-        } else {
-            responseDataObserver = nil
-        }
-        let response: BiliResponse<DynamicFeedData> = try await get(
-            base: baseURL,
-            path: "/x/polymer/web-dynamic/v1/feed/all",
-            query: query,
-            cookieHeader: snapshot.cookieHeader,
-            responseCachePolicy: .brief,
-            responseDataObserver: responseDataObserver
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        guard let data = response.payload else { throw BiliAPIError.missingPayload }
-        return data
-    }
-
-    private nonisolated static func isSuccessfulDynamicFeedResponse(_ data: Data) -> Bool {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let code = object["code"] as? NSNumber,
-              code.intValue == 0,
-              let payload = object["data"],
-              !(payload is NSNull)
-        else { return false }
-        return true
-    }
-
-    func fetchDynamicPortal() async throws -> DynamicPortalData {
-        let snapshot = await requestSnapshot(purpose: .dynamicFeed)
-        guard snapshot.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        let response: BiliResponse<DynamicPortalData> = try await get(
-            base: baseURL,
-            path: "/x/polymer/web-dynamic/v1/portal",
-            query: [
-                "up_list_more": "1",
-                "web_location": "333.1365"
-            ],
-            cookieHeader: snapshot.cookieHeader,
-            responseCachePolicy: .brief
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        guard let data = response.payload else { throw BiliAPIError.missingPayload }
-        return data
-    }
-
-    func fetchUploaderDynamicFeed(mid: Int, offset: String? = nil) async throws -> DynamicFeedData {
-        guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
-        let snapshot = await requestSnapshot(purpose: .dynamicFeed)
-        let cookieHeader = Self.uploaderDynamicCookieHeader(
-            isLoggedIn: snapshot.isLoggedIn,
-            authenticatedCookieHeader: snapshot.cookieHeader,
-            anonymousCookieHeader: snapshot.anonymousCookieHeader
-        )
-
-        do {
-            return try await requestUploaderDynamicFeed(
-                mid: mid,
-                offset: offset,
-                cookieHeader: cookieHeader
-            )
-        } catch let error as BiliAPIError {
-            guard case .api(let code, _) = error, code == -352 else {
-                throw error
-            }
-
-            // Bilibili rotates WBI keys independently; retry once with a fresh signature.
-            await state.clearWBIKeys()
-            return try await requestUploaderDynamicFeed(
-                mid: mid,
-                offset: offset,
-                cookieHeader: cookieHeader
-            )
-        }
-    }
-
-    private func requestUploaderDynamicFeed(
-        mid: Int,
-        offset: String?,
-        cookieHeader: String
-    ) async throws -> DynamicFeedData {
-        let keys = try await fetchWBIKeys(priority: .utility)
-        let signed = WBISigner.sign([
-            "offset": offset ?? "",
-            "host_mid": String(mid),
-            "timezone_offset": "-480",
-            "features": "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
-            "platform": "web",
-            "web_location": "333.1387",
-            "dm_img_list": "[]",
-            "dm_img_str": Self.randomAlphaNumeric(length: 16),
-            "dm_cover_img_str": Self.randomAlphaNumeric(length: 32),
-            "dm_img_inter": #"{"ds":[],"wh":[0,0,0],"of":[0,0,0]}"#,
-            "x-bili-device-req-json": #"{"platform":"web","device":"pc","spmid":"333.1387"}"#
-        ], keys: keys)
-        let response: BiliResponse<DynamicFeedData> = try await get(
-            base: baseURL,
-            path: "/x/polymer/web-dynamic/v1/feed/space",
-            query: signed,
-            referer: "https://space.bilibili.com/\(mid)/dynamic",
-            userAgent: Self.uploaderDynamicWebUserAgent,
-            cookieHeader: cookieHeader,
-            additionalHeaders: ["Origin": "https://space.bilibili.com"],
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        guard let data = response.payload else { throw BiliAPIError.missingPayload }
-        return data
-    }
-
     func generateQRCodeLogin() async throws -> QRCodeLoginInfo {
         let response: BiliResponse<QRCodeLoginInfo> = try await get(
             base: passportURL,
@@ -7271,7 +7113,7 @@ nonisolated final class BiliAPIClient {
         return value
     }
 
-    private static func randomAlphaNumeric(length: Int) -> String {
+    static func randomAlphaNumeric(length: Int) -> String {
         let characters = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         var bytes = [UInt8](repeating: 0, count: length)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
