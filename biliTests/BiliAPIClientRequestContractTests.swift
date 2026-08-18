@@ -2203,11 +2203,194 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=transport-session")
     }
 
+    func testHomeRecommendWebBuildsSignedPaginationAndLimitRequest() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"item":[]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            recommendSource: .web
+        )
+        let videos = try await api.fetchRecommendFeed(freshIndex: 9, limit: 99)
+
+        XCTAssertTrue(videos.isEmpty)
+        let request = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" })
+        )
+        let query = queryValues(for: request)
+        XCTAssertEqual(query["fresh_idx"], "9")
+        XCTAssertEqual(query["brush"], "9")
+        XCTAssertEqual(query["fresh_idx_1h"], "9")
+        XCTAssertEqual(query["fresh_type"], "4")
+        XCTAssertEqual(query["ps"], "50")
+        XCTAssertNotNil(query["w_rid"])
+        XCTAssertNotNil(query["wts"])
+    }
+
+    func testHomeRecommendAppGuestFallsBackToWebWithoutAccessKey() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/v2/feed/index":
+                return Self.response(for: request, body: #"{"code":0,"data":{"item":[]}}"#)
+            case "/x/web-interface/nav":
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"item":[]}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key",
+            guestModeEnabled: true,
+            recommendSource: .app
+        )
+        let videos = try await api.fetchRecommendFeed(freshIndex: 4, limit: 3)
+
+        XCTAssertTrue(videos.isEmpty)
+        let appRequests = recorder.requests.filter { $0.url?.path == "/x/v2/feed/index" }
+        XCTAssertEqual(appRequests.count, 2)
+        for request in appRequests {
+            let query = queryValues(for: request)
+            XCTAssertEqual(query["idx"], "4")
+            XCTAssertEqual(query["ps"], "3")
+            XCTAssertEqual(query["page_size"], "3")
+            XCTAssertEqual(query["login_event"], "0")
+            XCTAssertNil(query["access_key"])
+        }
+        XCTAssertNotNil(
+            recorder.requests.first(where: { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" })
+        )
+    }
+
+    func testHomeRecommendAppReturnsPrimaryProfileResultWithoutWebFallback() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(
+                for: request,
+                body:
+                    #"{"code":0,"data":{"item":[{"id":123,"bvid":"BV1HomeFeedTest","title":"推荐视频","goto":"av","idx":12}]}}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key",
+            recommendSource: .app
+        )
+        let videos = try await api.fetchRecommendFeed(freshIndex: 0, limit: 1)
+
+        XCTAssertEqual(videos.map(\.bvid), ["BV1HomeFeedTest"])
+        let appRequests = recorder.requests.filter { $0.url?.path == "/x/v2/feed/index" }
+        XCTAssertEqual(appRequests.count, 1)
+        XCTAssertEqual(queryValues(for: try XCTUnwrap(appRequests.first))["access_key"], "app-access-key")
+        XCTAssertNil(
+            recorder.requests.first(where: { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" })
+        )
+    }
+
+    func testHomeRecommendAppAPIErrorsFallBackToWeb() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/v2/feed/index":
+                return Self.response(for: request, body: #"{"code":-500,"message":"app failed"}"#)
+            case "/x/web-interface/nav":
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            default:
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"item":[{"id":456,"bvid":"BV1HomeFallback","title":"网页兜底视频","goto":"av"}]}}"#
+                )
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key",
+            recommendSource: .app
+        )
+        let videos = try await api.fetchRecommendFeed(freshIndex: 5, limit: 2)
+
+        XCTAssertEqual(videos.map(\.bvid), ["BV1HomeFallback"])
+        XCTAssertEqual(recorder.requests.filter { $0.url?.path == "/x/v2/feed/index" }.count, 2)
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" }.count,
+            1
+        )
+    }
+
+    func testHomeRecommendCoalescesConcurrentIdenticalRequests() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+            return Self.response(for: request, body: #"{"code":0,"data":{"item":[]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001", recommendSource: .web)
+        async let first = api.fetchRecommendFeed(freshIndex: 6, limit: 8)
+        async let second = api.fetchRecommendFeed(freshIndex: 6, limit: 8)
+        let results = try await [first, second]
+
+        XCTAssertEqual(results.map(\.count), [0, 0])
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" }.count,
+            1
+        )
+    }
+
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
         playURLCache: PlayURLCache = .shared,
-        guestModeEnabled: Bool = false
+        guestModeEnabled: Bool = false,
+        recommendSource: HomeRecommendFeedSourcePreference = .web
     ) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -2230,6 +2413,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
         let libraryStore = LibraryStore(userDefaults: UserDefaults(suiteName: keychainService)!)
         libraryStore.setGuestModeEnabled(guestModeEnabled)
+        libraryStore.setHomeRecommendFeedSourcePreference(recommendSource)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RequestContractURLProtocol.self]
         configuration.urlCache = nil
