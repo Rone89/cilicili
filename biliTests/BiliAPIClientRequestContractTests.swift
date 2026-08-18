@@ -1769,6 +1769,170 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    func testFetchPopularVideosBuildsPagedRequestAndDecodesItems() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let requestExpectation = expectation(description: "popular videos request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: #"{"code":0,"data":{"list":[{"bvid":"BV1popular","aid":1001,"title":"热门视频"}]}}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let videos = try await api.fetchPopularVideos(page: 3)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(videos.map(\.bvid), ["BV1popular"])
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/popular")
+        XCTAssertEqual(queryValues(for: request), ["pn": "3", "ps": "20"])
+    }
+
+    func testFetchVideoDetailBVIDCoalescesConcurrentRequests() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        let firstRequestStarted = expectation(description: "first video detail request started")
+        let secondCallStarted = expectation(description: "second video detail call started")
+        let responseGate = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/view" {
+                firstRequestStarted.fulfill()
+                _ = responseGate.wait(timeout: .now() + 5)
+            }
+            return Self.response(
+                for: request,
+                body: Self.videoItemResponse(bvid: "BV1detail", aid: 1002)
+            )
+        }
+        defer {
+            responseGate.signal()
+            RequestContractURLProtocol.reset()
+        }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let first = Task { try await api.fetchVideoDetail(bvid: "BV1detail") }
+        await fulfillment(of: [firstRequestStarted], timeout: 2)
+        let second = Task {
+            secondCallStarted.fulfill()
+            return try await api.fetchVideoDetail(bvid: "BV1detail")
+        }
+        await fulfillment(of: [secondCallStarted], timeout: 2)
+        try await Task.sleep(for: .milliseconds(20))
+        responseGate.signal()
+        let details = try await [first.value, second.value]
+
+        XCTAssertEqual(details.map(\.bvid), ["BV1detail", "BV1detail"])
+        let requests = recorder.requests.filter { $0.url?.path == "/x/web-interface/view" }
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(queryValues(for: request), ["bvid": "BV1detail"])
+        XCTAssertEqual(
+            cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"],
+            "session-value"
+        )
+    }
+
+    func testFetchVideoDetailAIDBuildsRequestAndDecodes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let requestExpectation = expectation(description: "AID video detail request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: Self.videoItemResponse(bvid: "BV1aid", aid: 1003)
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let detail = try await api.fetchVideoDetail(aid: 1003)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(detail.bvid, "BV1aid")
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/view")
+        XCTAssertEqual(queryValues(for: request), ["aid": "1003"])
+    }
+
+    func testFetchVideoRelatedBuildsGuestScopedRequestAndDecodes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let requestExpectation = expectation(description: "related videos request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: #"{"code":0,"data":[{"bvid":"BV1related","aid":1004,"title":"相关推荐"}]}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            guestModeEnabled: true
+        )
+        let videos = try await api.fetchVideoRelated(bvid: "BV1source")
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(videos.map(\.bvid), ["BV1related"])
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/archive/related")
+        XCTAssertEqual(
+            queryValues(for: request),
+            ["bvid": "BV1source", "pn": "1", "ps": "40"]
+        )
+        let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNotNil(cookies["buvid3"])
+        XCTAssertNil(cookies["SESSDATA"])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), BiliAPIClient.webUserAgent)
+    }
+
+    func testFetchVideoShotNormalizesBVIDAndDecodesMetadata() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let requestExpectation = expectation(description: "video shot request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body:
+                    #"{"code":0,"data":{"img_x_len":10,"img_y_len":10,"img_x_size":160,"img_y_size":90,"image":["https://image.example.com/shot.jpg"],"index":[0,10]}}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let metadata = try await api.fetchVideoShot(bvid: " BV1shot ", cid: 1005)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertTrue(metadata.isUsable)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/player/videoshot")
+        XCTAssertEqual(
+            queryValues(for: request),
+            ["bvid": "BV1shot", "cid": "1005", "index": "1"]
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com/video/BV1shot")
+        XCTAssertEqual(
+            cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"],
+            "session-value"
+        )
+    }
+
     func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1953,7 +2117,8 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
-        playURLCache: PlayURLCache = .shared
+        playURLCache: PlayURLCache = .shared,
+        guestModeEnabled: Bool = false
     ) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -1975,6 +2140,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             try sessionStore.saveLoginCookies(cookieValues, credentialKind: .web)
         }
         let libraryStore = LibraryStore(userDefaults: UserDefaults(suiteName: keychainService)!)
+        libraryStore.setGuestModeEnabled(guestModeEnabled)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RequestContractURLProtocol.self]
         configuration.urlCache = nil
@@ -2002,6 +2168,10 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
 
     private static func playableDASHResponse(quality: Int) -> String {
         #"{"code":0,"data":{"quality":\#(quality),"accept_quality":[\#(quality)],"dash":{"video":[{"id":\#(quality),"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}"#
+    }
+
+    private static func videoItemResponse(bvid: String, aid: Int) -> String {
+        #"{"code":0,"data":{"bvid":"\#(bvid)","aid":\#(aid),"title":"视频详情"}}"#
     }
 
     private func cookieValues(in header: String?) -> [String: String] {
