@@ -272,6 +272,19 @@ nonisolated final class BiliAPIClient {
         )
     }
 
+    func danmakuRequestContext() async -> DanmakuRequestContext {
+        let snapshot = await requestSnapshot()
+        return DanmakuRequestContext(
+            commentURL: commentURL,
+            apiURL: baseURL,
+            guestModeCookieHeader: snapshot.guestModeEnabled ? snapshot.anonymousCookieHeader : nil
+        )
+    }
+
+    func fetchDanmakuData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await data(for: request, priority: .utility)
+    }
+
     func videoContentListTask(for key: String) async -> Task<[VideoItem], Error>? {
         await state.videoListTask(for: key)
     }
@@ -1110,98 +1123,6 @@ nonisolated final class BiliAPIClient {
             mergedVideos[index] = video
         }
         return mergedVideos
-    }
-
-    func fetchDanmaku(cid: Int) async throws -> [DanmakuItem] {
-        if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
-            return cached
-        }
-
-        return try await ResourceRequestLimiter.shared.runDanmaku { [self] in
-            if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
-                return cached
-            }
-
-            var request = try await makeRequest(
-                base: commentURL,
-                path: "/\(cid).xml",
-                query: [:],
-                referer: "https://www.bilibili.com",
-                userAgent: Self.webUserAgent,
-                cookieHeader: await guestModeCookieHeader(),
-                cachePolicy: .returnCacheDataElseLoad
-            )
-            request.networkServiceType = .responsiveData
-            request.timeoutInterval = 8
-            request.setValue("application/xml,text/xml,*/*", forHTTPHeaderField: "Accept")
-
-            let (data, response) = try await data(for: request, priority: .utility)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode)
-            else {
-                throw BiliAPIError.emptyData
-            }
-            guard !data.isEmpty else { throw BiliAPIError.emptyData }
-
-            let items = try DanmakuXMLParser(cid: cid).parse(data: data)
-            await SubtitleDanmakuResourceCache.shared.storeDanmaku(items, for: cid, segmentIndex: 0)
-            return items
-        }
-    }
-
-    func fetchDanmakuSegment(cid: Int, segmentIndex: Int) async throws -> [DanmakuItem] {
-        let normalizedSegmentIndex = max(1, segmentIndex)
-        if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(
-            for: cid,
-            segmentIndex: normalizedSegmentIndex
-        ) {
-            return cached
-        }
-
-        return try await ResourceRequestLimiter.shared.runDanmaku { [self] in
-            if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(
-                for: cid,
-                segmentIndex: normalizedSegmentIndex
-            ) {
-                return cached
-            }
-
-            var request = try await makeRequest(
-                base: baseURL,
-                path: "/x/v2/dm/web/seg.so",
-                query: [
-                    "type": "1",
-                    "oid": String(cid),
-                    "segment_index": String(normalizedSegmentIndex)
-                ],
-                referer: "https://www.bilibili.com",
-                userAgent: Self.webUserAgent,
-                cookieHeader: await guestModeCookieHeader(),
-                cachePolicy: .returnCacheDataElseLoad
-            )
-            request.networkServiceType = .responsiveData
-            request.timeoutInterval = 8
-            request.setValue("application/octet-stream,*/*", forHTTPHeaderField: "Accept")
-
-            let (data, response) = try await data(for: request, priority: .utility)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode)
-            else {
-                throw BiliAPIError.emptyData
-            }
-
-            let items = try DanmakuSegmentProtobufParser(
-                cid: cid,
-                segmentIndex: normalizedSegmentIndex
-            )
-            .parse(data: data)
-            await SubtitleDanmakuResourceCache.shared.storeDanmaku(
-                items,
-                for: cid,
-                segmentIndex: normalizedSegmentIndex
-            )
-            return items
-        }
     }
 
     func reportVideoHistory(

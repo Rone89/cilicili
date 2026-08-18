@@ -1933,6 +1933,95 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    func testFetchDanmakuBuildsXMLRequestParsesAndUsesResourceCache() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        await SubtitleDanmakuResourceCache.shared.clear()
+
+        let requestExpectation = expectation(description: "XML danmaku request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: #"<?xml version="1.0"?><i><d p="1.5,1,25,16777215,0,0,0,42">测试弹幕</d></i>"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let cid = 9_100_001
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            guestModeEnabled: true
+        )
+        let first = try await api.fetchDanmaku(cid: cid)
+        let second = try await api.fetchDanmaku(cid: cid)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(first.map(\.text), ["测试弹幕"])
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(recorder.requests.count, 1)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.host, "comment.bilibili.com")
+        XCTAssertEqual(request.url?.path, "/\(cid).xml")
+        XCTAssertNil(request.url?.query)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), BiliAPIClient.webUserAgent)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/xml,text/xml,*/*")
+        XCTAssertEqual(request.cachePolicy, .returnCacheDataElseLoad)
+        XCTAssertEqual(request.timeoutInterval, 8)
+        let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNotNil(cookies["buvid3"])
+        XCTAssertNil(cookies["SESSDATA"])
+
+        await SubtitleDanmakuResourceCache.shared.clear()
+    }
+
+    func testFetchDanmakuSegmentNormalizesIndexBuildsProtobufRequestAndParses() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        await SubtitleDanmakuResourceCache.shared.clear()
+
+        let requestExpectation = expectation(description: "protobuf danmaku request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, data: Self.protobufDanmakuSegmentData())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let cid = 9_100_002
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            guestModeEnabled: true
+        )
+        let items = try await api.fetchDanmakuSegment(cid: cid, segmentIndex: 0)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(items.map(\.id), ["\(cid)-seg1-42"])
+        XCTAssertEqual(items.map(\.text), ["分段弹幕"])
+        XCTAssertEqual(items.first?.time, 1.5)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.host, "api.bilibili.com")
+        XCTAssertEqual(request.url?.path, "/x/v2/dm/web/seg.so")
+        XCTAssertEqual(
+            queryValues(for: request),
+            ["type": "1", "oid": "\(cid)", "segment_index": "1"]
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), BiliAPIClient.webUserAgent)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/octet-stream,*/*")
+        XCTAssertEqual(request.cachePolicy, .returnCacheDataElseLoad)
+        XCTAssertEqual(request.timeoutInterval, 8)
+        let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNotNil(cookies["buvid3"])
+        XCTAssertNil(cookies["SESSDATA"])
+
+        await SubtitleDanmakuResourceCache.shared.clear()
+    }
+
     func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2157,13 +2246,52 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
     }
 
     private static func response(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
+        response(for: request, data: Data(body.utf8))
+    }
+
+    private static func response(for request: URLRequest, data: Data) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
-        return (response, Data(body.utf8))
+        return (response, data)
+    }
+
+    private static func protobufDanmakuSegmentData() -> Data {
+        let element =
+            protobufVarintField(1, value: 42)
+            + protobufVarintField(2, value: 1_500)
+            + protobufVarintField(3, value: 1)
+            + protobufVarintField(4, value: 25)
+            + protobufVarintField(5, value: 16_777_215)
+            + protobufLengthDelimitedField(7, payload: Array("分段弹幕".utf8))
+        return Data(protobufLengthDelimitedField(1, payload: element))
+    }
+
+    private static func protobufVarintField(_ fieldNumber: Int, value: UInt64) -> [UInt8] {
+        protobufVarint(UInt64(fieldNumber << 3)) + protobufVarint(value)
+    }
+
+    private static func protobufLengthDelimitedField(_ fieldNumber: Int, payload: [UInt8]) -> [UInt8] {
+        protobufVarint(UInt64((fieldNumber << 3) | 2))
+            + protobufVarint(UInt64(payload.count))
+            + payload
+    }
+
+    private static func protobufVarint(_ value: UInt64) -> [UInt8] {
+        var remaining = value
+        var bytes = [UInt8]()
+        repeat {
+            var byte = UInt8(remaining & 0x7F)
+            remaining >>= 7
+            if remaining != 0 {
+                byte |= 0x80
+            }
+            bytes.append(byte)
+        } while remaining != 0
+        return bytes
     }
 
     private static func playableDASHResponse(quality: Int) -> String {
@@ -2272,8 +2400,8 @@ private final class RequestContractURLProtocol: URLProtocol {
 
     override class func canInit(with request: URLRequest) -> Bool {
         [
-            "api.bilibili.com", "api.live.bilibili.com", "app.bilibili.com", "passport.bilibili.com",
-            "space.bilibili.com",
+            "api.bilibili.com", "api.live.bilibili.com", "app.bilibili.com", "comment.bilibili.com",
+            "passport.bilibili.com", "space.bilibili.com",
         ].contains(
             request.url?.host)
     }
