@@ -1312,6 +1312,150 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-space/seasons_series_list")
     }
 
+    func testWebAndAppQRCodeLoginBuildExpectedRequests() async throws {
+        let requestExpectation = expectation(description: "QR login requests captured")
+        requestExpectation.expectedFulfillmentCount = 4
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            switch request.url?.path {
+            case "/x/passport-login/web/qrcode/generate":
+                return Self.response(
+                    for: request,
+                    body: #"{"code":0,"data":{"url":"https://example.com/web-qr","qrcode_key":"web-key"}}"#
+                )
+            case "/x/passport-tv-login/qrcode/auth_code":
+                return Self.response(
+                    for: request,
+                    body: #"{"code":0,"data":{"auth_code":"app-key","url":"https://example.com/app-qr"}}"#
+                )
+            case "/x/passport-tv-login/qrcode/poll":
+                return Self.response(for: request, body: #"{"code":86090,"message":"已扫码"}"#)
+            case "/x/passport-login/web/qrcode/poll":
+                return Self.response(
+                    for: request,
+                    body: #"{"code":0,"data":{"code":86101,"message":"未扫码"}}"#
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "buvid3=test-buvid")
+        let webQR = try await api.generateQRCodeLogin()
+        let appQR = try await api.generateAppQRCodeLogin()
+        let webPoll = try await api.pollQRCodeLogin(qrcodeKey: webQR.qrcodeKey)
+        let appPoll = try await api.pollAppQRCodeLogin(authCode: appQR.qrcodeKey)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(webQR.qrcodeKey, "web-key")
+        XCTAssertEqual(appQR.qrcodeKey, "app-key")
+        XCTAssertEqual(webPoll.data.status, .waitingForScan)
+        XCTAssertEqual(appPoll.status, .waitingForConfirm)
+
+        let webRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/passport-login/web/qrcode/generate" }
+        )
+        XCTAssertEqual(webRequest.httpMethod, "GET")
+        XCTAssertEqual(webRequest.value(forHTTPHeaderField: "Referer"), "https://passport.bilibili.com/login")
+
+        let webPollRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/passport-login/web/qrcode/poll" }
+        )
+        XCTAssertEqual(webPollRequest.httpMethod, "GET")
+        XCTAssertEqual(queryValues(for: webPollRequest)["qrcode_key"], "web-key")
+
+        for path in [
+            "/x/passport-tv-login/qrcode/auth_code",
+            "/x/passport-tv-login/qrcode/poll",
+        ] {
+            let request = try XCTUnwrap(recorder.requests.first { $0.url?.path == path })
+            let values = queryValues(for: request)
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Content-Type"), "application/x-www-form-urlencoded; charset=utf-8")
+            XCTAssertEqual(values["appkey"], "4409e2ce8ffd12b8")
+            XCTAssertFalse((values["sign"] ?? "").isEmpty)
+            XCTAssertFalse((values["ts"] ?? "").isEmpty)
+        }
+
+        let appQRRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/passport-tv-login/qrcode/auth_code" }
+        )
+        XCTAssertEqual(queryValues(for: appQRRequest)["local_id"], "0")
+        let appPollRequest = try XCTUnwrap(
+            recorder.requests.first { $0.url?.path == "/x/passport-tv-login/qrcode/poll" }
+        )
+        XCTAssertEqual(queryValues(for: appPollRequest)["auth_code"], "app-key")
+    }
+
+    func testAppSMSCodeBuildsSignedFormRequest() async throws {
+        let requestExpectation = expectation(description: "SMS request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: #"{"code":0,"data":{"captcha_key":"captcha-key"}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "buvid3=test-buvid")
+        let result = try await api.sendAppSMSCode(phone: "13800138000", countryCode: "852")
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(result.captchaKey, "captcha-key")
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/passport-login/sms/send")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Content-Type"), "application/x-www-form-urlencoded; charset=utf-8")
+        let requestBuvid = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["buvid3"]
+        XCTAssertFalse((requestBuvid ?? "").isEmpty)
+        let values = formValues(in: request)
+        XCTAssertEqual(values["appkey"], "dfca71928277209b")
+        XCTAssertEqual(values["buvid"], requestBuvid)
+        XCTAssertEqual(values["cid"], "852")
+        XCTAssertEqual(values["local_id"], requestBuvid)
+        XCTAssertEqual(values["tel"], "13800138000")
+        XCTAssertFalse((values["login_session_id"] ?? "").isEmpty)
+        XCTAssertFalse((values["sign"] ?? "").isEmpty)
+        XCTAssertFalse((values["ts"] ?? "").isEmpty)
+    }
+
+    func testFetchNavUserCoalescesConcurrentRequests() async throws {
+        let firstRequestExpectation = expectation(description: "first nav request captured")
+        let responseRelease = DispatchSemaphore(value: 0)
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            firstRequestExpectation.fulfill()
+            _ = responseRelease.wait(timeout: .now() + 2)
+            return Self.response(
+                for: request,
+                body: #"{"code":0,"data":{"isLogin":true,"uname":"测试用户","mid":1001}}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let firstTask = Task { try await api.fetchNavUser() }
+        await fulfillment(of: [firstRequestExpectation], timeout: 2)
+        let secondTask = Task { try await api.fetchNavUser() }
+        try await Task.sleep(for: .milliseconds(50))
+        responseRelease.signal()
+
+        let firstUser = try await firstTask.value
+        let secondUser = try await secondTask.value
+
+        XCTAssertEqual(firstUser.mid, 1001)
+        XCTAssertEqual(secondUser.mid, 1001)
+        XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
+    }
+
     private func makeAPI(cookieHeader: String, accessKey: String? = nil) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -1447,7 +1591,8 @@ private final class RequestContractURLProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        ["api.bilibili.com", "app.bilibili.com", "space.bilibili.com"].contains(request.url?.host)
+        ["api.bilibili.com", "app.bilibili.com", "passport.bilibili.com", "space.bilibili.com"].contains(
+            request.url?.host)
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {

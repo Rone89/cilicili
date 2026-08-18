@@ -4,10 +4,6 @@ import OSLog
 import QuartzCore
 import Security
 
-nonisolated private extension CharacterSet {
-    static let biliAppComponentAllowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
-}
-
 nonisolated struct LiveDanmakuClientContext: Sendable {
     let uid: Int
     let buvid: String
@@ -43,12 +39,11 @@ nonisolated struct AccountVideoEntryPage {
 nonisolated final class BiliAPIClient {
     let baseURL = URL(string: "https://api.bilibili.com")!
     let appURL = URL(string: "https://app.bilibili.com")!
-    private let passportURL = URL(string: "https://passport.bilibili.com")!
     private let liveURL = URL(string: "https://api.live.bilibili.com")!
     private let commentURL = URL(string: "https://comment.bilibili.com")!
     private static let appRecommendProfiles: [BiliAppSigner.Profile] = [.androidHD, .androidPhone]
     private static let primaryAppRecommendProfile: BiliAppSigner.Profile = .androidHD
-    private static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     static let webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     private static let recommendLogger = Logger(subsystem: "cc.bili", category: "HomeRecommend")
     private let session: URLSession
@@ -290,7 +285,7 @@ nonisolated final class BiliAPIClient {
         await state.clearWBIKeys()
     }
 
-    private func anonymousCookieHeader(
+    func anonymousCookieHeader(
         purpose: BiliAccountPurpose = .main
     ) async -> String {
         let snapshot = await requestSnapshot(purpose: purpose)
@@ -369,6 +364,18 @@ nonisolated final class BiliAPIClient {
     func resetPlaybackAuthorizationState() async {
         await state.clearAllPlayURLFailuresAndTasks()
         await ResourceCacheCenter.clearAPI()
+    }
+
+    func activeNavUserTask() async -> Task<NavUserInfo, Error>? {
+        await state.navUserTask()
+    }
+
+    func storeNavUserTask(_ task: Task<NavUserInfo, Error>) async {
+        await state.setNavUserTask(task)
+    }
+
+    func clearStoredNavUserTask() async {
+        await state.clearNavUserTask()
     }
 
     func fetchRecommendFeed(freshIndex: Int = 0, limit: Int? = nil) async throws -> [VideoItem] {
@@ -852,7 +859,7 @@ nonisolated final class BiliAPIClient {
     private static let appRecommendHydrationCandidateLimit = 24
     private static let appRecommendHydrationConcurrencyLimit = 6
 
-    private struct AppRecommendHeaderContext {
+    struct AppRecommendHeaderContext {
         let headers: [String: String]
         let fingerprintSource: String
         let sessionSource: String
@@ -875,7 +882,7 @@ nonisolated final class BiliAPIClient {
         let hasBuvidFP: Bool
     }
 
-    private static func piliPodStyleAppRecommendHeaders(
+    static func piliPodStyleAppRecommendHeaders(
         cookieHeader: String,
         profile: BiliAppSigner.Profile
     ) -> AppRecommendHeaderContext {
@@ -983,50 +990,6 @@ nonisolated final class BiliAPIClient {
 
     private static func piliPlusTraceID() -> String {
         "\(stableHexToken(seed: UUID().uuidString, length: 32)):\(stableHexToken(seed: UUID().uuidString, length: 16)):0:0"
-    }
-
-    private static func appQRCodeLoginBaseFields(profile: BiliAppSigner.Profile, localID: String) -> [String: String] {
-        if profile == .androidTV {
-            return [
-                "local_id": "0"
-            ]
-        }
-
-        if profile == .androidHD {
-            return [
-                "local_id": "0",
-                "mobi_app": profile.mobiApp,
-                "platform": profile.platform
-            ]
-        }
-
-        return [
-            "build": profile.build,
-            "c_locale": "zh_CN",
-            "channel": profile.channel,
-            "local_id": localID,
-            "mobi_app": profile.mobiApp,
-            "platform": profile.platform,
-            "s_locale": "zh_CN",
-            "statistics": profile.statistics
-        ]
-    }
-
-    private static func appQRCodeLoginStatus(for code: Int) -> QRCodeLoginPollStatus {
-        switch code {
-        case 0:
-            return .confirmed
-        case 86038:
-            return .expired
-        case 86090:
-            return .waitingForConfirm
-        case 86039:
-            return .waitingForScan
-        case 86101:
-            return .waitingForScan
-        default:
-            return .unknown(code)
-        }
     }
 
     private static func stableHexToken(seed: String, length: Int) -> String {
@@ -4748,268 +4711,6 @@ nonisolated final class BiliAPIClient {
         return nil
     }
 
-    func generateQRCodeLogin() async throws -> QRCodeLoginInfo {
-        let response: BiliResponse<QRCodeLoginInfo> = try await get(
-            base: passportURL,
-            path: "/x/passport-login/web/qrcode/generate",
-            query: [:],
-            referer: "https://passport.bilibili.com/login",
-            userAgent: Self.webUserAgent
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        guard let info = response.payload else { throw BiliAPIError.missingPayload }
-        return info
-    }
-
-    func generateAppQRCodeLogin() async throws -> QRCodeLoginInfo {
-        let profile = BiliAppSigner.Profile.androidTV
-        let cookieHeader = await anonymousCookieHeader()
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        var request = try await makeRequest(
-            base: passportURL,
-            path: "/x/passport-tv-login/qrcode/auth_code",
-            query: BiliAppSigner.sign(
-                Self.appQRCodeLoginBaseFields(profile: profile, localID: "0"),
-                profile: profile
-            ),
-            referer: "https://www.bilibili.com",
-            userAgent: profile.userAgent,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-
-        let (data, _) = try await data(for: request, priority: .userInitiated)
-        guard !data.isEmpty else { throw BiliAPIError.emptyData }
-        let response: BiliResponse<AppQRCodeLoginAuthInfo> = try await Self.decode(data, priority: .userInitiated)
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        guard let info = response.payload else { throw BiliAPIError.missingPayload }
-        return info.qrCodeInfo
-    }
-
-    func confirmAppQRCodeLoginWithCurrentSession(authCode: String) async throws {
-        let csrf = try await requireCSRF()
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: passportURL,
-            path: "/x/passport-tv-login/h5/qrcode/confirm",
-            body: [
-                "auth_code": authCode,
-                "csrf": csrf,
-                "scanning_type": "1"
-            ],
-            referer: "https://passport.bilibili.com/h5-app/passport/login/scan?auth_code=\(authCode)",
-            userAgent: Self.mobileUserAgent
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-    }
-
-    func sendAppSMSCode(phone: String, countryCode: String = "86") async throws -> AppSMSCodeInfo {
-        let profile = BiliAppSigner.Profile.androidHD
-        let cookieHeader = await anonymousCookieHeader()
-        let buvid = Self.cookieValue(named: "buvid3", in: cookieHeader) ?? "0"
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        let now = Date()
-        let milliseconds = Int(now.timeIntervalSince1970 * 1000)
-        let fields = BiliAppSigner.sign([
-            "build": profile.build,
-            "buvid": buvid,
-            "c_locale": "zh_CN",
-            "channel": profile.channel,
-            "cid": countryCode,
-            "disable_rcmd": "0",
-            "local_id": buvid,
-            "login_session_id": Self.md5("\(buvid)\(milliseconds)"),
-            "mobi_app": profile.mobiApp,
-            "platform": profile.platform,
-            "s_locale": "zh_CN",
-            "statistics": profile.statistics,
-            "tel": phone
-        ], profile: profile, timestamp: Int(now.timeIntervalSince1970))
-
-        let response: BiliResponse<AppSMSCodeInfo> = try await postSignedAppForm(
-            path: "/x/passport-login/sms/send",
-            fields: fields,
-            profile: profile,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let info = response.payload else { throw BiliAPIError.missingPayload }
-        if let recaptchaURL = info.recaptchaURL, !recaptchaURL.isEmpty {
-            throw BiliAPIError.api(code: -105, message: "需要人机验证，请先使用 App 扫码登录。")
-        }
-        guard info.captchaKey?.isEmpty == false else { throw BiliAPIError.missingPayload }
-        return info
-    }
-
-    func loginWithAppSMS(
-        phone: String,
-        countryCode: String = "86",
-        code: String,
-        captchaKey: String
-    ) async throws -> AppQRCodeLoginPollData {
-        let profile = BiliAppSigner.Profile.androidHD
-        let cookieHeader = await anonymousCookieHeader()
-        let buvid = Self.cookieValue(named: "buvid3", in: cookieHeader) ?? "0"
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        let webKey = try await fetchAppLoginWebKey()
-        let encryptedDeviceToken = try Self.rsaEncryptedComponent(
-            Self.randomAlphaNumeric(length: 16),
-            publicKeyPEM: webKey.key
-        )
-        let deviceID = Self.appLoginDeviceID()
-        let fields = BiliAppSigner.sign([
-            "bili_local_id": deviceID,
-            "build": profile.build,
-            "buvid": buvid,
-            "c_locale": "zh_CN",
-            "captcha_key": captchaKey,
-            "channel": profile.channel,
-            "cid": countryCode,
-            "code": code,
-            "device": "phone",
-            "device_id": deviceID,
-            "device_name": "vivo",
-            "device_platform": "Android14vivo",
-            "disable_rcmd": "0",
-            "dt": encryptedDeviceToken,
-            "from_pv": "main.my-information.my-login.0.click",
-            "from_url": Self.appPercentEncodedComponent("bilibili://user_center/mine"),
-            "local_id": buvid,
-            "mobi_app": profile.mobiApp,
-            "platform": profile.platform,
-            "s_locale": "zh_CN",
-            "statistics": profile.statistics,
-            "tel": phone
-        ], profile: profile)
-
-        let response: BiliResponse<AppQRCodeLoginPollData> = try await postSignedAppForm(
-            path: "/x/passport-login/login/sms",
-            fields: fields,
-            profile: profile,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let loginData = response.payload else { throw BiliAPIError.missingPayload }
-        return loginData
-    }
-
-    func pollQRCodeLogin(qrcodeKey: String) async throws -> QRCodeLoginPollResult {
-        let request = try await makeRequest(
-            base: passportURL,
-            path: "/x/passport-login/web/qrcode/poll",
-            query: ["qrcode_key": qrcodeKey],
-            referer: "https://passport.bilibili.com/login",
-            userAgent: Self.webUserAgent
-        )
-        let (data, response) = try await data(for: request, priority: .utility)
-        guard !data.isEmpty else { throw BiliAPIError.emptyData }
-
-        let apiResponse: BiliResponse<QRCodeLoginPollData> = try await Self.decode(data, priority: .utility)
-        guard apiResponse.code == 0 else {
-            throw BiliAPIError.api(code: apiResponse.code, message: apiResponse.displayMessage)
-        }
-        guard let pollData = apiResponse.payload else { throw BiliAPIError.missingPayload }
-        return QRCodeLoginPollResult(
-            data: pollData,
-            cookies: Self.biliCookies(from: response, requestURL: request.url)
-        )
-    }
-
-    func pollAppQRCodeLogin(authCode: String) async throws -> AppQRCodeLoginPollResult {
-        let profile = BiliAppSigner.Profile.androidTV
-        let cookieHeader = await anonymousCookieHeader()
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        let fields = BiliAppSigner.sign([
-            "auth_code": authCode,
-            "local_id": "0"
-        ], profile: profile)
-        var request = try await makeRequest(
-            base: passportURL,
-            path: "/x/passport-tv-login/qrcode/poll",
-            query: fields,
-            referer: "https://www.bilibili.com",
-            userAgent: profile.userAgent,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-
-        let (data, _) = try await data(for: request, priority: .utility)
-        guard !data.isEmpty else { throw BiliAPIError.emptyData }
-        let response: BiliResponse<AppQRCodeLoginPollData> = try await Self.decode(data, priority: .utility)
-        return AppQRCodeLoginPollResult(
-            status: Self.appQRCodeLoginStatus(for: response.code),
-            message: response.displayMessage,
-            loginData: response.payload
-        )
-    }
-
-    func fetchNavUser() async throws -> NavUserInfo {
-        if let task = await state.navUserTask() {
-            return try await task.value
-        }
-        let task = Task<NavUserInfo, Error>(priority: .utility) { [self] in
-            let response: BiliResponse<NavUserInfo> = try await get(
-                base: baseURL,
-                path: "/x/web-interface/nav",
-                query: [:]
-            )
-            guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-            guard let info = response.payload else { throw BiliAPIError.missingPayload }
-            return info
-        }
-        await state.setNavUserTask(task)
-        do {
-            let info = try await task.value
-            await state.clearNavUserTask()
-            return info
-        } catch {
-            await state.clearNavUserTask()
-            throw error
-        }
-    }
-
-    func fetchNavUser(cookieHeader: String) async throws -> NavUserInfo {
-        let response: BiliResponse<NavUserInfo> = try await get(
-            base: baseURL,
-            path: "/x/web-interface/nav",
-            query: [:],
-            cookieHeader: cookieHeader,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let info = response.payload, info.isLogin == true else {
-            throw BiliAPIError.missingSESSDATA
-        }
-        return info
-    }
-
     func fetchLiveRooms(page: Int = 1, refreshIndex: Int = 0) async throws -> [LiveRoom] {
         var query = [
             "platform": "web",
@@ -5613,31 +5314,6 @@ nonisolated final class BiliAPIClient {
         return try await Self.decode(data, priority: .userInitiated)
     }
 
-    private func postSignedAppForm<T: Decodable>(
-        path: String,
-        fields: [String: String],
-        profile: BiliAppSigner.Profile,
-        cookieHeader: String,
-        additionalHeaders: [String: String]
-    ) async throws -> T {
-        var request = try await makeRequest(
-            base: passportURL,
-            path: path,
-            query: [:],
-            referer: "https://www.bilibili.com",
-            userAgent: profile.userAgent,
-            cookieHeader: cookieHeader,
-            additionalHeaders: additionalHeaders,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Self.formBody(from: fields)
-        let (data, _) = try await data(for: request, priority: .userInitiated)
-        guard !data.isEmpty else { throw BiliAPIError.emptyData }
-        return try await Self.decode(data, priority: .userInitiated)
-    }
-
     func postSignedAPIForm<T: Decodable>(
         path: String,
         fields: [String: String],
@@ -5661,22 +5337,6 @@ nonisolated final class BiliAPIClient {
         let (data, _) = try await data(for: request, priority: .userInitiated)
         guard !data.isEmpty else { throw BiliAPIError.emptyData }
         return try await Self.decode(data, priority: .userInitiated)
-    }
-
-    private func fetchAppLoginWebKey() async throws -> AppLoginWebKeyData {
-        let response: BiliResponse<AppLoginWebKeyData> = try await get(
-            base: passportURL,
-            path: "/x/passport-login/web/key",
-            query: [:],
-            referer: "https://passport.bilibili.com/login",
-            userAgent: Self.mobileUserAgent,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let data = response.payload else { throw BiliAPIError.missingPayload }
-        return data
     }
 
     func makeRequest(
@@ -5827,7 +5487,7 @@ nonisolated final class BiliAPIClient {
         return (csrf, snapshot)
     }
 
-    private func requireCSRF() async throws -> String {
+    func requireCSRF() async throws -> String {
         try await requireCSRFContext(for: .main).csrf
     }
 
@@ -5845,7 +5505,7 @@ nonisolated final class BiliAPIClient {
         return snapshot.guestModeEnabled ? snapshot.anonymousCookieHeader : nil
     }
 
-    private nonisolated static func cookieValue(named name: String, in header: String) -> String? {
+    nonisolated static func cookieValue(named name: String, in header: String) -> String? {
         header
             .split(separator: ";")
             .compactMap { item -> String? in
@@ -5883,38 +5543,10 @@ nonisolated final class BiliAPIClient {
         return items.joined(separator: "; ")
     }
 
-    private static func formBody(from fields: [String: String]) -> Data {
+    static func formBody(from fields: [String: String]) -> Data {
         var components = URLComponents()
         components.queryItems = fields.map { URLQueryItem(name: $0.key, value: $0.value) }
         return Data((components.percentEncodedQuery ?? "").utf8)
-    }
-
-    private static func md5(_ value: String) -> String {
-        let digest = Insecure.MD5.hash(data: Data(value.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func appLoginDeviceID() -> String {
-        let key = "BiliAppLoginDeviceID"
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
-            return existing
-        }
-
-        var bytes = [UInt8](repeating: 0, count: 25)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status != errSecSuccess {
-            bytes = Array(UUID().uuidString.utf8).map { UInt8($0) }.prefix(25).map { $0 }
-            while bytes.count < 25 {
-                bytes.append(UInt8.random(in: 0...255))
-            }
-        }
-        let checksum = bytes.reduce(0) { ($0 + Int($1)) & 0xff }
-        let digest = Insecure.MD5.hash(data: Data(bytes))
-            .map { String(format: "%02x", $0) }
-            .joined()
-        let value = digest + String(format: "%02x", checksum)
-        UserDefaults.standard.set(value, forKey: key)
-        return value
     }
 
     static func randomAlphaNumeric(length: Int) -> String {
@@ -5925,46 +5557,6 @@ nonisolated final class BiliAPIClient {
             return String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(length))
         }
         return String(bytes.map { characters[Int($0) % characters.count] })
-    }
-
-    private static func rsaEncryptedComponent(_ value: String, publicKeyPEM: String) throws -> String {
-        let publicKey = try rsaPublicKey(from: publicKeyPEM)
-        let algorithm = SecKeyAlgorithm.rsaEncryptionPKCS1
-        guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
-            throw BiliAPIError.api(code: -1, message: "当前设备不支持短信登录加密")
-        }
-        var error: Unmanaged<CFError>?
-        guard let encrypted = SecKeyCreateEncryptedData(publicKey, algorithm, Data(value.utf8) as CFData, &error) as Data? else {
-            let message = error?.takeRetainedValue().localizedDescription
-            throw BiliAPIError.api(code: -1, message: message ?? "短信登录加密失败")
-        }
-        return appPercentEncodedComponent(encrypted.base64EncodedString())
-    }
-
-    private static func rsaPublicKey(from pem: String) throws -> SecKey {
-        let base64 = pem
-            .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----END PUBLIC KEY-----", with: "")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .joined()
-        guard let keyData = Data(base64Encoded: base64) else {
-            throw BiliAPIError.api(code: -1, message: "登录公钥格式无效")
-        }
-        let attributes: [CFString: Any] = [
-            kSecAttrKeyType: kSecAttrKeyTypeRSA,
-            kSecAttrKeyClass: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits: 1024
-        ]
-        var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
-            let message = error?.takeRetainedValue().localizedDescription
-            throw BiliAPIError.api(code: -1, message: message ?? "登录公钥解析失败")
-        }
-        return key
-    }
-
-    private static func appPercentEncodedComponent(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .biliAppComponentAllowed) ?? value
     }
 
     nonisolated static func decode<T: Decodable>(
@@ -6089,35 +5681,6 @@ nonisolated final class BiliAPIClient {
         return []
     }
 
-    private static func biliCookies(from response: URLResponse, requestURL: URL?) -> [HTTPCookie] {
-        var cookies = [HTTPCookie]()
-
-        if let httpResponse = response as? HTTPURLResponse,
-           let requestURL {
-            let headers = httpResponse.allHeaderFields.reduce(into: [String: String]()) { result, field in
-                let key = (field.key.base as? String) ?? String(describing: field.key)
-                result[key] = String(describing: field.value)
-            }
-            cookies.append(contentsOf: HTTPCookie.cookies(withResponseHeaderFields: headers, for: requestURL))
-        }
-
-        if cookies.isEmpty {
-            let storageURLs = [
-                requestURL,
-                URL(string: "https://passport.bilibili.com"),
-                URL(string: "https://www.bilibili.com"),
-                URL(string: "https://api.bilibili.com")
-            ].compactMap { $0 }
-            cookies.append(contentsOf: storageURLs.flatMap { HTTPCookieStorage.shared.cookies(for: $0) ?? [] })
-        }
-
-        var seen = Set<String>()
-        return cookies.filter { cookie in
-            guard cookie.domain.localizedCaseInsensitiveContains("bilibili.com") else { return false }
-            let key = "\(cookie.name)|\(cookie.domain)|\(cookie.path)"
-            return seen.insert(key).inserted
-        }
-    }
 }
 
 extension JSONDecoder {
