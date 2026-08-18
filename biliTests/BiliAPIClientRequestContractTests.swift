@@ -1456,6 +1456,187 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
     }
 
+    func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "live recommendation request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"list":[{"roomid":31415,"title":"直播测试","uname":"主播","live_status":1}]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; buvid3=live-guest-buvid"
+        )
+        let rooms = try await api.fetchLiveRooms(page: 3, refreshIndex: 7)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(rooms.map(\.roomID), [31_415])
+        let request = try XCTUnwrap(recorder.request)
+        let url = try XCTUnwrap(request.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(url.host, "api.live.bilibili.com")
+        XCTAssertEqual(url.path, "/xlive/web-interface/v1/webMain/getMoreRecList")
+        let query = queryValues(in: components)
+        XCTAssertEqual(query["platform"], "web")
+        XCTAssertEqual(query["page"], "3")
+        XCTAssertEqual(query["page_size"], "20")
+        XCTAssertEqual(query["fresh_idx"], "7")
+        XCTAssertEqual(query["fresh_type"], "3")
+        XCTAssertNotNil(query["_"])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://live.bilibili.com")
+        XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["buvid3"], "live-guest-buvid")
+        XCTAssertNil(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"])
+    }
+
+    func testFetchLiveRoomInfoBuildsRoomScopedRequestAndDecodes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "live room info request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"room_id":24680,"uid":1001,"title":"直播间","live_status":1,"online":12}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let info = try await api.fetchLiveRoomInfo(roomID: 24_680)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(info.roomID, 24_680)
+        XCTAssertEqual(info.title, "直播间")
+        let request = try XCTUnwrap(recorder.request)
+        let url = try XCTUnwrap(request.url)
+        XCTAssertEqual(url.host, "api.live.bilibili.com")
+        XCTAssertEqual(url.path, "/room/v1/Room/get_info")
+        XCTAssertEqual(queryValues(for: request), ["room_id": "24680"])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://live.bilibili.com/24680")
+    }
+
+    func testFetchLiveStreamInfoBuildsWebAndAndroidRequestsAndDecodesCandidate() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "web and android live play requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            let platform = Self.queryValue(named: "platform", in: request)
+            if platform == "web" {
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"playurl_info":{"playurl":{"stream":[],"g_qn_desc":[{"qn":10000,"desc":"原画"}]}}}}
+                        """
+                )
+            }
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"playurl_info":{"playurl":{"stream":[{"protocol_name":"http_hls","format":[{"format_name":"fmp4","codec":[{"codec_name":"avc","current_qn":10000,"accept_qn":[10000],"base_url":"/live.m3u8","url_info":[{"host":"https://live.example.com","extra":"?token=android"}]}]}]}],"g_qn_desc":[{"qn":10000,"desc":"原画"}]}}}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let result = try await api.fetchLiveStreamInfo(roomID: 13_579, quality: 10_000)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(
+            result.candidates.map(\.url.absoluteString), ["https://live.example.com/live.m3u8?token=android"])
+        XCTAssertEqual(result.playableQualities.map(\.qn), [10_000])
+        let requests = recorder.requests.filter {
+            $0.url?.path == "/xlive/web-room/v2/index/getRoomPlayInfo"
+        }
+        XCTAssertEqual(requests.count, 2)
+        let queriesByPlatform = Dictionary(
+            uniqueKeysWithValues: requests.compactMap { request in
+                Self.queryValue(named: "platform", in: request).map { ($0, queryValues(for: request)) }
+            })
+        XCTAssertEqual(queriesByPlatform["web"]?["room_id"], "13579")
+        XCTAssertEqual(queriesByPlatform["web"]?["protocol"], "0,1")
+        XCTAssertEqual(queriesByPlatform["web"]?["format"], "0,1,2")
+        XCTAssertEqual(queriesByPlatform["web"]?["codec"], "0,1")
+        XCTAssertEqual(queriesByPlatform["web"]?["qn"], "10000")
+        XCTAssertEqual(queriesByPlatform["android"]?["room_id"], "13579")
+        XCTAssertEqual(queriesByPlatform["android"]?["protocol"], "0,1")
+        XCTAssertEqual(queriesByPlatform["android"]?["format"], "0,1,2")
+        XCTAssertEqual(queriesByPlatform["android"]?["codec"], "0")
+        XCTAssertEqual(queriesByPlatform["android"]?["qn"], "10000")
+    }
+
+    func testFetchLiveDanmakuConnectionInfoUsesTransportSessionAndDecodesToken() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "live danmaku request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            guard request.url?.host == "api.live.bilibili.com" else {
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}
+                        """
+                )
+            }
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"token":"live-token","host_list":[{"host":"broadcast.example.com","wss_port":443}]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RequestContractURLProtocol.self]
+        configuration.urlCache = nil
+        let transportSession = URLSession(configuration: configuration)
+        let info = try await api.fetchLiveDanmakuConnectionInfo(
+            roomID: 97531,
+            cookieHeader: "SESSDATA=transport-session",
+            transportSession: transportSession
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(info.token, "live-token")
+        XCTAssertEqual(info.hostList.first?.host, "broadcast.example.com")
+        let request = try XCTUnwrap(
+            recorder.requests.last(where: { $0.url?.host == "api.live.bilibili.com" })
+        )
+        let url = try XCTUnwrap(request.url)
+        XCTAssertEqual(url.path, "/xlive/web-room/v1/index/getDanmuInfo")
+        let query = queryValues(for: request)
+        XCTAssertEqual(query["id"], "97531")
+        XCTAssertEqual(query["type"], "0")
+        XCTAssertEqual(query["web_location"], "444.8")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=transport-session")
+    }
+
     private func makeAPI(cookieHeader: String, accessKey: String? = nil) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -1521,6 +1702,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return [:] }
         return queryValues(in: components)
+    }
+
+    private static func queryValue(named name: String, in request: URLRequest) -> String? {
+        guard let url = request.url,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        return components.queryItems?.first(where: { $0.name == name })?.value
     }
 
     private func formValues(in request: URLRequest) -> [String: String] {
@@ -1591,7 +1779,10 @@ private final class RequestContractURLProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        ["api.bilibili.com", "app.bilibili.com", "passport.bilibili.com", "space.bilibili.com"].contains(
+        [
+            "api.bilibili.com", "api.live.bilibili.com", "app.bilibili.com", "passport.bilibili.com",
+            "space.bilibili.com",
+        ].contains(
             request.url?.host)
     }
 
