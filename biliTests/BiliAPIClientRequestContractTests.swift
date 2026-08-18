@@ -915,7 +915,142 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             ])
     }
 
-    private func makeAPI(cookieHeader: String) throws -> BiliAPIClient {
+    func testUploaderProfileRejectsInvalidMIDWithoutRequest() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            throw URLError(.badServerResponse)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        for operation in [
+            { try await api.fetchUploaderProfile(mid: 0) },
+            { try await api.fetchUploaderStatsProfile(mid: -1) },
+        ] {
+            do {
+                _ = try await operation()
+                XCTFail("Expected invalid uploader UID to fail")
+            } catch let error as BiliAPIError {
+                guard case .api(let code, let message) = error else {
+                    return XCTFail("Unexpected API error: \(error)")
+                }
+                XCTAssertEqual(code, -1)
+                XCTAssertEqual(message, "UP 主 UID 无效")
+            }
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testUploaderProfileMergesVisibleSourcesAndSurvivesPartialFailures() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let query = self.queryValues(for: request)
+            switch (request.url?.host, request.url?.path) {
+            case ("api.bilibili.com", "/x/web-interface/card"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":-500,\"message\":\"card failed\",\"data\":null}"
+                )
+            case ("app.bilibili.com", "/x/v2/space"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"card\":{\"mid\":123,\"name\":\"测试UP\",\"fans\":200}}}"
+                )
+            case ("api.bilibili.com", "/x/web-interface/nav"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"wbi_img\":{"
+                        + "\"img_url\":\"https://i0.hdslb.com/bfs/wbi/abcdef.png\","
+                        + "\"sub_url\":\"https://i0.hdslb.com/bfs/wbi/ghijkl.png\"}}}"
+                )
+            case ("api.bilibili.com", "/x/space/wbi/acc/info"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"follower\":300}}"
+                )
+            case ("api.bilibili.com", "/x/relation/stat"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"following\":12,\"follower\":400}}"
+                )
+            case ("api.bilibili.com", "/x/space/upstat"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"likes\":999,\"archive\":{\"count\":88}}}"
+                )
+            case ("api.bilibili.com", "/x/relation"):
+                XCTAssertEqual(query["fid"], "123")
+                return Self.response(for: request, body: "{\"code\":0,\"data\":{\"attribute\":2}}")
+            case ("space.bilibili.com", "/123"):
+                return Self.response(
+                    for: request,
+                    body: "window.__INITIAL_STATE__={\"card\":{\"mid\":123,\"fans\":500}};"
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let profile = try await api.fetchUploaderProfile(mid: 123)
+
+        XCTAssertEqual(profile.card?.name, "测试UP")
+        XCTAssertEqual(profile.visibleFollowerCount, 400)
+        XCTAssertEqual(profile.visibleFollowingCount, 12)
+        XCTAssertEqual(profile.visibleLikeCount, 999)
+        XCTAssertEqual(profile.visibleArchiveCount, 88)
+        XCTAssertTrue(recorder.requests.contains { $0.url?.path == "/x/web-interface/card" })
+        XCTAssertTrue(recorder.requests.contains { $0.url?.path == "/x/v2/space" })
+    }
+
+    func testUploaderProfileFallsBackToAppAccessKeyForViewerRelation() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch (request.url?.host, request.url?.path) {
+            case ("api.bilibili.com", "/x/web-interface/card"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"card\":{\"mid\":123,\"name\":\"测试UP\"}}}"
+                )
+            case ("app.bilibili.com", "/x/v2/space"):
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"card\":{\"mid\":123,\"name\":\"测试UP\"}}}"
+                )
+            case ("api.bilibili.com", "/x/relation"):
+                let query = self.queryValues(for: request)
+                if query["access_key"] == "app-access-key" {
+                    return Self.response(for: request, body: "{\"code\":0,\"data\":{\"attribute\":2}}")
+                }
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":-101,\"message\":\"cookie failed\",\"data\":null}"
+                )
+            default:
+                return Self.response(for: request, body: "{\"code\":0,\"data\":null}")
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key"
+        )
+        let profile = try await api.fetchUploaderProfile(mid: 123)
+
+        XCTAssertEqual(profile.following, true)
+        let relationRequests = recorder.requests.filter { $0.url?.path == "/x/relation" }
+        XCTAssertTrue(relationRequests.contains { self.queryValues(for: $0)["access_key"] == nil })
+        XCTAssertTrue(relationRequests.contains { self.queryValues(for: $0)["access_key"] == "app-access-key" })
+    }
+
+    private func makeAPI(cookieHeader: String, accessKey: String? = nil) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
         let cookieValues = cookieHeader.split(separator: ";").reduce(into: [String: String]()) { values, item in
@@ -926,6 +1061,9 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
         try keychain.save(cookieHeader, for: "LOGIN_COOKIE_HEADER")
         try keychain.save(cookieValues["SESSDATA"] ?? "", for: "SESSDATA")
+        if let accessKey {
+            try keychain.save(accessKey, for: "ACCESS_KEY")
+        }
         try keychain.save(LoginCredentialKind.web.rawValue, for: "LOGIN_CREDENTIAL_KIND")
 
         let sessionStore = SessionStore(keychain: keychain)
@@ -1047,7 +1185,7 @@ private final class RequestContractURLProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "api.bilibili.com"
+        ["api.bilibili.com", "app.bilibili.com", "space.bilibili.com"].contains(request.url?.host)
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
