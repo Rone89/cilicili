@@ -36,13 +36,11 @@ struct LiveFeedView: View {
         .task {
             await viewModel.loadInitial()
         }
-        .overlay(alignment: .top) {
-            HomeFeedPullRefreshOverlay(
-                pullDistance: pullRefreshDistance,
-                triggerDistance: pullRefreshTriggerDistance,
-                isRefreshing: viewModel.isRefreshing
-            )
-        }
+        .homeFeedPullRefreshLayout(
+            pullDistance: pullRefreshDistance,
+            triggerDistance: pullRefreshTriggerDistance,
+            isRefreshing: viewModel.isRefreshing
+        )
         .overlay {
             LiveFeedErrorOverlay(viewModel: viewModel)
         }

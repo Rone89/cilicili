@@ -15,13 +15,11 @@ private struct HomeFeedScrollOverlayModifier: ViewModifier {
                     retry: actions.retryInitialLoad
                 )
             }
-            .overlay(alignment: .top) {
-                HomeFeedPullRefreshOverlay(
-                    pullDistance: viewportState.currentPullRefreshDistance,
-                    triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
-                    isRefreshing: viewModel.isUserRefreshing
-                )
-            }
+            .homeFeedPullRefreshLayout(
+                pullDistance: viewportState.currentPullRefreshDistance,
+                triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
+                isRefreshing: viewModel.isUserRefreshing
+            )
     }
 }
 

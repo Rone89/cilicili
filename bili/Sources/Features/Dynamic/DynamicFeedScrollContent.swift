@@ -41,13 +41,11 @@ struct DynamicFeedScrollContent: View {
         .task(id: isLoggedIn) {
             await viewModel.loadInitial()
         }
-        .overlay(alignment: .top) {
-            HomeFeedPullRefreshOverlay(
-                pullDistance: pullRefreshDistance,
-                triggerDistance: pullRefreshTriggerDistance,
-                isRefreshing: viewModel.isRefreshing
-            )
-        }
+        .homeFeedPullRefreshLayout(
+            pullDistance: pullRefreshDistance,
+            triggerDistance: pullRefreshTriggerDistance,
+            isRefreshing: viewModel.isRefreshing
+        )
         .overlay {
             DynamicFeedErrorOverlay(viewModel: viewModel, isLoggedIn: isLoggedIn)
         }
