@@ -249,6 +249,16 @@ nonisolated final class BiliAPIClient {
         )
     }
 
+    func pgcPlaybackRequestContext() async -> PGCPlaybackRequestContext {
+        let snapshot = await requestSnapshot(purpose: .playback)
+        return PGCPlaybackRequestContext(
+            cookieHeader: snapshot.cookieHeader,
+            effectivePreferredVideoQuality: snapshot.effectivePreferredVideoQuality,
+            playbackStreamSourcePreference: snapshot.playbackStreamSourcePreference,
+            currentUserMID: snapshot.currentUserMID
+        )
+    }
+
     func accountLibraryRequestContext(
         purpose: BiliAccountPurpose
     ) async -> AccountLibraryRequestContext {
@@ -1576,46 +1586,6 @@ nonisolated final class BiliAPIClient {
         return try BiliListenerPlaylistCodec.decodeResponse(responseMessage)
     }
 
-    func fetchPgcSeasonInfo(seasonID: Int?, epID: Int? = nil) async throws -> PgcSeasonInfo {
-        var candidates = [(query: [String: String], referer: String)]()
-        if let epID, epID > 0 {
-            candidates.append((
-                query: ["ep_id": String(epID)],
-                referer: "https://www.bilibili.com/bangumi/play/ep\(epID)"
-            ))
-        }
-        if let seasonID, seasonID > 0 {
-            candidates.append((
-                query: ["season_id": String(seasonID)],
-                referer: "https://www.bilibili.com/bangumi/play/ss\(seasonID)"
-            ))
-        }
-        guard !candidates.isEmpty else { throw BiliAPIError.missingPayload }
-
-        var lastError: Error?
-        for candidate in candidates {
-            do {
-                let response: BiliResponse<PgcSeasonInfo> = try await get(
-                    base: baseURL,
-                    path: "/pgc/view/web/season",
-                    query: candidate.query,
-                    referer: candidate.referer,
-                    responseCachePolicy: .detail
-                )
-                guard response.code == 0 else {
-                    throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-                }
-                guard let info = response.payload else { throw BiliAPIError.missingPayload }
-                return info
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                lastError = error
-            }
-        }
-        throw lastError ?? BiliAPIError.missingPayload
-    }
-
     func fetchPlayURL(
         bvid: String,
         cid: Int,
@@ -1653,7 +1623,7 @@ nonisolated final class BiliAPIClient {
             )
             return await applyingConfiguredHistoryAccount(
                 to: cached,
-                playbackSnapshot: snapshot
+                playbackUserMID: snapshot.currentUserMID
             )
         }
 
@@ -1677,89 +1647,8 @@ nonisolated final class BiliAPIClient {
         }
         return await applyingConfiguredHistoryAccount(
             to: data,
-            playbackSnapshot: snapshot
+            playbackUserMID: snapshot.currentUserMID
         )
-    }
-
-    func fetchPgcPlayURL(
-        bvid: String,
-        cid: Int,
-        seasonID: Int?,
-        epID: Int?,
-        qn: Int = 112,
-        preferredQuality: Int? = nil
-    ) async throws -> PlayURLData {
-        let snapshot = await requestSnapshot(purpose: .playback)
-        let requestedQuality = preferredQuality ?? snapshot.effectivePreferredVideoQuality ?? qn
-        let streamSource = snapshot.playbackStreamSourcePreference
-        let keys = try await fetchWBIKeys(priority: .userInitiated)
-        let referer: String
-        if let epID {
-            referer = "https://www.bilibili.com/bangumi/play/ep\(epID)"
-        } else if let seasonID {
-            referer = "https://www.bilibili.com/bangumi/play/ss\(seasonID)"
-        } else {
-            referer = "https://www.bilibili.com/bangumi/play/"
-        }
-        var lastError: Error?
-        var bestFallbackData: PlayURLData?
-        for codecPreference in PlayURLCodecPreference.extendedPlaybackOrder(requestedQuality: requestedQuality) {
-            do {
-                var query = pgcPlayURLQuery(
-                    bvid: bvid,
-                    cid: cid,
-                    seasonID: seasonID,
-                    epID: epID,
-                    qn: requestedQuality,
-                    streamSource: streamSource,
-                    codecPreference: codecPreference
-                )
-                query = WBISigner.sign(query, keys: keys)
-                let response: BiliResponse<PgcPlayURLResult> = try await get(
-                    base: baseURL,
-                    path: "/pgc/player/web/v2/playurl",
-                    query: query,
-                    referer: referer,
-                    userAgent: userAgent(for: streamSource),
-                    cookieHeader: snapshot.cookieHeader,
-                    cachePolicy: .reloadIgnoringLocalCacheData,
-                    priority: URLSessionTask.highPriority
-                )
-                let data = try requirePgcPlayURLData(response, requirePlayablePayload: true)
-                let requestedData = try requireRequestedQualityIfNeeded(data, requestedQuality: requestedQuality)
-                guard codecPreference.accepts(requestedData) else {
-                    throw BiliAPIError.emptyPlayURL
-                }
-                if Self.shouldContinueCodecFallback(
-                    for: requestedData,
-                    requestedQuality: requestedQuality,
-                    requestedCodecFamily: codecPreference.selectionCodecFamily,
-                    allowsUnavailableQualityFallback: codecPreference.allowsUnavailableQualityFallback
-                ) {
-                    bestFallbackData = preferredStartupCandidate(
-                        bestFallbackData,
-                        requestedData,
-                        requestedQuality: requestedQuality
-                    )
-                    continue
-                }
-                return await applyingConfiguredHistoryAccount(
-                    to: requestedData,
-                    playbackSnapshot: snapshot
-                )
-            } catch {
-                guard !Task.isCancelled else { throw error }
-                lastError = error
-                guard shouldTryAlternatePlayURLCodec(after: error) else { break }
-            }
-        }
-        if let bestFallbackData {
-            return await applyingConfiguredHistoryAccount(
-                to: bestFallbackData,
-                playbackSnapshot: snapshot
-            )
-        }
-        throw lastError ?? BiliAPIError.emptyPlayURL
     }
 
     func clearCachedPlayURLFailures(bvid: String) async {
@@ -1787,16 +1676,16 @@ nonisolated final class BiliAPIClient {
         ) else { return nil }
         return await applyingConfiguredHistoryAccount(
             to: data,
-            playbackSnapshot: snapshot
+            playbackUserMID: snapshot.currentUserMID
         )
     }
 
-    private func applyingConfiguredHistoryAccount(
+    func applyingConfiguredHistoryAccount(
         to data: PlayURLData,
-        playbackSnapshot: RequestSnapshot
+        playbackUserMID: Int?
     ) async -> PlayURLData {
         let historySnapshot = await requestSnapshot(purpose: .historyRead)
-        guard historySnapshot.currentUserMID == playbackSnapshot.currentUserMID else {
+        guard historySnapshot.currentUserMID == playbackUserMID else {
             return data.removingHistoryMetadata()
         }
         return data
@@ -2080,7 +1969,7 @@ nonisolated final class BiliAPIClient {
         logPlayURLStage("webpagePlayInfo", bvid: bvid, cid: cid, start: stageStart, data: data)
         return await applyingConfiguredHistoryAccount(
             to: data,
-            playbackSnapshot: snapshot
+            playbackUserMID: snapshot.currentUserMID
         )
     }
 
@@ -2171,7 +2060,7 @@ nonisolated final class BiliAPIClient {
         )
         return await applyingConfiguredHistoryAccount(
             to: data,
-            playbackSnapshot: snapshot
+            playbackUserMID: snapshot.currentUserMID
         )
     }
 
@@ -2286,7 +2175,7 @@ nonisolated final class BiliAPIClient {
             )
             return await applyingConfiguredHistoryAccount(
                 to: cached,
-                playbackSnapshot: snapshot
+                playbackUserMID: snapshot.currentUserMID
             )
         }
 
@@ -2311,7 +2200,7 @@ nonisolated final class BiliAPIClient {
         }
         return await applyingConfiguredHistoryAccount(
             to: data,
-            playbackSnapshot: snapshot
+            playbackUserMID: snapshot.currentUserMID
         )
     }
 
@@ -3629,31 +3518,6 @@ nonisolated final class BiliAPIClient {
         await state.cancelPlayURLStage(cacheKey)
     }
 
-    private nonisolated func userAgent(for streamSource: PlaybackStreamSourcePreference) -> String {
-        switch streamSource {
-        case .web:
-            return Self.webUserAgent
-        case .app:
-            return Self.mobileUserAgent
-        }
-    }
-
-    private func preferredStartupCandidate(
-        _ lhs: PlayURLData?,
-        _ rhs: PlayURLData,
-        requestedQuality: Int
-    ) -> PlayURLData? {
-        guard Self.startupCandidateQuality(in: rhs, requestedQuality: requestedQuality) != nil else {
-            return lhs
-        }
-        guard let lhs else { return rhs }
-        guard let lhsQuality = Self.startupCandidateQuality(in: lhs, requestedQuality: requestedQuality) else {
-            return rhs
-        }
-        let rhsQuality = Self.startupCandidateQuality(in: rhs, requestedQuality: requestedQuality) ?? 0
-        return rhsQuality > lhsQuality ? rhs : lhs
-    }
-
     private func preferredStartupRaceCandidate(
         _ lhs: StartupPlayURLRaceResult?,
         _ rhs: StartupPlayURLRaceResult,
@@ -3920,108 +3784,6 @@ nonisolated final class BiliAPIClient {
         await state.startupWBISuppressionStatus()
     }
 
-    private enum PlayURLCodecPreference: String, CaseIterable {
-        case av1
-        case hevc
-        case automatic
-        case avc
-
-        static func primaryPlaybackOrder(requestedQuality: Int?) -> [PlayURLCodecPreference] {
-            playbackOrder(for: VideoCodecPreference.stored(), requestedQuality: requestedQuality)
-        }
-
-        static func extendedPlaybackOrder(requestedQuality: Int?) -> [PlayURLCodecPreference] {
-            playbackOrder(for: VideoCodecPreference.stored(), requestedQuality: requestedQuality)
-        }
-
-        private static func playbackOrder(
-            for preference: VideoCodecPreference,
-            requestedQuality: Int?
-        ) -> [PlayURLCodecPreference] {
-            if requestedQuality.map({ BiliAPIClient.requiresAutomaticCodecNegotiation(requestedQuality: $0) }) == true {
-                return [.automatic]
-            }
-            let configuredOrder = preference.codecOrder.compactMap { codec -> PlayURLCodecPreference? in
-                switch codec {
-                case .av1:
-                    return .av1
-                case .hevc:
-                    return .hevc
-                case .h264:
-                    return .avc
-                case .unknown:
-                    return nil
-                }
-            }
-            guard configuredOrder.count > 1 else {
-                return configuredOrder.isEmpty ? [.automatic] : configuredOrder
-            }
-            if configuredOrder.first == .av1 {
-                // The unconstrained response most consistently exposes AV1 alongside
-                // the configured fallbacks, so selection can stay local.
-                return [.automatic] + configuredOrder
-            }
-            return configuredOrder + [.automatic]
-        }
-
-        func videoCodecid(requestedQuality: Int) -> String? {
-            guard !BiliAPIClient.requiresAutomaticCodecNegotiation(requestedQuality: requestedQuality) else { return nil }
-            switch self {
-            case .av1:
-                return "13"
-            case .hevc:
-                return "12"
-            case .automatic:
-                return nil
-            case .avc:
-                return "7"
-            }
-        }
-
-        var stageSuffix: String {
-            switch self {
-            case .av1:
-                return "AV1"
-            case .hevc:
-                return ""
-            case .automatic:
-                return "AutoCodec"
-            case .avc:
-                return "AVC"
-            }
-        }
-
-        func accepts(_ data: PlayURLData) -> Bool {
-            switch self {
-            case .av1:
-                return data.dash?.video?.contains(where: \.isAV1VideoCodec) == true
-            case .hevc:
-                return data.dash?.video?.contains(where: \.isHEVCVideoCodec) == true
-            case .avc:
-                return data.dash?.video?.contains(where: \.isAVCVideoCodec) == true
-            case .automatic:
-                return true
-            }
-        }
-
-        var selectionCodecFamily: VideoCodecFamily? {
-            switch self {
-            case .av1:
-                return .av1
-            case .hevc:
-                return .hevc
-            case .avc:
-                return .h264
-            case .automatic:
-                return VideoCodecPreference.stored().codecOrder.first
-            }
-        }
-
-        var allowsUnavailableQualityFallback: Bool {
-            self != .automatic
-        }
-    }
-
     private nonisolated static func playURLQuery(
         bvid: String,
         cid: Int,
@@ -4109,44 +3871,6 @@ nonisolated final class BiliAPIClient {
         let length = Int.random(in: minLength...maxLength)
         let bytes = (0..<length).map { _ in UInt8.random(in: 0x26...0x7e) }
         return String(Data(bytes).base64EncodedString().dropLast(2))
-    }
-
-    private func pgcPlayURLQuery(
-        bvid: String,
-        cid: Int,
-        seasonID: Int?,
-        epID: Int?,
-        qn: Int,
-        streamSource: PlaybackStreamSourcePreference,
-        codecPreference: PlayURLCodecPreference = .hevc
-    ) -> [String: String] {
-        var query = [
-            "cid": String(cid),
-            "qn": String(qn),
-            "fnval": "4048",
-            "fnver": "0",
-            "fourk": "1",
-            "platform": streamSource.playURLPlatform,
-            "high_quality": "1",
-            "otype": "json",
-            "try_look": "1",
-            "gaia_source": "pre-load",
-            "isGaiaAvoided": "true",
-            "web_location": "1315873"
-        ]
-        if bvid.hasPrefix("BV") {
-            query["bvid"] = bvid
-        }
-        if let seasonID {
-            query["season_id"] = String(seasonID)
-        }
-        if let epID {
-            query["ep_id"] = String(epID)
-        }
-        if let videoCodecid = codecPreference.videoCodecid(requestedQuality: qn) {
-            query["video_codecid"] = videoCodecid
-        }
-        return query
     }
 
     private func fetchLegacyPlayURLWithCodecFallbacks(
@@ -4322,26 +4046,6 @@ nonisolated final class BiliAPIClient {
             return bestFallbackData
         }
         throw lastError ?? BiliAPIError.emptyPlayURL
-    }
-
-    private func requireRequestedQualityIfNeeded(
-        _ data: PlayURLData,
-        requestedQuality: Int
-    ) throws -> PlayURLData {
-        guard Self.requiresAutomaticCodecNegotiation(requestedQuality: requestedQuality),
-              !data.hasMediaPayloadQuality(requestedQuality)
-        else { return data }
-        throw BiliAPIError.emptyPlayURL
-    }
-
-    private func shouldTryAlternatePlayURLCodec(after error: Error) -> Bool {
-        guard let biliError = error as? BiliAPIError else { return false }
-        switch biliError {
-        case .emptyPlayURL, .unsupportedHardwarePlayback:
-            return true
-        default:
-            return false
-        }
     }
 
     private func shouldRefreshWBIKeys(after error: Error) -> Bool {
@@ -5204,25 +4908,6 @@ nonisolated final class BiliAPIClient {
             if data.hasAnyPlayURLPayload {
                 throw BiliAPIError.unsupportedHardwarePlayback(
                     "播放接口已返回地址，但没有可用的 HEVC/AAC 硬解组合（\(data.rawPlayURLSummary)）"
-                )
-            }
-            throw BiliAPIError.emptyPlayURL
-        }
-        return data
-    }
-
-    private func requirePgcPlayURLData(_ response: BiliResponse<PgcPlayURLResult>, requirePlayablePayload: Bool = false) throws -> PlayURLData {
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let data = response.payload?.videoInfo else { throw BiliAPIError.missingPayload }
-        if let code = data.code, code != 0 {
-            throw BiliAPIError.api(code: code, message: data.message)
-        }
-        if requirePlayablePayload, data.playVariants.isEmpty {
-            if data.hasAnyPlayURLPayload {
-                throw BiliAPIError.unsupportedHardwarePlayback(
-                    "番剧播放接口已返回地址，但没有可用的 HEVC/AAC 硬解组合（\(data.rawPlayURLSummary)）"
                 )
             }
             throw BiliAPIError.emptyPlayURL

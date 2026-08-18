@@ -1456,6 +1456,178 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
     }
 
+    func testFetchPgcSeasonInfoPrefersEpisodeThenFallsBackToSeason() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "PGC season requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            if Self.queryValue(named: "ep_id", in: request) == "42" {
+                return Self.response(
+                    for: request,
+                    body: #"{"code":-404,"message":"episode not found","result":null}"#
+                )
+            }
+            return Self.response(
+                for: request,
+                body: #"{"code":0,"result":{"season_id":120,"title":"PGC fallback"}}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let season = try await api.fetchPgcSeasonInfo(seasonID: 120, epID: 42)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(season.seasonID, 120)
+        let requests = recorder.requests.filter { $0.url?.path == "/pgc/view/web/season" }
+        XCTAssertEqual(requests.count, 2)
+        let requestsByParameter = Dictionary(
+            uniqueKeysWithValues: requests.compactMap { request in
+                let query = queryValues(for: request)
+                if let epID = query["ep_id"] {
+                    return ("ep_id", (epID, request))
+                }
+                if let seasonID = query["season_id"] {
+                    return ("season_id", (seasonID, request))
+                }
+                return nil
+            }
+        )
+        XCTAssertEqual(requestsByParameter["ep_id"]?.0, "42")
+        XCTAssertEqual(requestsByParameter["season_id"]?.0, "120")
+        XCTAssertEqual(
+            requestsByParameter["ep_id"]?.1.value(forHTTPHeaderField: "Referer"),
+            "https://www.bilibili.com/bangumi/play/ep42"
+        )
+        XCTAssertEqual(
+            requestsByParameter["season_id"]?.1.value(forHTTPHeaderField: "Referer"),
+            "https://www.bilibili.com/bangumi/play/ss120"
+        )
+    }
+
+    func testFetchPgcPlayURLBuildsSignedTargetQualityRequestAndDecodesDASH() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let requestExpectation = expectation(description: "PGC signed play URL request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body:
+                    #"{"code":0,"result":{"video_info":{"code":0,"quality":80,"accept_quality":[80],"dash":{"video":[{"id":80,"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}}"#
+            )
+        }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let data = try await api.fetchPgcPlayURL(
+            bvid: "BV1PGCtest",
+            cid: 24680,
+            seasonID: 120,
+            epID: 42,
+            preferredQuality: 80
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(data.quality, 80)
+        XCTAssertEqual(data.dash?.video?.first?.id, 80)
+        XCTAssertEqual(data.dash?.bestAudioStream?.id, 30280)
+        let request = try XCTUnwrap(
+            recorder.requests.first(where: { $0.url?.path == "/pgc/player/web/v2/playurl" })
+        )
+        let query = queryValues(for: request)
+        XCTAssertEqual(query["bvid"], "BV1PGCtest")
+        XCTAssertEqual(query["cid"], "24680")
+        XCTAssertEqual(query["season_id"], "120")
+        XCTAssertEqual(query["ep_id"], "42")
+        XCTAssertEqual(query["qn"], "80")
+        XCTAssertEqual(query["fnval"], "4048")
+        XCTAssertEqual(query["platform"], "iphone")
+        XCTAssertEqual(query["video_codecid"], "7")
+        XCTAssertNotNil(query["w_rid"])
+        XCTAssertNotNil(query["wts"])
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Referer"),
+            "https://www.bilibili.com/bangumi/play/ep42"
+        )
+    }
+
+    func testFetchPgcPlayURLPropagatesMissingPayload() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let requestExpectation = expectation(description: "PGC missing payload request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: #"{"code":0,"result":{}}"#)
+        }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        do {
+            _ = try await api.fetchPgcPlayURL(
+                bvid: "BV1PGCtest",
+                cid: 24680,
+                seasonID: 120,
+                epID: 42,
+                preferredQuality: 80
+            )
+            XCTFail("Expected missing PGC play URL payload")
+        } catch let error as BiliAPIError {
+            guard case .missingPayload = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        XCTAssertNotNil(
+            recorder.requests.first(where: { $0.url?.path == "/pgc/player/web/v2/playurl" })
+        )
+    }
+
     func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
