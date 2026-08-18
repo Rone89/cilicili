@@ -4331,8 +4331,7 @@ actor RemoteImageCache {
             decodePolicy: decodePolicy
         )
         let request = Self.imageRequest(url: url, cachePolicy: cachePolicy)
-        let usesCDNFailover = RemoteImageCDNFailoverExperiment.isEnabled()
-            && RemoteImageCDNFailoverPolicy.isEligible(url)
+        let usesCDNFailover = RemoteImageCDNFailoverPolicy.isEligible(url)
         let retryPolicy: BiliNetworkRetryPolicy = usesCDNFailover ? .imageFailover : .image
         if cachePolicy == .standard {
             recordDiskRequest(
@@ -4350,8 +4349,7 @@ actor RemoteImageCache {
         }
         RemoteImageCDNHealthMemory.shared.recordRequest(
             for: url,
-            originalURL: originalURL,
-            experimentEnabled: usesCDNFailover
+            originalURL: originalURL
         )
         let networkPriority = priority.networkTaskPriority
         let priorityHandle = ResourceLoadingExperiment.isFeatureEnabled(.visibleImagePriority)
@@ -4370,16 +4368,14 @@ actor RemoteImageCache {
                    !(200..<300).contains(response.statusCode) {
                     if RemoteImageCDNFailoverPolicy.shouldDemote(statusCode: response.statusCode) {
                         RemoteImageCDNHealthMemory.shared.recordTransientFailure(
-                            for: url,
-                            experimentEnabled: usesCDNFailover
+                            for: url
                         )
                     }
                     return nil
                 }
                 guard !Task.isCancelled else { return nil }
                 RemoteImageCDNHealthMemory.shared.recordSuccess(
-                    for: url,
-                    experimentEnabled: usesCDNFailover
+                    for: url
                 )
                 guard
                       let decoded = UIImage.downsampledImage(data: data, scale: scale, targetPixelSize: effectiveTargetPixelSize)
@@ -4389,8 +4385,7 @@ actor RemoteImageCache {
             } catch {
                 if RemoteImageCDNFailoverPolicy.shouldDemote(error: error) {
                     RemoteImageCDNHealthMemory.shared.recordTransientFailure(
-                        for: url,
-                        experimentEnabled: usesCDNFailover
+                        for: url
                     )
                 }
                 return nil
@@ -4445,8 +4440,7 @@ actor RemoteImageCache {
 
     private func imageCandidateURLs(for url: URL) -> [URL] {
         RemoteImageCDNHealthMemory.shared.orderedCandidates(
-            for: [url],
-            experimentEnabled: RemoteImageCDNFailoverExperiment.isEnabled()
+            for: [url]
         )
     }
 

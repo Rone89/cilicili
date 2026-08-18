@@ -46,9 +46,6 @@ struct RootTabView: View {
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
-        .environment(\.unifiedVideoCoverBorderExperimentEnabled, libraryStore.unifiedVideoCoverBorderExperimentEnabled)
-        .environment(\.thumbnailLongPressPreviewExperimentEnabled, libraryStore.thumbnailLongPressPreviewExperimentEnabled)
-        .environment(\.fastScrollImageLoadSuppressionExperimentEnabled, libraryStore.fastScrollImageLoadSuppressionExperimentEnabled)
         .environment(\.scrollEdgeEffectPreference, runtimeSettings.scrollEdgeEffectPreference)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }

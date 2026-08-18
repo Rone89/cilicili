@@ -97,6 +97,7 @@ struct BiliPlayerViewContent: View {
             playbackControlsOpacity: context.playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: context.playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
+            topCenterControlsAccessory: nil,
             topTrailingControlsAccessory: context.configuration.showsMoreControls
                 ? AnyView(moreControlsButton)
                 : nil,
@@ -124,13 +125,17 @@ private struct BiliPlayerMoreControlsButton: View {
 
     var body: some View {
         Button(action: open) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: metrics.iconSize, weight: .semibold))
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: metrics.controlHeight, height: metrics.controlHeight)
         }
         .biliPlayerCompactGlassCircle(metrics: metrics)
         .accessibilityLabel("更多播放设置")
+    }
+
+    private var iconSize: CGFloat {
+        metrics.iconSize + 3
     }
 }
 

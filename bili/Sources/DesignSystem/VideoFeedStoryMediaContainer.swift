@@ -2,7 +2,6 @@ import SwiftUI
 
 struct VideoFeedStoryMediaContainer: View {
     @Environment(\.showsVideoCoverDurationBadges) private var showsVideoCoverDurationBadges
-    @Environment(\.unifiedVideoCoverBorderExperimentEnabled) private var unifiedVideoCoverBorderExperimentEnabled
     let display: VideoCardDisplayModel
     @State private var coverLoadedState = VideoCoverLoadedState()
 
@@ -52,10 +51,7 @@ struct VideoFeedStoryMediaContainer: View {
             .frame(maxWidth: .infinity)
             .clipped()
             .clipShape(shape)
-            .unifiedVideoCoverExperimentBorder(
-                in: shape,
-                isEnabled: unifiedVideoCoverBorderExperimentEnabled
-            )
+            .unifiedVideoCoverBorder(in: shape)
     }
 
     private var coverMetaOverlay: some View {

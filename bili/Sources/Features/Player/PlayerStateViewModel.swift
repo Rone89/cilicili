@@ -3621,6 +3621,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         let effectiveIsEnabled = isEnabled && playbackContentMode == .video
+        guard isPictureInPictureEnabled != effectiveIsEnabled else {
+            return
+        }
         isPictureInPictureEnabled = effectiveIsEnabled
         engine.setPictureInPictureEnabled(effectiveIsEnabled)
         pictureInPictureController?.canStartPictureInPictureAutomaticallyFromInline = effectiveIsEnabled

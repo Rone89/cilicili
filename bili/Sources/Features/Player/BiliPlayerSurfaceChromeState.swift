@@ -22,6 +22,7 @@ struct BiliPlayerSurfaceChromeState {
     let playbackControlsOpacity: Double
     let playbackControlsAllowsHitTesting: Bool
     let topLeadingControlsAccessory: AnyView?
+    let topCenterControlsAccessory: AnyView?
     let topTrailingControlsAccessory: AnyView?
     let isFullscreenActive: Bool
     let controlsBottomLift: CGFloat

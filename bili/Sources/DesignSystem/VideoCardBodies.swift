@@ -88,7 +88,6 @@ struct VideoCardBorderedCompactBody: View, Equatable {
     }
 
     @Environment(\.showsVideoCoverDurationBadges) private var showsVideoCoverDurationBadges
-    @Environment(\.unifiedVideoCoverBorderExperimentEnabled) private var unifiedVideoCoverBorderExperimentEnabled
     let display: VideoCardDisplayModel
     let coverSize: CGSize
     var usesGenericAuthorIcon = false
@@ -155,10 +154,7 @@ struct VideoCardBorderedCompactBody: View, Equatable {
             }
         }
         .clipShape(shape)
-        .unifiedVideoCoverExperimentBorder(
-            in: shape,
-            isEnabled: unifiedVideoCoverBorderExperimentEnabled
-        )
+        .unifiedVideoCoverBorder(in: shape)
     }
 
     private var metadataStack: some View {

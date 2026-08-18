@@ -14,6 +14,10 @@ struct PlayerNativeControlMetrics: Equatable {
     let qualityButtonMaxWidth: CGFloat
     let qualityHorizontalPadding: CGFloat
 
+    var iconOnlyControlSize: CGFloat {
+        controlHeight * 0.68
+    }
+
     static let portrait = PlayerNativeControlMetrics(
         controlHeight: 28,
         progressControlHeight: 22,

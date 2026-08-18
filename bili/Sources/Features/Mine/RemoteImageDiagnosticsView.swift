@@ -112,10 +112,7 @@ struct RemoteImageDiagnosticsView: View {
 
     private var cdnSection: some View {
         Section("B站图片 CDN") {
-            LabeledContent(
-                "自动切换实验",
-                value: libraryStore.remoteImageCDNFailoverExperimentEnabled ? "已开启" : "未开启"
-            )
+            LabeledContent("自动切换", value: "已启用")
             if let cdnStatistics {
                 LabeledContent("加载任务", value: cdnStatistics.requestCount.formatted())
                 LabeledContent("成功响应", value: cdnStatistics.successCount.formatted())
@@ -129,10 +126,7 @@ struct RemoteImageDiagnosticsView: View {
 
     private var scrollSection: some View {
         Section("滚动图片调度") {
-            LabeledContent(
-                "快速滚动抑制实验",
-                value: libraryStore.fastScrollImageLoadSuppressionExperimentEnabled ? "已开启" : "未开启"
-            )
+            LabeledContent("快速滚动负载抑制", value: "已启用")
             if let scrollStatistics {
                 LabeledContent("滚动中可见请求放行", value: scrollStatistics.visibleBypassCount.formatted())
                 LabeledContent("滚动中后台预取延后", value: scrollStatistics.deferredPrefetchCount.formatted())
@@ -235,8 +229,6 @@ struct RemoteImageDiagnosticsView: View {
             displayCache: displayCacheStatistics,
             scroll: scrollStatistics,
             cdn: cdnStatistics,
-            isFastScrollImageLoadSuppressionEnabled: libraryStore.fastScrollImageLoadSuppressionExperimentEnabled,
-            isCDNFailoverEnabled: libraryStore.remoteImageCDNFailoverExperimentEnabled,
             isDiagnosticsEnabled: libraryStore.remoteImageDiagnosticsEnabled,
             version: version,
             build: build,
@@ -263,8 +255,6 @@ nonisolated enum RemoteImageDiagnosticsTextFormatter {
         displayCache: RemoteImageDisplayCacheStatistics,
         scroll: RemoteImageScrollLoadSuppressionStatistics = .empty,
         cdn: RemoteImageCDNDiagnosticsSnapshot,
-        isFastScrollImageLoadSuppressionEnabled: Bool = false,
-        isCDNFailoverEnabled: Bool,
         isDiagnosticsEnabled: Bool = true,
         version: String,
         build: String,
@@ -292,13 +282,13 @@ nonisolated enum RemoteImageDiagnosticsTextFormatter {
             "  磁盘占用: \(byteCount(cache.diskUsage)) / \(byteCount(cache.diskCapacity))",
             "",
             "滚动图片调度",
-            "  快速滚动抑制实验: \(isFastScrollImageLoadSuppressionEnabled ? "已开启" : "未开启")",
+            "  快速滚动负载抑制: 已启用",
             "  滚动中可见请求放行: \(scroll.visibleBypassCount)",
             "  滚动中后台预取延后: \(scroll.deferredPrefetchCount)",
             "  当前抑制滚动容器: \(scroll.activeScopeCount)",
             "",
             "B站图片 CDN",
-            "  自动切换实验: \(isCDNFailoverEnabled ? "已开启" : "未开启")",
+            "  自动切换: 已启用",
             "  加载任务: \(cdn.requestCount)",
             "  成功响应: \(cdn.successCount)",
             "  瞬时失败: \(cdn.transientFailureCount)",

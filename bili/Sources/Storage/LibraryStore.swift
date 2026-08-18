@@ -100,6 +100,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appearanceMode: AppAppearanceMode
     @Published private(set) var appIconPreference: AppIconPreference
     @Published private(set) var appTintColorHex: String
+    @Published private(set) var followsSystemFontSize: Bool
+    @Published private(set) var manualFontSize: AppManualFontSize
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var playbackHistorySyncThresholdSeconds: Int
     @Published private(set) var preferredVideoQuality: Int?
@@ -154,11 +156,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var videoCoverBadgeShadowOpacity: Double
     @Published private(set) var videoCoverBottomScrimEnabled: Bool
     @Published private(set) var showsVideoCoverDurationBadges: Bool
-    @Published private(set) var unifiedVideoCoverBorderExperimentEnabled: Bool
-    @Published private(set) var thumbnailLongPressPreviewExperimentEnabled: Bool
     @Published private(set) var homeNavigationModeSwitcherExperimentEnabled: Bool
-    @Published private(set) var fastScrollImageLoadSuppressionExperimentEnabled: Bool
-    @Published private(set) var remoteImageCDNFailoverExperimentEnabled: Bool
     @Published private(set) var remoteImageDiagnosticsEnabled: Bool
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
@@ -171,6 +169,8 @@ final class LibraryStore: ObservableObject {
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
     private static let appIconPreferenceKey = "cc.bili.appearance.appIconPreference.v1"
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
+    private static let followsSystemFontSizeKey = "cc.bili.appearance.followsSystemFontSize.v1"
+    private static let manualFontSizeKey = "cc.bili.appearance.manualFontSize.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
     private static let appTintColorDefaultToneMigrationKey = "cc.bili.appearance.tintColorDefaultToneMigration.v2"
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
@@ -213,6 +213,8 @@ final class LibraryStore: ObservableObject {
     private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature.resumePacketWarmup.storageKey
     private static let videoRotationFrameReportOverlayEnabledKey = "cc.bili.playback.rotationFrameReportOverlayEnabled.v1"
     nonisolated static let playerControlEdgeScrimEnabledKey = "cc.bili.playback.controlEdgeScrimEnabled.v1"
+    private static let legacyPlayerIconOnlyControlsExperimentEnabledKey = "cc.bili.playback.iconOnlyControlsExperimentEnabled.v1"
+    private static let legacyPlayerFullscreenStatusExperimentEnabledKey = "cc.bili.playback.fullscreenStatusExperimentEnabled.v1"
     private static let showsVideoDetailNetworkDiagnosticsButtonKey = "cc.bili.videoDetail.showsNetworkDiagnosticsButton.v1"
     private static let showsVideoDetailPinnedProgressBarKey = "cc.bili.videoDetail.showsPinnedProgressBar.v1"
     private static let videoDetailAutoplayEnabledKey = "cc.bili.videoDetail.autoplayEnabled.v1"
@@ -229,8 +231,6 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBadgeShadowOpacityKey = VideoCoverBadgeShadow.storageKey
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
-    private static let unifiedVideoCoverBorderExperimentEnabledKey = "cc.bili.display.unifiedVideoCoverBorderExperimentEnabled.v1"
-    private static let thumbnailLongPressPreviewExperimentEnabledKey = "cc.bili.display.thumbnailLongPressPreviewExperimentEnabled.v1"
     private static let homeNavigationModeSwitcherExperimentEnabledKey = HomeNavigationModeSwitcherExperiment.storageKey
     private static let retiredExperimentKeys = [
         "cc.bili.playback.startupRequestSchedulingExperimentEnabled.v1",
@@ -259,9 +259,14 @@ final class LibraryStore: ObservableObject {
         "cc.bili.videoDetail.moreControlsSwiftUISheetExperimentEnabled.v1",
         "cc.bili.playback.nativePlayerProgressSliderExperimentEnabled.v1",
         "cc.bili.playback.iosNativePlaybackControlsExperimentEnabled.v1",
+        "cc.bili.display.unifiedVideoCoverBorderExperimentEnabled.v1",
+        "cc.bili.display.thumbnailLongPressPreviewExperimentEnabled.v1",
+        "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
+        "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1",
+        "cc.bili.home.nativePullRefreshIndicatorExperimentEnabled.v1",
+        legacyPlayerIconOnlyControlsExperimentEnabledKey,
+        legacyPlayerFullscreenStatusExperimentEnabledKey,
     ]
-    private static let fastScrollImageLoadSuppressionExperimentEnabledKey = "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1"
-    private static let remoteImageCDNFailoverExperimentEnabledKey = RemoteImageCDNFailoverExperiment.storageKey
     private static let remoteImageDiagnosticsEnabledKey = RemoteImageDiagnosticsSettings.storageKey
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
@@ -357,6 +362,11 @@ final class LibraryStore: ObservableObject {
         self.appIconPreference = AppIconPreference(
             rawValue: userDefaults.string(forKey: Self.appIconPreferenceKey) ?? ""
         ) ?? .system
+        self.followsSystemFontSize = userDefaults.object(
+            forKey: Self.followsSystemFontSizeKey
+        ) as? Bool ?? true
+        self.manualFontSize = (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
+            .flatMap(AppManualFontSize.init(rawValue:)) ?? .defaultValue
         let storedAppTintColorHex = AppThemeTintColor.normalizedHex(
             userDefaults.string(forKey: Self.appTintColorHexKey)
         )
@@ -515,22 +525,10 @@ final class LibraryStore: ObservableObject {
             ?? VideoCoverBottomScrimSettings.defaultIsEnabled
         self.showsVideoCoverDurationBadges = userDefaults.object(forKey: Self.videoCoverDurationBadgesEnabledKey) as? Bool
             ?? VideoCoverDurationBadgeSettings.defaultIsEnabled
-        self.unifiedVideoCoverBorderExperimentEnabled = userDefaults.object(
-            forKey: Self.unifiedVideoCoverBorderExperimentEnabledKey
-        ) as? Bool ?? VideoCoverBorderExperiment.defaultIsEnabled
-        self.thumbnailLongPressPreviewExperimentEnabled = userDefaults.object(
-            forKey: Self.thumbnailLongPressPreviewExperimentEnabledKey
-        ) as? Bool ?? ThumbnailLongPressPreviewExperiment.defaultIsEnabled
         self.homeNavigationModeSwitcherExperimentEnabled = userDefaults.object(
             forKey: Self.homeNavigationModeSwitcherExperimentEnabledKey
         ) as? Bool ?? HomeNavigationModeSwitcherExperiment.defaultIsEnabled
         Self.retiredExperimentKeys.forEach(userDefaults.removeObject(forKey:))
-        self.fastScrollImageLoadSuppressionExperimentEnabled = userDefaults.object(
-            forKey: Self.fastScrollImageLoadSuppressionExperimentEnabledKey
-        ) as? Bool ?? FastScrollImageLoadSuppressionExperiment.defaultIsEnabled
-        self.remoteImageCDNFailoverExperimentEnabled = userDefaults.object(
-            forKey: Self.remoteImageCDNFailoverExperimentEnabledKey
-        ) as? Bool ?? RemoteImageCDNFailoverExperiment.defaultIsEnabled
         self.remoteImageDiagnosticsEnabled = userDefaults.object(
             forKey: Self.remoteImageDiagnosticsEnabledKey
         ) as? Bool ?? RemoteImageDiagnosticsSettings.defaultIsEnabled
@@ -558,6 +556,16 @@ final class LibraryStore: ObservableObject {
     func setAppIconPreference(_ preference: AppIconPreference) {
         appIconPreference = preference
         userDefaults.set(preference.rawValue, forKey: Self.appIconPreferenceKey)
+    }
+
+    func setFollowsSystemFontSize(_ followsSystem: Bool) {
+        followsSystemFontSize = followsSystem
+        userDefaults.set(followsSystem, forKey: Self.followsSystemFontSizeKey)
+    }
+
+    func setManualFontSize(_ size: AppManualFontSize) {
+        manualFontSize = size
+        userDefaults.set(size.rawValue, forKey: Self.manualFontSizeKey)
     }
 
     @discardableResult
@@ -1170,30 +1178,9 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.videoCoverDurationBadgesEnabledKey)
     }
 
-    func setUnifiedVideoCoverBorderExperimentEnabled(_ isEnabled: Bool) {
-        unifiedVideoCoverBorderExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.unifiedVideoCoverBorderExperimentEnabledKey)
-    }
-
-    func setThumbnailLongPressPreviewExperimentEnabled(_ isEnabled: Bool) {
-        thumbnailLongPressPreviewExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.thumbnailLongPressPreviewExperimentEnabledKey)
-    }
-
     func setHomeNavigationModeSwitcherExperimentEnabled(_ isEnabled: Bool) {
         homeNavigationModeSwitcherExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.homeNavigationModeSwitcherExperimentEnabledKey)
-    }
-
-    func setFastScrollImageLoadSuppressionExperimentEnabled(_ isEnabled: Bool) {
-        fastScrollImageLoadSuppressionExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.fastScrollImageLoadSuppressionExperimentEnabledKey)
-    }
-
-    func setRemoteImageCDNFailoverExperimentEnabled(_ isEnabled: Bool) {
-        remoteImageCDNFailoverExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.remoteImageCDNFailoverExperimentEnabledKey)
-        RemoteImageCDNHealthMemory.shared.reset()
     }
 
     func setRemoteImageDiagnosticsEnabled(_ isEnabled: Bool) {

@@ -1,15 +1,5 @@
 import Foundation
 
-nonisolated enum RemoteImageCDNFailoverExperiment {
-    static let storageKey = "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1"
-    static let defaultIsEnabled = true
-    static let failureTTL: TimeInterval = 90
-
-    static func isEnabled(in userDefaults: UserDefaults = .standard) -> Bool {
-        userDefaults.object(forKey: storageKey) as? Bool ?? defaultIsEnabled
-    }
-}
-
 nonisolated enum RemoteImageDiagnosticsSettings {
     static let storageKey = "cc.bili.display.remoteImageDiagnosticsEnabled.v1"
     static let defaultIsEnabled = true
@@ -47,6 +37,7 @@ nonisolated final class RemoteImageDiagnosticsRuntime: @unchecked Sendable {
 }
 
 nonisolated enum RemoteImageCDNFailoverPolicy {
+    static let failureTTL: TimeInterval = 90
     static let interchangeableHosts = [
         "i0.hdslb.com",
         "i1.hdslb.com",
@@ -140,18 +131,15 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
     private var automaticSwitchCount = 0
     private var countersByHost: [String: HostCounters] = [:]
 
-    init(failureTTL: TimeInterval = RemoteImageCDNFailoverExperiment.failureTTL) {
+    init(failureTTL: TimeInterval = RemoteImageCDNFailoverPolicy.failureTTL) {
         self.failureTTL = max(failureTTL, 1)
     }
 
     func orderedCandidates(
         for urls: [URL],
-        experimentEnabled: Bool,
         now: Date = Date()
     ) -> [URL] {
         let uniqueURLs = Self.uniqueURLs(urls)
-        guard experimentEnabled else { return uniqueURLs }
-
         let candidates = Self.uniqueURLs(uniqueURLs.flatMap(RemoteImageCDNFailoverPolicy.candidateURLs))
         let unhealthyHosts = lock.withLock { () -> Set<String> in
             unhealthyUntilByHost = unhealthyUntilByHost.filter { $0.value > now }
@@ -172,8 +160,7 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
 
     func recordRequest(
         for url: URL,
-        originalURL: URL,
-        experimentEnabled: Bool
+        originalURL: URL
     ) {
         guard RemoteImageCDNFailoverPolicy.isEligible(url),
               let host = url.host?.lowercased()
@@ -183,8 +170,7 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
         lock.withLock {
             requestCount += 1
             countersByHost[host, default: HostCounters()].requestCount += 1
-            if experimentEnabled,
-               RemoteImageCDNFailoverPolicy.isEligible(originalURL),
+            if RemoteImageCDNFailoverPolicy.isEligible(originalURL),
                originalHost != host {
                 automaticSwitchCount += 1
             }
@@ -193,7 +179,6 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
 
     func recordTransientFailure(
         for url: URL,
-        experimentEnabled: Bool,
         now: Date = Date()
     ) {
         guard RemoteImageCDNFailoverPolicy.isEligible(url),
@@ -204,13 +189,11 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
                 transientFailureCount += 1
                 countersByHost[host, default: HostCounters()].transientFailureCount += 1
             }
-            if experimentEnabled {
-                unhealthyUntilByHost[host] = now.addingTimeInterval(failureTTL)
-            }
+            unhealthyUntilByHost[host] = now.addingTimeInterval(failureTTL)
         }
     }
 
-    func recordSuccess(for url: URL, experimentEnabled: Bool) {
+    func recordSuccess(for url: URL) {
         guard RemoteImageCDNFailoverPolicy.isEligible(url),
               let host = url.host?.lowercased()
         else { return }
@@ -219,9 +202,7 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
                 successCount += 1
                 countersByHost[host, default: HostCounters()].successCount += 1
             }
-            if experimentEnabled {
-                unhealthyUntilByHost[host] = nil
-            }
+            unhealthyUntilByHost[host] = nil
         }
     }
 

@@ -2,27 +2,38 @@ import SwiftUI
 
 extension View {
     @ViewBuilder
-    func biliPlayerCompactGlassCircle(metrics: PlayerNativeControlMetrics) -> some View {
+    func biliPlayerCompactGlassCircle(
+        metrics: PlayerNativeControlMetrics,
+        isEnabled: Bool = true
+    ) -> some View {
         buttonStyle(.plain)
             .contentShape(Circle())
-            .biliPlayerClearGlass(interactive: true, in: Circle())
+            .biliPlayerClearGlass(interactive: true, in: Circle(), isEnabled: isEnabled)
             .biliPlayerExpandedHitTarget(metrics: metrics)
     }
 
     @ViewBuilder
-    func biliPlayerCompactGlassCapsule(metrics: PlayerNativeControlMetrics) -> some View {
+    func biliPlayerCompactGlassCapsule(
+        metrics: PlayerNativeControlMetrics,
+        isEnabled: Bool = true
+    ) -> some View {
         buttonStyle(.plain)
             .contentShape(Capsule())
-            .biliPlayerClearGlass(interactive: true, in: Capsule())
+            .biliPlayerClearGlass(interactive: true, in: Capsule(), isEnabled: isEnabled)
             .biliPlayerExpandedHitTarget(metrics: metrics)
     }
 
     @ViewBuilder
     func biliPlayerClearGlass<S: Shape>(
         interactive: Bool,
-        in shape: S
+        in shape: S,
+        isEnabled: Bool = true
     ) -> some View {
-        modifier(BiliPlayerClearGlassModifier(interactive: interactive, shape: shape))
+        if isEnabled {
+            modifier(BiliPlayerClearGlassModifier(interactive: interactive, shape: shape))
+        } else {
+            self
+        }
     }
 
     func biliPlayerExpandedHitTarget(horizontal: CGFloat = 4, vertical: CGFloat = 8) -> some View {

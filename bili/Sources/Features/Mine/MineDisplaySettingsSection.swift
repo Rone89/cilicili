@@ -32,6 +32,46 @@ struct MineDisplaySettingsSection: View {
 
             MineThemeColorControl(libraryStore: libraryStore)
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.followsSystemFontSize },
+                set: { libraryStore.setFollowsSystemFontSize($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("字体跟随系统字号", systemImage: "textformat.size")
+
+                    Text("关闭后可以固定 App 字号，不再随系统文字大小变化。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if !libraryStore.followsSystemFontSize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("手动字体大小", systemImage: "textformat")
+                        Spacer(minLength: 8)
+                        Text(libraryStore.manualFontSize.title)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Slider(
+                        value: manualFontSizeBinding,
+                        in: 0...Double(AppManualFontSize.allCases.count - 1),
+                        step: 1
+                    ) {
+                        Text("手动字体大小")
+                    } minimumValueLabel: {
+                        Text("A").font(.caption2)
+                    } maximumValueLabel: {
+                        Text("A").font(.title3)
+                    }
+                    .tint(libraryStore.appTintColor)
+                    .accessibilityValue(libraryStore.manualFontSize.title)
+                }
+            }
+
             Picker(selection: Binding(
                 get: { libraryStore.remoteImageQualityPreference },
                 set: { libraryStore.setRemoteImageQualityPreference($0) }
@@ -54,66 +94,10 @@ struct MineDisplaySettingsSection: View {
             MineImageCacheControl()
 
             Toggle(isOn: Binding(
-                get: { libraryStore.thumbnailLongPressPreviewExperimentEnabled },
-                set: { libraryStore.setThumbnailLongPressPreviewExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("缩略图按住预览实验", systemImage: "hand.tap")
-
-                    Text("打开后，按住动态或消息里的缩略图会弹出系统图片预览；普通点击仍会打开完整大图。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
                 get: { libraryStore.showsVideoCoverDurationBadges },
                 set: { libraryStore.setShowsVideoCoverDurationBadges($0) }
             )) {
                 Label("显示视频封面时长", systemImage: "timer")
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.unifiedVideoCoverBorderExperimentEnabled },
-                set: { libraryStore.setUnifiedVideoCoverBorderExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("统一视频封面描边实验", systemImage: "rectangle.dashed")
-
-                    Text("开着后视频封面用 iOS 自适应分隔线做一层更清楚的细描边，保留轻阴影，不给整张图盖玻璃。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.fastScrollImageLoadSuppressionExperimentEnabled },
-                set: { libraryStore.setFastScrollImageLoadSuppressionExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("快速滚动图片负载抑制实验", systemImage: "photo.stack")
-
-                    Text("开着时猛刷列表会先顾屏幕里的封面，后台预取等停下来再做，滑动更稳；关掉后预取会边滑边跑。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.remoteImageCDNFailoverExperimentEnabled },
-                set: { libraryStore.setRemoteImageCDNFailoverExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("图片 CDN 自动切换实验", systemImage: "arrow.triangle.branch")
-
-                    Text("开着时某个图片节点临时抽风会短暂换别的节点拿图，封面更不容易卡住；关掉后只用原节点。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             Toggle(isOn: Binding(
@@ -211,6 +195,16 @@ struct MineDisplaySettingsSection: View {
 
     private var videoCoverBadgeContrastBackingOpacityTitle: String {
         "\(Int((VideoCoverBadgeContrastBacking.normalized(videoCoverBadgeContrastBackingOpacity) * 100).rounded()))%"
+    }
+
+    private var manualFontSizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(libraryStore.manualFontSize.rawValue) },
+            set: { value in
+                guard let size = AppManualFontSize(rawValue: Int(value.rounded())) else { return }
+                libraryStore.setManualFontSize(size)
+            }
+        )
     }
 }
 

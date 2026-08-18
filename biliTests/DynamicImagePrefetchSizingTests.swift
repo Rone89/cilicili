@@ -49,6 +49,44 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
             size: nil
         )
     }
+
+    func testDynamicImageDecodesGIFMetadataAndViewerURL() throws {
+        let data = """
+        {
+            "url": "https://i0.hdslb.com/bfs/dynamic/preview.jpg",
+            "width": 640,
+            "height": 360,
+            "is_gif": true,
+            "gif_url": "https://i0.hdslb.com/bfs/dynamic/animation.gif"
+        }
+        """.data(using: .utf8)!
+
+        let image = try JSONDecoder().decode(DynamicImageItem.self, from: data)
+
+        XCTAssertTrue(image.isAnimatedGIF)
+        XCTAssertEqual(image.mediaBadgeText, "GIF")
+        XCTAssertEqual(image.normalizedAnimatedImageURL, "https://i0.hdslb.com/bfs/dynamic/animation.gif")
+    }
+
+    func testDynamicImageDecodesLivePhotoObject() throws {
+        let data = """
+        {
+            "url": "https://i0.hdslb.com/bfs/dynamic/live.jpg",
+            "width": 1080,
+            "height": 1920,
+            "live_photo": {
+                "video_url": "//upos-sz-mirrorali.bilivideo.com/live.mov"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let image = try JSONDecoder().decode(DynamicImageItem.self, from: data)
+
+        XCTAssertTrue(image.isLiveImage)
+        XCTAssertEqual(image.mediaBadgeText, "LIVE")
+        XCTAssertEqual(image.normalizedLiveVideoURL, "https://upos-sz-mirrorali.bilivideo.com/live.mov")
+        XCTAssertTrue(image.isLongImage)
+    }
 }
 
 final class ZoomyAnimatedImageDecodeBudgetTests: XCTestCase {

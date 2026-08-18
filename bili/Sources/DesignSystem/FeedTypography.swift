@@ -1,6 +1,47 @@
 import SwiftUI
 import UIKit
 
+enum AppManualFontSize: Int, CaseIterable, Identifiable {
+    case extraSmall
+    case small
+    case medium
+    case standard
+    case large
+    case extraLarge
+    case extraExtraLarge
+    case accessibility
+
+    static let defaultValue: AppManualFontSize = .standard
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .extraSmall: return "最小"
+        case .small: return "较小"
+        case .medium: return "小"
+        case .standard: return "标准"
+        case .large: return "大"
+        case .extraLarge: return "较大"
+        case .extraExtraLarge: return "特大"
+        case .accessibility: return "辅助大字"
+        }
+    }
+
+    var contentSizeCategory: UIContentSizeCategory {
+        switch self {
+        case .extraSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .standard: return .large
+        case .large: return .extraLarge
+        case .extraLarge: return .extraExtraLarge
+        case .extraExtraLarge: return .extraExtraExtraLarge
+        case .accessibility: return .accessibilityMedium
+        }
+    }
+}
+
 enum AppTypography {
     enum Role: String, Hashable {
         case pageTitle

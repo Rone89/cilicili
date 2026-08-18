@@ -24,7 +24,7 @@ struct SearchPosterCover: View {
             cornerRadius: 10,
             shadowLevel: .subtle,
             emphasizesBorder: true,
-            appliesUnifiedBorderExperiment: false
+            appliesUnifiedBorder: false
         )
     }
 }

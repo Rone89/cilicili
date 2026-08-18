@@ -9,7 +9,7 @@ struct PlayerNativeGlassIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: metrics.iconSize, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .frame(
                     width: metrics.controlHeight,
                     height: metrics.controlHeight
@@ -17,5 +17,9 @@ struct PlayerNativeGlassIconButton: View {
         }
         .biliPlayerCompactGlassCircle(metrics: metrics)
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var iconSize: CGFloat {
+        metrics.iconSize
     }
 }

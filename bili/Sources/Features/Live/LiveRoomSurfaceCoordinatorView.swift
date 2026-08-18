@@ -685,6 +685,7 @@ private struct LiveRoomSurfaceOnlyOverlay: View {
             playbackControlsOpacity: playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
+            topCenterControlsAccessory: nil,
             topTrailingControlsAccessory: nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,

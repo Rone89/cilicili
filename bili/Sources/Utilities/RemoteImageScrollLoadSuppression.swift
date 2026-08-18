@@ -1,24 +1,11 @@
 import SwiftUI
 
-enum FastScrollImageLoadSuppressionExperiment {
-    static let defaultIsEnabled = true
+enum FastScrollImageLoadSuppression {
     static let resumeDelayNanoseconds: UInt64 = 120_000_000
 }
 
-private struct FastScrollImageLoadSuppressionExperimentKey: EnvironmentKey {
-    static let defaultValue = FastScrollImageLoadSuppressionExperiment.defaultIsEnabled
-}
-
-extension EnvironmentValues {
-    var fastScrollImageLoadSuppressionExperimentEnabled: Bool {
-        get { self[FastScrollImageLoadSuppressionExperimentKey.self] }
-        set { self[FastScrollImageLoadSuppressionExperimentKey.self] = newValue }
-    }
-}
-
 enum FastScrollImageLoadSuppressionPolicy {
-    nonisolated static func suppressesNetworkLoads(experimentEnabled: Bool, phase: ScrollPhase) -> Bool {
-        guard experimentEnabled else { return false }
+    nonisolated static func suppressesNetworkLoads(phase: ScrollPhase) -> Bool {
         switch phase {
         case .interacting, .decelerating:
             return true
@@ -132,7 +119,6 @@ actor RemoteImageLoadSuppressionGate {
 }
 
 private struct FastScrollImageLoadSuppressionModifier: ViewModifier {
-    @Environment(\.fastScrollImageLoadSuppressionExperimentEnabled) private var experimentEnabled
     @State private var phase: ScrollPhase = .idle
     @State private var scopeID = UUID()
 
@@ -153,14 +139,10 @@ private struct FastScrollImageLoadSuppressionModifier: ViewModifier {
     }
 
     private var suppressesNetworkLoads: Bool {
-        FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
-            experimentEnabled: experimentEnabled,
-            phase: phase
-        )
+        FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(phase: phase)
     }
 
     private var gateTaskIdentity: Int {
-        guard experimentEnabled else { return 0 }
         return suppressesNetworkLoads ? 1 : 2
     }
 
@@ -171,12 +153,10 @@ private struct FastScrollImageLoadSuppressionModifier: ViewModifier {
             return
         }
 
-        if experimentEnabled {
-            do {
-                try await Task.sleep(nanoseconds: FastScrollImageLoadSuppressionExperiment.resumeDelayNanoseconds)
-            } catch {
-                return
-            }
+        do {
+            try await Task.sleep(nanoseconds: FastScrollImageLoadSuppression.resumeDelayNanoseconds)
+        } catch {
+            return
         }
         guard !Task.isCancelled else { return }
         await RemoteImageLoadSuppressionGate.shared.setSuppressed(false, for: scopeID)

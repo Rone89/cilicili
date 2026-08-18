@@ -484,7 +484,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     let viewModel: PlayerStateViewModel
     let detailViewModel: VideoDetailViewModel
-    let libraryStore: LibraryStore
+    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
 
     let overlaySnapshot: VideoDetailShellOverlaySnapshot
@@ -546,7 +546,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.runtimeSettings = runtimeSettings
         self.usesNarrowObservation = usesNarrowObservation
         self.dependencies = dependencies
-        self.libraryStore = dependencies.libraryStore
+        _libraryStore = ObservedObject(wrappedValue: dependencies.libraryStore)
         self.isLandscape = isLandscape
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
@@ -646,7 +646,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                         )
                         .zIndex(3)
 
-                        persistentMoreControlsButton(contentInsets: videoInsets)
+                        if isAudioOnlyPlayback {
+                            persistentMoreControlsButton(contentInsets: videoInsets)
+                        }
 
                         if runtimeSettings.playerPerformanceOverlayEnabled {
                             performanceOverlay(contentInsets: videoInsets, in: proxy.size)
@@ -851,7 +853,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             pausesOnDisappear: false,
             controlsAccessory: isAudioOnlyPlayback
                 ? AnyView(videoListenQuickControls)
-                : nil,
+                : usesFullscreenStatusChrome
+                    ? AnyView(moreControlsButton)
+                    : nil,
             topLeadingControlsAccessory: keepsChromeMounted ? AnyView(backButton) : nil,
             isDanmakuEnabled: keepsChromeMounted && overlaySnapshot.isDanmakuEnabled && !isAudioOnlyPlayback,
             onToggleDanmaku: isAudioOnlyPlayback ? nil : onToggleDanmaku,
@@ -910,6 +914,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     private var moreControlsButton: some View {
         SurfaceOnlyUIKitMoreControlsButton(
             metrics: controlMetrics,
+            systemImageName: usesFullscreenStatusChrome ? "gearshape.fill" : "ellipsis.circle",
             onPressBegan: {
                 isMoreControlsButtonPressed = true
                 playbackControlsVisibility.cancelAutoHide()
@@ -939,14 +944,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 }
             }
         }
-        .frame(width: moreControlsButtonWidth, height: controlMetrics.controlHeight)
+        .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
         .frame(width: 44, height: controlMetrics.controlHeight, alignment: .trailing)
         .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
         .accessibilityLabel("更多播放设置")
-    }
-
-    private var moreControlsButtonWidth: CGFloat {
-        controlMetrics.controlHeight + 10
     }
 
     private func persistentMoreControlsButton(contentInsets: EdgeInsets) -> some View {
@@ -1060,6 +1061,14 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         return .portrait
     }
 
+    private var usesFullscreenStatusChrome: Bool {
+        !isAudioOnlyPlayback
+    }
+
+    private var showsFullscreenStatusControls: Bool {
+        usesFullscreenStatusChrome && fullscreenMode?.isLandscape == true
+    }
+
     private func surfaceChromeState(
         context: BiliPlayerViewRenderContext,
         renderState: BiliPlayerViewRenderState,
@@ -1087,7 +1096,12 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             playbackControlsOpacity: playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
-            topTrailingControlsAccessory: nil,
+            topCenterControlsAccessory: showsFullscreenStatusControls
+                ? AnyView(VideoDetailFullscreenClockControl())
+                : nil,
+            topTrailingControlsAccessory: showsFullscreenStatusControls
+                ? AnyView(VideoDetailFullscreenBatteryControl())
+                : nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,
             controlsHorizontalInset: context.configuration.controlsHorizontalInset,
@@ -1207,7 +1221,7 @@ private struct SurfaceOnlyVideoListenQuickControls: View {
                 }
             } label: {
                 Image(systemName: libraryStore.videoListenPlaybackOrder.systemImage)
-                    .font(.system(size: metrics.iconSize, weight: .semibold))
+                    .font(.system(size: iconSize, weight: .semibold))
                     .frame(width: metrics.controlHeight, height: metrics.controlHeight)
             }
             .biliPlayerCompactGlassCircle(metrics: metrics)
@@ -1245,9 +1259,13 @@ private struct SurfaceOnlyVideoListenQuickControls: View {
             }
         } else {
             Image(systemName: detailViewModel.videoListenSleepTimerOption.systemImage)
-                .font(.system(size: metrics.iconSize, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .frame(width: metrics.controlHeight, height: metrics.controlHeight)
         }
+    }
+
+    private var iconSize: CGFloat {
+        metrics.iconSize
     }
 }
 
@@ -2908,6 +2926,7 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
 
 private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
     let metrics: PlayerNativeControlMetrics
+    let systemImageName: String
     let onPressBegan: () -> Void
     let onPressEnded: () -> Void
     let action: () -> Void
@@ -2971,9 +2990,9 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
         }
 
         iconView.image = UIImage(
-            systemName: "ellipsis",
+            systemName: systemImageName,
             withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: metrics.iconSize,
+                pointSize: metrics.iconSize + 3,
                 weight: .semibold
             )
         )
@@ -3007,6 +3026,91 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
         lazy var primaryAction = UIAction { [weak self] _ in
             self?.action()
         }
+    }
+}
+
+private struct VideoDetailFullscreenClockControl: View {
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            Text(context.date, format: .dateTime.hour().minute())
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
+        }
+        .biliPlayerClearGlass(
+            interactive: false,
+            in: Capsule(),
+            isEnabled: true
+        )
+        .biliLiquidGlassForeground(shadowOpacity: 0.20)
+        .allowsHitTesting(false)
+        .accessibilityLabel("系统时间")
+    }
+}
+
+private struct VideoDetailFullscreenBatteryControl: View {
+    @State private var batteryLevel: Float = -1
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(percentageText)
+                .monospacedDigit()
+            Image(systemName: batterySymbolName)
+        }
+        .font(.caption.weight(.semibold))
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
+        .biliPlayerClearGlass(
+            interactive: false,
+            in: Capsule(),
+            isEnabled: true
+        )
+        .biliLiquidGlassForeground(shadowOpacity: 0.20)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("设备电量 \(percentageText)")
+        .onAppear {
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            updateBatteryLevel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
+            updateBatteryLevel()
+        }
+        .onDisappear {
+            UIDevice.current.isBatteryMonitoringEnabled = false
+        }
+    }
+
+    private var percentage: Int? {
+        guard batteryLevel >= 0 else { return nil }
+        return min(max(Int((batteryLevel * 100).rounded()), 0), 100)
+    }
+
+    private var percentageText: String {
+        percentage.map { "\($0)%" } ?? "--%"
+    }
+
+    private var batterySymbolName: String {
+        guard let percentage else { return "battery.0percent" }
+        switch percentage {
+        case 76...:
+            return "battery.100percent"
+        case 51...:
+            return "battery.75percent"
+        case 26...:
+            return "battery.50percent"
+        case 1...:
+            return "battery.25percent"
+        default:
+            return "battery.0percent"
+        }
+    }
+
+    private func updateBatteryLevel() {
+        batteryLevel = UIDevice.current.batteryLevel
     }
 }
 

@@ -337,16 +337,20 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStorePersistsUnifiedVideoCoverBorderExperiment() {
+    func testLibraryStoreDefaultsFontSizeToSystemAndPersistsManualSelection() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertFalse(store.unifiedVideoCoverBorderExperimentEnabled)
-        store.setUnifiedVideoCoverBorderExperimentEnabled(true)
+        XCTAssertTrue(store.followsSystemFontSize)
+        XCTAssertEqual(store.manualFontSize, .standard)
 
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).unifiedVideoCoverBorderExperimentEnabled
-        )
+        store.setFollowsSystemFontSize(false)
+        store.setManualFontSize(.extraLarge)
+
+        let restoredStore = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(restoredStore.followsSystemFontSize)
+        XCTAssertEqual(restoredStore.manualFontSize, .extraLarge)
+        XCTAssertEqual(restoredStore.manualFontSize.contentSizeCategory, .extraExtraLarge)
     }
 
     @MainActor
@@ -399,38 +403,17 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.videoDetail.moreControlsSwiftUISheetExperimentEnabled.v1",
             "cc.bili.playback.nativePlayerProgressSliderExperimentEnabled.v1",
             "cc.bili.playback.iosNativePlaybackControlsExperimentEnabled.v1",
+            "cc.bili.display.unifiedVideoCoverBorderExperimentEnabled.v1",
+            "cc.bili.display.thumbnailLongPressPreviewExperimentEnabled.v1",
+            "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
+            "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1",
+            "cc.bili.home.nativePullRefreshIndicatorExperimentEnabled.v1",
         ]
         retiredKeys.forEach { defaults.set(true, forKey: $0) }
 
         _ = LibraryStore(userDefaults: defaults)
 
         retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
-    }
-
-    @MainActor
-    func testLibraryStorePersistsFastScrollImageLoadSuppressionExperiment() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertTrue(store.fastScrollImageLoadSuppressionExperimentEnabled)
-        store.setFastScrollImageLoadSuppressionExperimentEnabled(false)
-
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).fastScrollImageLoadSuppressionExperimentEnabled
-        )
-    }
-
-    @MainActor
-    func testLibraryStorePersistsRemoteImageCDNFailoverExperiment() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertTrue(store.remoteImageCDNFailoverExperimentEnabled)
-        store.setRemoteImageCDNFailoverExperimentEnabled(false)
-
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).remoteImageCDNFailoverExperimentEnabled
-        )
     }
 
     @MainActor
@@ -1136,9 +1119,9 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         player.setPictureInPictureEnabled(true)
         player.setPictureInPictureEnabled(false)
-        player.setPictureInPictureEnabled(false)
+        player.stopPictureInPictureIfNeeded()
 
-        XCTAssertEqual(engine.pictureInPictureEnabledValues, [true, false, false])
+        XCTAssertEqual(engine.pictureInPictureEnabledValues, [true, false])
         XCTAssertEqual(engine.stopPictureInPictureCallCount, 2)
         XCTAssertFalse(player.isPictureInPictureEnabled)
     }

@@ -4789,9 +4789,34 @@ nonisolated enum DynamicJSONValue: Codable, Hashable {
             object["cover_url"]?.textValue,
             object["pic"]?.textValue,
             object["thumb"]?.textValue,
-            object["thumbnail"]?.textValue
+            object["thumbnail"]?.textValue,
+            object["gif_url"]?.textValue,
+            object["gifUrl"]?.textValue,
+            object["animated_url"]?.textValue,
+            object["animatedUrl"]?.textValue
         ])
         guard let url, !url.isEmpty else { return nil }
+        let livePhotoValue = object["live_photo"] ?? object["livePhoto"]
+        let livePhotoFlag: String? = {
+            if dynamicTruthy(object["is_live_photo"]) || dynamicTruthy(object["isLivePhoto"]) {
+                return "live-photo"
+            }
+            guard let value = livePhotoValue else { return nil }
+            if dynamicTruthy(value) { return "live-photo" }
+            return value.textValue
+        }()
+        let livePhotoObjectURL: String? = {
+            guard case .object(let values) = livePhotoValue else { return nil }
+            return firstNonBlankDynamicText([
+                values["video_url"]?.textValue,
+                values["video_src"]?.textValue,
+                values["live_video_url"]?.textValue,
+                values["liveVideoUrl"]?.textValue,
+                values["videoUrl"]?.textValue,
+                values["url"]?.textValue,
+                values["src"]?.textValue
+            ])
+        }()
         return DynamicImageItem(
             url: url,
             width: firstDynamicInt([
@@ -4813,21 +4838,51 @@ nonisolated enum DynamicJSONValue: Codable, Hashable {
             ]),
             mediaType: firstNonBlankDynamicText([
                 object["media_type"]?.textValue,
+                object["mediaType"]?.textValue,
                 object["mime_type"]?.textValue,
+                object["mimeType"]?.textValue,
                 object["image_type"]?.textValue,
+                object["imageType"]?.textValue,
                 object["img_type"]?.textValue,
                 object["picture_type"]?.textValue,
                 object["type"]?.textValue,
                 object["format"]?.textValue,
-                object["live_photo"]?.textValue
+                livePhotoFlag
             ]),
+            isLivePhoto: dynamicTruthy(object["is_live_photo"])
+                || dynamicTruthy(object["isLivePhoto"])
+                || dynamicTruthy(livePhotoValue),
             liveVideoURL: firstNonBlankDynamicText([
                 object["live_video_url"]?.textValue,
+                object["liveVideoUrl"]?.textValue,
                 object["video_url"]?.textValue,
+                object["videoUrl"]?.textValue,
                 object["video_src"]?.textValue,
-                object["live_url"]?.textValue
+                object["videoSrc"]?.textValue,
+                object["live_url"]?.textValue,
+                object["liveUrl"]?.textValue,
+                livePhotoObjectURL
+            ]),
+            isAnimatedGIF: dynamicTruthy(object["is_gif"]) || dynamicTruthy(object["isGif"]),
+            animatedImageURL: firstNonBlankDynamicText([
+                object["gif_url"]?.textValue,
+                object["gifUrl"]?.textValue,
+                object["animated_url"]?.textValue,
+                object["animatedUrl"]?.textValue
             ])
         )
+    }
+
+    private func dynamicTruthy(_ value: DynamicJSONValue?) -> Bool {
+        switch value {
+        case .bool(let value):
+            return value
+        case .number(let value), .string(let value):
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return ["1", "true", "yes", "on", "live", "live-photo", "livephoto"].contains(normalized)
+        default:
+            return false
+        }
     }
 
     private func firstDynamicInt(_ values: [DynamicJSONValue?]) -> Int? {
@@ -6458,7 +6513,10 @@ nonisolated struct DynamicImageItem: Decodable, Hashable {
     let height: Int?
     let size: Double?
     let mediaType: String?
+    let isLivePhotoFlag: Bool
     let liveVideoURL: String?
+    let isAnimatedGIFFlag: Bool
+    let animatedImageURL: String?
 
     enum CodingKeys: String, CodingKey {
         case src, url, width, height, size
@@ -6469,9 +6527,21 @@ nonisolated struct DynamicImageItem: Decodable, Hashable {
         case imgType = "img_type"
         case pictureType = "picture_type"
         case livePhoto = "live_photo"
+        case livePhotoCamel = "livePhoto"
+        case isLivePhoto = "is_live_photo"
+        case isLivePhotoCamel = "isLivePhoto"
         case liveVideoURL = "live_video_url"
+        case liveVideoURLCamel = "liveVideoUrl"
         case videoURL = "video_url"
+        case videoURLCamel = "videoUrl"
         case videoSrc = "video_src"
+        case videoSrcCamel = "videoSrc"
+        case gifURL = "gif_url"
+        case gifURLCamel = "gifUrl"
+        case animatedURL = "animated_url"
+        case animatedURLCamel = "animatedUrl"
+        case isGIF = "is_gif"
+        case isGIFCamel = "isGif"
         case imgSrc = "img_src"
         case imgWidth = "img_width"
         case imgHeight = "img_height"
@@ -6492,14 +6562,20 @@ nonisolated struct DynamicImageItem: Decodable, Hashable {
         height: Int?,
         size: Double?,
         mediaType: String? = nil,
-        liveVideoURL: String? = nil
+        isLivePhoto: Bool = false,
+        liveVideoURL: String? = nil,
+        isAnimatedGIF: Bool = false,
+        animatedImageURL: String? = nil
     ) {
         self.url = url
         self.width = width
         self.height = height
         self.size = size
         self.mediaType = mediaType
+        self.isLivePhotoFlag = isLivePhoto
         self.liveVideoURL = liveVideoURL
+        self.isAnimatedGIFFlag = isAnimatedGIF
+        self.animatedImageURL = animatedImageURL
     }
 
     init(from decoder: Decoder) throws {
@@ -6535,11 +6611,53 @@ nonisolated struct DynamicImageItem: Decodable, Hashable {
         ]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .first { !$0.isEmpty }
+        let livePhotoValue = (try? container.decode(DynamicJSONValue.self, forKey: .livePhoto))
+            ?? (try? container.decode(DynamicJSONValue.self, forKey: .livePhotoCamel))
+        let isLivePhoto = container.decodeLossyBoolIfPresent(forKey: .isLivePhoto) == true
+            || container.decodeLossyBoolIfPresent(forKey: .isLivePhotoCamel) == true
+        let isGIF = container.decodeLossyBoolIfPresent(forKey: .isGIF) == true
+            || container.decodeLossyBoolIfPresent(forKey: .isGIFCamel) == true
+        animatedImageURL = container.decodeLossyStringIfPresent(forKey: .gifURL)
+            ?? container.decodeLossyStringIfPresent(forKey: .gifURLCamel)
+            ?? container.decodeLossyStringIfPresent(forKey: .animatedURL)
+            ?? container.decodeLossyStringIfPresent(forKey: .animatedURLCamel)
+        let livePhotoObjectURL: String? = {
+            guard case .object(let values) = livePhotoValue else { return nil }
+            return firstNonBlankDynamicText([
+                values["video_url"]?.textValue,
+                values["video_src"]?.textValue,
+                values["live_video_url"]?.textValue,
+                values["liveVideoUrl"]?.textValue,
+                values["videoUrl"]?.textValue,
+                values["url"]?.textValue,
+                values["src"]?.textValue
+            ])
+        }()
+        let hasLivePhotoObject: Bool = {
+            guard case .object(let values) = livePhotoValue else { return false }
+            return !values.isEmpty
+        }()
         liveVideoURL = container.decodeLossyStringIfPresent(forKey: .liveVideoURL)
+            ?? container.decodeLossyStringIfPresent(forKey: .liveVideoURLCamel)
             ?? container.decodeLossyStringIfPresent(forKey: .videoURL)
+            ?? container.decodeLossyStringIfPresent(forKey: .videoURLCamel)
             ?? container.decodeLossyStringIfPresent(forKey: .videoSrc)
+            ?? container.decodeLossyStringIfPresent(forKey: .videoSrcCamel)
+            ?? livePhotoObjectURL
         let liveFlag = container.decodeLossyStringIfPresent(forKey: .livePhoto)
-        mediaType = decodedMediaType ?? liveFlag
+            ?? container.decodeLossyStringIfPresent(forKey: .livePhotoCamel)
+        let liveFlagValue = container.decodeLossyBoolIfPresent(forKey: .livePhoto)
+            ?? container.decodeLossyBoolIfPresent(forKey: .livePhotoCamel)
+        mediaType = decodedMediaType
+            ?? liveFlag
+            ?? (isLivePhoto ? "live-photo" : nil)
+            ?? (liveFlagValue == true ? "live-photo" : nil)
+            ?? (hasLivePhotoObject ? "live-photo" : nil)
+        isLivePhotoFlag = isLivePhoto
+            || liveFlagValue == true
+            || hasLivePhotoObject
+            || liveVideoURL != nil
+        isAnimatedGIFFlag = isGIF || animatedImageURL != nil
     }
 
     var normalizedURL: String? {
@@ -6562,14 +6680,37 @@ nonisolated struct DynamicImageItem: Decodable, Hashable {
         return normalized.isEmpty ? nil : normalized
     }
 
+    var normalizedAnimatedImageURL: String? {
+        let normalized = animatedImageURL?.trimmingCharacters(in: .whitespacesAndNewlines).normalizedBiliURL() ?? ""
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    var isLongImage: Bool {
+        let text = (mediaType ?? "")
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+        return text.contains("long") || text.contains("长图") || aspectRatio < 0.62
+    }
+
     var isAnimatedGIF: Bool {
-        let text = "\(mediaType ?? "") \(normalizedURL ?? url)".lowercased()
-        return text.contains("gif")
+        let text = "\(mediaType ?? "") \(normalizedAnimatedImageURL ?? "") \(normalizedURL ?? url)"
+            .lowercased()
+            .removingPercentEncoding ?? "\(mediaType ?? "") \(normalizedAnimatedImageURL ?? "") \(normalizedURL ?? url)".lowercased()
+        return isAnimatedGIFFlag || text.contains("gif") || text.contains("image/gif")
     }
 
     var isLiveImage: Bool {
-        let text = (mediaType ?? "").lowercased()
-        return text.contains("live") || text.contains("实况") || normalizedLiveVideoURL != nil
+        let text = (mediaType ?? "")
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+        return isLivePhotoFlag
+            || text.contains("live")
+            || text.contains("livephoto")
+            || text.contains("实况")
+            || normalizedLiveVideoURL != nil
     }
 
     var mediaBadgeText: String? {

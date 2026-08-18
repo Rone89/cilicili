@@ -11,14 +11,19 @@ struct VideoDetailPlayerBackButton: View {
             action()
         }) {
             Image(systemName: "chevron.left")
-                .font(.system(size: controlMetrics.iconSize, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(
                     width: controlMetrics.controlHeight,
                     height: controlMetrics.controlHeight
                 )
         }
-        .modifier(VideoDetailPlayerBackButtonSurface(usesGlass: usesGlass, metrics: controlMetrics))
+        .modifier(
+            VideoDetailPlayerBackButtonSurface(
+                usesGlass: usesGlass,
+                metrics: controlMetrics
+            )
+        )
         .frame(width: 44, height: controlMetrics.controlHeight, alignment: .leading)
         .biliPlayerExpandedHitTarget(horizontal: 0, vertical: verticalHitPadding)
         .accessibilityLabel("返回")
@@ -26,6 +31,10 @@ struct VideoDetailPlayerBackButton: View {
 
     private var verticalHitPadding: CGFloat {
         max((44 - controlMetrics.controlHeight) / 2, 8)
+    }
+
+    private var iconSize: CGFloat {
+        controlMetrics.iconSize
     }
 }
 

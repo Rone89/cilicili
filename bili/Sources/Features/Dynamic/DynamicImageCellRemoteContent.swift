@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DynamicImageCellRemoteContent: View {
     let normalizedURLString: String?
+    let mediaBadgeText: String?
+    let showsLongImage: Bool
     let previewItems: [ZoomyImagePreviewItem]
     let previewItemID: String?
     let previewGroup: ZoomyImagePreviewGroup?
@@ -36,6 +38,13 @@ struct DynamicImageCellRemoteContent: View {
                     iconSize: 19
                 )
             }
+
+            DynamicImageBadgeRow(
+                mediaBadgeText: mediaBadgeText,
+                showsLongImage: showsLongImage
+            )
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }
 }

@@ -1,4 +1,5 @@
 import Combine
+import AVFoundation
 import ImageIO
 import Photos
 import PhotosUI
@@ -100,6 +101,7 @@ nonisolated enum ZoomyViewerImageSizing {
 }
 
 struct ZoomyFullScreenImageViewer: View {
+    @Environment(\.colorScheme) private var colorScheme
     let initialImage: UIImage?
     let url: URL?
     let items: [ZoomyImagePreviewItem]
@@ -171,7 +173,7 @@ struct ZoomyFullScreenImageViewer: View {
 
     private var viewerSurface: some View {
         ZStack {
-            Color.black
+            (colorScheme == .dark ? Color.black : Color.white)
                 .opacity(backgroundOpacity)
                 .ignoresSafeArea()
 
@@ -190,7 +192,6 @@ struct ZoomyFullScreenImageViewer: View {
                         .ignoresSafeArea()
                 }
 
-                viewerControlContrastScrim
                 pageIndicator
             }
             .offset(y: dismissDragOffset)
@@ -247,29 +248,9 @@ struct ZoomyFullScreenImageViewer: View {
 
     private var viewerActionBar: some View {
         viewerActionContent
-            .biliLiquidGlassForeground(shadowOpacity: 0.36)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .biliGlassEffect(
-                tint: .black.opacity(0.24),
-                interactive: true,
-                in: Capsule()
-            )
-    }
-
-    private var viewerControlContrastScrim: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.30)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 160)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+            .biliGlassEffect(interactive: true, in: Capsule())
     }
 
     private func viewerActionButton(
@@ -284,6 +265,7 @@ struct ZoomyFullScreenImageViewer: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .foregroundStyle(.primary)
         .accessibilityLabel(accessibilityLabel)
     }
 
@@ -330,7 +312,7 @@ struct ZoomyFullScreenImageViewer: View {
             )
         } else {
             ProgressView()
-                .tint(.white)
+                .tint(.primary)
         }
     }
 
@@ -592,6 +574,23 @@ private struct ZoomyViewerImagePage: View {
                 .onAppear {
                     reportSnapshotIfNeeded()
                 }
+            } else if let liveVideoURL = loader.snapshot?.liveVideoFileURL,
+                      let image = loader.snapshot?.image {
+                ZoomyLiveVideoView(
+                    videoURL: liveVideoURL,
+                    placeholderImage: image,
+                    isDismissGestureEnabled: isSelected
+                ) {
+                    isPresented = false
+                } onDismissDragChanged: { translationY in
+                    onDismissDragChanged(item.id, translationY)
+                } onDismissDragEnded: { translationY, velocityY, cancelled in
+                    onDismissDragEnded(item.id, translationY, velocityY, cancelled)
+                }
+                .ignoresSafeArea()
+                .onAppear {
+                    reportSnapshotIfNeeded()
+                }
             } else if let image = loader.snapshot?.image {
                 ZoomyZoomableImageView(
                     image: image,
@@ -736,7 +735,7 @@ private struct ZoomyViewerImagePage: View {
             .biliLiquidGlassForeground(shadowOpacity: 0.34)
             .biliGlassEffect(tint: .black.opacity(0.24), interactive: true, in: Capsule())
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .accessibilityElement(children: .contain)
     }
 
@@ -1480,8 +1479,11 @@ private enum ZoomyViewerMediaLoader {
                 targetSize: .zero,
                 contentMode: .aspectFit
             ) { livePhoto, info in
-                let isDegraded = (info[PHLivePhotoInfoIsDegradedKey] as? Bool) == true
-                guard !isDegraded, !didResume else { return }
+                // Bilibili resources often are not Apple-authored Live Photos. The request
+                // may only produce a degraded/nil callback; resume immediately so the
+                // paired video fallback can be shown instead of leaving the viewer loading.
+                _ = info[PHLivePhotoInfoIsDegradedKey]
+                guard !didResume else { return }
                 didResume = true
                 continuation.resume(returning: livePhoto)
             }
@@ -1504,7 +1506,7 @@ private struct ZoomyViewerPageControl: UIViewRepresentable {
     let currentPage: Int
 
     private var indicatorColor: UIColor {
-        .white
+        .label
     }
 
     func makeUIView(context _: Context) -> UIPageControl {
@@ -1604,6 +1606,116 @@ private final class ZoomyDismissPanGestureController: NSObject, UIGestureRecogni
         let identifier = ObjectIdentifier(otherGestureRecognizer)
         guard prioritizedRecognizers.insert(identifier).inserted else { return }
         otherGestureRecognizer.require(toFail: recognizer)
+    }
+}
+
+private struct ZoomyLiveVideoView: UIViewRepresentable {
+    let videoURL: URL
+    let placeholderImage: UIImage
+    let isDismissGestureEnabled: Bool
+    let onTapExit: () -> Void
+    let onDismissDragChanged: (CGFloat) -> Void
+    let onDismissDragEnded: (CGFloat, CGFloat, Bool) -> Void
+
+    func makeUIView(context _: Context) -> ZoomyLiveVideoHostView {
+        let view = ZoomyLiveVideoHostView()
+        view.isDismissGestureEnabled = isDismissGestureEnabled
+        view.onTapExit = onTapExit
+        view.onDismissDragChanged = onDismissDragChanged
+        view.onDismissDragEnded = onDismissDragEnded
+        view.setVideo(url: videoURL, placeholderImage: placeholderImage)
+        return view
+    }
+
+    func updateUIView(_ view: ZoomyLiveVideoHostView, context _: Context) {
+        view.isDismissGestureEnabled = isDismissGestureEnabled
+        view.onTapExit = onTapExit
+        view.onDismissDragChanged = onDismissDragChanged
+        view.onDismissDragEnded = onDismissDragEnded
+        view.setVideo(url: videoURL, placeholderImage: placeholderImage)
+    }
+}
+
+private final class ZoomyLiveVideoHostView: UIView, UIGestureRecognizerDelegate {
+    var isDismissGestureEnabled = false
+    var onTapExit: (() -> Void)?
+    var onDismissDragChanged: ((CGFloat) -> Void)?
+    var onDismissDragEnded: ((CGFloat, CGFloat, Bool) -> Void)?
+
+    private let playerLayer = AVPlayerLayer()
+    private var player: AVPlayer?
+    private var currentURL: URL?
+    private var endObserver: NSObjectProtocol?
+    private lazy var dismissPanController: ZoomyDismissPanGestureController = {
+        let controller = ZoomyDismissPanGestureController()
+        controller.canBegin = { [weak self] in self?.isDismissGestureEnabled == true }
+        controller.onChanged = { [weak self] translationY in
+            self?.onDismissDragChanged?(translationY)
+        }
+        controller.onEnded = { [weak self] translationY, velocityY, cancelled in
+            self?.onDismissDragEnded?(translationY, velocityY, cancelled)
+        }
+        return controller
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.backgroundColor = UIColor.clear.cgColor
+        layer.addSublayer(playerLayer)
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        tap.delegate = self
+        addGestureRecognizer(tap)
+        dismissPanController.install(on: self)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        player?.pause()
+    }
+
+    func setVideo(url: URL, placeholderImage _: UIImage) {
+        guard currentURL != url else {
+            if player?.rate == 0 { player?.play() }
+            return
+        }
+        currentURL = url
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        let player = AVPlayer(url: url)
+        player.isMuted = true
+        player.actionAtItemEnd = .none
+        self.player = player
+        playerLayer.player = player
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak player] _ in
+            player?.seek(to: .zero) { _ in player?.play() }
+        }
+        player.play()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+        dismissPanController.prioritizeAncestorPanGestures(from: self)
+    }
+
+    @objc private func handleTap() {
+        onTapExit?()
     }
 }
 

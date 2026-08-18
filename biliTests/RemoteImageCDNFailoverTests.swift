@@ -3,20 +3,11 @@ import UIKit
 @testable import bili
 
 final class RemoteImageCDNFailoverTests: XCTestCase {
-    func testDisabledExperimentKeepsOriginalURLOnly() throws {
-        let memory = RemoteImageCDNHealthMemory()
-        let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg?imageView2/1/w/640"))
-
-        let candidates = memory.orderedCandidates(for: [url], experimentEnabled: false)
-
-        XCTAssertEqual(candidates, [url])
-    }
-
     func testEligibleImageURLAddsInterchangeableCDNHosts() throws {
         let memory = RemoteImageCDNHealthMemory()
         let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg?imageView2/1/w/640"))
 
-        let candidates = memory.orderedCandidates(for: [url], experimentEnabled: true)
+        let candidates = memory.orderedCandidates(for: [url])
 
         XCTAssertEqual(candidates.compactMap(\.host), ["i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"])
         XCTAssertTrue(candidates.allSatisfy { $0.path == url.path && $0.query == url.query })
@@ -26,7 +17,7 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         let memory = RemoteImageCDNHealthMemory()
         let url = try XCTUnwrap(URL(string: "https://images.example.com/avatar.jpg"))
 
-        let candidates = memory.orderedCandidates(for: [url], experimentEnabled: true)
+        let candidates = memory.orderedCandidates(for: [url])
 
         XCTAssertEqual(candidates, [url])
     }
@@ -35,16 +26,14 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         let memory = RemoteImageCDNHealthMemory(failureTTL: 90)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg"))
-        memory.recordTransientFailure(for: url, experimentEnabled: true, now: now)
+        memory.recordTransientFailure(for: url, now: now)
 
         let duringTTL = memory.orderedCandidates(
             for: [url],
-            experimentEnabled: true,
             now: now.addingTimeInterval(30)
         )
         let afterTTL = memory.orderedCandidates(
             for: [url],
-            experimentEnabled: true,
             now: now.addingTimeInterval(91)
         )
 
@@ -55,10 +44,10 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
     func testSuccessRestoresOriginalHostImmediately() throws {
         let memory = RemoteImageCDNHealthMemory(failureTTL: 90)
         let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg"))
-        memory.recordTransientFailure(for: url, experimentEnabled: true)
-        memory.recordSuccess(for: url, experimentEnabled: true)
+        memory.recordTransientFailure(for: url)
+        memory.recordSuccess(for: url)
 
-        let candidates = memory.orderedCandidates(for: [url], experimentEnabled: true)
+        let candidates = memory.orderedCandidates(for: [url])
 
         XCTAssertEqual(candidates.first?.host, "i0.hdslb.com")
     }
@@ -78,10 +67,10 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         let originalURL = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg"))
         let switchedURL = try XCTUnwrap(URL(string: "https://i1.hdslb.com/bfs/archive/example.jpg"))
 
-        memory.recordRequest(for: originalURL, originalURL: originalURL, experimentEnabled: true)
-        memory.recordSuccess(for: originalURL, experimentEnabled: true)
-        memory.recordRequest(for: switchedURL, originalURL: originalURL, experimentEnabled: true)
-        memory.recordTransientFailure(for: switchedURL, experimentEnabled: true, now: now)
+        memory.recordRequest(for: originalURL, originalURL: originalURL)
+        memory.recordSuccess(for: originalURL)
+        memory.recordRequest(for: switchedURL, originalURL: originalURL)
+        memory.recordTransientFailure(for: switchedURL, now: now)
 
         let diagnostics = memory.diagnostics(now: now)
         let originalNode = try XCTUnwrap(diagnostics.hosts.first { $0.host == "i0.hdslb.com" })
@@ -102,9 +91,9 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         let memory = RemoteImageCDNHealthMemory()
         let url = try XCTUnwrap(URL(string: "https://images.example.com/avatar.jpg"))
 
-        memory.recordRequest(for: url, originalURL: url, experimentEnabled: true)
-        memory.recordSuccess(for: url, experimentEnabled: true)
-        memory.recordTransientFailure(for: url, experimentEnabled: true)
+        memory.recordRequest(for: url, originalURL: url)
+        memory.recordSuccess(for: url)
+        memory.recordTransientFailure(for: url)
 
         let diagnostics = memory.diagnostics()
 
@@ -118,8 +107,8 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         let memory = RemoteImageCDNHealthMemory(failureTTL: 90)
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg"))
-        memory.recordRequest(for: url, originalURL: url, experimentEnabled: true)
-        memory.recordTransientFailure(for: url, experimentEnabled: true, now: now)
+        memory.recordRequest(for: url, originalURL: url)
+        memory.recordTransientFailure(for: url, now: now)
 
         memory.resetDiagnostics()
         let afterDiagnosticReset = memory.diagnostics(now: now)
@@ -181,8 +170,6 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
             displayCache: displayCache,
             scroll: scroll,
             cdn: cdn,
-            isFastScrollImageLoadSuppressionEnabled: true,
-            isCDNFailoverEnabled: true,
             isDiagnosticsEnabled: true,
             version: "1.0.14",
             build: "48",
@@ -196,6 +183,8 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         XCTAssertTrue(text.contains("新建图片加载任务: 21"))
         XCTAssertTrue(text.contains("滚动中可见请求放行: 7"))
         XCTAssertTrue(text.contains("滚动中后台预取延后: 4"))
+        XCTAssertTrue(text.contains("快速滚动负载抑制: 已启用"))
+        XCTAssertTrue(text.contains("自动切换: 已启用"))
         XCTAssertTrue(text.contains("i0.hdslb.com: 请求 50 · 成功 49 · 瞬时失败 1 · 失败率 2%"))
         XCTAssertTrue(text.contains("i1.hdslb.com: 剩余 42 秒"))
         XCTAssertFalse(text.contains("https://"))

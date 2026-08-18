@@ -31,7 +31,11 @@ struct PlayerNativeControlButtonRow: View {
                             width: metrics.timeLabelWidth,
                             height: metrics.controlHeight
                         )
-                        .biliPlayerClearGlass(interactive: false, in: Capsule())
+                        .biliPlayerClearGlass(
+                            interactive: false,
+                            in: Capsule(),
+                            isEnabled: true
+                        )
                 }
 
                 if layout.isLive, let controlsAccessory {

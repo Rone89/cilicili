@@ -29,13 +29,6 @@ struct DynamicImageCell: View {
 
     var body: some View {
         baseImageContent
-            .overlay(alignment: .bottomTrailing) {
-                DynamicImageBadgeRow(
-                    mediaBadgeText: image.mediaBadgeText,
-                    showsLongImage: displayMode.isLongImage
-                )
-                .padding(8)
-            }
     }
 
     @ViewBuilder
@@ -51,7 +44,7 @@ struct DynamicImageCell: View {
                     shadowLevel: .regular,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
-                    appliesUnifiedBorderExperiment: false
+                    appliesUnifiedBorder: false
                 )
         case .longImage(let cornerRadius):
             imageContent
@@ -63,7 +56,7 @@ struct DynamicImageCell: View {
                     shadowLevel: .regular,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
-                    appliesUnifiedBorderExperiment: false
+                    appliesUnifiedBorder: false
                 )
         case .square(let cornerRadius):
             imageContent
@@ -74,7 +67,7 @@ struct DynamicImageCell: View {
                     shadowLevel: .subtle,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
-                    appliesUnifiedBorderExperiment: false
+                    appliesUnifiedBorder: false
                 )
         case .hero(let aspectRatio, let cornerRadius):
             imageContent
@@ -86,7 +79,7 @@ struct DynamicImageCell: View {
                     shadowLevel: .regular,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
-                    appliesUnifiedBorderExperiment: false
+                    appliesUnifiedBorder: false
                 )
         case .fixedHeight(let height, let cornerRadius):
             imageContent
@@ -98,7 +91,7 @@ struct DynamicImageCell: View {
                     shadowLevel: .regular,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
-                    appliesUnifiedBorderExperiment: false
+                    appliesUnifiedBorder: false
                 )
         }
     }
@@ -106,8 +99,10 @@ struct DynamicImageCell: View {
     private var imageContent: some View {
         DynamicImageCellRemoteContent(
             normalizedURLString: normalizedURLString,
-            previewItems: previewItems,
-            previewItemID: previewItemID,
+            mediaBadgeText: image.mediaBadgeText,
+            showsLongImage: displayMode.isLongImage,
+            previewItems: effectivePreviewItems,
+            previewItemID: effectivePreviewItemID,
             previewGroup: previewGroup,
             targetPixelSize: thumbnailMaxSide,
             cornerRadius: displayMode.cornerRadius,
@@ -142,6 +137,27 @@ struct DynamicImageCell: View {
     private var thumbnailMaxSide: Int {
         let usesCompactImages = PlaybackEnvironment.current.shouldPreferConservativePlayback
         return displayMode.thumbnailMaxSide(usesCompactImages: usesCompactImages)
+    }
+
+    private var effectivePreviewItems: [ZoomyImagePreviewItem] {
+        guard previewItems.isEmpty,
+              let normalizedURLString,
+              let url = URL(string: normalizedURLString)
+        else { return previewItems }
+        return [
+            ZoomyImagePreviewItem(
+                id: effectivePreviewItemID ?? url.absoluteString,
+                fallbackURL: url,
+                viewerURL: image.normalizedAnimatedImageURL.flatMap { URL(string: $0) } ?? url,
+                mediaBadgeText: image.mediaBadgeText,
+                liveVideoURL: image.normalizedLiveVideoURL.flatMap { URL(string: $0) },
+                aspectRatio: imageAspectRatio
+            )
+        ]
+    }
+
+    private var effectivePreviewItemID: String? {
+        previewItemID ?? normalizedURLString
     }
 
     private static func aspectRatio(for image: DynamicImageItem, normalizedURLString: String?) -> CGFloat {

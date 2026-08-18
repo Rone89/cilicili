@@ -50,5 +50,67 @@ private struct MainInterfaceHost: View {
             .environmentObject(dependencies.sessionStore)
             .environmentObject(dependencies.libraryStore)
             .environmentObject(dependencies.homeRecommendDiagnosticsStore)
+            .background {
+                AppFontSizePreferenceInstaller(libraryStore: dependencies.libraryStore)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
+    }
+}
+
+private struct AppFontSizePreferenceInstaller: UIViewRepresentable {
+    @ObservedObject var libraryStore: LibraryStore
+
+    func makeUIView(context _: Context) -> AppFontSizePreferenceView {
+        let view = AppFontSizePreferenceView(frame: .zero)
+        update(view)
+        return view
+    }
+
+    func updateUIView(_ uiView: AppFontSizePreferenceView, context _: Context) {
+        update(uiView)
+    }
+
+    private func update(_ view: AppFontSizePreferenceView) {
+        view.apply(
+            followsSystemFontSize: libraryStore.followsSystemFontSize,
+            manualContentSizeCategory: libraryStore.manualFontSize.contentSizeCategory
+        )
+    }
+}
+
+private final class AppFontSizePreferenceView: UIView {
+    private var followsSystemFontSize = true
+    private var manualContentSizeCategory: UIContentSizeCategory = .large
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        applyToWindowScene()
+    }
+
+    func apply(
+        followsSystemFontSize: Bool,
+        manualContentSizeCategory: UIContentSizeCategory
+    ) {
+        self.followsSystemFontSize = followsSystemFontSize
+        self.manualContentSizeCategory = manualContentSizeCategory
+        applyToWindowScene()
+    }
+
+    private func applyToWindowScene() {
+        guard let windowScene = window?.windowScene else { return }
+        var overrides = windowScene.traitOverrides
+
+        if followsSystemFontSize {
+            guard overrides.contains(UITraitPreferredContentSizeCategory.self) else { return }
+            overrides.remove(UITraitPreferredContentSizeCategory.self)
+        } else {
+            guard !overrides.contains(UITraitPreferredContentSizeCategory.self)
+                    || windowScene.traitCollection.preferredContentSizeCategory != manualContentSizeCategory
+            else { return }
+            overrides.preferredContentSizeCategory = manualContentSizeCategory
+        }
+
+        windowScene.traitOverrides = overrides
     }
 }

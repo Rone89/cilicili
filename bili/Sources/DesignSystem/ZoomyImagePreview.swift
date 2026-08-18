@@ -87,22 +87,6 @@ nonisolated enum ZoomyImagePreviewQuality: Int, Sendable {
     case viewer
 }
 
-enum ThumbnailLongPressPreviewExperiment {
-    static let defaultIsEnabled = false
-    static let targetPixelSize = 1_800
-}
-
-private struct ThumbnailLongPressPreviewExperimentKey: EnvironmentKey {
-    static let defaultValue = ThumbnailLongPressPreviewExperiment.defaultIsEnabled
-}
-
-extension EnvironmentValues {
-    var thumbnailLongPressPreviewExperimentEnabled: Bool {
-        get { self[ThumbnailLongPressPreviewExperimentKey.self] }
-        set { self[ThumbnailLongPressPreviewExperimentKey.self] = newValue }
-    }
-}
-
 @MainActor
 final class ZoomyImagePreviewGroup: ObservableObject {
     @Published var isPresented = false
@@ -195,8 +179,6 @@ final class ZoomyImagePreviewGroup: ObservableObject {
 /// Minimal in-app image viewer:
 /// tap thumbnail to view, tap the full-screen image to exit, pinch only after entering.
 struct ZoomyRemoteImage<Placeholder: View>: View {
-    @Environment(\.thumbnailLongPressPreviewExperimentEnabled) private var thumbnailLongPressPreviewExperimentEnabled
-
     let url: URL?
     let fallbackURL: URL?
     let viewerURL: URL?
@@ -284,7 +266,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
     }
 
     var body: some View {
-        thumbnailInteraction
+        thumbnailButton
         .buttonStyle(.plain)
         .task(id: cacheIdentity) {
             registerWithViewerGroup()
@@ -337,31 +319,6 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityAddTraits(.isImage)
-    }
-
-    @ViewBuilder
-    private var thumbnailInteraction: some View {
-        if thumbnailLongPressPreviewExperimentEnabled, canPresentViewer {
-            thumbnailButton
-                .contextMenu {
-                    Button {
-                        presentViewerAfterContextMenuDismissal()
-                    } label: {
-                        Label("打开大图", systemImage: "arrow.up.left.and.arrow.down.right")
-                    }
-                } preview: {
-                    ZoomyThumbnailContextPreview(
-                        item: resolvedViewerItem,
-                        initialImage: viewerGroup?.image(for: resolvedViewerItemID) ?? loader.image,
-                        targetPixelSize: min(
-                            viewerTargetPixelSize,
-                            ThumbnailLongPressPreviewExperiment.targetPixelSize
-                        )
-                    )
-                }
-        } else {
-            thumbnailButton
-        }
     }
 
     private var thumbnailButton: some View {
@@ -443,14 +400,6 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
         isViewerPresented = true
     }
 
-    private func presentViewerAfterContextMenuDismissal() {
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
-            guard !Task.isCancelled else { return }
-            presentViewer()
-        }
-    }
-
     private func registerWithViewerGroup() {
         guard let viewerGroup else { return }
         viewerGroup.register(anchor: sourceAnchor, itemID: resolvedViewerItemID)
@@ -493,95 +442,6 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 decodePolicy: .highQualityViewer
             )
         }
-    }
-}
-
-private struct ZoomyThumbnailContextPreview: View {
-    let item: ZoomyImagePreviewItem
-    let targetPixelSize: Int
-    @State private var image: UIImage?
-
-    init(item: ZoomyImagePreviewItem, initialImage: UIImage?, targetPixelSize: Int) {
-        self.item = item
-        self.targetPixelSize = max(targetPixelSize, 1)
-        _image = State(initialValue: initialImage)
-    }
-
-    var body: some View {
-        ZStack {
-            Color(uiColor: .secondarySystemBackground)
-
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                ProgressView()
-            }
-        }
-        .frame(width: previewSize.width, height: previewSize.height)
-        .task(id: loadIdentity) {
-            await loadHighQualityImageIfNeeded()
-        }
-    }
-
-    private var loadIdentity: String {
-        "\(item.id)|\(item.displayURL?.absoluteString ?? "")|\(targetPixelSize)"
-    }
-
-    private var previewSize: CGSize {
-        let maximumWidth: CGFloat = 320
-        let maximumHeight: CGFloat = 420
-        let minimumShortEdge: CGFloat = 180
-        guard let ratio = resolvedAspectRatio, ratio > 0 else {
-            return CGSize(width: maximumWidth, height: 320)
-        }
-
-        if ratio >= maximumWidth / maximumHeight {
-            return CGSize(
-                width: maximumWidth,
-                height: max(minimumShortEdge, maximumWidth / ratio)
-            )
-        }
-        return CGSize(
-            width: max(minimumShortEdge, maximumHeight * ratio),
-            height: maximumHeight
-        )
-    }
-
-    private var resolvedAspectRatio: CGFloat? {
-        if let ratio = item.resolvedAspectRatio, ratio > 0 {
-            return ratio
-        }
-        guard let image, image.size.height > 0 else { return nil }
-        return image.size.width / image.size.height
-    }
-
-    private func loadHighQualityImageIfNeeded() async {
-        guard !item.needsOriginalMedia, let url = item.displayURL else { return }
-        guard let loadedImage = await RemoteImageCache.shared.load(
-            url: url,
-            scale: 1,
-            targetPixelSize: targetPixelSize,
-            priority: .visible,
-            decodePolicy: .highQualityViewer
-        ) else { return }
-        guard !Task.isCancelled else { return }
-        if let image,
-           ZoomyViewerImageQuality.shouldKeepCurrent(
-               currentPixelSize: Self.pixelSize(of: image),
-               candidatePixelSize: Self.pixelSize(of: loadedImage)
-           ) {
-            return
-        }
-        image = loadedImage
-    }
-
-    private static func pixelSize(of image: UIImage) -> CGSize {
-        if let cgImage = image.cgImage {
-            return CGSize(width: cgImage.width, height: cgImage.height)
-        }
-        return CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
     }
 }
 
@@ -903,7 +763,7 @@ private final class ZoomyImageViewerAnimator: NSObject, UIViewControllerAnimated
         toView.layoutIfNeeded()
 
         let backgroundView = UIView(frame: container.bounds)
-        backgroundView.backgroundColor = .black
+        backgroundView.backgroundColor = viewerBackgroundColor
         backgroundView.alpha = 0
 
         let imageView = transitionImageView(image: image)
@@ -947,7 +807,7 @@ private final class ZoomyImageViewerAnimator: NSObject, UIViewControllerAnimated
 
         let container = transitionContext.containerView
         let backgroundView = UIView(frame: container.bounds)
-        backgroundView.backgroundColor = .black
+        backgroundView.backgroundColor = viewerBackgroundColor
         backgroundView.alpha = dismissBackgroundStartAlpha
 
         let imageView = transitionImageView(image: image)
@@ -1043,6 +903,12 @@ private final class ZoomyImageViewerAnimator: NSObject, UIViewControllerAnimated
         guard initialDismissTranslationY > 0 else { return 1 }
         let progress = min(max(abs(initialDismissTranslationY) / 260, 0), 1)
         return max(0.55, 1 - progress * 0.45)
+    }
+
+    private var viewerBackgroundColor: UIColor {
+        UIColor { traitCollection in
+            traitCollection.userInterfaceStyle == .dark ? .black : .white
+        }
     }
 
     private func aspectFitFrame(for image: UIImage, in bounds: CGRect) -> CGRect {

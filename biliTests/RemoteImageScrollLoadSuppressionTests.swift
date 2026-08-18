@@ -3,22 +3,15 @@ import XCTest
 @testable import bili
 
 final class RemoteImageScrollLoadSuppressionTests: XCTestCase {
-    func testExperimentOnlySuppressesInteractiveAndDeceleratingScroll() {
+    func testPolicySuppressesInteractiveAndDeceleratingScroll() {
         XCTAssertTrue(FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
-            experimentEnabled: true,
             phase: .interacting
         ))
         XCTAssertTrue(FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
-            experimentEnabled: true,
             phase: .decelerating
         ))
         XCTAssertFalse(FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
-            experimentEnabled: true,
             phase: .idle
-        ))
-        XCTAssertFalse(FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
-            experimentEnabled: false,
-            phase: .interacting
         ))
     }
 
