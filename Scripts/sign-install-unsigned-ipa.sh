@@ -5,6 +5,11 @@ SCRIPT_PATH="${0:A}"
 ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 COMMAND_NAME="${0:t}"
 CONFIG_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/cilicili/sign-install-ipa.conf"
+SIGNING_ENV_PATH="${SIGNING_ENV_PATH:-$ROOT_DIR/Config/Signing.local.env}"
+if [[ -f "$SIGNING_ENV_PATH" ]]; then
+  source "$SIGNING_ENV_PATH"
+fi
+CERT_DIR="${CERT_DIR:-$ROOT_DIR/Signing}"
 KEYCHAIN="${KEYCHAIN:-$HOME/Library/Keychains/login.keychain-db}"
 SAVE_CONFIG=0
 FORCE_CONFIGURE=0
@@ -166,7 +171,7 @@ save_config() {
 }
 
 configure() {
-  local default_profile="/Users/rayc/Desktop/Apple Distribution Eric Kirsche KQ737H7L22_certificate/cert.mobileprovision"
+  local default_profile="$CERT_DIR/cert.mobileprovision"
   [[ -f "$default_profile" ]] || default_profile=""
   PROFILE_PATH="$(read_path "Provisioning profile path" "${PROFILE_PATH:-$default_profile}" required)"
 
@@ -174,7 +179,7 @@ configure() {
   profile_plist="$(mktemp /tmp/sign-install-profile.XXXXXX)"
   decode_profile "$PROFILE_PATH" "$profile_plist"
 
-  local default_p12="/Users/rayc/Desktop/Apple Distribution Eric Kirsche KQ737H7L22_certificate/cert.p12"
+  local default_p12="$CERT_DIR/cert.p12"
   [[ -f "$default_p12" ]] || default_p12=""
   P12_PATH="$(read_path "P12 path, press return for default, type - to skip" "${P12_PATH:-$default_p12}" optional)"
   if [[ -n "$P12_PATH" ]]; then

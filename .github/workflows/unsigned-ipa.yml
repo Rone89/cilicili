@@ -3,70 +3,62 @@ name: Build unsigned IPA
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build unsigned IPA
     runs-on: macos-26
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Select Xcode
         run: |
           set -euo pipefail
-          ls -1 /Applications | grep -E '^Xcode' || true
-          if [ -d "/Applications/Xcode_26.4.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.4.app
-          elif [ -d "/Applications/Xcode_26.3.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.3.app
-          elif [ -d "/Applications/Xcode_26.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.2.app
-          elif [ -d "/Applications/Xcode_26.1.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.1.1.app
-          elif [ -d "/Applications/Xcode_26.0.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          current_major="$(xcodebuild -version | awk '$1 == "Xcode" { split($2, version, "."); print version[1]; exit }')"
+          if [ "$current_major" != "26" ]; then
+            for developer_dir in \
+              "/Applications/Xcode_26.4.1.app/Contents/Developer" \
+              "/Applications/Xcode_26.4.app/Contents/Developer" \
+              "/Applications/Xcode_26.3.app/Contents/Developer" \
+              "/Applications/Xcode_26.2.app/Contents/Developer" \
+              "/Applications/Xcode_26.1.1.app/Contents/Developer" \
+              "/Applications/Xcode_26.0.1.app/Contents/Developer"; do
+              if [ -d "$developer_dir" ]; then
+                sudo xcode-select --switch "$developer_dir"
+                break
+              fi
+            done
           fi
+
+          selected_version="$(xcodebuild -version | awk '$1 == "Xcode" { print $2; exit }')"
+          selected_major="${selected_version%%.*}"
+          if [ "$selected_major" != "26" ]; then
+            echo "Xcode 26 is required; selected $selected_version" >&2
+            exit 1
+          fi
+          echo "XCODE_VERSION_MAJOR=$selected_major" >> "$GITHUB_ENV"
+          xcode-select -p
           xcodebuild -version
           xcodebuild -showsdks
 
       - name: Build Release app without signing
-        run: |
-          set -euo pipefail
-          DERIVED_DATA_PATH="$RUNNER_TEMP/DerivedData"
-          BUILD_DIR="$RUNNER_TEMP/build"
-          xcodebuild \
-            -project bili.xcodeproj \
-            -scheme bili \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            COPY_PHASE_STRIP=YES \
-            STRIP_INSTALLED_PRODUCT=YES \
-            DEPLOYMENT_POSTPROCESSING=YES \
-            build
-          APP_PATH="$(find "$DERIVED_DATA_PATH/Build/Products" -maxdepth 2 -name '*.app' -type d | head -n 1)"
-          if [ -z "$APP_PATH" ]; then
-            echo "No .app bundle was produced." >&2
-            exit 1
-          fi
-          mkdir -p "$BUILD_DIR/Payload"
-          cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
-          (cd "$BUILD_DIR" && zip -qry "$GITHUB_WORKSPACE/cilicili-release-unsigned.ipa" Payload)
+        run: zsh Scripts/build-release-unsigned-ipa.sh
 
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cilicili-release-unsigned-ipa
-          path: cilicili-release-unsigned.ipa
+          path: build/release-unsigned-ipa/bili-release-unsigned.ipa
           if-no-files-found: error

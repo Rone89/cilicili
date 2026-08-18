@@ -2,7 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CERT_DIR="${CERT_DIR:-/Users/rayc/Desktop/Apple Distribution Eric Kirsche KQ737H7L22_certificate}"
+SIGNING_ENV_PATH="${SIGNING_ENV_PATH:-$ROOT_DIR/Config/Signing.local.env}"
+if [[ -f "$SIGNING_ENV_PATH" ]]; then
+  source "$SIGNING_ENV_PATH"
+fi
+CERT_DIR="${CERT_DIR:-$ROOT_DIR/Signing}"
 PROFILE_PATH="$CERT_DIR/cert.mobileprovision"
 PROFILE_PLIST="${TMPDIR:-/tmp}/cilicili_distribution_profile.plist"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -20,7 +24,6 @@ PROFILE_NAME="$(plutil -extract Name raw -o - "$PROFILE_PLIST")"
 TEAM_ID="$(plutil -extract TeamIdentifier.0 raw -o - "$PROFILE_PLIST")"
 APP_IDENTIFIER="$(plutil -extract Entitlements.application-identifier raw -o - "$PROFILE_PLIST")"
 BUNDLE_ID="${APP_IDENTIFIER#*.}"
-IDENTITY_NAME="Apple Distribution: Eric Kirsche ($TEAM_ID)"
 
 mkdir -p "$(dirname "$ARCHIVE_PATH")" "$EXPORT_PATH" "$LOG_DIR"
 

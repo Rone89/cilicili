@@ -1,7 +1,12 @@
 #!/bin/zsh
 set -euo pipefail
 
-CERT_DIR="${CERT_DIR:-/Users/rayc/Desktop/Apple Distribution Eric Kirsche KQ737H7L22_certificate}"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SIGNING_ENV_PATH="${SIGNING_ENV_PATH:-$ROOT_DIR/Config/Signing.local.env}"
+if [[ -f "$SIGNING_ENV_PATH" ]]; then
+  source "$SIGNING_ENV_PATH"
+fi
+CERT_DIR="${CERT_DIR:-$ROOT_DIR/Signing}"
 P12_PATH="$CERT_DIR/cert.p12"
 PROFILE_PATH="$CERT_DIR/cert.mobileprovision"
 PASSWORD_PATH="$CERT_DIR/password.txt"
@@ -50,12 +55,18 @@ PROFILE_NAME="$(plutil -extract Name raw -o - "$PROFILE_PLIST")"
 TEAM_ID="$(plutil -extract TeamIdentifier.0 raw -o - "$PROFILE_PLIST")"
 APP_IDENTIFIER="$(plutil -extract Entitlements.application-identifier raw -o - "$PROFILE_PLIST")"
 BUNDLE_ID="${APP_IDENTIFIER#*.}"
-IDENTITY_NAME="Apple Distribution: Eric Kirsche ($TEAM_ID)"
+
+find_distribution_identity() {
+  security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null \
+    | sed -nE 's/^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "([^"]+)".*$/\1/p' \
+    | awk -v team="$TEAM_ID" 'index($0, "Apple Distribution") && index($0, "(" team ")") { print; exit }'
+}
 
 mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
 cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
-if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY_NAME"; then
+IDENTITY_NAME="$(find_distribution_identity)"
+if [[ -z "$IDENTITY_NAME" ]]; then
   echo "Importing distribution certificate..."
   P12_PASSWORD="$(extract_password)"
   security import "$P12_PATH" \
@@ -66,12 +77,14 @@ if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY_
     -f pkcs12 >/dev/null
 fi
 
-if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY_NAME"; then
+IDENTITY_NAME="$(find_distribution_identity)"
+if [[ -z "$IDENTITY_NAME" ]]; then
   ensure_wwdr_g3
 fi
 
-if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY_NAME"; then
-  echo "Signing identity is still not valid: $IDENTITY_NAME" >&2
+IDENTITY_NAME="$(find_distribution_identity)"
+if [[ -z "$IDENTITY_NAME" ]]; then
+  echo "No valid Apple Distribution identity was found for team $TEAM_ID" >&2
   echo "Open Keychain Access and confirm the private key is present under the certificate." >&2
   exit 1
 fi

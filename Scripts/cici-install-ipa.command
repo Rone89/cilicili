@@ -1,9 +1,11 @@
 #!/bin/zsh
 set -u
 
-INSTALLER="/Users/rayc/Desktop/ciciswift/Scripts/sign-install-unsigned-ipa.sh"
+SCRIPT_PATH="${0:A}"
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+INSTALLER="$ROOT_DIR/Scripts/sign-install-unsigned-ipa.sh"
 CONFIG_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/cilicili/sign-install-ipa.conf"
-DEFAULT_IPA_DIR="/Users/rayc/Desktop/ciciswift/build/debug-unsigned-ipa"
+DEFAULT_IPA_DIR="$ROOT_DIR/build/debug-unsigned-ipa"
 
 pause() {
   echo

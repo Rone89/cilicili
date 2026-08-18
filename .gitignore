@@ -45,6 +45,8 @@ Carthage/Build/
 *.p8
 *.xcconfig.local
 Local.xcconfig
+Config/Signing.local.xcconfig
+Config/Signing.local.env
 Config/Secrets*.plist
 Config/Local*.plist
 

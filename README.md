@@ -20,7 +20,7 @@ cilicili 是一个使用 SwiftUI 开发的第三方 iOS 客户端实验项目，
 
 - macOS + Xcode 26.5 或更新版本。
 - iOS 26.4+。
-- Swift 6 / SwiftUI。
+- Swift 6 工具链、Swift 5 language mode / SwiftUI。工程已启用 Approachable Concurrency 和默认 MainActor 隔离，并会逐步迁移到完整 Swift 6 language mode。
 - 目标设备建议 iPhone 16 及以上机型。
 
 ## 本地运行
@@ -42,36 +42,26 @@ xcodebuild \
 未签名 IPA 适合上传到 GitHub Release 或交给其他签名工具继续处理，不能直接作为 App Store/TestFlight 包发布。
 
 ```bash
-DERIVED_DATA_PATH="$PWD/build/UnsignedIPADerivedData"
-BUILD_DIR="$PWD/build/ipa"
-
-rm -rf "$DERIVED_DATA_PATH" "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/Payload"
-
-xcodebuild \
-  -project bili.xcodeproj \
-  -scheme bili \
-  -configuration Release \
-  -sdk iphoneos \
-  -destination 'generic/platform=iOS' \
-  -derivedDataPath "$DERIVED_DATA_PATH" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY="" \
-  PROVISIONING_PROFILE_SPECIFIER="" \
-  COPY_PHASE_STRIP=YES \
-  STRIP_INSTALLED_PRODUCT=YES \
-  DEPLOYMENT_POSTPROCESSING=YES \
-  build
-
-APP_PATH="$(find "$DERIVED_DATA_PATH/Build/Products" -maxdepth 2 -name '*.app' -type d | head -n 1)"
-cp -R "$APP_PATH" "$BUILD_DIR/Payload/"
-(cd "$BUILD_DIR" && zip -qry cilicili-release-unsigned.ipa Payload)
+zsh Scripts/build-release-unsigned-ipa.sh
 ```
 
 ## GitHub Actions
 
-仓库内置 `.github/workflows/unsigned-ipa.yml`，每次推送到 `main` 或手动触发 workflow 时，会构建一个 Release 未签名 IPA artifact。
+仓库内置两类自动化：
+
+- Pull Request 和主分支推送会执行模拟器编译、单元测试、覆盖率摘要和增量格式检查。
+- `.github/workflows/unsigned-ipa.yml` 只在版本 Tag 或手动触发时构建 Release 未签名 IPA，普通提交不再重复打包。
+
+## 本地签名配置
+
+仓库不保存个人 Team ID、发布 Bundle ID、Provisioning Profile 或证书路径。本地真机和发布签名通过以下忽略文件配置：
+
+```bash
+cp Config/Signing.local.xcconfig.example Config/Signing.local.xcconfig
+cp Config/Signing.local.env.example Config/Signing.local.env
+```
+
+`Signing.local.xcconfig` 供 Xcode Release 配置使用，`Signing.local.env` 供签名和真机安装脚本读取。未签名 IPA 构建不需要这些文件。
 
 ## 隐私与安全
 

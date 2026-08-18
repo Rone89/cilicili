@@ -1,0 +1,5 @@
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Apple Distribution
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+PRODUCT_BUNDLE_IDENTIFIER = your.bundle.identifier
+PROVISIONING_PROFILE_SPECIFIER = Your Provisioning Profile Name

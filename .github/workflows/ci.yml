@@ -1,0 +1,144 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: bili.xcodeproj
+  SCHEME: bili
+
+jobs:
+  test:
+    name: Debug tests
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_major="$(xcodebuild -version | awk '$1 == "Xcode" { split($2, version, "."); print version[1]; exit }')"
+          if [ "$current_major" != "26" ]; then
+            for developer_dir in \
+              "/Applications/Xcode_26.4.1.app/Contents/Developer" \
+              "/Applications/Xcode_26.4.app/Contents/Developer" \
+              "/Applications/Xcode_26.3.app/Contents/Developer" \
+              "/Applications/Xcode_26.2.app/Contents/Developer" \
+              "/Applications/Xcode_26.1.1.app/Contents/Developer" \
+              "/Applications/Xcode_26.0.1.app/Contents/Developer"; do
+              if [ -d "$developer_dir" ]; then
+                sudo xcode-select --switch "$developer_dir"
+                break
+              fi
+            done
+          fi
+
+          selected_version="$(xcodebuild -version | awk '$1 == "Xcode" { print $2; exit }')"
+          selected_major="${selected_version%%.*}"
+          if [ "$selected_major" != "26" ]; then
+            echo "Xcode 26 is required; selected $selected_version" >&2
+            exit 1
+          fi
+          echo "XCODE_VERSION_MAJOR=$selected_major" >> "$GITHUB_ENV"
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Swift format check (changed files)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          formatter="$(xcrun --find swift-format 2>/dev/null || true)"
+          if [ -z "$formatter" ]; then
+            echo "swift-format is unavailable on this runner; skipping format check."
+            exit 0
+          fi
+
+          base_sha="$BASE_SHA"
+          if [ -z "$base_sha" ] || [[ "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git rev-list --max-parents=0 "$HEAD_SHA" | tail -n 1)"
+          fi
+
+          changed_files="$(git diff --name-only --diff-filter=ACMR "$base_sha" "$HEAD_SHA" -- '*.swift')"
+          if [ -z "$changed_files" ]; then
+            echo "No changed Swift files."
+            exit 0
+          fi
+
+          format_status=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            "$formatter" lint --strict --configuration "$GITHUB_WORKSPACE/.swift-format" "$file" || format_status=$?
+          done <<< "$changed_files"
+          exit "$format_status"
+
+      - name: Test Debug with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
+          coverage_path="$GITHUB_WORKSPACE/coverage.txt"
+          test_status=0
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -destination-timeout 120 \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -resultBundlePath "$result_bundle_path" \
+            -enableCodeCoverage YES \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test || test_status=$?
+
+          if [ -d "$result_bundle_path" ]; then
+            if ! xcrun xccov view --report "$result_bundle_path" > "$coverage_path"; then
+              echo "Unable to read coverage from $result_bundle_path" > "$coverage_path"
+            fi
+          else
+            echo "No xcresult bundle was produced." > "$coverage_path"
+          fi
+
+          exit "$test_status"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-coverage
+          path: coverage.txt
+          if-no-files-found: error
+
+      - name: Upload test result bundle
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-results
+          path: ${{ runner.temp }}/bili-tests.xcresult
+          if-no-files-found: warn
