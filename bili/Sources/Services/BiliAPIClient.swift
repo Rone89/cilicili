@@ -15,6 +15,14 @@ nonisolated struct LiveDanmakuClientContext: Sendable {
     let headers: [String: String]
 }
 
+nonisolated struct InteractionRequestContext: Sendable {
+    let cookieHeader: String
+    let appAccessKey: String?
+    let isLoggedIn: Bool
+    let csrfToken: String?
+    let currentUserMID: Int?
+}
+
 nonisolated struct AccountHistoryCursor: Equatable {
     let max: Int
     let viewAt: Int
@@ -225,6 +233,19 @@ nonisolated final class BiliAPIClient {
             guestModeEnabled: libraryStore.guestModeEnabled,
             playbackCredentialVersion: account.version,
             isAccountPurposeEnabled: account.isPurposeEnabled
+        )
+    }
+
+    func interactionRequestContext(
+        purpose: BiliAccountPurpose = .interaction
+    ) async -> InteractionRequestContext {
+        let snapshot = await requestSnapshot(purpose: purpose)
+        return InteractionRequestContext(
+            cookieHeader: snapshot.cookieHeader,
+            appAccessKey: snapshot.appAccessKey,
+            isLoggedIn: snapshot.isLoggedIn,
+            csrfToken: snapshot.csrfToken,
+            currentUserMID: snapshot.currentUserMID
         )
     }
 
@@ -841,6 +862,13 @@ nonisolated final class BiliAPIClient {
             sessionSource: cookieSession == nil ? "generated" : "cookie",
             appKeyHeader: profile.appKeyHeader
         )
+    }
+
+    static func interactionAppHeaders(
+        cookieHeader: String,
+        profile: BiliAppSigner.Profile
+    ) -> [String: String] {
+        piliPodStyleAppRecommendHeaders(cookieHeader: cookieHeader, profile: profile).headers
     }
 
     private static func appRecommendRequestProfileSummary(
@@ -1627,211 +1655,6 @@ nonisolated final class BiliAPIClient {
         return relation
     }
 
-    func fetchVideoInteractionState(aid: Int, bvid: String?) async throws -> VideoInteractionState {
-        let snapshot = await requestSnapshot(purpose: .interaction)
-        guard snapshot.isLoggedIn || snapshot.appAccessKey?.isEmpty == false else {
-            throw BiliAPIError.missingSESSDATA
-        }
-
-        do {
-            let relationState = try await fetchVideoArchiveRelationState(
-                aid: aid,
-                bvid: bvid,
-                snapshot: snapshot
-            )
-            var state = relationState.interactionState
-            state.isFollowing = false
-            return state
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            // Older web endpoints are a reliable fallback for cookie-based accounts.
-        }
-
-        guard snapshot.isLoggedIn else {
-            throw BiliAPIError.missingSESSDATA
-        }
-
-        async let like: BiliResponse<Int> = get(
-            base: baseURL,
-            path: "/x/web-interface/archive/has/like",
-            query: ["aid": String(aid)],
-            cookieHeader: snapshot.cookieHeader,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: .utility
-        )
-        async let coin: BiliResponse<VideoCoinState> = get(
-            base: baseURL,
-            path: "/x/web-interface/archive/coins",
-            query: ["aid": String(aid)],
-            cookieHeader: snapshot.cookieHeader,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: .utility
-        )
-        async let favorite: BiliResponse<VideoFavoriteState> = get(
-            base: baseURL,
-            path: "/x/v2/fav/video/favoured",
-            query: ["aid": String(aid)],
-            cookieHeader: snapshot.cookieHeader,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: .utility
-        )
-
-        let (likeResponse, coinResponse, favoriteResponse) = try await (like, coin, favorite)
-
-        guard likeResponse.code == 0 else { throw BiliAPIError.api(code: likeResponse.code, message: likeResponse.displayMessage) }
-        guard coinResponse.code == 0 else { throw BiliAPIError.api(code: coinResponse.code, message: coinResponse.displayMessage) }
-        guard favoriteResponse.code == 0 else { throw BiliAPIError.api(code: favoriteResponse.code, message: favoriteResponse.displayMessage) }
-
-        return VideoInteractionState(
-            isLiked: (likeResponse.payload ?? 0) == 1,
-            coinCount: coinResponse.payload?.multiply ?? 0,
-            isFavorited: favoriteResponse.payload?.favoured ?? false,
-            isFollowing: false
-        )
-    }
-
-    private func fetchVideoArchiveRelationState(
-        aid: Int,
-        bvid: String?,
-        snapshot: RequestSnapshot
-    ) async throws -> VideoArchiveRelationState {
-        var query = ["aid": String(aid)]
-        if let bvid, !bvid.isEmpty {
-            query["bvid"] = bvid
-        }
-        if !snapshot.isLoggedIn,
-           let accessKey = snapshot.appAccessKey,
-           !accessKey.isEmpty {
-            query["access_key"] = accessKey
-        }
-
-        let response: BiliResponse<VideoArchiveRelationState> = try await get(
-            base: baseURL,
-            path: "/x/web-interface/archive/relation",
-            query: query,
-            cookieHeader: snapshot.cookieHeader,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: .utility
-        )
-        guard response.code == 0 else {
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
-        guard let state = response.payload else { throw BiliAPIError.missingPayload }
-        return state
-    }
-
-    func toggleVideoLike(aid: Int, liked: Bool) async throws {
-        let context = try await requireCSRFContext(for: .interaction)
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/web-interface/archive/like",
-            body: [
-                "aid": String(aid),
-                "like": liked ? "1" : "2",
-                "csrf": context.csrf,
-                "cross_domain": "true",
-                "source": "web_normal",
-                "ga": "1"
-            ],
-            cookieHeader: context.snapshot.cookieHeader,
-            retryPolicy: .idempotentMutation
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    func addVideoCoin(aid: Int, multiply: Int = 1, selectLike: Bool = false) async throws {
-        guard (1...2).contains(multiply) else {
-            throw BiliAPIError.api(code: -1, message: "投币数量无效")
-        }
-        let context = try await requireCSRFContext(for: .interaction)
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/web-interface/coin/add",
-            body: [
-                "aid": String(aid),
-                "multiply": String(multiply),
-                "select_like": selectLike ? "1" : "0",
-                "csrf": context.csrf,
-                "cross_domain": "true",
-                "source": "web_normal",
-                "ga": "1"
-            ],
-            cookieHeader: context.snapshot.cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    func setVideoFavorite(aid: Int, favorited: Bool) async throws {
-        let context = try await requireCSRFContext(for: .interaction)
-        let folderIDs = try await favoriteFolderIDs(
-            for: aid,
-            snapshot: context.snapshot
-        )
-        let targetIDs: [Int]
-        if favorited {
-            guard let folderID = folderIDs.first else { throw BiliAPIError.missingPayload }
-            targetIDs = [folderID]
-        } else {
-            targetIDs = folderIDs
-            guard !targetIDs.isEmpty else { throw BiliAPIError.missingPayload }
-        }
-
-        let addMediaIDs = favorited ? targetIDs.map(String.init).joined(separator: ",") : ""
-        let delMediaIDs = favorited ? "" : targetIDs.map(String.init).joined(separator: ",")
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/v3/fav/resource/deal",
-            body: [
-                "rid": String(aid),
-                "type": "2",
-                "add_media_ids": addMediaIDs,
-                "del_media_ids": delMediaIDs,
-                "csrf": context.csrf,
-                "platform": "web",
-                "gaia_source": "web_normal",
-                "ga": "1"
-            ],
-            cookieHeader: context.snapshot.cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    func fetchFavoriteFolders(for aid: Int? = nil) async throws -> [FavoriteFolder] {
-        let snapshot = await requestSnapshot(purpose: .interaction)
-        guard snapshot.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        return try await favoriteFolderSummaries(rid: aid, snapshot: snapshot)
-            .filter { $0.id > 0 }
-    }
-
-    func setVideoFavorite(aid: Int, addFolderIDs: Set<Int>, removeFolderIDs: Set<Int>) async throws {
-        let context = try await requireCSRFContext(for: .interaction)
-        let addIDs = addFolderIDs
-            .filter { $0 > 0 && !removeFolderIDs.contains($0) }
-            .sorted()
-        let removeIDs = removeFolderIDs
-            .filter { $0 > 0 && !addFolderIDs.contains($0) }
-            .sorted()
-        guard !addIDs.isEmpty || !removeIDs.isEmpty else { return }
-
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/v3/fav/resource/deal",
-            body: [
-                "rid": String(aid),
-                "type": "2",
-                "add_media_ids": addIDs.map(String.init).joined(separator: ","),
-                "del_media_ids": removeIDs.map(String.init).joined(separator: ","),
-                "csrf": context.csrf,
-                "platform": "web",
-                "gaia_source": "web_normal",
-                "ga": "1"
-            ],
-            cookieHeader: context.snapshot.cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
     func fetchAccountHistory(page: Int = 1, pageSize: Int = 20) async throws -> [AccountVideoEntry] {
         if page <= 1 {
             return try await fetchAccountHistoryPage(pageSize: pageSize).entries
@@ -2237,67 +2060,6 @@ nonisolated final class BiliAPIClient {
         let response: BiliResponse<EmptyBiliPayload> = try await postSignedAPIForm(
             path: "/x/v2/history/report",
             fields: fields,
-            profile: profile,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    func setUploaderFollowing(mid: Int, following: Bool) async throws {
-        let snapshot = await requestSnapshot()
-        if let csrf = snapshot.csrfToken, snapshot.isLoggedIn {
-            try await setUploaderFollowingWithWeb(mid: mid, following: following, csrf: csrf)
-            return
-        }
-        if let accessKey = snapshot.appAccessKey, !accessKey.isEmpty {
-            try await setUploaderFollowingWithAppAccessKey(
-                mid: mid,
-                following: following,
-                accessKey: accessKey,
-                cookieHeader: snapshot.cookieHeader
-            )
-            return
-        }
-        throw BiliAPIError.missingSESSDATA
-    }
-
-    private func setUploaderFollowingWithWeb(mid: Int, following: Bool, csrf: String) async throws {
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/relation/modify",
-            body: [
-                "fid": String(mid),
-                "act": following ? "1" : "2",
-                "re_src": "11",
-                "csrf": csrf,
-                "gaia_source": "web_normal",
-                "ga": "1"
-            ]
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    private func setUploaderFollowingWithAppAccessKey(
-        mid: Int,
-        following: Bool,
-        accessKey: String,
-        cookieHeader: String
-    ) async throws {
-        let profile = BiliAppSigner.Profile.androidLogin
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        let response: BiliResponse<EmptyBiliPayload> = try await postSignedAPIForm(
-            path: "/x/relation/modify",
-            fields: [
-                "access_key": accessKey,
-                "fid": String(mid),
-                "act": following ? "1" : "2",
-                "re_src": "11",
-                "gaia_source": "app_normal"
-            ],
             profile: profile,
             cookieHeader: cookieHeader,
             additionalHeaders: headerContext.headers
@@ -6780,7 +6542,7 @@ nonisolated final class BiliAPIClient {
         }
     }
 
-    private func postForm<T: Decodable>(
+    func postForm<T: Decodable>(
         base: URL,
         path: String,
         body: [String: String],
@@ -6834,7 +6596,7 @@ nonisolated final class BiliAPIClient {
         return try await Self.decode(data, priority: .userInitiated)
     }
 
-    private func postSignedAPIForm<T: Decodable>(
+    func postSignedAPIForm<T: Decodable>(
         path: String,
         fields: [String: String],
         profile: BiliAppSigner.Profile,
@@ -7189,21 +6951,26 @@ nonisolated final class BiliAPIClient {
         try await decode(T.self, from: data, priority: priority)
     }
 
-    private func favoriteFolderIDs(
-        for aid: Int,
-        snapshot: RequestSnapshot
-    ) async throws -> [Int] {
-        try await favoriteFolderSummaries(rid: aid, snapshot: snapshot)
-            .filter { $0.id > 0 }
-            .map(\.id)
-    }
-
     private func favoriteFolderSummaries(
         rid: Int? = nil,
         snapshot: RequestSnapshot
     ) async throws -> [FavoriteFolder] {
-        guard snapshot.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        guard let userMID = snapshot.currentUserMID, userMID > 0 else {
+        let context = InteractionRequestContext(
+            cookieHeader: snapshot.cookieHeader,
+            appAccessKey: snapshot.appAccessKey,
+            isLoggedIn: snapshot.isLoggedIn,
+            csrfToken: snapshot.csrfToken,
+            currentUserMID: snapshot.currentUserMID
+        )
+        return try await favoriteFolderSummaries(rid: rid, context: context)
+    }
+
+    func favoriteFolderSummaries(
+        rid: Int? = nil,
+        context: InteractionRequestContext
+    ) async throws -> [FavoriteFolder] {
+        guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+        guard let userMID = context.currentUserMID, userMID > 0 else {
             throw BiliAPIError.missingPayload
         }
         var query = [
@@ -7217,7 +6984,7 @@ nonisolated final class BiliAPIClient {
             base: baseURL,
             path: "/x/v3/fav/folder/created/list-all",
             query: query,
-            cookieHeader: snapshot.cookieHeader
+            cookieHeader: context.cookieHeader
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload?.list ?? []

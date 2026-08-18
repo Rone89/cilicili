@@ -466,6 +466,233 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-dynamic/v1/feed/all")
     }
 
+    func testVideoInteractionStateBuildsRelationRequestAndDecodes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "video relation request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"like":1,"coin":2,"favorite":1,"attention":1}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let state = try await api.fetchVideoInteractionState(aid: 123, bvid: "BV1test")
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertTrue(state.isLiked)
+        XCTAssertEqual(state.coinCount, 2)
+        XCTAssertTrue(state.isFavorited)
+        XCTAssertFalse(state.isFollowing)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/archive/relation")
+        let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(queryValues(in: components), ["aid": "123", "bvid": "BV1test"])
+    }
+
+    func testVideoLikeBuildsCSRFFormAndRetriesIdempotently() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "like requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        let attemptLock = NSLock()
+        var attempts = 0
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            attemptLock.lock()
+            attempts += 1
+            let currentAttempt = attempts
+            attemptLock.unlock()
+            if currentAttempt == 1 {
+                throw URLError(.timedOut)
+            }
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let cookieHeader = "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        let api = try makeAPI(cookieHeader: cookieHeader)
+        try await api.toggleVideoLike(aid: 456, liked: true)
+
+        await fulfillment(of: [requestExpectation], timeout: 3)
+
+        XCTAssertEqual(recorder.requests.count, 2)
+        for request in recorder.requests {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/x/web-interface/archive/like")
+            XCTAssertEqual(
+                formValues(in: request),
+                [
+                    "aid": "456",
+                    "like": "1",
+                    "csrf": "csrf-value",
+                    "cross_domain": "true",
+                    "source": "web_normal",
+                    "ga": "1",
+                ])
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["bili_jct"], "csrf-value")
+        }
+    }
+
+    func testVideoCoinValidatesMultiplyAndBuildsForm() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "coin request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        do {
+            try await api.addVideoCoin(aid: 789, multiply: 3)
+            XCTFail("Expected invalid coin quantity to fail")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -1)
+            XCTAssertEqual(message, "投币数量无效")
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+
+        try await api.addVideoCoin(aid: 789, multiply: 2, selectLike: true)
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/coin/add")
+        XCTAssertEqual(
+            formValues(in: request),
+            [
+                "aid": "789",
+                "multiply": "2",
+                "select_like": "1",
+                "csrf": "csrf-value",
+                "cross_domain": "true",
+                "source": "web_normal",
+                "ga": "1",
+            ])
+    }
+
+    func testFavoriteFoldersAndMutationBuildExpectedRequests() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "favorite requests captured")
+        requestExpectation.expectedFulfillmentCount = 4
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            if request.url?.path == "/x/v3/fav/folder/created/list-all" {
+                return Self.response(
+                    for: request,
+                    body: "{\"code\":0,\"data\":{\"list\":[{\"id\":7,\"title\":\"默认收藏夹\"}]}}"
+                )
+            }
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        let folders = try await api.fetchFavoriteFolders(for: 321)
+        try await api.setVideoFavorite(aid: 321, favorited: true)
+        try await api.setVideoFavorite(aid: 321, addFolderIDs: [9, 7], removeFolderIDs: [11, 7])
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(folders.map(\.id), [7])
+        let requests = recorder.requests
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests[0].url?.path, "/x/v3/fav/folder/created/list-all")
+        let folderQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(requests[0].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(queryValues(in: folderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
+        XCTAssertEqual(requests[1].url?.path, "/x/v3/fav/folder/created/list-all")
+        let repeatedFolderQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(requests[1].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(queryValues(in: repeatedFolderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
+        XCTAssertEqual(
+            formValues(in: requests[2]),
+            [
+                "rid": "321",
+                "type": "2",
+                "add_media_ids": "7",
+                "del_media_ids": "",
+                "csrf": "csrf-value",
+                "platform": "web",
+                "gaia_source": "web_normal",
+                "ga": "1",
+            ])
+        XCTAssertEqual(
+            formValues(in: requests[3]),
+            [
+                "rid": "321",
+                "type": "2",
+                "add_media_ids": "9",
+                "del_media_ids": "11",
+                "csrf": "csrf-value",
+                "platform": "web",
+                "gaia_source": "web_normal",
+                "ga": "1",
+            ])
+    }
+
+    func testUploaderFollowWebMutationBuildsFormAndPropagatesAPIError() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "follow request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: "{\"code\":-400,\"message\":\"关注失败\",\"data\":null}"
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        do {
+            try await api.setUploaderFollowing(mid: 654, following: true)
+            XCTFail("Expected follow API error")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -400)
+            XCTAssertEqual(message, "关注失败")
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/relation/modify")
+        XCTAssertEqual(
+            formValues(in: request),
+            [
+                "fid": "654",
+                "act": "1",
+                "re_src": "11",
+                "csrf": "csrf-value",
+                "gaia_source": "web_normal",
+                "ga": "1",
+            ])
+    }
+
     private func makeAPI(cookieHeader: String) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -521,6 +748,31 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         components.queryItems?.reduce(into: [:]) { values, item in
             values[item.name] = item.value ?? ""
         } ?? [:]
+    }
+
+    private func formValues(in request: URLRequest) -> [String: String] {
+        guard let body = requestBodyData(from: request),
+            let bodyString = String(data: body, encoding: .utf8),
+            let components = URLComponents(string: "?\(bodyString)")
+        else { return [:] }
+        return queryValues(in: components)
+    }
+
+    private func requestBodyData(from request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 }
 
