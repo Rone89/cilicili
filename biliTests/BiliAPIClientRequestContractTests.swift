@@ -372,6 +372,228 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
     }
 
+    func testAccountHistoryBuildsFirstPageAndCursorPaginationRequests() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "account history requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            let query = self.queryValues(for: request)
+            if query["max"] == "0" {
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"list":[{"bvid":"BVfirst","aid":101,"title":"第一条","view_at":1700000000}]}}
+                        """
+                )
+            }
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"list":[{"bvid":"BVsecond","aid":100,"title":"第二条","view_at":1699999000}]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let entries = try await api.fetchAccountHistory(page: 2, pageSize: 1)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(entries.map(\.bvid), ["BVsecond"])
+        XCTAssertEqual(recorder.requests.count, 2)
+        let firstQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(recorder.requests[0].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(
+            queryValues(in: firstQuery),
+            [
+                "type": "archive",
+                "ps": "1",
+                "max": "0",
+                "view_at": "0",
+            ])
+        let secondQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(recorder.requests[1].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(
+            queryValues(in: secondQuery),
+            [
+                "type": "archive",
+                "ps": "1",
+                "max": "101",
+                "view_at": "1700000000",
+            ])
+        XCTAssertEqual(
+            cookieValues(in: recorder.requests[0].value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
+    }
+
+    func testAccountFavoritesBuildFolderListAndDeduplicateAcrossFolders() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "account favorite requests captured")
+        requestExpectation.expectedFulfillmentCount = 3
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            switch request.url?.path {
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"list":[{"id":7},{"id":8}]}}
+                        """
+                )
+            case "/x/v3/fav/resource/list":
+                let folderID = self.queryValues(for: request)["media_id"]
+                let body =
+                    folderID == "7"
+                    ? """
+                    {"code":0,"data":{"medias":[{"bvid":"BVone","aid":1},{"bvid":"BVtwo","aid":2}]}}
+                    """
+                    : """
+                    {"code":0,"data":{"medias":[{"bvid":"BVtwo","aid":2},{"bvid":"BVthree","aid":3}]}}
+                    """
+                return Self.response(for: request, body: body)
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let entries = try await api.fetchAccountFavorites(page: 2, pageSize: 3)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(entries.map(\.bvid), ["BVone", "BVtwo", "BVthree"])
+        XCTAssertEqual(recorder.requests.count, 3)
+        let folderQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(recorder.requests[0].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(queryValues(in: folderQuery), ["up_mid": "1001", "type": "2"])
+        let firstFolderQuery = try XCTUnwrap(
+            URLComponents(url: try XCTUnwrap(recorder.requests[1].url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(
+            queryValues(in: firstFolderQuery),
+            [
+                "media_id": "7",
+                "pn": "2",
+                "ps": "3",
+                "keyword": "",
+                "order": "mtime",
+                "type": "0",
+                "tid": "0",
+                "platform": "web",
+            ])
+        let favoriteCookieValues = cookieValues(in: recorder.requests[1].value(forHTTPHeaderField: "Cookie"))
+        XCTAssertEqual(favoriteCookieValues["SESSDATA"], "session-value")
+        XCTAssertEqual(favoriteCookieValues["DedeUserID"], "1001")
+    }
+
+    func testAccountFavoritesReturnsSuccessfulEntriesWhenAnotherFolderFails() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "partial favorite requests captured")
+        requestExpectation.expectedFulfillmentCount = 3
+        RequestContractURLProtocol.install { request in
+            requestExpectation.fulfill()
+            switch request.url?.path {
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"list":[{"id":7},{"id":8}]}}
+                        """
+                )
+            case "/x/v3/fav/resource/list":
+                let folderID = self.queryValues(for: request)["media_id"]
+                if folderID == "7" {
+                    return Self.response(
+                        for: request,
+                        body: "{\"code\":-500,\"message\":\"临时失败\",\"data\":null}"
+                    )
+                }
+                return Self.response(
+                    for: request,
+                    body: """
+                        {"code":0,"data":{"medias":[{"bvid":"BVsuccess","aid":3}]}}
+                        """
+                )
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        let entries = try await api.fetchAccountFavorites(pageSize: 20)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        XCTAssertEqual(entries.map(\.bvid), ["BVsuccess"])
+    }
+
+    func testFavoriteFolderPagePropagatesAPIErrorAndBuildsRequest() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "favorite folder error captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":-404,"message":"收藏夹不存在","data":null}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        do {
+            _ = try await api.fetchFavoriteFolderVideoPage(folderID: 12, page: 3, pageSize: 15)
+            XCTFail("Expected the favorite folder API error to be propagated")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+            XCTAssertEqual(code, -404)
+            XCTAssertEqual(message, "收藏夹不存在")
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        let request = try XCTUnwrap(recorder.request)
+        let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+        XCTAssertEqual(queryValues(in: components)["media_id"], "12")
+        XCTAssertEqual(queryValues(in: components)["pn"], "3")
+        XCTAssertEqual(queryValues(in: components)["ps"], "15")
+    }
+
+    func testAccountHistoryRequiresAuthenticatedHistoryAccount() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            throw URLError(.badServerResponse)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "")
+        do {
+            _ = try await api.fetchAccountHistoryPage(pageSize: 20)
+            XCTFail("Expected account history authentication to be required")
+        } catch let error as BiliAPIError {
+            guard case .missingSESSDATA = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
     func testUploaderDynamicFeedBuildsSignedRequestWithAuthenticatedCookie() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -748,6 +970,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         components.queryItems?.reduce(into: [:]) { values, item in
             values[item.name] = item.value ?? ""
         } ?? [:]
+    }
+
+    private func queryValues(for request: URLRequest) -> [String: String] {
+        guard let url = request.url,
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return [:] }
+        return queryValues(in: components)
     }
 
     private func formValues(in request: URLRequest) -> [String: String] {
