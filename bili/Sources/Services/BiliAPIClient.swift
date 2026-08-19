@@ -80,7 +80,7 @@ nonisolated final class BiliAPIClient {
     private let libraryStore: LibraryStore
     let homeRecommendDiagnosticsStore: HomeRecommendDiagnosticsStore
     private let playURLCache: PlayURLCache
-    private let state = BiliAPIClientState()
+    let state = BiliAPIClientState()
     static let uploaderLogger = Logger(subsystem: "cc.bili", category: "Uploader")
 
     fileprivate struct TargetQualityUnavailableError: LocalizedError, Sendable {
@@ -510,23 +510,6 @@ nonisolated final class BiliAPIClient {
     private func isLoggedIn() async -> Bool {
         let snapshot = await requestSnapshot()
         return snapshot.isLoggedIn
-    }
-
-    func prewarmPlaybackSigningKeys() async {
-        _ = try? await fetchWBIKeys(priority: .utility)
-    }
-
-    func refreshPlaybackSigningKeys() async throws -> WBIKeys {
-        await state.clearWBIKeys()
-        return try await fetchWBIKeys(
-            priority: .userInitiated,
-            forcesNetworkRefresh: true
-        )
-    }
-
-    func signedWBIQuery(_ query: [String: String]) async throws -> [String: String] {
-        let keys = try await fetchWBIKeys(priority: .userInitiated)
-        return WBISigner.sign(query, keys: keys)
     }
 
     func prewarmStartupResources() async {
@@ -3466,78 +3449,6 @@ nonisolated final class BiliAPIClient {
         return nil
     }
 
-    func fetchWBIKeys(
-        priority: Float = URLSessionTask.defaultPriority,
-        forcesNetworkRefresh: Bool = false
-    ) async throws -> WBIKeys {
-        if !forcesNetworkRefresh, let keys = await freshCachedWBIKeys() {
-            return keys
-        }
-
-        if !forcesNetworkRefresh, let task = await state.wbiKeysFetchTask() {
-            return try await task.value
-        }
-
-        let task = Task<WBIKeys, Error>(priority: priority >= URLSessionTask.highPriority ? .userInitiated : .utility) {
-            [self] in
-            let response: BiliResponse<NavUserInfo> = try await get(
-                base: baseURL,
-                path: "/x/web-interface/nav",
-                query: [:],
-                cachePolicy: forcesNetworkRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy,
-                priority: priority
-            )
-            guard let image = response.payload?.wbiImg else {
-                if response.code != 0 {
-                    throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-                }
-                throw BiliAPIError.missingPayload
-            }
-            return WBIKeys(
-                imgKey: Self.fileStem(from: image.imgURL),
-                subKey: Self.fileStem(from: image.subURL)
-            )
-        }
-        await state.setWBIKeysFetchTask(task)
-        do {
-            let keys = try await task.value
-            await state.storeWBIKeys(keys)
-            return keys
-        } catch {
-            await state.clearWBIKeysFetchTask()
-            throw error
-        }
-    }
-
-    private func freshCachedWBIKeys() async -> WBIKeys? {
-        await state.freshCachedWBIKeys()
-    }
-
-    func favoriteFolderSummaries(
-        rid: Int? = nil,
-        context: InteractionRequestContext
-    ) async throws -> [FavoriteFolder] {
-        guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        guard let userMID = context.currentUserMID, userMID > 0 else {
-            throw BiliAPIError.missingPayload
-        }
-        var query = [
-            "up_mid": String(userMID),
-            "type": "2",
-        ]
-        if let rid {
-            query["rid"] = String(rid)
-        }
-        let response: BiliResponse<FavoriteFolderListData> = try await get(
-            base: baseURL,
-            path: "/x/v3/fav/folder/created/list-all",
-            query: query,
-            cookieHeader: context.cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        return response.payload?.list ?? []
-    }
-
     private func requirePlayURLData(_ response: BiliResponse<PlayURLData>, requirePlayablePayload: Bool = false) throws
         -> PlayURLData
     {
@@ -3557,11 +3468,6 @@ nonisolated final class BiliAPIClient {
             throw BiliAPIError.emptyPlayURL
         }
         return data
-    }
-
-    private static func fileStem(from url: String) -> String {
-        let filename = URL(string: url)?.deletingPathExtension().lastPathComponent
-        return filename ?? ""
     }
 
 }

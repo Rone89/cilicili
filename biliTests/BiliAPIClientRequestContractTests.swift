@@ -1456,6 +1456,40 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
     }
 
+    func testFetchWBIKeysCoalescesConcurrentRequests() async throws {
+        let firstRequestExpectation = expectation(description: "first WBI request captured")
+        let responseRelease = DispatchSemaphore(value: 0)
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            firstRequestExpectation.fulfill()
+            _ = responseRelease.wait(timeout: .now() + 2)
+            return Self.response(
+                for: request,
+                body:
+                    #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+            )
+        }
+        defer {
+            responseRelease.signal()
+            RequestContractURLProtocol.reset()
+        }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        await api.state.clearWBIKeys()
+        let first = Task { try await api.fetchWBIKeys() }
+        await fulfillment(of: [firstRequestExpectation], timeout: 2)
+        let second = Task { try await api.fetchWBIKeys() }
+        try await Task.sleep(for: .milliseconds(20))
+        responseRelease.signal()
+
+        let keys = try await [first.value, second.value]
+
+        XCTAssertEqual(keys.map(\.imgKey), ["abc", "abc"])
+        XCTAssertEqual(keys.map(\.subKey), ["def", "def"])
+        XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
+    }
+
     func testFetchPgcSeasonInfoPrefersEpisodeThenFallsBackToSeason() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 

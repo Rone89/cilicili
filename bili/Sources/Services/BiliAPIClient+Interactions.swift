@@ -1,6 +1,31 @@
 import Foundation
 
 extension BiliAPIClient {
+    private func favoriteFolderSummaries(
+        rid: Int? = nil,
+        context: InteractionRequestContext
+    ) async throws -> [FavoriteFolder] {
+        guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+        guard let userMID = context.currentUserMID, userMID > 0 else {
+            throw BiliAPIError.missingPayload
+        }
+        var query = [
+            "up_mid": String(userMID),
+            "type": "2",
+        ]
+        if let rid {
+            query["rid"] = String(rid)
+        }
+        let response: BiliResponse<FavoriteFolderListData> = try await get(
+            base: baseURL,
+            path: "/x/v3/fav/folder/created/list-all",
+            query: query,
+            cookieHeader: context.cookieHeader
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        return response.payload?.list ?? []
+    }
+
     private func requireInteractionCSRFContext() async throws -> (
         csrf: String,
         context: InteractionRequestContext
