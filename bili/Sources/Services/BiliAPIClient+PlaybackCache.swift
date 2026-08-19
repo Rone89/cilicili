@@ -200,7 +200,7 @@ extension BiliAPIClient {
         start: CFTimeInterval,
         operation: @escaping () async throws -> PlayURLData
     ) async throws -> PlayURLData {
-        let cacheKey = playURLFailureCacheKey(
+        let cacheKey = Self.playURLFailureCacheKey(
             stage: stage,
             bvid: bvid,
             cid: cid,
@@ -245,7 +245,7 @@ extension BiliAPIClient {
         return try await Self.awaitSharedTask(task)
     }
 
-    func playURLFailureCacheKey(
+    nonisolated static func playURLFailureCacheKey(
         stage: String,
         bvid: String,
         cid: Int,

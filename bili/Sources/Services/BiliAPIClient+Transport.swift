@@ -208,7 +208,7 @@ extension BiliAPIClient {
         return Data((components.percentEncodedQuery ?? "").utf8)
     }
 
-    static func randomAlphaNumeric(length: Int) -> String {
+    nonisolated static func randomAlphaNumeric(length: Int) -> String {
         let characters = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         var bytes = [UInt8](repeating: 0, count: length)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
