@@ -46,6 +46,21 @@ nonisolated struct HomeRecommendRequestContext: Sendable {
     let feedSource: HomeRecommendFeedSourcePreference
 }
 
+nonisolated struct PlaybackHistoryRequestContext: Sendable {
+    let cookieHeader: String
+    let appAccessKey: String?
+    let isLoggedIn: Bool
+    let csrfToken: String?
+    let isAccountPurposeEnabled: Bool
+}
+
+nonisolated struct VideoListenPlaylistRequestContext: Sendable {
+    let cookieHeader: String
+    let anonymousCookieHeader: String
+    let appAccessKey: String?
+    let guestModeEnabled: Bool
+}
+
 nonisolated final class BiliAPIClient {
     let baseURL = URL(string: "https://api.bilibili.com")!
     let appURL = URL(string: "https://app.bilibili.com")!
@@ -61,7 +76,6 @@ nonisolated final class BiliAPIClient {
     private let playURLCache: PlayURLCache
     private let state = BiliAPIClientState()
     static let uploaderLogger = Logger(subsystem: "cc.bili", category: "Uploader")
-    private static let historyLogger = Logger(subsystem: "cc.bili", category: "History")
 
     fileprivate struct TargetQualityUnavailableError: LocalizedError, Sendable {
         let requestedQuality: Int
@@ -242,6 +256,27 @@ nonisolated final class BiliAPIClient {
             guestModeEnabled: libraryStore.guestModeEnabled,
             playbackCredentialVersion: account.version,
             isAccountPurposeEnabled: account.isPurposeEnabled
+        )
+    }
+
+    func playbackHistoryRequestContext() async -> PlaybackHistoryRequestContext {
+        let snapshot = await requestSnapshot(purpose: .historyWrite)
+        return PlaybackHistoryRequestContext(
+            cookieHeader: snapshot.cookieHeader,
+            appAccessKey: snapshot.appAccessKey,
+            isLoggedIn: snapshot.isLoggedIn,
+            csrfToken: snapshot.csrfToken,
+            isAccountPurposeEnabled: snapshot.isAccountPurposeEnabled
+        )
+    }
+
+    func videoListenPlaylistRequestContext() async -> VideoListenPlaylistRequestContext {
+        let snapshot = await requestSnapshot(purpose: .playback)
+        return VideoListenPlaylistRequestContext(
+            cookieHeader: snapshot.cookieHeader,
+            anonymousCookieHeader: snapshot.anonymousCookieHeader,
+            appAccessKey: snapshot.appAccessKey,
+            guestModeEnabled: snapshot.guestModeEnabled
         )
     }
 
@@ -554,7 +589,7 @@ nonisolated final class BiliAPIClient {
         piliPodStyleAppRecommendHeaders(cookieHeader: cookieHeader, profile: profile).headers
     }
 
-    private static func piliPlusTraceID() -> String {
+    static func piliPlusTraceID() -> String {
         "\(stableHexToken(seed: UUID().uuidString, length: 32)):\(stableHexToken(seed: UUID().uuidString, length: 16)):0:0"
     }
 
@@ -567,284 +602,6 @@ nonisolated final class BiliAPIClient {
             value += value
         }
         return String(value.prefix(length))
-    }
-
-    func reportVideoHistory(
-        aid: Int?,
-        cid: Int?,
-        progress: TimeInterval,
-        duration: TimeInterval?,
-        bvid: String? = nil
-    ) async throws {
-        let snapshot = await requestSnapshot(purpose: .historyWrite)
-        guard snapshot.isAccountPurposeEnabled else { return }
-        var webError: Error?
-        if let csrf = snapshot.csrfToken, !csrf.isEmpty, snapshot.isLoggedIn {
-            do {
-                try await reportVideoHeartbeatWithWeb(
-                    aid: aid,
-                    bvid: bvid,
-                    cid: cid,
-                    progress: progress,
-                    csrf: csrf,
-                    cookieHeader: snapshot.cookieHeader
-                )
-                return
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                webError = error
-                Self.historyLogger.error(
-                    "historyReport webFailed fallback=history aid=\(aid ?? 0, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-                if let aid, aid > 0 {
-                    do {
-                        try await reportVideoHistoryWithWeb(
-                            aid: aid,
-                            cid: cid,
-                            progress: progress,
-                            duration: duration,
-                            csrf: csrf,
-                            cookieHeader: snapshot.cookieHeader
-                        )
-                        return
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch {
-                        webError = error
-                    }
-                }
-            }
-        }
-
-        if let aid, aid > 0, let accessKey = snapshot.appAccessKey, !accessKey.isEmpty {
-            do {
-                try await reportVideoHistoryWithAppAccessKey(
-                    aid: aid,
-                    cid: cid,
-                    progress: progress,
-                    duration: duration,
-                    accessKey: accessKey,
-                    cookieHeader: snapshot.cookieHeader
-                )
-                return
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                Self.historyLogger.error(
-                    "historyReport appFailed aid=\(aid, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
-                throw error
-            }
-        }
-
-        if let webError {
-            throw webError
-        }
-        throw BiliAPIError.missingSESSDATA
-    }
-
-    private func reportVideoHistoryWithWeb(
-        aid: Int,
-        cid: Int?,
-        progress: TimeInterval,
-        duration: TimeInterval?,
-        csrf: String,
-        cookieHeader: String
-    ) async throws {
-        var body = [
-            "aid": String(aid),
-            "progress": String(max(0, Int(progress))),
-            "type": "3",
-            "csrf": csrf,
-            "gaia_source": "web_normal",
-            "ga": "1",
-        ]
-        if let cid, cid > 0 {
-            body["cid"] = String(cid)
-        }
-        if let duration, duration > 0 {
-            body["duration"] = String(Int(duration))
-        }
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/v2/history/report",
-            body: body,
-            userAgent: Self.webUserAgent,
-            cookieHeader: cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    private func reportVideoHeartbeatWithWeb(
-        aid: Int?,
-        bvid: String?,
-        cid: Int?,
-        progress: TimeInterval,
-        csrf: String,
-        cookieHeader: String
-    ) async throws {
-        let normalizedBVID = bvid?.trimmingCharacters(in: .whitespacesAndNewlines)
-        var body = [
-            "played_time": String(max(0, Int(progress))),
-            "type": "3",
-            "csrf": csrf,
-        ]
-        if let normalizedBVID, !normalizedBVID.isEmpty {
-            body["bvid"] = normalizedBVID
-        } else if let aid, aid > 0 {
-            body["aid"] = String(aid)
-        } else {
-            throw BiliAPIError.missingPayload
-        }
-        if let cid, cid > 0 {
-            body["cid"] = String(cid)
-        }
-        let referer: String
-        if let normalizedBVID, !normalizedBVID.isEmpty {
-            referer = "https://www.bilibili.com/video/\(normalizedBVID)"
-        } else if let aid, aid > 0 {
-            referer = "https://www.bilibili.com/video/av\(aid)"
-        } else {
-            referer = "https://www.bilibili.com"
-        }
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
-            base: baseURL,
-            path: "/x/click-interface/web/heartbeat",
-            body: body,
-            referer: referer,
-            userAgent: Self.webUserAgent,
-            cookieHeader: cookieHeader
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    private func reportVideoHistoryWithAppAccessKey(
-        aid: Int,
-        cid: Int?,
-        progress: TimeInterval,
-        duration: TimeInterval?,
-        accessKey: String,
-        cookieHeader: String
-    ) async throws {
-        let profile = BiliAppSigner.Profile.androidLogin
-        let headerContext = Self.piliPodStyleAppRecommendHeaders(
-            cookieHeader: cookieHeader,
-            profile: profile
-        )
-        var fields = [
-            "access_key": accessKey,
-            "aid": String(aid),
-            "progress": String(max(0, Int(progress))),
-            "type": "3",
-            "gaia_source": "app_normal",
-        ]
-        if let cid, cid > 0 {
-            fields["cid"] = String(cid)
-        }
-        if let duration, duration > 0 {
-            fields["duration"] = String(Int(duration))
-        }
-        let response: BiliResponse<EmptyBiliPayload> = try await postSignedAPIForm(
-            path: "/x/v2/history/report",
-            fields: fields,
-            profile: profile,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headerContext.headers
-        )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-    }
-
-    func fetchOfficialVideoListenPlaylist(
-        aid: Int,
-        cid: Int?,
-        cursor: String? = nil,
-        sortOrder: VideoListenPlaylistSortOrder = .normal
-    ) async throws -> BiliListenerPlaylistPage {
-        guard aid > 0 else { throw BiliListenerPlaylistError.invalidAnchor }
-        let normalizedCursor = cursor?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalizedCursor?.isEmpty != false, (cid ?? 0) <= 0 {
-            throw BiliListenerPlaylistError.invalidAnchor
-        }
-
-        let snapshot = await requestSnapshot(purpose: .playback)
-        guard !snapshot.guestModeEnabled,
-            let accessKey = snapshot.appAccessKey?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !accessKey.isEmpty
-        else {
-            throw BiliListenerPlaylistError.missingAccessKey
-        }
-
-        let profile = BiliAppSigner.Profile.androidHD
-        let cookieHeader = snapshot.cookieHeader
-        let buvid =
-            Self.cookieValue(named: "buvid3", in: cookieHeader)
-            ?? Self.cookieValue(named: "buvid4", in: cookieHeader)
-            ?? Self.cookieValue(named: "buvid3", in: snapshot.anonymousCookieHeader)
-            ?? Self.cookieValue(named: "buvid4", in: snapshot.anonymousCookieHeader)
-            ?? ""
-        let headers = BiliListenerPlaylistCodec.grpcHeaders(
-            accessKey: accessKey,
-            buvid: buvid,
-            networkClass: PlaybackEnvironment.current.networkClass,
-            traceID: Self.piliPlusTraceID()
-        )
-        let message = try BiliListenerPlaylistCodec.encodeRequest(
-            aid: aid,
-            cid: cid,
-            cursor: normalizedCursor,
-            sortOrder: sortOrder
-        )
-        var request = try await makeRequest(
-            base: appURL,
-            path: BiliListenerPlaylistCodec.endpointPath,
-            query: [:],
-            referer: "https://www.bilibili.com/video/av\(aid)",
-            userAgent: profile.userAgent,
-            cookieHeader: cookieHeader,
-            additionalHeaders: headers,
-            cachePolicy: .reloadIgnoringLocalCacheData
-        )
-        request.httpMethod = "POST"
-        request.httpBody = BiliListenerPlaylistCodec.frame(message)
-
-        let (data, response) = try await self.data(
-            for: request,
-            priority: .userInitiated,
-            retryPolicy: .api
-        )
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw BiliListenerPlaylistError.invalidResponse
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw BiliListenerPlaylistError.invalidHTTPStatus(httpResponse.statusCode)
-        }
-
-        let biliStatus = httpResponse.value(forHTTPHeaderField: "bili-status-code")
-            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        if let biliStatus, biliStatus != 0 {
-            let message =
-                httpResponse.value(forHTTPHeaderField: "bili-status-message")
-                ?? httpResponse.value(forHTTPHeaderField: "grpc-message")
-            throw BiliListenerPlaylistError.grpcStatus(
-                biliStatus,
-                message?.removingPercentEncoding ?? message
-            )
-        }
-
-        let grpcStatus = httpResponse.value(forHTTPHeaderField: "grpc-status")
-            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        if let grpcStatus, grpcStatus != 0 {
-            let message = httpResponse.value(forHTTPHeaderField: "grpc-message")
-            throw BiliListenerPlaylistError.grpcStatus(
-                grpcStatus,
-                message?.removingPercentEncoding ?? message
-            )
-        }
-
-        guard !data.isEmpty else { throw BiliListenerPlaylistError.invalidResponse }
-        let responseMessage = try BiliListenerPlaylistCodec.unframe(data)
-        return try BiliListenerPlaylistCodec.decodeResponse(responseMessage)
     }
 
     func clearCachedPlayURLFailures(bvid: String) async {

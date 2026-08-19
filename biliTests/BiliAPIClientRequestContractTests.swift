@@ -2385,6 +2385,264 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    func testVideoHistoryReportsWebHeartbeatBodyAndReferer() async throws {
+        let requestExpectation = expectation(description: "history heartbeat request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: #"{"code":0,"data":null}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; bili_jct=csrf-value; buvid3=buvid-value"
+        )
+        try await api.reportVideoHistory(
+            aid: 123,
+            cid: 456,
+            progress: 12.9,
+            duration: 300.8,
+            bvid: "  BV1TEST  "
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/click-interface/web/heartbeat")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com/video/BV1TEST")
+        XCTAssertEqual(
+            formValues(in: request),
+            [
+                "bvid": "BV1TEST",
+                "cid": "456",
+                "csrf": "csrf-value",
+                "played_time": "12",
+                "type": "3",
+            ]
+        )
+        XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
+    }
+
+    func testVideoHistoryFallsBackFromHeartbeatToWebHistory() async throws {
+        let requestExpectation = expectation(description: "history fallback requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            if request.url?.path == "/x/click-interface/web/heartbeat" {
+                return Self.response(for: request, body: #"{"code":-1,"message":"heartbeat failed","data":null}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":null}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001; bili_jct=csrf-value")
+        try await api.reportVideoHistory(aid: 123, cid: 456, progress: 42, duration: 120)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(
+            recorder.requests.map { $0.url?.path },
+            [
+                "/x/click-interface/web/heartbeat",
+                "/x/v2/history/report",
+            ])
+        let request = try XCTUnwrap(recorder.requests.last)
+        XCTAssertEqual(
+            formValues(in: request),
+            [
+                "aid": "123",
+                "cid": "456",
+                "csrf": "csrf-value",
+                "duration": "120",
+                "ga": "1",
+                "gaia_source": "web_normal",
+                "progress": "42",
+                "type": "3",
+            ]
+        )
+    }
+
+    func testVideoHistoryUsesSignedAppAccessKeyRouteWhenWebCredentialIsUnavailable() async throws {
+        let requestExpectation = expectation(description: "app history request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: #"{"code":0,"data":null}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; buvid3=buvid-value",
+            accessKey: "app-access-key"
+        )
+        try await api.reportVideoHistory(aid: 123, cid: 456, progress: 7, duration: 80)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/v2/history/report")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "app-key"), "android")
+        let fields = formValues(in: request)
+        XCTAssertEqual(fields["access_key"], "app-access-key")
+        XCTAssertEqual(fields["aid"], "123")
+        XCTAssertEqual(fields["cid"], "456")
+        XCTAssertEqual(fields["duration"], "80")
+        XCTAssertEqual(fields["gaia_source"], "app_normal")
+        XCTAssertEqual(fields["progress"], "7")
+        XCTAssertEqual(fields["type"], "3")
+        XCTAssertNotNil(fields["sign"])
+        XCTAssertNotNil(fields["ts"])
+    }
+
+    func testOfficialVideoListenPlaylistBuildsCursorQualityAndSortRequest() async throws {
+        let requestExpectation = expectation(description: "official listen playlist request captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            let responseMessage = Data([0x10, 0x01, 0x18, 0x01])
+            return Self.response(for: request, data: BiliListenerPlaylistCodec.frame(responseMessage))
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; buvid3=buvid-value",
+            accessKey: "app-access-key"
+        )
+        let page = try await api.fetchOfficialVideoListenPlaylist(
+            aid: 123,
+            cid: 456,
+            cursor: "  cursor-token  ",
+            sortOrder: .reverse
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertTrue(page.reachedStart)
+        XCTAssertTrue(page.reachedEnd)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.host, "app.bilibili.com")
+        XCTAssertEqual(request.url?.path, BiliListenerPlaylistCodec.endpointPath)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "authorization"), "identify_v1 app-access-key")
+        let expectedBody = try BiliListenerPlaylistCodec.encodeRequest(
+            aid: 123,
+            cid: 456,
+            cursor: "cursor-token",
+            sortOrder: .reverse
+        )
+        XCTAssertEqual(requestBodyData(from: request), BiliListenerPlaylistCodec.frame(expectedBody))
+    }
+
+    func testOfficialVideoListenPlaylistRejectsInvalidAnchorBeforeRequest() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, data: Data())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001", accessKey: "app-access-key")
+        do {
+            _ = try await api.fetchOfficialVideoListenPlaylist(aid: 123, cid: nil)
+            XCTFail("Expected invalid anchor")
+        } catch let error as BiliListenerPlaylistError {
+            XCTAssertEqual(error, .invalidAnchor)
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testOfficialVideoListenPlaylistRejectsMissingAccessKeyBeforeRequest() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, data: Data())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+        do {
+            _ = try await api.fetchOfficialVideoListenPlaylist(aid: 123, cid: 456)
+            XCTFail("Expected missing access key")
+        } catch let error as BiliListenerPlaylistError {
+            XCTAssertEqual(error, .missingAccessKey)
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testOfficialVideoListenPlaylistRejectsHTTPFailureAfterBuvidFallback() async throws {
+        let requestExpectation = expectation(description: "official listen playlist HTTP failure captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, statusCode: 503, data: Data())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; buvid4=buvid4-value",
+            accessKey: "app-access-key"
+        )
+        do {
+            _ = try await api.fetchOfficialVideoListenPlaylist(aid: 123, cid: 456)
+            XCTFail("Expected HTTP failure")
+        } catch let error as BiliListenerPlaylistError {
+            XCTAssertEqual(error, .invalidHTTPStatus(503))
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        XCTAssertFalse(recorder.request?.value(forHTTPHeaderField: "buvid")?.isEmpty ?? true)
+    }
+
+    func testOfficialVideoListenPlaylistRejectsBiliStatus() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(
+                for: request,
+                headerFields: [
+                    "Content-Type": "application/grpc",
+                    "bili-status-code": "7",
+                    "bili-status-message": "permission%20denied",
+                ],
+                data: Data([0])
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key"
+        )
+        do {
+            _ = try await api.fetchOfficialVideoListenPlaylist(aid: 123, cid: 456)
+            XCTFail("Expected Bili status failure")
+        } catch let error as BiliListenerPlaylistError {
+            XCTAssertEqual(error, .grpcStatus(7, "permission denied"))
+        }
+    }
+
+    func testOfficialVideoListenPlaylistRejectsEmptyResponse() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, data: Data())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            accessKey: "app-access-key"
+        )
+        do {
+            _ = try await api.fetchOfficialVideoListenPlaylist(aid: 123, cid: 456)
+            XCTFail("Expected invalid response")
+        } catch let error as BiliListenerPlaylistError {
+            XCTAssertEqual(error, .invalidResponse)
+        }
+    }
+
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
@@ -2433,12 +2691,17 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         response(for: request, data: Data(body.utf8))
     }
 
-    private static func response(for request: URLRequest, data: Data) -> (HTTPURLResponse, Data) {
+    private static func response(
+        for request: URLRequest,
+        statusCode: Int = 200,
+        headerFields: [String: String] = ["Content-Type": "application/json"],
+        data: Data
+    ) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: headerFields
         )!
         return (response, data)
     }
