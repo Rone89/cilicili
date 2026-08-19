@@ -3,12 +3,14 @@ import Foundation
 nonisolated struct PlaybackAPIRequestContext: Sendable {
     let cookieHeader: String
     let anonymousCookieHeader: String
+    let appAccessKey: String?
     let effectivePreferredVideoQuality: Int?
     let playbackStreamSourcePreference: PlaybackStreamSourcePreference
     let isLoggedIn: Bool
     let currentUserMID: Int?
     let guestModeEnabled: Bool
     let playbackCredentialVersion: Int
+    let isAccountPurposeEnabled: Bool
 }
 
 extension BiliAPIClient {
