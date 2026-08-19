@@ -1,0 +1,306 @@
+import Foundation
+import OSLog
+
+extension BiliAPIClient {
+    func clearCachedPlayURLFailures(bvid: String) async {
+        await state.clearPlayURLFailuresAndTasks(containing: bvid)
+    }
+
+    func clearPlaybackPerformanceTestState(bvid: String) async {
+        await state.clearPlayURLFailuresAndTasks(containing: bvid)
+        await state.clearVideoDetailTasks(containing: bvid)
+    }
+
+    func cachedPlayablePlayURLFallback(bvid: String, cid: Int) async -> PlayURLData? {
+        let context = await playbackAPIRequestContext()
+        let scope = PlayURLCacheLoginScope(
+            isLoggedIn: context.isLoggedIn,
+            userMID: context.currentUserMID,
+            guestModeEnabled: context.guestModeEnabled,
+            credentialVersion: context.playbackCredentialVersion
+        )
+        guard
+            let data = await playURLCache.playableFallback(
+                bvid: bvid,
+                cid: cid,
+                platform: nil,
+                scope: scope
+            )
+        else { return nil }
+        return await applyingConfiguredHistoryAccount(
+            to: data,
+            playbackUserMID: context.currentUserMID
+        )
+    }
+
+    func cachedPlayURL(
+        for key: PlayURLCacheKey,
+        scope: PlayURLCacheLoginScope,
+        requiredQuality: Int
+    ) async -> PlayURLData? {
+        await playURLCache.value(
+            for: key,
+            scope: scope,
+            requiredQuality: requiredQuality
+        )
+    }
+
+    func fetchPlayURLWithPendingRequest(
+        cacheKey: PlayURLCacheKey,
+        scope: PlayURLCacheLoginScope,
+        bvid: String,
+        cid: Int,
+        requestedQuality: Int,
+        source: String,
+        cachePlatform: String,
+        isStartup: Bool,
+        operation: @escaping () async throws -> PlayURLData
+    ) async throws -> PlayURLData {
+        let pendingKey = PendingPlayURLRequestKey(cacheKey: cacheKey, scope: scope)
+        if let existingRequest = await state.pendingPlayURLRequest(for: pendingKey) {
+            PlayerMetricsLog.logger.info(
+                "playURLRequestJoined source=\(source, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) qn=\(requestedQuality, privacy: .public)"
+            )
+            return try await Self.awaitSharedTask(existingRequest.task)
+        }
+
+        let requestID = UUID()
+        let startGate = PendingPlayURLRequestStartGate()
+        let task = Task<PlayURLData, Error>(priority: .userInitiated) {
+            await startGate.wait()
+            do {
+                try Task.checkCancellation()
+                let data = try await operation()
+                let storageKey: PlayURLCacheKey
+                if data.hasPlayableMediaQuality(requestedQuality) {
+                    storageKey = cacheKey
+                } else if let actualQuality = Self.startupCandidateQuality(
+                    in: data,
+                    requestedQuality: requestedQuality
+                ), actualQuality < requestedQuality {
+                    if isStartup,
+                        PiliPlusStylePlayURLSelectionExperiment.stored(),
+                        Self.canUseUnavailablePreferredStartupFallback(
+                            data,
+                            requestedQuality: requestedQuality,
+                            isAuthoritativeSource: true
+                        )
+                    {
+                        storageKey = cacheKey
+                    } else {
+                        storageKey = PlayURLCacheKey(
+                            bvid: bvid,
+                            cid: cid,
+                            requestedQuality: actualQuality,
+                            audioLanguage: cacheKey.audioLanguage,
+                            fnval: cacheKey.fnval,
+                            fnver: cacheKey.fnver,
+                            platform: Self.playURLCachePlatform(
+                                cachePlatform,
+                                requestedQuality: actualQuality,
+                                isStartup: isStartup
+                            )
+                        )
+                    }
+                } else {
+                    storageKey = cacheKey
+                }
+                await self.playURLCache.store(data, for: storageKey, scope: scope)
+                await self.state.clearPendingPlayURLRequest(for: pendingKey, id: requestID)
+                return data
+            } catch {
+                await self.state.clearPendingPlayURLRequest(for: pendingKey, id: requestID)
+                throw error
+            }
+        }
+        let request = PendingPlayURLRequest(id: requestID, task: task)
+        if let existingRequest = await state.insertPendingPlayURLRequestIfAbsent(request, for: pendingKey) {
+            task.cancel()
+            await startGate.open()
+            PlayerMetricsLog.logger.info(
+                "playURLRequestJoinedAfterRace source=\(source, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) qn=\(requestedQuality, privacy: .public)"
+            )
+            return try await Self.awaitSharedTask(existingRequest.task)
+        }
+
+        await startGate.open()
+        return try await Self.awaitSharedTask(task)
+    }
+
+    func hasCachedStartupPlayURL(
+        bvid: String,
+        cid: Int,
+        preferredQuality: Int? = nil
+    ) async -> Bool {
+        let context = await playbackAPIRequestContext()
+        let configuredQuality = preferredQuality ?? context.effectivePreferredVideoQuality
+        let requestedQuality = configuredQuality ?? LibraryStore.defaultPreferredVideoQuality
+        let key = PlayURLCacheKey(
+            bvid: bvid,
+            cid: cid,
+            requestedQuality: requestedQuality,
+            audioLanguage: "default",
+            fnval: "4048",
+            fnver: "0",
+            platform: Self.playURLCachePlatform(
+                context.playbackStreamSourcePreference.cachePlatform,
+                requestedQuality: requestedQuality,
+                isStartup: true
+            )
+        )
+        let scope = PlayURLCacheLoginScope(
+            isLoggedIn: context.isLoggedIn,
+            userMID: context.currentUserMID,
+            guestModeEnabled: context.guestModeEnabled,
+            credentialVersion: context.playbackCredentialVersion
+        )
+        return await playURLCache.contains(
+            key,
+            scope: scope,
+            requiredQuality: requestedQuality,
+            allowsVerifiedLowerQualityFallback: PiliPlusStylePlayURLSelectionExperiment.stored()
+        )
+    }
+
+    nonisolated static func playURLCachePlatform(
+        _ basePlatform: String,
+        requestedQuality: Int?,
+        isStartup: Bool = false
+    ) -> String {
+        let base = isStartup ? "startup-\(basePlatform)" : basePlatform
+        let selectionStrategy: String
+        if isStartup && PiliPlusStylePlayURLSelectionExperiment.stored() {
+            selectionStrategy = PiliPlusStylePlayURLSelectionExperiment.currentStrategyKey
+        } else {
+            selectionStrategy = "strictTargetQualityV1"
+        }
+        return "\(base)-\(selectionStrategy)-\(playURLCodecCachePolicyToken(requestedQuality: requestedQuality))"
+    }
+
+    nonisolated static func playURLCodecCachePolicyToken(requestedQuality: Int?) -> String {
+        let preference = VideoCodecPreference.stored()
+        let policy: String
+        if requestedQuality.map({ Self.requiresAutomaticCodecNegotiation(requestedQuality: $0) }) == true {
+            policy = "hdrAutoStrictV2"
+        } else if preference.codecOrder.first == .av1, PlaybackCodecPolicy.canDecodeAV1 {
+            policy = "av1FirstHardwareV1"
+        } else {
+            policy = "hevcFirstV2"
+        }
+        return "codec-\(preference.rawValue)-\(policy)"
+    }
+
+    func runCachedPlayURLStage(
+        _ stage: String,
+        bvid: String,
+        cid: Int,
+        qn: Int,
+        cookieMode: String,
+        credentialVersion: Int,
+        start: CFTimeInterval,
+        operation: @escaping () async throws -> PlayURLData
+    ) async throws -> PlayURLData {
+        let cacheKey = playURLFailureCacheKey(
+            stage: stage,
+            bvid: bvid,
+            cid: cid,
+            qn: qn,
+            cookieMode: cookieMode,
+            credentialVersion: credentialVersion
+        )
+        if let cachedFailure = await state.cachedPlayURLFailure(for: cacheKey) {
+            logPlayURLStage("\(stage)CachedFailure", bvid: bvid, cid: cid, start: start, error: cachedFailure)
+            throw cachedFailure
+        }
+        if let existingTask = await state.playURLStageTask(for: cacheKey) {
+            logPlayURLStage("\(stage)Joined", bvid: bvid, cid: cid, start: start)
+            return try await Self.awaitSharedTask(existingTask.task)
+        }
+
+        let requestID = UUID()
+        let startGate = PendingPlayURLRequestStartGate()
+        let task = Task<PlayURLData, Error>(priority: .userInitiated) {
+            await startGate.wait()
+            try Task.checkCancellation()
+            return try await operation()
+        }
+        let request = PendingPlayURLStageRequest(id: requestID, task: task)
+        if let existingTask = await state.insertPlayURLStageTaskIfAbsent(request, for: cacheKey) {
+            task.cancel()
+            await startGate.open()
+            logPlayURLStage("\(stage)JoinedAfterRace", bvid: bvid, cid: cid, start: start)
+            return try await Self.awaitSharedTask(existingTask.task)
+        }
+        await startGate.open()
+        Task(priority: .utility) { [self] in
+            do {
+                _ = try await task.value
+                await state.clearPlayURLStageTask(for: cacheKey, id: requestID)
+            } catch {
+                await state.clearPlayURLStageTask(for: cacheKey, id: requestID)
+                logPlayURLStage(stage, bvid: bvid, cid: cid, start: start, error: error)
+                await state.storePlayURLFailure(error, for: cacheKey)
+            }
+        }
+        return try await Self.awaitSharedTask(task)
+    }
+
+    func playURLFailureCacheKey(
+        stage: String,
+        bvid: String,
+        cid: Int,
+        qn: Int,
+        cookieMode: String,
+        credentialVersion: Int
+    ) -> String {
+        "\(stage)|\(bvid)|\(cid)|\(qn)|\(cookieMode)|credential=\(credentialVersion)"
+    }
+
+    nonisolated static func cacheablePlayURLFailure(_ error: Error) -> BiliAPIError? {
+        guard !(error is CancellationError), let biliError = error as? BiliAPIError else { return nil }
+
+        switch biliError {
+        case .api(let code, _) where code == -351:
+            return biliError
+        default:
+            return nil
+        }
+    }
+
+    nonisolated static func playURLFailureTTL(for error: BiliAPIError) -> CFTimeInterval {
+        switch error {
+        case .api(let code, _) where code == -351:
+            return 45
+        case .emptyPlayURL:
+            return 10
+        default:
+            return 6
+        }
+    }
+}
+
+private actor PendingPlayURLRequestStartGate {
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            if isOpen {
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let pendingWaiters = waiters
+        waiters.removeAll()
+        for waiter in pendingWaiters {
+            waiter.resume()
+        }
+    }
+}
