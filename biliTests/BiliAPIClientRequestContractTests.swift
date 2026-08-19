@@ -2424,6 +2424,41 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
     }
 
+    func testRequireCSRFReturnsMainAccountToken() async throws {
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001; bili_jct=csrf-value"
+        )
+
+        let csrf = try await api.requireCSRF()
+        XCTAssertEqual(csrf, "csrf-value")
+    }
+
+    func testRequireCSRFRejectsLoggedOutSession() async throws {
+        let api = try makeAPI(cookieHeader: "")
+
+        do {
+            _ = try await api.requireCSRF()
+            XCTFail("Expected missing login credential")
+        } catch let error as BiliAPIError {
+            guard case .missingSESSDATA = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+    }
+
+    func testRequireCSRFRejectsAuthenticatedSessionWithoutToken() async throws {
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
+
+        do {
+            _ = try await api.requireCSRF()
+            XCTFail("Expected missing CSRF token")
+        } catch let error as BiliAPIError {
+            guard case .missingCSRF = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+    }
+
     func testVideoHistoryFallsBackFromHeartbeatToWebHistory() async throws {
         let requestExpectation = expectation(description: "history fallback requests captured")
         requestExpectation.expectedFulfillmentCount = 2
