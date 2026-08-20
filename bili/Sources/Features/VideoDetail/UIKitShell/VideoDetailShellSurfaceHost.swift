@@ -15,6 +15,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         @Published var isLandscape = false
         @Published var isBareSurfaceTransitionActive = false
         @Published var retainsChromeDuringBareSurfaceTransition = false
+        @Published var isCollapsedChromeActive = false
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
 
@@ -263,6 +264,11 @@ final class VideoDetailShellSurfaceHost: UIView {
         state.videoAspectRatio = aspectRatio
     }
 
+    func setCollapsedChromeActive(_ active: Bool) {
+        guard state.isCollapsedChromeActive != active else { return }
+        state.isCollapsedChromeActive = active
+    }
+
     private func layoutRotationChromePrewarm() {
         overlayHostingController.view.setNeedsLayout()
         overlayHostingController.view.layoutIfNeeded()
@@ -459,6 +465,7 @@ private struct PlayerOverlayHostRoot: View {
             isLandscape: state.isLandscape,
             isBareSurfaceTransitionActive: state.isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
+            isCollapsedChromeActive: state.isCollapsedChromeActive,
             videoAspectRatio: state.videoAspectRatio,
             onShowMoreControls: onShowMoreControls,
             onDismissMoreControls: onDismissMoreControls,
@@ -494,6 +501,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let isLandscape: Bool
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
+    let isCollapsedChromeActive: Bool
     let videoAspectRatio: CGFloat
     let onShowMoreControls: (@escaping () -> Void) -> Void
     let onDismissMoreControls: () -> Void
@@ -530,6 +538,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         isLandscape: Bool,
         isBareSurfaceTransitionActive: Bool,
         retainsChromeDuringBareSurfaceTransition: Bool,
+        isCollapsedChromeActive: Bool,
         videoAspectRatio: CGFloat,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
@@ -550,6 +559,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.isLandscape = isLandscape
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
+        self.isCollapsedChromeActive = isCollapsedChromeActive
         self.videoAspectRatio = videoAspectRatio
         self.onShowMoreControls = onShowMoreControls
         self.onDismissMoreControls = onDismissMoreControls
@@ -589,7 +599,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             prepareUserSeekWarmup: prepareUserSeekWarmupIfNeeded,
             resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 }
         ).actions
-        let shouldKeepChromeMounted = keepsChromeMounted
+        let shouldKeepChromeMounted = keepsChromeMounted && !isCollapsedChromeActive
 
         GeometryReader { proxy in
             let videoInsets = visibleVideoInsets(in: proxy.size)
@@ -820,6 +830,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     private var showsCenterPlaybackControl: Bool {
         keepsChromeMounted
+            && !isCollapsedChromeActive
             && !isBareSurfaceTransitionActive
             && surfaceState.showsExplicitPlaybackStartControl
             && surfaceState.errorMessage == nil

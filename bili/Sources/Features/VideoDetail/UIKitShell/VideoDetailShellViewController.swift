@@ -39,6 +39,7 @@ final class VideoDetailShellViewController: UIViewController {
         )
     }()
     private let playerContainer = UIView()
+    private weak var videoSurfaceHost: VideoDetailShellSurfaceHost?
     private let contentHost: UIHostingController<VideoDetailShellContentView>
     private let contentState = VideoDetailShellContentView.State()
     /// 暂停下翻收缩时的折叠工具条（主题色遮罩），盖在 playerContainer 上。
@@ -213,6 +214,7 @@ final class VideoDetailShellViewController: UIViewController {
         view.backgroundColor = .black
 
         playerContainer.backgroundColor = .black
+        playerContainer.clipsToBounds = true
         updateCollapsedDimmingColor()
         collapsedDimmingView.alpha = 0
         collapsedDimmingView.isUserInteractionEnabled = false
@@ -542,7 +544,7 @@ final class VideoDetailShellViewController: UIViewController {
     // MARK: - Player surface
 
     private func makeSurfaceHost(for playerViewModel: PlayerStateViewModel) -> VideoDetailShellSurfaceHost {
-        VideoDetailShellSurfaceHost(
+        let host = VideoDetailShellSurfaceHost(
             playerViewModel: playerViewModel,
             detailViewModel: viewModel,
             dependencies: dependencies,
@@ -563,6 +565,11 @@ final class VideoDetailShellViewController: UIViewController {
             onShowDanmakuSettings: { [weak self] in self?.onShowDanmakuSettings() },
             onNavigateBack: { [weak self] in self?.handleBackButton() }
         )
+        videoSurfaceHost = host
+        host.setCollapsedChromeActive(
+            shouldShowCollapsedChrome(playerHeight: playerContainer.bounds.height)
+        )
+        return host
     }
 
     private func currentSurfaceLayout(usesLandscapeChrome: Bool) -> PlayerSurfaceLayout {
@@ -764,9 +771,9 @@ final class VideoDetailShellViewController: UIViewController {
     private func updateCollapsedChrome(playerHeight: CGFloat) {
         let minimum = minimumPlayerHeight(forWidth: view.bounds.width)
         let standard = standardPlayerHeight(forWidth: view.bounds.width)
-        let threshold = standard - 4
         let isPlaybackActive = isPlaybackActiveForCollapsedChrome
-        let shouldShow = !isLandscape && !isPlaybackActive && playerHeight <= threshold
+        let shouldShow = shouldShowCollapsedChrome(playerHeight: playerHeight)
+        videoSurfaceHost?.setCollapsedChromeActive(shouldShow)
 
         collapsedDimmingView.frame = playerContainer.bounds
         let collapseDistance = max(standard - minimum, 1)
@@ -798,11 +805,20 @@ final class VideoDetailShellViewController: UIViewController {
     }
 
     private func removeCollapsedBarHost() {
+        videoSurfaceHost?.setCollapsedChromeActive(false)
         guard let host = collapsedBarHost else { return }
         host.willMove(toParent: nil)
         host.view.removeFromSuperview()
         host.removeFromParent()
         collapsedBarHost = nil
+    }
+
+    private func shouldShowCollapsedChrome(playerHeight: CGFloat) -> Bool {
+        guard playerHeight > 0 else { return false }
+        let threshold = standardPlayerHeight(forWidth: view.bounds.width) - 4
+        return !isLandscape
+            && !isPlaybackActiveForCollapsedChrome
+            && playerHeight <= threshold
     }
 
     // MARK: - Bindings
