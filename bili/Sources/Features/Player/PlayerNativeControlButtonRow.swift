@@ -63,6 +63,7 @@ struct PlayerNativeControlButtonRow: View {
                     PlayerNativeGlassIconButton(
                         systemName: isFullscreenActive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                         accessibilityLabel: isFullscreenActive ? "退出全屏" : "全屏",
+                        accessibilityIdentifier: "ui.player.fullscreen.toggle",
                         metrics: metrics,
                         action: actions.onToggleFullscreen
                     )

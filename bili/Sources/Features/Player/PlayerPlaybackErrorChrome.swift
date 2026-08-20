@@ -14,5 +14,7 @@ struct PlayerPlaybackErrorChrome: View {
         .background(.black.opacity(0.72))
         .foregroundStyle(.white)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("ui.player.error")
     }
 }

@@ -12,6 +12,7 @@ struct DanmakuSettingsDisplayAreaSection: View {
             }
             .pickerStyle(.segmented)
             .controlSize(.small)
+            .accessibilityIdentifier("ui.videoDetail.sheet.danmakuSettings.displayArea")
         }
     }
 }
@@ -22,6 +23,7 @@ struct DanmakuSettingsPortraitVisibilitySection: View {
     var body: some View {
         Section("竖屏播放") {
             Toggle("竖屏时隐藏弹幕", isOn: $hidesDanmakuInPortrait)
+                .accessibilityIdentifier("ui.videoDetail.sheet.danmakuSettings.hidesInPortrait")
         }
     }
 }

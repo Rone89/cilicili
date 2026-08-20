@@ -62,6 +62,12 @@ struct BiliPlayerSurfaceGestureLayer<Content: View>: View {
             .simultaneousGesture(horizontalSeekGesture(size: proxy.size))
             .simultaneousGesture(verticalAdjustmentGesture(size: proxy.size))
         }
+        .accessibilityElement()
+        .accessibilityLabel("播放器画面")
+        .accessibilityIdentifier("ui.player.surface")
+        .accessibilityAction {
+            onSingleTap()
+        }
     }
 
     @ViewBuilder

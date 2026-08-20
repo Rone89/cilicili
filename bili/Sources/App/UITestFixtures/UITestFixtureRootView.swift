@@ -3,18 +3,24 @@ import SwiftUI
 /// A network-free host for production UI components used by XCUITest.
 struct UITestFixtureRootView: View {
     let scenario: UITestFixtureScenario
+    @StateObject private var dependencies = AppDependencies()
 
     var body: some View {
-        switch scenario {
-        case .danmaku:
-            UITestDanmakuFixtureView()
-        case .fullscreen:
-            UITestFullscreenFixtureView()
+        Group {
+            switch scenario {
+            case .danmaku:
+                UITestDanmakuFixtureView(libraryStore: dependencies.libraryStore)
+            case .fullscreen:
+                UITestPlayerFixtureView()
+            }
         }
+        .environmentObject(dependencies)
+        .environmentObject(dependencies.libraryStore)
     }
 }
 
 private struct UITestDanmakuFixtureView: View {
+    @ObservedObject var libraryStore: LibraryStore
     @State private var isShowingSettings = false
     @StateObject private var store = VideoDetailDanmakuSettingsRenderStore()
 
@@ -27,6 +33,8 @@ private struct UITestDanmakuFixtureView: View {
             VStack(spacing: 20) {
                 Text("UI Test Video Detail")
                     .accessibilityIdentifier("ui.videoDetail.ready")
+                Text(libraryStore.danmakuSettings.displayArea.rawValue)
+                    .accessibilityIdentifier("ui.videoDetail.danmakuSettings.persistedValue")
                 Button("Open Danmaku Settings") {
                     isShowingSettings = true
                 }
@@ -34,6 +42,13 @@ private struct UITestDanmakuFixtureView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task {
+            if UITestFixtureScenario.resetsPersistedState {
+                libraryStore.setDanmakuEnabled(true)
+                libraryStore.setDanmakuSettings(.default)
+            }
+            synchronizeRenderStore()
         }
         .sheet(isPresented: $isShowingSettings) {
             DanmakuSettingsSheet(
@@ -46,47 +61,95 @@ private struct UITestDanmakuFixtureView: View {
     }
 
     private func toggleDanmaku() {
-        var snapshot = VideoDetailDanmakuSettingsRenderSnapshot()
-        snapshot.isDanmakuEnabled = !store.isDanmakuEnabled
-        snapshot.danmakuSettings = store.danmakuSettings
-        store.update(snapshot)
+        libraryStore.setDanmakuEnabled(!store.isDanmakuEnabled)
+        synchronizeRenderStore()
     }
 
     private func updateDanmakuSettings(_ settings: DanmakuSettings) {
+        libraryStore.setDanmakuSettings(settings)
+        synchronizeRenderStore()
+    }
+
+    private func synchronizeRenderStore() {
         var snapshot = VideoDetailDanmakuSettingsRenderSnapshot()
-        snapshot.isDanmakuEnabled = store.isDanmakuEnabled
-        snapshot.danmakuSettings = settings
+        snapshot.isDanmakuEnabled = libraryStore.danmakuEnabled
+        snapshot.danmakuSettings = libraryStore.danmakuSettings
         store.update(snapshot)
     }
 }
 
-private struct UITestFullscreenFixtureView: View {
+private struct UITestPlayerFixtureView: View {
+    @StateObject private var fixture = UITestPlayerFixtureController()
     @State private var isFullscreen = false
+    @State private var hidesSystemChrome = false
+    @State private var isShowingPlayer = true
 
     var body: some View {
         PlaybackDetailPageHost(
-            hidesSystemChrome: $isFullscreen,
+            hidesSystemChrome: $hidesSystemChrome,
             background: .black,
             statusBarStyle: .lightContent
         ) {
-            ZStack {
-                Color.black
-                VStack(spacing: 20) {
-                    Text(isFullscreen ? "Fullscreen Active" : "Live Fixture Ready")
-                        .accessibilityIdentifier(
-                            isFullscreen ? "ui.live.fullscreenSurface" : "ui.live.ready"
+            if isShowingPlayer {
+                VStack(spacing: 16) {
+                    ZStack {
+                        BiliPlayerView(
+                            viewModel: fixture.player,
+                            presentation: isFullscreen ? .fullScreen : .embedded,
+                            showsNavigationChrome: false,
+                            showsStartupLoadingIndicator: false,
+                            pausesOnDisappear: true,
+                            isSecondaryControlsPresented: true,
+                            embeddedAspectRatio: 16 / 9,
+                            ignoresContainerSafeArea: isFullscreen,
+                            keepsPlayerSurfaceStable: true,
+                            fullscreenMode: isFullscreen ? .landscape(.landscapeRight) : nil,
+                            showsRotationTransitionSnapshot: false,
+                            onRequestFullscreen: {
+                                isFullscreen = true
+                                hidesSystemChrome = true
+                            },
+                            onExitFullscreen: {
+                                isFullscreen = false
+                                hidesSystemChrome = false
+                            }
                         )
-                    if isFullscreen {
-                        Button("Exit Fullscreen") {
-                            isFullscreen = false
-                        }
-                        .accessibilityIdentifier("ui.live.player.exitFullscreen")
-                    } else {
-                        Button("Enter Fullscreen") {
-                            isFullscreen = true
-                        }
-                        .accessibilityIdentifier("ui.live.player.fullscreen")
                     }
+
+                    Text(isFullscreen ? "Fullscreen Player" : "Player Ready")
+                        .font(.caption2)
+                        .accessibilityIdentifier(
+                            isFullscreen ? "ui.player.fullscreenSurface" : "ui.player.ready"
+                        )
+
+                    if !isFullscreen {
+                        Text(fixture.player.isTerminated ? "terminated" : "active")
+                            .accessibilityIdentifier("ui.player.lifecycleState")
+                        HStack {
+                            Button("Simulate Failure") {
+                                fixture.simulateFailure()
+                            }
+                            .accessibilityIdentifier("ui.player.simulateFailure")
+
+                            Button("Retry") {
+                                fixture.retry()
+                            }
+                            .accessibilityIdentifier("ui.player.retry")
+
+                            Button("Close Player") {
+                                isShowingPlayer = false
+                            }
+                            .accessibilityIdentifier("ui.player.close")
+                        }
+                    }
+                }
+                .foregroundStyle(.white)
+            } else {
+                VStack(spacing: 12) {
+                    Text("Player Closed")
+                        .accessibilityIdentifier("ui.player.navigationReturned")
+                    Text(fixture.didSuspendForNavigation ? "suspended" : "pending")
+                        .accessibilityIdentifier("ui.player.navigationState")
                 }
                 .foregroundStyle(.white)
             }

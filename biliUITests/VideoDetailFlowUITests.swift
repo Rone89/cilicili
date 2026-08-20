@@ -26,6 +26,36 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testDanmakuDisplayAreaPersistsAcrossRelaunch() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "danmaku",
+            "--ui-test-reset-state"
+        ]
+        app.launch()
+        XCTAssertTrue(element("ui.videoDetail.ready", in: app).waitForExistence(timeout: 5))
+
+        app.buttons["ui.videoDetail.danmakuSettings"].tap()
+        let picker = element("ui.videoDetail.sheet.danmakuSettings.displayArea", in: app)
+        XCTAssertTrue(picker.waitForExistence(timeout: 2))
+        let full = picker.buttons["全屏"]
+        XCTAssertTrue(full.waitForExistence(timeout: 2))
+        full.tap()
+        app.buttons["ui.videoDetail.sheet.danmakuSettings.done"].tap()
+
+        let persisted = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
+        XCTAssertTrue(persisted.waitForExistence(timeout: 2))
+        XCTAssertEqual(persisted.label, "full")
+
+        app.terminate()
+        app.launchArguments = ["--ui-test-fixture", "danmaku"]
+        app.launch()
+        let restored = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertEqual(restored.label, "full")
+    }
+
+    @MainActor
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
     }

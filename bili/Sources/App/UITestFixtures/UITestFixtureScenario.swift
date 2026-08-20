@@ -12,4 +12,8 @@ enum UITestFixtureScenario: String {
         guard arguments.indices.contains(valueIndex) else { return nil }
         return Self(rawValue: arguments[valueIndex])
     }
+
+    static var resetsPersistedState: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-reset-state")
+    }
 }
