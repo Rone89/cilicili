@@ -3,6 +3,10 @@ import Foundation
 import Security
 
 extension BiliAPIClient {
+    func transportSession() -> URLSession {
+        session
+    }
+
     func get<T: Decodable>(
         base: URL,
         path: String,

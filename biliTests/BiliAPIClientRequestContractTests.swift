@@ -1803,6 +1803,181 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    func testFetchPlayURLDoesNotCoalesceDifferentPreferredQualityKeys() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let previousPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(VideoCodecPreference.forceH264.rawValue, forKey: VideoCodecPreference.storageKey)
+        defer {
+            if let previousPreference {
+                defaults.set(previousPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            let quality = Int(Self.queryValue(named: "qn", in: request) ?? "") ?? 80
+            return Self.response(for: request, body: Self.playableDASHResponse(quality: quality))
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache()
+        )
+        _ = try await api.fetchPlayURL(
+            bvid: "BV1videoKeyIsolation",
+            cid: 24_684,
+            preferredQuality: 80
+        )
+        _ = try await api.fetchPlayURL(
+            bvid: "BV1videoKeyIsolation",
+            cid: 24_684,
+            preferredQuality: 112
+        )
+
+        let playURLRequests = recorder.requests.filter { $0.url?.path == "/x/player/wbi/playurl" }
+        XCTAssertEqual(playURLRequests.count, 2)
+        XCTAssertEqual(
+            Set(playURLRequests.compactMap { Self.queryValue(named: "qn", in: $0) }),
+            ["80", "112"]
+        )
+    }
+
+    func testFetchWebPagePlayInfoUsesInjectedIncrementalJSON() async throws {
+        let playInfoJSON = Self.playableDASHResponse(quality: 80)
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            webPagePlayInfoStreamFetch: { _, _ in
+                BiliWebPagePlayInfoStreamResult(
+                    json: playInfoJSON,
+                    fullPageData: nil,
+                    receivedByteCount: 128,
+                    expectedByteCount: 256,
+                    elapsedMilliseconds: 1
+                )
+            }
+        )
+
+        let data = try await api.fetchWebPagePlayInfo(
+            bvid: "BV1webpageIncremental",
+            page: nil,
+            referer: "https://www.bilibili.com/video/BV1webpageIncremental",
+            cookieHeader: "SESSDATA=session-value"
+        )
+
+        XCTAssertEqual(data.quality, 80)
+        XCTAssertEqual(data.dash?.video?.first?.id, 80)
+    }
+
+    func testFetchWebPagePlayInfoRejectsNonzeroStreamWithoutValidFullPage() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, body: "<html>no playinfo</html>")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            webPagePlayInfoStreamFetch: { _, _ in
+                BiliWebPagePlayInfoStreamResult(
+                    json: nil,
+                    fullPageData: nil,
+                    receivedByteCount: 12,
+                    expectedByteCount: nil,
+                    elapsedMilliseconds: 1
+                )
+            }
+        )
+
+        do {
+            _ = try await api.fetchWebPagePlayInfo(
+                bvid: "BV1webpageMissing",
+                page: nil,
+                referer: "https://www.bilibili.com/video/BV1webpageMissing",
+                cookieHeader: "SESSDATA=session-value"
+            )
+            XCTFail("Expected missing webpage playinfo payload")
+        } catch let error as BiliAPIError {
+            guard case .missingPayload = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+    }
+
+    func testFetchWebPagePlayInfoRejectsZeroByteStreamAndFullPage() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, data: Data())
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            webPagePlayInfoStreamFetch: { _, _ in
+                BiliWebPagePlayInfoStreamResult(
+                    json: nil,
+                    fullPageData: nil,
+                    receivedByteCount: 0,
+                    expectedByteCount: nil,
+                    elapsedMilliseconds: 1
+                )
+            }
+        )
+
+        do {
+            _ = try await api.fetchWebPagePlayInfo(
+                bvid: "BV1webpageEmpty",
+                page: nil,
+                referer: "https://www.bilibili.com/video/BV1webpageEmpty",
+                cookieHeader: "SESSDATA=session-value"
+            )
+            XCTFail("Expected empty webpage response")
+        } catch let error as BiliAPIError {
+            guard case .emptyData = error else {
+                return XCTFail("Unexpected API error: \(error)")
+            }
+        }
+    }
+
+    func testFetchWebPagePlayInfoFallsBackToFullPageAfterStreamError() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(
+                for: request,
+                body: "<script>window.__playinfo__=\(Self.playableDASHResponse(quality: 80));</script>"
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            webPagePlayInfoStreamFetch: { _, _ in throw URLError(.cannotConnectToHost) }
+        )
+        let data = try await api.fetchWebPagePlayInfo(
+            bvid: "BV1webpageFullFallback",
+            page: 2,
+            referer: "https://www.bilibili.com/video/BV1webpageFullFallback",
+            cookieHeader: "SESSDATA=session-value"
+        )
+
+        XCTAssertEqual(data.quality, 80)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.host, "www.bilibili.com")
+        XCTAssertEqual(request.url?.path, "/video/BV1webpageFullFallback")
+        XCTAssertEqual(Self.queryValue(named: "p", in: request), "2")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=session-value")
+    }
+
     func testFetchPopularVideosBuildsPagedRequestAndDecodesItems() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let requestExpectation = expectation(description: "popular videos request captured")
@@ -2717,7 +2892,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         accessKey: String? = nil,
         playURLCache: PlayURLCache = .shared,
         guestModeEnabled: Bool = false,
-        recommendSource: HomeRecommendFeedSourcePreference = .web
+        recommendSource: HomeRecommendFeedSourcePreference = .web,
+        webPagePlayInfoStreamFetch: @escaping @Sendable (URLRequest, Float) async throws
+            -> BiliWebPagePlayInfoStreamResult = { request, priority in
+                try await BiliWebPagePlayInfoStreamingSession.shared.fetch(
+                    request: request,
+                    priority: priority
+                )
+            }
     ) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: keychainService)
@@ -2752,7 +2934,8 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             sessionStore: sessionStore,
             libraryStore: libraryStore,
             homeRecommendDiagnosticsStore: .shared,
-            playURLCache: playURLCache
+            playURLCache: playURLCache,
+            webPagePlayInfoStreamFetch: webPagePlayInfoStreamFetch
         )
     }
 
@@ -2917,7 +3100,7 @@ private final class RequestContractURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool {
         [
             "api.bilibili.com", "api.live.bilibili.com", "app.bilibili.com", "comment.bilibili.com",
-            "passport.bilibili.com", "space.bilibili.com",
+            "passport.bilibili.com", "space.bilibili.com", "www.bilibili.com",
         ].contains(
             request.url?.host)
     }

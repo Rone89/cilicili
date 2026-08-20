@@ -7,6 +7,19 @@ nonisolated struct DanmakuRequestContext: Sendable {
 }
 
 extension BiliAPIClient {
+    func danmakuRequestContext() async -> DanmakuRequestContext {
+        let snapshot = requestSnapshot()
+        return DanmakuRequestContext(
+            commentURL: commentURL,
+            apiURL: baseURL,
+            guestModeCookieHeader: snapshot.guestModeEnabled ? snapshot.anonymousCookieHeader : nil
+        )
+    }
+
+    func fetchDanmakuData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await data(for: request, priority: URLSessionTask.defaultPriority)
+    }
+
     func fetchDanmaku(cid: Int) async throws -> [DanmakuItem] {
         if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
             return cached

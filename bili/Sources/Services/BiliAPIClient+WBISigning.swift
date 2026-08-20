@@ -1,6 +1,10 @@
 import Foundation
 
 extension BiliAPIClient {
+    func clearWBIKeysForDynamicFeed() async {
+        await state.clearWBIKeys()
+    }
+
     func prewarmPlaybackSigningKeys() async {
         _ = try? await fetchWBIKeys(priority: URLSessionTask.defaultPriority)
     }

@@ -4,6 +4,14 @@ private let dynamicUploaderWebUserAgent =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15"
 
 extension BiliAPIClient {
+    nonisolated static func uploaderDynamicCookieHeader(
+        isLoggedIn: Bool,
+        authenticatedCookieHeader: String,
+        anonymousCookieHeader: String
+    ) -> String {
+        isLoggedIn ? authenticatedCookieHeader : anonymousCookieHeader
+    }
+
     func fetchDynamicFeed(offset: String? = nil) async throws -> DynamicFeedData {
         let context = await dynamicFeedRequestContext()
         guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }

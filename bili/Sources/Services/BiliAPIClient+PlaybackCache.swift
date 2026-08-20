@@ -2,6 +2,36 @@ import Foundation
 import OSLog
 
 extension BiliAPIClient {
+    nonisolated func logPlayURLStage(
+        _ stage: String,
+        bvid: String,
+        cid: Int,
+        start: CFTimeInterval,
+        data: PlayURLData? = nil,
+        error: Error? = nil
+    ) {
+        let elapsed = PlayerMetricsLog.elapsedMilliseconds(since: start)
+        let variants = data?.playVariants ?? []
+        let playableVariants = variants.filter(\.isPlayable)
+        let qualities =
+            playableVariants
+            .map { "\($0.quality)\($0.audioURL == nil ? "p" : "d")" }
+            .joined(separator: ",")
+        let qualitySummary = qualities.isEmpty ? "-" : qualities
+        let rawSummary = data?.rawPlayURLSummary ?? "-"
+        let errorMessage = error?.localizedDescription ?? ""
+
+        if error != nil {
+            PlayerMetricsLog.logger.error(
+                "playURLStage stage=\(stage, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) elapsedMs=\(elapsed, format: .fixed(precision: 1), privacy: .public) error=\(errorMessage, privacy: .public)"
+            )
+        } else {
+            PlayerMetricsLog.logger.info(
+                "playURLStage stage=\(stage, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) elapsedMs=\(elapsed, format: .fixed(precision: 1), privacy: .public) variants=\(variants.count, privacy: .public) playable=\(playableVariants.count, privacy: .public) highest=\(data?.highestPlayableQuality ?? 0, privacy: .public) durl=\((data?.durl?.isEmpty == false), privacy: .public) dash=\((data?.dash?.video?.isEmpty == false), privacy: .public) qualities=\(qualitySummary, privacy: .public) raw=\(rawSummary, privacy: .public)"
+            )
+        }
+    }
+
     func clearCachedPlayURLFailures(bvid: String) async {
         await state.clearPlayURLFailuresAndTasks(containing: bvid)
     }

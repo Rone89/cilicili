@@ -7,6 +7,30 @@ nonisolated struct VideoContentRequestContext: Sendable {
 }
 
 extension BiliAPIClient {
+    func videoContentListTask(for key: String) async -> Task<[VideoItem], Error>? {
+        await state.videoListTask(for: key)
+    }
+
+    func setVideoContentListTask(_ task: Task<[VideoItem], Error>, for key: String) async {
+        await state.setVideoListTask(task, for: key)
+    }
+
+    func clearVideoContentListTask(for key: String) async {
+        await state.clearVideoListTask(for: key)
+    }
+
+    func videoContentDetailTask(for key: String) async -> Task<VideoItem, Error>? {
+        await state.videoDetailTask(for: key)
+    }
+
+    func setVideoContentDetailTask(_ task: Task<VideoItem, Error>, for key: String) async {
+        await state.setVideoDetailTask(task, for: key)
+    }
+
+    func clearVideoContentDetailTask(for key: String) async {
+        await state.clearVideoDetailTask(for: key)
+    }
+
     func fetchPopularVideos(page: Int = 1) async throws -> [VideoItem] {
         let taskKey = "popular|\(page)"
         if let task = await videoContentListTask(for: taskKey) {

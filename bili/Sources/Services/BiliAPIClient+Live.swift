@@ -4,7 +4,24 @@ import QuartzCore
 
 private let liveAPIURL = URL(string: "https://api.live.bilibili.com")!
 
+nonisolated struct LiveDanmakuClientContext: Sendable {
+    let uid: Int
+    let buvid: String
+    let cookieHeader: String
+    let headers: [String: String]
+}
+
 extension BiliAPIClient {
+    func liveDanmakuTransportData(
+        for request: URLRequest,
+        transportSession: URLSession?
+    ) async throws -> Data {
+        if let transportSession {
+            return try await transportSession.data(for: request).0
+        }
+        return try await session.data(for: request).0
+    }
+
     func fetchLiveRooms(page: Int = 1, refreshIndex: Int = 0) async throws -> [LiveRoom] {
         var query = [
             "platform": "web",

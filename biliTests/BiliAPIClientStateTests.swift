@@ -63,15 +63,6 @@ final class BiliAPIClientStateTests: XCTestCase {
         XCTAssertTrue(unrelatedStage.task.isCancelled)
     }
 
-    func testUnavailableQualityCacheReturnsStoredFallback() async {
-        let state = BiliAPIClientState()
-
-        await state.storeUnavailableQuality(80, for: "quality-key")
-        let cached = await state.cachedUnavailableQuality(for: "quality-key")
-
-        XCTAssertEqual(cached?.fallbackQuality, 80)
-    }
-
     private func makeRequestKey(bvid: String) -> PendingPlayURLRequestKey {
         PendingPlayURLRequestKey(
             cacheKey: PlayURLCacheKey(

@@ -1,5 +1,60 @@
 import Foundation
 
+extension BiliAPIClient {
+    struct RequestSnapshot: Sendable {
+        let cookieHeader: String
+        let anonymousCookieHeader: String
+        let appAccessKey: String?
+        let homeRecommendIdentityKey: String
+        let isLoggedIn: Bool
+        let csrfToken: String?
+        let currentUserMID: Int?
+        let preferredVideoQuality: Int?
+        let cellularPreferredVideoQuality: Int?
+        let playbackStreamSourcePreference: PlaybackStreamSourcePreference
+        let homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
+        let guestModeEnabled: Bool
+        let playbackCredentialVersion: Int
+        let isAccountPurposeEnabled: Bool
+        let effectivePreferredVideoQuality: Int?
+    }
+
+    @MainActor
+    func requestSnapshot(
+        purpose: BiliAccountPurpose = .main
+    ) -> RequestSnapshot {
+        let preferredVideoQuality = libraryStore.preferredVideoQuality
+        let cellularPreferredVideoQuality = libraryStore.cellularPreferredVideoQuality
+        let account = sessionStore.credentialSnapshot(
+            for: purpose,
+            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+        )
+        return RequestSnapshot(
+            cookieHeader: account.cookieHeader,
+            anonymousCookieHeader: account.anonymousCookieHeader,
+            appAccessKey: account.accessKey,
+            homeRecommendIdentityKey: sessionStore.recommendCacheIdentityKey(
+                guestModeEnabled: libraryStore.guestModeEnabled
+            ),
+            isLoggedIn: account.isLoggedIn,
+            csrfToken: account.csrfToken,
+            currentUserMID: account.accountMID,
+            preferredVideoQuality: preferredVideoQuality,
+            cellularPreferredVideoQuality: cellularPreferredVideoQuality,
+            playbackStreamSourcePreference: libraryStore.playbackStreamSourcePreference,
+            homeRecommendFeedSourcePreference: libraryStore.homeRecommendFeedSourcePreference,
+            guestModeEnabled: libraryStore.guestModeEnabled,
+            playbackCredentialVersion: account.version,
+            isAccountPurposeEnabled: account.isPurposeEnabled,
+            effectivePreferredVideoQuality: LibraryStore.effectivePreferredVideoQuality(
+                preferred: preferredVideoQuality,
+                cellular: cellularPreferredVideoQuality,
+                networkClass: PlaybackEnvironment.current.networkClass
+            )
+        )
+    }
+}
+
 nonisolated struct InteractionRequestContext: Sendable {
     let cookieHeader: String
     let appAccessKey: String?

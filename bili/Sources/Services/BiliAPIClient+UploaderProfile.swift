@@ -2,12 +2,24 @@ import Foundation
 import OSLog
 
 extension BiliAPIClient {
+    nonisolated func uploaderProfileTask(for mid: Int) async -> Task<UploaderProfile, Error>? {
+        await state.uploaderProfileTask(for: mid)
+    }
+
+    nonisolated func setUploaderProfileTask(_ task: Task<UploaderProfile, Error>, for mid: Int) async {
+        await state.setUploaderProfileTask(task, for: mid)
+    }
+
+    nonisolated func clearUploaderProfileTask(for mid: Int) async {
+        await state.clearUploaderProfileTask(for: mid)
+    }
+
     func fetchUploaderProfile(mid: Int) async throws -> UploaderProfile {
         guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
         if let task = await uploaderProfileTask(for: mid) {
             return try await task.value
         }
-        let task = Task<UploaderProfile, Error>(priority: .utility) { [self] in
+        let task = Task<UploaderProfile, Error>(priority: .utility) { @MainActor [self] in
             async let cardProfile = uploaderProfileResult("card") {
                 try await fetchUploaderCardProfile(mid: mid)
             }
@@ -67,6 +79,7 @@ extension BiliAPIClient {
         }
     }
 
+    @MainActor
     func fetchUploaderStatsProfile(mid: Int) async throws -> UploaderProfile {
         guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
 

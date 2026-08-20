@@ -2,6 +2,40 @@ import Foundation
 import QuartzCore
 
 extension BiliAPIClient {
+    func fetchWebPagePlayURL(
+        bvid: String,
+        cid: Int,
+        page: Int? = nil,
+        preferredQuality: Int? = nil
+    ) async throws -> PlayURLData {
+        let stageStart = CACurrentMediaTime()
+        let referer = "https://www.bilibili.com/video/\(bvid)"
+        let snapshot = requestSnapshot(purpose: .playback)
+        let requestedQuality = preferredQuality ?? snapshot.effectivePreferredVideoQuality ?? 112
+        let streamSource = snapshot.playbackStreamSourcePreference
+        let data = try await runCachedPlayURLStage(
+            "webpagePlayInfo",
+            bvid: bvid,
+            cid: cid,
+            qn: requestedQuality,
+            cookieMode: "auth-webpage-\(streamSource.cachePlatform)",
+            credentialVersion: snapshot.playbackCredentialVersion,
+            start: stageStart
+        ) { [self] in
+            try await fetchWebPagePlayInfo(
+                bvid: bvid,
+                page: page,
+                referer: referer,
+                cookieHeader: snapshot.cookieHeader
+            )
+        }
+        logPlayURLStage("webpagePlayInfo", bvid: bvid, cid: cid, start: stageStart, data: data)
+        return await applyingConfiguredHistoryAccount(
+            to: data,
+            playbackUserMID: snapshot.currentUserMID
+        )
+    }
+
     func fetchWebPagePlayInfo(
         bvid: String,
         page: Int?,
@@ -35,9 +69,9 @@ extension BiliAPIClient {
         if PiliPlusStylePlayURLSelectionExperiment.stored() {
             let streamStart = CACurrentMediaTime()
             do {
-                let result = try await BiliWebPagePlayInfoStreamingSession.shared.fetch(
-                    request: request,
-                    priority: URLSessionTask.highPriority
+                let result = try await webPagePlayInfoStreamFetch(
+                    request,
+                    URLSessionTask.highPriority
                 )
                 if let extractedJSON = result.json {
                     json = extractedJSON

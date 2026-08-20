@@ -6,11 +6,6 @@ struct CachedPlayURLFailure {
     let expiresAt: CFTimeInterval
 }
 
-struct CachedUnavailableQuality {
-    let fallbackQuality: Int?
-    let expiresAt: CFTimeInterval
-}
-
 nonisolated struct PendingPlayURLRequestKey: Hashable, Sendable {
     let cacheKey: PlayURLCacheKey
     let scope: PlayURLCacheLoginScope
@@ -39,8 +34,6 @@ actor BiliAPIClientState {
 
     private static let persistedWBIKeysKey = "cc.bili.persisted-wbi-keys.v1"
     private let playURLFailureCacheLimit = 96
-    private let unavailableQualityCacheLimit = 64
-    private let unavailableQualityCacheTTL: CFTimeInterval = 10 * 60
     private let danmakuCacheLimit = 12
     private let danmakuCacheTTL: CFTimeInterval = 30 * 60
     private var cachedWBIKeys: WBIKeys?
@@ -54,7 +47,6 @@ actor BiliAPIClientState {
     private let startupWBIHealth = StartupWBIHealthStore()
     private let startupWBIRouteHints = StartupWBIRouteHintStore()
     private var playURLFailureCache: [String: CachedPlayURLFailure] = [:]
-    private var unavailableQualityCache: [String: CachedUnavailableQuality] = [:]
     private var playURLRequestTasks: [PendingPlayURLRequestKey: PendingPlayURLRequest] = [:]
     private var playURLStageTasks: [String: PendingPlayURLStageRequest] = [:]
     private var danmakuCache: [Int: CachedDanmaku] = [:]
@@ -259,10 +251,6 @@ actor BiliAPIClientState {
         for key in failureKeys {
             playURLFailureCache[key] = nil
         }
-        let unavailableKeys = unavailableQualityCache.keys.filter { $0.contains("|\(bvid)|") }
-        for key in unavailableKeys {
-            unavailableQualityCache[key] = nil
-        }
         let taskKeys = playURLStageTasks.keys.filter { $0.contains("|\(bvid)|") }
         for key in taskKeys {
             playURLStageTasks[key]?.task.cancel()
@@ -278,7 +266,6 @@ actor BiliAPIClientState {
     func clearAllPlayURLFailuresAndTasks() async {
         await startupWBIRouteHints.clear()
         playURLFailureCache.removeAll()
-        unavailableQualityCache.removeAll()
         for request in playURLStageTasks.values {
             request.task.cancel()
         }
@@ -321,26 +308,6 @@ actor BiliAPIClientState {
         return nil
     }
 
-    func cachedUnavailableQuality(for key: String) -> CachedUnavailableQuality? {
-        let now = CACurrentMediaTime()
-        guard let cached = unavailableQualityCache[key] else { return nil }
-        guard cached.expiresAt > now else {
-            unavailableQualityCache[key] = nil
-            trimExpiredUnavailableQualities(now: now)
-            return nil
-        }
-        return cached
-    }
-
-    func storeUnavailableQuality(_ fallbackQuality: Int?, for key: String) {
-        let now = CACurrentMediaTime()
-        unavailableQualityCache[key] = CachedUnavailableQuality(
-            fallbackQuality: fallbackQuality,
-            expiresAt: now + unavailableQualityCacheTTL
-        )
-        trimUnavailableQualityCacheIfNeeded(now: now)
-    }
-
     func storePlayURLFailure(_ error: Error, for key: String) {
         guard let cacheableError = BiliAPIClient.cacheablePlayURLFailure(error) else { return }
         let now = CACurrentMediaTime()
@@ -366,24 +333,6 @@ actor BiliAPIClientState {
             .map(\.key)
         for key in expiredKeys {
             playURLFailureCache[key] = nil
-        }
-    }
-
-    private func trimExpiredUnavailableQualities(now: CFTimeInterval = CACurrentMediaTime()) {
-        unavailableQualityCache = unavailableQualityCache.filter { $0.value.expiresAt > now }
-    }
-
-    private func trimUnavailableQualityCacheIfNeeded(now: CFTimeInterval = CACurrentMediaTime()) {
-        trimExpiredUnavailableQualities(now: now)
-        guard unavailableQualityCache.count > unavailableQualityCacheLimit else { return }
-        let overflow = unavailableQualityCache.count - unavailableQualityCacheLimit
-        let expiredKeys =
-            unavailableQualityCache
-            .sorted { $0.value.expiresAt < $1.value.expiresAt }
-            .prefix(overflow)
-            .map(\.key)
-        for key in expiredKeys {
-            unavailableQualityCache[key] = nil
         }
     }
 

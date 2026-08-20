@@ -39,3 +39,23 @@ nonisolated final class PendingTaskWaiter<Value: Sendable>: @unchecked Sendable 
         continuation?.resume(with: result)
     }
 }
+
+extension BiliAPIClient {
+    nonisolated static func awaitSharedTask<Value: Sendable>(
+        _ task: Task<Value, Error>
+    ) async throws -> Value {
+        let waiter = PendingTaskWaiter<Value>()
+        Task(priority: .utility) {
+            do {
+                waiter.succeed(try await task.value)
+            } catch {
+                waiter.fail(error)
+            }
+        }
+        return try await withTaskCancellationHandler {
+            try await waiter.value()
+        } onCancel: {
+            waiter.fail(CancellationError())
+        }
+    }
+}

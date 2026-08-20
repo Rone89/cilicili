@@ -8,6 +8,35 @@ extension BiliAPIClient {
     private static let appRecommendHydrationCandidateLimit = 24
     private static let appRecommendHydrationConcurrencyLimit = 6
 
+    func homeRecommendTask(for key: String) async -> Task<[VideoItem], Error>? {
+        await state.videoListTask(for: key)
+    }
+
+    func setHomeRecommendTask(_ task: Task<[VideoItem], Error>, for key: String) async {
+        await state.setVideoListTask(task, for: key)
+    }
+
+    func clearHomeRecommendTask(for key: String) async {
+        await state.clearVideoListTask(for: key)
+    }
+
+    func clearHomeRecommendState() async {
+        await state.clearHomeRecommendState()
+    }
+
+    func homeRecommendAppFeedIndex(defaulting defaultIndex: Int) async -> Int {
+        await state.appRecommendFeedIndex(defaulting: defaultIndex)
+    }
+
+    func setHomeRecommendAppFeedIndex(_ index: Int?) async {
+        await state.setAppRecommendFeedIndex(index)
+    }
+
+    func homeRecommendGuestModeCookieHeader() async -> String? {
+        let context = await transportRequestContext()
+        return context.guestModeEnabled ? context.anonymousCookieHeader : nil
+    }
+
     func resetHomeRecommendState() async {
         await clearHomeRecommendState()
     }
@@ -120,7 +149,7 @@ extension BiliAPIClient {
                 "fresh_type": "4",
             ], keys: keys)
 
-        await homeRecommendDiagnosticsStore.recordRequest(
+        homeRecommendDiagnosticsStore.recordRequest(
             HomeRecommendDiagnosticsSnapshot(
                 status: .requesting,
                 source: .web,
@@ -172,7 +201,7 @@ extension BiliAPIClient {
                 responseCachePolicy: .brief
             )
         } catch {
-            await homeRecommendDiagnosticsStore.recordResponse(
+            homeRecommendDiagnosticsStore.recordResponse(
                 status: .failed,
                 nextIndex: nil,
                 nextIndexSource: nil,
@@ -187,7 +216,7 @@ extension BiliAPIClient {
             throw error
         }
         guard response.code == 0 else {
-            await homeRecommendDiagnosticsStore.recordResponse(
+            homeRecommendDiagnosticsStore.recordResponse(
                 status: .failed,
                 nextIndex: nil,
                 nextIndexSource: nil,
@@ -203,7 +232,7 @@ extension BiliAPIClient {
         }
         let allVideos = response.payload?.feedItems.compactMap { $0.asVideoItem() } ?? []
         let videos = Self.limitedRecommendVideos(allVideos, limit: limit)
-        await homeRecommendDiagnosticsStore.recordResponse(
+        homeRecommendDiagnosticsStore.recordResponse(
             status: .succeeded,
             nextIndex: nil,
             nextIndexSource: nil,
@@ -285,7 +314,7 @@ extension BiliAPIClient {
             cookieHeader: cookieHeader,
             profile: profile
         )
-        await homeRecommendDiagnosticsStore.recordRequest(
+        homeRecommendDiagnosticsStore.recordRequest(
             HomeRecommendDiagnosticsSnapshot(
                 status: .requesting,
                 source: .app,
@@ -342,7 +371,7 @@ extension BiliAPIClient {
                 cachePolicy: .reloadIgnoringLocalCacheData
             )
         } catch {
-            await homeRecommendDiagnosticsStore.recordResponse(
+            homeRecommendDiagnosticsStore.recordResponse(
                 status: .failed,
                 nextIndex: nil,
                 nextIndexSource: nil,
@@ -357,7 +386,7 @@ extension BiliAPIClient {
             throw error
         }
         guard response.code == 0 else {
-            await homeRecommendDiagnosticsStore.recordResponse(
+            homeRecommendDiagnosticsStore.recordResponse(
                 status: .failed,
                 nextIndex: nil,
                 nextIndexSource: nil,
@@ -372,7 +401,7 @@ extension BiliAPIClient {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
         guard let payload = response.payload else {
-            await homeRecommendDiagnosticsStore.recordResponse(
+            homeRecommendDiagnosticsStore.recordResponse(
                 status: .succeeded,
                 nextIndex: nil,
                 nextIndexSource: nil,
@@ -397,7 +426,7 @@ extension BiliAPIClient {
         let droppedCardCount = max(0, payload.feedItems.count - videoCardCount)
         let recommendReasonCount = videos.filter { $0.recommendReason?.isEmpty == false }.count
         await setHomeRecommendAppFeedIndex(nextIndex)
-        await homeRecommendDiagnosticsStore.recordResponse(
+        homeRecommendDiagnosticsStore.recordResponse(
             status: .succeeded,
             nextIndex: nextIndex,
             nextIndexSource: nextIndexResult.source,

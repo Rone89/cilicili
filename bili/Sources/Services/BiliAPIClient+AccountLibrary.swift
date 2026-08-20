@@ -1,5 +1,16 @@
 import Foundation
 
+nonisolated struct AccountHistoryCursor: Equatable {
+    let max: Int
+    let viewAt: Int
+}
+
+nonisolated struct AccountVideoEntryPage {
+    let entries: [AccountVideoEntry]
+    let hasMore: Bool
+    let nextHistoryCursor: AccountHistoryCursor?
+}
+
 extension BiliAPIClient {
     func fetchAccountHistory(page: Int = 1, pageSize: Int = 20) async throws -> [AccountVideoEntry] {
         if page <= 1 {

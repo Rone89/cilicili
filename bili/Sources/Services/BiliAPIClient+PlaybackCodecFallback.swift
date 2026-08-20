@@ -2,6 +2,27 @@ import Foundation
 import QuartzCore
 
 extension BiliAPIClient {
+    nonisolated func requirePlayURLData(_ response: BiliResponse<PlayURLData>, requirePlayablePayload: Bool = false) throws
+        -> PlayURLData
+    {
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        guard let data = response.payload else { throw BiliAPIError.missingPayload }
+        if let code = data.code, code != 0 {
+            throw BiliAPIError.api(code: code, message: data.message)
+        }
+        if requirePlayablePayload, data.playVariants.isEmpty {
+            if data.hasAnyPlayURLPayload {
+                throw BiliAPIError.unsupportedHardwarePlayback(
+                    "播放接口已返回地址，但没有可用的 HEVC/AAC 硬解组合（\(data.rawPlayURLSummary)）"
+                )
+            }
+            throw BiliAPIError.emptyPlayURL
+        }
+        return data
+    }
+
     nonisolated static func playURLQuery(
         bvid: String,
         cid: Int,

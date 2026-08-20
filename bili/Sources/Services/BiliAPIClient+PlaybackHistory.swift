@@ -4,6 +4,18 @@ import OSLog
 extension BiliAPIClient {
     private static let historyLogger = Logger(subsystem: "cc.bili", category: "History")
 
+    func applyingConfiguredHistoryAccount(
+        to data: PlayURLData,
+        playbackUserMID: Int?
+    ) async -> PlayURLData {
+        let historySnapshot = requestSnapshot(purpose: .historyRead)
+        guard historySnapshot.currentUserMID == playbackUserMID else {
+            return data.removingHistoryMetadata()
+        }
+        return data
+    }
+
+
     func reportVideoHistory(
         aid: Int?,
         cid: Int?,

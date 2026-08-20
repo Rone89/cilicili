@@ -1895,7 +1895,7 @@ actor ResourceRequestLimiter {
     private var danmakuWaiters: [CheckedContinuation<Void, Never>] = []
 
     func runDanmaku<T: Sendable>(
-        _ operation: @Sendable () async throws -> T
+        _ operation: @MainActor @Sendable () async throws -> T
     ) async throws -> T {
         await acquireDanmakuSlot()
         defer { releaseDanmakuSlot() }
