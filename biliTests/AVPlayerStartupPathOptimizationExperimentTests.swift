@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
+    @MainActor
     func testStartupPathIsAlwaysEnabledAndCapsPlayerCreationWaitAtFortyMilliseconds() {
         let defaults = makeUserDefaults()
         defaults.set(false, forKey: AVPlayerStartupPathOptimizationExperiment.storageKey)
@@ -24,12 +25,14 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPiliPlusStylePlayURLSelectionIsAlwaysEnabled() {
         let defaults = makeUserDefaults()
         defaults.set(false, forKey: PiliPlusStylePlayURLSelectionExperiment.storageKey)
         XCTAssertTrue(PiliPlusStylePlayURLSelectionExperiment.stored(in: defaults))
     }
 
+    @MainActor
     func testPendingTaskDeadlineReturnsBeforeSlowTaskCompletes() async {
         let slowTask = Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -47,6 +50,7 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         XCTAssertLessThan(startedAt.duration(to: clock.now), .milliseconds(250))
     }
 
+    @MainActor
     func testPendingTaskDeadlineDoesNotCancelSharedTaskAfterTimeout() async {
         let sharedTask = Task {
             try? await Task.sleep(nanoseconds: 60_000_000)
@@ -63,6 +67,7 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         XCTAssertTrue(completedWithoutCancellation)
     }
 
+    @MainActor
     func testStartupPacketWarmupRequiresBothVideoAndAudio() {
         XCTAssertTrue(HLSStartupPacketWarmupResult(videoReady: true, audioReady: true).isReady)
         XCTAssertFalse(HLSStartupPacketWarmupResult(videoReady: true, audioReady: false).isReady)
@@ -73,6 +78,7 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPerformanceCopyReportsStartupExperimentState() {
         var session = PlayerPerformanceSession(id: "BVstartupExperiment")
         session.avPlayerStartupPathOptimizationExperimentEnabled = true
@@ -105,6 +111,7 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPerformanceLogOmitsPurePrebuildSession() {
         var prebuild = PlayerPerformanceSession(id: "BVprebuild")
         prebuild.manifestStageMessage = "plannedVideo=q80"
@@ -123,6 +130,7 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         XCTAssertFalse(log.contains("metricsID: BVprebuild"))
     }
 
+    @MainActor
     func testPerformanceCopyUsesStartupCodecAndRedactsSignedURLs() {
         var session = PlayerPerformanceSession(id: "BVstartupCodec")
         session.startupCodec = "av01.0.08M.08.0.110.01.01.01.0"
@@ -138,12 +146,14 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         XCTAssertFalse(copy.contains("token=secret"))
     }
 
+    @MainActor
     func testStartupMedianUsesBothMiddleSamples() {
         XCTAssertEqual(PlayerPerformanceSampleGroup.median([500, 1_500]), 1_000)
         XCTAssertEqual(PlayerPerformanceSampleGroup.median([100, 500, 1_500]), 500)
         XCTAssertNil(PlayerPerformanceSampleGroup.median([]))
     }
 
+    @MainActor
     func testPerformanceTestPlaybackOptionsDisableHistoryAndStartupCaches() {
         XCTAssertFalse(VideoDetailPlaybackOptions.performanceTest.recordsPlaybackHistory)
         XCTAssertFalse(VideoDetailPlaybackOptions.performanceTest.resumesPlaybackHistory)

@@ -3,6 +3,7 @@ import XCTest
 @testable import bili
 
 final class VideoListenModeTests: XCTestCase {
+    @MainActor
     func testAudioVariantsIncludeLosslessDolbyAndAACInDisplayOrder() throws {
         let data = try audioPlayURLData()
 
@@ -15,12 +16,14 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertTrue(variants[2].subtitle.contains("192 kbps"))
     }
 
+    @MainActor
     func testAutomaticAudioPrefersCompatibleAAC() throws {
         let data = try audioPlayURLData()
 
         XCTAssertEqual(data.dash?.bestAudioStream?.codecs, "mp4a.40.2")
     }
 
+    @MainActor
     func testAudioFallbackUsesAutomaticThenRemainingCompatibleTrack() throws {
         let variants = try audioPlayURLData().videoListenAudioVariants(cdnPreference: .automatic)
         let automatic = try XCTUnwrap(variants.first(where: { $0.kind == .aac }))
@@ -51,6 +54,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testUGCSequenceResolverFindsPreviousAndNextPage() {
         let pages = [
             VideoPage(cid: 11, page: 1, part: "P1", duration: 10, dimension: nil),
@@ -70,6 +74,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertNil(VideoListenSequenceResolver.page(in: pages, selectedCID: 33, direction: .next))
     }
 
+    @MainActor
     func testPGCSequenceResolverFindsAdjacentEpisode() throws {
         let season = try pgcSeasonInfo()
         let current = try XCTUnwrap(season.allPlayableEpisodes[1].videoItem(in: season))
@@ -84,6 +89,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPlaybackOrderPersists() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
@@ -97,6 +103,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testOfficialListenerSortOrderPersists() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
@@ -109,6 +116,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(restored.videoListenPlaylistSortOrder, .reverse)
     }
 
+    @MainActor
     func testOfficialListenerRequestEncodingMatchesPlaylistContract() throws {
         let request = try BiliListenerPlaylistCodec.encodeRequest(
             aid: 1,
@@ -123,6 +131,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testOfficialListenerPagingRequestOmitsInitialAnchor() throws {
         let request = try BiliListenerPlaylistCodec.encodeRequest(
             aid: 1,
@@ -137,6 +146,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testOfficialListenerResponseDecodesVideoAndPagination() throws {
         let response = try XCTUnwrap(Data(hexString: "08031000180022430a06080118012002121b080112034f6e651a03706963220464657363283c407b4a034256311a0c080110021a025031203c2801220c0809120255501a046661636540013a0c0a046e657874120470726576"))
 
@@ -157,6 +167,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(page.videos[0].pages?.first?.part, "P1")
     }
 
+    @MainActor
     func testOfficialListenerGRPCFramesSupportIdentityAndGZIP() throws {
         let message = Data([0xAA, 0xBB])
         XCTAssertEqual(
@@ -171,6 +182,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testOfficialListenerRequestRejectsMissingInitialCID() {
         XCTAssertThrowsError(
             try BiliListenerPlaylistCodec.encodeRequest(
@@ -184,6 +196,7 @@ final class VideoListenModeTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testPlaybackEndResolverCoversEveryOrder() {
         XCTAssertEqual(
             VideoListenPlaybackEndResolver.action(
@@ -208,6 +221,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testEndOfCurrentSleepTimerOverridesPlaybackOrder() {
         for order in VideoListenPlaybackOrder.allCases {
             XCTAssertEqual(
@@ -220,6 +234,7 @@ final class VideoListenModeTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testSleepTimerCountdownFormatting() {
         let now = Date(timeIntervalSince1970: 1_000)
 
@@ -246,6 +261,7 @@ final class VideoListenModeTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testAudioInterruptionStateHonorsExplicitPause() {
         var state = VideoListenAudioInterruptionState()
 
@@ -262,6 +278,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertFalse(state.shouldResume)
     }
 
+    @MainActor
     func testUGCQueueBuilderMarksCurrentPage() {
         let pages = [
             VideoPage(cid: 11, page: 1, part: "开场", duration: 65, dimension: nil),
@@ -275,6 +292,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(entries.map(\.isCurrent), [false, true])
     }
 
+    @MainActor
     func testPGCQueueBuilderMarksCurrentEpisode() throws {
         let season = try pgcSeasonInfo()
         let current = try XCTUnwrap(season.allPlayableEpisodes[1].videoItem(in: season))
@@ -286,6 +304,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(entries[1].title, "2")
     }
 
+    @MainActor
     func testUploaderQueueKeepsSinglePartCurrentVideoAtSourcePosition() {
         let previous = makeVideo(bvid: "BV-previous", aid: 101, title: "上一条", pages: [])
         let current = makeVideo(bvid: "BV-current", aid: 102, title: "当前视频", pages: [])
@@ -314,6 +333,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(entries.firstIndex(where: \.isCurrent), 1)
     }
 
+    @MainActor
     func testUploaderQueueExpandsOnlyCurrentMultiPartVideo() {
         let pages = [
             VideoPage(cid: 21, page: 1, part: "上集", duration: 10, dimension: nil),
@@ -333,6 +353,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(entries.map(\.isCurrent), [false, false, true, false])
     }
 
+    @MainActor
     func testUploaderQueueDeduplicatesPartialAndFullVideoByAID() {
         let partial = makeVideo(bvid: "", aid: 302, title: "列表简版", pages: [])
         let current = makeVideo(bvid: "BV-current", aid: 302, title: "详情完整版", pages: [])
@@ -357,6 +378,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertEqual(session.videos.last?.title, "下一条")
     }
 
+    @MainActor
     func testUploaderQueueResolvesPreviousAndNextVideo() {
         let previous = makeVideo(bvid: "BV-previous", aid: 401, title: "上一条", pages: [])
         let current = makeVideo(bvid: "BV-current", aid: 402, title: "当前视频", pages: [])
@@ -381,6 +403,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertNil(session.video(relativeTo: next, direction: .next))
     }
 
+    @MainActor
     func testOfficialListenerQueuePrependsAndAppendsPaginationWithoutLosingTokens() throws {
         let oldest = makeVideo(bvid: "BV-oldest", aid: 600, title: "更早", pages: [])
         let previous = makeVideo(bvid: "BV-previous", aid: 601, title: "上一条", pages: [])
@@ -442,6 +465,7 @@ final class VideoListenModeTests: XCTestCase {
         XCTAssertNil(session.listenerNextToken)
     }
 
+    @MainActor
     func testQueueCancellationClearsLoadingStateAndAllowsPaginationRetry() throws {
         let current = makeVideo(bvid: "BV-current", aid: 501, title: "当前视频", pages: [])
         let next = makeVideo(bvid: "BV-next", aid: 502, title: "下一条", pages: [])

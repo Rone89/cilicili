@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class DanmakuSettingsTests: XCTestCase {
+    @MainActor
     func testLegacySettingsDefaultToHidingDanmakuInPortrait() throws {
         let data = Data(
             """

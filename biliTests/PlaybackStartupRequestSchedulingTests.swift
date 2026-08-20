@@ -3,6 +3,7 @@ import XCTest
 @testable import bili
 
 final class PlaybackStartupRequestSchedulingTests: XCTestCase {
+    @MainActor
     func testExpectedPlayURLCancellationDoesNotBecomeAPlaybackFailure() {
         XCTAssertTrue(VideoDetailViewModel.isExpectedPlayURLCancellation(CancellationError()))
         XCTAssertTrue(VideoDetailViewModel.isExpectedPlayURLCancellation(URLError(.cancelled)))
@@ -14,6 +15,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertFalse(VideoDetailViewModel.isExpectedPlayURLCancellation(URLError(.timedOut)))
     }
 
+    @MainActor
     func testSchedulerRacesUntilAStartSourceHasEnoughAcceptedSamples() async {
         let scheduler = StartupPlayURLRoutePerformanceStore(
             sampleLimit: 4,
@@ -39,6 +41,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertFalse(decision.usesStaggeredFallback)
     }
 
+    @MainActor
     func testSchedulerStaggersTheSlowerSourceAfterLearning() async {
         let scheduler = StartupPlayURLRoutePerformanceStore(
             sampleLimit: 4,
@@ -70,6 +73,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(decision.fallbackRoute, .webpage)
     }
 
+    @MainActor
     func testSchedulerUsesAProvenWinnerBeforeTheFallbackHasSamples() async {
         let scheduler = StartupPlayURLRoutePerformanceStore(
             sampleLimit: 4,
@@ -93,6 +97,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(decision.fallbackRoute, .webpage)
     }
 
+    @MainActor
     func testSchedulerUsesFullRaceWhenWBIIsUnavailable() async {
         let scheduler = StartupPlayURLRoutePerformanceStore(
             minimumAcceptedSamples: 1,
@@ -116,6 +121,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertFalse(decision.usesStaggeredFallback)
     }
 
+    @MainActor
     func testSchedulerDiagnosticDescribesTheStaggeredRouteOrder() {
         let decision = StartupPlayURLSchedulingDecision(
             primaryRoute: .wbi,
@@ -128,6 +134,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPiliPlusDefersWebpageFallbackUntilWBIFailure() {
         let decision = StartupPlayURLSchedulingDecision(
             primaryRoute: .wbi,
@@ -144,6 +151,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(PiliPlusStylePlayURLSelectionExperiment.webpageHedgeDelayNanoseconds, 0)
     }
 
+    @MainActor
     func testRoutingPlanReleasesWebpageOnlyAfterWBIFailure() {
         let plan = StartupPlayURLRoutingPlan(
             schedulingDecision: StartupPlayURLSchedulingDecision(
@@ -162,6 +170,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertNil(plan.deferredFallbackRoute(forUnacceptableResultFrom: .webpage))
     }
 
+    @MainActor
     func testWebpageOnlyRoutingPlanDoesNotStartWBIOrHedge() {
         let plan = StartupPlayURLRoutingPlan(
             schedulingDecision: .race,
@@ -174,6 +183,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertNil(plan.deferredFallbackRoute(forUnacceptableResultFrom: .wbi))
     }
 
+    @MainActor
     func testPiliPlusUsesWBIFirstWhileSchedulerIsStillLearning() {
         let decision = StartupPlayURLSchedulingDecision.race.preferringWBIForPiliPlus(
             piliPlusStyleEnabled: true,
@@ -185,6 +195,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertTrue(decision.defersWebpageFallbackUntilWBIFailure(piliPlusStyleEnabled: true))
     }
 
+    @MainActor
     func testPiliPlusOverridesLearnedWebpagePreference() {
         let decision = StartupPlayURLSchedulingDecision(
             primaryRoute: .webpage,
@@ -199,6 +210,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertTrue(decision.defersWebpageFallbackUntilWBIFailure(piliPlusStyleEnabled: true))
     }
 
+    @MainActor
     func testPiliPlusKeepsFullRaceWhenWBIIsUnavailable() {
         let decision = StartupPlayURLSchedulingDecision.race.preferringWBIForPiliPlus(
             piliPlusStyleEnabled: true,
@@ -208,6 +220,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertFalse(decision.usesStaggeredFallback)
     }
 
+    @MainActor
     func testNonPiliPlusAndWebpagePrimaryKeepStaggeredFallback() {
         let wbiPrimary = StartupPlayURLSchedulingDecision(
             primaryRoute: .wbi,
@@ -230,6 +243,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPerformanceCopyKeepsStartupSchedulerMessage() {
         var session = PlayerPerformanceSession(id: "BVstartupScheduler")
         session.startupSchedulerMessage = "startupScheduler=adaptive mode=race learning"
@@ -242,6 +256,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertTrue(copy.contains("startupScheduler:\n  startupScheduler=adaptive mode=race learning"))
     }
 
+    @MainActor
     func testStartupSchedulerRetainsEnoughMessagesForWBIRecoveryDiagnostics() {
         XCTAssertGreaterThanOrEqual(
             PlayerPerformanceStore.startupSchedulerDiagnosticPartLimit,
@@ -249,6 +264,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFallbackTrackerKeepsTheTerminalStatus() async {
         let cancelledBeforeStart = StartupPlayURLFallbackTracker()
         await cancelledBeforeStart.markCancelledBeforeStart()
@@ -265,6 +281,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(startedStatus, .started)
     }
 
+    @MainActor
     func testDeferredFallbackTracksSuccessAndWBIFailureSeparately() async {
         let notNeeded = StartupPlayURLFallbackTracker(initialStatus: .deferred)
         await notNeeded.markNotNeeded()
@@ -281,6 +298,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(startedStatus, .startedAfterWBIFailure)
     }
 
+    @MainActor
     func testExpiredRequestLeaseRejectsLateSchedulerFeedback() async {
         let scheduler = StartupPlayURLRoutePerformanceStore(
             minimumAcceptedSamples: 1,
@@ -303,11 +321,13 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertFalse(decision.usesStaggeredFallback)
     }
 
+    @MainActor
     func testPreloadRequestsDoNotRecordSchedulerFeedback() {
         XCTAssertTrue(StartupPlayURLRequestSource.foreground.recordsSchedulerFeedback)
         XCTAssertFalse(StartupPlayURLRequestSource.preload.recordsSchedulerFeedback)
     }
 
+    @MainActor
     func testSharedTaskWaiterCancelsWithoutCancellingUnderlyingRequest() async throws {
         let underlying = Task<Int, Error> {
             try await Task.sleep(for: .milliseconds(80))
@@ -329,6 +349,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(underlyingValue, 42)
     }
 
+    @MainActor
     func testWBIHealthRequiresTwoFailuresBeforeSuppression() async {
         let health = StartupWBIHealthStore(
             failureThreshold: 2,
@@ -356,6 +377,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(statusAfterSecond?.remainingMilliseconds, 29_000)
     }
 
+    @MainActor
     func testWBIHealthSuccessResetsPendingFailureStreak() async {
         let health = StartupWBIHealthStore(
             failureThreshold: 2,
@@ -371,6 +393,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(nextFailure, .observed(consecutiveFailures: 1))
     }
 
+    @MainActor
     func testContentSpecificEmptyPlayURLDoesNotSuppressWBIForOtherVideos() {
         XCTAssertNil(
             BiliAPIClient.startupWBIHealthFailureReason(for: BiliAPIError.emptyPlayURL)
@@ -386,6 +409,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPiliPlusCompatibilityRescueRejectsUnrelatedAPIErrors() {
         XCTAssertTrue(BiliAPIClient.shouldRescuePiliPlusWBI(after: BiliAPIError.emptyPlayURL))
         XCTAssertFalse(BiliAPIClient.shouldRescuePiliPlusWBI(after: BiliAPIError.emptyData))
@@ -396,6 +420,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testWBIRouteHintIsScopedAndExpires() async {
         let store = StartupWBIRouteHintStore(duration: 10)
         let key = StartupWBIRouteHintKey(
@@ -454,6 +479,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertTrue(recoveredPlan.shouldRaceWBI)
     }
 
+    @MainActor
     func testWBIRouteHintCanClearOneVideoWithoutAffectingAnother() async {
         let store = StartupWBIRouteHintStore(duration: 10)
         let first = StartupWBIRouteHintKey(
@@ -481,6 +507,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(secondHint, .compatibilityWBI)
     }
 
+    @MainActor
     func testPiliPlusSampleGroupingSeparatesSchedulerVersions() {
         XCTAssertEqual(
             PiliPlusStylePlayURLSelectionExperiment.sampleGroupStrategy(
@@ -595,6 +622,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(currentStrategy.title, "取流策略：V18")
     }
 
+    @MainActor
     func testPiliPlusWebpageHedgeDiagnosticIncludesCancellationPhase() {
         let message = BiliAPIClient.piliPlusWebpageHedgeDiagnosticMessage(
             event: "webpageHedgeCancelled",
@@ -611,6 +639,7 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertTrue(message.contains("request=22ms"))
     }
 
+    @MainActor
     func testPiliPlusWebpageStreamDiagnosticIncludesSavedBytes() {
         let message = BiliAPIClient.piliPlusWebpageStreamDiagnosticMessage(
             mode: "incremental",

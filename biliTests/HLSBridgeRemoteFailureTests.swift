@@ -6,6 +6,7 @@ import QuartzCore
 @testable import bili
 
 final class HLSBridgeRemoteFailureTests: XCTestCase {
+    @MainActor
     func testHTTPStatusReasonMatrix() {
         assertHTTPStatus(
             401,
@@ -65,6 +66,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testURLErrorReasonMatrix() {
         let cancelled = HLSBridgeRemoteFailure.reason(for: URLError(.cancelled))
         XCTAssertEqual(cancelled.category, .cancelled)
@@ -79,6 +81,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         XCTAssertEqual(timedOut.proxyHTTPStatus.statusCode, 504)
     }
 
+    @MainActor
     func testUnknownErrorIsRecoverableByRebuild() {
         let reason = HLSBridgeRemoteFailure.reason(for: NSError(
             domain: "HLSBridgeRemoteFailureTests",
@@ -93,6 +96,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         XCTAssertEqual(reason.proxyHTTPStatus.statusCode, 502)
     }
 
+    @MainActor
     func testAVFoundationDecodeFailuresSkipSameSourceRecovery() {
         let decoderNotFound = HLSBridgeRemoteFailure.reason(for: NSError(
             domain: AVFoundationErrorDomain,
@@ -114,6 +118,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         XCTAssertFalse(unsupportedFormat.allowsSameSourceRecovery)
     }
 
+    @MainActor
     func testDecoderCategoriesPreferVariantFallbackOverSameSourceRecovery() {
         for category in [
             HLSBridgeRemoteFailureCategory.codecUnsupported,
@@ -155,6 +160,7 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
 }
 
 final class HLSRemoteRangeResponseValidatorTests: XCTestCase {
+    @MainActor
     func testRejectsCDNResponseThatIgnoresNonZeroRange() throws {
         let url = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -177,6 +183,7 @@ final class HLSRemoteRangeResponseValidatorTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testAllowsPartialContentRangeResponse() throws {
         let url = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -193,6 +200,7 @@ final class HLSRemoteRangeResponseValidatorTests: XCTestCase {
         ))
     }
 
+    @MainActor
     func testRejectsPartialContentWithoutContentRange() throws {
         let url = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -216,6 +224,7 @@ final class HLSRemoteRangeResponseValidatorTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testRejectsPartialContentWithMismatchedRange() throws {
         let url = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -241,6 +250,7 @@ final class HLSRemoteRangeResponseValidatorTests: XCTestCase {
 }
 
 final class SIDXParserTests: XCTestCase {
+    @MainActor
     func testParsesSegmentRangesDurationsAndStartTimes() throws {
         let data = makeSIDX(
             timescale: 1_000,
@@ -304,6 +314,7 @@ final class SIDXParserTests: XCTestCase {
 }
 
 final class BiliHLSManifestBuilderHeaderTests: XCTestCase {
+    @MainActor
     func testPlaybackHeadersIncludeCookieWhenProvided() {
         let headers = BiliHLSManifestBuilder.httpHeaders(
             referer: "https://www.bilibili.com/video/BV1xx",
@@ -317,6 +328,7 @@ final class BiliHLSManifestBuilderHeaderTests: XCTestCase {
 }
 
 final class HLSPlaylistAttributeFormatterTests: XCTestCase {
+    @MainActor
     func testFormatsFrameRateAttribute() {
         XCTAssertEqual(HLSPlaylistAttributeFormatter.frameRateAttribute(for: 60), ",FRAME-RATE=60")
         XCTAssertEqual(HLSPlaylistAttributeFormatter.frameRateAttribute(for: 29.97003), ",FRAME-RATE=29.97")
@@ -326,6 +338,7 @@ final class HLSPlaylistAttributeFormatterTests: XCTestCase {
 }
 
 final class HLSBridgePlaylistRenderingTests: XCTestCase {
+    @MainActor
     func testRendersMasterMediaPlaylistsAndRangeRoutes() throws {
         let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:49152"))
         let videoURL = try XCTUnwrap(URL(string: "https://upos.example.test/video-hevc.m4s"))
@@ -464,6 +477,7 @@ final class HLSBridgePlaylistRenderingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testRendersNativeHDRVideoOnlyPlaylistWithoutAudioGroup() throws {
         let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:50123"))
         let videoURL = try XCTUnwrap(URL(string: "https://upos.example.test/video-dv.m4s"))
@@ -537,6 +551,7 @@ final class HLSBridgePlaylistRenderingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testRendersAudioOnlyPlaylistWithoutVideoRoutes() throws {
         let baseURL = try XCTUnwrap(URL(string: "http://127.0.0.1:50124"))
         let audioURL = try XCTUnwrap(URL(string: "https://upos.example.test/audio-aac.m4s"))
@@ -649,6 +664,7 @@ final class HLSBridgePlaylistRenderingTests: XCTestCase {
 }
 
 final class HLSLoopbackEndpointPolicyTests: XCTestCase {
+    @MainActor
     func testAllowsOnlyLoopbackHostPortEndpoints() throws {
         XCTAssertTrue(HLSLoopbackEndpointPolicy.allows(.hostPort(
             host: .ipv4(try XCTUnwrap(IPv4Address("127.0.0.1"))),
@@ -668,6 +684,7 @@ final class HLSLoopbackEndpointPolicyTests: XCTestCase {
         )))
     }
 
+    @MainActor
     func testListenerParametersRequireIPv4LoopbackEndpoint() throws {
         let parameters = try HLSLoopbackEndpointPolicy.tcpListenerParameters()
         let endpoint = try XCTUnwrap(parameters.requiredLocalEndpoint)
@@ -680,6 +697,7 @@ final class HLSLoopbackEndpointPolicyTests: XCTestCase {
     }
 
 #if DEBUG
+    @MainActor
     func testLocalLiveProxyUsesLoopbackEndpointPolicy() throws {
         let endpoint = try XCTUnwrap(LocalLiveHLSProxyTesting.listenerRequiredLocalEndpoint())
 
@@ -702,6 +720,7 @@ final class HLSLoopbackEndpointPolicyTests: XCTestCase {
 
 @MainActor
 final class PlayerPerformanceDiagnosticsPrivacyTests: XCTestCase {
+    @MainActor
     func testCopyFormatterRedactsFailureHostToRegistrableSuffix() {
         XCTAssertEqual(
             PlayerPerformanceOverlayDiagnosticsCopyTextFormatter.redactedHost("upos-sz-mirror08c.bilivideo.com"),
@@ -717,6 +736,7 @@ final class PlayerPerformanceDiagnosticsPrivacyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCopyFormatterRedactsSourceHosts() {
         XCTAssertEqual(
             PlayerPerformanceOverlayDiagnosticsCopyTextFormatter.redactedSourceHosts(
@@ -734,6 +754,7 @@ final class PlayerPerformanceDiagnosticsPrivacyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFailureActionHintNamesDecodeFallback() {
         let reason = HLSBridgeFailureReason(
             layer: .avPlayerItem,
@@ -750,6 +771,7 @@ final class PlayerPerformanceDiagnosticsPrivacyTests: XCTestCase {
         XCTAssertTrue(hint.contains("SDR"))
     }
 
+    @MainActor
     func testEngineDiagnosticsCompactDescriptionIncludesPlaybackPipeline() {
         let diagnostics = PlayerEngineDiagnostics(
             engineName: "AVPlayer",
@@ -787,6 +809,7 @@ final class PlayerPerformanceDiagnosticsPrivacyTests: XCTestCase {
 }
 
 final class HLSProxyFailureStoreTests: XCTestCase {
+    @MainActor
     func testStoresRecentRemoteFailureReason() throws {
         let store = HLSProxyFailureStore()
         let url = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
@@ -804,6 +827,7 @@ final class HLSProxyFailureStoreTests: XCTestCase {
         XCTAssertEqual(reason.rangeDescription, "0-99")
     }
 
+    @MainActor
     func testIgnoresStaleRemoteFailureReason() {
         let store = HLSProxyFailureStore()
 
@@ -817,6 +841,7 @@ final class HLSProxyFailureStoreTests: XCTestCase {
 }
 
 final class HLSProxyHTTPResponseBuilderTests: XCTestCase {
+    @MainActor
     func testRequestRangeParserSupportsOpenEndedAndSuffixRanges() {
         XCTAssertEqual(
             HTTPByteRange(httpHeaderValue: "bytes=1000-")?.clamped(toLength: 1_500),
@@ -834,6 +859,7 @@ final class HLSProxyHTTPResponseBuilderTests: XCTestCase {
         XCTAssertNil(HTTPByteRange(rawValue: "-500"))
     }
 
+    @MainActor
     func testBuildsPartialContentResponseForMediaRange() throws {
         let request = try XCTUnwrap(HLSProxyRequest(data: Data("""
         GET /media/video/segment-1.m4s HTTP/1.1\r
@@ -863,6 +889,7 @@ final class HLSProxyHTTPResponseBuilderTests: XCTestCase {
         XCTAssertTrue(headerText.hasSuffix("\r\n\r\n"))
     }
 
+    @MainActor
     func testBuildsNoCachePlaylistResponse() throws {
         let request = try XCTUnwrap(HLSProxyRequest(data: Data("""
         HEAD /master.m3u8 HTTP/1.1\r
@@ -886,6 +913,7 @@ final class HLSProxyHTTPResponseBuilderTests: XCTestCase {
         XCTAssertEqual(response.headers["Connection"], "keep-alive")
     }
 
+    @MainActor
     func testBuildsPlainTextErrorResponse() throws {
         let error = HLSProxyHTTPResponseBuilder.errorResponse(statusCode: 410, reason: "Gone")
 
@@ -899,6 +927,7 @@ final class HLSProxyHTTPResponseBuilderTests: XCTestCase {
 
 #if DEBUG
 final class LocalHLSProxyServerIntegrationTests: XCTestCase {
+    @MainActor
     func testParallelBridgesUseDistinctSystemAssignedPorts() async throws {
         let videoURL = try XCTUnwrap(URL(string: "https://upos.example.test/video.m4s"))
         let audioURL = try XCTUnwrap(URL(string: "https://upos.example.test/audio.m4s"))
@@ -913,6 +942,7 @@ final class LocalHLSProxyServerIntegrationTests: XCTestCase {
         XCTAssertEqual(Set(ports).count, bridges.count)
     }
 
+    @MainActor
     func testServesLocalPlaylistsAndTranslatesSegmentRangeRequests() async throws {
         let videoData = testData(byteCount: 512)
         let audioData = testData(byteCount: 128)
@@ -967,6 +997,7 @@ final class LocalHLSProxyServerIntegrationTests: XCTestCase {
         XCTAssertEqual(videoRequest.headers["cookie"], "SESSDATA=test")
     }
 
+    @MainActor
     func testFallsBackToBackupURLWhenPrimarySegmentRequestFails() async throws {
         let primaryData = testData(byteCount: 128, seed: 3)
         let fallbackData = testData(byteCount: 128, seed: 7)
@@ -1005,6 +1036,7 @@ final class LocalHLSProxyServerIntegrationTests: XCTestCase {
         XCTAssertTrue(requests.contains { $0.path == "/video-backup.m4s" && $0.rangeHeader == "bytes=40-49" })
     }
 
+    @MainActor
     func testStartupHedgeUsesBackupWhenPrimaryFirstChunkIsSlow() async throws {
         let byteCount = 640 * 1024
         let primaryData = testData(byteCount: byteCount, seed: 13)
@@ -1205,13 +1237,12 @@ private final class TestHTTPRangeServer: @unchecked Sendable {
     func start() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
-                var didResume = false
+                let continuationGate = ContinuationGate()
                 self.listener.stateUpdateHandler = { [weak self] state in
                     guard let self else { return }
                     switch state {
                     case .ready:
-                        guard !didResume else { return }
-                        didResume = true
+                        guard continuationGate.claim() else { return }
                         if let port = self.listener.port,
                            let url = URL(string: "http://127.0.0.1:\(port.rawValue)") {
                             self.baseURL = url
@@ -1220,8 +1251,7 @@ private final class TestHTTPRangeServer: @unchecked Sendable {
                             continuation.resume(throwing: TestHTTPRangeServerError.missingPort)
                         }
                     case let .failed(error):
-                        guard !didResume else { return }
-                        didResume = true
+                        guard continuationGate.claim() else { return }
                         continuation.resume(throwing: error)
                     case .cancelled:
                         break
@@ -1361,8 +1391,9 @@ private final class TestHTTPRangeServer: @unchecked Sendable {
             .joined(separator: "\r\n") + "\r\n\r\n"
         var response = Data(headerText.utf8)
         response.append(body)
-        let sendResponse = {
-            connection.send(content: response, completion: .contentProcessed { _ in
+        let responseData = response
+        let sendResponse: @Sendable () -> Void = {
+            connection.send(content: responseData, completion: .contentProcessed { _ in
                 connection.cancel()
             })
         }
@@ -1378,6 +1409,19 @@ private final class TestHTTPRangeServer: @unchecked Sendable {
 
     private enum TestHTTPRangeServerError: Error {
         case missingPort
+    }
+
+    private final class ContinuationGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isClaimed = false
+
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !isClaimed else { return false }
+            isClaimed = true
+            return true
+        }
     }
 }
 
@@ -1405,6 +1449,7 @@ private struct TestHTTPRangeRequest {
 #endif
 
 final class HLSVideoRenditionPlannerTests: XCTestCase {
+    @MainActor
     func testAutoAddsSameQualityH264FallbackForHEVCStartup() throws {
         let data = try playURLDataWithHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)
@@ -1423,6 +1468,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertEqual(renditions.first?.videoURL.absoluteString, "https://example.com/video-80-avc.m4s")
     }
 
+    @MainActor
     func testForceHEVCKeepsH264OutOfAlternateRenditions() throws {
         let data = try playURLDataWithHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .forceHEVC).first)
@@ -1438,6 +1484,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertTrue(renditions.isEmpty)
     }
 
+    @MainActor
     func testDisabledCodecsStayOutOfPlayableVariants() throws {
         let data = try playURLDataWithHEVCAndH264()
         let preference = VideoCodecPreference(codecOrder: [.av1])
@@ -1450,6 +1497,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertFalse(variants.contains(where: \.isPlayable))
     }
 
+    @MainActor
     func testCodecFallbackVariantKeepsQualityAndAudioButSwapsVideoCodec() throws {
         let data = try playURLDataWithHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)
@@ -1471,6 +1519,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertTrue(fallback.isPlayable)
     }
 
+    @MainActor
     func testProgressiveFallbackVariantKeepsQualityAndUsesSingleStream() throws {
         let data = try playURLDataWithHEVCAndH264AndProgressive()
         let startup = try XCTUnwrap(
@@ -1496,6 +1545,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertNotEqual(fallback.id, startup.id)
     }
 
+    @MainActor
     func testProgressiveFallbackContextNamesSingleStreamSwitch() throws {
         let data = try playURLDataWithHEVCAndH264AndProgressive()
         let startup = try XCTUnwrap(
@@ -1525,6 +1575,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertTrue(context.logDescription.contains("toCodec=Progressive"))
     }
 
+    @MainActor
     func testSDRCodecFallbackContextNamesCodecSwitch() throws {
         let data = try playURLDataWithHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)
@@ -1549,6 +1600,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertTrue(context.logDescription.contains("toCodec=H.264"))
     }
 
+    @MainActor
     func testHDRCodecFallbackIsOptInForRecoveryOnly() throws {
         let data = try playURLDataWithHDRHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)
@@ -1577,6 +1629,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertEqual(recoveryRenditions.first?.videoURL.absoluteString, "https://example.com/video-125-avc.m4s")
     }
 
+    @MainActor
     func testHDRCodecFallbackVariantKeepsQualityAndAudioButSwapsVideoCodec() throws {
         let data = try playURLDataWithHDRHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)
@@ -1600,6 +1653,7 @@ final class HLSVideoRenditionPlannerTests: XCTestCase {
         XCTAssertNotEqual(fallback.id, startup.id)
     }
 
+    @MainActor
     func testHDRCodecFallbackContextUsesSDRCodecTarget() throws {
         let data = try playURLDataWithHDRHEVCAndH264()
         let startup = try XCTUnwrap(data.playVariants(cdnPreference: .automatic, codecPreference: .auto).first)

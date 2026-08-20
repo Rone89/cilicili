@@ -3,8 +3,8 @@ import XCTest
 
 @testable import bili
 
-@MainActor
 final class BiliAPIClientRequestContractTests: XCTestCase {
+    @MainActor
     func testSearchSuggestBuildsStableEncodedQueryForwardsHeadersAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -60,6 +60,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSearchHotSearchPropagatesAPIErrorResponse() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -102,6 +103,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/web-interface/wbi/search/square")
     }
 
+    @MainActor
     func testMainCommentsBuildsRequestAndDecodesPaginationAndComments() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -130,7 +132,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let url = try XCTUnwrap(request.url)
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/main")
-        var query = queryValues(in: components)
+        var query = Self.queryValues(in: components)
         let pagination = try XCTUnwrap(query.removeValue(forKey: "pagination_str"))
         let paginationObject = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(pagination.utf8)) as? [String: String]
@@ -147,6 +149,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCommentRepliesBuildsPagingAndTimeSortRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -181,7 +184,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/reply")
         XCTAssertEqual(
-            queryValues(in: components),
+            Self.queryValues(in: components),
             [
                 "oid": "456",
                 "type": "11",
@@ -193,6 +196,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCommentDialogBuildsRequestAndDecodesResponse() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -221,7 +225,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/dialog/cursor")
         XCTAssertEqual(
-            queryValues(in: components),
+            Self.queryValues(in: components),
             [
                 "oid": "321",
                 "type": "1",
@@ -232,6 +236,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCommentDialogPropagatesAPIError() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -265,6 +270,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/v2/reply/dialog/cursor")
     }
 
+    @MainActor
     func testDynamicFeedBuildsFirstPageAndOffsetPaginationRequests() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -314,12 +320,12 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                 guard let components = URLComponents(url: $0.url!, resolvingAgainstBaseURL: false) else {
                     return false
                 }
-                return queryValues(in: components)["offset"] == nil
+                return Self.queryValues(in: components)["offset"] == nil
             })
         )
         let firstQuery = try XCTUnwrap(URLComponents(url: firstRequest.url!, resolvingAgainstBaseURL: false))
         XCTAssertEqual(
-            queryValues(in: firstQuery),
+            Self.queryValues(in: firstQuery),
             [
                 "features":
                     "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
@@ -333,13 +339,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                 guard let components = URLComponents(url: $0.url!, resolvingAgainstBaseURL: false) else {
                     return false
                 }
-                return queryValues(in: components)["offset"] == "next-offset"
+                return Self.queryValues(in: components)["offset"] == "next-offset"
             })
         )
         let secondQuery = try XCTUnwrap(URLComponents(url: secondRequest.url!, resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: secondQuery)["offset"], "next-offset")
+        XCTAssertEqual(Self.queryValues(in: secondQuery)["offset"], "next-offset")
     }
 
+    @MainActor
     func testDynamicPortalBuildsRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -366,12 +373,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.url?.path, "/x/polymer/web-dynamic/v1/portal")
         let components = try XCTUnwrap(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
         XCTAssertEqual(
-            queryValues(in: components),
+            Self.queryValues(in: components),
             ["up_list_more": "1", "web_location": "333.1365"]
         )
         XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
     }
 
+    @MainActor
     func testAccountHistoryBuildsFirstPageAndCursorPaginationRequests() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -381,7 +389,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         RequestContractURLProtocol.install { request in
             recorder.record(request)
             requestExpectation.fulfill()
-            let query = self.queryValues(for: request)
+            let query = Self.queryValues(for: request)
             if query["max"] == "0" {
                 return Self.response(
                     for: request,
@@ -409,7 +417,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let firstQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(recorder.requests[0].url), resolvingAgainstBaseURL: false))
         XCTAssertEqual(
-            queryValues(in: firstQuery),
+            Self.queryValues(in: firstQuery),
             [
                 "type": "archive",
                 "ps": "1",
@@ -419,7 +427,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let secondQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(recorder.requests[1].url), resolvingAgainstBaseURL: false))
         XCTAssertEqual(
-            queryValues(in: secondQuery),
+            Self.queryValues(in: secondQuery),
             [
                 "type": "archive",
                 "ps": "1",
@@ -430,6 +438,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             cookieValues(in: recorder.requests[0].value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
     }
 
+    @MainActor
     func testAccountFavoritesBuildFolderListAndDeduplicateAcrossFolders() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -448,7 +457,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                         """
                 )
             case "/x/v3/fav/resource/list":
-                let folderID = self.queryValues(for: request)["media_id"]
+                let folderID = Self.queryValues(for: request)["media_id"]
                 let body =
                     folderID == "7"
                     ? """
@@ -473,11 +482,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.count, 3)
         let folderQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(recorder.requests[0].url), resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: folderQuery), ["up_mid": "1001", "type": "2"])
+        XCTAssertEqual(Self.queryValues(in: folderQuery), ["up_mid": "1001", "type": "2"])
         let firstFolderQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(recorder.requests[1].url), resolvingAgainstBaseURL: false))
         XCTAssertEqual(
-            queryValues(in: firstFolderQuery),
+            Self.queryValues(in: firstFolderQuery),
             [
                 "media_id": "7",
                 "pn": "2",
@@ -493,6 +502,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(favoriteCookieValues["DedeUserID"], "1001")
     }
 
+    @MainActor
     func testAccountFavoritesReturnsSuccessfulEntriesWhenAnotherFolderFails() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -509,7 +519,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                         """
                 )
             case "/x/v3/fav/resource/list":
-                let folderID = self.queryValues(for: request)["media_id"]
+                let folderID = Self.queryValues(for: request)["media_id"]
                 if folderID == "7" {
                     return Self.response(
                         for: request,
@@ -535,6 +545,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(entries.map(\.bvid), ["BVsuccess"])
     }
 
+    @MainActor
     func testFavoriteFolderPagePropagatesAPIErrorAndBuildsRequest() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -567,11 +578,12 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await fulfillment(of: [requestExpectation], timeout: 2)
         let request = try XCTUnwrap(recorder.request)
         let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: components)["media_id"], "12")
-        XCTAssertEqual(queryValues(in: components)["pn"], "3")
-        XCTAssertEqual(queryValues(in: components)["ps"], "15")
+        XCTAssertEqual(Self.queryValues(in: components)["media_id"], "12")
+        XCTAssertEqual(Self.queryValues(in: components)["pn"], "3")
+        XCTAssertEqual(Self.queryValues(in: components)["ps"], "15")
     }
 
+    @MainActor
     func testAccountHistoryRequiresAuthenticatedHistoryAccount() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -594,6 +606,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
+    @MainActor
     func testUploaderDynamicFeedBuildsSignedRequestWithAuthenticatedCookie() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -637,7 +650,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let uploaderRequest = try XCTUnwrap(requests.last)
         XCTAssertEqual(uploaderRequest.url?.path, "/x/polymer/web-dynamic/v1/feed/space")
         let components = try XCTUnwrap(URLComponents(url: uploaderRequest.url!, resolvingAgainstBaseURL: false))
-        let query = queryValues(in: components)
+        let query = Self.queryValues(in: components)
         XCTAssertEqual(query["host_mid"], "2002")
         XCTAssertEqual(query["offset"], "space-cursor")
         XCTAssertEqual(query["platform"], "web")
@@ -655,6 +668,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(uploaderCookies["DedeUserID"], "1001")
     }
 
+    @MainActor
     func testDynamicFeedPropagatesAPIError() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -688,6 +702,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-dynamic/v1/feed/all")
     }
 
+    @MainActor
     func testVideoInteractionStateBuildsRelationRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -717,24 +732,21 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/archive/relation")
         let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: components), ["aid": "123", "bvid": "BV1test"])
+        XCTAssertEqual(Self.queryValues(in: components), ["aid": "123", "bvid": "BV1test"])
     }
 
+    @MainActor
     func testVideoLikeBuildsCSRFFormAndRetriesIdempotently() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
         let requestExpectation = expectation(description: "like requests captured")
         requestExpectation.expectedFulfillmentCount = 2
         let recorder = RequestContractRecorder()
-        let attemptLock = NSLock()
-        var attempts = 0
+        let attempts = RequestContractCounter()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
             requestExpectation.fulfill()
-            attemptLock.lock()
-            attempts += 1
-            let currentAttempt = attempts
-            attemptLock.unlock()
+            let currentAttempt = attempts.increment()
             if currentAttempt == 1 {
                 throw URLError(.timedOut)
             }
@@ -767,6 +779,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testVideoCoinValidatesMultiplyAndBuildsForm() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -810,6 +823,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             ])
     }
 
+    @MainActor
     func testFavoriteFoldersAndMutationBuildExpectedRequests() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -842,11 +856,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(requests[0].url?.path, "/x/v3/fav/folder/created/list-all")
         let folderQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(requests[0].url), resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: folderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
+        XCTAssertEqual(Self.queryValues(in: folderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
         XCTAssertEqual(requests[1].url?.path, "/x/v3/fav/folder/created/list-all")
         let repeatedFolderQuery = try XCTUnwrap(
             URLComponents(url: try XCTUnwrap(requests[1].url), resolvingAgainstBaseURL: false))
-        XCTAssertEqual(queryValues(in: repeatedFolderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
+        XCTAssertEqual(Self.queryValues(in: repeatedFolderQuery), ["up_mid": "1001", "type": "2", "rid": "321"])
         XCTAssertEqual(
             formValues(in: requests[2]),
             [
@@ -873,6 +887,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             ])
     }
 
+    @MainActor
     func testUploaderFollowWebMutationBuildsFormAndPropagatesAPIError() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -915,6 +930,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             ])
     }
 
+    @MainActor
     func testUploaderProfileRejectsInvalidMIDWithoutRequest() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -942,12 +958,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
+    @MainActor
     func testUploaderProfileMergesVisibleSourcesAndSurvivesPartialFailures() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
-            let query = self.queryValues(for: request)
+            let query = Self.queryValues(for: request)
             switch (request.url?.host, request.url?.path) {
             case ("api.bilibili.com", "/x/web-interface/card"):
                 return Self.response(
@@ -1007,6 +1024,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(recorder.requests.contains { $0.url?.path == "/x/v2/space" })
     }
 
+    @MainActor
     func testUploaderProfileFallsBackToAppAccessKeyForViewerRelation() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
@@ -1024,7 +1042,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                     body: "{\"code\":0,\"data\":{\"card\":{\"mid\":123,\"name\":\"测试UP\"}}}"
                 )
             case ("api.bilibili.com", "/x/relation"):
-                let query = self.queryValues(for: request)
+                let query = Self.queryValues(for: request)
                 if query["access_key"] == "app-access-key" {
                     return Self.response(for: request, body: "{\"code\":0,\"data\":{\"attribute\":2}}")
                 }
@@ -1046,10 +1064,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
 
         XCTAssertEqual(profile.following, true)
         let relationRequests = recorder.requests.filter { $0.url?.path == "/x/relation" }
-        XCTAssertTrue(relationRequests.contains { self.queryValues(for: $0)["access_key"] == nil })
-        XCTAssertTrue(relationRequests.contains { self.queryValues(for: $0)["access_key"] == "app-access-key" })
+        XCTAssertTrue(relationRequests.contains { Self.queryValues(for: $0)["access_key"] == nil })
+        XCTAssertTrue(relationRequests.contains { Self.queryValues(for: $0)["access_key"] == "app-access-key" })
     }
 
+    @MainActor
     func testUploaderWebVideoPageBuildsSignedRequestAndDecodesPagination() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1087,7 +1106,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
 
         let request = try XCTUnwrap(recorder.requests.last)
         XCTAssertEqual(request.url?.path, "/x/space/wbi/arc/search")
-        let query = queryValues(for: request)
+        let query = Self.queryValues(for: request)
         XCTAssertEqual(query["mid"], "321")
         XCTAssertEqual(query["pn"], "2")
         XCTAssertEqual(query["ps"], "30")
@@ -1099,6 +1118,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNotNil(query["w_rid"])
     }
 
+    @MainActor
     func testUploaderVideoPageFallsBackToSignedAppArchiveWithCursor() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1143,7 +1163,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let appRequest = try XCTUnwrap(
             recorder.requests.first { $0.url?.path == "/x/v2/space/archive/cursor" }
         )
-        let query = queryValues(for: appRequest)
+        let query = Self.queryValues(for: appRequest)
         XCTAssertEqual(appRequest.url?.host, "app.bilibili.com")
         XCTAssertEqual(query["vmid"], "321")
         XCTAssertEqual(query["aid"], "123")
@@ -1154,6 +1174,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNotNil(query["sign"])
     }
 
+    @MainActor
     func testUploaderSeasonSeriesBuildsRequestAndDecodesItems() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1177,11 +1198,12 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/polymer/web-space/seasons_series_list")
         XCTAssertEqual(
-            queryValues(for: request),
+            Self.queryValues(for: request),
             ["mid": "321", "page_num": "2", "page_size": "5"]
         )
     }
 
+    @MainActor
     func testUploaderSeasonAndSeriesArchivePagesPreservePathsSortAndPagination() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1239,7 +1261,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             recorder.requests.first { $0.url?.path == "/x/polymer/web-space/seasons_archives_list" }
         )
         XCTAssertEqual(
-            queryValues(for: seasonRequest),
+            Self.queryValues(for: seasonRequest),
             [
                 "mid": "321",
                 "season_id": "11",
@@ -1253,7 +1275,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             recorder.requests.first { $0.url?.path == "/x/series/archives" }
         )
         XCTAssertEqual(
-            queryValues(for: seriesRequest),
+            Self.queryValues(for: seriesRequest),
             [
                 "mid": "321",
                 "series_id": "12",
@@ -1265,6 +1287,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testUploaderSeasonSeriesRejectsInvalidMIDAndMissingPayload() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -1312,6 +1335,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-space/seasons_series_list")
     }
 
+    @MainActor
     func testWebAndAppQRCodeLoginBuildExpectedRequests() async throws {
         let requestExpectation = expectation(description: "QR login requests captured")
         requestExpectation.expectedFulfillmentCount = 4
@@ -1366,14 +1390,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             recorder.requests.first { $0.url?.path == "/x/passport-login/web/qrcode/poll" }
         )
         XCTAssertEqual(webPollRequest.httpMethod, "GET")
-        XCTAssertEqual(queryValues(for: webPollRequest)["qrcode_key"], "web-key")
+        XCTAssertEqual(Self.queryValues(for: webPollRequest)["qrcode_key"], "web-key")
 
         for path in [
             "/x/passport-tv-login/qrcode/auth_code",
             "/x/passport-tv-login/qrcode/poll",
         ] {
             let request = try XCTUnwrap(recorder.requests.first { $0.url?.path == path })
-            let values = queryValues(for: request)
+            let values = Self.queryValues(for: request)
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(
                 request.value(forHTTPHeaderField: "Content-Type"), "application/x-www-form-urlencoded; charset=utf-8")
@@ -1385,13 +1409,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let appQRRequest = try XCTUnwrap(
             recorder.requests.first { $0.url?.path == "/x/passport-tv-login/qrcode/auth_code" }
         )
-        XCTAssertEqual(queryValues(for: appQRRequest)["local_id"], "0")
+        XCTAssertEqual(Self.queryValues(for: appQRRequest)["local_id"], "0")
         let appPollRequest = try XCTUnwrap(
             recorder.requests.first { $0.url?.path == "/x/passport-tv-login/qrcode/poll" }
         )
-        XCTAssertEqual(queryValues(for: appPollRequest)["auth_code"], "app-key")
+        XCTAssertEqual(Self.queryValues(for: appPollRequest)["auth_code"], "app-key")
     }
 
+    @MainActor
     func testAppSMSCodeBuildsSignedFormRequest() async throws {
         let requestExpectation = expectation(description: "SMS request captured")
         let recorder = RequestContractRecorder()
@@ -1426,6 +1451,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertFalse((values["ts"] ?? "").isEmpty)
     }
 
+    @MainActor
     func testFetchNavUserCoalescesConcurrentRequests() async throws {
         let firstRequestExpectation = expectation(description: "first nav request captured")
         let responseRelease = DispatchSemaphore(value: 0)
@@ -1456,6 +1482,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
     }
 
+    @MainActor
     func testFetchWBIKeysCoalescesConcurrentRequests() async throws {
         let firstRequestExpectation = expectation(description: "first WBI request captured")
         let responseRelease = DispatchSemaphore(value: 0)
@@ -1490,6 +1517,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
     }
 
+    @MainActor
     func testFetchPgcSeasonInfoPrefersEpisodeThenFallsBackToSeason() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -1522,7 +1550,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
         let requestsByParameter = Dictionary(
             uniqueKeysWithValues: requests.compactMap { request in
-                let query = queryValues(for: request)
+                let query = Self.queryValues(for: request)
                 if let epID = query["ep_id"] {
                     return ("ep_id", (epID, request))
                 }
@@ -1544,6 +1572,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchPgcPlayURLBuildsSignedTargetQualityRequestAndDecodesDASH() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1594,7 +1623,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(
             recorder.requests.first(where: { $0.url?.path == "/pgc/player/web/v2/playurl" })
         )
-        let query = queryValues(for: request)
+        let query = Self.queryValues(for: request)
         XCTAssertEqual(query["bvid"], "BV1PGCtest")
         XCTAssertEqual(query["cid"], "24680")
         XCTAssertEqual(query["season_id"], "120")
@@ -1611,6 +1640,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchPgcPlayURLPropagatesMissingPayload() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1662,6 +1692,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchPlayURLUsesPreferredQualityBuildsSignedRequestAndDecodesDASH() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1710,7 +1741,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(
             recorder.requests.first(where: { $0.url?.path == "/x/player/wbi/playurl" })
         )
-        let query = queryValues(for: request)
+        let query = Self.queryValues(for: request)
         XCTAssertEqual(query["bvid"], "BV1videoContract")
         XCTAssertEqual(query["cid"], "24680")
         XCTAssertEqual(query["qn"], "80")
@@ -1720,6 +1751,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNotNil(query["wts"])
     }
 
+    @MainActor
     func testFetchPlayURLReusesMemoryCacheForSameKey() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1760,6 +1792,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchPlayURLMergesConcurrentRequestsForSameKey() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1803,6 +1836,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchPlayURLDoesNotCoalesceDifferentPreferredQualityKeys() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let defaults = UserDefaults.standard
@@ -1854,6 +1888,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchWebPagePlayInfoUsesInjectedIncrementalJSON() async throws {
         let playInfoJSON = Self.playableDASHResponse(quality: 80)
         let api = try makeAPI(
@@ -1880,6 +1915,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(data.dash?.video?.first?.id, 80)
     }
 
+    @MainActor
     func testStartupRaceWaitsForWBIFailureBeforeReturningWebpageFallback() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let wbiStarted = expectation(description: "WBI request started")
@@ -1959,6 +1995,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchWebPagePlayInfoRejectsNonzeroStreamWithoutValidFullPage() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(for: request, body: "<html>no playinfo</html>")
@@ -1993,6 +2030,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testFetchWebPagePlayInfoRejectsZeroByteStreamAndFullPage() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(for: request, data: Data())
@@ -2027,6 +2065,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testFetchWebPagePlayInfoFallsBackToFullPageAfterStreamError() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -2057,6 +2096,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=session-value")
     }
 
+    @MainActor
     func testFetchPopularVideosBuildsPagedRequestAndDecodesItems() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let requestExpectation = expectation(description: "popular videos request captured")
@@ -2079,9 +2119,10 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(videos.map(\.bvid), ["BV1popular"])
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/popular")
-        XCTAssertEqual(queryValues(for: request), ["pn": "3", "ps": "20"])
+        XCTAssertEqual(Self.queryValues(for: request), ["pn": "3", "ps": "20"])
     }
 
+    @MainActor
     func testFetchVideoDetailBVIDCoalescesConcurrentRequests() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
@@ -2120,13 +2161,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let requests = recorder.requests.filter { $0.url?.path == "/x/web-interface/view" }
         XCTAssertEqual(requests.count, 1)
         let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(queryValues(for: request), ["bvid": "BV1detail"])
+        XCTAssertEqual(Self.queryValues(for: request), ["bvid": "BV1detail"])
         XCTAssertEqual(
             cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"],
             "session-value"
         )
     }
 
+    @MainActor
     func testFetchVideoDetailAIDBuildsRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let requestExpectation = expectation(description: "AID video detail request captured")
@@ -2149,9 +2191,10 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(detail.bvid, "BV1aid")
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/view")
-        XCTAssertEqual(queryValues(for: request), ["aid": "1003"])
+        XCTAssertEqual(Self.queryValues(for: request), ["aid": "1003"])
     }
 
+    @MainActor
     func testFetchVideoRelatedBuildsGuestScopedRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let requestExpectation = expectation(description: "related videos request captured")
@@ -2178,7 +2221,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/archive/related")
         XCTAssertEqual(
-            queryValues(for: request),
+            Self.queryValues(for: request),
             ["bvid": "BV1source", "pn": "1", "ps": "40"]
         )
         let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
@@ -2187,6 +2230,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), BiliAPIClient.webUserAgent)
     }
 
+    @MainActor
     func testFetchVideoShotNormalizesBVIDAndDecodesMetadata() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let requestExpectation = expectation(description: "video shot request captured")
@@ -2211,7 +2255,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/player/videoshot")
         XCTAssertEqual(
-            queryValues(for: request),
+            Self.queryValues(for: request),
             ["bvid": "BV1shot", "cid": "1005", "index": "1"]
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com/video/BV1shot")
@@ -2221,6 +2265,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testFetchDanmakuBuildsXMLRequestParsesAndUsesResourceCache() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         await SubtitleDanmakuResourceCache.shared.clear()
@@ -2266,6 +2311,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await SubtitleDanmakuResourceCache.shared.clear()
     }
 
+    @MainActor
     func testFetchDanmakuSegmentNormalizesIndexBuildsProtobufRequestAndParses() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         await SubtitleDanmakuResourceCache.shared.clear()
@@ -2298,7 +2344,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(request.url?.host, "api.bilibili.com")
         XCTAssertEqual(request.url?.path, "/x/v2/dm/web/seg.so")
         XCTAssertEqual(
-            queryValues(for: request),
+            Self.queryValues(for: request),
             ["type": "1", "oid": "\(cid)", "segment_index": "1"]
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://www.bilibili.com")
@@ -2313,6 +2359,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await SubtitleDanmakuResourceCache.shared.clear()
     }
 
+    @MainActor
     func testFetchLiveRoomsBuildsAnonymousRequestAndDecodesFallbackRoomList() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2343,7 +2390,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.host, "api.live.bilibili.com")
         XCTAssertEqual(url.path, "/xlive/web-interface/v1/webMain/getMoreRecList")
-        let query = queryValues(in: components)
+        let query = Self.queryValues(in: components)
         XCTAssertEqual(query["platform"], "web")
         XCTAssertEqual(query["page"], "3")
         XCTAssertEqual(query["page_size"], "20")
@@ -2355,6 +2402,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNil(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"])
     }
 
+    @MainActor
     func testFetchLiveRoomInfoBuildsRoomScopedRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2383,10 +2431,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let url = try XCTUnwrap(request.url)
         XCTAssertEqual(url.host, "api.live.bilibili.com")
         XCTAssertEqual(url.path, "/room/v1/Room/get_info")
-        XCTAssertEqual(queryValues(for: request), ["room_id": "24680"])
+        XCTAssertEqual(Self.queryValues(for: request), ["room_id": "24680"])
         XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://live.bilibili.com/24680")
     }
 
+    @MainActor
     func testFetchLiveStreamInfoBuildsWebAndAndroidRequestsAndDecodesCandidate() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2428,7 +2477,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
         let queriesByPlatform = Dictionary(
             uniqueKeysWithValues: requests.compactMap { request in
-                Self.queryValue(named: "platform", in: request).map { ($0, queryValues(for: request)) }
+                Self.queryValue(named: "platform", in: request).map { ($0, Self.queryValues(for: request)) }
             })
         XCTAssertEqual(queriesByPlatform["web"]?["room_id"], "13579")
         XCTAssertEqual(queriesByPlatform["web"]?["protocol"], "0,1")
@@ -2442,6 +2491,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(queriesByPlatform["android"]?["qn"], "10000")
     }
 
+    @MainActor
     func testFetchLiveDanmakuConnectionInfoUsesTransportSessionAndDecodesToken() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2487,13 +2537,14 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
         let url = try XCTUnwrap(request.url)
         XCTAssertEqual(url.path, "/xlive/web-room/v1/index/getDanmuInfo")
-        let query = queryValues(for: request)
+        let query = Self.queryValues(for: request)
         XCTAssertEqual(query["id"], "97531")
         XCTAssertEqual(query["type"], "0")
         XCTAssertEqual(query["web_location"], "444.8")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "SESSDATA=transport-session")
     }
 
+    @MainActor
     func testHomeRecommendWebBuildsSignedPaginationAndLimitRequest() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2521,7 +2572,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let request = try XCTUnwrap(
             recorder.requests.first(where: { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" })
         )
-        let query = queryValues(for: request)
+        let query = Self.queryValues(for: request)
         XCTAssertEqual(query["fresh_idx"], "9")
         XCTAssertEqual(query["brush"], "9")
         XCTAssertEqual(query["fresh_idx_1h"], "9")
@@ -2531,6 +2582,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNotNil(query["wts"])
     }
 
+    @MainActor
     func testHomeRecommendAppGuestFallsBackToWebWithoutAccessKey() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2564,7 +2616,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let appRequests = recorder.requests.filter { $0.url?.path == "/x/v2/feed/index" }
         XCTAssertEqual(appRequests.count, 2)
         for request in appRequests {
-            let query = queryValues(for: request)
+            let query = Self.queryValues(for: request)
             XCTAssertEqual(query["idx"], "4")
             XCTAssertEqual(query["ps"], "3")
             XCTAssertEqual(query["page_size"], "3")
@@ -2576,6 +2628,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testHomeRecommendAppReturnsPrimaryProfileResultWithoutWebFallback() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2600,12 +2653,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(videos.map(\.bvid), ["BV1HomeFeedTest"])
         let appRequests = recorder.requests.filter { $0.url?.path == "/x/v2/feed/index" }
         XCTAssertEqual(appRequests.count, 1)
-        XCTAssertEqual(queryValues(for: try XCTUnwrap(appRequests.first))["access_key"], "app-access-key")
+        XCTAssertEqual(Self.queryValues(for: try XCTUnwrap(appRequests.first))["access_key"], "app-access-key")
         XCTAssertNil(
             recorder.requests.first(where: { $0.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" })
         )
     }
 
+    @MainActor
     func testHomeRecommendAppAPIErrorsFallBackToWeb() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2646,6 +2700,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testHomeRecommendCoalescesConcurrentIdenticalRequests() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
@@ -2676,6 +2731,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testVideoHistoryReportsWebHeartbeatBodyAndReferer() async throws {
         let requestExpectation = expectation(description: "history heartbeat request captured")
         let recorder = RequestContractRecorder()
@@ -2715,6 +2771,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "session-value")
     }
 
+    @MainActor
     func testRequireCSRFReturnsMainAccountToken() async throws {
         let api = try makeAPI(
             cookieHeader: "SESSDATA=session-value; DedeUserID=1001; bili_jct=csrf-value"
@@ -2724,6 +2781,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(csrf, "csrf-value")
     }
 
+    @MainActor
     func testRequireCSRFRejectsLoggedOutSession() async throws {
         let api = try makeAPI(cookieHeader: "")
 
@@ -2737,6 +2795,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testRequireCSRFRejectsAuthenticatedSessionWithoutToken() async throws {
         let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001")
 
@@ -2750,6 +2809,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testVideoHistoryFallsBackFromHeartbeatToWebHistory() async throws {
         let requestExpectation = expectation(description: "history fallback requests captured")
         requestExpectation.expectedFulfillmentCount = 2
@@ -2791,6 +2851,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testVideoHistoryUsesSignedAppAccessKeyRouteWhenWebCredentialIsUnavailable() async throws {
         let requestExpectation = expectation(description: "app history request captured")
         let recorder = RequestContractRecorder()
@@ -2824,6 +2885,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertNotNil(fields["ts"])
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistBuildsCursorQualityAndSortRequest() async throws {
         let requestExpectation = expectation(description: "official listen playlist request captured")
         let recorder = RequestContractRecorder()
@@ -2864,6 +2926,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(requestBodyData(from: request), BiliListenerPlaylistCodec.frame(expectedBody))
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistRejectsInvalidAnchorBeforeRequest() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -2882,6 +2945,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistRejectsMissingAccessKeyBeforeRequest() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -2900,6 +2964,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistRejectsHTTPFailureAfterBuvidFallback() async throws {
         let requestExpectation = expectation(description: "official listen playlist HTTP failure captured")
         let recorder = RequestContractRecorder()
@@ -2925,6 +2990,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertFalse(recorder.request?.value(forHTTPHeaderField: "buvid")?.isEmpty ?? true)
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistRejectsBiliStatus() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(
@@ -2951,6 +3017,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testOfficialVideoListenPlaylistRejectsEmptyResponse() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(for: request, data: Data())
@@ -2969,6 +3036,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
@@ -3021,11 +3089,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         )
     }
 
-    private static func response(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
+    private nonisolated static func response(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         response(for: request, data: Data(body.utf8))
     }
 
-    private static func response(
+    private nonisolated static func response(
         for request: URLRequest,
         statusCode: Int = 200,
         headerFields: [String: String] = ["Content-Type": "application/json"],
@@ -3040,7 +3108,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         return (response, data)
     }
 
-    private static func protobufDanmakuSegmentData() -> Data {
+    private nonisolated static func protobufDanmakuSegmentData() -> Data {
         let element =
             protobufVarintField(1, value: 42)
             + protobufVarintField(2, value: 1_500)
@@ -3051,17 +3119,17 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         return Data(protobufLengthDelimitedField(1, payload: element))
     }
 
-    private static func protobufVarintField(_ fieldNumber: Int, value: UInt64) -> [UInt8] {
+    private nonisolated static func protobufVarintField(_ fieldNumber: Int, value: UInt64) -> [UInt8] {
         protobufVarint(UInt64(fieldNumber << 3)) + protobufVarint(value)
     }
 
-    private static func protobufLengthDelimitedField(_ fieldNumber: Int, payload: [UInt8]) -> [UInt8] {
+    private nonisolated static func protobufLengthDelimitedField(_ fieldNumber: Int, payload: [UInt8]) -> [UInt8] {
         protobufVarint(UInt64((fieldNumber << 3) | 2))
             + protobufVarint(UInt64(payload.count))
             + payload
     }
 
-    private static func protobufVarint(_ value: UInt64) -> [UInt8] {
+    private nonisolated static func protobufVarint(_ value: UInt64) -> [UInt8] {
         var remaining = value
         var bytes = [UInt8]()
         repeat {
@@ -3075,11 +3143,11 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         return bytes
     }
 
-    private static func playableDASHResponse(quality: Int) -> String {
+    private nonisolated static func playableDASHResponse(quality: Int) -> String {
         #"{"code":0,"data":{"quality":\#(quality),"accept_quality":[\#(quality)],"dash":{"video":[{"id":\#(quality),"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}"#
     }
 
-    private static func videoItemResponse(bvid: String, aid: Int) -> String {
+    private nonisolated static func videoItemResponse(bvid: String, aid: Int) -> String {
         #"{"code":0,"data":{"bvid":"\#(bvid)","aid":\#(aid),"title":"视频详情"}}"#
     }
 
@@ -3092,20 +3160,20 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         }
     }
 
-    private func queryValues(in components: URLComponents) -> [String: String] {
+    private nonisolated static func queryValues(in components: URLComponents) -> [String: String] {
         components.queryItems?.reduce(into: [:]) { values, item in
             values[item.name] = item.value ?? ""
         } ?? [:]
     }
 
-    private func queryValues(for request: URLRequest) -> [String: String] {
+    private nonisolated static func queryValues(for request: URLRequest) -> [String: String] {
         guard let url = request.url,
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return [:] }
-        return queryValues(in: components)
+        return Self.queryValues(in: components)
     }
 
-    private static func queryValue(named name: String, in request: URLRequest) -> String? {
+    private nonisolated static func queryValue(named name: String, in request: URLRequest) -> String? {
         guard let url = request.url,
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
@@ -3117,7 +3185,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             let bodyString = String(data: body, encoding: .utf8),
             let components = URLComponents(string: "?\(bodyString)")
         else { return [:] }
-        return queryValues(in: components)
+        return Self.queryValues(in: components)
     }
 
     private func requestBodyData(from request: URLRequest) -> Data? {
@@ -3161,6 +3229,18 @@ private final class RequestContractRecorder: @unchecked Sendable {
     }
 }
 
+private final class RequestContractCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
+    }
+}
+
 private actor RequestContractCompletionFlag {
     private(set) var didComplete = false
 
@@ -3170,21 +3250,16 @@ private actor RequestContractCompletionFlag {
 }
 
 private final class RequestContractURLProtocol: URLProtocol {
-    typealias Handler = (URLRequest) throws -> (HTTPURLResponse, Data)
+    typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
 
-    private static let lock = NSLock()
-    private static var handler: Handler?
+    private static let state = HandlerState()
 
     static func install(_ handler: @escaping Handler) {
-        lock.lock()
-        self.handler = handler
-        lock.unlock()
+        state.install(handler)
     }
 
     static func reset() {
-        lock.lock()
-        handler = nil
-        lock.unlock()
+        state.reset()
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -3213,12 +3288,33 @@ private final class RequestContractURLProtocol: URLProtocol {
     override func stopLoading() {}
 
     private static func currentHandler() throws -> Handler {
-        lock.lock()
-        let handler = self.handler
-        lock.unlock()
-        guard let handler else {
-            throw URLError(.badServerResponse)
+        try state.currentHandler()
+    }
+
+    private final class HandlerState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var handler: Handler?
+
+        func install(_ handler: @escaping Handler) {
+            lock.lock()
+            self.handler = handler
+            lock.unlock()
         }
-        return handler
+
+        func reset() {
+            lock.lock()
+            handler = nil
+            lock.unlock()
+        }
+
+        func currentHandler() throws -> Handler {
+            lock.lock()
+            let handler = self.handler
+            lock.unlock()
+            guard let handler else {
+                throw URLError(.badServerResponse)
+            }
+            return handler
+        }
     }
 }

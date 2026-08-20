@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class HomeFeedImagePrefetchPolicyTests: XCTestCase {
+    @MainActor
     func testInitialPrefetchAdaptsToLayoutAndEnvironment() {
         XCTAssertEqual(
             HomeFeedImagePrefetchPolicy.initialPrefetchLimit(
@@ -26,6 +27,7 @@ final class HomeFeedImagePrefetchPolicyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testLookaheadStartsBeyondVisibleViewport() {
         XCTAssertEqual(
             HomeFeedImagePrefetchPolicy.lookaheadStartIndex(
@@ -43,6 +45,7 @@ final class HomeFeedImagePrefetchPolicyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testBorderedSingleColumnProfileMatchesRenderedCoverDimensions() throws {
         let profile = HomeFeedCoverPrefetchProfile.make(
             layout: .borderedSingleColumn,

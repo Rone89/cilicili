@@ -3,6 +3,7 @@ import UIKit
 @testable import bili
 
 final class ZoomyLongImageViewerTests: XCTestCase {
+    @MainActor
     func testSharperCurrentImageIsNotReplacedBySmallerSameAspectImage() {
         XCTAssertTrue(
             ZoomyViewerImageQuality.shouldKeepCurrent(
@@ -18,6 +19,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testDifferentAspectRatioCanReplaceCurrentImage() {
         XCTAssertFalse(
             ZoomyViewerImageQuality.shouldKeepCurrent(
@@ -27,6 +29,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testDismissGestureRequiresDownwardVerticalPullAndDistance() {
         XCTAssertTrue(
             ZoomyViewerDismissGesturePolicy.isDownwardVerticalPull(
@@ -64,6 +67,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         XCTAssertTrue(group.image(for: "item") === viewerImage)
     }
 
+    @MainActor
     func testViewerUsesOriginalBiliImageURL() throws {
         let transformedURL = try XCTUnwrap(
             URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg@672w_378h_1c.webp")
@@ -76,6 +80,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testViewerUsesOriginalBiliImageURLWhenTransformIsInQuery() throws {
         let transformedURL = try XCTUnwrap(
             URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg?imageView2/2/w/672/format/webp")
@@ -88,6 +93,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testLongImageStartsAtReadableScreenWidth() {
         let layout = ZoomyViewerImageSizing.initialLayout(
             imageSize: CGSize(width: 500, height: 5_000),
@@ -99,6 +105,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         XCTAssertEqual(layout.contentSize.height, 3_900, accuracy: 0.001)
     }
 
+    @MainActor
     func testRegularImageKeepsAspectFitLayout() {
         let layout = ZoomyViewerImageSizing.initialLayout(
             imageSize: CGSize(width: 1_200, height: 800),
@@ -110,6 +117,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         XCTAssertEqual(layout.contentSize.height, 260, accuracy: 0.001)
     }
 
+    @MainActor
     func testImageAtLongImageThresholdKeepsAspectFitLayout() {
         let layout = ZoomyViewerImageSizing.initialLayout(
             imageSize: CGSize(width: 1_000, height: 2_600),
@@ -121,6 +129,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         XCTAssertEqual(layout.contentSize.height, 844, accuracy: 0.001)
     }
 
+    @MainActor
     func testLongImageUsesLargerButBoundedDecodeTarget() {
         let target = ZoomyViewerImageSizing.targetPixelSize(
             baseTargetPixelSize: 2_400,
@@ -138,6 +147,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testHighQualityViewerDecodeBypassesThumbnailLongestSideCap() {
         let environment = PlaybackEnvironment(
             networkClass: .wifi,

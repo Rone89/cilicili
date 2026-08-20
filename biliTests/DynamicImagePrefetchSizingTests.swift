@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class DynamicImagePrefetchSizingTests: XCTestCase {
+    @MainActor
     func testSingleImagePrefetchMatchesExpandedThumbnailRequest() {
         let request = DynamicImageThumbnailSizing.prefetchRequest(
             for: image(),
@@ -13,6 +14,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         XCTAssertTrue(request?.source.url.absoluteString.contains("/w/1280/") == true)
     }
 
+    @MainActor
     func testGridImagePrefetchMatchesCompactThumbnailRequest() {
         let request = DynamicImageThumbnailSizing.prefetchRequest(
             for: image(),
@@ -24,6 +26,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         XCTAssertTrue(request?.source.url.absoluteString.contains("/w/420/") == true)
     }
 
+    @MainActor
     func testConservativeImagePrefetchUsesReducedTargets() {
         XCTAssertEqual(
             DynamicImageThumbnailSizing.targetPixelSize(
@@ -50,6 +53,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testDynamicImageDecodesGIFMetadataAndViewerURL() throws {
         let data = """
         {
@@ -68,6 +72,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
         XCTAssertEqual(image.normalizedAnimatedImageURL, "https://i0.hdslb.com/bfs/dynamic/animation.gif")
     }
 
+    @MainActor
     func testDynamicImageDecodesLivePhotoObject() throws {
         let data = """
         {
@@ -90,6 +95,7 @@ final class DynamicImagePrefetchSizingTests: XCTestCase {
 }
 
 final class ZoomyAnimatedImageDecodeBudgetTests: XCTestCase {
+    @MainActor
     func testNormalBudgetCapsLargeViewerGIFs() {
         let budget = ZoomyAnimatedImageDecodeBudget.make(
             targetPixelSize: 2_400,
@@ -101,6 +107,7 @@ final class ZoomyAnimatedImageDecodeBudgetTests: XCTestCase {
         XCTAssertEqual(budget.maximumDecodedPixels, 18_000_000)
     }
 
+    @MainActor
     func testConstrainedBudgetReducesGIFMemoryPressure() {
         let budget = ZoomyAnimatedImageDecodeBudget.make(
             targetPixelSize: 2_400,
@@ -112,6 +119,7 @@ final class ZoomyAnimatedImageDecodeBudgetTests: XCTestCase {
         XCTAssertEqual(budget.maximumDecodedPixels, 9_000_000)
     }
 
+    @MainActor
     func testGIFSamplingSpansTheOriginalTimeline() {
         let budget = ZoomyAnimatedImageDecodeBudget.make(
             targetPixelSize: 2_400,
@@ -128,10 +136,12 @@ final class ZoomyAnimatedImageDecodeBudgetTests: XCTestCase {
 }
 
 final class RemoteImageDisplayCachePolicyTests: XCTestCase {
+    @MainActor
     func testTransientImagesDoNotRetainAnAdditionalDisplayCacheCopy() {
         XCTAssertFalse(RemoteImageDisplayCachePolicy.transient.retainsImage)
     }
 
+    @MainActor
     func testRetainedImagesKeepTheExistingDisplayCacheBehavior() {
         XCTAssertTrue(RemoteImageDisplayCachePolicy.retained.retainsImage)
     }

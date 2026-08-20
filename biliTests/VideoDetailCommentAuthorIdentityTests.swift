@@ -38,6 +38,7 @@ final class VideoDetailCommentAuthorIdentityTests: XCTestCase {
         XCTAssertFalse(display.isVideoUploader(ownerMID: nil))
     }
 
+    @MainActor
     func testDynamicCommentDisplayRetainsTheCommentAuthorOwner() throws {
         let comment = try JSONDecoder().decode(
             Comment.self,

@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class PlaybackCDNStickyRecommendationTests: XCTestCase {
+    @MainActor
     func testWeakProbeDoesNotReplaceVerifiedRecommendation() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 180)])
         let weakProbe = snapshot(
@@ -15,6 +16,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         XCTAssertTrue(stabilized.result(for: .ali)?.isActionableForPlaybackRecommendation == true)
     }
 
+    @MainActor
     func testSmallLatencyAdvantageKeepsCurrentRecommendation() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 220)])
         let refreshed = snapshot(
@@ -28,6 +30,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testMaterialLatencyAdvantageSwitchesRecommendation() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 400)])
         let refreshed = snapshot(
@@ -41,6 +44,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCurrentFailureSwitchesRecommendation() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 180)])
         let refreshed = snapshot(
@@ -57,6 +61,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPlaybackDegradationDisablesHysteresis() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 220)])
         let refreshed = snapshot(
@@ -73,6 +78,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testUnsafeRewriteDoesNotReplaceVerifiedRecommendation() {
         let previous = snapshot(recommended: .ali, results: [result(.ali, elapsed: 220)])
         let refreshed = snapshot(
@@ -96,6 +102,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         XCTAssertTrue(stabilized.result(for: .ali)?.isActionableForPlaybackRecommendation == true)
     }
 
+    @MainActor
     private func snapshot(
         recommended: PlaybackCDNPreference?,
         results: [PlaybackCDNProbeResult]
@@ -107,6 +114,7 @@ final class PlaybackCDNStickyRecommendationTests: XCTestCase {
         )
     }
 
+    @MainActor
     private func result(
         _ preference: PlaybackCDNPreference,
         elapsed: Int,

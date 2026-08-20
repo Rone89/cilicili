@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class PlayerHorizontalSeekSensitivityTests: XCTestCase {
+    @MainActor
     func testMatchesPiliPlusDefaultAcrossVideoDurations() {
         for duration in [3 * 60, 15 * 60, 2 * 60 * 60] {
             XCTAssertEqual(
@@ -11,6 +12,7 @@ final class PlayerHorizontalSeekSensitivityTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testUsesPiliPlusDefaultWithoutDuration() {
         XCTAssertEqual(
             PlayerHorizontalSeekSensitivity.secondsPerFullWidth(duration: nil),

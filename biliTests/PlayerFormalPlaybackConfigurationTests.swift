@@ -6,6 +6,7 @@ import UIKit
 @testable import bili
 
 final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
+    @MainActor
     func testTelegramProgressThumbTracksPlaybackPosition() {
         let width: CGFloat = 200
         let diameter: CGFloat = 16
@@ -36,6 +37,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testLivePlayerControlLayoutOnlyKeepsNavigationActions() {
         XCTAssertFalse(BiliPlayerControlLayout.live.showsProgress)
         XCTAssertFalse(BiliPlayerControlLayout.live.showsPlaybackToggle)
@@ -50,6 +52,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertTrue(BiliPlayerControlLayout.standard.showsTimeLabel)
     }
 
+    @MainActor
     func testSystemNowPlayingPublicationIsDisabled() {
         XCTAssertFalse(PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo)
 
@@ -74,6 +77,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testAudioOnlyPlaybackPublishesNowPlayingWhileActivelyPlaying() {
         XCTAssertTrue(
             PlayerNowPlayingPublicationPolicy.shouldPublish(
@@ -188,6 +192,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
     }
 
+    @MainActor
     func testPlayerStreamSourceResumeTimePreservesAudioOnlyMode() {
         let source = PlayerStreamSource(
             metricsID: "audio-only-test",
@@ -476,6 +481,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).visibleRootTabs.contains(.search))
     }
 
+    @MainActor
     func testDolbyVisionQualityUsesAutomaticCodecNegotiation() {
         XCTAssertTrue(BiliAPIClient.requiresAutomaticCodecNegotiation(requestedQuality: 125))
         XCTAssertTrue(BiliAPIClient.requiresAutomaticCodecNegotiation(requestedQuality: 126))
@@ -483,6 +489,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertFalse(BiliAPIClient.requiresAutomaticCodecNegotiation(requestedQuality: 120))
     }
 
+    @MainActor
     func testHDRPlaybackRecoveryWatchdogAllowsSlowerFirstFrame() {
         XCTAssertLessThan(
             PlaybackRecoveryWatchdogReason.firstFrame.delay(for: .sdr),

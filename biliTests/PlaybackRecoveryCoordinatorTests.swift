@@ -2,6 +2,7 @@ import XCTest
 @testable import bili
 
 final class PlaybackRecoveryCoordinatorTests: XCTestCase {
+    @MainActor
     func testAuthDeniedReloadsPlayURLWithoutCDNRefresh() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.authDenied, statusCode: 403)))
@@ -12,6 +13,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldRefreshCDN)
     }
 
+    @MainActor
     func testRateLimitedReloadsPlayURLAndRefreshesCDN() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.rateLimited, statusCode: 429)))
@@ -20,6 +22,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertTrue(decision.shouldRefreshCDN)
     }
 
+    @MainActor
     func testURLExpiredReloadsPlayURLEvenWhenFallbackExists() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.urlExpired, statusCode: 412)))
@@ -28,6 +31,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldRefreshCDN)
     }
 
+    @MainActor
     func testURLExpiredIsIgnoredWhilePlayURLReloadIsAlreadyInFlight() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(
@@ -41,6 +45,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldMarkFailedVariant)
     }
 
+    @MainActor
     func testReloadMessageIsIgnoredWhilePlayURLReloadIsAlreadyInFlight() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(
@@ -54,6 +59,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldHandleFailure)
     }
 
+    @MainActor
     func testCancelledFailureIsIgnored() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.cancelled)))
@@ -63,6 +69,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldMarkFailedVariant)
     }
 
+    @MainActor
     func testDuplicateFailureIsIgnoredAcrossSources() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let first = coordinator.receiveFailure(input(source: .playerCallback, reason: reason(.timeout)))
@@ -72,6 +79,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(duplicate.action, .ignore(.duplicateFailure))
     }
 
+    @MainActor
     func testNetworkFailureReloadsSameVariantBeforeFallingBack() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.network), hasFallbackVariant: true))
@@ -80,6 +88,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertTrue(decision.shouldRefreshCDN)
     }
 
+    @MainActor
     func testNetworkFailureFallsBackAfterSameVariantRetry() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         _ = coordinator.receiveFailure(input(reason: reason(.network), recoveryAttemptCount: 0))
@@ -89,6 +98,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(retry.action, .switchVariant)
     }
 
+    @MainActor
     func testDecoderFailureSwitchesVariantWhenFallbackExists() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(
@@ -101,6 +111,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertTrue(decision.shouldMarkFailedVariant)
     }
 
+    @MainActor
     func testLocalFailureDoesNotRefreshCDN() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(
@@ -112,6 +123,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.shouldRefreshCDN)
     }
 
+    @MainActor
     func testNetworkFailureReloadsWhenNoFallbackExistsAndAttemptsRemain() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(reason: reason(.network), hasFallbackVariant: false))
@@ -119,6 +131,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(decision.action, .reloadPlayURL)
     }
 
+    @MainActor
     func testReloadExhaustsWhenNoFallbackAndAttemptLimitReached() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(
@@ -130,6 +143,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(decision.action, .exhausted)
     }
 
+    @MainActor
     func testStaleVariantIsIgnored() {
         var coordinator = VideoDetailPlaybackRecoveryCoordinator()
         let decision = coordinator.receiveFailure(input(selectedVariantID: "other-variant"))
@@ -180,6 +194,7 @@ final class PlaybackRecoveryCoordinatorTests: XCTestCase {
 }
 
 final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
+    @MainActor
     func testQualityMenuAllowsAdvertisedQualityToLoadOnDemand() {
         let onDemandVariant = PlayVariant(
             quality: 112,
@@ -209,6 +224,7 @@ final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
         XCTAssertFalse(item?.isDisabled ?? true)
     }
 
+    @MainActor
     func testQualityMenuSubtitleShowsProgressiveFallbackRoute() throws {
         let originalVariant = try dashVariant(
             stream: stream(id: 64, codecs: "hev1.1.6.L120.90", codecid: 12)
@@ -239,6 +255,7 @@ final class VideoDetailPlaybackQualityMenuBuilderTests: XCTestCase {
         XCTAssertEqual(item?.subtitle, "单流兜底")
     }
 
+    @MainActor
     func testQualityMenuSubtitleShowsH264CodecFallbackRoute() throws {
         let originalVariant = try dashVariant(
             stream: stream(id: 116, codecs: "hev1.1.6.L150.90", codecid: 12)

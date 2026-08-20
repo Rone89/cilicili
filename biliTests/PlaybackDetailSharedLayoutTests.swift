@@ -5,6 +5,7 @@ import XCTest
 @testable import bili
 
 final class PlaybackDetailSharedLayoutTests: XCTestCase {
+    @MainActor
     func testPortraitWidthUsesSmallestAvailableShortSide() {
         XCTAssertEqual(
             PlaybackDetailStableLayout.portraitWidth(
@@ -16,6 +17,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPortraitWidthWorksWithoutWindowSize() {
         XCTAssertEqual(
             PlaybackDetailStableLayout.portraitWidth(
@@ -27,12 +29,14 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSharedPlayerAndContentMetrics() {
         XCTAssertEqual(PlaybackDetailPlayerMetrics.standardHeight(for: 393), 221.0625)
         XCTAssertEqual(PlaybackDetailContentMetrics.contentWidth(for: 393), 369)
         XCTAssertEqual(PlaybackDetailContentMetrics.contentWidth(for: 12), 0)
     }
 
+    @MainActor
     func testUIKitShellLayoutUsesStandardPortraitPlayerAndContentFrames() {
         let layout = PlaybackDetailShellLayout(
             bounds: CGRect(x: 0, y: 0, width: 393, height: 852),
@@ -47,6 +51,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertEqual(layout.contentTopInset, 221)
     }
 
+    @MainActor
     func testUIKitShellLayoutMakesThePlayerTheOnlyLandscapeSurface() {
         let layout = PlaybackDetailShellLayout(
             bounds: CGRect(x: 0, y: 0, width: 852, height: 393),
@@ -61,6 +66,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNil(layout.contentTopInset)
     }
 
+    @MainActor
     func testPageLifecycleActionsDeliverPageAndSceneEvents() {
         var events = [String]()
         let actions = PlaybackDetailPageLifecycleActions(
@@ -86,6 +92,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPGCPerformanceContextKeepsSeasonIdentityAcrossEpisodeSwitches() {
         let firstEpisode = makeVideo(bvid: "BV-first", seasonID: 46089, episodeID: 1)
         let secondEpisode = makeVideo(bvid: "BV-second", seasonID: 46089, episodeID: 2)
@@ -98,6 +105,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNotEqual(firstContext.mediaID, secondContext.mediaID)
     }
 
+    @MainActor
     func testFullscreenGeometryFallsBackToSafeAreaExpansion() {
         let geometry = PlaybackDetailFullscreenGeometry.resolve(
             containerSize: CGSize(width: 375, height: 734),
@@ -115,9 +123,9 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
     }
 
     @MainActor
-    func testFullscreenGeometryUsesWindowCoordinateSpaceWhenAvailable() {
+    func testFullscreenGeometryUsesWindowCoordinateSpaceWhenAvailable() throws {
         let controller = UIViewController()
-        let window = UIWindow(frame: CGRect(x: 40, y: 30, width: 390, height: 844))
+        let window = try makeWindow(frame: CGRect(x: 40, y: 30, width: 390, height: 844))
         window.rootViewController = controller
         window.layoutIfNeeded()
 
@@ -149,7 +157,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         let controller = UIHostingController(
             rootView: PlaybackDetailLoadedStateHarness(model: model, recorder: recorder)
         )
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let window = try makeWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
@@ -212,6 +220,16 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    @MainActor
+    private func makeWindow(frame: CGRect) throws -> UIWindow {
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = frame
+        return window
     }
 
     private func makeVideo(bvid: String, seasonID: Int, episodeID: Int) -> VideoItem {
