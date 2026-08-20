@@ -1082,10 +1082,8 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testDisablingPictureInPictureReleasesCustomControllerAndRemainsDisabled() throws {
-        guard AVPictureInPictureController.isPictureInPictureSupported() else {
-            throw XCTSkip("当前测试设备不支持画中画")
-        }
+    func testDisablingPictureInPictureLeavesNoCustomControllerAndRemainsDisabled() {
+        let isSupported = AVPictureInPictureController.isPictureInPictureSupported()
         let player = PlayerStateViewModel(
             videoURL: nil,
             audioURL: nil,
@@ -1100,7 +1098,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         player.setPictureInPictureEnabled(true)
-        XCTAssertTrue(player.hasConfiguredPictureInPictureControllerForTesting)
+        XCTAssertEqual(player.hasConfiguredPictureInPictureControllerForTesting, isSupported)
 
         player.setPictureInPictureEnabled(false)
         player.setPictureInPictureEnabled(false)
