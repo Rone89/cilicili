@@ -100,7 +100,7 @@ extension View {
                 viewModel: viewModel,
                 libraryStore: libraryStore,
                 sheetState: sheetState,
-                sheetActions: VideoDetailSheetActionsBuilder(viewModel: viewModel).actions
+                sheetActions: VideoDetailSheetActions(viewModel: viewModel)
             )
         )
     }

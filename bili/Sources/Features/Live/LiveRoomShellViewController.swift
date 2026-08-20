@@ -188,7 +188,6 @@ final class LiveRoomShellViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         isViewActive = false
-        AppStatusBarCompatibility.restoreDefaultPresentation()
         cancelPendingRotationRecovery()
         cancelActiveRotationPresentationIfNeeded()
         resumeDeferredLiveRenderUpdates()
@@ -224,11 +223,6 @@ final class LiveRoomShellViewController: UIViewController {
         super.viewWillTransition(to: size, with: coordinator)
         let toLandscape = size.width > size.height
         let targetUsesLandscapeFullscreen = usesLandscapeLiveFullscreen(forLandscape: toLandscape)
-        let targetUsesFullscreenLayout = targetUsesLandscapeFullscreen || isPortraitFullscreen
-        AppStatusBarCompatibility.applyPlaybackPresentation(
-            isHidden: targetUsesFullscreenLayout,
-            style: statusBarStyle(forHiddenSystemChrome: targetUsesFullscreenLayout)
-        )
         rotationGeneration &+= 1
         let generation = rotationGeneration
         cancelPendingRotationRecovery()
@@ -329,20 +323,6 @@ final class LiveRoomShellViewController: UIViewController {
     private func updatePlaybackSystemChrome() {
         setNeedsStatusBarAppearanceUpdate()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
-        guard isViewActive else { return }
-        AppStatusBarCompatibility.applyPlaybackPresentation(
-            isHidden: hidesSystemChrome,
-            style: statusBarStyle(forHiddenSystemChrome: hidesSystemChrome)
-        )
-    }
-
-    private func statusBarStyle(forHiddenSystemChrome isHidden: Bool) -> UIStatusBarStyle {
-        guard !isHidden,
-              traitCollection.userInterfaceStyle != .dark
-        else {
-            return .lightContent
-        }
-        return .darkContent
     }
 
     private func applyAppearanceMode(_ mode: AppAppearanceMode) {

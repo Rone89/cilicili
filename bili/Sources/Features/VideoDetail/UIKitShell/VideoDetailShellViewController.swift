@@ -230,9 +230,6 @@ final class VideoDetailShellViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewActive = true
-        AppStatusBarCompatibility.applyPlaybackPresentation(
-            isHidden: isLandscape || isPortraitFullscreen
-        )
         // window 此时已挂载，按视频类型设置朝向锁。
         updateOrientationLock()
         restoreSystemBackGestures()
@@ -256,7 +253,6 @@ final class VideoDetailShellViewController: UIViewController {
         super.viewWillDisappear(animated)
         isViewActive = false
         dismissPlayerMoreControls()
-        AppStatusBarCompatibility.restoreDefaultPresentation()
         cancelPendingRotationCompletionRecovery()
         playerSurfaceController.cancelRotationChromePrewarm()
         rotationFrameProbe.cancel()
@@ -309,9 +305,6 @@ final class VideoDetailShellViewController: UIViewController {
         if toLandscape {
             dismissPlayerMoreControls()
         }
-        AppStatusBarCompatibility.applyPlaybackPresentation(
-            isHidden: toLandscape || isPortraitFullscreen
-        )
         rotationCompletionRecoveryGeneration &+= 1
         let completionRecoveryGeneration = rotationCompletionRecoveryGeneration
         cancelPendingRotationCompletionRecovery()
@@ -658,7 +651,6 @@ final class VideoDetailShellViewController: UIViewController {
     private func setPortraitFullscreen(_ active: Bool) {
         guard isPortraitFullscreen != active else { return }
         isPortraitFullscreen = active
-        AppStatusBarCompatibility.applyPlaybackPresentation(isHidden: active)
         setSurfaceLandscape(active) // 复用全屏 chrome 样式（隐藏导航栏等）
         UIView.animate(
             withDuration: PlaybackDetailRotationTiming.portraitFullscreenDuration,
