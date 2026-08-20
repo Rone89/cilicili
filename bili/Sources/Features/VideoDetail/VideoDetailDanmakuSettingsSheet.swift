@@ -21,9 +21,13 @@ struct DanmakuSettingsSheet: View {
             .navigationTitle("弹幕设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                VideoDetailDoneToolbar(finish: dismissDanmakuSettings)
+                VideoDetailDoneToolbar(
+                    finish: dismissDanmakuSettings,
+                    accessibilityIdentifier: "ui.videoDetail.sheet.danmakuSettings.done"
+                )
             }
         }
+        .accessibilityIdentifier("ui.videoDetail.sheet.danmakuSettings")
     }
 
     private func dismissDanmakuSettings() {

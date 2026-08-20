@@ -11,6 +11,9 @@ struct JKBiliApp: App {
             memoryCapacity: 96 * 1024 * 1024,
             diskCapacity: 768 * 1024 * 1024
         )
+        if UITestFixtureScenario.current != nil {
+            UIView.setAnimationsEnabled(false)
+        }
         RefreshRateManager.shared.restorePersistedPreference()
     }
 
@@ -41,6 +44,17 @@ private struct LaunchWindowBackgroundInstaller: UIViewRepresentable {
 }
 
 private struct MainInterfaceHost: View {
+    var body: some View {
+        if let fixture = UITestFixtureScenario.current {
+            UITestFixtureRootView(scenario: fixture)
+                .transaction { $0.disablesAnimations = true }
+        } else {
+            ProductionMainInterfaceHost()
+        }
+    }
+}
+
+private struct ProductionMainInterfaceHost: View {
     @StateObject private var dependencies = AppDependencies()
 
     var body: some View {
@@ -54,7 +68,7 @@ private struct MainInterfaceHost: View {
                 AppFontSizePreferenceInstaller(libraryStore: dependencies.libraryStore)
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
-            }
+        }
     }
 }
 

@@ -1,0 +1,15 @@
+import Foundation
+
+/// Opt-in UI-test entry points. Production launches never select a fixture.
+enum UITestFixtureScenario: String {
+    case danmaku
+    case fullscreen
+
+    static var current: Self? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "--ui-test-fixture") else { return nil }
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex) else { return nil }
+        return Self(rawValue: arguments[valueIndex])
+    }
+}

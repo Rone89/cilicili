@@ -40,6 +40,17 @@
                ReferencedContainer = "container:bili.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A11C0DE10000000000000003"
+               BuildableName = "biliUITests.xctest"
+               BlueprintName = "biliUITests"
+               ReferencedContainer = "container:bili.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
