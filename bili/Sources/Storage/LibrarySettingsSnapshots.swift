@@ -124,6 +124,7 @@ final class PullRefreshRuntimeSettingsStore: ObservableObject {
 struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playerPerformanceOverlayEnabled = false
     var videoRotationFrameReportOverlayEnabled = false
+    var videoRotationOptimizationExperimentEnabled = VideoDetailRotationOptimizationExperiment.defaultIsEnabled
     var pictureInPictureEnabled = false
     var appTintColorHex = LibraryStore.defaultAppTintColorHex
     var defaultPlaybackRate = 1.0
@@ -143,6 +144,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
 
     var playerPerformanceOverlayEnabled: Bool { snapshot.playerPerformanceOverlayEnabled }
     var videoRotationFrameReportOverlayEnabled: Bool { snapshot.videoRotationFrameReportOverlayEnabled }
+    var videoRotationOptimizationExperimentEnabled: Bool { snapshot.videoRotationOptimizationExperimentEnabled }
     var pictureInPictureEnabled: Bool { snapshot.pictureInPictureEnabled }
     var appTintColor: Color { AppThemeTintColor.color(for: snapshot.appTintColorHex) }
     var defaultPlaybackRate: Double { snapshot.defaultPlaybackRate }
@@ -172,6 +174,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
         let next = VideoDetailRuntimeSettingsSnapshot(
             playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
             videoRotationFrameReportOverlayEnabled: libraryStore.videoRotationFrameReportOverlayEnabled,
+            videoRotationOptimizationExperimentEnabled: libraryStore.videoRotationOptimizationExperimentEnabled,
             pictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             appTintColorHex: libraryStore.appTintColorHex,
             defaultPlaybackRate: libraryStore.defaultPlaybackRate,

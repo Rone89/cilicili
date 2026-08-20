@@ -139,6 +139,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var resourceLoadingDynamicDiskSnapshotEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
     @Published private(set) var videoRotationFrameReportOverlayEnabled: Bool
+    @Published private(set) var videoRotationOptimizationExperimentEnabled: Bool
     @Published private(set) var playerControlEdgeScrimEnabled: Bool
     @Published private(set) var showsVideoDetailNetworkDiagnosticsButton: Bool
     @Published private(set) var showsVideoDetailPinnedProgressBar: Bool
@@ -212,6 +213,7 @@ final class LibraryStore: ObservableObject {
     private static let resourceLoadingDynamicDiskSnapshotEnabledKey = ResourceLoadingExperiment.Feature.dynamicDiskSnapshot.storageKey
     private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature.resumePacketWarmup.storageKey
     private static let videoRotationFrameReportOverlayEnabledKey = "cc.bili.playback.rotationFrameReportOverlayEnabled.v1"
+    private static let videoRotationOptimizationExperimentEnabledKey = VideoDetailRotationOptimizationExperiment.storageKey
     nonisolated static let playerControlEdgeScrimEnabledKey = "cc.bili.playback.controlEdgeScrimEnabled.v1"
     private static let legacyPlayerIconOnlyControlsExperimentEnabledKey = "cc.bili.playback.iconOnlyControlsExperimentEnabled.v1"
     private static let legacyPlayerFullscreenStatusExperimentEnabledKey = "cc.bili.playback.fullscreenStatusExperimentEnabled.v1"
@@ -491,6 +493,9 @@ final class LibraryStore: ObservableObject {
             forKey: Self.resourceLoadingResumePacketWarmupEnabledKey
         ) as? Bool ?? true
         self.videoRotationFrameReportOverlayEnabled = userDefaults.object(forKey: Self.videoRotationFrameReportOverlayEnabledKey) as? Bool ?? false
+        self.videoRotationOptimizationExperimentEnabled = userDefaults.object(
+            forKey: Self.videoRotationOptimizationExperimentEnabledKey
+        ) as? Bool ?? VideoDetailRotationOptimizationExperiment.defaultIsEnabled
         self.playerControlEdgeScrimEnabled = userDefaults.object(forKey: Self.playerControlEdgeScrimEnabledKey) as? Bool ?? true
         self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? false
         self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
@@ -1087,6 +1092,11 @@ final class LibraryStore: ObservableObject {
     func setVideoRotationFrameReportOverlayEnabled(_ isEnabled: Bool) {
         videoRotationFrameReportOverlayEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.videoRotationFrameReportOverlayEnabledKey)
+    }
+
+    func setVideoRotationOptimizationExperimentEnabled(_ isEnabled: Bool) {
+        videoRotationOptimizationExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.videoRotationOptimizationExperimentEnabledKey)
     }
 
     func setPlayerControlEdgeScrimEnabled(_ isEnabled: Bool) {

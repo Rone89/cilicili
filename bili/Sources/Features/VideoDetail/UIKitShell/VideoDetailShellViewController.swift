@@ -114,6 +114,12 @@ final class VideoDetailShellViewController: UIViewController {
         view.bounds.width > view.bounds.height
     }
 
+    private var rotationOptimizationPolicy: VideoDetailRotationOptimizationPolicy {
+        VideoDetailRotationOptimizationPolicy(
+            isEnabled: runtimeSettings.videoRotationOptimizationExperimentEnabled
+        )
+    }
+
     init(
         viewModel: VideoDetailViewModel,
         fullscreenCoordinator: VideoDetailFullscreenCoordinator,
@@ -246,6 +252,11 @@ final class VideoDetailShellViewController: UIViewController {
         let scene = view.window?.windowScene
         if isPortraitVideo {
             AppOrientationLock.update(to: .portrait, in: scene)
+            if rotationOptimizationPolicy.restoresPortraitAfterResolvingPortraitVideo(
+                isCurrentlyLandscape: isLandscape
+            ) {
+                AppOrientationLock.requestGeometryUpdate(to: .portrait, in: scene)
+            }
         } else {
             AppOrientationLock.update(to: .allButUpsideDown, in: scene)
         }
@@ -292,7 +303,10 @@ final class VideoDetailShellViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        applyLayout()
+        applyLayout(
+            publishesContentLayout: !isSystemRotationTransitioning
+                || rotationOptimizationPolicy.publishesContentLayoutDuringSystemTransition
+        )
         // 全屏 UIKit 容器会盖住导航控制器的边缘返回区，需主动恢复
         // interactivePopGestureRecognizer（含 iOS26 全局右滑的 content pop）。
         restoreSystemBackGestures()
@@ -323,8 +337,10 @@ final class VideoDetailShellViewController: UIViewController {
             toLandscape: toLandscape,
             coordinator: coordinator
         )
-        contentHost.view.isHidden = toLandscape
-        contentHost.view.isUserInteractionEnabled = !toLandscape
+        contentHost.view.isHidden = rotationOptimizationPolicy.hidesContentHost(
+            duringTransitionToLandscape: toLandscape
+        )
+        contentHost.view.isUserInteractionEnabled = !contentHost.view.isHidden
         isSystemRotationTransitioning = true
         setBareSurfaceTransitionActive(true)
         // 目标方向的控件树在系统动画开始就准备好，避免首次旋转在结束帧冷启动。
@@ -335,13 +351,18 @@ final class VideoDetailShellViewController: UIViewController {
             currentPlayerHeight = nil
         }
         coordinator.animate(alongsideTransition: { [weak self] _ in
-            self?.rotationFrameProbe.mark("系统动画布局开始")
-            self?.applyLayout(forBoundsSize: size)
-            self?.view.layoutIfNeeded()
-            self?.refreshSurfaceLayoutImmediately()
-            self?.setNeedsStatusBarAppearanceUpdate()
-            self?.setNeedsUpdateOfHomeIndicatorAutoHidden()
-            self?.rotationFrameProbe.mark("系统动画布局完成")
+            guard let self else { return }
+            self.rotationFrameProbe.mark("系统动画布局开始")
+            self.applyLayout(
+                forBoundsSize: size,
+                publishesContentLayout: self.rotationOptimizationPolicy
+                    .publishesContentLayoutDuringSystemTransition
+            )
+            self.view.layoutIfNeeded()
+            self.refreshSurfaceLayoutImmediately()
+            self.setNeedsStatusBarAppearanceUpdate()
+            self.setNeedsUpdateOfHomeIndicatorAutoHidden()
+            self.rotationFrameProbe.mark("系统动画布局完成")
         }, completion: { [weak self] _ in
             guard let self else { return }
             guard self.rotationCompletionRecoveryGeneration == completionRecoveryGeneration else { return }
@@ -379,12 +400,17 @@ final class VideoDetailShellViewController: UIViewController {
         generation: Int
     ) {
         rotationFrameProbe.mark("系统完成：保持视频层与已挂载控件树")
-        contentHost.view.isHidden = toLandscape
+        contentHost.view.isHidden = rotationOptimizationPolicy.hidesContentHost(
+            duringTransitionToLandscape: toLandscape
+        )
         contentHost.view.isUserInteractionEnabled = false
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        applyLayout()
+        applyLayout(
+            publishesContentLayout: rotationOptimizationPolicy
+                .publishesContentLayoutDuringSystemTransition
+        )
         CATransaction.commit()
         rotationFrameProbe.mark("视频层几何已提交，等待下一帧")
 
@@ -510,7 +536,10 @@ final class VideoDetailShellViewController: UIViewController {
         }
     }
 
-    private func applyLayout(forBoundsSize size: CGSize? = nil) {
+    private func applyLayout(
+        forBoundsSize size: CGSize? = nil,
+        publishesContentLayout: Bool = true
+    ) {
         let bounds = CGRect(origin: .zero, size: size ?? view.bounds.size)
         let landscape = bounds.width > bounds.height
 
@@ -528,7 +557,7 @@ final class VideoDetailShellViewController: UIViewController {
         )
         playerContainer.frame = shellLayout.playerFrame
         contentHost.view.frame = shellLayout.contentFrame
-        if let contentTopInset = shellLayout.contentTopInset {
+        if publishesContentLayout, let contentTopInset = shellLayout.contentTopInset {
             // 内容留白 = expanded（固定，对齐原项目）：播放器覆盖在内容上层、随滚动
             // 收缩，内容顶部始终贴播放器底部。这样"拖动先把播放器收到最小、再正常
             // 滚内容"是自然结果，且内容不会双倍滚动。
@@ -634,7 +663,11 @@ final class VideoDetailShellViewController: UIViewController {
         } else {
             let scene = view.window?.windowScene
             AppOrientationLock.update(to: .allButUpsideDown, in: scene)
-            AppOrientationLock.requestGeometryUpdate(to: .landscapeRight, in: scene)
+            let targetOrientation = rotationOptimizationPolicy.preferredLandscapeInterfaceOrientation(
+                currentInterfaceOrientation: scene?.effectiveGeometry.interfaceOrientation,
+                deviceOrientation: UIDevice.current.orientation
+            )
+            AppOrientationLock.requestGeometryUpdate(to: targetOrientation, in: scene)
         }
     }
 

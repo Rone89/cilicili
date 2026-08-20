@@ -66,6 +66,49 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNil(layout.contentTopInset)
     }
 
+    func testRotationOptimizationDisabledPreservesVersion1021Behavior() {
+        let policy = VideoDetailRotationOptimizationPolicy(isEnabled: false)
+
+        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: true))
+        XCTAssertFalse(policy.hidesContentHost(duringTransitionToLandscape: false))
+        XCTAssertTrue(policy.publishesContentLayoutDuringSystemTransition)
+        XCTAssertFalse(
+            policy.restoresPortraitAfterResolvingPortraitVideo(isCurrentlyLandscape: true)
+        )
+        XCTAssertEqual(
+            policy.preferredLandscapeInterfaceOrientation(
+                currentInterfaceOrientation: .portrait,
+                deviceOrientation: .landscapeRight
+            ),
+            .landscapeRight
+        )
+    }
+
+    func testRotationOptimizationFreezesContentAndUsesDeviceDirection() {
+        let policy = VideoDetailRotationOptimizationPolicy(isEnabled: true)
+
+        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: true))
+        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: false))
+        XCTAssertFalse(policy.publishesContentLayoutDuringSystemTransition)
+        XCTAssertTrue(
+            policy.restoresPortraitAfterResolvingPortraitVideo(isCurrentlyLandscape: true)
+        )
+        XCTAssertEqual(
+            policy.preferredLandscapeInterfaceOrientation(
+                currentInterfaceOrientation: .portrait,
+                deviceOrientation: .landscapeLeft
+            ),
+            .landscapeRight
+        )
+        XCTAssertEqual(
+            policy.preferredLandscapeInterfaceOrientation(
+                currentInterfaceOrientation: .portrait,
+                deviceOrientation: .landscapeRight
+            ),
+            .landscapeLeft
+        )
+    }
+
     @MainActor
     func testPageLifecycleActionsDeliverPageAndSceneEvents() {
         var events = [String]()

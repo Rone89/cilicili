@@ -68,6 +68,18 @@ struct MinePlaybackToolsSection: View {
             }
 
             Toggle(isOn: Binding(
+                get: { libraryStore.videoRotationOptimizationExperimentEnabled },
+                set: { libraryStore.setVideoRotationOptimizationExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("视频旋转优化实验", systemImage: "rectangle.landscape.rotate")
+                    Text("关闭后立即恢复 1.0.21 的稳定旋转方案")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.playerControlEdgeScrimEnabled },
                 set: { libraryStore.setPlayerControlEdgeScrimEnabled($0) }
             )) {

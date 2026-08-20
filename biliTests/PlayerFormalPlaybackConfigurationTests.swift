@@ -319,12 +319,27 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         libraryStore.setPictureInPictureEnabled(true)
         libraryStore.setDefaultPlaybackRate(1.5)
+        libraryStore.setVideoRotationOptimizationExperimentEnabled(true)
         XCTAssertTrue(libraryStore.setAppTintColorHex("#123456"))
         try? await Task.sleep(nanoseconds: 30_000_000)
 
         XCTAssertTrue(runtimeSettings.pictureInPictureEnabled)
+        XCTAssertTrue(runtimeSettings.videoRotationOptimizationExperimentEnabled)
         XCTAssertEqual(runtimeSettings.defaultPlaybackRate, 1.5)
         XCTAssertEqual(runtimeSettings.snapshot.appTintColorHex, "#123456")
+    }
+
+    @MainActor
+    func testLibraryStoreDefaultsRotationOptimizationOffAndPersistsToggle() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.videoRotationOptimizationExperimentEnabled)
+        store.setVideoRotationOptimizationExperimentEnabled(true)
+
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).videoRotationOptimizationExperimentEnabled
+        )
     }
 
     @MainActor
