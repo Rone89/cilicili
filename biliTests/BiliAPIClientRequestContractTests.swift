@@ -1880,6 +1880,85 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         XCTAssertEqual(data.dash?.video?.first?.id, 80)
     }
 
+    func testStartupRaceWaitsForWBIFailureBeforeReturningWebpageFallback() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let wbiStarted = expectation(description: "WBI request started")
+        let webpageFinished = expectation(description: "webpage hedge finished")
+        let releaseWBI = DispatchSemaphore(value: 0)
+        let completion = RequestContractCompletionFlag()
+        let recorder = RequestContractRecorder()
+        let webpageJSON = Self.playableDASHResponse(quality: 80)
+
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            if request.url?.path == "/x/player/wbi/playurl" {
+                wbiStarted.fulfill()
+                _ = releaseWBI.wait(timeout: .now() + 3)
+                return Self.response(
+                    for: request,
+                    body: #"{"code":-352,"message":"risk control","data":null}"#
+                )
+            }
+            return Self.response(for: request, body: #"{"code":-404,"message":"unexpected"}"#)
+        }
+        defer {
+            releaseWBI.signal()
+            RequestContractURLProtocol.reset()
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache(),
+            webPagePlayInfoStreamFetch: { _, _ in
+                webpageFinished.fulfill()
+                return BiliWebPagePlayInfoStreamResult(
+                    json: webpageJSON,
+                    fullPageData: nil,
+                    receivedByteCount: 128,
+                    expectedByteCount: 128,
+                    elapsedMilliseconds: 1
+                )
+            }
+        )
+        let resultTask = Task {
+            do {
+                let result = try await api.fetchRacedStartupPlayURL(
+                    bvid: "BV1startupDeferredFallback",
+                    cid: 24_684,
+                    page: nil,
+                    requestedQuality: 80,
+                    requestLease: nil,
+                    requestSource: .preload
+                )
+                await completion.markCompleted()
+                return result
+            } catch {
+                await completion.markCompleted()
+                throw error
+            }
+        }
+
+        await fulfillment(of: [wbiStarted, webpageFinished], timeout: 2)
+        let completedBeforeWBIFailure = await completion.didComplete
+        XCTAssertFalse(completedBeforeWBIFailure)
+        releaseWBI.signal()
+
+        let result = try await resultTask.value
+        XCTAssertEqual(result?.data.quality, 80)
+        let completedAfterWBIFailure = await completion.didComplete
+        XCTAssertTrue(completedAfterWBIFailure)
+        XCTAssertEqual(
+            recorder.requests.filter { $0.url?.path == "/x/player/wbi/playurl" }.count,
+            1
+        )
+    }
+
     func testFetchWebPagePlayInfoRejectsNonzeroStreamWithoutValidFullPage() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(for: request, body: "<html>no playinfo</html>")
@@ -2206,12 +2285,15 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             guestModeEnabled: true
         )
         let items = try await api.fetchDanmakuSegment(cid: cid, segmentIndex: 0)
+        let cachedItems = try await api.fetchDanmakuSegment(cid: cid, segmentIndex: 0)
 
         await fulfillment(of: [requestExpectation], timeout: 2)
 
         XCTAssertEqual(items.map(\.id), ["\(cid)-seg1-42"])
         XCTAssertEqual(items.map(\.text), ["分段弹幕"])
         XCTAssertEqual(items.first?.time, 1.5)
+        XCTAssertEqual(cachedItems, items)
+        XCTAssertEqual(recorder.requests.count, 1)
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.host, "api.bilibili.com")
         XCTAssertEqual(request.url?.path, "/x/v2/dm/web/seg.so")
@@ -3076,6 +3158,14 @@ private final class RequestContractRecorder: @unchecked Sendable {
         lock.lock()
         storedRequests.append(request)
         lock.unlock()
+    }
+}
+
+private actor RequestContractCompletionFlag {
+    private(set) var didComplete = false
+
+    func markCompleted() {
+        didComplete = true
     }
 }
 

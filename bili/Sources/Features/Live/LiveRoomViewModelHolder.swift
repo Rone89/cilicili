@@ -6,7 +6,7 @@ final class LiveRoomViewModelHolder: ObservableObject {
     @Published var viewModel: LiveRoomViewModel?
 
     private var cancellable: AnyCancellable?
-    private var cleanupPlayback: (() -> Void)?
+    private var cleanupPlayback: (@Sendable () -> Void)?
     private var lastSnapshot: LiveRoomToolbarSnapshot?
 
     func configure(room: LiveRoom, api: BiliAPIClient, libraryStore: LibraryStore) {

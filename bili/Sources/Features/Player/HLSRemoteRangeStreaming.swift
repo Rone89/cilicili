@@ -439,16 +439,12 @@ nonisolated enum PlaybackRangeStreamingSessionCoordinator {
     }
 }
 
-private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+nonisolated private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     static let shared = HLSRemoteRangeStreamingSession()
 
     private let lock = NSLock()
     private let delegateQueue: OperationQueue
-    private lazy var session = URLSession(
-        configuration: BiliURLSessionFactory.makePlaybackStreamingConfiguration(),
-        delegate: self,
-        delegateQueue: delegateQueue
-    )
+    private var session: URLSession!
     private var handlers: [ObjectIdentifier: HLSRemoteRangeStreamHandler] = [:]
 
     private override init() {
@@ -456,12 +452,17 @@ private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDele
         delegateQueue.maxConcurrentOperationCount = 2
         delegateQueue.qualityOfService = .userInitiated
         super.init()
+        session = URLSession(
+            configuration: BiliURLSessionFactory.makePlaybackStreamingConfiguration(),
+            delegate: self,
+            delegateQueue: delegateQueue
+        )
     }
 
     func start(request: URLRequest) -> (task: URLSessionDataTask, handler: HLSRemoteRangeStreamHandler) {
         let handler = HLSRemoteRangeStreamHandler()
         lock.lock()
-        let currentSession = session
+        let currentSession = session!
         let task = currentSession.dataTask(with: request)
         handlers[ObjectIdentifier(task)] = handler
         lock.unlock()
@@ -527,7 +528,7 @@ private final class HLSRemoteRangeStreamingSession: NSObject, URLSessionDataDele
     }
 }
 
-private final class HLSRemoteRangeStreamHandler: @unchecked Sendable {
+nonisolated private final class HLSRemoteRangeStreamHandler: @unchecked Sendable {
     let chunks: AsyncThrowingStream<Data, Error>
 
     private let lock = NSLock()

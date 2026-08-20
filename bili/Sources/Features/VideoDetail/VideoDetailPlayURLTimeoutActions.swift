@@ -3,7 +3,7 @@ import Foundation
 extension VideoDetailViewModel {
     func fetchPlayURLWithTimeout(
         timeout: UInt64,
-        operation: @escaping () async throws -> PlayURLData
+        operation: @escaping @MainActor @Sendable () async throws -> PlayURLData
     ) async throws -> PlayURLData {
         try await withThrowingTaskGroup(of: PlayURLData.self) { group -> PlayURLData in
             group.addTask(priority: .userInitiated) {

@@ -3,28 +3,29 @@ import Foundation
 import OSLog
 import UniformTypeIdentifiers
 
-final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+nonisolated final class BiliHeaderResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
     let assetURL: URL
 
     private let originalURL: URL
     private let headers: [String: String]
-    private let callbackQueue = DispatchQueue(label: "cc.bili.progressive-resource-loader")
+    private let callbackQueue: DispatchQueue
     private let lock = NSLock()
     private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
     private var cacheLookupTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var activeRequests: Set<ObjectIdentifier> = []
-    private lazy var session: URLSession = {
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 6
-        queue.underlyingQueue = self.callbackQueue
-        return BiliURLSessionFactory.makePlaybackResourceSession(delegateQueue: queue)
-    }()
+    private let session: URLSession
 
     init(originalURL: URL, headers: [String: String]) {
         self.originalURL = originalURL
         self.headers = headers
         let identifier = UUID().uuidString
         assetURL = URL(string: "bili-resource://asset/\(identifier)/video.mp4")!
+        let callbackQueue = DispatchQueue(label: "cc.bili.progressive-resource-loader")
+        self.callbackQueue = callbackQueue
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 6
+        queue.underlyingQueue = callbackQueue
+        session = BiliURLSessionFactory.makePlaybackResourceSession(delegateQueue: queue)
         super.init()
     }
 

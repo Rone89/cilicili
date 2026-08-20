@@ -144,6 +144,36 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         XCTAssertEqual(PiliPlusStylePlayURLSelectionExperiment.webpageHedgeDelayNanoseconds, 0)
     }
 
+    func testRoutingPlanReleasesWebpageOnlyAfterWBIFailure() {
+        let plan = StartupPlayURLRoutingPlan(
+            schedulingDecision: StartupPlayURLSchedulingDecision(
+                primaryRoute: .wbi,
+                fallbackRoute: .webpage
+            ),
+            shouldRaceWBI: true,
+            piliPlusStyleEnabled: true
+        )
+
+        XCTAssertTrue(plan.startsWebpageHedge)
+        XCTAssertEqual(
+            plan.deferredFallbackRoute(forUnacceptableResultFrom: .wbi),
+            .webpage
+        )
+        XCTAssertNil(plan.deferredFallbackRoute(forUnacceptableResultFrom: .webpage))
+    }
+
+    func testWebpageOnlyRoutingPlanDoesNotStartWBIOrHedge() {
+        let plan = StartupPlayURLRoutingPlan(
+            schedulingDecision: .race,
+            shouldRaceWBI: false,
+            piliPlusStyleEnabled: true
+        )
+
+        XCTAssertFalse(plan.shouldRaceWBI)
+        XCTAssertFalse(plan.startsWebpageHedge)
+        XCTAssertNil(plan.deferredFallbackRoute(forUnacceptableResultFrom: .wbi))
+    }
+
     func testPiliPlusUsesWBIFirstWhileSchedulerIsStillLearning() {
         let decision = StartupPlayURLSchedulingDecision.race.preferringWBIForPiliPlus(
             piliPlusStyleEnabled: true,
@@ -382,15 +412,46 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
             accountMID: 43,
             credentialVersion: key.credentialVersion
         )
+        let otherCID = StartupWBIRouteHintKey(
+            bvid: key.bvid,
+            cid: 2,
+            requestedQuality: key.requestedQuality,
+            accountMID: key.accountMID,
+            credentialVersion: key.credentialVersion
+        )
+        let otherCredential = StartupWBIRouteHintKey(
+            bvid: key.bvid,
+            cid: key.cid,
+            requestedQuality: key.requestedQuality,
+            accountMID: key.accountMID,
+            credentialVersion: 4
+        )
 
-        await store.store(.compatibilityWBI, for: key, now: 100)
+        await store.store(.webpageOnly, for: key, now: 100)
         let storedHint = await store.hint(for: key, now: 109)
         let otherAccountHint = await store.hint(for: otherAccount, now: 109)
-        let expiredHint = await store.hint(for: key, now: 111)
+        let otherCIDHint = await store.hint(for: otherCID, now: 109)
+        let otherCredentialHint = await store.hint(for: otherCredential, now: 109)
+        let recoveredHint = await store.hint(for: key, now: 111)
 
-        XCTAssertEqual(storedHint, .compatibilityWBI)
+        let webpageOnlyPlan = StartupPlayURLRoutingPlan(
+            schedulingDecision: .race,
+            shouldRaceWBI: storedHint != .webpageOnly,
+            piliPlusStyleEnabled: true
+        )
+        let recoveredPlan = StartupPlayURLRoutingPlan(
+            schedulingDecision: .race,
+            shouldRaceWBI: recoveredHint != .webpageOnly,
+            piliPlusStyleEnabled: true
+        )
+
+        XCTAssertEqual(storedHint, .webpageOnly)
         XCTAssertNil(otherAccountHint)
-        XCTAssertNil(expiredHint)
+        XCTAssertNil(otherCIDHint)
+        XCTAssertNil(otherCredentialHint)
+        XCTAssertNil(recoveredHint)
+        XCTAssertFalse(webpageOnlyPlan.shouldRaceWBI)
+        XCTAssertTrue(recoveredPlan.shouldRaceWBI)
     }
 
     func testWBIRouteHintCanClearOneVideoWithoutAffectingAnother() async {

@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-enum HLSBridgeRemoteFailureCategory: String, Sendable {
+nonisolated enum HLSBridgeRemoteFailureCategory: String, Sendable {
     case authDenied
     case urlExpired
     case rangeUnsupported
@@ -18,7 +18,7 @@ enum HLSBridgeRemoteFailureCategory: String, Sendable {
     case unknown
 }
 
-struct HLSBridgeFailureReason: Sendable, Equatable {
+nonisolated struct HLSBridgeFailureReason: Sendable, Equatable {
     enum Layer: String, Sendable {
         case remoteRange
         case proxy
@@ -112,7 +112,7 @@ struct HLSBridgeFailureReason: Sendable, Equatable {
 
 typealias HLSRemoteFailureHandler = @MainActor @Sendable (HLSBridgeFailureReason) -> Void
 
-struct HLSBridgeRemoteFailure: LocalizedError, Sendable {
+nonisolated struct HLSBridgeRemoteFailure: LocalizedError, Sendable {
     let category: HLSBridgeRemoteFailureCategory
     let statusCode: Int?
     let urlHost: String?

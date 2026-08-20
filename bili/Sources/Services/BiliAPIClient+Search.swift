@@ -32,7 +32,7 @@ extension BiliAPIClient {
             .filter { $0.articleID > 0 }
     }
 
-    private func searchTypedResults<Result: Decodable>(
+    private func searchTypedResults<Result: Decodable & Sendable>(
         keyword: String,
         searchType: String,
         page: Int = 1,

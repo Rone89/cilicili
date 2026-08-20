@@ -1,7 +1,9 @@
 import Foundation
 
 extension VideoDetailViewModel {
-    nonisolated static func makeDeinitPlaybackCleanup(for player: PlayerStateViewModel?) -> (() -> Void)? {
+    nonisolated static func makeDeinitPlaybackCleanup(
+        for player: PlayerStateViewModel?
+    ) -> (@Sendable () -> Void)? {
         guard let player else { return nil }
         return {
             stopPlayerAfterDeinit(player)

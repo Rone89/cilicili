@@ -54,11 +54,11 @@ extension BiliAPIClient {
             piliPlusStyleEnabled: piliPlusStyleEnabled,
             wbiAvailable: shouldRaceWBI
         )
-        let defersWebpageFallbackUntilWBIFailure =
-            schedulingDecision
-            .defersWebpageFallbackUntilWBIFailure(
-                piliPlusStyleEnabled: piliPlusStyleEnabled
-            )
+        let routingPlan = StartupPlayURLRoutingPlan(
+            schedulingDecision: schedulingDecision,
+            shouldRaceWBI: shouldRaceWBI,
+            piliPlusStyleEnabled: piliPlusStyleEnabled
+        )
         let schedulerBaseMessage =
             shouldRaceWBI
             ? schedulingDecision.diagnosticMessage(
@@ -82,13 +82,13 @@ extension BiliAPIClient {
         var bestStartupResult: StartupPlayURLRaceResult?
         var lastError: Error?
         let fallbackTracker =
-            schedulingDecision.usesStaggeredFallback
+            routingPlan.usesStaggeredFallback
             ? StartupPlayURLFallbackTracker(
-                initialStatus: defersWebpageFallbackUntilWBIFailure ? .deferred : .waiting
+                initialStatus: routingPlan.defersWebpageFallbackUntilWBIFailure ? .deferred : .waiting
             )
             : nil
         let webpageHedge =
-            defersWebpageFallbackUntilWBIFailure
+            routingPlan.startsWebpageHedge
             ? makePiliPlusWebpageHedge(
                 bvid: bvid,
                 page: page,
@@ -98,7 +98,7 @@ extension BiliAPIClient {
         defer { webpageHedge?.task.cancel() }
 
         return await withTaskGroup(of: StartupPlayURLAttempt.self, returning: StartupPlayURLRaceResult?.self) { group in
-            if schedulingDecision.usesStaggeredFallback,
+            if routingPlan.usesStaggeredFallback,
                 let primaryRoute = schedulingDecision.primaryRoute,
                 let fallbackRoute = schedulingDecision.fallbackRoute
             {
@@ -111,7 +111,7 @@ extension BiliAPIClient {
                         requestedQuality: requestedQuality
                     )
                 }
-                if !defersWebpageFallbackUntilWBIFailure {
+                if !routingPlan.defersWebpageFallbackUntilWBIFailure {
                     group.addTask(priority: .utility) {
                         do {
                             try await Task.sleep(
@@ -174,7 +174,7 @@ extension BiliAPIClient {
                     )
                 }
 
-                if shouldRaceWBI {
+                if routingPlan.shouldRaceWBI {
                     group.addTask(priority: .userInitiated) {
                         await self.startupPlayURLAttempt(
                             route: .wbi,
@@ -240,7 +240,7 @@ extension BiliAPIClient {
                         requestedQuality: requestedQuality
                     )
                     if hasRequestedMedia {
-                        if defersWebpageFallbackUntilWBIFailure, attempt.route == .wbi {
+                        if routingPlan.defersWebpageFallbackUntilWBIFailure, attempt.route == .wbi {
                             await fallbackTracker?.markNotNeeded()
                             webpageHedge?.task.cancel()
                         }
@@ -279,7 +279,7 @@ extension BiliAPIClient {
                         return result
                     }
                     if result.isVerifiedUnavailablePreferredFallback {
-                        if defersWebpageFallbackUntilWBIFailure, attempt.route == .wbi {
+                        if routingPlan.defersWebpageFallbackUntilWBIFailure, attempt.route == .wbi {
                             await fallbackTracker?.markNotNeeded()
                             webpageHedge?.task.cancel()
                         }
@@ -375,9 +375,10 @@ extension BiliAPIClient {
                     shouldStartDeferredWebpageFallback = attempt.route == .wbi
                 }
 
-                if defersWebpageFallbackUntilWBIFailure,
-                    shouldStartDeferredWebpageFallback,
-                    let fallbackRoute = schedulingDecision.fallbackRoute
+                if shouldStartDeferredWebpageFallback,
+                    let fallbackRoute = routingPlan.deferredFallbackRoute(
+                        forUnacceptableResultFrom: attempt.route
+                    )
                 {
                     await fallbackTracker?.markStartedAfterWBIFailure()
                     group.addTask(priority: .userInitiated) {

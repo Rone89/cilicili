@@ -303,7 +303,7 @@ extension BiliAPIClient {
         return data
     }
 
-    private func postSignedAppForm<T: Decodable>(
+    private func postSignedAppForm<T: Decodable & Sendable>(
         path: String,
         fields: [String: String],
         profile: BiliAppSigner.Profile,

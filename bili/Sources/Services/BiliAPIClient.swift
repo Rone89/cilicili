@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-nonisolated final class BiliAPIClient {
+nonisolated final class BiliAPIClient: @unchecked Sendable {
     let baseURL = URL(string: "https://api.bilibili.com")!
     let appURL = URL(string: "https://app.bilibili.com")!
     let commentURL = URL(string: "https://comment.bilibili.com")!

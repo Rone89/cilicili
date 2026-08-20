@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class VideoDetailViewModelHolder: ObservableObject {
     @Published var viewModel: VideoDetailViewModel?
-    private var cleanupPlayback: (() -> Void)?
+    private var cleanupPlayback: (@Sendable () -> Void)?
 
     func configure(
         seedVideo: VideoItem,

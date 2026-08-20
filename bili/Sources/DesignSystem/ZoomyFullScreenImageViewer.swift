@@ -1645,7 +1645,7 @@ private final class ZoomyLiveVideoHostView: UIView, UIGestureRecognizerDelegate 
     private let playerLayer = AVPlayerLayer()
     private var player: AVPlayer?
     private var currentURL: URL?
-    private var endObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var endObserver: NSObjectProtocol?
     private lazy var dismissPanController: ZoomyDismissPanGestureController = {
         let controller = ZoomyDismissPanGestureController()
         controller.canBegin = { [weak self] in self?.isDismissGestureEnabled == true }
@@ -1702,8 +1702,8 @@ private final class ZoomyLiveVideoHostView: UIView, UIGestureRecognizerDelegate 
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player.currentItem,
             queue: .main
-        ) { [weak player] _ in
-            player?.seek(to: .zero) { _ in player?.play() }
+        ) { [player] _ in
+            player.seek(to: .zero) { _ in player.play() }
         }
         player.play()
     }

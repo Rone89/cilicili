@@ -247,6 +247,46 @@ nonisolated struct StartupPlayURLSchedulingDecision: Equatable, Sendable {
     }
 }
 
+/// Resolves startup-route scheduling from already-observed state.
+///
+/// Keeping this policy free of clocks, actors, and environment reads lets both
+/// the caller and tests make the same route decision deterministically.
+nonisolated struct StartupPlayURLRoutingPlan: Equatable, Sendable {
+    let schedulingDecision: StartupPlayURLSchedulingDecision
+    let shouldRaceWBI: Bool
+    let defersWebpageFallbackUntilWBIFailure: Bool
+
+    init(
+        schedulingDecision: StartupPlayURLSchedulingDecision,
+        shouldRaceWBI: Bool,
+        piliPlusStyleEnabled: Bool
+    ) {
+        self.schedulingDecision = schedulingDecision
+        self.shouldRaceWBI = shouldRaceWBI
+        defersWebpageFallbackUntilWBIFailure =
+            schedulingDecision.defersWebpageFallbackUntilWBIFailure(
+                piliPlusStyleEnabled: piliPlusStyleEnabled
+            )
+    }
+
+    var usesStaggeredFallback: Bool {
+        schedulingDecision.usesStaggeredFallback
+    }
+
+    var startsWebpageHedge: Bool {
+        defersWebpageFallbackUntilWBIFailure
+    }
+
+    /// Returns the deferred fallback only after the WBI attempt cannot supply
+    /// an acceptable result. A successful WBI attempt never releases it.
+    func deferredFallbackRoute(forUnacceptableResultFrom route: StartupPlayURLRoute?) -> StartupPlayURLRoute? {
+        guard defersWebpageFallbackUntilWBIFailure,
+              route == .wbi
+        else { return nil }
+        return schedulingDecision.fallbackRoute
+    }
+}
+
 actor StartupPlayURLFallbackTracker {
     enum Status: String, Equatable, Sendable {
         case waiting

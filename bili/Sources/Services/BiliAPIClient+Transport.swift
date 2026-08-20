@@ -7,7 +7,7 @@ extension BiliAPIClient {
         session
     }
 
-    func get<T: Decodable>(
+    func get<T: Decodable & Sendable>(
         base: URL,
         path: String,
         query: [String: String],
@@ -87,7 +87,7 @@ extension BiliAPIClient {
         }
     }
 
-    func postForm<T: Decodable>(
+    func postForm<T: Decodable & Sendable>(
         base: URL,
         path: String,
         body: [String: String],
@@ -116,7 +116,7 @@ extension BiliAPIClient {
         return try await Self.decode(data, priority: URLSessionTask.highPriority)
     }
 
-    func postSignedAPIForm<T: Decodable>(
+    func postSignedAPIForm<T: Decodable & Sendable>(
         path: String,
         fields: [String: String],
         profile: BiliAppSigner.Profile,
@@ -235,7 +235,7 @@ extension BiliAPIClient {
             .first
     }
 
-    nonisolated static func decode<T: Decodable>(
+    nonisolated static func decode<T: Decodable & Sendable>(
         _ type: T.Type = T.self,
         from data: Data,
         priority: Float
@@ -254,7 +254,7 @@ extension BiliAPIClient {
         }.value
     }
 
-    nonisolated static func decode<T: Decodable>(
+    nonisolated static func decode<T: Decodable & Sendable>(
         _ data: Data,
         priority: Float
     ) async throws -> T {

@@ -146,7 +146,7 @@ final class VideoDetailViewModel: ObservableObject {
     var uploaderInteractionLoadState = VideoDetailUploaderInteractionLoadState()
     var lastUserSeekAt: Date?
     var loadTiming = VideoDetailViewModelLoadTimingState()
-    private var cleanupStablePlaybackBeforeDeinit: (() -> Void)?
+    private var cleanupStablePlaybackBeforeDeinit: (@Sendable () -> Void)?
     let relatedLoadTimeoutNanoseconds: UInt64 = 5_000_000_000
 
     init(

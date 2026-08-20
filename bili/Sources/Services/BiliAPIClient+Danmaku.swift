@@ -6,7 +6,52 @@ nonisolated struct DanmakuRequestContext: Sendable {
     let guestModeCookieHeader: String?
 }
 
+nonisolated struct DanmakuXMLParseContext: Sendable {
+    let cid: Int
+    let maxItems: Int
+
+    init(cid: Int, maxItems: Int = 6_000) {
+        self.cid = cid
+        self.maxItems = maxItems
+    }
+}
+
+nonisolated struct DanmakuSegmentParseContext: Sendable {
+    let cid: Int
+    let segmentIndex: Int
+    let maxItems: Int
+
+    init(cid: Int, segmentIndex: Int, maxItems: Int = 2_200) {
+        self.cid = cid
+        self.segmentIndex = segmentIndex
+        self.maxItems = maxItems
+    }
+}
+
 extension BiliAPIClient {
+    nonisolated static func parseDanmakuXML(
+        _ data: Data,
+        context: DanmakuXMLParseContext
+    ) async throws -> [DanmakuItem] {
+        try await Task.detached(priority: .userInitiated) {
+            try DanmakuXMLParser(cid: context.cid, maxItems: context.maxItems).parse(data: data)
+        }.value
+    }
+
+    nonisolated static func parseDanmakuSegment(
+        _ data: Data,
+        context: DanmakuSegmentParseContext
+    ) async throws -> [DanmakuItem] {
+        try await Task.detached(priority: .userInitiated) {
+            try DanmakuSegmentProtobufParser(
+                cid: context.cid,
+                segmentIndex: context.segmentIndex,
+                maxItems: context.maxItems
+            )
+            .parse(data: data)
+        }.value
+    }
+
     func danmakuRequestContext() async -> DanmakuRequestContext {
         let snapshot = requestSnapshot()
         return DanmakuRequestContext(
@@ -52,7 +97,10 @@ extension BiliAPIClient {
             }
             guard !data.isEmpty else { throw BiliAPIError.emptyData }
 
-            let items = try DanmakuXMLParser(cid: cid).parse(data: data)
+            let items = try await Self.parseDanmakuXML(
+                data,
+                context: DanmakuXMLParseContext(cid: cid)
+            )
             await SubtitleDanmakuResourceCache.shared.storeDanmaku(items, for: cid, segmentIndex: 0)
             return items
         }
@@ -100,11 +148,13 @@ extension BiliAPIClient {
                 throw BiliAPIError.emptyData
             }
 
-            let items = try DanmakuSegmentProtobufParser(
-                cid: cid,
-                segmentIndex: normalizedSegmentIndex
+            let items = try await Self.parseDanmakuSegment(
+                data,
+                context: DanmakuSegmentParseContext(
+                    cid: cid,
+                    segmentIndex: normalizedSegmentIndex
+                )
             )
-            .parse(data: data)
             await SubtitleDanmakuResourceCache.shared.storeDanmaku(
                 items,
                 for: cid,

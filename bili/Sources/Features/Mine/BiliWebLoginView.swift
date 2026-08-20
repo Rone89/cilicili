@@ -69,7 +69,11 @@ private struct BiliWebLoginWebView: UIViewRepresentable {
             inspectCookies(in: webView)
         }
 
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+        ) {
             if navigationAction.targetFrame == nil, let requestURL = navigationAction.request.url {
                 webView.load(URLRequest(url: requestURL))
                 decisionHandler(.cancel)

@@ -1,6 +1,6 @@
 import Foundation
 
-enum BiliAPIError: LocalizedError {
+nonisolated enum BiliAPIError: LocalizedError, Sendable {
     case invalidURL
     case emptyData
     case api(code: Int, message: String?)

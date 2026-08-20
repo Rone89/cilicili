@@ -301,10 +301,6 @@ final class DanmakuAnimationOverlayView: UIView {
         configureView()
     }
 
-    deinit {
-        displayLink?.invalidate()
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         let size = bounds.size

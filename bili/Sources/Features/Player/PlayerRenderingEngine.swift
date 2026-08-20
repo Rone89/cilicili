@@ -425,7 +425,7 @@ struct PlayerQualityControlItem: Identifiable {
 }
 
 @MainActor
-protocol PlayerRenderingEngine: AnyObject {
+protocol PlayerRenderingEngine: AnyObject, Sendable {
     var hasMedia: Bool { get }
     var needsMediaRecovery: Bool { get }
     var playbackErrorMessage: String? { get }

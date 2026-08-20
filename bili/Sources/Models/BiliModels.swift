@@ -112,11 +112,15 @@ nonisolated struct BiliResponse<T: Decodable>: Decodable {
     }
 }
 
+extension BiliResponse: Sendable where T: Sendable {}
+
 nonisolated struct BiliPage<T: Decodable>: Decodable {
     let list: [T]?
     let item: [T]?
     let result: [T]?
 }
+
+extension BiliPage: Sendable where T: Sendable {}
 
 nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     nonisolated var id: String { bvid }
@@ -2993,7 +2997,7 @@ nonisolated struct HTTPByteRange: Hashable, Sendable {
     }
 }
 
-nonisolated struct CommentPage: Decodable {
+nonisolated struct CommentPage: Decodable, Sendable {
     let replies: [Comment]?
     let topReplies: [Comment]?
     let root: Comment?
@@ -3017,7 +3021,7 @@ nonisolated struct CommentPage: Decodable {
     }
 }
 
-nonisolated struct CommentCursor: Decodable {
+nonisolated struct CommentCursor: Decodable, Sendable {
     let next: String?
     let nextOffset: String?
     let isEnd: Bool?
@@ -3049,7 +3053,7 @@ nonisolated struct CommentCursor: Decodable {
     }
 }
 
-nonisolated private struct CommentCursorPaginationReply: Decodable {
+nonisolated private struct CommentCursorPaginationReply: Decodable, Sendable {
     let nextOffset: String?
     let isEnd: Bool?
 
@@ -3065,7 +3069,7 @@ nonisolated private struct CommentCursorPaginationReply: Decodable {
     }
 }
 
-nonisolated struct Comment: Identifiable, Decodable, Hashable {
+nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
     let rpid: Int
     let rootID: Int?
     let parentID: Int?
@@ -3110,7 +3114,7 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct CommentMember: Decodable, Hashable {
+nonisolated struct CommentMember: Decodable, Hashable, Sendable {
     let mid: String?
     let uname: String?
     let avatar: String?
@@ -3146,7 +3150,7 @@ nonisolated struct CommentMember: Decodable, Hashable {
     }
 }
 
-nonisolated struct CommentLevelInfo: Decodable, Hashable {
+nonisolated struct CommentLevelInfo: Decodable, Hashable, Sendable {
     let currentLevel: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -3159,7 +3163,7 @@ nonisolated struct CommentLevelInfo: Decodable, Hashable {
     }
 }
 
-nonisolated struct CommentContent: Decodable, Hashable {
+nonisolated struct CommentContent: Decodable, Hashable, Sendable {
     let message: String?
     let emotes: [String: CommentEmote]
     let pictures: [DynamicImageItem]
@@ -3208,7 +3212,7 @@ nonisolated struct CommentContent: Decodable, Hashable {
     }
 }
 
-nonisolated struct CommentEmote: Decodable, Hashable {
+nonisolated struct CommentEmote: Decodable, Hashable, Sendable {
     let text: String?
     let url: String?
     let gifURL: String?
@@ -3327,7 +3331,9 @@ nonisolated struct SearchTypeData<Result: Decodable>: Decodable {
     let result: [Result]?
 }
 
-nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable {
+extension SearchTypeData: Sendable where Result: Sendable {}
+
+nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable, Sendable {
     var id: String { bvid }
 
     let bvid: String
@@ -3388,7 +3394,7 @@ nonisolated struct SearchVideoItem: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct SearchUserItem: Identifiable, Decodable, Hashable {
+nonisolated struct SearchUserItem: Identifiable, Decodable, Hashable, Sendable {
     var id: Int { mid }
 
     let mid: Int
@@ -3426,11 +3432,11 @@ nonisolated struct SearchUserItem: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct SearchUserOfficialVerify: Decodable, Hashable {
+nonisolated struct SearchUserOfficialVerify: Decodable, Hashable, Sendable {
     let desc: String?
 }
 
-nonisolated struct SearchMediaItem: Identifiable, Decodable, Hashable {
+nonisolated struct SearchMediaItem: Identifiable, Decodable, Hashable, Sendable {
     var id: String {
         if let mediaID {
             return "media-\(mediaID)"
@@ -3498,7 +3504,7 @@ nonisolated struct SearchMediaItem: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct SearchMediaRating: Decodable, Hashable {
+nonisolated struct SearchMediaRating: Decodable, Hashable, Sendable {
     let score: Double?
 
     enum CodingKeys: String, CodingKey {
@@ -3517,7 +3523,7 @@ nonisolated struct SearchMediaRating: Decodable, Hashable {
     }
 }
 
-nonisolated struct SearchArticleItem: Identifiable, Decodable, Hashable {
+nonisolated struct SearchArticleItem: Identifiable, Decodable, Hashable, Sendable {
     var id: Int { articleID }
 
     let articleID: Int
@@ -3565,26 +3571,26 @@ nonisolated struct SearchArticleItem: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct SearchSuggestResponse: Decodable {
+nonisolated struct SearchSuggestResponse: Decodable, Sendable {
     let tag: [SearchSuggestItem]?
 }
 
-nonisolated struct SearchSuggestItem: Identifiable, Decodable, Hashable {
+nonisolated struct SearchSuggestItem: Identifiable, Decodable, Hashable, Sendable {
     var id: String { value }
 
     let value: String
     let ref: Int?
 }
 
-nonisolated struct HotSearchData: Decodable {
+nonisolated struct HotSearchData: Decodable, Sendable {
     let trending: HotSearchTrending?
 }
 
-nonisolated struct HotSearchTrending: Decodable {
+nonisolated struct HotSearchTrending: Decodable, Sendable {
     let list: [HotSearchItem]?
 }
 
-nonisolated struct HotSearchItem: Identifiable, Decodable, Hashable {
+nonisolated struct HotSearchItem: Identifiable, Decodable, Hashable, Sendable {
     var id: String { keyword }
 
     let keyword: String
@@ -3597,7 +3603,7 @@ nonisolated struct HotSearchItem: Identifiable, Decodable, Hashable {
     }
 }
 
-nonisolated struct EmptyBiliPayload: Decodable {}
+nonisolated struct EmptyBiliPayload: Decodable, Sendable {}
 
 nonisolated struct VideoInteractionState: Hashable, Sendable {
     var isLiked = false
@@ -4293,7 +4299,7 @@ nonisolated private struct DynamicCodingKey: CodingKey {
     }
 }
 
-nonisolated enum DynamicJSONValue: Codable, Hashable {
+nonisolated enum DynamicJSONValue: Codable, Hashable, Sendable {
     case string(String)
     case number(String)
     case bool(Bool)
@@ -6507,7 +6513,7 @@ nonisolated struct DynamicDraw: Decodable, Hashable {
     }
 }
 
-nonisolated struct DynamicImageItem: Decodable, Hashable {
+nonisolated struct DynamicImageItem: Decodable, Hashable, Sendable {
     let url: String
     let width: Int?
     let height: Int?

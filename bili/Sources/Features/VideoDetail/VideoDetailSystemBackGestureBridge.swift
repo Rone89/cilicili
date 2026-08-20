@@ -64,11 +64,6 @@ struct VideoDetailSystemBackGestureBridge: UIViewControllerRepresentable {
             }
         }
 
-        deinit {
-            detachFromSystemBackGestures()
-            onNavigationGestureBegan = nil
-        }
-
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             restoreSystemBackGestures()

@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-final class HLSProxyFailureStore: @unchecked Sendable {
+nonisolated final class HLSProxyFailureStore: @unchecked Sendable {
     private let lock = NSLock()
     nonisolated(unsafe) private var value: (reason: HLSBridgeFailureReason, date: Date)?
 

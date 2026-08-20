@@ -1,5 +1,5 @@
 import AVFoundation
-import AVKit
+@preconcurrency import AVKit
 import Combine
 import MediaPlayer
 import OSLog
@@ -626,7 +626,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         rescheduleTimeObserverIfNeeded(force: true)
     }
 
-    deinit {
+    isolated deinit {
         isTerminated = true
         let nowPlayingPlayerID = ObjectIdentifier(self)
         Task { @MainActor in
@@ -5857,6 +5857,18 @@ private struct PendingSeekRecoveryMetric {
     let engineElapsedMilliseconds: Double?
 }
 
+nonisolated private final class PictureInPictureRestoreCompletion: @unchecked Sendable {
+    private let handler: (Bool) -> Void
+
+    init(_ handler: @escaping (Bool) -> Void) {
+        self.handler = handler
+    }
+
+    func callAsFunction(_ didRestore: Bool) {
+        handler(didRestore)
+    }
+}
+
 extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         Task { @MainActor [weak self] in
@@ -5896,16 +5908,17 @@ extension PlayerStateViewModel: AVPictureInPictureControllerDelegate {
         _ pictureInPictureController: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
+        let completion = PictureInPictureRestoreCompletion(completionHandler)
         Task { @MainActor [weak self] in
             guard let self,
                   !self.isTerminated,
                   self.pictureInPictureController === pictureInPictureController
             else {
-                completionHandler(false)
+                completion(false)
                 return
             }
             let didRestore = await self.restoreUserInterfaceAfterPictureInPictureStopIfNeeded()
-            completionHandler(didRestore)
+            completion(didRestore)
         }
     }
 
@@ -5969,16 +5982,17 @@ extension PlayerStateViewModel: AVPlayerViewControllerDelegate {
         _ playerViewController: AVPlayerViewController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
+        let completion = PictureInPictureRestoreCompletion(completionHandler)
         Task { @MainActor [weak self] in
             guard let self,
                   !self.isTerminated,
                   self.nativePlaybackController === playerViewController
             else {
-                completionHandler(false)
+                completion(false)
                 return
             }
             let didRestore = await self.restoreUserInterfaceAfterPictureInPictureStopIfNeeded()
-            completionHandler(didRestore)
+            completion(didRestore)
         }
     }
 

@@ -26,10 +26,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private let player = AVPlayer()
     private weak var viewModel: PlayerStateViewModel?
-    private var itemEndObserver: Any?
-    private var itemFailedObserver: Any?
-    private var itemStalledObserver: Any?
-    private var itemAccessLogObserver: Any?
+    nonisolated(unsafe) private var itemEndObserver: Any?
+    nonisolated(unsafe) private var itemFailedObserver: Any?
+    nonisolated(unsafe) private var itemStalledObserver: Any?
+    nonisolated(unsafe) private var itemAccessLogObserver: Any?
     private var itemReadinessTimeoutTask: Task<Void, Never>?
     private var firstFrameWatchdogTask: Task<Void, Never>?
     private var firstFrameWatchdogGeneration = 0
@@ -37,7 +37,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var itemObservers: [NSKeyValueObservation] = []
     private var layerReadyForDisplayObserver: NSKeyValueObservation?
     private var controllerReadyForDisplayObserver: NSKeyValueObservation?
-    private var periodicTimeObserver: Any?
+    nonisolated(unsafe) private var periodicTimeObserver: Any?
     private let videoFrameContext = CIContext()
     private weak var surfaceView: UIView?
     private var playerLayer: AVPlayerLayer?
@@ -2128,10 +2128,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func observeControllerReadyForDisplay(_ controller: AVPlayerViewController) {
         guard controllerReadyForDisplayObserver == nil else { return }
         controllerReadyForDisplayObserver = controller.observe(\.isReadyForDisplay, options: [.new]) { [weak self] controller, _ in
-            guard controller.isReadyForDisplay else { return }
             let controllerIdentity = ObjectIdentifier(controller)
-            Task { @MainActor [weak self] in
+            Task { @MainActor [weak self, weak controller] in
                 guard let self,
+                      controller?.isReadyForDisplay == true,
                       !self.isStopped,
                       self.isCurrentPlayerViewController(controllerIdentity),
                       self.player.currentItem === self.playerItem
@@ -5407,6 +5407,19 @@ struct HLSBridgeRenderedPlaylists: Sendable {
     let routes: [String: HLSProxyRoute]
 }
 
+nonisolated private final class HLSContinuationResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !didResume else { return false }
+        didResume = true
+        return true
+    }
+}
+
 private struct HLSBridgeSeekPlanner: Sendable {
     let video: HLSBridgeSeekMap?
     let audio: HLSBridgeSeekMap
@@ -5476,7 +5489,7 @@ private struct HLSBridgeSeekPlanner: Sendable {
     }
 }
 
-private final class LocalLiveHLSProxy: @unchecked Sendable {
+nonisolated private final class LocalLiveHLSProxy: @unchecked Sendable {
     let playlistURL: URL
 
     private let sourcePlaylistURL: URL
@@ -5556,16 +5569,14 @@ private final class LocalLiveHLSProxy: @unchecked Sendable {
                 }
                 self.isStarted = true
 
-                var didResume = false
+                let resumeGate = HLSContinuationResumeGate()
                 self.listener.stateUpdateHandler = { state in
                     switch state {
                     case .ready:
-                        guard !didResume else { return }
-                        didResume = true
+                        guard resumeGate.claim() else { return }
                         continuation.resume()
                     case let .failed(error):
-                        guard !didResume else { return }
-                        didResume = true
+                        guard resumeGate.claim() else { return }
                         continuation.resume(throwing: error)
                     case .cancelled:
                         break
@@ -7107,7 +7118,7 @@ private actor HLSSourcePreferenceCache {
     }
 }
 
-private final class LocalHLSProxyServer: @unchecked Sendable {
+nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
     nonisolated private static let maxStreamingCacheBytes: Int64 = 24 * 1024 * 1024
 
     nonisolated(unsafe) private var headers: [String: String]
@@ -7209,26 +7220,23 @@ private final class LocalHLSProxyServer: @unchecked Sendable {
                 }
                 self.isStarted = true
 
-                var didResume = false
+                let resumeGate = HLSContinuationResumeGate()
                 self.listener.stateUpdateHandler = { state in
                     switch state {
                     case .ready:
-                        guard !didResume else { return }
+                        guard resumeGate.claim() else { return }
                         guard let port = self.listener.port,
                               let baseURL = URL(string: "http://127.0.0.1:\(port.rawValue)")
                         else {
-                            didResume = true
                             self.listener.cancel()
                             continuation.resume(throwing: PlayerEngineError.unsupportedMedia)
                             return
                         }
                         let renderedPlaylists = renderPlaylists(baseURL)
                         self.routes = renderedPlaylists.routes
-                        didResume = true
                         continuation.resume(returning: renderedPlaylists)
                     case let .failed(error):
-                        guard !didResume else { return }
-                        didResume = true
+                        guard resumeGate.claim() else { return }
                         continuation.resume(throwing: error)
                     case .cancelled:
                         break
