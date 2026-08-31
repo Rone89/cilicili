@@ -81,6 +81,21 @@ extension BiliAPIClient {
         return progress
     }
 
+    func fetchAccountWatchLater() async throws -> [AccountVideoEntry] {
+        let context = await accountLibraryRequestContext(purpose: .historyRead)
+        guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+        let response: BiliResponse<DynamicJSONValue> = try await get(
+            base: baseURL,
+            path: "/x/v2/history/toview",
+            query: [:],
+            cookieHeader: context.cookieHeader
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        return response.payload?.accountVideoEntries ?? []
+    }
+
     func fetchAccountFavorites(page: Int = 1, pageSize: Int = 20) async throws -> [AccountVideoEntry] {
         let context = await accountLibraryRequestContext(purpose: .interaction)
         guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }

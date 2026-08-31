@@ -4762,6 +4762,7 @@ nonisolated enum DynamicJSONValue: Codable, Hashable, Sendable {
         )
         let timestamp = object["view_at"]?.doubleValue
             ?? object["fav_time"]?.doubleValue
+            ?? object["add_at"]?.doubleValue
             ?? object["mtime"]?.doubleValue
             ?? object["ctime"]?.doubleValue
         let progress = object["progress"]?.doubleValue
