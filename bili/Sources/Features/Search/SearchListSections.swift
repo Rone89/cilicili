@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SearchSortHeaderButton: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     var showsContainer = true
 
@@ -39,7 +38,7 @@ struct SearchSortHeaderButton: View {
 
         if showsContainer {
             label
-                .searchSortGlassEffect(libraryStore.videoDetailSegmentedPickerGlassStyle)
+                .biliBottomTabGlassEffect(interactive: false, in: Capsule())
         } else {
             label
         }
@@ -47,17 +46,5 @@ struct SearchSortHeaderButton: View {
 
     private var sortTitle: String {
         viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "排序"
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func searchSortGlassEffect(_ style: VideoDetailSegmentedPickerGlassStyle) -> some View {
-        switch style {
-        case .clear:
-            glassEffect(.clear.interactive(), in: .capsule)
-        case .regular:
-            glassEffect(.regular.interactive(), in: .capsule)
-        }
     }
 }

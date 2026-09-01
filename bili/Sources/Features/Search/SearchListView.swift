@@ -222,13 +222,18 @@ private struct SearchDiscoveryEmptyCard: View {
 }
 
 private struct SearchStructuredResultCard: View, Equatable {
+    @Environment(\.dismissSearch) private var dismissSearch
     let result: SearchResultItem
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.result == rhs.result
+    }
 
     var body: some View {
         Group {
             switch result {
             case .video(let video):
-                VideoRouteLink(video) {
+                VideoRouteLink(video, onOpen: dismissSearch.callAsFunction) {
                     SearchVideoResultRow(video: video)
                 }
             default:

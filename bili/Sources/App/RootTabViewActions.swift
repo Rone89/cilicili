@@ -127,6 +127,9 @@ extension RootTabView {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction, push)
+        } else if selectedTab == .search,
+                  libraryStore.searchTabExpansionExperimentEnabled {
+            push()
         } else {
             withAnimation(.smooth(duration: 0.30), push)
         }
@@ -163,13 +166,7 @@ extension RootTabView {
     func beginPlaybackPreload(for video: VideoItem) {
         guard !video.bvid.isEmpty, !video.bvid.hasPrefix("av") else { return }
         guard !video.isPGCEpisode else { return }
-        let now = Date()
-        if let lastPreload = recentPlaybackPreloadTimes[video.bvid],
-           now.timeIntervalSince(lastPreload) < 1.2 {
-            return
-        }
-        recentPlaybackPreloadTimes[video.bvid] = now
-        trimRecentPlaybackPreloads(now: now)
+        guard recentPlaybackPreloadGate.shouldBeginPreload(for: video.bvid) else { return }
         Task {
             let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
                 for: video.bvid,
@@ -196,20 +193,6 @@ extension RootTabView {
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
         }
-    }
-
-    func trimRecentPlaybackPreloads(now: Date) {
-        recentPlaybackPreloadTimes = recentPlaybackPreloadTimes.filter { _, date in
-            now.timeIntervalSince(date) < 8
-        }
-        guard recentPlaybackPreloadTimes.count > 16 else { return }
-        let keptKeys = Set(
-            recentPlaybackPreloadTimes
-                .sorted { $0.value > $1.value }
-                .prefix(16)
-                .map(\.key)
-        )
-        recentPlaybackPreloadTimes = recentPlaybackPreloadTimes.filter { keptKeys.contains($0.key) }
     }
 
     func restoreVideoPlaybackUIForPictureInPicture(_ video: VideoItem) async -> Bool {

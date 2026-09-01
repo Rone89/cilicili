@@ -23,7 +23,7 @@ struct RootTabView: View {
     @State var didConsumeStartupLiveRoom = false
     @State var didConsumeStartupUploader = false
     @State var inAppBrowserItem: InAppBrowserItem?
-    @State var recentPlaybackPreloadTimes: [String: Date] = [:]
+    @State var recentPlaybackPreloadGate = RecentPlaybackPreloadGate()
     let shouldStartDetail = ProcessInfo.processInfo.arguments.contains("--start-detail")
     let startBVID = Self.argumentValue(after: "--start-bvid")
     let startLiveRoomID = Self.argumentInt(after: "--start-live-room")
@@ -425,6 +425,31 @@ struct RootTabView: View {
 
 private struct HomeMessageUnreadRefreshTaskID: Hashable {
     let credentialVersion: Int
+}
+
+@MainActor
+final class RecentPlaybackPreloadGate {
+    private var recentTimes: [String: Date] = [:]
+
+    func shouldBeginPreload(for bvid: String, now: Date = Date()) -> Bool {
+        if let lastPreload = recentTimes[bvid],
+           now.timeIntervalSince(lastPreload) < 1.2 {
+            return false
+        }
+
+        recentTimes[bvid] = now
+        recentTimes = recentTimes.filter { now.timeIntervalSince($0.value) < 8 }
+        if recentTimes.count > 16 {
+            let keptKeys = Set(
+                recentTimes
+                    .sorted { $0.value > $1.value }
+                    .prefix(16)
+                    .map(\.key)
+            )
+            recentTimes = recentTimes.filter { keptKeys.contains($0.key) }
+        }
+        return true
+    }
 }
 
 private extension View {

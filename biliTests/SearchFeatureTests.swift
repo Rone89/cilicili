@@ -25,4 +25,13 @@ final class SearchFeatureTests: XCTestCase {
             LibraryStore(userDefaults: defaults).searchTabExpansionExperimentEnabled
         )
     }
+
+    func testRecentPlaybackPreloadGateSuppressesImmediateDuplicates() {
+        let gate = RecentPlaybackPreloadGate()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertTrue(gate.shouldBeginPreload(for: "BV1", now: start))
+        XCTAssertFalse(gate.shouldBeginPreload(for: "BV1", now: start.addingTimeInterval(1)))
+        XCTAssertTrue(gate.shouldBeginPreload(for: "BV1", now: start.addingTimeInterval(1.3)))
+    }
 }

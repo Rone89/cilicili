@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SearchContentView: View {
+    @Environment(\.isSearching) private var isSearching
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     @ObservedObject var accessoryStore: SearchBottomAccessoryStore
@@ -17,6 +18,7 @@ struct SearchContentView: View {
                     SearchBottomControls(viewModel: viewModel)
                 }
                 .padding(.vertical, 4)
+                .padding(.bottom, isSearching ? 56 : 0)
             } else if !usesSearchTabExpansion,
                       !accessoryStore.isSearchFocused {
                 SearchSortHeaderButton(viewModel: viewModel)

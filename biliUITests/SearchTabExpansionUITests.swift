@@ -28,7 +28,7 @@ final class SearchTabExpansionUITests: XCTestCase {
         XCTAssertTrue(scope.waitForExistence(timeout: 5))
         XCTAssertTrue(sort.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(searchField.frame.minY, app.frame.midY)
-        XCTAssertLessThan(scope.frame.maxY, searchField.frame.minY)
-        XCTAssertLessThan(sort.frame.maxY, searchField.frame.minY)
+        XCTAssertLessThan(scope.frame.maxY + 4, searchField.frame.minY)
+        XCTAssertLessThan(sort.frame.maxY + 4, searchField.frame.minY)
     }
 }
