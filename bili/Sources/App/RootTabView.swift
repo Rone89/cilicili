@@ -105,17 +105,37 @@ struct RootTabView: View {
     private var rootTabBar: some View {
         TabView(selection: tabSelection) {
             ForEach(visibleRootTabs) { tab in
-                Tab(value: tab) {
-                    rootTabNavigationStack(
-                        for: tab,
-                        detailPath: rootNavigationPathBinding(for: tab)
-                    )
-                } label: {
-                    Label(tab.title, systemImage: tab.systemImage)
+                if tab == .search,
+                   libraryStore.searchTabExpansionExperimentEnabled {
+                    Tab(
+                        tab.title,
+                        systemImage: tab.systemImage,
+                        value: tab,
+                        role: .search
+                    ) {
+                        rootTabNavigationStack(
+                            for: tab,
+                            detailPath: rootNavigationPathBinding(for: tab)
+                        )
+                    }
+                } else {
+                    Tab(value: tab) {
+                        rootTabNavigationStack(
+                            for: tab,
+                            detailPath: rootNavigationPathBinding(for: tab)
+                        )
+                    } label: {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    }
                 }
             }
         }
         .tint(libraryStore.appTintColor)
+        .tabViewSearchActivation(
+            libraryStore.searchTabExpansionExperimentEnabled
+                ? .searchTabSelection
+                : .automatic
+        )
         .tabViewBottomAccessory(isEnabled: showsSearchBottomAccessory) {
             SearchTabBottomAccessory(store: searchBottomAccessoryStore)
         }
@@ -158,8 +178,18 @@ struct RootTabView: View {
                     api: dependencies.api
                 )
         }
+        .systemSearchTab(
+            text: rootSearchQueryBinding,
+            isEnabled: tab == .search
+                && libraryStore.searchTabExpansionExperimentEnabled,
+            prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
+            onSubmit: submitRootSearch
+        )
         .coordinatesRootTabBarTransitions(
-            isDetailPresented: !detailPath.wrappedValue.isEmpty
+            isDetailPresented: !detailPath.wrappedValue.isEmpty,
+            isEnabled: tab != .search
+                || !libraryStore.searchTabExpansionExperimentEnabled
+                || !detailPath.wrappedValue.isEmpty
         )
     }
 
@@ -191,7 +221,8 @@ struct RootTabView: View {
             isPresented: $searchBottomAccessoryStore.isSearchFocused,
             isEnabled: tab == .search
                 && selectedTab == .search
-                && detailPath.wrappedValue.isEmpty,
+                && detailPath.wrappedValue.isEmpty
+                && !libraryStore.searchTabExpansionExperimentEnabled,
             prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
             title: "搜索",
             onSubmit: submitRootSearch
@@ -241,22 +272,24 @@ struct RootTabView: View {
         )
     }
 
-    private var showsSearchBottomAccessory: Bool {
-        guard visibleRootTabs.contains(.search),
-              selectedTab == .search,
-              searchNavigationPath.isEmpty,
-              searchBottomAccessoryStore.viewModel != nil,
-              !searchBottomAccessoryStore.isSearchFocused else {
-            return false
-        }
-        return true
-    }
-
     private var rootTabBarMinimizeBehavior: TabBarMinimizeBehavior {
         if selectedTab == .search {
             return .onScrollDown
         }
         return runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never
+    }
+
+    private var showsSearchBottomAccessory: Bool {
+        guard visibleRootTabs.contains(.search),
+              selectedTab == .search,
+              searchNavigationPath.isEmpty,
+              searchBottomAccessoryStore.viewModel != nil else {
+            return false
+        }
+        if libraryStore.searchTabExpansionExperimentEnabled {
+            return false
+        }
+        return !searchBottomAccessoryStore.isSearchFocused
     }
 
     private func cancelMediaWarmupsIfEnvironmentConstrained() {
@@ -392,4 +425,25 @@ struct RootTabView: View {
 
 private struct HomeMessageUnreadRefreshTaskID: Hashable {
     let credentialVersion: Int
+}
+
+private extension View {
+    @ViewBuilder
+    func systemSearchTab(
+        text: Binding<String>,
+        isEnabled: Bool,
+        prompt: String,
+        onSubmit: @escaping () -> Void
+    ) -> some View {
+        if isEnabled {
+            searchable(
+                text: text,
+                placement: .automatic,
+                prompt: Text(prompt)
+            )
+            .onSubmit(of: .search, onSubmit)
+        } else {
+            self
+        }
+    }
 }

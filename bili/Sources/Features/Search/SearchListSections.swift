@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SearchSortHeaderButton: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     var showsContainer = true
 
@@ -28,24 +29,35 @@ struct SearchSortHeaderButton: View {
     @ViewBuilder
     private var sortLabel: some View {
         let label = Label(sortTitle, systemImage: "arrow.up.arrow.down")
-            .font(.caption.weight(.semibold))
+            .font(.subheadline.weight(.medium))
             .labelStyle(.titleAndIcon)
             .lineLimit(1)
-            .minimumScaleFactor(0.78)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(viewModel.selectedScope.supportsOrder ? Color.primary : Color.secondary)
-            .frame(minWidth: 58)
-            .frame(height: 36)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
+            .frame(height: 40)
 
         if showsContainer {
             label
-                .biliBottomTabGlassEffect(interactive: false, in: Capsule())
+                .searchSortGlassEffect(libraryStore.videoDetailSegmentedPickerGlassStyle)
         } else {
             label
         }
     }
 
     private var sortTitle: String {
-        viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.shortTitle : "排序"
+        viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "排序"
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func searchSortGlassEffect(_ style: VideoDetailSegmentedPickerGlassStyle) -> some View {
+        switch style {
+        case .clear:
+            glassEffect(.clear.interactive(), in: .capsule)
+        case .regular:
+            glassEffect(.regular.interactive(), in: .capsule)
+        }
     }
 }

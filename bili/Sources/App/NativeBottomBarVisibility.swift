@@ -2,10 +2,18 @@ import SwiftUI
 import UIKit
 
 extension View {
-    func coordinatesRootTabBarTransitions(isDetailPresented: Bool) -> some View {
-        background(
-            NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented)
-        )
+    @ViewBuilder
+    func coordinatesRootTabBarTransitions(
+        isDetailPresented: Bool,
+        isEnabled: Bool = true
+    ) -> some View {
+        if isEnabled {
+            background(
+                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented)
+            )
+        } else {
+            self
+        }
     }
 }
 

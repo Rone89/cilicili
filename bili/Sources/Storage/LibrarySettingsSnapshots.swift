@@ -49,6 +49,8 @@ final class RootRuntimeSettingsStore: ObservableObject {
 struct HomeRuntimeSettingsSnapshot: Equatable {
     var homeFeedLayout: HomeFeedLayout = LibraryStore.defaultHomeFeedLayout
     var homeRefreshTriggerDistance: Double = LibraryStore.defaultHomeRefreshTriggerDistance
+    var homeNavigationTitleHideDistanceExperimentEnabled = false
+    var homeNavigationTitleHideDistance: Double = LibraryStore.defaultHomeNavigationTitleHideDistance
 }
 
 @MainActor
@@ -59,6 +61,14 @@ final class HomeRuntimeSettingsStore: ObservableObject {
 
     var homeFeedLayout: HomeFeedLayout { snapshot.homeFeedLayout }
     var homeRefreshTriggerDistance: Double { snapshot.homeRefreshTriggerDistance }
+    var homeNavigationTitleHideDistanceExperimentEnabled: Bool {
+        snapshot.homeNavigationTitleHideDistanceExperimentEnabled
+    }
+    var homeNavigationTitleHideDistance: Double {
+        homeNavigationTitleHideDistanceExperimentEnabled
+            ? snapshot.homeNavigationTitleHideDistance
+            : LibraryStore.defaultHomeNavigationTitleHideDistance
+    }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -78,7 +88,10 @@ final class HomeRuntimeSettingsStore: ObservableObject {
         guard let libraryStore else { return }
         let next = HomeRuntimeSettingsSnapshot(
             homeFeedLayout: libraryStore.homeFeedLayout,
-            homeRefreshTriggerDistance: libraryStore.homeRefreshTriggerDistance
+            homeRefreshTriggerDistance: libraryStore.homeRefreshTriggerDistance,
+            homeNavigationTitleHideDistanceExperimentEnabled: libraryStore
+                .homeNavigationTitleHideDistanceExperimentEnabled,
+            homeNavigationTitleHideDistance: libraryStore.homeNavigationTitleHideDistance
         )
         guard next != snapshot else { return }
         snapshot = next

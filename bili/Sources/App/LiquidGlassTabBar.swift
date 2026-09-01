@@ -85,8 +85,16 @@ extension View {
     }
 
     @ViewBuilder
-    func nativeTopScrollEdgeEffect(hidesRootNavigationTitle: Bool = true) -> some View {
-        modifier(TopScrollEdgeEffect(hidesRootNavigationTitle: hidesRootNavigationTitle))
+    func nativeTopScrollEdgeEffect(
+        hidesRootNavigationTitle: Bool = true,
+        navigationTitleHideDistance: CGFloat = TopScrollEdgeEffect.defaultNavigationTitleHideDistance
+    ) -> some View {
+        modifier(
+            TopScrollEdgeEffect(
+                hidesRootNavigationTitle: hidesRootNavigationTitle,
+                navigationTitleHideDistance: navigationTitleHideDistance
+            )
+        )
     }
 
     @ViewBuilder
@@ -266,29 +274,42 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
 }
 
 struct TopScrollEdgeEffect: ViewModifier {
+    static let defaultNavigationTitleHideDistance: CGFloat = 18
+
     @Environment(\.isPresented) private var isPresented
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
     @Environment(\.scrollEdgeEffectPreference) private var scrollEdgeEffectPreference
+    @State private var scrollState = TopScrollEdgeEffectScrollState()
     let hidesRootNavigationTitle: Bool
+    let navigationTitleHideDistance: CGFloat
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if hidesRootNavigationTitle {
             nativeStyledContent(content)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     // contentOffset is already relative to the scroll view's resting content origin.
                     // Adding contentInsets.top treats the navigation bar safe area as an upward scroll
                     // during the first layout pass and hides every root title immediately.
-                    geometry.contentOffset.y > 18
-                } action: { _, isHidden in
-                    guard !isPresented else { return }
-                    guard rootNavigationTitleHidden.wrappedValue != isHidden else { return }
-                    withAnimation(.smooth(duration: 0.18)) {
-                        rootNavigationTitleHidden.wrappedValue = isHidden
-                    }
+                    geometry.contentOffset.y
+                } action: { _, contentOffsetY in
+                    scrollState.contentOffsetY = contentOffsetY
+                    updateNavigationTitleVisibility()
+                }
+                .onChange(of: navigationTitleHideDistance) { _, _ in
+                    updateNavigationTitleVisibility()
                 }
         } else {
             nativeStyledContent(content)
+        }
+    }
+
+    private func updateNavigationTitleVisibility() {
+        guard !isPresented else { return }
+        let isHidden = scrollState.contentOffsetY > navigationTitleHideDistance
+        guard rootNavigationTitleHidden.wrappedValue != isHidden else { return }
+        withAnimation(.smooth(duration: 0.18)) {
+            rootNavigationTitleHidden.wrappedValue = isHidden
         }
     }
 
@@ -303,6 +324,10 @@ struct TopScrollEdgeEffect: ViewModifier {
             content.scrollEdgeEffectStyle(.automatic, for: .top)
         }
     }
+}
+
+private final class TopScrollEdgeEffectScrollState {
+    var contentOffsetY: CGFloat = 0
 }
 
 private struct RootFloatingNavigationTitleModifier<Accessory: View>: ViewModifier {

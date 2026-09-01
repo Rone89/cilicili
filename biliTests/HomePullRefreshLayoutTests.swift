@@ -275,4 +275,62 @@ final class HomePullRefreshLayoutTests: XCTestCase {
         XCTAssertTrue(store.usesCustomPullRefresh)
         XCTAssertEqual(store.homeRefreshTriggerDistance, 140)
     }
+
+    @MainActor
+    func testHomeNavigationTitleHideDistanceExperimentDefaultsOffAndPersistsSettings() {
+        let suiteName = "cc.bili.tests.home-navigation-title-distance.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.homeNavigationTitleHideDistanceExperimentEnabled)
+        XCTAssertEqual(store.homeNavigationTitleHideDistance, LibraryStore.defaultHomeNavigationTitleHideDistance)
+
+        store.setHomeNavigationTitleHideDistanceExperimentEnabled(true)
+        store.setHomeNavigationTitleHideDistance(64)
+
+        let restoredStore = LibraryStore(userDefaults: defaults)
+        XCTAssertTrue(restoredStore.homeNavigationTitleHideDistanceExperimentEnabled)
+        XCTAssertEqual(restoredStore.homeNavigationTitleHideDistance, 64)
+    }
+
+    @MainActor
+    func testHomeNavigationTitleHideDistanceIsClampedToSupportedRange() {
+        let suiteName = "cc.bili.tests.home-navigation-title-distance-clamp.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+
+        store.setHomeNavigationTitleHideDistance(0)
+        XCTAssertEqual(
+            store.homeNavigationTitleHideDistance,
+            LibraryStore.homeNavigationTitleHideDistanceRange.lowerBound
+        )
+
+        store.setHomeNavigationTitleHideDistance(999)
+        XCTAssertEqual(
+            store.homeNavigationTitleHideDistance,
+            LibraryStore.homeNavigationTitleHideDistanceRange.upperBound
+        )
+    }
+
+    @MainActor
+    func testHomeRuntimeSettingsUpdatesEffectiveNavigationTitleHideDistance() async {
+        let suiteName = "cc.bili.tests.home-runtime-navigation-title-distance.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        let runtimeSettings = HomeRuntimeSettingsStore()
+        runtimeSettings.bind(store)
+
+        store.setHomeNavigationTitleHideDistanceExperimentEnabled(true)
+        store.setHomeNavigationTitleHideDistance(64)
+        await Task.yield()
+
+        XCTAssertTrue(runtimeSettings.homeNavigationTitleHideDistanceExperimentEnabled)
+        XCTAssertEqual(runtimeSettings.homeNavigationTitleHideDistance, 64)
+    }
 }

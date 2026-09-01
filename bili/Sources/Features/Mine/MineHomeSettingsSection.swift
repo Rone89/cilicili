@@ -61,6 +61,24 @@ struct MineHomeSettingsSection: View {
             }
 
             MineHomeRefreshDistanceControl(libraryStore: libraryStore)
+
+            Toggle(isOn: Binding(
+                get: { libraryStore.homeNavigationTitleHideDistanceExperimentEnabled },
+                set: { libraryStore.setHomeNavigationTitleHideDistanceExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("首页导航栏独立隐藏距离实验", systemImage: "arrow.up.to.line")
+
+                    Text("开启后，首页标题和顶部按钮使用独立的上滑隐藏距离；关闭时沿用其他页面的默认距离。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if libraryStore.homeNavigationTitleHideDistanceExperimentEnabled {
+                MineHomeNavigationTitleHideDistanceControl(libraryStore: libraryStore)
+            }
         }
     }
 
@@ -107,6 +125,50 @@ struct MineHomeSettingsSection: View {
                 return "当前是 App 端账号推荐，但你是网页登录；如推荐偏泛，请改用短信验证码登录。"
             case .unknown:
                 return "当前是 App 端账号推荐；如推荐不像官方，建议用 App 短信验证码重新登录。"
+            }
+        }
+    }
+}
+
+private struct MineHomeNavigationTitleHideDistanceControl: View {
+    @ObservedObject var libraryStore: LibraryStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("标题隐藏距离", systemImage: "arrow.up.and.down")
+                Spacer()
+                Text("\(Int(libraryStore.homeNavigationTitleHideDistance)) pt")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Slider(
+                value: Binding(
+                    get: { libraryStore.homeNavigationTitleHideDistance },
+                    set: { libraryStore.setHomeNavigationTitleHideDistance($0) }
+                ),
+                in: LibraryStore.homeNavigationTitleHideDistanceRange,
+                step: 1
+            ) {
+                Text("标题隐藏距离")
+            } minimumValueLabel: {
+                Text("近")
+            } maximumValueLabel: {
+                Text("远")
+            }
+
+            HStack {
+                Text("范围 10–120 pt")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Button("默认") {
+                    libraryStore.setHomeNavigationTitleHideDistance(
+                        LibraryStore.defaultHomeNavigationTitleHideDistance
+                    )
+                }
+                .buttonStyle(.borderless)
             }
         }
     }

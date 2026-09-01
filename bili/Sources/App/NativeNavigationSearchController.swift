@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 extension View {
+    @ViewBuilder
     func nativeNavigationSearch(
         text: Binding<String>,
         isPresented: Binding<Bool>,
@@ -10,16 +11,20 @@ extension View {
         title: String = "",
         onSubmit: @escaping () -> Void
     ) -> some View {
-        background {
-            NativeNavigationSearchBridge(
-                text: text,
-                isPresented: isPresented,
-                isEnabled: isEnabled,
-                prompt: prompt,
-                title: title,
-                onSubmit: onSubmit
-            )
-            .frame(width: 0, height: 0)
+        if isEnabled {
+            background {
+                NativeNavigationSearchBridge(
+                    text: text,
+                    isPresented: isPresented,
+                    isEnabled: true,
+                    prompt: prompt,
+                    title: title,
+                    onSubmit: onSubmit
+                )
+                .frame(width: 0, height: 0)
+            }
+        } else {
+            self
         }
     }
 }

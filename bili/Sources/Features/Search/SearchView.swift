@@ -20,7 +20,8 @@ struct SearchView: View {
                 SearchContentView(
                     viewModel: viewModel,
                     showsHotSearches: libraryStore.showsHotSearches,
-                    accessoryStore: accessoryStore
+                    accessoryStore: accessoryStore,
+                    usesSearchTabExpansion: libraryStore.searchTabExpansionExperimentEnabled
                 )
             } else {
                 SearchLoadingList()
