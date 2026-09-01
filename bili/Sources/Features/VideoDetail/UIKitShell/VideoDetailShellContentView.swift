@@ -16,6 +16,7 @@ struct VideoDetailShellContentView: View {
         @Published var topInset: CGFloat = 0
         @Published var scrollAdjustment: VideoDetailScrollAdjustment?
         @Published var suppressesInteractiveContentActions = false
+        @Published var mountsSecondaryContent = false
         private var scrollAdjustmentToken = 0
 
         func requestScrollAdjustment(tab: VideoDetailContentTab, offset: CGFloat) {
@@ -28,7 +29,8 @@ struct VideoDetailShellContentView: View {
         }
     }
 
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
+    @ObservedObject var updateGate: VideoDetailContentUpdateGate
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: State
     let layoutWidth: CGFloat
@@ -42,6 +44,7 @@ struct VideoDetailShellContentView: View {
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
 
     var body: some View {
+        let _ = updateGate.revision
         VideoDetailShellContentBody(
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
@@ -80,13 +83,15 @@ private struct VideoDetailShellContentBody: View {
             layoutWidth: layoutWidth,
             topInset: state.topInset,
             scrollAdjustment: state.scrollAdjustment,
-            minimizesTabBarOnScroll: runtimeSettings.minimizesTabBarOnScroll,
+            mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
+                || state.mountsSecondaryContent,
             onScrollOffsetChange: onScrollOffsetChange,
-            content: { tab in
+            content: { tab, mountsSecondaryContent in
                 VideoDetailContentPage(
                     viewModel: viewModel,
                     layoutWidth: layoutWidth,
                     tab: tab,
+                    mountsSecondaryContent: mountsSecondaryContent,
                     runtimeSettings: runtimeSettings.snapshot,
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,

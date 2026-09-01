@@ -1,10 +1,7 @@
 import SwiftUI
 
-private enum DynamicPullRefreshCoordinateSpace {
-    static let name = "dynamic-feed-pull-refresh"
-}
-
 struct DynamicFeedScrollContent: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
     let isLoggedIn: Bool
@@ -15,10 +12,6 @@ struct DynamicFeedScrollContent: View {
 
     var body: some View {
         ScrollView {
-            HomePullRefreshOffsetReader(
-                coordinateSpaceName: DynamicPullRefreshCoordinateSpace.name
-            )
-
             DynamicFeedBodyContent(
                 api: api,
                 viewModel: viewModel,
@@ -26,42 +19,56 @@ struct DynamicFeedScrollContent: View {
                 contentWidth: contentWidth
             )
             .padding(.horizontal, 16)
-            .padding(.top, 28)
             .padding(.bottom, 18)
         }
-        .coordinateSpace(name: DynamicPullRefreshCoordinateSpace.name)
         .rootFloatingTabBarContentPadding()
-        .nativeTopScrollEdgeEffect()
+        .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemBackground))
-        .onPreferenceChange(HomePullRefreshDistancePreferenceKey.self) { pullDistance in
-            handlePullRefreshDistanceChange(pullDistance)
-        }
+        .nativeTopScrollEdgeEffect()
+        .customPullRefreshTracking(
+            isEnabled: libraryStore.usesCustomPullRefresh,
+            onChange: handlePullRefreshChange
+        )
         .task(id: isLoggedIn) {
             await viewModel.loadInitial()
         }
+        .nativePullRefresh(
+            isEnabled: libraryStore.usesNativePullRefresh,
+            action: refreshFromNativePull
+        )
         .homeFeedPullRefreshLayout(
             pullDistance: pullRefreshDistance,
             triggerDistance: pullRefreshTriggerDistance,
-            isRefreshing: viewModel.isRefreshing
+            isRefreshing: viewModel.isRefreshing,
+            isEnabled: libraryStore.usesCustomPullRefresh
         )
         .overlay {
             DynamicFeedErrorOverlay(viewModel: viewModel, isLoggedIn: isLoggedIn)
         }
     }
 
-    private func handlePullRefreshDistanceChange(_ pullDistance: CGFloat) {
+    private func handlePullRefreshChange(
+        pullDistance: CGFloat,
+        isUserInteracting: Bool
+    ) {
         pullRefreshDistance = pullDistance
-        guard isLoggedIn else { return }
+        guard isLoggedIn, libraryStore.usesCustomPullRefresh else { return }
         pullRefreshActions.handleConfiguredPullRefresh(
             pullDistance: pullDistance,
             triggerDistance: pullRefreshTriggerDistance,
+            isUserInteracting: isUserInteracting,
             isRefreshing: viewModel.isRefreshing
         ) {
             await viewModel.refresh()
             return viewModel.state == .loaded
         }
+    }
+
+    private func refreshFromNativePull() async {
+        guard isLoggedIn else { return }
+        await viewModel.refresh()
     }
 }
 

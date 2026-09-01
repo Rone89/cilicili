@@ -44,6 +44,21 @@ extension VideoDetailViewModel {
             page: page,
             source: loadedSource
         )
+        if let trace = await VideoPreloadCenter.shared.takeRelatedEarlyPlayURLPrefetchTrace(
+            for: detail.bvid
+        ) {
+            PlayerMetricsLog.record(
+                .startupScheduler,
+                metricsID: detail.bvid,
+                title: detail.title,
+                message: RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticMessage(
+                    event: "consumed",
+                    targetBVID: detail.bvid,
+                    disposition: trace.disposition,
+                    leadMilliseconds: trace.leadMilliseconds()
+                )
+            )
+        }
         return .loaded(signpostMessage: loadedSignpost)
     }
 }

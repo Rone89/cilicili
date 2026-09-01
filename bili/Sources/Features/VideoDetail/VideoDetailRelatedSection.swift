@@ -37,7 +37,7 @@ struct VideoDetailRelatedSection: View {
         .actions
     }
 
-    private func beginRelatedPreloadIfNeeded(_ video: VideoItem) {
-        preloadActions.beginPreloadIfNeeded(video)
+    private func beginRelatedPreloadIfNeeded(_ video: VideoItem) async {
+        await preloadActions.beginPreloadIfNeeded(video)
     }
 }

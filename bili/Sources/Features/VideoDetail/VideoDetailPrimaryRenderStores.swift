@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class VideoDetailInteractionRenderStore: ObservableObject {
     @Published private var snapshot = VideoDetailInteractionRenderSnapshot()
+    private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailInteractionRenderSnapshot>()
 
     var interactionState: VideoInteractionState { snapshot.interactionState }
     var interactionMessage: String? { snapshot.interactionMessage }
@@ -39,7 +40,14 @@ final class VideoDetailInteractionRenderStore: ObservableObject {
     }
 
     private func setSnapshot(_ next: VideoDetailInteractionRenderSnapshot) {
-        guard next != snapshot else { return }
+        guard let next = deferredSnapshot.submit(next, current: snapshot, isEquivalent: ==) else {
+            return
+        }
         snapshot = next
+    }
+
+    func setUpdatesDeferred(_ deferred: Bool) {
+        guard let pending = deferredSnapshot.setDeferred(deferred), pending != snapshot else { return }
+        snapshot = pending
     }
 }

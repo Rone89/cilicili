@@ -15,6 +15,18 @@ struct VideoDetailViewModelRenderStores {
 }
 
 extension VideoDetailViewModel {
+    func setContentRenderUpdatesDeferred(_ deferred: Bool) {
+        renderStores.comments.setUpdatesDeferred(deferred)
+        renderStores.related.setUpdatesDeferred(deferred)
+        renderStores.interaction.setUpdatesDeferred(deferred)
+        renderStores.description.setUpdatesDeferred(deferred)
+        renderStores.playback.pageSelectorStore.setUpdatesDeferred(deferred)
+    }
+
+    func setPlaybackRenderUpdatesDeferred(_ deferred: Bool) {
+        renderStores.playback.setUpdatesDeferred(deferred)
+    }
+
     var commentsRenderStore: VideoDetailCommentsRenderStore {
         renderStores.comments
     }

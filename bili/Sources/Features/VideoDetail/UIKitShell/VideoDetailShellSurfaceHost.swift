@@ -13,9 +13,11 @@ final class VideoDetailShellSurfaceHost: UIView {
     @MainActor
     final class State: ObservableObject {
         @Published var isLandscape = false
+        @Published var isPortraitFullscreen = false
         @Published var isBareSurfaceTransitionActive = false
         @Published var retainsChromeDuringBareSurfaceTransition = false
         @Published var isCollapsedChromeActive = false
+        @Published var playbackControlsHideRequestGeneration = 0
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
 
@@ -34,6 +36,10 @@ final class VideoDetailShellSurfaceHost: UIView {
                 retainsChromeDuringBareSurfaceTransition = false
             }
         }
+
+        func requestPlaybackControlsHideForRotation() {
+            playbackControlsHideRequestGeneration &+= 1
+        }
     }
 
     private let state: State
@@ -46,6 +52,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
     private var rotationChromePrewarmOriginalLandscape: Bool?
+    private(set) var isRotationChromePrewarmed = false
     private var isTornDown = false
 
     init(
@@ -166,6 +173,14 @@ final class VideoDetailShellSurfaceHost: UIView {
         state.isLandscape = landscape
     }
 
+    func requestPlaybackControlsHideForRotation() {
+        state.requestPlaybackControlsHideForRotation()
+    }
+
+    func markRotationChromePrewarmed() {
+        isRotationChromePrewarmed = true
+    }
+
     /// 系统旋转期间退化成 bare surface，但始终保留弹幕层以避免重建和闪烁。
     /// 实验路径可保留不可见的控件树，避免旋转结束时集中重建 SwiftUI 叠层。
     func setBareSurfaceTransitionActive(_ active: Bool, retainsChromeTree: Bool = false) {
@@ -196,6 +211,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         guard !isRotationChromePrewarming,
               !state.isBareSurfaceTransitionActive
         else { return }
+        isRotationChromePrewarmed = false
         isRotationChromePrewarming = true
         rotationChromePrewarmGeneration &+= 1
         let generation = rotationChromePrewarmGeneration
@@ -226,6 +242,7 @@ final class VideoDetailShellSurfaceHost: UIView {
                 }
                 self.isRotationChromePrewarming = false
                 self.rotationChromePrewarmOriginalLandscape = nil
+                self.isRotationChromePrewarmed = true
             }
         }
     }
@@ -279,8 +296,9 @@ final class VideoDetailShellSurfaceHost: UIView {
 extension VideoDetailShellSurfaceHost: PlayerSurfaceHosting {
     var surfaceView: UIView { self }
 
-    func setPortraitFullscreen(_: Bool) {
-        // 视频详情已有独立的竖屏全屏路径，并通过 setLandscape 复用其控件树。
+    func setPortraitFullscreen(_ active: Bool) {
+        guard state.isPortraitFullscreen != active else { return }
+        state.isPortraitFullscreen = active
     }
 }
 
@@ -463,9 +481,11 @@ private struct PlayerOverlayHostRoot: View {
             usesNarrowObservation: usesNarrowObservation,
             dependencies: dependencies,
             isLandscape: state.isLandscape,
+            isPortraitFullscreen: state.isPortraitFullscreen,
             isBareSurfaceTransitionActive: state.isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
             isCollapsedChromeActive: state.isCollapsedChromeActive,
+            playbackControlsHideRequestGeneration: state.playbackControlsHideRequestGeneration,
             videoAspectRatio: state.videoAspectRatio,
             onShowMoreControls: onShowMoreControls,
             onDismissMoreControls: onDismissMoreControls,
@@ -499,9 +519,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let usesNarrowObservation: Bool
     let dependencies: AppDependencies
     let isLandscape: Bool
+    let isPortraitFullscreen: Bool
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
+    let playbackControlsHideRequestGeneration: Int
     let videoAspectRatio: CGFloat
     let onShowMoreControls: (@escaping () -> Void) -> Void
     let onDismissMoreControls: () -> Void
@@ -536,9 +558,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         usesNarrowObservation: Bool,
         dependencies: AppDependencies,
         isLandscape: Bool,
+        isPortraitFullscreen: Bool,
         isBareSurfaceTransitionActive: Bool,
         retainsChromeDuringBareSurfaceTransition: Bool,
         isCollapsedChromeActive: Bool,
+        playbackControlsHideRequestGeneration: Int,
         videoAspectRatio: CGFloat,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
@@ -557,9 +581,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.dependencies = dependencies
         _libraryStore = ObservedObject(wrappedValue: dependencies.libraryStore)
         self.isLandscape = isLandscape
+        self.isPortraitFullscreen = isPortraitFullscreen
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
         self.isCollapsedChromeActive = isCollapsedChromeActive
+        self.playbackControlsHideRequestGeneration = playbackControlsHideRequestGeneration
         self.videoAspectRatio = videoAspectRatio
         self.onShowMoreControls = onShowMoreControls
         self.onDismissMoreControls = onDismissMoreControls
@@ -774,6 +800,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 isVideoListenQueuePresented = false
             }
             playbackControlsVisibility.cancelAutoHide()
+        }
+        .onChange(of: playbackControlsHideRequestGeneration) { _, _ in
+            playbackControlsVisibility.hide(animated: false)
         }
         .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
             updateSeekTransitionSnapshot(isUserSeeking: isUserSeeking)
@@ -1077,7 +1106,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private var showsFullscreenStatusControls: Bool {
-        usesFullscreenStatusChrome && fullscreenMode?.isLandscape == true
+        VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
+            usesFullscreenChrome: usesFullscreenStatusChrome
+                && fullscreenMode?.isLandscape == true,
+            isPortraitFullscreen: isPortraitFullscreen
+        )
     }
 
     private func surfaceChromeState(

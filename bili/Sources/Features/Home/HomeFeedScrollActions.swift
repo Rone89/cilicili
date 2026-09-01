@@ -4,9 +4,14 @@ import SwiftUI
 @MainActor
 final class HomeFeedScrollActions: ObservableObject {
     @Published private(set) var topScrollRequestID = 0
+    @Published private(set) var programmaticRefreshRequestID = 0
 
     func requestScrollToTop() {
         topScrollRequestID &+= 1
+    }
+
+    func requestProgrammaticRefresh() {
+        programmaticRefreshRequestID &+= 1
     }
 
     func updateFeedContainerWidth(
@@ -27,22 +32,4 @@ final class HomeFeedScrollActions: ObservableObject {
         return updatedState
     }
 
-    func updatePullRefreshDistance(
-        pullDistance: CGFloat,
-        state: HomeFeedViewportState,
-        triggerDistance: CGFloat,
-        isRefreshing: Bool,
-        refreshActions: HomeFeedRefreshActions,
-        refresh: @escaping @MainActor () async -> Bool
-    ) -> HomeFeedViewportState {
-        var updatedState = state
-        updatedState.currentPullRefreshDistance = pullDistance
-        refreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: triggerDistance,
-            isRefreshing: isRefreshing,
-            refresh: refresh
-        )
-        return updatedState
-    }
 }

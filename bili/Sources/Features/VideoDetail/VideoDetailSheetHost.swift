@@ -22,6 +22,11 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             reloadDialog: sheetActions.replies.reloadDialog
                         )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
+                        .commentLikeTarget(
+                            oid: viewModel.commentTarget?.oid,
+                            type: viewModel.commentTarget?.type,
+                            referer: videoReferer
+                        )
                     } else {
                         VideoDetailReplySheetHost(
                             rootComment: comment,
@@ -30,6 +35,11 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             actions: sheetActions.replies
                         )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
+                        .commentLikeTarget(
+                            oid: viewModel.commentTarget?.oid,
+                            type: viewModel.commentTarget?.type,
+                            referer: videoReferer
+                        )
                     }
                 case .moreControls(let presentation):
                     SurfaceOnlyMoreControlsSheet(
@@ -77,6 +87,11 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                 sheetState.route.wrappedValue = route
             }
         )
+    }
+
+    private var videoReferer: String {
+        let bvid = viewModel.detail.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bvid.isEmpty ? "https://www.bilibili.com" : "https://www.bilibili.com/video/\(bvid)"
     }
 
     private func finish(_ route: VideoDetailSheetRoute) {

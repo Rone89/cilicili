@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct VideoDetailSummaryCard: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let contentWidth: CGFloat
     let showsNetworkDiagnosticsButton: Bool
     let showsVideoInfo: Bool

@@ -70,7 +70,9 @@ extension BiliAPIClient {
                 page: page,
                 preferredQuality: preferredQuality,
                 requestLease: requestLease,
-                requestSource: requestSource
+                requestSource: requestSource,
+                fallbackDeadlineExperimentEnabled: snapshot
+                    .playbackPlayableFallbackDeadlineExperimentEnabled
             )
         }
         return await applyingConfiguredHistoryAccount(
@@ -85,7 +87,8 @@ extension BiliAPIClient {
         page: Int? = nil,
         preferredQuality: Int? = nil,
         requestLease: StartupPlayURLRequestLease?,
-        requestSource: StartupPlayURLRequestSource
+        requestSource: StartupPlayURLRequestSource,
+        fallbackDeadlineExperimentEnabled: Bool
     ) async throws -> PlayURLData {
         let storedPreferredQuality = await preferredVideoQuality()
         let configuredQuality = preferredQuality ?? storedPreferredQuality
@@ -93,21 +96,73 @@ extension BiliAPIClient {
         let requestStart = CACurrentMediaTime()
         var bestStartupData: PlayURLData?
 
-        let racedStartupResult = try await fetchRacedStartupPlayURL(
-            bvid: bvid,
-            cid: cid,
-            page: page,
-            requestedQuality: requestedQuality,
-            requestLease: requestLease,
-            requestSource: requestSource
-        )
+        let raceStart = CACurrentMediaTime()
+        let racedStartupResult: StartupPlayURLRaceResult?
+        do {
+            racedStartupResult = try await fetchRacedStartupPlayURL(
+                bvid: bvid,
+                cid: cid,
+                page: page,
+                requestedQuality: requestedQuality,
+                requestLease: requestLease,
+                requestSource: requestSource
+            )
+        } catch {
+            let wasCancelled =
+                Task.isCancelled
+                || error is CancellationError
+                || (error as? URLError)?.code == .cancelled
+            recordStartupPlayURLPipeline(
+                bvid: bvid,
+                cid: cid,
+                requestSource: requestSource,
+                requestedQuality: requestedQuality,
+                requestStart: requestStart,
+                raceStart: raceStart,
+                racedData: nil,
+                fullFallbackStart: nil,
+                fullFallbackStatus: "notStarted",
+                selectedData: nil,
+                outcome: wasCancelled ? "raceCancelled" : "raceFailure",
+                fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+            )
+            throw error
+        }
 
         if let racedStartupResult {
             let racedStartupData = racedStartupResult.data
             if racedStartupData.hasPlayableMediaQuality(requestedQuality) {
+                recordStartupPlayURLPipeline(
+                    bvid: bvid,
+                    cid: cid,
+                    requestSource: requestSource,
+                    requestedQuality: requestedQuality,
+                    requestStart: requestStart,
+                    raceStart: raceStart,
+                    racedData: racedStartupData,
+                    fullFallbackStart: nil,
+                    fullFallbackStatus: "notStarted",
+                    selectedData: racedStartupData,
+                    outcome: "raceTarget",
+                    fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+                )
                 return racedStartupData
             }
             if racedStartupResult.isVerifiedUnavailablePreferredFallback {
+                recordStartupPlayURLPipeline(
+                    bvid: bvid,
+                    cid: cid,
+                    requestSource: requestSource,
+                    requestedQuality: requestedQuality,
+                    requestStart: requestStart,
+                    raceStart: raceStart,
+                    racedData: racedStartupData,
+                    fullFallbackStart: nil,
+                    fullFallbackStatus: "notStarted",
+                    selectedData: racedStartupData,
+                    outcome: "raceVerifiedFallback",
+                    fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+                )
                 return racedStartupData
             }
             bestStartupData = preferredStartupCandidate(
@@ -117,15 +172,68 @@ extension BiliAPIClient {
             )
         }
 
+        let fullFallbackStart = CACurrentMediaTime()
+        var fullFallbackStatus = "empty"
         do {
-            let data = try await fetchPlayURLUncached(
-                bvid: bvid,
-                cid: cid,
-                qn: requestedQuality,
-                page: page,
-                preferredQuality: requestedQuality
+            let fullFallbackOperation: @Sendable () async throws -> PlayURLData = { [self] in
+                try await fetchPlayURLUncached(
+                    bvid: bvid,
+                    cid: cid,
+                    qn: requestedQuality,
+                    page: page,
+                    preferredQuality: requestedQuality
+                )
+            }
+            let appliesFallbackDeadline = PlayableFallbackDeadlineExperiment.allowsEarlyReturn(
+                isEnabled: fallbackDeadlineExperimentEnabled,
+                hasPlayableFallback: bestStartupData != nil
             )
+            let data: PlayURLData
+            if appliesFallbackDeadline {
+                guard
+                    let completedData = try await PendingTaskDeadline.value(
+                        within: PlayableFallbackDeadlineExperiment.fullFallbackGraceNanoseconds,
+                        operation: fullFallbackOperation
+                    )
+                else {
+                    guard let bestStartupData else { throw BiliAPIError.emptyPlayURL }
+                    fullFallbackStatus = "deadline"
+                    recordStartupPlayURLPipeline(
+                        bvid: bvid,
+                        cid: cid,
+                        requestSource: requestSource,
+                        requestedQuality: requestedQuality,
+                        requestStart: requestStart,
+                        raceStart: raceStart,
+                        racedData: racedStartupResult?.data,
+                        fullFallbackStart: fullFallbackStart,
+                        fullFallbackStatus: fullFallbackStatus,
+                        selectedData: bestStartupData,
+                        outcome: "deadlineFallback",
+                        fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+                    )
+                    return bestStartupData
+                }
+                data = completedData
+            } else {
+                data = try await fullFallbackOperation()
+            }
+            fullFallbackStatus = "success"
             if data.hasPlayableMediaQuality(requestedQuality) {
+                recordStartupPlayURLPipeline(
+                    bvid: bvid,
+                    cid: cid,
+                    requestSource: requestSource,
+                    requestedQuality: requestedQuality,
+                    requestStart: requestStart,
+                    raceStart: raceStart,
+                    racedData: racedStartupResult?.data,
+                    fullFallbackStart: fullFallbackStart,
+                    fullFallbackStatus: fullFallbackStatus,
+                    selectedData: data,
+                    outcome: "fullFallbackTarget",
+                    fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+                )
                 return data
             }
             bestStartupData = preferredStartupCandidate(
@@ -141,7 +249,24 @@ extension BiliAPIClient {
                 data: data
             )
         } catch {
-            guard !Task.isCancelled else { throw error }
+            guard !Task.isCancelled else {
+                recordStartupPlayURLPipeline(
+                    bvid: bvid,
+                    cid: cid,
+                    requestSource: requestSource,
+                    requestedQuality: requestedQuality,
+                    requestStart: requestStart,
+                    raceStart: raceStart,
+                    racedData: racedStartupResult?.data,
+                    fullFallbackStart: fullFallbackStart,
+                    fullFallbackStatus: "cancelled",
+                    selectedData: bestStartupData,
+                    outcome: "fullFallbackCancelled",
+                    fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+                )
+                throw error
+            }
+            fullFallbackStatus = "failure"
             logPlayURLStage(
                 "startupFullFallback",
                 bvid: bvid,
@@ -151,8 +276,89 @@ extension BiliAPIClient {
             )
         }
 
-        guard let bestStartupData else { throw BiliAPIError.emptyPlayURL }
+        guard let bestStartupData else {
+            recordStartupPlayURLPipeline(
+                bvid: bvid,
+                cid: cid,
+                requestSource: requestSource,
+                requestedQuality: requestedQuality,
+                requestStart: requestStart,
+                raceStart: raceStart,
+                racedData: racedStartupResult?.data,
+                fullFallbackStart: fullFallbackStart,
+                fullFallbackStatus: fullFallbackStatus,
+                selectedData: nil,
+                outcome: "empty",
+                fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+            )
+            throw BiliAPIError.emptyPlayURL
+        }
+        recordStartupPlayURLPipeline(
+            bvid: bvid,
+            cid: cid,
+            requestSource: requestSource,
+            requestedQuality: requestedQuality,
+            requestStart: requestStart,
+            raceStart: raceStart,
+            racedData: racedStartupResult?.data,
+            fullFallbackStart: fullFallbackStart,
+            fullFallbackStatus: fullFallbackStatus,
+            selectedData: bestStartupData,
+            outcome: "bestFallback",
+            fallbackDeadlineExperimentEnabled: fallbackDeadlineExperimentEnabled
+        )
         return bestStartupData
+    }
+
+    private func recordStartupPlayURLPipeline(
+        bvid: String,
+        cid: Int,
+        requestSource: StartupPlayURLRequestSource,
+        requestedQuality: Int,
+        requestStart: CFTimeInterval,
+        raceStart: CFTimeInterval,
+        racedData: PlayURLData?,
+        fullFallbackStart: CFTimeInterval?,
+        fullFallbackStatus: String,
+        selectedData: PlayURLData?,
+        outcome: String,
+        fallbackDeadlineExperimentEnabled: Bool
+    ) {
+        let now = CACurrentMediaTime()
+        let raceMilliseconds = Self.elapsedMilliseconds(from: raceStart, to: fullFallbackStart ?? now)
+        let fullFallbackMilliseconds =
+            fullFallbackStart.map {
+                "\(Self.elapsedMilliseconds(from: $0, to: now))ms"
+            } ?? "-"
+        let racedQuality =
+            racedData.flatMap {
+                Self.startupCandidateQuality(
+                    in: $0,
+                    requestedQuality: requestedQuality
+                )
+            }.map(String.init) ?? "-"
+        let selectedQuality =
+            selectedData.flatMap {
+                Self.startupCandidateQuality(
+                    in: $0,
+                    requestedQuality: requestedQuality
+                )
+            }.map(String.init) ?? "-"
+        let fallbackDeadlineState = fallbackDeadlineExperimentEnabled ? "on" : "off"
+        let fallbackDeadlineBudgetMilliseconds =
+            PlayableFallbackDeadlineExperiment.fullFallbackGraceNanoseconds / 1_000_000
+        let message =
+            "playURLPipeline cid=\(cid) source=\(requestSource.rawValue) target=\(requestedQuality) race=\(raceMilliseconds)ms raceQ=\(racedQuality) fullFallback=\(fullFallbackMilliseconds) fullFallbackResult=\(fullFallbackStatus) selected=\(selectedQuality) outcome=\(outcome) fallbackDeadline=\(fallbackDeadlineState) fallbackDeadlineBudget=\(fallbackDeadlineBudgetMilliseconds)ms total=\(Self.elapsedMilliseconds(from: requestStart, to: now))ms"
+        Task(priority: .utility) { [self] in
+            await recordStartupSchedulerMessage(message, bvid: bvid)
+        }
+    }
+
+    private nonisolated static func elapsedMilliseconds(
+        from start: CFTimeInterval,
+        to end: CFTimeInterval
+    ) -> Int {
+        Int(((end - start) * 1_000).rounded())
     }
 
     private nonisolated func startupRequestedQuality(configuredQuality: Int?) -> Int {

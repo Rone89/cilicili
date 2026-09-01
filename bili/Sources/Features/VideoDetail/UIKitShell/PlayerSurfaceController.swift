@@ -23,6 +23,10 @@ final class PlayerSurfaceController {
     /// Surface 的播放器替换会回传给详情页，用来维持仅与布局有关的状态订阅。
     var onActivePlayerChange: ((PlayerStateViewModel?) -> Void)?
 
+    var isRotationChromePrewarmed: Bool {
+        host?.isRotationChromePrewarmed ?? false
+    }
+
     init(
         parentViewController: UIViewController,
         containerView: UIView,

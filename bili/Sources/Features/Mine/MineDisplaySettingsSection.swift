@@ -151,19 +151,17 @@ struct MineDisplaySettingsSection: View {
                 Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
             }
 
-            Toggle(isOn: Binding(
-                get: { libraryStore.homeNavigationModeSwitcherExperimentEnabled },
-                set: { libraryStore.setHomeNavigationModeSwitcherExperimentEnabled($0) }
+            Picker(selection: Binding(
+                get: { libraryStore.videoDetailSegmentedPickerGlassStyle },
+                set: { libraryStore.setVideoDetailSegmentedPickerGlassStyle($0) }
             )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("首页推荐/热门胶囊实验", systemImage: "rectangle.split.2x1")
-
-                    Text("开着后推荐和热门系统切换控件会显示在首页顶部正中间，消息按钮保持在右侧；下滑时会一起收起，来回切换不会自动刷新推荐。关掉后恢复原来的更多按钮。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                ForEach(VideoDetailSegmentedPickerGlassStyle.allCases) { glassStyle in
+                    Text(glassStyle.title).tag(glassStyle)
                 }
+            } label: {
+                Label("底部栏液态玻璃效果", systemImage: "circle.lefthalf.filled")
             }
+            .pickerStyle(.navigationLink)
 
             Picker(selection: Binding(
                 get: { libraryStore.scrollEdgeEffectPreference },

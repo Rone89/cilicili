@@ -620,6 +620,17 @@ final class PlaybackStartupRequestSchedulingTests: XCTestCase {
         )
         XCTAssertEqual(currentStrategy.key, PiliPlusStylePlayURLSelectionExperiment.currentStrategyKey)
         XCTAssertEqual(currentStrategy.title, "取流策略：V18")
+
+        let fallbackDeadlineStrategy = PiliPlusStylePlayURLSelectionExperiment.sampleGroupStrategy(
+            startupSchedulerMessage:
+                "strategy=\(PiliPlusStylePlayURLSelectionExperiment.currentStrategyKey) fallbackDeadline=on",
+            isEnabled: true
+        )
+        XCTAssertEqual(
+            fallbackDeadlineStrategy.key,
+            PlayableFallbackDeadlineExperiment.strategyKey
+        )
+        XCTAssertEqual(fallbackDeadlineStrategy.title, "取流策略：V18 + 降级限时实验")
     }
 
     @MainActor

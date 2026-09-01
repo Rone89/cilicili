@@ -9,9 +9,11 @@ enum AppOrientationLock {
         in scene: UIWindowScene?,
         requestsGeometryUpdate: Bool = false
     ) {
+        let didChange = supportedOrientations != orientations
         supportedOrientations = orientations
 
         let targetScenes = scenes(matching: scene)
+        guard didChange || requestsGeometryUpdate else { return }
         requestInterfaceUpdates(in: targetScenes)
 
         guard requestsGeometryUpdate else { return }
@@ -19,7 +21,15 @@ enum AppOrientationLock {
     }
 
     static func restorePortrait(in scene: UIWindowScene? = nil) {
-        update(to: .portrait, in: scene, requestsGeometryUpdate: true)
+        let targetScenes = scenes(matching: scene)
+        let needsGeometryUpdate = targetScenes.contains {
+            !$0.effectiveGeometry.interfaceOrientation.isPortrait
+        }
+        guard supportedOrientations != .portrait || needsGeometryUpdate else { return }
+        supportedOrientations = .portrait
+        requestInterfaceUpdates(in: targetScenes)
+        guard needsGeometryUpdate else { return }
+        requestGeometryUpdate(to: .portrait, in: targetScenes)
     }
 
     static func requestGeometryUpdate(
@@ -109,6 +119,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
         RemoteImageDisplayMemoryCache.shared.clear()
+        BiliEmoteMemoryCache.clear()
         Task {
             await RemoteImageCache.shared.clearMemoryCache(cancelInFlight: true)
             await PlayURLCache.shared.clearMemoryCache()

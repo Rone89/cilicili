@@ -8,7 +8,6 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.openVideoOwnerRouteAction) private var openVideoOwnerRoute
     @ObservedObject var viewModel: VideoDetailViewModel
-    @ObservedObject var fullscreenCoordinator: VideoDetailFullscreenCoordinator
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
@@ -24,7 +23,6 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         runtimeSettings.bind(dependencies.libraryStore)
         return VideoDetailShellViewController(
             viewModel: viewModel,
-            fullscreenCoordinator: fullscreenCoordinator,
             runtimeSettings: runtimeSettings,
             dependencies: dependencies,
             openVideoOwnerRoute: openVideoOwnerRoute,

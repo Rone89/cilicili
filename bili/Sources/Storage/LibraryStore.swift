@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import SwiftUI
 
 struct StoredVideo: Identifiable, Codable, Hashable {
@@ -66,7 +66,7 @@ struct StoredVideo: Identifiable, Codable, Hashable {
 
     var resumeTime: TimeInterval? {
         guard let playbackTime,
-              playbackTime >= TimeInterval(LibraryStore.defaultPlaybackHistorySyncThresholdSeconds)
+            playbackTime >= TimeInterval(LibraryStore.defaultPlaybackHistorySyncThresholdSeconds)
         else { return nil }
         if let playbackDuration, playbackDuration > 0 {
             let remaining = playbackDuration - playbackTime
@@ -132,14 +132,10 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var pictureInPictureEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
-    @Published private(set) var diagnosticsBackgroundProcessingExperimentEnabled: Bool
-    @Published private(set) var resourceLoadingFirstScreenPriorityEnabled: Bool
-    @Published private(set) var resourceLoadingVisibleImagePriorityEnabled: Bool
-    @Published private(set) var resourceLoadingReadRequestCoalescingEnabled: Bool
-    @Published private(set) var resourceLoadingDynamicDiskSnapshotEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
+    @Published private(set) var playbackPlayableFallbackDeadlineExperimentEnabled: Bool
     @Published private(set) var videoRotationFrameReportOverlayEnabled: Bool
-    @Published private(set) var videoRotationOptimizationExperimentEnabled: Bool
+    @Published private(set) var videoDetailNavigationLatencyDiagnosticsEnabled: Bool
     @Published private(set) var playerControlEdgeScrimEnabled: Bool
     @Published private(set) var showsVideoDetailNetworkDiagnosticsButton: Bool
     @Published private(set) var showsVideoDetailPinnedProgressBar: Bool
@@ -150,14 +146,15 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountExperimentEnabled: Bool
+    @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
+    @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
     @Published private(set) var remoteImageQualityPreference: RemoteImageQualityPreference
     @Published private(set) var videoCoverBadgeShadowOpacity: Double
     @Published private(set) var videoCoverBottomScrimEnabled: Bool
     @Published private(set) var showsVideoCoverDurationBadges: Bool
-    @Published private(set) var homeNavigationModeSwitcherExperimentEnabled: Bool
     @Published private(set) var remoteImageDiagnosticsEnabled: Bool
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
@@ -174,6 +171,8 @@ final class LibraryStore: ObservableObject {
     private static let manualFontSizeKey = "cc.bili.appearance.manualFontSize.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
     private static let appTintColorDefaultToneMigrationKey = "cc.bili.appearance.tintColorDefaultToneMigration.v2"
+    private static let appTintColorPreviousDefaultMigrationKey =
+        "cc.bili.appearance.tintColorPreviousDefaultMigration.v3"
     private static let defaultPlaybackRateKey = "cc.bili.playback.defaultPlaybackRate.v1"
     private static let playbackHistorySyncThresholdSecondsKey = "cc.bili.playback.historySyncThresholdSeconds.v1"
     private static let preferredVideoQualityKey = "cc.bili.playback.preferredVideoQuality.v1"
@@ -200,41 +199,68 @@ final class LibraryStore: ObservableObject {
     private static let recommendMinimumViewCountKey = "cc.bili.content.recommendMinimumViewCount.v1"
     private static let recommendMinimumLikeRatioPercentKey = "cc.bili.content.recommendMinimumLikeRatioPercent.v1"
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
-    private static let appliesRecommendFiltersToRelatedVideosKey = "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
+    private static let appliesRecommendFiltersToRelatedVideosKey =
+        "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
-    private static let diagnosticsBackgroundProcessingExperimentEnabledKey = PlayerDiagnosticsBackgroundProcessingExperiment.storageKey
-    private static let resourceLoadingFirstScreenPriorityEnabledKey = ResourceLoadingExperiment.Feature.firstScreenPriority.storageKey
-    private static let resourceLoadingVisibleImagePriorityEnabledKey = ResourceLoadingExperiment.Feature.visibleImagePriority.storageKey
-    private static let resourceLoadingReadRequestCoalescingEnabledKey = ResourceLoadingExperiment.Feature.readRequestCoalescing.storageKey
-    private static let resourceLoadingDynamicDiskSnapshotEnabledKey = ResourceLoadingExperiment.Feature.dynamicDiskSnapshot.storageKey
-    private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature.resumePacketWarmup.storageKey
-    private static let videoRotationFrameReportOverlayEnabledKey = "cc.bili.playback.rotationFrameReportOverlayEnabled.v1"
-    private static let videoRotationOptimizationExperimentEnabledKey = VideoDetailRotationOptimizationExperiment.storageKey
+    private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature
+        .resumePacketWarmup.storageKey
+    private static let playbackPlayableFallbackDeadlineExperimentEnabledKey =
+        PlayableFallbackDeadlineExperiment.storageKey
+    private static let videoRotationFrameReportOverlayEnabledKey =
+        "cc.bili.playback.rotationFrameReportOverlayEnabled.v1"
+    private static let videoDetailNavigationLatencyDiagnosticsEnabledKey =
+        "cc.bili.videoDetail.navigationLatencyDiagnosticsEnabled.v1"
     nonisolated static let playerControlEdgeScrimEnabledKey = "cc.bili.playback.controlEdgeScrimEnabled.v1"
-    private static let legacyPlayerIconOnlyControlsExperimentEnabledKey = "cc.bili.playback.iconOnlyControlsExperimentEnabled.v1"
-    private static let legacyPlayerFullscreenStatusExperimentEnabledKey = "cc.bili.playback.fullscreenStatusExperimentEnabled.v1"
-    private static let showsVideoDetailNetworkDiagnosticsButtonKey = "cc.bili.videoDetail.showsNetworkDiagnosticsButton.v1"
+    private static let legacyPlayerIconOnlyControlsExperimentEnabledKey =
+        "cc.bili.playback.iconOnlyControlsExperimentEnabled.v1"
+    private static let legacyPlayerFullscreenStatusExperimentEnabledKey =
+        "cc.bili.playback.fullscreenStatusExperimentEnabled.v1"
+    private static let showsVideoDetailNetworkDiagnosticsButtonKey =
+        "cc.bili.videoDetail.showsNetworkDiagnosticsButton.v1"
     private static let showsVideoDetailPinnedProgressBarKey = "cc.bili.videoDetail.showsPinnedProgressBar.v1"
     private static let videoDetailAutoplayEnabledKey = "cc.bili.videoDetail.autoplayEnabled.v1"
     private static let videoListenPlaybackOrderKey = "cc.bili.playback.videoListenPlaybackOrder.v1"
     private static let videoListenPlaylistSortOrderKey = "cc.bili.playback.videoListenPlaylistSortOrder.v1"
-    private static let cellularBiliTrafficCompatibilityExperimentEnabledKey = CellularBiliTrafficCompatibilityExperiment.storageKey
+    private static let cellularBiliTrafficCompatibilityExperimentEnabledKey = CellularBiliTrafficCompatibilityExperiment
+        .storageKey
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
+    private static let nativePullRefreshEnabledKey =
+        "cc.bili.home.nativePullRefreshEnabled.v1"
+    private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
+        "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
+    private static let videoDetailSegmentedPickerGlassStyleKey =
+        "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
     private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
     private static let liquidGlassStylePreferenceKey = AppLiquidGlassStylePreference.storageKey
     private static let remoteImageQualityPreferenceKey = RemoteImageQualityPreference.storageKey
     private static let videoCoverBadgeShadowOpacityKey = VideoCoverBadgeShadow.storageKey
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
-    private static let homeNavigationModeSwitcherExperimentEnabledKey = HomeNavigationModeSwitcherExperiment.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.display.rootNavigationContainerExperimentEnabled.v1",
+        "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
+        "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",
+        "cc.bili.videoDetail.sharedSystemTabBarExperimentEnabled.v1",
+        "cc.bili.display.singleOwnerTabBarExperimentEnabled.v1",
+        "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
+        "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
+        "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
+        "cc.bili.home.navigationToolbarScrollVisibilityExperimentEnabled.v1",
+        "cc.bili.home.navigationChromeDelayedReturnExperimentEnabled.v1",
+        "cc.bili.home.navigationChromeUnifiedScrollVisibilityExperimentEnabled.v1",
+        "cc.bili.home.navigationModeTitleTransitionExperimentEnabled.v1",
+        "cc.bili.home.feedWarmupExperimentEnabled.v1",
+        "cc.bili.dynamic.feedWarmupExperimentEnabled.v1",
+        "cc.bili.network.pathStabilizationExperimentEnabled.v1",
+        "cc.bili.dynamic.detailKeepsTabBarVisibleExperimentEnabled.v1",
+        "cc.bili.dynamic.nativeNavigationTitleExperimentEnabled.v1",
         "cc.bili.playback.startupRequestSchedulingExperimentEnabled.v1",
         "cc.bili.live.videoDetailLayoutExperimentEnabled.v1",
         "cc.bili.live.piliPodLayoutExperimentEnabled.v1",
@@ -266,6 +292,32 @@ final class LibraryStore: ObservableObject {
         "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
         "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1",
         "cc.bili.home.nativePullRefreshIndicatorExperimentEnabled.v1",
+        "cc.bili.videoDetail.rotationOptimizationExperimentEnabled.v1",
+        "cc.bili.playback.diagnosticsBackgroundProcessingExperimentEnabled.v1",
+        "cc.bili.playback.avPlayerStartupPathOptimizationExperimentEnabled.v1",
+        "cc.bili.playback.piliPlusStylePlayURLSelectionExperimentEnabled.v1",
+        "cc.bili.resourceLoading.experimentEnabled.v1",
+        "cc.bili.resourceLoading.firstScreenPriorityExperimentEnabled.v1",
+        "cc.bili.resourceLoading.visibleImagePriorityExperimentEnabled.v1",
+        "cc.bili.resourceLoading.readRequestCoalescingExperimentEnabled.v1",
+        "cc.bili.resourceLoading.dynamicDiskSnapshotExperimentEnabled.v1",
+        "cc.bili.playback.immediatePlayerCreationExperimentEnabled.v1",
+        "cc.bili.videoDetail.transitionStabilityExperimentEnabled.v1",
+        "cc.bili.videoDetail.backgroundRenderFreezeExperimentEnabled.v1",
+        "cc.bili.videoDetail.deferredSecondaryContentExperimentEnabled.v1",
+        "cc.bili.videoDetail.fastNavigationExperimentEnabled.v1",
+        "cc.bili.videoDetail.shortNavigationTransitionExperimentEnabled.v1",
+        "cc.bili.dynamic.commentReadingExperimentEnabled.v1",
+        "cc.bili.dynamic.commentSortPreference.v1",
+        "cc.bili.dynamic.commentPublishExperimentEnabled.v1",
+        "cc.bili.dynamic.commentReplyPublishExperimentEnabled.v1",
+        "cc.bili.dynamic.realLikeExperimentEnabled.v1",
+        "cc.bili.comment.likeExperimentEnabled.v1",
+        "cc.bili.dynamic.imageTextDetailExperimentEnabled.v1",
+        "cc.bili.home.navigationBarScrollVisibilityExperimentEnabled.v2",
+        "cc.bili.playback.relatedEarlyPlayURLPrefetchExperimentEnabled.v1",
+        "cc.bili.playback.relatedStartupPackageWarmupExperimentEnabled.v1",
+        legacyUnifiedPullRefreshIndicatorExperimentEnabledKey,
         legacyPlayerIconOnlyControlsExperimentEnabledKey,
         legacyPlayerFullscreenStatusExperimentEnabledKey,
     ]
@@ -317,7 +369,8 @@ final class LibraryStore: ObservableObject {
 
     var activePlaybackCDNAvoidanceDescription: String? {
         let now = Date()
-        let activeAvoidances = temporarilyAvoidedPlaybackCDNPreferences
+        let activeAvoidances =
+            temporarilyAvoidedPlaybackCDNPreferences
             .filter { $0.value > now }
             .sorted { lhs, rhs in
                 if lhs.value != rhs.value {
@@ -326,7 +379,8 @@ final class LibraryStore: ObservableObject {
                 return lhs.key.title < rhs.key.title
             }
         guard !activeAvoidances.isEmpty else { return nil }
-        return activeAvoidances
+        return
+            activeAvoidances
             .map { preference, expiresAt in
                 "\(preference.title) 至 \(expiresAt.formatted(date: .omitted, time: .shortened))"
             }
@@ -346,7 +400,8 @@ final class LibraryStore: ObservableObject {
         guard let snapshot = playbackCDNProbeSnapshotForCurrentContext else { return true }
         if snapshot.isExpired(freshnessInterval: playbackCDNProbeRefreshInterval) { return true }
         if snapshot.recommendedPreference == nil,
-           snapshot.isExpired(freshnessInterval: 15 * 60) {
+            snapshot.isExpired(freshnessInterval: 15 * 60)
+        {
             return true
         }
         return false
@@ -358,32 +413,50 @@ final class LibraryStore: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        self.appearanceMode = AppAppearanceMode(
-            rawValue: userDefaults.string(forKey: Self.appearanceModeKey) ?? ""
-        ) ?? .system
-        self.appIconPreference = AppIconPreference(
-            rawValue: userDefaults.string(forKey: Self.appIconPreferenceKey) ?? ""
-        ) ?? .system
-        self.followsSystemFontSize = userDefaults.object(
-            forKey: Self.followsSystemFontSizeKey
-        ) as? Bool ?? true
-        self.manualFontSize = (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
+        self.appearanceMode =
+            AppAppearanceMode(
+                rawValue: userDefaults.string(forKey: Self.appearanceModeKey) ?? ""
+            ) ?? .system
+        self.appIconPreference =
+            AppIconPreference(
+                rawValue: userDefaults.string(forKey: Self.appIconPreferenceKey) ?? ""
+            ) ?? .system
+        self.followsSystemFontSize =
+            userDefaults.object(
+                forKey: Self.followsSystemFontSizeKey
+            ) as? Bool ?? true
+        self.manualFontSize =
+            (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
             .flatMap(AppManualFontSize.init(rawValue:)) ?? .defaultValue
         let storedAppTintColorHex = AppThemeTintColor.normalizedHex(
             userDefaults.string(forKey: Self.appTintColorHexKey)
         )
-        let hasMigratedAppTintDefault = userDefaults.bool(forKey: Self.appTintColorDefaultToneMigrationKey)
+        let hasMigratedLegacyAppTintDefaults = userDefaults.bool(
+            forKey: Self.appTintColorDefaultToneMigrationKey
+        )
+        let hasMigratedPreviousAppTintDefault = userDefaults.bool(
+            forKey: Self.appTintColorPreviousDefaultMigrationKey
+        )
         if let storedAppTintColorHex,
-           !hasMigratedAppTintDefault,
-           AppThemeTintColor.legacyDefaultHexes.contains(storedAppTintColorHex) {
+            !hasMigratedLegacyAppTintDefaults,
+            AppThemeTintColor.legacyDefaultHexes.contains(storedAppTintColorHex)
+        {
+            self.appTintColorHex = Self.defaultAppTintColorHex
+            userDefaults.set(Self.defaultAppTintColorHex, forKey: Self.appTintColorHexKey)
+        } else if let storedAppTintColorHex,
+            !hasMigratedPreviousAppTintDefault,
+            storedAppTintColorHex == AppThemeTintColor.previousDefaultHex
+        {
             self.appTintColorHex = Self.defaultAppTintColorHex
             userDefaults.set(Self.defaultAppTintColorHex, forKey: Self.appTintColorHexKey)
         } else {
             self.appTintColorHex = storedAppTintColorHex ?? Self.defaultAppTintColorHex
         }
         userDefaults.set(true, forKey: Self.appTintColorDefaultToneMigrationKey)
+        userDefaults.set(true, forKey: Self.appTintColorPreviousDefaultMigrationKey)
         userDefaults.set(true, forKey: Self.appTintColorDefaultMigrationKey)
-        self.defaultPlaybackRate = Self.normalizedPlaybackRate(userDefaults.object(forKey: Self.defaultPlaybackRateKey) as? Double ?? 1.0)
+        self.defaultPlaybackRate = Self.normalizedPlaybackRate(
+            userDefaults.object(forKey: Self.defaultPlaybackRateKey) as? Double ?? 1.0)
         self.playbackHistorySyncThresholdSeconds = Self.normalizedPlaybackHistorySyncThresholdSeconds(
             userDefaults.object(forKey: Self.playbackHistorySyncThresholdSecondsKey) as? Int
                 ?? Self.defaultPlaybackHistorySyncThresholdSeconds
@@ -394,35 +467,41 @@ final class LibraryStore: ObservableObject {
             self.preferredVideoQuality = Self.defaultPreferredVideoQuality
         }
         if let storedCellularVideoQuality = userDefaults.object(forKey: Self.cellularPreferredVideoQualityKey) as? Int {
-            self.cellularPreferredVideoQuality = storedCellularVideoQuality == 0 ? nil : Self.normalizedVideoQuality(storedCellularVideoQuality)
+            self.cellularPreferredVideoQuality =
+                storedCellularVideoQuality == 0 ? nil : Self.normalizedVideoQuality(storedCellularVideoQuality)
         } else {
             self.cellularPreferredVideoQuality = Self.defaultCellularPreferredVideoQuality
         }
-        self.playbackAutoOptimizationMode = PlaybackAutoOptimizationMode(
-            rawValue: userDefaults.string(forKey: Self.playbackAutoOptimizationModeKey) ?? ""
-        ) ?? .automatic
-        self.playbackStreamSourcePreference = PlaybackStreamSourcePreference(
-            rawValue: userDefaults.string(forKey: Self.playbackStreamSourcePreferenceKey) ?? ""
-        ) ?? Self.defaultPlaybackStreamSourcePreference
+        self.playbackAutoOptimizationMode =
+            PlaybackAutoOptimizationMode(
+                rawValue: userDefaults.string(forKey: Self.playbackAutoOptimizationModeKey) ?? ""
+            ) ?? .automatic
+        self.playbackStreamSourcePreference =
+            PlaybackStreamSourcePreference(
+                rawValue: userDefaults.string(forKey: Self.playbackStreamSourcePreferenceKey) ?? ""
+            ) ?? Self.defaultPlaybackStreamSourcePreference
         self.videoCodecPreference = VideoCodecPreference.stored(in: userDefaults)
         self.forceHardwareDecodeEnabled = PlaybackHardwareDecodePolicy.stored(in: userDefaults)
         self.dolbyVisionRenderingPolicy = DolbyVisionRenderingPolicy.stored(in: userDefaults)
-        self.playbackCDNPreference = PlaybackCDNPreference(
-            rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
-        ) ?? .automatic
+        self.playbackCDNPreference =
+            PlaybackCDNPreference(
+                rawValue: userDefaults.string(forKey: Self.playbackCDNPreferenceKey) ?? ""
+            ) ?? .automatic
         self.playbackCustomCDNHost = PlaybackCDNPreference.normalizedCustomHost(
             userDefaults.string(forKey: Self.playbackCustomCDNHostKey)
         )
-        self.playbackCDNProbeRefreshPolicy = PlaybackCDNProbeRefreshPolicy(
-            rawValue: userDefaults.string(forKey: Self.playbackCDNProbeRefreshPolicyKey) ?? ""
-        ) ?? .interval
+        self.playbackCDNProbeRefreshPolicy =
+            PlaybackCDNProbeRefreshPolicy(
+                rawValue: userDefaults.string(forKey: Self.playbackCDNProbeRefreshPolicyKey) ?? ""
+            ) ?? .interval
         self.playbackCDNProbeRefreshIntervalMinutes = Self.normalizedPlaybackCDNProbeRefreshIntervalMinutes(
             userDefaults.object(forKey: Self.playbackCDNProbeRefreshIntervalMinutesKey) as? Int
                 ?? Self.defaultPlaybackCDNProbeRefreshIntervalMinutes
         )
-        let storedAddressFamilyPreference = PlaybackNetworkAddressFamilyPreference(
-            rawValue: userDefaults.string(forKey: Self.playbackNetworkAddressFamilyPreferenceKey) ?? ""
-        ) ?? .automatic
+        let storedAddressFamilyPreference =
+            PlaybackNetworkAddressFamilyPreference(
+                rawValue: userDefaults.string(forKey: Self.playbackNetworkAddressFamilyPreferenceKey) ?? ""
+            ) ?? .automatic
         self.playbackNetworkAddressFamilyPreference = storedAddressFamilyPreference
         self.prefersBackupAudioURL = PlaybackAudioURLPolicy.stored(in: userDefaults)
         let currentProbeContextKey = Self.playbackCDNProbeContextKey(
@@ -430,18 +509,21 @@ final class LibraryStore: ObservableObject {
             addressFamilyPreference: storedAddressFamilyPreference
         )
         if let contextData = userDefaults.data(forKey: Self.playbackCDNProbeSnapshotsByContextKey),
-           let snapshots = try? JSONDecoder().decode([String: PlaybackCDNProbeSnapshot].self, from: contextData) {
+            let snapshots = try? JSONDecoder().decode([String: PlaybackCDNProbeSnapshot].self, from: contextData)
+        {
             self.playbackCDNProbeSnapshotsByContext = snapshots
             self.playbackCDNProbeSnapshot = snapshots[currentProbeContextKey]
         } else if let probeSnapshotData = userDefaults.data(forKey: Self.playbackCDNProbeSnapshotKey),
-                  let probeSnapshot = try? JSONDecoder().decode(PlaybackCDNProbeSnapshot.self, from: probeSnapshotData) {
+            let probeSnapshot = try? JSONDecoder().decode(PlaybackCDNProbeSnapshot.self, from: probeSnapshotData)
+        {
             self.playbackCDNProbeSnapshotsByContext = [currentProbeContextKey: probeSnapshot]
             self.playbackCDNProbeSnapshot = probeSnapshot
         } else {
             self.playbackCDNProbeSnapshot = nil
         }
         if let progressData = userDefaults.data(forKey: Self.playbackProgressByBVIDKey),
-           let progress = try? JSONDecoder().decode([String: StoredPlaybackProgress].self, from: progressData) {
+            let progress = try? JSONDecoder().decode([String: StoredPlaybackProgress].self, from: progressData)
+        {
             self.playbackProgressByBVID = progress
         }
         self.blocksAdDynamics = userDefaults.object(forKey: Self.blocksAdDynamicsKey) as? Bool ?? true
@@ -465,59 +547,82 @@ final class LibraryStore: ObservableObject {
         self.blockedRecommendKeywords = Self.normalizedBlockedRecommendKeywords(
             userDefaults.stringArray(forKey: Self.blockedRecommendKeywordsKey) ?? []
         )
-        self.appliesRecommendFiltersToRelatedVideos = userDefaults.object(forKey: Self.appliesRecommendFiltersToRelatedVideosKey) as? Bool ?? false
+        self.appliesRecommendFiltersToRelatedVideos =
+            userDefaults.object(forKey: Self.appliesRecommendFiltersToRelatedVideosKey) as? Bool ?? false
         self.danmakuEnabled = userDefaults.object(forKey: Self.danmakuEnabledKey) as? Bool ?? true
         if let settingsData = userDefaults.data(forKey: Self.danmakuSettingsKey),
-           let settings = try? JSONDecoder().decode(DanmakuSettings.self, from: settingsData) {
+            let settings = try? JSONDecoder().decode(DanmakuSettings.self, from: settingsData)
+        {
             self.danmakuSettings = settings.normalized
         } else {
             self.danmakuSettings = .default
         }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
-        self.playerPerformanceOverlayEnabled = userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
-        self.diagnosticsBackgroundProcessingExperimentEnabled = userDefaults.object(forKey: Self.diagnosticsBackgroundProcessingExperimentEnabledKey) as? Bool ?? false
-        self.resourceLoadingFirstScreenPriorityEnabled = userDefaults.object(
-            forKey: Self.resourceLoadingFirstScreenPriorityEnabledKey
-        ) as? Bool ?? true
-        self.resourceLoadingVisibleImagePriorityEnabled = userDefaults.object(
-            forKey: Self.resourceLoadingVisibleImagePriorityEnabledKey
-        ) as? Bool ?? true
-        self.resourceLoadingReadRequestCoalescingEnabled = userDefaults.object(
-            forKey: Self.resourceLoadingReadRequestCoalescingEnabledKey
-        ) as? Bool ?? true
-        self.resourceLoadingDynamicDiskSnapshotEnabled = userDefaults.object(
-            forKey: Self.resourceLoadingDynamicDiskSnapshotEnabledKey
-        ) as? Bool ?? true
-        self.resourceLoadingResumePacketWarmupEnabled = userDefaults.object(
-            forKey: Self.resourceLoadingResumePacketWarmupEnabledKey
-        ) as? Bool ?? true
-        self.videoRotationFrameReportOverlayEnabled = userDefaults.object(forKey: Self.videoRotationFrameReportOverlayEnabledKey) as? Bool ?? false
-        self.videoRotationOptimizationExperimentEnabled = userDefaults.object(
-            forKey: Self.videoRotationOptimizationExperimentEnabledKey
-        ) as? Bool ?? VideoDetailRotationOptimizationExperiment.defaultIsEnabled
-        self.playerControlEdgeScrimEnabled = userDefaults.object(forKey: Self.playerControlEdgeScrimEnabledKey) as? Bool ?? true
-        self.showsVideoDetailNetworkDiagnosticsButton = userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? false
-        self.showsVideoDetailPinnedProgressBar = userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
-        self.videoDetailAutoplayEnabled = userDefaults.object(forKey: Self.videoDetailAutoplayEnabledKey) as? Bool ?? true
-        self.videoListenPlaybackOrder = userDefaults.string(
-            forKey: Self.videoListenPlaybackOrderKey
-        ).flatMap(VideoListenPlaybackOrder.init(rawValue:)) ?? .sequential
-        self.videoListenPlaylistSortOrder = userDefaults.string(
-            forKey: Self.videoListenPlaylistSortOrderKey
-        ).flatMap(VideoListenPlaylistSortOrder.init(rawValue:)) ?? .normal
-        self.cellularBiliTrafficCompatibilityExperimentEnabled = userDefaults.object(
-            forKey: Self.cellularBiliTrafficCompatibilityExperimentEnabledKey
-        ) as? Bool ?? CellularBiliTrafficCompatibilityExperiment.defaultIsEnabled
+        self.playerPerformanceOverlayEnabled =
+            userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
+        self.resourceLoadingResumePacketWarmupEnabled =
+            userDefaults.object(
+                forKey: Self.resourceLoadingResumePacketWarmupEnabledKey
+            ) as? Bool ?? true
+        self.playbackPlayableFallbackDeadlineExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.playbackPlayableFallbackDeadlineExperimentEnabledKey
+            ) as? Bool ?? PlayableFallbackDeadlineExperiment.defaultIsEnabled
+        self.videoRotationFrameReportOverlayEnabled =
+            userDefaults.object(forKey: Self.videoRotationFrameReportOverlayEnabledKey) as? Bool ?? false
+        self.videoDetailNavigationLatencyDiagnosticsEnabled =
+            userDefaults.object(
+                forKey: Self.videoDetailNavigationLatencyDiagnosticsEnabledKey
+            ) as? Bool ?? false
+        self.playerControlEdgeScrimEnabled =
+            userDefaults.object(forKey: Self.playerControlEdgeScrimEnabledKey) as? Bool ?? true
+        self.showsVideoDetailNetworkDiagnosticsButton =
+            userDefaults.object(forKey: Self.showsVideoDetailNetworkDiagnosticsButtonKey) as? Bool ?? false
+        self.showsVideoDetailPinnedProgressBar =
+            userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
+        self.videoDetailAutoplayEnabled =
+            userDefaults.object(forKey: Self.videoDetailAutoplayEnabledKey) as? Bool ?? true
+        self.videoListenPlaybackOrder =
+            userDefaults.string(
+                forKey: Self.videoListenPlaybackOrderKey
+            ).flatMap(VideoListenPlaybackOrder.init(rawValue:)) ?? .sequential
+        self.videoListenPlaylistSortOrder =
+            userDefaults.string(
+                forKey: Self.videoListenPlaylistSortOrderKey
+            ).flatMap(VideoListenPlaylistSortOrder.init(rawValue:)) ?? .normal
+        self.cellularBiliTrafficCompatibilityExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.cellularBiliTrafficCompatibilityExperimentEnabledKey
+            ) as? Bool ?? CellularBiliTrafficCompatibilityExperiment.defaultIsEnabled
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
-        self.multiAccountExperimentEnabled = userDefaults.object(
-            forKey: Self.multiAccountExperimentEnabledKey
-        ) as? Bool ?? false
+        self.multiAccountExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.multiAccountExperimentEnabledKey
+            ) as? Bool ?? false
+        let storedNativePullRefreshEnabled =
+            userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
+        let nativePullRefreshEnabled = storedNativePullRefreshEnabled
+            ?? userDefaults.object(
+                forKey: Self.legacyUnifiedPullRefreshIndicatorExperimentEnabledKey
+            ) as? Bool
+            ?? true
+        self.nativePullRefreshEnabled = nativePullRefreshEnabled
+        if storedNativePullRefreshEnabled == nil {
+            userDefaults.set(nativePullRefreshEnabled, forKey: Self.nativePullRefreshEnabledKey)
+        }
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
-        self.scrollEdgeEffectPreference = AppScrollEdgeEffectPreference(
-            rawValue: userDefaults.string(forKey: Self.scrollEdgeEffectPreferenceKey) ?? ""
-        ) ?? .soft
+        self.videoDetailSegmentedPickerGlassStyle =
+            VideoDetailSegmentedPickerGlassStyle(
+                rawValue: userDefaults.string(
+                    forKey: Self.videoDetailSegmentedPickerGlassStyleKey
+                ) ?? ""
+            ) ?? .clear
+        self.scrollEdgeEffectPreference =
+            AppScrollEdgeEffectPreference(
+                rawValue: userDefaults.string(forKey: Self.scrollEdgeEffectPreferenceKey) ?? ""
+            ) ?? .soft
         self.liquidGlassStylePreference = AppLiquidGlassStylePreference(
             storedRawValue: userDefaults.string(forKey: Self.liquidGlassStylePreferenceKey)
         )
@@ -526,30 +631,34 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(forKey: Self.videoCoverBadgeShadowOpacityKey) as? Double
                 ?? VideoCoverBadgeShadow.defaultOpacity
         )
-        self.videoCoverBottomScrimEnabled = userDefaults.object(forKey: Self.videoCoverBottomScrimEnabledKey) as? Bool
+        self.videoCoverBottomScrimEnabled =
+            userDefaults.object(forKey: Self.videoCoverBottomScrimEnabledKey) as? Bool
             ?? VideoCoverBottomScrimSettings.defaultIsEnabled
-        self.showsVideoCoverDurationBadges = userDefaults.object(forKey: Self.videoCoverDurationBadgesEnabledKey) as? Bool
+        self.showsVideoCoverDurationBadges =
+            userDefaults.object(forKey: Self.videoCoverDurationBadgesEnabledKey) as? Bool
             ?? VideoCoverDurationBadgeSettings.defaultIsEnabled
-        self.homeNavigationModeSwitcherExperimentEnabled = userDefaults.object(
-            forKey: Self.homeNavigationModeSwitcherExperimentEnabledKey
-        ) as? Bool ?? HomeNavigationModeSwitcherExperiment.defaultIsEnabled
         Self.retiredExperimentKeys.forEach(userDefaults.removeObject(forKey:))
-        self.remoteImageDiagnosticsEnabled = userDefaults.object(
-            forKey: Self.remoteImageDiagnosticsEnabledKey
-        ) as? Bool ?? RemoteImageDiagnosticsSettings.defaultIsEnabled
-        self.force120HzScrollingEnabled = userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
+        self.remoteImageDiagnosticsEnabled =
+            userDefaults.object(
+                forKey: Self.remoteImageDiagnosticsEnabledKey
+            ) as? Bool ?? RemoteImageDiagnosticsSettings.defaultIsEnabled
+        self.force120HzScrollingEnabled =
+            userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
         )
         self.homeRefreshTriggerDistance = Self.normalizedHomeRefreshDistance(
-            userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double ?? Self.defaultHomeRefreshTriggerDistance
+            userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double
+                ?? Self.defaultHomeRefreshTriggerDistance
         )
-        self.homeFeedLayout = HomeFeedLayout(
-            rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
-        ) ?? Self.defaultHomeFeedLayout
-        self.homeRecommendFeedSourcePreference = HomeRecommendFeedSourcePreference(
-            rawValue: userDefaults.string(forKey: Self.homeRecommendFeedSourcePreferenceKey) ?? ""
-        ) ?? Self.defaultHomeRecommendFeedSourcePreference
+        self.homeFeedLayout =
+            HomeFeedLayout(
+                rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
+            ) ?? Self.defaultHomeFeedLayout
+        self.homeRecommendFeedSourcePreference =
+            HomeRecommendFeedSourcePreference(
+                rawValue: userDefaults.string(forKey: Self.homeRecommendFeedSourcePreferenceKey) ?? ""
+            ) ?? Self.defaultHomeRecommendFeedSourcePreference
         self.showsHotSearches = userDefaults.object(forKey: Self.showsHotSearchesKey) as? Bool ?? true
     }
 
@@ -610,8 +719,8 @@ final class LibraryStore: ObservableObject {
     ) {
         let bvid = video.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !bvid.isEmpty,
-              progress.isFinite,
-              progress >= TimeInterval(playbackHistorySyncThresholdSeconds)
+            progress.isFinite,
+            progress >= TimeInterval(playbackHistorySyncThresholdSeconds)
         else { return }
         playbackProgressByBVID[bvid] = StoredPlaybackProgress(
             bvid: bvid,
@@ -630,8 +739,9 @@ final class LibraryStore: ObservableObject {
     ) -> TimeInterval? {
         guard let progress = localPlaybackProgress(for: video, duration: duration) else { return nil }
         if let progressCID = progress.cid,
-           let cid,
-           progressCID != cid {
+            let cid,
+            progressCID != cid
+        {
             return nil
         }
         return progress.playbackTime
@@ -644,8 +754,8 @@ final class LibraryStore: ObservableObject {
         guard !incognitoModeEnabled else { return nil }
         let bvid = video.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !bvid.isEmpty,
-              let progress = playbackProgressByBVID[bvid],
-              isUsablePlaybackProgress(progress, duration: duration)
+            let progress = playbackProgressByBVID[bvid],
+            isUsablePlaybackProgress(progress, duration: duration)
         else { return nil }
         return progress
     }
@@ -655,7 +765,7 @@ final class LibraryStore: ObservableObject {
         duration: TimeInterval?
     ) -> Bool {
         guard progress.playbackTime.isFinite,
-              progress.playbackTime >= TimeInterval(playbackHistorySyncThresholdSeconds)
+            progress.playbackTime >= TimeInterval(playbackHistorySyncThresholdSeconds)
         else { return false }
         let resolvedDuration = duration ?? progress.playbackDuration
         if let resolvedDuration, resolvedDuration > 0 {
@@ -793,7 +903,7 @@ final class LibraryStore: ObservableObject {
         duration: TimeInterval = 10 * 60
     ) -> Bool {
         guard playbackCDNPreference == .automatic,
-              preference.isManualHost
+            preference.isManualHost
         else { return false }
         let expiration = Date().addingTimeInterval(max(30, duration))
         temporarilyAvoidedPlaybackCDNPreferences[preference] = expiration
@@ -804,11 +914,14 @@ final class LibraryStore: ObservableObject {
     func setPlaybackCDNProbeSnapshot(_ snapshot: PlaybackCDNProbeSnapshot?) {
         let contextKey = currentPlaybackCDNProbeContextKey
         let previousSnapshot = playbackCDNProbeSnapshotsByContext[contextKey]
-        let currentPreference = previousSnapshot?.recommendedPreference
+        let currentPreference =
+            previousSnapshot?.recommendedPreference
             ?? previousSnapshot?.actionableResults.first?.preference
-        let keepsCurrentRecommendation = playbackCDNPreference == .automatic
+        let keepsCurrentRecommendation =
+            playbackCDNPreference == .automatic
             && currentPreference.map { !isPlaybackCDNTemporarilyAvoided($0) } != false
-        let snapshot = playbackCDNPreference == .automatic
+        let snapshot =
+            playbackCDNPreference == .automatic
             ? snapshot?.stabilizedRecommendation(
                 previous: previousSnapshot,
                 keepsCurrentRecommendation: keepsCurrentRecommendation
@@ -835,19 +948,21 @@ final class LibraryStore: ObservableObject {
 
     private func playbackCDNRecommendation(allowExpired: Bool) -> PlaybackCDNPreference? {
         guard let snapshot = playbackCDNProbeSnapshotForCurrentContext,
-              allowExpired || !snapshot.isExpired(freshnessInterval: playbackCDNProbeRefreshInterval)
+            allowExpired || !snapshot.isExpired(freshnessInterval: playbackCDNProbeRefreshInterval)
         else { return nil }
         var seenPreferences = Set<PlaybackCDNPreference>()
         var candidates = [PlaybackCDNPreference]()
         func appendCandidate(_ preference: PlaybackCDNPreference?) {
             guard let preference,
-                  snapshot.result(for: preference)?.isActionableForPlaybackRecommendation == true,
-                  seenPreferences.insert(preference).inserted
+                snapshot.result(for: preference)?.isActionableForPlaybackRecommendation == true,
+                seenPreferences.insert(preference).inserted
             else { return }
             candidates.append(preference)
         }
         appendCandidate(snapshot.recommendedPreference)
-        snapshot.actionableResults.forEach { appendCandidate($0.preference) }
+        for result in snapshot.actionableResults {
+            appendCandidate(result.preference)
+        }
         return candidates.first { !isPlaybackCDNTemporarilyAvoided($0) }
     }
 
@@ -878,7 +993,7 @@ final class LibraryStore: ObservableObject {
 
     private func persistPlaybackCDNProbeSnapshotsByContext() {
         guard !playbackCDNProbeSnapshotsByContext.isEmpty,
-              let data = try? JSONEncoder().encode(playbackCDNProbeSnapshotsByContext)
+            let data = try? JSONEncoder().encode(playbackCDNProbeSnapshotsByContext)
         else {
             userDefaults.removeObject(forKey: Self.playbackCDNProbeSnapshotsByContextKey)
             return
@@ -897,7 +1012,7 @@ final class LibraryStore: ObservableObject {
             )
         }
         guard !playbackProgressByBVID.isEmpty,
-              let data = try? JSONEncoder().encode(playbackProgressByBVID)
+            let data = try? JSONEncoder().encode(playbackProgressByBVID)
         else {
             userDefaults.removeObject(forKey: Self.playbackProgressByBVIDKey)
             return
@@ -936,7 +1051,11 @@ final class LibraryStore: ObservableObject {
     func addBlockedDynamicKeyword(_ keyword: String) {
         let normalizedKeyword = Self.normalizedBlockedDynamicKeyword(keyword)
         guard !normalizedKeyword.isEmpty else { return }
-        guard !blockedDynamicKeywords.contains(where: { Self.blockedDynamicKeywordKey($0) == Self.blockedDynamicKeywordKey(normalizedKeyword) }) else {
+        guard
+            !blockedDynamicKeywords.contains(where: {
+                Self.blockedDynamicKeywordKey($0) == Self.blockedDynamicKeywordKey(normalizedKeyword)
+            })
+        else {
             return
         }
         blockedDynamicKeywords.append(normalizedKeyword)
@@ -1000,7 +1119,11 @@ final class LibraryStore: ObservableObject {
     func addBlockedRecommendKeyword(_ keyword: String) {
         let normalizedKeyword = Self.normalizedBlockedRecommendKeyword(keyword)
         guard !normalizedKeyword.isEmpty else { return }
-        guard !blockedRecommendKeywords.contains(where: { Self.blockedRecommendKeywordKey($0) == Self.blockedRecommendKeywordKey(normalizedKeyword) }) else {
+        guard
+            !blockedRecommendKeywords.contains(where: {
+                Self.blockedRecommendKeywordKey($0) == Self.blockedRecommendKeywordKey(normalizedKeyword)
+            })
+        else {
             return
         }
         blockedRecommendKeywords.append(normalizedKeyword)
@@ -1054,39 +1177,17 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.playerPerformanceOverlayEnabledKey)
     }
 
-    func setDiagnosticsBackgroundProcessingExperimentEnabled(_ isEnabled: Bool) {
-        diagnosticsBackgroundProcessingExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.diagnosticsBackgroundProcessingExperimentEnabledKey)
-    }
-
-    func setResourceLoadingFirstScreenPriorityEnabled(_ isEnabled: Bool) {
-        resourceLoadingFirstScreenPriorityEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.resourceLoadingFirstScreenPriorityEnabledKey)
-        if !isEnabled {
-            Task {
-                await ResourceLoadingForegroundPriorityGate.shared.reset()
-            }
-        }
-    }
-
-    func setResourceLoadingVisibleImagePriorityEnabled(_ isEnabled: Bool) {
-        resourceLoadingVisibleImagePriorityEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.resourceLoadingVisibleImagePriorityEnabledKey)
-    }
-
-    func setResourceLoadingReadRequestCoalescingEnabled(_ isEnabled: Bool) {
-        resourceLoadingReadRequestCoalescingEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.resourceLoadingReadRequestCoalescingEnabledKey)
-    }
-
-    func setResourceLoadingDynamicDiskSnapshotEnabled(_ isEnabled: Bool) {
-        resourceLoadingDynamicDiskSnapshotEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.resourceLoadingDynamicDiskSnapshotEnabledKey)
-    }
-
     func setResourceLoadingResumePacketWarmupEnabled(_ isEnabled: Bool) {
         resourceLoadingResumePacketWarmupEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.resourceLoadingResumePacketWarmupEnabledKey)
+    }
+
+    func setPlaybackPlayableFallbackDeadlineExperimentEnabled(_ isEnabled: Bool) {
+        playbackPlayableFallbackDeadlineExperimentEnabled = isEnabled
+        userDefaults.set(
+            isEnabled,
+            forKey: Self.playbackPlayableFallbackDeadlineExperimentEnabledKey
+        )
     }
 
     func setVideoRotationFrameReportOverlayEnabled(_ isEnabled: Bool) {
@@ -1094,9 +1195,12 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.videoRotationFrameReportOverlayEnabledKey)
     }
 
-    func setVideoRotationOptimizationExperimentEnabled(_ isEnabled: Bool) {
-        videoRotationOptimizationExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.videoRotationOptimizationExperimentEnabledKey)
+    func setVideoDetailNavigationLatencyDiagnosticsEnabled(_ isEnabled: Bool) {
+        videoDetailNavigationLatencyDiagnosticsEnabled = isEnabled
+        userDefaults.set(
+            isEnabled,
+            forKey: Self.videoDetailNavigationLatencyDiagnosticsEnabledKey
+        )
     }
 
     func setPlayerControlEdgeScrimEnabled(_ isEnabled: Bool) {
@@ -1152,9 +1256,21 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.multiAccountExperimentEnabledKey)
     }
 
+    func setNativePullRefreshEnabled(_ isEnabled: Bool) {
+        nativePullRefreshEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.nativePullRefreshEnabledKey)
+    }
+
     func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
         minimizesTabBarOnScroll = isEnabled
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
+    }
+
+    func setVideoDetailSegmentedPickerGlassStyle(
+        _ glassStyle: VideoDetailSegmentedPickerGlassStyle
+    ) {
+        videoDetailSegmentedPickerGlassStyle = glassStyle
+        userDefaults.set(glassStyle.rawValue, forKey: Self.videoDetailSegmentedPickerGlassStyleKey)
     }
 
     func setScrollEdgeEffectPreference(_ preference: AppScrollEdgeEffectPreference) {
@@ -1188,11 +1304,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.videoCoverDurationBadgesEnabledKey)
     }
 
-    func setHomeNavigationModeSwitcherExperimentEnabled(_ isEnabled: Bool) {
-        homeNavigationModeSwitcherExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.homeNavigationModeSwitcherExperimentEnabledKey)
-    }
-
     func setRemoteImageDiagnosticsEnabled(_ isEnabled: Bool) {
         remoteImageDiagnosticsEnabled = isEnabled
         RemoteImageDiagnosticsSettings.setEnabled(isEnabled, in: userDefaults)
@@ -1216,10 +1327,11 @@ final class LibraryStore: ObservableObject {
         if isVisible {
             if !tabs.contains(tab) {
                 let defaultIndex = AppTab.defaultVisibleTabs.firstIndex(of: tab) ?? tabs.count
-                let insertionIndex = tabs.firstIndex { existing in
-                    let existingIndex = AppTab.defaultVisibleTabs.firstIndex(of: existing) ?? Int.max
-                    return existingIndex > defaultIndex
-                } ?? tabs.count
+                let insertionIndex =
+                    tabs.firstIndex { existing in
+                        let existingIndex = AppTab.defaultVisibleTabs.firstIndex(of: existing) ?? Int.max
+                        return existingIndex > defaultIndex
+                    } ?? tabs.count
                 tabs.insert(tab, at: insertionIndex)
             }
         } else {
@@ -1243,6 +1355,14 @@ final class LibraryStore: ObservableObject {
         let normalizedDistance = Self.normalizedHomeRefreshDistance(distance)
         homeRefreshTriggerDistance = normalizedDistance
         userDefaults.set(normalizedDistance, forKey: Self.homeRefreshTriggerDistanceKey)
+    }
+
+    var usesNativePullRefresh: Bool {
+        nativePullRefreshEnabled
+    }
+
+    var usesCustomPullRefresh: Bool {
+        !usesNativePullRefresh
     }
 
     func setHomeFeedLayout(_ layout: HomeFeedLayout) {
@@ -1271,7 +1391,9 @@ final class LibraryStore: ObservableObject {
     }
 
     private static func normalizedPlaybackCDNProbeRefreshIntervalMinutes(_ minutes: Int) -> Int {
-        min(max(minutes, playbackCDNProbeRefreshIntervalRange.lowerBound), playbackCDNProbeRefreshIntervalRange.upperBound)
+        min(
+            max(minutes, playbackCDNProbeRefreshIntervalRange.lowerBound),
+            playbackCDNProbeRefreshIntervalRange.upperBound)
     }
 
     private static func normalizedVisibleRootTabs(_ rawValues: [String]?) -> [AppTab] {
@@ -1358,8 +1480,8 @@ final class LibraryStore: ObservableObject {
     }
 }
 
-private extension PlaybackEnvironment.NetworkClass {
-    var cacheKey: String {
+extension PlaybackEnvironment.NetworkClass {
+    fileprivate var cacheKey: String {
         switch self {
         case .wifi:
             return "wifi"
@@ -1418,6 +1540,22 @@ enum AppScrollEdgeEffectPreference: String, CaseIterable, Identifiable {
             return "Hard"
         case .automatic:
             return "Automatic"
+        }
+    }
+}
+
+enum VideoDetailSegmentedPickerGlassStyle: String, CaseIterable, Identifiable {
+    case clear
+    case regular
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .clear:
+            return "Clear"
+        case .regular:
+            return "Regular"
         }
     }
 }

@@ -31,7 +31,7 @@ struct RemoteImageDiagnosticsView: View {
         .formStyle(.grouped)
         .nativeTopScrollEdgeEffect()
         .navigationTitle("图片加载诊断")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

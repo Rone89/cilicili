@@ -17,13 +17,14 @@ struct VideoDetailInitialPlaybackStage: View {
                 selection: $selectedContentTab,
                 layoutWidth: layout.width,
                 topInset: layout.playerHeight,
-                minimizesTabBarOnScroll: runtimeSettings.minimizesTabBarOnScroll,
+                mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent,
                 onScrollOffsetChange: nil
-            ) { tab in
+            ) { tab, mountsSecondaryContent in
                 InitialVideoDetailContentPage(
                     seedVideo: seedVideo,
                     layoutWidth: layout.width,
-                    tab: tab
+                    tab: tab,
+                    mountsSecondaryContent: mountsSecondaryContent
                 )
             }
         } player: {

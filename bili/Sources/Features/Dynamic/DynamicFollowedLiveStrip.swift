@@ -48,7 +48,6 @@ struct FollowedLiveStrip: View {
                 .scrollIndicators(.hidden)
                 .scrollClipDisabled()
             }
-            .padding(.top, 4)
             .padding(.bottom, 10)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }

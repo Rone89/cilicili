@@ -4,7 +4,6 @@ struct VideoDetailViewContentResolver: View {
     @EnvironmentObject private var dependencies: AppDependencies
     let seedVideo: VideoItem
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
-    @ObservedObject var fullscreenCoordinator: VideoDetailFullscreenCoordinator
     @ObservedObject var viewModel: VideoDetailViewModel
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
@@ -18,7 +17,6 @@ struct VideoDetailViewContentResolver: View {
     var body: some View {
         VideoDetailShellRepresentable(
             viewModel: viewModel,
-            fullscreenCoordinator: fullscreenCoordinator,
             runtimeSettings: runtimeSettings,
             selectedContentTab: $selectedContentTab,
             sheetRoute: $sheetRoute,

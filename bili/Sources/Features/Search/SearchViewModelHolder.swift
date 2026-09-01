@@ -38,6 +38,7 @@ final class SearchBottomAccessoryStore: ObservableObject {
 
 private struct SearchRenderSnapshot: Equatable {
     let query: String
+    let showsDiscovery: Bool
     let selectedScope: SearchScope
     let selectedOrder: SearchSortOrder
     let state: LoadingState
@@ -53,6 +54,7 @@ private struct SearchRenderSnapshot: Equatable {
 
     init(_ viewModel: SearchViewModel) {
         query = viewModel.query
+        showsDiscovery = viewModel.showsDiscovery
         selectedScope = viewModel.selectedScope
         selectedOrder = viewModel.selectedOrder
         state = viewModel.state

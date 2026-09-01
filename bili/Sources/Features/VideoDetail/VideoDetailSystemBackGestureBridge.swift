@@ -4,25 +4,30 @@ import UIKit
 struct VideoDetailSystemBackGestureBridge: UIViewControllerRepresentable {
     let onNavigationGestureBegan: (() -> Void)?
     let allowsSingleControllerNavigation: Bool
+    let preservesSystemGestureDelegates: Bool
 
     init(
         onNavigationGestureBegan: (() -> Void)?,
-        allowsSingleControllerNavigation: Bool = false
+        allowsSingleControllerNavigation: Bool = false,
+        preservesSystemGestureDelegates: Bool = false
     ) {
         self.onNavigationGestureBegan = onNavigationGestureBegan
         self.allowsSingleControllerNavigation = allowsSingleControllerNavigation
+        self.preservesSystemGestureDelegates = preservesSystemGestureDelegates
     }
 
     func makeUIViewController(context _: Context) -> Controller {
         Controller(
             onNavigationGestureBegan: onNavigationGestureBegan,
-            allowsSingleControllerNavigation: allowsSingleControllerNavigation
+            allowsSingleControllerNavigation: allowsSingleControllerNavigation,
+            preservesSystemGestureDelegates: preservesSystemGestureDelegates
         )
     }
 
     func updateUIViewController(_ uiViewController: Controller, context _: Context) {
         uiViewController.onNavigationGestureBegan = onNavigationGestureBegan
         uiViewController.allowsSingleControllerNavigation = allowsSingleControllerNavigation
+        uiViewController.preservesSystemGestureDelegates = preservesSystemGestureDelegates
         if onNavigationGestureBegan == nil {
             uiViewController.detachFromSystemBackGestures()
         } else {
@@ -36,13 +41,16 @@ struct VideoDetailSystemBackGestureBridge: UIViewControllerRepresentable {
         weak var attachedNavigationController: UINavigationController?
         var onNavigationGestureBegan: (() -> Void)?
         var allowsSingleControllerNavigation: Bool
+        var preservesSystemGestureDelegates: Bool
 
         init(
             onNavigationGestureBegan: (() -> Void)?,
-            allowsSingleControllerNavigation: Bool
+            allowsSingleControllerNavigation: Bool,
+            preservesSystemGestureDelegates: Bool
         ) {
             self.onNavigationGestureBegan = onNavigationGestureBegan
             self.allowsSingleControllerNavigation = allowsSingleControllerNavigation
+            self.preservesSystemGestureDelegates = preservesSystemGestureDelegates
             super.init(nibName: nil, bundle: nil)
         }
 
@@ -71,6 +79,7 @@ struct VideoDetailSystemBackGestureBridge: UIViewControllerRepresentable {
 
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews()
+            guard !preservesSystemGestureDelegates else { return }
             restoreSystemBackGestures()
         }
 
@@ -80,5 +89,18 @@ struct VideoDetailSystemBackGestureBridge: UIViewControllerRepresentable {
                 self.restoreSystemBackGestures()
             }
         }
+    }
+}
+
+final class ClearPassthroughView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }

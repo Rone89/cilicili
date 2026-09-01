@@ -31,7 +31,7 @@ struct CommentRow: View, Equatable {
             )
 
             VStack(alignment: .leading, spacing: 5) {
-                CommentRowHeader(display: display)
+                CommentRowHeader(comment: comment, display: display)
 
                 BiliEmoteText(
                     content: comment.content,

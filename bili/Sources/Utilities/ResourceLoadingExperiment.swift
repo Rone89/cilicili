@@ -2,43 +2,24 @@ import Foundation
 
 nonisolated enum ResourceLoadingExperiment {
     enum Feature: CaseIterable {
-        case firstScreenPriority
-        case visibleImagePriority
-        case readRequestCoalescing
-        case dynamicDiskSnapshot
         case resumePacketWarmup
 
         var storageKey: String {
             switch self {
-            case .firstScreenPriority:
-                "cc.bili.resourceLoading.firstScreenPriorityExperimentEnabled.v1"
-            case .visibleImagePriority:
-                "cc.bili.resourceLoading.visibleImagePriorityExperimentEnabled.v1"
-            case .readRequestCoalescing:
-                "cc.bili.resourceLoading.readRequestCoalescingExperimentEnabled.v1"
-            case .dynamicDiskSnapshot:
-                "cc.bili.resourceLoading.dynamicDiskSnapshotExperimentEnabled.v1"
             case .resumePacketWarmup:
                 "cc.bili.resourceLoading.resumePacketWarmupExperimentEnabled.v1"
             }
         }
     }
 
-    static let storageKey = "cc.bili.resourceLoading.experimentEnabled.v1"
-    static let defaultIsEnabled = true
     static let firstScreenPriorityWindow: TimeInterval = 0.95
     static let resumePacketWarmupAdditionalWait: TimeInterval = 0.10
-
-    static func isEnabled(in _: UserDefaults = .standard) -> Bool {
-        true
-    }
 
     static func isFeatureEnabled(
         _ feature: Feature,
         in userDefaults: UserDefaults = .standard
     ) -> Bool {
-        guard isEnabled(in: userDefaults) else { return false }
-        return userDefaults.object(forKey: feature.storageKey) as? Bool ?? true
+        userDefaults.object(forKey: feature.storageKey) as? Bool ?? true
     }
 
     static func resumeWarmupWait(
@@ -168,7 +149,7 @@ nonisolated final class ResourceLoadingDiagnostics: @unchecked Sendable {
 
     init(
         maximumEventCount: Int = 60,
-        shouldRecord: @escaping @Sendable () -> Bool = { ResourceLoadingExperiment.isEnabled() }
+        shouldRecord: @escaping @Sendable () -> Bool = { true }
     ) {
         self.maximumEventCount = max(maximumEventCount, 1)
         self.shouldRecord = shouldRecord
@@ -245,7 +226,6 @@ nonisolated final class ResourceLoadingDiagnostics: @unchecked Sendable {
 nonisolated enum ResourceLoadingDiagnosticsTextFormatter {
     static func makeText(
         snapshot: ResourceLoadingDiagnosticsSnapshot,
-        isExperimentEnabled: Bool,
         featureStates: [(String, Bool)]
     ) -> String {
         let formatter = DateFormatter()
@@ -253,7 +233,8 @@ nonisolated enum ResourceLoadingDiagnosticsTextFormatter {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
-        let featureText = featureStates
+        let featureText =
+            featureStates
             .map { "\($0.0)=\($0.1 ? "on" : "off")" }
             .joined(separator: " ")
 
@@ -285,7 +266,7 @@ nonisolated enum ResourceLoadingDiagnosticsTextFormatter {
             "断点续播预热",
             "  完成: \(snapshot.resumeWarmupHitCount) · 超时: \(snapshot.resumeWarmupTimeoutCount) · 平均 \(snapshot.averageResumeWarmupMilliseconds)ms",
             "",
-            "最近事件"
+            "最近事件",
         ]
 
         if snapshot.events.isEmpty {
@@ -320,7 +301,6 @@ actor ResourceLoadingForegroundPriorityGate {
         for scope: ResourceLoadingForegroundScope,
         duration: TimeInterval = ResourceLoadingExperiment.firstScreenPriorityWindow
     ) {
-        guard ResourceLoadingExperiment.isFeatureEnabled(.firstScreenPriority) else { return }
         let deadline = Date().addingTimeInterval(max(duration, 0))
         if let existing = foregroundUntilByScope[scope], existing > deadline {
             return
@@ -334,7 +314,6 @@ actor ResourceLoadingForegroundPriorityGate {
     }
 
     func backgroundDelayNanoseconds(for scope: ResourceLoadingForegroundScope) -> UInt64 {
-        guard ResourceLoadingExperiment.isFeatureEnabled(.firstScreenPriority) else { return 0 }
         let now = Date()
         guard let deadline = foregroundUntilByScope[scope], deadline > now else {
             foregroundUntilByScope[scope] = nil
@@ -347,9 +326,5 @@ actor ResourceLoadingForegroundPriorityGate {
             details: ["scope": scope.rawValue]
         )
         return UInt64((delay * 1_000_000_000).rounded(.up))
-    }
-
-    func reset() {
-        foregroundUntilByScope.removeAll()
     }
 }

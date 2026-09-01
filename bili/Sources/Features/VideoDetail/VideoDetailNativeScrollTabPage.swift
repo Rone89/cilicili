@@ -27,6 +27,7 @@ struct VideoDetailNativeScrollTabPage<Content: View>: View {
                 content(tab)
             }
         )
+        .defersRemoteImageLoadsDuringFastScroll()
     }
 
     private var pageScrollAdjustment: PlaybackDetailScrollAdjustment? {

@@ -6,21 +6,35 @@ enum HomePullRefreshLayout {
     static func topInset(isRefreshing: Bool) -> CGFloat {
         isRefreshing ? refreshingTopInset : 0
     }
+
 }
 
 struct HomeFeedPullRefreshOverlay: View {
     let pullDistance: CGFloat
     let triggerDistance: CGFloat
     let isRefreshing: Bool
+    @State private var suppressesPullProgress = false
+    @State private var refreshCompletionSuppressionID = 0
 
     var body: some View {
         HomePullRefreshIndicator(
             pullDistance: pullDistance,
             triggerDistance: triggerDistance,
-            isRefreshing: isRefreshing
+            isRefreshing: isRefreshing,
+            suppressesPullProgress: suppressesPullProgress
         )
         .padding(.top, 6)
         .allowsHitTesting(false)
+        .onChange(of: isRefreshing) { wasRefreshing, isRefreshing in
+            refreshCompletionSuppressionID &+= 1
+            suppressesPullProgress = wasRefreshing && !isRefreshing
+        }
+        .task(id: refreshCompletionSuppressionID) {
+            guard suppressesPullProgress else { return }
+            try? await Task.sleep(for: .milliseconds(360))
+            guard !Task.isCancelled else { return }
+            suppressesPullProgress = false
+        }
     }
 }
 
@@ -28,21 +42,20 @@ private struct HomeFeedPullRefreshLayoutModifier: ViewModifier {
     let pullDistance: CGFloat
     let triggerDistance: CGFloat
     let isRefreshing: Bool
+    let isEnabled: Bool
 
     func body(content: Content) -> some View {
         content
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Color.clear
-                    .frame(height: HomePullRefreshLayout.topInset(isRefreshing: isRefreshing))
-                    .animation(.smooth(duration: 0.24), value: isRefreshing)
-            }
             .overlay(alignment: .top) {
-                HomeFeedPullRefreshOverlay(
-                    pullDistance: pullDistance,
-                    triggerDistance: triggerDistance,
-                    isRefreshing: isRefreshing
-                )
+                if isEnabled {
+                    HomeFeedPullRefreshOverlay(
+                        pullDistance: pullDistance,
+                        triggerDistance: triggerDistance,
+                        isRefreshing: isRefreshing
+                    )
+                }
             }
+            .animation(.smooth(duration: 0.18), value: isEnabled)
     }
 }
 
@@ -50,14 +63,28 @@ extension View {
     func homeFeedPullRefreshLayout(
         pullDistance: CGFloat,
         triggerDistance: CGFloat,
-        isRefreshing: Bool
+        isRefreshing: Bool,
+        isEnabled: Bool = true
     ) -> some View {
         modifier(
             HomeFeedPullRefreshLayoutModifier(
                 pullDistance: pullDistance,
                 triggerDistance: triggerDistance,
-                isRefreshing: isRefreshing
+                isRefreshing: isRefreshing,
+                isEnabled: isEnabled
             )
         )
+    }
+
+    @ViewBuilder
+    func nativePullRefresh(
+        isEnabled: Bool,
+        action: @escaping @MainActor () async -> Void
+    ) -> some View {
+        if isEnabled {
+            refreshable(action: action)
+        } else {
+            self
+        }
     }
 }

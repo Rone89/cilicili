@@ -284,9 +284,7 @@ extension BiliAPIClient {
         for request: URLRequest,
         priority: Float
     ) async throws -> Data {
-        guard ResourceLoadingExperiment.isFeatureEnabled(.readRequestCoalescing),
-            let key = Self.readRequestCoalescingKey(for: request, priority: priority)
-        else {
+        guard let key = Self.readRequestCoalescingKey(for: request, priority: priority) else {
             return try await data(for: request, priority: priority).0
         }
 

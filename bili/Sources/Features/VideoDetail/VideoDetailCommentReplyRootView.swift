@@ -27,6 +27,10 @@ struct CommentReplyRootView: View {
                             .appTypography(.metadata, fallback: .caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    Spacer(minLength: 8)
+
+                    CommentLikeButton(comment: comment)
                 }
 
                 BiliEmoteText(

@@ -420,7 +420,7 @@ private struct VideoDetailPgcEpisodeSelectionSheet: View {
                 }
             }
             .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+            .nativeTopScrollEdgeEffect()
             .scrollContentBackground(.hidden)
             .background(.clear)
         }

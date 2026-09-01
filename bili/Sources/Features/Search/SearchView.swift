@@ -4,9 +4,13 @@ struct SearchView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var accessoryStore: SearchBottomAccessoryStore
-    @StateObject private var holder = SearchViewModelHolder()
+    @ObservedObject var holder: SearchViewModelHolder
 
-    init(accessoryStore: SearchBottomAccessoryStore) {
+    init(
+        holder: SearchViewModelHolder,
+        accessoryStore: SearchBottomAccessoryStore
+    ) {
+        self.holder = holder
         self.accessoryStore = accessoryStore
     }
 
@@ -22,9 +26,8 @@ struct SearchView: View {
                 SearchLoadingList()
                     .task {
                         holder.configure(api: dependencies.api)
-                    }
+                }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
     }
 }

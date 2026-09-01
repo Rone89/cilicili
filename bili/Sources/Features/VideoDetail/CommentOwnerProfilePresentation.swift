@@ -18,13 +18,17 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
         NavigationStack {
             content()
                 .environment(\.openVideoOwnerRouteAction, openProfile)
+                .environment(\.openVideoAction, nil)
+                .environment(\.openLiveRoomAction, nil)
+                .environment(\.openPgcSeasonRouteAction, nil)
                 .navigationDestination(item: $profileRoute) { route in
                     UploaderView(
-                        owner: route.owner,
-                        hidesRootTabBar: false,
-                        allowsPullToRefresh: false
+                        owner: route.owner
                     )
-                        .videoDestinations(hidesRootTabBar: false)
+                        .environment(\.openVideoAction, nil)
+                        .environment(\.openLiveRoomAction, nil)
+                        .environment(\.openPgcSeasonRouteAction, nil)
+                        .videoDestinations()
                 }
         }
     }

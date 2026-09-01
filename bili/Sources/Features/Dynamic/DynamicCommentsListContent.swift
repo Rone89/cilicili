@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DynamicCommentsListContent: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
+    let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
 
     @ViewBuilder
@@ -26,13 +27,19 @@ struct DynamicCommentsListContent: View {
             )
             .padding(14)
         } else {
-            DynamicCommentsLoadedList(viewModel: viewModel, showReplies: showReplies)
+            DynamicCommentsLoadedList(
+                viewModel: viewModel,
+                highlightedCommentID: highlightedCommentID,
+                showReplies: showReplies
+            )
         }
     }
 }
 
 private struct DynamicCommentsLoadedList: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     @ObservedObject var viewModel: DynamicCommentsViewModel
+    let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
 
     var body: some View {
@@ -42,6 +49,11 @@ private struct DynamicCommentsLoadedList: View {
                     showReplies(item.comment)
                 }
                 .padding(.horizontal, 14)
+                .background(
+                    item.id == highlightedCommentID ? appTintColor.opacity(0.10) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .id(item.id)
 
                 Divider()
                     .padding(.leading, 62)

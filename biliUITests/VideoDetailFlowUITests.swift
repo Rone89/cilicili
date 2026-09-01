@@ -56,6 +56,50 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoDetailUsesLayeredPagesAndNativeSegmentedPicker() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state",
+            "-cc.bili.videoDetail.segmentedPickerGlassStyle.v1", "regular",
+            "--start-tab", "home",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        app.launch()
+
+        let picker = app.segmentedControls["video.detail.glass-panel-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        XCTAssertEqual(picker.buttons.count, 2)
+        XCTAssertEqual(picker.frame.width, 144, accuracy: 2)
+        XCTAssertEqual(picker.frame.height, 40, accuracy: 2)
+        XCTAssertEqual(app.frame.maxY - picker.frame.maxY, 32, accuracy: 3)
+        let detailButton = picker.buttons.element(boundBy: 0)
+        let commentsButton = picker.buttons.element(boundBy: 1)
+
+        XCTAssertFalse(app.tabBars.buttons["首页"].isHittable)
+        XCTAssertFalse(app.tabBars.buttons["详情"].isHittable)
+        XCTAssertFalse(app.tabBars.buttons["评论"].isHittable)
+
+        let detailMarker = app.staticTexts["相关推荐"].firstMatch
+        XCTAssertTrue(detailMarker.waitForExistence(timeout: 10))
+        let initialDetailMarkerY = detailMarker.frame.minY
+        app.swipeUp()
+        let scrolledDetailMarkerY = detailMarker.frame.minY
+        XCTAssertLessThan(scrolledDetailMarkerY, initialDetailMarkerY)
+
+        commentsButton.tap()
+        XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))
+        detailButton.tap()
+        XCTAssertTrue(detailMarker.waitForExistence(timeout: 5))
+        XCTAssertEqual(detailMarker.frame.minY, scrolledDetailMarkerY, accuracy: 8)
+
+        app.swipeRight()
+        let homeTab = app.tabBars.buttons["首页"]
+        XCTAssertTrue(homeTab.waitForExistence(timeout: 5))
+        XCTAssertTrue(homeTab.isHittable)
+        XCTAssertFalse(picker.exists)
+    }
+
+    @MainActor
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
     }

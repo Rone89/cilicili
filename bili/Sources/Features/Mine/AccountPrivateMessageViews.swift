@@ -87,7 +87,7 @@ struct AccountPrivateMessageSessionsView: View {
             sessionListOverlay
         }
         .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索用户或最近消息")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -517,9 +517,9 @@ private struct AccountPrivateMessageConversationView: View {
         }
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(.automatic, for: .navigationBar)
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItem(placement: .principal) {
                 AccountPrivateMessageConversationHeader(actor: session.actor)

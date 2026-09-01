@@ -17,6 +17,11 @@ struct DynamicImageGridTile: View {
         ) {
             overflowOverlay
         }
+        .accessibilityLabel(
+            imagesCount > 1
+                ? "查看第 \(item.index + 1) 张图片，共 \(imagesCount) 张"
+                : "查看图片"
+        )
     }
 
     @ViewBuilder

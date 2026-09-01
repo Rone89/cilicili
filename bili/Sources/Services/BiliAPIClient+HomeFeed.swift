@@ -148,6 +148,7 @@ extension BiliAPIClient {
                 "fresh_idx_1h": String(freshIndex),
                 "fresh_type": "4",
             ], keys: keys)
+        let diagnosticsRequestID = UUID()
 
         homeRecommendDiagnosticsStore.recordRequest(
             HomeRecommendDiagnosticsSnapshot(
@@ -187,8 +188,10 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: nil
-            ))
+                errorMessage: nil,
+                requestID: diagnosticsRequestID
+            )
+        )
 
         let response: BiliResponse<RecommendFeedData>
         do {
@@ -211,7 +214,8 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: error.localizedDescription
+                errorMessage: error.localizedDescription,
+                requestID: diagnosticsRequestID
             )
             throw error
         }
@@ -226,7 +230,8 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: response.displayMessage
+                errorMessage: response.displayMessage,
+                requestID: diagnosticsRequestID
             )
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
@@ -241,7 +246,8 @@ extension BiliAPIClient {
             videoCount: videos.count,
             liveCardCount: nil,
             droppedCardCount: max(0, (response.payload?.feedItems.count ?? allVideos.count) - allVideos.count),
-            recommendReasonCount: videos.filter { $0.recommendReason?.isEmpty == false }.count
+            recommendReasonCount: videos.filter { $0.recommendReason?.isEmpty == false }.count,
+            requestID: diagnosticsRequestID
         )
         return videos
     }
@@ -314,6 +320,7 @@ extension BiliAPIClient {
             cookieHeader: cookieHeader,
             profile: profile
         )
+        let diagnosticsRequestID = UUID()
         homeRecommendDiagnosticsStore.recordRequest(
             HomeRecommendDiagnosticsSnapshot(
                 status: .requesting,
@@ -353,7 +360,8 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: nil
+                errorMessage: nil,
+                requestID: diagnosticsRequestID
             ))
         Self.recommendLogger.info(
             "source=app request endpoint=/x/v2/feed/index host=app.bilibili.com profile=\(profile.displayName, privacy: .public) signed=1 auth=\(authDiagnostics.mode, privacy: .public) loggedIn=\(authDiagnostics.isLoggedIn, privacy: .public) hasAccessKey=\(authDiagnostics.hasAccessKey, privacy: .public) hasSESSDATA=\(authDiagnostics.hasSESSDATA, privacy: .public) hasDedeUserID=\(authDiagnostics.hasDedeUserID, privacy: .public) hasBuvid=\(authDiagnostics.hasBuvid, privacy: .public) hasBuvidFP=\(authDiagnostics.hasBuvidFP, privacy: .public) idx=\(requestedIndex, privacy: .public) pull=\(requestedIndex == 0 ? "true" : "false", privacy: .public) fp=\(headerContext.fingerprintSource, privacy: .public) session=\(headerContext.sessionSource, privacy: .public) cacheIdentity=\(context.identityKey, privacy: .public) trace=per-request cache=snapshot-bypassed"
@@ -381,7 +389,8 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: error.localizedDescription
+                errorMessage: error.localizedDescription,
+                requestID: diagnosticsRequestID
             )
             throw error
         }
@@ -396,7 +405,8 @@ extension BiliAPIClient {
                 liveCardCount: nil,
                 droppedCardCount: nil,
                 recommendReasonCount: nil,
-                errorMessage: response.displayMessage
+                errorMessage: response.displayMessage,
+                requestID: diagnosticsRequestID
             )
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
@@ -410,7 +420,8 @@ extension BiliAPIClient {
                 videoCount: 0,
                 liveCardCount: 0,
                 droppedCardCount: 0,
-                recommendReasonCount: 0
+                recommendReasonCount: 0,
+                requestID: diagnosticsRequestID
             )
             return []
         }
@@ -435,7 +446,8 @@ extension BiliAPIClient {
             videoCount: videos.count,
             liveCardCount: liveCardCount,
             droppedCardCount: droppedCardCount,
-            recommendReasonCount: recommendReasonCount
+            recommendReasonCount: recommendReasonCount,
+            requestID: diagnosticsRequestID
         )
         Self.recommendLogger.info(
             "source=app response endpoint=/x/v2/feed/index auth=\(authDiagnostics.mode, privacy: .public) profile=\(profile.displayName, privacy: .public) idx=\(requestedIndex, privacy: .public) nextIdx=\(nextIndex ?? -1, privacy: .public) nextIdxSource=\(nextIndexResult.source ?? "-", privacy: .public) rawCount=\(payload.feedItems.count, privacy: .public) videoCardCount=\(videoCardCount, privacy: .public) videoCount=\(videos.count, privacy: .public) liveCardCount=\(liveCardCount, privacy: .public) droppedCardCount=\(droppedCardCount, privacy: .public) recommendReasonCount=\(recommendReasonCount, privacy: .public)"

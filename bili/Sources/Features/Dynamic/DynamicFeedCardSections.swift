@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicFeedCardTextSection: View {
     let display: DynamicFeedCardDisplayModel
     let preferredWidth: CGFloat?
+    let onOpenDetail: (() -> Void)?
     @Binding var isTextExpanded: Bool
 
     var body: some View {
@@ -13,6 +14,7 @@ struct DynamicFeedCardTextSection: View {
                 copyText: text,
                 preferredWidth: preferredWidth,
                 showsExpandButton: display.showsExpandButton,
+                onOpenDetail: onOpenDetail,
                 isExpanded: $isTextExpanded
             )
         }

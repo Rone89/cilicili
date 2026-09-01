@@ -12,7 +12,10 @@ struct DynamicCommentRow: View {
         item.display
     }
 
-    init(item: DynamicCommentRowItem, showReplies: @escaping () -> Void) {
+    init(
+        item: DynamicCommentRowItem,
+        showReplies: @escaping () -> Void
+    ) {
         self.item = item
         self.showReplies = showReplies
     }
@@ -25,7 +28,11 @@ struct DynamicCommentRow: View {
                 size: 38
             )
 
-            DynamicCommentRowContent(comment: comment, display: display, showReplies: showReplies)
+            DynamicCommentRowContent(
+                comment: comment,
+                display: display,
+                showReplies: showReplies
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
         }

@@ -8,13 +8,15 @@ struct DynamicFeedTextContent: View {
     let copyText: String?
     let preferredWidth: CGFloat?
     let showsExpandButton: Bool
+    let onOpenDetail: (() -> Void)?
     @Binding var isExpanded: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             DynamicRichTextView(
                 input: isExpanded ? expandedInput : collapsedInput,
-                preferredWidth: preferredWidth
+                preferredWidth: preferredWidth,
+                onNonLinkTap: onOpenDetail
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)

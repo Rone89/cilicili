@@ -32,11 +32,9 @@ extension VideoDetailViewModel {
         playbackPerformanceCancellable = PlayerPerformanceStore.shared.updates
             .sink { [weak self] _ in
                 guard let self,
-                      !self.isPlaybackInvalidatedForNavigation
+                    !self.isPlaybackInvalidatedForNavigation
                 else { return }
-                self.refreshDanmakuRenderStoreForPlaybackPerformance(
-                    force: !self.libraryStore.diagnosticsBackgroundProcessingExperimentEnabled
-                )
+                self.refreshDanmakuRenderStoreForPlaybackPerformance(force: false)
             }
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct VideoDetailLoadedCommentsContentPage: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let onReply: (Comment) -> Void
 
     var body: some View {

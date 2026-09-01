@@ -1,6 +1,7 @@
 import SwiftUI
 
 private struct HomeFeedScrollOverlayModifier: ViewModifier {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
     @ObservedObject var runtimeSettings: HomeRuntimeSettingsStore
     let viewportState: HomeFeedViewportState
@@ -18,7 +19,8 @@ private struct HomeFeedScrollOverlayModifier: ViewModifier {
             .homeFeedPullRefreshLayout(
                 pullDistance: viewportState.currentPullRefreshDistance,
                 triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
-                isRefreshing: viewModel.isUserRefreshing
+                isRefreshing: viewModel.isUserRefreshing,
+                isEnabled: libraryStore.usesCustomPullRefresh
             )
     }
 }

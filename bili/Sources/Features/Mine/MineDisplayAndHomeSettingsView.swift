@@ -6,7 +6,6 @@ struct MineInterfaceSettingsView: View {
     var body: some View {
         Form {
             MineDisplaySettingsSection(libraryStore: libraryStore)
-            MineRootTabSettingsSection(libraryStore: libraryStore)
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)

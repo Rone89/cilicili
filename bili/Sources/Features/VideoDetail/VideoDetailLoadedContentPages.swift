@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct VideoDetailLoadedDetailContentPage: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let layoutWidth: CGFloat
+    let mountsSecondaryContent: Bool
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
@@ -45,13 +46,15 @@ struct VideoDetailLoadedDetailContentPage: View {
             .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
         }
 
-        VideoDetailRecommendationsSection(
-            detail: viewModel.detail,
-            relatedStore: renderPack.relatedStore,
-            layoutWidth: layoutWidth,
-            runtimeSettings: runtimeSettings,
-            retryRelated: renderPack.actions.retryRelated
-        )
+        if mountsSecondaryContent {
+            VideoDetailRecommendationsSection(
+                detail: viewModel.detail,
+                relatedStore: renderPack.relatedStore,
+                layoutWidth: layoutWidth,
+                runtimeSettings: runtimeSettings,
+                retryRelated: renderPack.actions.retryRelated
+            )
+        }
     }
 
     private var renderPack: VideoDetailLoadedDetailContentPageRenderPack {

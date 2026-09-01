@@ -13,12 +13,8 @@ extension VideoDetailViewModel {
         isPlaybackTerminatedForNavigation = false
 
         if let player = stablePlayerViewModel {
-            if isAwaitingRelatedVideoReturnPlayback {
-                player.setPlaybackIntent(false)
-                player.setRelatedVideoReturnPlaybackPrompt(true)
-                clearPendingNavigationResumeState()
-                return
-            }
+            isAwaitingRelatedVideoReturnPlayback = false
+            player.setRelatedVideoReturnPlaybackPrompt(false)
             _ = player.restoreAudioAfterCancelledNavigation()
             clearPendingNavigationResumeState()
             return

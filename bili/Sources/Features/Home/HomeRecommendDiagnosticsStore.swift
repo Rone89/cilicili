@@ -23,7 +23,11 @@ final class HomeRecommendDiagnosticsStore: ObservableObject {
     }
 
     func recordRequest(_ update: HomeRecommendDiagnosticsSnapshot) {
-        snapshot = update
+        var updated = update
+        updated.keyCounts = HomeRecommendDiagnosticsCounterPolicy.recordingRequest(
+            previous: snapshot.keyCounts
+        )
+        snapshot = updated
         persist()
     }
 
@@ -37,9 +41,14 @@ final class HomeRecommendDiagnosticsStore: ObservableObject {
         liveCardCount: Int?,
         droppedCardCount: Int?,
         recommendReasonCount: Int?,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        requestID: UUID? = nil
     ) {
-        snapshot = snapshot.response(
+        guard HomeRecommendDiagnosticsRequestPolicy.acceptsResponse(
+            currentRequestID: snapshot.requestID,
+            responseRequestID: requestID
+        ) else { return }
+        var updated = snapshot.response(
             status: status,
             nextIndex: nextIndex,
             nextIndexSource: nextIndexSource,
@@ -51,6 +60,11 @@ final class HomeRecommendDiagnosticsStore: ObservableObject {
             recommendReasonCount: recommendReasonCount,
             errorMessage: errorMessage
         )
+        updated.keyCounts = HomeRecommendDiagnosticsCounterPolicy.recordingResponse(
+            previous: updated.keyCounts,
+            status: status
+        )
+        snapshot = updated
         persist()
     }
 
@@ -137,6 +151,9 @@ nonisolated struct HomeRecommendDiagnosticsSnapshot: Codable, Equatable, Sendabl
     var recommendReasonCount: Int?
     var errorMessage: String?
 
+    var keyCounts: [String: Int]? = nil
+    var requestID: UUID? = nil
+
     static let empty = HomeRecommendDiagnosticsSnapshot(
         status: .idle,
         source: .app,
@@ -187,11 +204,12 @@ nonisolated struct HomeRecommendDiagnosticsSnapshot: Codable, Equatable, Sendabl
         liveCardCount: Int?,
         droppedCardCount: Int?,
         recommendReasonCount: Int?,
-        errorMessage: String?
+        errorMessage: String?,
+        finishedAt: Date = Date()
     ) -> Self {
         var copy = self
         copy.status = status
-        copy.responseFinishedAt = Date()
+        copy.responseFinishedAt = finishedAt
         copy.nextIndex = nextIndex
         copy.nextIndexSource = nextIndexSource
         copy.rawCount = rawCount
@@ -202,5 +220,40 @@ nonisolated struct HomeRecommendDiagnosticsSnapshot: Codable, Equatable, Sendabl
         copy.recommendReasonCount = recommendReasonCount
         copy.errorMessage = errorMessage
         return copy
+    }
+}
+
+nonisolated enum HomeRecommendDiagnosticsCounterPolicy {
+    static func recordingRequest(previous: [String: Int]?) -> [String: Int] {
+        incrementing("request_count", in: previous)
+    }
+
+    static func recordingResponse(
+        previous: [String: Int]?,
+        status: HomeRecommendDiagnosticsStatus
+    ) -> [String: Int] {
+        var counts = incrementing("response_count", in: previous)
+        if status == .failed {
+            counts["failure_count", default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func incrementing(
+        _ key: String,
+        in previous: [String: Int]?
+    ) -> [String: Int] {
+        var counts = previous ?? [:]
+        counts[key, default: 0] += 1
+        return counts
+    }
+}
+
+nonisolated enum HomeRecommendDiagnosticsRequestPolicy {
+    static func acceptsResponse(
+        currentRequestID: UUID?,
+        responseRequestID: UUID?
+    ) -> Bool {
+        responseRequestID == nil || currentRequestID == responseRequestID
     }
 }

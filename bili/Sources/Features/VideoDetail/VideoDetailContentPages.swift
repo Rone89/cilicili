@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct VideoDetailContentPage: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let layoutWidth: CGFloat
     let tab: VideoDetailContentTab
+    let mountsSecondaryContent: Bool
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
@@ -21,6 +22,7 @@ struct VideoDetailContentPage: View {
                 viewModel: viewModel,
                 layoutWidth: layoutWidth,
                 tab: tab,
+                mountsSecondaryContent: mountsSecondaryContent,
                 runtimeSettings: runtimeSettings,
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
@@ -28,5 +30,15 @@ struct VideoDetailContentPage: View {
                 onReply: onReply
             )
         }
+        .commentLikeTarget(
+            oid: viewModel.commentTarget?.oid,
+            type: viewModel.commentTarget?.type,
+            referer: videoReferer
+        )
+    }
+
+    private var videoReferer: String {
+        let bvid = viewModel.detail.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bvid.isEmpty ? "https://www.bilibili.com" : "https://www.bilibili.com/video/\(bvid)"
     }
 }

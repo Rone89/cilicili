@@ -1,7 +1,7 @@
-import Foundation
-import Combine
 import AVFoundation
 import AVKit
+import Combine
+import Foundation
 import OSLog
 import SwiftUI
 import UIKit
@@ -254,7 +254,8 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
             parts.append("\(hlsVideoVariantCount)档")
         }
         if !hlsVideoVariantQualities.isEmpty {
-            let qualities = hlsVideoVariantQualities
+            let qualities =
+                hlsVideoVariantQualities
                 .map { "q\($0)" }
                 .joined(separator: "/")
             parts.append(qualities)
@@ -274,11 +275,12 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
 
     var renderedDynamicRangeTitle: String {
         if dynamicRange == .dolbyVision,
-           nativeHDRVideoLayerState == "ready" {
+            nativeHDRVideoLayerState == "ready"
+        {
             return "Dolby Vision (原生视频层)"
         }
         guard usesLocalHLSBridge,
-              let hlsRange = hlsRenderedDynamicRangeTitle
+            let hlsRange = hlsRenderedDynamicRangeTitle
         else { return sourceDynamicRangeTitle }
         if dynamicRange == .dolbyVision, hlsRange != sourceDynamicRangeTitle {
             if hlsRange.contains("Dolby Vision") {
@@ -299,7 +301,8 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
             return "HLG"
         }
         if lowercasedDetails.contains("dvpolicy=applenativep8hls")
-            || lowercasedDetails.contains("dvpath=applenativep8hls") {
+            || lowercasedDetails.contains("dvpath=applenativep8hls")
+        {
             return "Dolby Vision (Apple 原生 P8)"
         }
         if lowercasedDetails.contains("dvpolicy=fulleffect") {
@@ -311,7 +314,8 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
         if lowercasedDetails.contains("supp=dvh1")
             || lowercasedDetails.contains("supp=dvhe")
             || lowercasedDetails.contains("supplemental-codecs=\"dvh1")
-            || lowercasedDetails.contains("supplemental-codecs=\"dvhe") {
+            || lowercasedDetails.contains("supplemental-codecs=\"dvhe")
+        {
             return "Dolby Vision"
         }
         if details.contains("HLG") || details.contains("color=18") {
@@ -561,15 +565,17 @@ extension UIImage {
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
-        guard let context = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else {
+        guard
+            let context = CGContext(
+                data: &pixels,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            )
+        else {
             return false
         }
 
@@ -673,14 +679,16 @@ enum PlayerMetricsLog {
     }
 
     @MainActor
-    static func record(_ event: PlayerPerformanceEvent.Kind, metricsID: String, title: String? = nil, message: String? = nil) {
+    static func record(
+        _ event: PlayerPerformanceEvent.Kind, metricsID: String, title: String? = nil, message: String? = nil
+    ) {
         PlayerPerformanceStore.shared.record(event, metricsID: metricsID, title: title, message: message)
         diagnostic(
             [
                 "event=\(event.title)",
                 "metricsID=\(metricsID)",
                 title.map { "title=\(shortTitle($0))" },
-                message.map { "message=\($0)" }
+                message.map { "message=\($0)" },
             ].compactMap { $0 }.joined(separator: " ")
         )
     }
@@ -688,32 +696,9 @@ enum PlayerMetricsLog {
     nonisolated static func diagnostic(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "\(timestamp) \(message)"
-        if PlayerDiagnosticsBackgroundProcessingExperiment.isEnabled {
-            Task.detached(priority: .utility) {
-                await PlayerDiagnosticsFileWriter.shared.enqueue(line)
-            }
-        } else {
-            print("[PlayerDiagnostics] \(line)")
-            Task { @MainActor in
-                appendDiagnosticLine(line)
-            }
+        Task.detached(priority: .utility) {
+            await PlayerDiagnosticsFileWriter.shared.enqueue(line)
         }
-    }
-
-    @MainActor
-    private static func appendDiagnosticLine(_ line: String) {
-        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
-              let data = (line + "\n").data(using: .utf8)
-        else { return }
-        let url = directory.appendingPathComponent(diagnosticsFileName)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            try? data.write(to: url, options: .atomic)
-            return
-        }
-        guard let handle = try? FileHandle(forWritingTo: url) else { return }
-        defer { handle.closeFile() }
-        handle.seekToEndOfFile()
-        handle.write(data)
     }
 
     nonisolated static func elapsedMilliseconds(since start: CFTimeInterval) -> Double {
@@ -726,14 +711,6 @@ enum PlayerMetricsLog {
             return trimmed
         }
         return "\(trimmed.prefix(36))..."
-    }
-}
-
-enum PlayerDiagnosticsBackgroundProcessingExperiment {
-    nonisolated static let storageKey = "cc.bili.playback.diagnosticsBackgroundProcessingExperimentEnabled.v1"
-
-    nonisolated static var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: storageKey)
     }
 }
 
@@ -767,7 +744,7 @@ private actor PlayerDiagnosticsFileWriter {
     private func flush() {
         flushTask = nil
         guard !pendingLines.isEmpty,
-              let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         else { return }
 
         let lines = pendingLines
@@ -775,7 +752,8 @@ private actor PlayerDiagnosticsFileWriter {
         let payload = lines.joined(separator: "\n") + "\n"
         guard let data = payload.data(using: .utf8) else { return }
 
-        let consolePayload = lines
+        let consolePayload =
+            lines
             .map { "[PlayerDiagnostics] \($0)" }
             .joined(separator: "\n") + "\n"
         print(consolePayload, terminator: "")
@@ -892,7 +870,11 @@ struct PlayerPerformanceSampleGroup: Identifiable, Equatable {
     let codecKey: String
     let codecTitle: String
     let avPlayerStartupPathOptimizationExperimentEnabled: Bool?
+    let playerCreationModeKey: String
+    let playerCreationModeTitle: String
     let piliPlusStylePlayURLSelectionExperimentEnabled: Bool?
+    let relatedEarlyPlayURLPrefetchExperimentEnabled: Bool?
+    let relatedStartupPackageWarmupExperimentEnabled: Bool?
     let playURLSelectionStrategyKey: String
     let playURLSelectionStrategyTitle: String
     let sampleCount: Int
@@ -952,10 +934,12 @@ struct PlayerPerformanceSampleGroup: Identifiable, Equatable {
     }
 
     var subtitle: String {
-        let sampleText = hasSufficientSamples
+        let sampleText =
+            hasSufficientSamples
             ? "\(sampleCount) 次样本"
             : "\(sampleCount) 次样本（样本偏少）"
-        return "\(cdnTitle) · \(networkTitle) · \(startupSourceTitle) · \(AVPlayerStartupPathOptimizationExperiment.sampleGroupStateTitle(for: avPlayerStartupPathOptimizationExperimentEnabled)) · \(PiliPlusStylePlayURLSelectionExperiment.sampleGroupStateTitle(for: piliPlusStylePlayURLSelectionExperimentEnabled)) · \(playURLSelectionStrategyTitle) · \(sampleText)"
+        return
+            "\(cdnTitle) · \(networkTitle) · \(startupSourceTitle) · \(AVPlayerStartupPathOptimizationExperiment.sampleGroupStateTitle(for: avPlayerStartupPathOptimizationExperimentEnabled)) · \(playerCreationModeTitle) · \(PiliPlusStylePlayURLSelectionExperiment.sampleGroupStateTitle(for: piliPlusStylePlayURLSelectionExperimentEnabled)) · \(RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticStateTitle(for: relatedEarlyPlayURLPrefetchExperimentEnabled)) · \(RelatedPlaybackStartupPackageWarmupPolicy.diagnosticStateTitle(for: relatedStartupPackageWarmupExperimentEnabled)) · \(playURLSelectionStrategyTitle) · \(sampleText)"
     }
 
     var hasSufficientSamples: Bool {
@@ -973,7 +957,8 @@ struct PlayerPerformanceSampleGroup: Identifiable, Equatable {
     }
 
     var issueCount: Int {
-        slowStartupCount + failedCount + bufferCount + seekRecoverySlowCount + accessLogStallCount + speedBoostInterruptionCount
+        slowStartupCount + failedCount + bufferCount + seekRecoverySlowCount + accessLogStallCount
+            + speedBoostInterruptionCount
     }
 
     var recommendationScore: Int {
@@ -1004,7 +989,11 @@ private struct PlayerPerformanceSampleGroupAccumulator {
     let codecKey: String
     let codecTitle: String
     let avPlayerStartupPathOptimizationExperimentEnabled: Bool?
+    let playerCreationModeKey: String
+    let playerCreationModeTitle: String
     let piliPlusStylePlayURLSelectionExperimentEnabled: Bool?
+    let relatedEarlyPlayURLPrefetchExperimentEnabled: Bool?
+    let relatedStartupPackageWarmupExperimentEnabled: Bool?
     let playURLSelectionStrategyKey: String
     let playURLSelectionStrategyTitle: String
     var sampleCount = 0
@@ -1048,7 +1037,9 @@ private struct PlayerPerformanceSampleGroupAccumulator {
         )
         append(session.firstFramePlayerMilliseconds, sum: &playerFirstFrameSum, count: &playerFirstFrameCount)
         append(session.lastSeekRecoveryMilliseconds, sum: &seekRecoverySum, count: &seekRecoveryCount)
-        append(session.lastSeekBufferReadyCoveragePercent, sum: &seekBufferReadyCoverageSum, count: &seekBufferReadyCoverageCount)
+        append(
+            session.lastSeekBufferReadyCoveragePercent, sum: &seekBufferReadyCoverageSum,
+            count: &seekBufferReadyCoverageCount)
         append(session.observedBitrateKilobitsPerSecond, sum: &observedBitrateSum, count: &observedBitrateCount)
         if session.failureMessage != nil {
             failedCount += 1
@@ -1076,7 +1067,11 @@ private struct PlayerPerformanceSampleGroupAccumulator {
             codecKey: codecKey,
             codecTitle: codecTitle,
             avPlayerStartupPathOptimizationExperimentEnabled: avPlayerStartupPathOptimizationExperimentEnabled,
+            playerCreationModeKey: playerCreationModeKey,
+            playerCreationModeTitle: playerCreationModeTitle,
             piliPlusStylePlayURLSelectionExperimentEnabled: piliPlusStylePlayURLSelectionExperimentEnabled,
+            relatedEarlyPlayURLPrefetchExperimentEnabled: relatedEarlyPlayURLPrefetchExperimentEnabled,
+            relatedStartupPackageWarmupExperimentEnabled: relatedStartupPackageWarmupExperimentEnabled,
             playURLSelectionStrategyKey: playURLSelectionStrategyKey,
             playURLSelectionStrategyTitle: playURLSelectionStrategyTitle,
             sampleCount: sampleCount,
@@ -1183,7 +1178,10 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
     var startupNetworkKey: String?
     var startupNetworkTitle: String?
     var avPlayerStartupPathOptimizationExperimentEnabled: Bool?
+    var startupPlayerCreationMode: String?
     var piliPlusStylePlayURLSelectionExperimentEnabled: Bool?
+    var relatedEarlyPlayURLPrefetchExperimentEnabled: Bool?
+    var relatedStartupPackageWarmupExperimentEnabled: Bool?
     var startupSource: String?
     var startupPlayURLSource: String?
     var startupPlayURLVariantCount: Int?
@@ -1242,7 +1240,10 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         startupNetworkKey = session.startupNetworkKey
         startupNetworkTitle = session.startupNetworkTitle
         avPlayerStartupPathOptimizationExperimentEnabled = session.avPlayerStartupPathOptimizationExperimentEnabled
+        startupPlayerCreationMode = session.startupPlayerCreationMode
         piliPlusStylePlayURLSelectionExperimentEnabled = session.piliPlusStylePlayURLSelectionExperimentEnabled
+        relatedEarlyPlayURLPrefetchExperimentEnabled = session.relatedEarlyPlayURLPrefetchExperimentEnabled
+        relatedStartupPackageWarmupExperimentEnabled = session.relatedStartupPackageWarmupExperimentEnabled
         startupSource = session.startupSource
         startupPlayURLSource = session.startupPlayURLSource
         startupPlayURLVariantCount = session.startupPlayURLVariantCount
@@ -1302,7 +1303,10 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         session.startupNetworkKey = startupNetworkKey
         session.startupNetworkTitle = startupNetworkTitle
         session.avPlayerStartupPathOptimizationExperimentEnabled = avPlayerStartupPathOptimizationExperimentEnabled
+        session.startupPlayerCreationMode = startupPlayerCreationMode
         session.piliPlusStylePlayURLSelectionExperimentEnabled = piliPlusStylePlayURLSelectionExperimentEnabled
+        session.relatedEarlyPlayURLPrefetchExperimentEnabled = relatedEarlyPlayURLPrefetchExperimentEnabled
+        session.relatedStartupPackageWarmupExperimentEnabled = relatedStartupPackageWarmupExperimentEnabled
         session.startupSource = startupSource
         session.startupPlayURLSource = startupPlayURLSource
         session.startupPlayURLVariantCount = startupPlayURLVariantCount
@@ -1490,7 +1494,10 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var startupNetworkKey: String?
     var startupNetworkTitle: String?
     var avPlayerStartupPathOptimizationExperimentEnabled: Bool?
+    var startupPlayerCreationMode: String?
     var piliPlusStylePlayURLSelectionExperimentEnabled: Bool?
+    var relatedEarlyPlayURLPrefetchExperimentEnabled: Bool?
+    var relatedStartupPackageWarmupExperimentEnabled: Bool?
     var startupSource: String?
     var startupPlayURLSource: String?
     var startupPlayURLVariantCount: Int?
@@ -1530,14 +1537,14 @@ enum PlayerPerformanceCopyTextFormatter {
         var sections = [
             "CiliCili 播放性能日志",
             "generated: \(copyDateFormatter.string(from: Date()))",
-            "sessions: \(reportableSessions.count)"
+            "sessions: \(reportableSessions.count)",
         ]
 
         if !sampleGroups.isEmpty {
             let sampleLines = sampleGroups.map { group in
                 [
                     "  \(group.title) · \(group.subtitle)",
-                    "    totalFirstFrameAvg=\(millisecondsText(group.averageFirstFrameMilliseconds)) p50=\(millisecondsText(group.p50FirstFrameMilliseconds)) p90=\(millisecondsText(group.p90FirstFrameMilliseconds)) playerFirstFrame=\(millisecondsText(group.averagePlayerFirstFrameMilliseconds)) playURL=\(millisecondsText(group.averagePlayURLMilliseconds)) prepare=\(millisecondsText(group.averagePrepareMilliseconds)) buffers=\(group.bufferCount) slow=\(group.slowStartupCount) failures=\(group.failedCount)"
+                    "    totalFirstFrameAvg=\(millisecondsText(group.averageFirstFrameMilliseconds)) p50=\(millisecondsText(group.p50FirstFrameMilliseconds)) p90=\(millisecondsText(group.p90FirstFrameMilliseconds)) playerFirstFrame=\(millisecondsText(group.averagePlayerFirstFrameMilliseconds)) playURL=\(millisecondsText(group.averagePlayURLMilliseconds)) prepare=\(millisecondsText(group.averagePrepareMilliseconds)) buffers=\(group.bufferCount) slow=\(group.slowStartupCount) failures=\(group.failedCount)",
                 ].joined(separator: "\n")
             }
             sections.append((["启动样本"] + sampleLines).joined(separator: "\n"))
@@ -1547,9 +1554,10 @@ enum PlayerPerformanceCopyTextFormatter {
             sections.append("暂无性能样本")
         } else {
             sections.append("最近播放会话")
-            sections.append(contentsOf: reportableSessions.map {
-                performanceCopyText(metricsID: $0.metricsID, session: $0)
-            })
+            sections.append(
+                contentsOf: reportableSessions.map {
+                    performanceCopyText(metricsID: $0.metricsID, session: $0)
+                })
         }
 
         return redactedDiagnosticText(sections.joined(separator: "\n\n"))
@@ -1583,12 +1591,15 @@ enum PlayerPerformanceCopyTextFormatter {
             "  playURLSource: \(session.startupPlayURLSource ?? "-")",
             "  playURLVariants: \(session.startupPlayURLVariantCount.map(String.init) ?? "-")",
             "  startupPathOptimization: \(AVPlayerStartupPathOptimizationExperiment.diagnosticStateTitle(for: session.avPlayerStartupPathOptimizationExperimentEnabled))",
+            "  playerCreationMode: \(AVPlayerStartupPathOptimizationExperiment.playerCreationMode(session.startupPlayerCreationMode).key)",
             "  piliPlusStyleAV1PlayURLSelection: \(PiliPlusStylePlayURLSelectionExperiment.diagnosticStateTitle(for: session.piliPlusStylePlayURLSelectionExperimentEnabled))",
+            "  relatedEarlyPlayURLPrefetch: \(RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticStateTitle(for: session.relatedEarlyPlayURLPrefetchExperimentEnabled))",
+            "  relatedStartupPackageWarmup: \(RelatedPlaybackStartupPackageWarmupPolicy.diagnosticStateTitle(for: session.relatedStartupPackageWarmupExperimentEnabled))",
             "  prepare: \(millisecondsText(session.prepareMilliseconds))",
             "  quality: \(session.startupQuality.map(String.init) ?? "-")",
             "  codec: \(session.startupCodec ?? latestSampleValue(session.recentStartupSamples, \.codec) ?? "-")",
             "  fps: \(latestSampleValue(session.recentStartupSamples, \.frameRate) ?? "-")",
-            "  resolution: \(latestSampleValue(session.recentStartupSamples, \.resolution) ?? "-")"
+            "  resolution: \(latestSampleValue(session.recentStartupSamples, \.resolution) ?? "-")",
         ]
 
         if let startupBreakdownMessage = session.startupBreakdownMessage {
@@ -1638,7 +1649,8 @@ enum PlayerPerformanceCopyTextFormatter {
             let comparableIDs = Set(comparableSamples.map(\.id))
             let stableIDs = Set(stableSamples.map(\.id))
             for (index, sample) in samples.enumerated() {
-                let sampleStatus = stableIDs.contains(sample.id)
+                let sampleStatus =
+                    stableIDs.contains(sample.id)
                     ? "stable"
                     : (comparableIDs.contains(sample.id) ? "cold" : "other")
                 lines.append(
@@ -1663,7 +1675,7 @@ enum PlayerPerformanceCopyTextFormatter {
                         "probe=\(sample.probe ?? "-")",
                         "fps=\(sample.frameRate ?? "-")",
                         "codec=\(sample.codec ?? "-")",
-                        "res=\(sample.resolution ?? "-")"
+                        "res=\(sample.resolution ?? "-")",
                     ].joined(separator: " ")
                 )
             }
@@ -1693,7 +1705,7 @@ enum PlayerPerformanceCopyTextFormatter {
         to lines: inout [String]
     ) {
         guard let message,
-              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
         lines.append("\(title):")
         for line in message.components(separatedBy: .newlines) {
@@ -1734,7 +1746,7 @@ enum PlayerPerformanceCopyTextFormatter {
             summary(id: "endpoint", title: "endpoint", samples: samples, value: \.endpointMilliseconds),
             summary(id: "frameDone", title: "frame", samples: samples, value: \.frameDecodedMilliseconds),
             summary(id: "fetch", title: "fetch", samples: samples, value: \.frameFetchedMilliseconds),
-            summary(id: "enqueue", title: "enq", samples: samples, value: \.displayEnqueueMilliseconds)
+            summary(id: "enqueue", title: "enq", samples: samples, value: \.displayEnqueueMilliseconds),
         ].compactMap { $0 }
     }
 
@@ -2031,35 +2043,60 @@ final class PlayerPerformanceStore: ObservableObject {
             let experimentState = AVPlayerStartupPathOptimizationExperiment.diagnosticStateTitle(
                 for: session.avPlayerStartupPathOptimizationExperimentEnabled
             )
-            let id = "\(quality.map(String.init) ?? "unknown")|\(cdnKey)|\(networkKey)|\(startupSource.key)|\(codec.key)|\(experimentState)"
+            let id =
+                "\(quality.map(String.init) ?? "unknown")|\(cdnKey)|\(networkKey)|\(startupSource.key)|\(codec.key)|\(experimentState)"
+            let playerCreationMode = AVPlayerStartupPathOptimizationExperiment.playerCreationMode(
+                session.startupPlayerCreationMode
+            )
             let piliPlusExperimentState = PiliPlusStylePlayURLSelectionExperiment.diagnosticStateTitle(
                 for: session.piliPlusStylePlayURLSelectionExperimentEnabled
             )
+            let relatedEarlyPrefetchExperimentState =
+                RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticStateTitle(
+                    for: session.relatedEarlyPlayURLPrefetchExperimentEnabled
+                )
+            let relatedStartupPackageWarmupExperimentState =
+                RelatedPlaybackStartupPackageWarmupPolicy.diagnosticStateTitle(
+                    for: session.relatedStartupPackageWarmupExperimentEnabled
+                )
             let playURLSelectionStrategy = PiliPlusStylePlayURLSelectionExperiment.sampleGroupStrategy(
                 startupSchedulerMessage: session.startupSchedulerMessage,
                 isEnabled: session.piliPlusStylePlayURLSelectionExperimentEnabled
             )
             let scopedID = [
                 id,
+                playerCreationMode.key,
                 piliPlusExperimentState,
-                playURLSelectionStrategy.key
+                relatedEarlyPrefetchExperimentState,
+                relatedStartupPackageWarmupExperimentState,
+                playURLSelectionStrategy.key,
             ].joined(separator: "|")
-            var accumulator = accumulators[scopedID] ?? PlayerPerformanceSampleGroupAccumulator(
-                id: scopedID,
-                quality: quality,
-                cdnKey: cdnKey,
-                cdnTitle: cdnTitle,
-                networkKey: networkKey,
-                networkTitle: networkTitle,
-                startupSourceKey: startupSource.key,
-                startupSourceTitle: startupSource.title,
-                codecKey: codec.key,
-                codecTitle: codec.title,
-                avPlayerStartupPathOptimizationExperimentEnabled: session.avPlayerStartupPathOptimizationExperimentEnabled,
-                piliPlusStylePlayURLSelectionExperimentEnabled: session.piliPlusStylePlayURLSelectionExperimentEnabled,
-                playURLSelectionStrategyKey: playURLSelectionStrategy.key,
-                playURLSelectionStrategyTitle: playURLSelectionStrategy.title
-            )
+            var accumulator =
+                accumulators[scopedID]
+                ?? PlayerPerformanceSampleGroupAccumulator(
+                    id: scopedID,
+                    quality: quality,
+                    cdnKey: cdnKey,
+                    cdnTitle: cdnTitle,
+                    networkKey: networkKey,
+                    networkTitle: networkTitle,
+                    startupSourceKey: startupSource.key,
+                    startupSourceTitle: startupSource.title,
+                    codecKey: codec.key,
+                    codecTitle: codec.title,
+                    avPlayerStartupPathOptimizationExperimentEnabled: session
+                        .avPlayerStartupPathOptimizationExperimentEnabled,
+                    playerCreationModeKey: playerCreationMode.key,
+                    playerCreationModeTitle: playerCreationMode.title,
+                    piliPlusStylePlayURLSelectionExperimentEnabled: session
+                        .piliPlusStylePlayURLSelectionExperimentEnabled,
+                    relatedEarlyPlayURLPrefetchExperimentEnabled: session
+                        .relatedEarlyPlayURLPrefetchExperimentEnabled,
+                    relatedStartupPackageWarmupExperimentEnabled: session
+                        .relatedStartupPackageWarmupExperimentEnabled,
+                    playURLSelectionStrategyKey: playURLSelectionStrategy.key,
+                    playURLSelectionStrategyTitle: playURLSelectionStrategy.title
+                )
             accumulator.record(session)
             accumulators[scopedID] = accumulator
         }
@@ -2094,7 +2131,8 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     private static func startupCodec(for session: PlayerPerformanceSession) -> (key: String, title: String) {
-        let codec = (session.startupCodec ?? session.recentStartupSamples.last?.codec)?
+        let codec =
+            (session.startupCodec ?? session.recentStartupSamples.last?.codec)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
         if codec.contains("av01") || codec.contains("av1") {
@@ -2137,7 +2175,8 @@ final class PlayerPerformanceStore: ObservableObject {
             return PlayerPlaybackAdaptationProfile(level: .normal, isEnabled: false)
         }
         let relevantSessions = relevantPlaybackSessions(for: metricsID)
-        let worstLevel = relevantSessions
+        let worstLevel =
+            relevantSessions
             .map(Self.adaptationLevel(for:))
             .max { $0.rawValue < $1.rawValue } ?? .normal
         return PlayerPlaybackAdaptationProfile(level: worstLevel, isEnabled: true)
@@ -2156,7 +2195,9 @@ final class PlayerPerformanceStore: ObservableObject {
         persistTask?.cancel()
         persistTask = nil
         persistGeneration &+= 1
-        performanceCopyLogTasks.values.forEach { $0.cancel() }
+        for task in performanceCopyLogTasks.values {
+            task.cancel()
+        }
         performanceCopyLogTasks.removeAll()
         lastPerformanceCopyLogSignatures.removeAll()
         events.removeAll()
@@ -2169,8 +2210,9 @@ final class PlayerPerformanceStore: ObservableObject {
     private func relevantPlaybackSessions(for metricsID: String?) -> [PlayerPerformanceSession] {
         var candidates = Array(sessions.prefix(3))
         if let metricsID,
-           let session = sessionsByID[metricsID],
-           !candidates.contains(session) {
+            let session = sessionsByID[metricsID],
+            !candidates.contains(session)
+        {
             candidates.insert(session, at: 0)
         }
         return candidates
@@ -2186,8 +2228,11 @@ final class PlayerPerformanceStore: ObservableObject {
             || session.failureMessage != nil
     }
 
-    private nonisolated static func adaptationLevel(for session: PlayerPerformanceSession) -> PlayerPlaybackAdaptationProfile.Level {
-        let startupMilliseconds = session.firstFrameTotalMilliseconds
+    private nonisolated static func adaptationLevel(for session: PlayerPerformanceSession)
+        -> PlayerPlaybackAdaptationProfile.Level
+    {
+        let startupMilliseconds =
+            session.firstFrameTotalMilliseconds
             ?? session.prepareMilliseconds
             ?? session.playURLMilliseconds
             ?? session.detailLoadMilliseconds
@@ -2203,7 +2248,8 @@ final class PlayerPerformanceStore: ObservableObject {
             || session.seekRecoverySlowCount >= 2
             || session.lastSeekRecoveryMilliseconds.map({ $0 >= 2_200 }) == true
             || session.accessLogStallCount.map({ $0 >= 2 }) == true
-            || session.speedBoostInterruptionCount >= 3 {
+            || session.speedBoostInterruptionCount >= 3
+        {
             return .slow
         }
         if startupMilliseconds >= 1_600
@@ -2242,8 +2288,11 @@ final class PlayerPerformanceStore: ObservableObject {
         }
 
         if session.eventCount == 0 {
-            session.avPlayerStartupPathOptimizationExperimentEnabled = AVPlayerStartupPathOptimizationExperiment.stored()
+            session.avPlayerStartupPathOptimizationExperimentEnabled =
+                AVPlayerStartupPathOptimizationExperiment.stored()
             session.piliPlusStylePlayURLSelectionExperimentEnabled = PiliPlusStylePlayURLSelectionExperiment.stored()
+            session.relatedEarlyPlayURLPrefetchExperimentEnabled = true
+            session.relatedStartupPackageWarmupExperimentEnabled = true
         }
 
         session.lastUpdatedAt = event.date
@@ -2300,7 +2349,8 @@ final class PlayerPerformanceStore: ObservableObject {
         case .firstFrame:
             guard session.firstFrameTotalMilliseconds == nil else { break }
             session.firstFrameAt = event.date
-            let openedAt = session.openedAt
+            let openedAt =
+                session.openedAt
                 ?? session.detailStartedAt
                 ?? session.playURLStartedAt
                 ?? session.playerCreatedAt
@@ -2318,17 +2368,22 @@ final class PlayerPerformanceStore: ObservableObject {
             )
             if let message = event.message {
                 let tokens = Self.keyValueTokens(in: message)
-                session.detailLoadMilliseconds = session.detailLoadMilliseconds
+                session.detailLoadMilliseconds =
+                    session.detailLoadMilliseconds
                     ?? Self.millisecondsValue(for: "detail", in: tokens)
-                session.playURLMilliseconds = session.playURLMilliseconds
+                session.playURLMilliseconds =
+                    session.playURLMilliseconds
                     ?? Self.millisecondsValue(for: "playurl", in: tokens)
-                session.prepareMilliseconds = session.prepareMilliseconds
+                session.prepareMilliseconds =
+                    session.prepareMilliseconds
                     ?? Self.millisecondsValue(for: "prepare", in: tokens)
-                session.firstFramePlayerMilliseconds = session.firstFramePlayerMilliseconds
+                session.firstFramePlayerMilliseconds =
+                    session.firstFramePlayerMilliseconds
                     ?? Self.millisecondsValue(for: "firstFrame", in: tokens)
                 session.startupQuality = Self.integerValue(for: "q", in: tokens) ?? session.startupQuality
                 if let targetQuality = Self.integerValue(for: "targetQ", in: tokens),
-                   targetQuality > 0 {
+                    targetQuality > 0
+                {
                     session.startupTargetQuality = targetQuality
                 }
                 if let cdnKey = tokens["cdn"], !cdnKey.isEmpty {
@@ -2375,19 +2430,23 @@ final class PlayerPerformanceStore: ObservableObject {
         case .accessLog:
             if let message = event.message {
                 let tokens = Self.keyValueTokens(in: message)
-                session.observedBitrateKilobitsPerSecond = Self.integerValue(for: "observedKbps", in: tokens)
+                session.observedBitrateKilobitsPerSecond =
+                    Self.integerValue(for: "observedKbps", in: tokens)
                     ?? session.observedBitrateKilobitsPerSecond
-                session.indicatedBitrateKilobitsPerSecond = Self.integerValue(for: "indicatedKbps", in: tokens)
+                session.indicatedBitrateKilobitsPerSecond =
+                    Self.integerValue(for: "indicatedKbps", in: tokens)
                     ?? session.indicatedBitrateKilobitsPerSecond
                 if let stalls = Self.integerValue(for: "stalls", in: tokens) {
                     session.accessLogStallCount = max(session.accessLogStallCount ?? 0, stalls)
                 }
-                session.accessLogTransferMilliseconds = Self.millisecondsValue(for: "transfer", in: tokens)
+                session.accessLogTransferMilliseconds =
+                    Self.millisecondsValue(for: "transfer", in: tokens)
                     ?? session.accessLogTransferMilliseconds
                 if let bytes = Self.integer64Value(for: "bytes", in: tokens) {
                     session.accessLogBytesTransferred = bytes
                 }
-                session.accessLogMediaRequestCount = Self.integerValue(for: "requests", in: tokens)
+                session.accessLogMediaRequestCount =
+                    Self.integerValue(for: "requests", in: tokens)
                     ?? session.accessLogMediaRequestCount
                 if let host = tokens["host"], !host.isEmpty, host != "-" {
                     session.cdnHostMessage = host
@@ -2421,7 +2480,8 @@ final class PlayerPerformanceStore: ObservableObject {
             }
         case .resumeDecision:
             if event.message?.contains("player applied") == true,
-               let applyMilliseconds = Self.firstMilliseconds(in: event.message) {
+                let applyMilliseconds = Self.firstMilliseconds(in: event.message)
+            {
                 session.resumeApplyMilliseconds = applyMilliseconds
             }
             session.resumeDecisionMessage = Self.appendDiagnosticMessage(
@@ -2449,7 +2509,8 @@ final class PlayerPerformanceStore: ObservableObject {
             let isScrubInteraction = event.message?.hasPrefix("scrub ") == true
             if isBufferReady {
                 let tokens = Self.keyValueTokens(in: event.message ?? "")
-                session.lastSeekBufferReadyCoveragePercent = Self.percentageValue(for: "coverage", in: tokens)
+                session.lastSeekBufferReadyCoveragePercent =
+                    Self.percentageValue(for: "coverage", in: tokens)
                     ?? session.lastSeekBufferReadyCoveragePercent
             } else if !isScrubInteraction {
                 session.seekCount += 1
@@ -2491,7 +2552,8 @@ final class PlayerPerformanceStore: ObservableObject {
             session.playbackRecoveryCount += 1
             if event.message?.contains("status=failed") == true
                 || event.message?.contains("status=ignored") == true
-                || event.message?.contains("status=exhausted") == true {
+                || event.message?.contains("status=exhausted") == true
+            {
                 session.playbackRecoveryFailureCount += 1
             }
             session.playbackRecoveryMessage = Self.appendDiagnosticMessage(
@@ -2528,8 +2590,8 @@ final class PlayerPerformanceStore: ObservableObject {
         for session: PlayerPerformanceSession
     ) {
         guard Self.shouldSchedulePerformanceCopyLog(after: kind),
-              UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
-              Self.hasPerformanceCopyPayload(session)
+            UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
+            Self.hasPerformanceCopyPayload(session)
         else { return }
 
         let metricsID = session.id
@@ -2540,10 +2602,10 @@ final class PlayerPerformanceStore: ObservableObject {
         performanceCopyLogTasks[metricsID] = Task { @MainActor [weak self, metricsID] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled,
-                  let self,
-                  UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
-                  let latestSession = self.sessionsByID[metricsID],
-                  Self.hasPerformanceCopyPayload(latestSession)
+                let self,
+                UserDefaults.standard.bool(forKey: Self.performanceOverlayEnabledKey),
+                let latestSession = self.sessionsByID[metricsID],
+                Self.hasPerformanceCopyPayload(latestSession)
             else { return }
 
             let latestSignature = Self.performanceCopyLogSignature(for: latestSession)
@@ -2589,7 +2651,10 @@ final class PlayerPerformanceStore: ObservableObject {
         parts.append(session.playURLMilliseconds.map { String($0) } ?? "-")
         parts.append(session.prepareMilliseconds.map { String($0) } ?? "-")
         parts.append(session.startupQuality.map { String($0) } ?? "-")
+        parts.append(session.startupPlayerCreationMode ?? "-")
         parts.append(session.piliPlusStylePlayURLSelectionExperimentEnabled.map(String.init) ?? "-")
+        parts.append(session.relatedEarlyPlayURLPrefetchExperimentEnabled.map(String.init) ?? "-")
+        parts.append(session.relatedStartupPackageWarmupExperimentEnabled.map(String.init) ?? "-")
         parts.append(session.startupGapMessage ?? "-")
         parts.append(session.startupBreakdownMessage ?? "-")
         parts.append(session.hlsStartupMessage ?? "-")
@@ -2600,7 +2665,8 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     private static func logPerformanceCopyText(metricsID: String, text: String) {
-        let lines = text
+        let lines =
+            text
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
         PlayerMetricsLog.logger.notice(
@@ -2633,11 +2699,12 @@ final class PlayerPerformanceStore: ObservableObject {
 
     private func loadPersistedSessions() {
         guard let data = UserDefaults.standard.data(forKey: Self.persistedSessionsKey),
-              let persisted = try? JSONDecoder().decode([PlayerPerformancePersistedSession].self, from: data)
+            let persisted = try? JSONDecoder().decode([PlayerPerformancePersistedSession].self, from: data)
         else { return }
 
         let cutoff = Date().addingTimeInterval(-Self.persistedSessionMaxAge)
-        let restoredSessions = persisted
+        let restoredSessions =
+            persisted
             .filter { $0.lastUpdatedAt >= cutoff }
             .sorted { $0.lastUpdatedAt > $1.lastUpdatedAt }
             .prefix(maxSessionCount)
@@ -2652,7 +2719,8 @@ final class PlayerPerformanceStore: ObservableObject {
         persistGeneration &+= 1
         let generation = persistGeneration
         let cutoff = Date().addingTimeInterval(-Self.persistedSessionMaxAge)
-        let persistedSessions = sessions
+        let persistedSessions =
+            sessions
             .filter { Self.hasStartupSample($0) && $0.lastUpdatedAt >= cutoff }
             .prefix(maxPersistedSessionCount)
             .map(PlayerPerformancePersistedSession.init(session:))
@@ -2660,21 +2728,17 @@ final class PlayerPerformanceStore: ObservableObject {
         persistTask = Task { @MainActor [weak self, persistedSessions, generation] in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled,
-                  let self,
-                  self.persistGeneration == generation
+                let self,
+                self.persistGeneration == generation
             else { return }
 
-            if PlayerDiagnosticsBackgroundProcessingExperiment.isEnabled {
-                await PlayerPerformanceSessionPersistenceWriter.shared.persist(
-                    persistedSessions,
-                    forKey: Self.persistedSessionsKey
-                )
-            } else if let data = try? JSONEncoder().encode(persistedSessions) {
-                UserDefaults.standard.set(data, forKey: Self.persistedSessionsKey)
-            }
+            await PlayerPerformanceSessionPersistenceWriter.shared.persist(
+                persistedSessions,
+                forKey: Self.persistedSessionsKey
+            )
 
             guard !Task.isCancelled,
-                  self.persistGeneration == generation
+                self.persistGeneration == generation
             else { return }
             self.persistTask = nil
         }
@@ -2685,7 +2749,8 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     private func appendTimelineEvent(_ event: PlayerPerformanceEvent, to session: inout PlayerPerformanceSession) {
-        let startedAt = session.openedAt
+        let startedAt =
+            session.openedAt
             ?? session.detailStartedAt
             ?? session.playURLStartedAt
             ?? session.playerCreatedAt
@@ -2799,7 +2864,10 @@ final class PlayerPerformanceStore: ObservableObject {
         session.startupNetworkKey = nil
         session.startupNetworkTitle = nil
         session.avPlayerStartupPathOptimizationExperimentEnabled = nil
+        session.startupPlayerCreationMode = nil
         session.piliPlusStylePlayURLSelectionExperimentEnabled = nil
+        session.relatedEarlyPlayURLPrefetchExperimentEnabled = nil
+        session.relatedStartupPackageWarmupExperimentEnabled = nil
         session.startupSource = nil
         session.startupPlayURLSource = nil
         session.startupPlayURLVariantCount = nil
@@ -2910,7 +2978,8 @@ final class PlayerPerformanceStore: ObservableObject {
         }
     }
 
-    private static func startupBreakdownMessage(baseMessage: String?, for session: PlayerPerformanceSession) -> String? {
+    private static func startupBreakdownMessage(baseMessage: String?, for session: PlayerPerformanceSession) -> String?
+    {
         guard let baseMessage, !baseMessage.isEmpty else { return nil }
         var tokens = keyValueTokens(in: baseMessage)
         appendMillisecondsToken(
@@ -2934,7 +3003,8 @@ final class PlayerPerformanceStore: ObservableObject {
         guard !tokens.isEmpty else { return baseMessage }
 
         let existingKeys = Set(tokens.keys)
-        var orderedKeys = baseMessage
+        var orderedKeys =
+            baseMessage
             .split(separator: " ")
             .compactMap { token -> String? in
                 let parts = token.split(separator: "=", maxSplits: 1)
@@ -2950,8 +3020,8 @@ final class PlayerPerformanceStore: ObservableObject {
         var seenKeys = Set<String>()
         let orderedParts = orderedKeys.compactMap { key -> String? in
             guard seenKeys.insert(key).inserted,
-                  let value = tokens[key],
-                  !value.isEmpty
+                let value = tokens[key],
+                !value.isEmpty
             else { return nil }
             return "\(key)=\(value)"
         }
@@ -2980,7 +3050,8 @@ final class PlayerPerformanceStore: ObservableObject {
         }
 
         if let variantCount = integerValue(for: "variants", in: tokens)
-            ?? legacyFirstInteger(in: message) {
+            ?? legacyFirstInteger(in: message)
+        {
             session.startupPlayURLVariantCount = variantCount
         }
     }
@@ -2988,6 +3059,12 @@ final class PlayerPerformanceStore: ObservableObject {
     private static func updateManifestStartupFields(_ message: String, in session: inout PlayerPerformanceSession) {
         let tokens = keyValueTokens(in: message)
         updateStartupCodec(tokenValue(for: "codec", in: tokens), in: &session)
+
+        if message.hasPrefix("startupWarmWait"),
+            let mode = tokenValue(for: "mode", in: tokens)
+        {
+            session.startupPlayerCreationMode = mode
+        }
 
         if message.hasPrefix("startupPackage") {
             session.startupPackageMessage = message
@@ -3001,27 +3078,30 @@ final class PlayerPerformanceStore: ObservableObject {
 
         if let bridgeState = tokenValue(for: "bridge", in: tokens), bridgeState != "steadyBuffer" {
             session.startupRoutePlanState = bridgeState
-            session.startupRoutePlanMilliseconds = millisecondsValue(for: "total", in: tokens)
+            session.startupRoutePlanMilliseconds =
+                millisecondsValue(for: "total", in: tokens)
                 ?? session.startupRoutePlanMilliseconds
         }
 
         if let routePrebuildState = tokenValue(for: "routePrebuild", in: tokens) {
             session.startupRoutePrebuildState = routePrebuildState
-            session.startupRoutePrebuildMilliseconds = firstMilliseconds(in: message)
+            session.startupRoutePrebuildMilliseconds =
+                firstMilliseconds(in: message)
                 ?? session.startupRoutePrebuildMilliseconds
         }
 
         if let warmValue = tokenValue(for: "startupWarm", in: tokens) {
             session.startupRangeWarmState = warmValue == "skip" ? "skip" : "ready"
-            session.startupRangeWarmMilliseconds = millisecondsValue(for: "startupWarm", in: tokens)
+            session.startupRangeWarmMilliseconds =
+                millisecondsValue(for: "startupWarm", in: tokens)
                 ?? session.startupRangeWarmMilliseconds
         }
     }
 
     private static func updateStartupCodec(_ value: String?, in session: inout PlayerPerformanceSession) {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty,
-              value != "-"
+            !value.isEmpty,
+            value != "-"
         else { return }
         session.startupCodec = session.startupCodec ?? value
     }
@@ -3069,14 +3149,14 @@ final class PlayerPerformanceStore: ObservableObject {
     private static func qualityTransition(in message: String) -> (from: Int, to: Int)? {
         let pattern = #"q?(\d+)->q?(\d+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
+            let match = regex.firstMatch(
                 in: message,
                 range: NSRange(message.startIndex..., in: message)
-              ),
-              let fromRange = Range(match.range(at: 1), in: message),
-              let toRange = Range(match.range(at: 2), in: message),
-              let from = Int(message[fromRange]),
-              let to = Int(message[toRange])
+            ),
+            let fromRange = Range(match.range(at: 1), in: message),
+            let toRange = Range(match.range(at: 2), in: message),
+            let from = Int(message[fromRange]),
+            let to = Int(message[toRange])
         else { return nil }
         return (from, to)
     }
@@ -3084,11 +3164,11 @@ final class PlayerPerformanceStore: ObservableObject {
     private static func legacyFirstInteger(in message: String) -> Int? {
         let pattern = #"(\d+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
+            let match = regex.firstMatch(
                 in: message,
                 range: NSRange(message.startIndex..., in: message)
-              ),
-              let range = Range(match.range(at: 1), in: message)
+            ),
+            let range = Range(match.range(at: 1), in: message)
         else { return nil }
         return Int(message[range])
     }
@@ -3097,12 +3177,12 @@ final class PlayerPerformanceStore: ObservableObject {
         guard let message else { return nil }
         let pattern = #"(\d+(?:\.\d+)?)ms"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
+            let match = regex.firstMatch(
                 in: message,
                 range: NSRange(message.startIndex..., in: message)
-              ),
-              let range = Range(match.range(at: 1), in: message),
-              let value = Double(message[range])
+            ),
+            let range = Range(match.range(at: 1), in: message),
+            let value = Double(message[range])
         else { return nil }
         return Int(value.rounded())
     }
@@ -3110,11 +3190,11 @@ final class PlayerPerformanceStore: ObservableObject {
     private static func host(in message: String) -> String? {
         let pattern = #"host=([^\s]+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
+            let match = regex.firstMatch(
                 in: message,
                 range: NSRange(message.startIndex..., in: message)
-              ),
-              let range = Range(match.range(at: 1), in: message)
+            ),
+            let range = Range(match.range(at: 1), in: message)
         else { return nil }
         return String(message[range])
     }
@@ -3144,9 +3224,10 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     private static func millisecondsValue(for key: String, in tokens: [String: String]) -> Int? {
-        guard var value = tokenValue(for: key, in: tokens)?
-            .lowercased()
-            .replacingOccurrences(of: ",", with: ""),
+        guard
+            var value = tokenValue(for: key, in: tokens)?
+                .lowercased()
+                .replacingOccurrences(of: ",", with: ""),
             value != "n/a",
             value != "-"
         else { return nil }
@@ -3166,9 +3247,10 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     private static func percentageValue(for key: String, in tokens: [String: String]) -> Int? {
-        guard var value = tokenValue(for: key, in: tokens)?
-            .lowercased()
-            .replacingOccurrences(of: ",", with: ""),
+        guard
+            var value = tokenValue(for: key, in: tokens)?
+                .lowercased()
+                .replacingOccurrences(of: ",", with: ""),
             value != "n/a",
             value != "-"
         else { return nil }
@@ -3221,7 +3303,7 @@ final class PlayerPerformanceStore: ObservableObject {
             "startupPrebuild",
             "ffDemuxWarm",
             "startupPackage",
-            "prepareWarm"
+            "prepareWarm",
         ]
         let nextKey = diagnosticKey(in: next)
         var parts = current?.components(separatedBy: " | ") ?? []
@@ -3246,8 +3328,8 @@ final class PlayerPerformanceStore: ObservableObject {
 
     private static func diagnosticKey(in message: String) -> String? {
         guard let firstToken = message.split(separator: " ").first,
-              let key = firstToken.split(separator: "=", maxSplits: 1).first,
-              !key.isEmpty
+            let key = firstToken.split(separator: "=", maxSplits: 1).first,
+            !key.isEmpty
         else { return nil }
         return String(key)
     }

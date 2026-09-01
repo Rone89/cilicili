@@ -109,6 +109,9 @@ final class DynamicFeedLifecycleCoordinator {
     private func apply(page: DynamicFeedData, prefetchDelay: TimeInterval) -> [DynamicFeedItem] {
         rawItems = contentFilter.displayable(page.items)
         let filteredItems = filteredCurrentItems()
+        if !filteredItems.isEmpty {
+            StageOneBaselineMetricsStore.shared.markDynamicFirstData()
+        }
         resourcePrefetchCoordinator.scheduleResourcePrefetch(for: filteredItems, initialDelay: prefetchDelay)
         offset = page.offset ?? ""
         hasMore = page.hasMore ?? false

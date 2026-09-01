@@ -10,8 +10,6 @@ struct PlaybackDetailChromeHiddenPreferenceKey: PreferenceKey {
 }
 
 private struct PlaybackDetailViewChrome: ViewModifier {
-    let hidesRootTabBar: Bool
-    let tabBarRestoreTiming: PlaybackDetailTabBarRestoreTiming
     let navigationBarVisibility: Visibility?
     let hidesBackButton: Bool
 
@@ -19,7 +17,6 @@ private struct PlaybackDetailViewChrome: ViewModifier {
         content
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .hideRootTabBarWhenNeeded(hidesRootTabBar, restoreTiming: tabBarRestoreTiming)
             .navigationBarBackButtonHidden(hidesBackButton)
             .toolbarBackground(.hidden, for: .navigationBar)
             .playbackDetailNavigationBarVisibility(navigationBarVisibility)
@@ -57,15 +54,11 @@ private struct PlaybackDetailSystemChrome: ViewModifier {
 
 extension View {
     func playbackDetailViewChrome(
-        hidesRootTabBar: Bool = true,
-        tabBarRestoreTiming: PlaybackDetailTabBarRestoreTiming = .alongsideNavigationTransition,
         navigationBarVisibility: Visibility? = nil,
         hidesBackButton: Bool = false
     ) -> some View {
         modifier(
             PlaybackDetailViewChrome(
-                hidesRootTabBar: hidesRootTabBar,
-                tabBarRestoreTiming: tabBarRestoreTiming,
                 navigationBarVisibility: navigationBarVisibility,
                 hidesBackButton: hidesBackButton
             )

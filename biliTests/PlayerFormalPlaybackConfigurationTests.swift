@@ -1,8 +1,9 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-import XCTest
 import UIKit
+import XCTest
+
 @testable import bili
 
 final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
@@ -62,7 +63,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             (true, false, false, false, false),
             (false, true, true, false, false),
             (true, true, true, true, false),
-            (true, true, true, false, true)
+            (true, true, true, false, true),
         ]
         for state in playbackStates {
             XCTAssertFalse(
@@ -185,11 +186,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.playback.officialListenerPlaylistExperimentEnabled.v1",
             "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1",
         ]
-        retiredKeys.forEach { defaults.set(false, forKey: $0) }
+        for key in retiredKeys {
+            defaults.set(false, forKey: key)
+        }
 
         _ = LibraryStore(userDefaults: defaults)
 
-        retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
     }
 
     @MainActor
@@ -319,27 +324,12 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         libraryStore.setPictureInPictureEnabled(true)
         libraryStore.setDefaultPlaybackRate(1.5)
-        libraryStore.setVideoRotationOptimizationExperimentEnabled(true)
         XCTAssertTrue(libraryStore.setAppTintColorHex("#123456"))
         try? await Task.sleep(nanoseconds: 30_000_000)
 
         XCTAssertTrue(runtimeSettings.pictureInPictureEnabled)
-        XCTAssertTrue(runtimeSettings.videoRotationOptimizationExperimentEnabled)
         XCTAssertEqual(runtimeSettings.defaultPlaybackRate, 1.5)
         XCTAssertEqual(runtimeSettings.snapshot.appTintColorHex, "#123456")
-    }
-
-    @MainActor
-    func testLibraryStoreDefaultsRotationOptimizationOffAndPersistsToggle() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.videoRotationOptimizationExperimentEnabled)
-        store.setVideoRotationOptimizationExperimentEnabled(true)
-
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).videoRotationOptimizationExperimentEnabled
-        )
     }
 
     @MainActor
@@ -354,6 +344,25 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             LibraryStore(userDefaults: defaults).appIconPreference,
             .dark
         )
+    }
+
+    @MainActor
+    func testLibraryStoreDefaultsThemeTintToBilibiliPink() {
+        let store = LibraryStore(userDefaults: makeUserDefaults())
+
+        XCTAssertEqual(store.appTintColorHex, "#FB7299")
+        XCTAssertEqual(LibraryStore.defaultAppTintColorHex, "#FB7299")
+    }
+
+    @MainActor
+    func testLibraryStoreMigratesPreviousDefaultThemeTint() {
+        let defaults = makeUserDefaults()
+        defaults.set("#EE719E", forKey: "cc.bili.appearance.tintColorHex.v1")
+
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertEqual(store.appTintColorHex, "#FB7299")
+        XCTAssertEqual(defaults.string(forKey: "cc.bili.appearance.tintColorHex.v1"), "#FB7299")
     }
 
     @MainActor
@@ -387,15 +396,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStorePersistsHomeNavigationModeSwitcherExperiment() {
+    func testLibraryStoreDefaultsPlayableFallbackDeadlineExperimentOffAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertTrue(store.homeNavigationModeSwitcherExperimentEnabled)
-        store.setHomeNavigationModeSwitcherExperimentEnabled(false)
+        XCTAssertFalse(store.playbackPlayableFallbackDeadlineExperimentEnabled)
+        store.setPlaybackPlayableFallbackDeadlineExperimentEnabled(true)
 
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).homeNavigationModeSwitcherExperimentEnabled
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).playbackPlayableFallbackDeadlineExperimentEnabled
         )
     }
 
@@ -403,6 +412,17 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     func testLibraryStoreRemovesRetiredExperimentPreferences() {
         let defaults = makeUserDefaults()
         let retiredKeys = [
+            "cc.bili.display.rootNavigationContainerExperimentEnabled.v1",
+            "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
+            "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",
+            "cc.bili.display.singleOwnerTabBarExperimentEnabled.v1",
+            "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
+            "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
+            "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
+            "cc.bili.home.navigationToolbarScrollVisibilityExperimentEnabled.v1",
+            "cc.bili.home.navigationChromeDelayedReturnExperimentEnabled.v1",
+            "cc.bili.home.navigationChromeUnifiedScrollVisibilityExperimentEnabled.v1",
+            "cc.bili.home.navigationModeTitleTransitionExperimentEnabled.v1",
             "cc.bili.playback.startupRequestSchedulingExperimentEnabled.v1",
             "cc.bili.live.videoDetailLayoutExperimentEnabled.v1",
             "cc.bili.live.piliPodLayoutExperimentEnabled.v1",
@@ -428,12 +448,49 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
             "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1",
             "cc.bili.home.nativePullRefreshIndicatorExperimentEnabled.v1",
+            "cc.bili.videoDetail.rotationOptimizationExperimentEnabled.v1",
+            "cc.bili.playback.diagnosticsBackgroundProcessingExperimentEnabled.v1",
+            "cc.bili.playback.avPlayerStartupPathOptimizationExperimentEnabled.v1",
+            "cc.bili.playback.piliPlusStylePlayURLSelectionExperimentEnabled.v1",
+            "cc.bili.resourceLoading.experimentEnabled.v1",
+            "cc.bili.resourceLoading.firstScreenPriorityExperimentEnabled.v1",
+            "cc.bili.resourceLoading.visibleImagePriorityExperimentEnabled.v1",
+            "cc.bili.resourceLoading.readRequestCoalescingExperimentEnabled.v1",
+            "cc.bili.resourceLoading.dynamicDiskSnapshotExperimentEnabled.v1",
+            "cc.bili.playback.immediatePlayerCreationExperimentEnabled.v1",
+            "cc.bili.videoDetail.transitionStabilityExperimentEnabled.v1",
+            "cc.bili.videoDetail.backgroundRenderFreezeExperimentEnabled.v1",
+            "cc.bili.videoDetail.deferredSecondaryContentExperimentEnabled.v1",
+            "cc.bili.videoDetail.fastNavigationExperimentEnabled.v1",
+            "cc.bili.videoDetail.shortNavigationTransitionExperimentEnabled.v1",
+            "cc.bili.dynamic.commentReadingExperimentEnabled.v1",
+            "cc.bili.dynamic.commentSortPreference.v1",
+            "cc.bili.home.navigationBarScrollVisibilityExperimentEnabled.v2",
+            "cc.bili.playback.relatedEarlyPlayURLPrefetchExperimentEnabled.v1",
+            "cc.bili.playback.relatedStartupPackageWarmupExperimentEnabled.v1",
+            "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1",
         ]
-        retiredKeys.forEach { defaults.set(true, forKey: $0) }
+        for key in retiredKeys {
+            defaults.set(true, forKey: key)
+        }
 
         _ = LibraryStore(userDefaults: defaults)
 
-        retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+    }
+
+    @MainActor
+    func testLibraryStorePersistsVideoDetailSegmentedPickerGlassStyle() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertEqual(store.videoDetailSegmentedPickerGlassStyle, .clear)
+        store.setVideoDetailSegmentedPickerGlassStyle(.regular)
+
+        let restoredStore = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(restoredStore.videoDetailSegmentedPickerGlassStyle, .regular)
     }
 
     @MainActor
@@ -483,17 +540,17 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStoreAllowsHidingSearchRootTab() {
+    func testLibraryStoreKeepsAllRequiredRootTabsVisible() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertTrue(AppTab.search.canHideFromRootTabBar)
+        XCTAssertFalse(AppTab.search.canHideFromRootTabBar)
         XCTAssertTrue(AppTab.search.participatesInRootTabVisibilitySettings)
 
         store.setRootTab(.search, isVisible: false)
 
-        XCTAssertFalse(store.visibleRootTabs.contains(.search))
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).visibleRootTabs.contains(.search))
+        XCTAssertEqual(store.visibleRootTabs, AppTab.defaultVisibleTabs)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, AppTab.defaultVisibleTabs)
     }
 
     @MainActor
@@ -1182,11 +1239,13 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         surface.setShowsSystemPlaybackControls(true)
         surface.setNativePlaybackControllerEnabled(true)
 
-        let gestureRecognizers = surface.nativePlayerViewController.contentOverlayView?
+        let gestureRecognizers =
+            surface.nativePlayerViewController.contentOverlayView?
             .subviews
             .flatMap { $0.gestureRecognizers ?? [] }
             ?? []
-        let doubleTapGesture = gestureRecognizers
+        let doubleTapGesture =
+            gestureRecognizers
             .compactMap { $0 as? UITapGestureRecognizer }
             .first { $0.numberOfTapsRequired == 2 }
         let panGesture = gestureRecognizers.first { $0 is UIPanGestureRecognizer }

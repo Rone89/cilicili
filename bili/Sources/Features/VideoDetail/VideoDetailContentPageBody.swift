@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct VideoDetailContentPageBody: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let layoutWidth: CGFloat
     let tab: VideoDetailContentTab
+    let mountsSecondaryContent: Bool
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
@@ -16,6 +17,7 @@ struct VideoDetailContentPageBody: View {
             VideoDetailLoadedDetailContentPage(
                 viewModel: viewModel,
                 layoutWidth: layoutWidth,
+                mountsSecondaryContent: mountsSecondaryContent,
                 runtimeSettings: runtimeSettings,
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
@@ -23,10 +25,16 @@ struct VideoDetailContentPageBody: View {
             )
 
         case .comments:
-            VideoDetailLoadedCommentsContentPage(
-                viewModel: viewModel,
-                onReply: onReply
-            )
+            if mountsSecondaryContent {
+                VideoDetailLoadedCommentsContentPage(
+                    viewModel: viewModel,
+                    onReply: onReply
+                )
+            } else {
+                Color.clear
+                    .frame(minHeight: 320)
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

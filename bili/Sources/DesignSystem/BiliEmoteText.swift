@@ -148,6 +148,10 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     let onURLTap: (URL) -> Void
     private static let sharedRenderCache = BiliEmoteRenderCache()
 
+    static func clearRenderCache() {
+        sharedRenderCache.clear()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
@@ -524,7 +528,8 @@ private final class BiliEmoteRenderCache {
     private let cache = NSCache<NSString, BiliEmoteRenderCacheEntry>()
 
     init() {
-        cache.countLimit = 700
+        cache.countLimit = BiliEmoteCacheBudget.renderCountLimit
+        cache.totalCostLimit = BiliEmoteCacheBudget.renderCostLimit
     }
 
     func result(for key: String) -> BiliEmoteRenderResult? {
@@ -532,15 +537,47 @@ private final class BiliEmoteRenderCache {
     }
 
     func set(_ result: BiliEmoteRenderResult, for key: String) {
-        cache.setObject(BiliEmoteRenderCacheEntry(result: result), forKey: key as NSString)
+        let entry = BiliEmoteRenderCacheEntry(result: result)
+        cache.setObject(entry, forKey: key as NSString, cost: entry.memoryCost)
+    }
+
+    func clear() {
+        cache.removeAllObjects()
     }
 }
 
 private final class BiliEmoteRenderCacheEntry {
     let result: BiliEmoteRenderResult
+    let memoryCost: Int
 
     init(result: BiliEmoteRenderResult) {
         self.result = result
+        var attachmentImageCost = 0
+        result.attributedString.enumerateAttribute(
+            .attachment,
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { value, _, _ in
+            guard let attachment = value as? NSTextAttachment,
+                  let image = attachment.image
+            else { return }
+            attachmentImageCost += image.memoryCost
+        }
+        memoryCost = BiliEmoteCacheBudget.renderCost(
+            textLength: result.attributedString.length,
+            attachmentImageCost: attachmentImageCost
+        )
+    }
+}
+
+nonisolated enum BiliEmoteCacheBudget {
+    static let renderCountLimit = 240
+    static let renderCostLimit = 24 * 1024 * 1024
+    static let imageCountLimit = 160
+    static let imageCostLimit = 16 * 1024 * 1024
+
+    static func renderCost(textLength: Int, attachmentImageCost: Int) -> Int {
+        let textCost = max(textLength, 1) * 32
+        return max(textCost + max(attachmentImageCost, 0), 1)
     }
 }
 
@@ -877,7 +914,8 @@ final class BiliEmoteImageStore {
     private let placeholderCache = NSCache<NSNumber, UIImage>()
 
     private init() {
-        cache.countLimit = 240
+        cache.countLimit = BiliEmoteCacheBudget.imageCountLimit
+        cache.totalCostLimit = BiliEmoteCacheBudget.imageCostLimit
         placeholderCache.countLimit = 8
     }
 
@@ -895,11 +933,16 @@ final class BiliEmoteImageStore {
             scale: 2,
             targetPixelSize: 96
         ) {
-            cache.setObject(image, forKey: url as NSURL)
+            cache.setObject(image, forKey: url as NSURL, cost: image.memoryCost)
             return image
         }
 
         return nil
+    }
+
+    func clear() {
+        cache.removeAllObjects()
+        placeholderCache.removeAllObjects()
     }
 
     func placeholderImage(size: CGFloat) -> UIImage {
@@ -916,5 +959,13 @@ final class BiliEmoteImageStore {
         }
         placeholderCache.setObject(image, forKey: key)
         return image
+    }
+}
+
+enum BiliEmoteMemoryCache {
+    @MainActor
+    static func clear() {
+        BiliAttributedEmoteLabel.clearRenderCache()
+        BiliEmoteImageStore.shared.clear()
     }
 }

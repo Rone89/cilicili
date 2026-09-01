@@ -6,6 +6,92 @@ import XCTest
 
 final class PlaybackDetailSharedLayoutTests: XCTestCase {
     @MainActor
+    func testContentUpdateGateCoalescesDeferredChangesIntoOneRefresh() async {
+        let gate = VideoDetailContentUpdateGate()
+
+        gate.receiveUpdate()
+        gate.setUpdatesDeferred(true)
+        gate.receiveUpdate()
+        gate.receiveUpdate()
+
+        XCTAssertEqual(gate.revision, 0)
+
+        gate.setUpdatesDeferred(false)
+
+        XCTAssertEqual(gate.revision, 1)
+        gate.setUpdatesDeferred(false)
+        XCTAssertEqual(gate.revision, 1)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+        XCTAssertEqual(gate.revision, 1)
+    }
+
+    @MainActor
+    func testContentRenderStorePublishesOnlyLatestDeferredSnapshot() {
+        let store = VideoDetailInteractionRenderStore()
+        var publicationCount = 0
+        let cancellable = store.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        store.setUpdatesDeferred(true)
+        store.update(
+            interactionState: VideoInteractionState(),
+            interactionMessage: "first",
+            isMutatingInteraction: false,
+            isMutatingLike: false,
+            isMutatingCoin: false,
+            isMutatingFavorite: false,
+            isMutatingFollow: false,
+            playbackFallbackMessage: nil
+        )
+        store.update(
+            interactionState: VideoInteractionState(),
+            interactionMessage: "latest",
+            isMutatingInteraction: false,
+            isMutatingLike: false,
+            isMutatingCoin: false,
+            isMutatingFavorite: false,
+            isMutatingFollow: false,
+            playbackFallbackMessage: nil
+        )
+
+        XCTAssertNil(store.interactionMessage)
+        XCTAssertEqual(publicationCount, 0)
+
+        store.setUpdatesDeferred(false)
+
+        XCTAssertEqual(store.interactionMessage, "latest")
+        XCTAssertEqual(publicationCount, 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
+    func testPlaybackRenderStorePublishesOnlyLatestDeferredSnapshot() {
+        let store = VideoDetailPlaybackRenderStore()
+        var publicationCount = 0
+        let cancellable = store.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        store.setUpdatesDeferred(true)
+        store.update(VideoDetailPlaybackRenderSnapshot(historyCID: 1))
+        store.update(VideoDetailPlaybackRenderSnapshot(historyCID: 2))
+
+        XCTAssertNil(store.historyCID)
+        XCTAssertEqual(publicationCount, 0)
+
+        store.setUpdatesDeferred(false)
+
+        XCTAssertEqual(store.historyCID, 2)
+        XCTAssertEqual(publicationCount, 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
     func testPortraitWidthUsesSmallestAvailableShortSide() {
         XCTAssertEqual(
             PlaybackDetailStableLayout.portraitWidth(
@@ -66,32 +152,36 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNil(layout.contentTopInset)
     }
 
-    func testRotationOptimizationDisabledPreservesVersion1021Behavior() {
-        let policy = VideoDetailRotationOptimizationPolicy(isEnabled: false)
+    func testRotationPolicyPreservesContentAndFreezesLayoutDuringTransition() {
+        let policy = VideoDetailRotationPolicy()
 
-        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: true))
+        XCTAssertFalse(policy.hidesContentHost(duringTransitionToLandscape: true))
         XCTAssertFalse(policy.hidesContentHost(duringTransitionToLandscape: false))
-        XCTAssertTrue(policy.publishesContentLayoutDuringSystemTransition)
+        XCTAssertFalse(policy.publishesContentLayoutDuringSystemTransition)
+        XCTAssertTrue(policy.hidesPlaybackControlsDuringSystemTransition)
+        XCTAssertTrue(
+            policy.usesPrewarmedFastRecovery(hasPrewarmedRotationChrome: true)
+        )
         XCTAssertFalse(
+            policy.usesPrewarmedFastRecovery(hasPrewarmedRotationChrome: false)
+        )
+        XCTAssertTrue(
             policy.restoresPortraitAfterResolvingPortraitVideo(isCurrentlyLandscape: true)
         )
-        XCTAssertEqual(
-            policy.preferredLandscapeInterfaceOrientation(
-                currentInterfaceOrientation: .portrait,
-                deviceOrientation: .landscapeRight
-            ),
-            .landscapeRight
+        XCTAssertFalse(
+            policy.restoresPortraitAfterResolvingPortraitVideo(isCurrentlyLandscape: false)
         )
     }
 
-    func testRotationOptimizationFreezesContentAndUsesDeviceDirection() {
-        let policy = VideoDetailRotationOptimizationPolicy(isEnabled: true)
+    func testRotationPolicyPreservesCurrentLandscapeOrUsesDeviceDirection() {
+        let policy = VideoDetailRotationPolicy()
 
-        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: true))
-        XCTAssertTrue(policy.hidesContentHost(duringTransitionToLandscape: false))
-        XCTAssertFalse(policy.publishesContentLayoutDuringSystemTransition)
-        XCTAssertTrue(
-            policy.restoresPortraitAfterResolvingPortraitVideo(isCurrentlyLandscape: true)
+        XCTAssertEqual(
+            policy.preferredLandscapeInterfaceOrientation(
+                currentInterfaceOrientation: .landscapeLeft,
+                deviceOrientation: .landscapeRight
+            ),
+            .landscapeLeft
         )
         XCTAssertEqual(
             policy.preferredLandscapeInterfaceOrientation(
@@ -107,6 +197,102 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             ),
             .landscapeLeft
         )
+    }
+
+    func testRotationRecoveryWatchdogAllowsCoordinatorAndRecoveryFramesToFinish() {
+        let policy = VideoDetailRotationRecoveryPolicy()
+
+        XCTAssertEqual(policy.watchdogDelay(coordinatorDuration: 0), 1.25)
+        XCTAssertEqual(policy.watchdogDelay(coordinatorDuration: 0.4), 1.25)
+        XCTAssertEqual(policy.watchdogDelay(coordinatorDuration: 1), 1.75)
+    }
+
+    func testRotationRecoveryUsesInterfaceOrientationBeforeBoundsFallback() {
+        let policy = VideoDetailRotationRecoveryPolicy()
+
+        XCTAssertTrue(
+            policy.resolvesLandscape(
+                interfaceOrientation: .landscapeLeft,
+                fallbackBounds: CGSize(width: 390, height: 844)
+            )
+        )
+        XCTAssertFalse(
+            policy.resolvesLandscape(
+                interfaceOrientation: .portrait,
+                fallbackBounds: CGSize(width: 844, height: 390)
+            )
+        )
+        XCTAssertTrue(
+            policy.resolvesLandscape(
+                interfaceOrientation: .unknown,
+                fallbackBounds: CGSize(width: 844, height: 390)
+            )
+        )
+    }
+
+    func testFullscreenStatusControlsOnlyAppearOutsidePortraitFullscreen() {
+        XCTAssertTrue(
+            VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
+                usesFullscreenChrome: true,
+                isPortraitFullscreen: false
+            )
+        )
+        XCTAssertFalse(
+            VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
+                usesFullscreenChrome: true,
+                isPortraitFullscreen: true
+            )
+        )
+        XCTAssertFalse(
+            VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
+                usesFullscreenChrome: false,
+                isPortraitFullscreen: false
+            )
+        )
+    }
+
+    func testRotationRequestCoalescerKeepsOnlyLatestTargetDuringTransition() {
+        var coalescer = VideoDetailRotationRequestCoalescer()
+
+        coalescer.beginTransition()
+        XCTAssertNil(coalescer.submit(.landscapeLeft))
+        XCTAssertNil(coalescer.submit(.landscapeRight))
+        XCTAssertNil(coalescer.submit(.portrait))
+        XCTAssertEqual(coalescer.pendingTarget, .portrait)
+        XCTAssertEqual(
+            coalescer.completeTransition(
+                currentOrientation: .landscapeLeft
+            ),
+            .portrait
+        )
+        XCTAssertFalse(coalescer.isTransitioning)
+        XCTAssertNil(coalescer.pendingTarget)
+    }
+
+    func testRotationRequestCoalescerDropsSatisfiedTarget() {
+        var coalescer = VideoDetailRotationRequestCoalescer()
+
+        coalescer.beginTransition()
+        XCTAssertNil(coalescer.submit(.landscapeRight))
+        XCTAssertNil(
+            coalescer.completeTransition(
+                currentOrientation: .landscapeRight
+            )
+        )
+        XCTAssertFalse(coalescer.isTransitioning)
+        XCTAssertNil(coalescer.pendingTarget)
+    }
+
+    func testRotationRequestCoalescerResetClearsTransitionAndPendingTarget() {
+        var coalescer = VideoDetailRotationRequestCoalescer()
+
+        coalescer.beginTransition()
+        XCTAssertNil(coalescer.submit(.portrait))
+        coalescer.reset()
+
+        XCTAssertFalse(coalescer.isTransitioning)
+        XCTAssertNil(coalescer.pendingTarget)
+        XCTAssertEqual(coalescer.submit(.landscapeLeft), .landscapeLeft)
     }
 
     @MainActor

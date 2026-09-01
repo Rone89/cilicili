@@ -68,7 +68,7 @@ struct SMSLoginView: View {
                 }
             }
             .navigationTitle("短信验证码登录")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {

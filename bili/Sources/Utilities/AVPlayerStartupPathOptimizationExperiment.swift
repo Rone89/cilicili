@@ -1,20 +1,12 @@
 import Foundation
 
 nonisolated enum AVPlayerStartupPathOptimizationExperiment {
-    static let storageKey = "cc.bili.playback.avPlayerStartupPathOptimizationExperimentEnabled.v1"
-    static let defaultIsEnabled = true
-    static let startupPacketGateMaximumWait: TimeInterval = 0.04
-
-    static func stored(in _: UserDefaults = .standard) -> Bool {
+    static func stored() -> Bool {
         true
     }
 
-    static func playerCreationWarmupWait(
-        normalBudget: TimeInterval,
-        userDefaults: UserDefaults = .standard
-    ) -> TimeInterval {
-        guard stored(in: userDefaults) else { return normalBudget }
-        return min(max(normalBudget, 0), startupPacketGateMaximumWait)
+    static func playerCreationWarmupWait(normalBudget _: TimeInterval) -> TimeInterval {
+        0
     }
 
     static func diagnosticStateTitle(for isEnabled: Bool?) -> String {
@@ -26,15 +18,24 @@ nonisolated enum AVPlayerStartupPathOptimizationExperiment {
         guard let isEnabled else { return "启动链路：旧样本未知" }
         return isEnabled ? "启动链路：已启用" : "启动链路：未启用"
     }
+
+    static func playerCreationMode(_ rawValue: String?) -> (key: String, title: String) {
+        switch rawValue {
+        case "immediateCreate", "immediateCreateExperiment":
+            return ("immediateCreate", "播放器：即时创建")
+        case "packetGate":
+            return ("packetGate", "播放器：40ms 预热门槛")
+        default:
+            return ("unknown", "播放器：旧样本未知")
+        }
+    }
 }
 
 nonisolated enum PiliPlusStylePlayURLSelectionExperiment {
-    static let storageKey = "cc.bili.playback.piliPlusStylePlayURLSelectionExperimentEnabled.v1"
-    static let defaultIsEnabled = true
     static let currentStrategyKey = "piliPlusTargetFirstCompatibilityRescueV18"
     static let webpageHedgeDelayNanoseconds: UInt64 = 0
 
-    static func stored(in _: UserDefaults = .standard) -> Bool {
+    static func stored() -> Bool {
         true
     }
 
@@ -58,6 +59,12 @@ nonisolated enum PiliPlusStylePlayURLSelectionExperiment {
                 : ("unknown", "取流策略：旧样本未知")
         }
         let message = startupSchedulerMessage ?? ""
+        if message.contains("fallbackDeadline=on") {
+            return (
+                PlayableFallbackDeadlineExperiment.strategyKey,
+                "取流策略：V18 + 降级限时实验"
+            )
+        }
         if message.contains("strategy=\(currentStrategyKey)") {
             return (currentStrategyKey, "取流策略：V18")
         }
@@ -116,6 +123,21 @@ nonisolated enum PiliPlusStylePlayURLSelectionExperiment {
     }
 }
 
+nonisolated enum PlayableFallbackDeadlineExperiment {
+    static let storageKey = "cc.bili.playback.playableFallbackDeadlineExperimentEnabled.v1"
+    static let defaultIsEnabled = false
+    static let strategyKey = "piliPlusPlayableFallbackDeadlineV1"
+    static let fullFallbackGraceNanoseconds: UInt64 = 650_000_000
+
+    static func stored(in userDefaults: UserDefaults = .standard) -> Bool {
+        userDefaults.object(forKey: storageKey) as? Bool ?? defaultIsEnabled
+    }
+
+    static func allowsEarlyReturn(isEnabled: Bool, hasPlayableFallback: Bool) -> Bool {
+        isEnabled && hasPlayableFallback
+    }
+}
+
 nonisolated struct HLSStartupPacketWarmupResult: Equatable, Sendable {
     let videoReady: Bool
     let audioReady: Bool
@@ -130,8 +152,8 @@ nonisolated struct HLSStartupPacketWarmupResult: Equatable, Sendable {
 }
 
 nonisolated enum PendingTaskDeadline {
-    static func finishes<Value: Sendable>(
-        _ task: Task<Value, Never>,
+    static func finishes<Value: Sendable, Failure: Error>(
+        _ task: Task<Value, Failure>,
         within nanoseconds: UInt64
     ) async -> Bool {
         guard nanoseconds > 0 else { return false }
@@ -141,7 +163,7 @@ nonisolated enum PendingTaskDeadline {
             bufferingPolicy: .bufferingOldest(1)
         )
         let completionWaiter = Task {
-            _ = await task.value
+            _ = await task.result
             guard !Task.isCancelled else { return }
             continuation.yield(true)
             continuation.finish()
@@ -159,5 +181,21 @@ nonisolated enum PendingTaskDeadline {
         timeoutWaiter.cancel()
         continuation.finish()
         return didFinish
+    }
+
+    static func value<Value: Sendable>(
+        within nanoseconds: UInt64,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value? {
+        guard nanoseconds > 0 else { return nil }
+
+        let operationTask = Task {
+            try await operation()
+        }
+        guard await finishes(operationTask, within: nanoseconds) else {
+            operationTask.cancel()
+            return nil
+        }
+        return try await operationTask.value
     }
 }

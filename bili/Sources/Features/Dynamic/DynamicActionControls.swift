@@ -26,6 +26,7 @@ struct DynamicActionPill: View {
     let title: String
     let systemImage: String
     let isSelected: Bool
+    var isDisabled = false
     let action: () -> Void
 
     var body: some View {
@@ -42,6 +43,7 @@ struct DynamicActionPill: View {
         .biliGlassButtonStyle(prominent: isSelected)
         .controlSize(.small)
         .tint(isSelected ? appTintColor : .secondary)
+        .disabled(isDisabled)
     }
 }
 

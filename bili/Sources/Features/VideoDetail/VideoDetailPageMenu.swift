@@ -255,7 +255,7 @@ private struct VideoDetailPageSelectionSheet: View {
                 }
             }
             .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+            .nativeTopScrollEdgeEffect()
             .scrollContentBackground(.hidden)
             .background(.clear)
         }

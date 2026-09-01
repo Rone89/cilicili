@@ -8,7 +8,8 @@ extension VideoDetailSystemBackGestureBridge.Controller {
         }
         attachedNavigationController = navigationController
 
-        if let popGesture = navigationController.interactivePopGestureRecognizer {
+        if !preservesSystemGestureDelegates,
+           let popGesture = navigationController.interactivePopGestureRecognizer {
             popGesture.isEnabled = true
             popGesture.delegate = self
         }
@@ -16,8 +17,10 @@ extension VideoDetailSystemBackGestureBridge.Controller {
         guard let contentPopGesture = navigationController.interactiveContentPopGestureRecognizer else {
             return
         }
-        contentPopGesture.isEnabled = true
-        contentPopGesture.delegate = self
+        if !preservesSystemGestureDelegates {
+            contentPopGesture.isEnabled = true
+            contentPopGesture.delegate = self
+        }
         prioritizeSystemContentPopGesture(contentPopGesture, in: navigationController.view)
     }
 

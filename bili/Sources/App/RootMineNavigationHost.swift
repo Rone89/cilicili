@@ -46,7 +46,6 @@ struct RootMineNavigationDestination: View {
                 allowsSingleControllerNavigation: true
             )
         )
-        .toolbar(.visible, for: .navigationBar)
     }
 
     @ViewBuilder

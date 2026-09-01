@@ -2,7 +2,6 @@ import SwiftUI
 
 struct PgcSeasonPlaybackRouteView: View {
     let route: PgcSeasonRoute
-    let hidesRootTabBar: Bool
     let onRequestClose: (() -> Void)?
     let onPopOne: (() -> Void)?
 
@@ -12,12 +11,10 @@ struct PgcSeasonPlaybackRouteView: View {
 
     init(
         route: PgcSeasonRoute,
-        hidesRootTabBar: Bool = true,
         onRequestClose: (() -> Void)? = nil,
         onPopOne: (() -> Void)? = nil
     ) {
         self.route = route
-        self.hidesRootTabBar = hidesRootTabBar
         self.onRequestClose = onRequestClose
         self.onPopOne = onPopOne
     }
@@ -27,7 +24,6 @@ struct PgcSeasonPlaybackRouteView: View {
             if let selectedVideo {
                 VideoDetailView(
                     seedVideo: selectedVideo,
-                    hidesRootTabBar: hidesRootTabBar,
                     onRequestClose: onRequestClose,
                     onPopOne: onPopOne
                 )
@@ -41,7 +37,7 @@ struct PgcSeasonPlaybackRouteView: View {
             }
         }
         .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: route.id) {
             await load()

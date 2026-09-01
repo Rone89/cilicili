@@ -2,8 +2,7 @@ import SwiftUI
 
 struct DynamicCommentRepliesSheet: View {
     let rootComment: Comment
-    let replyStore: DynamicCommentReplyStore
-    @Environment(\.commentContentOwnerMID) private var commentContentOwnerMID
+    @ObservedObject var replyStore: DynamicCommentReplyStore
     @State private var dialogReply: Comment?
 
     var body: some View {
@@ -16,14 +15,18 @@ struct DynamicCommentRepliesSheet: View {
 
                     Divider()
 
-                    DynamicCommentRepliesContent(rootComment: rootComment, replyStore: replyStore) { reply in
+                    DynamicCommentRepliesContent(
+                        rootComment: rootComment,
+                        replyStore: replyStore,
+                        highlightedReplyID: nil
+                    ) { reply in
                         dialogReply = reply
                     }
                 }
             }
             .defersRemoteImageLoadsDuringFastScroll()
             .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+            .nativeTopScrollEdgeEffect()
             .task {
                 await replyStore.loadReplies(for: rootComment)
             }
@@ -32,7 +35,6 @@ struct DynamicCommentRepliesSheet: View {
         .presentationDragIndicator(.visible)
         .sheet(item: $dialogReply) { reply in
             DynamicCommentDialogSheet(rootComment: rootComment, focusReply: reply, replyStore: replyStore)
-                .environment(\.commentContentOwnerMID, commentContentOwnerMID)
         }
     }
 }
@@ -52,12 +54,16 @@ private struct DynamicCommentDialogSheet: View {
 
                     Divider()
 
-                    DynamicCommentDialogContent(rootComment: rootComment, focusReply: focusReply, replyStore: replyStore)
+                    DynamicCommentDialogContent(
+                        rootComment: rootComment,
+                        focusReply: focusReply,
+                        replyStore: replyStore
+                    )
                 }
             }
             .defersRemoteImageLoadsDuringFastScroll()
             .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+            .nativeTopScrollEdgeEffect()
             .task {
                 await replyStore.loadDialog(for: rootComment, reply: focusReply)
             }

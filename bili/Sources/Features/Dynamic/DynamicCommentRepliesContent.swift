@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicCommentRepliesContent: View {
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
 
     var body: some View {
@@ -12,6 +13,7 @@ struct DynamicCommentRepliesContent: View {
             snapshot: snapshot,
             rootComment: rootComment,
             replyStore: replyStore,
+            highlightedReplyID: highlightedReplyID,
             showDialog: showDialog
         )
     }
@@ -21,6 +23,7 @@ private struct DynamicCommentRepliesStateContent: View {
     let snapshot: DynamicCommentRepliesSnapshot
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
 
     var body: some View {
@@ -39,23 +42,32 @@ private struct DynamicCommentRepliesStateContent: View {
         } else {
             DynamicCommentRepliesLoadedList(
                 snapshot: snapshot,
+                replyItems: snapshot.replyItems,
                 rootComment: rootComment,
                 replyStore: replyStore,
+                highlightedReplyID: highlightedReplyID,
                 showDialog: showDialog
             )
         }
     }
+
+    private func loadMoreReplies() {
+        Task { await replyStore.loadMoreReplies(for: rootComment) }
+    }
 }
 
 private struct DynamicCommentRepliesLoadedList: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let snapshot: DynamicCommentRepliesSnapshot
+    let replyItems: [DynamicCommentReplyItem]
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(snapshot.replyItems) { replyItem in
+            ForEach(replyItems) { replyItem in
                 DynamicCommentReplyDetailRow(
                     item: replyItem,
                     showDialog: replyItem.canShowDialog ? {
@@ -63,6 +75,11 @@ private struct DynamicCommentRepliesLoadedList: View {
                     } : nil
                 )
                 .padding(.horizontal, 16)
+                .background(
+                    replyItem.id == highlightedReplyID ? appTintColor.opacity(0.10) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .id(replyItem.id)
 
                 Divider()
                     .padding(.leading, 66)

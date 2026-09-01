@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct VideoDetailEmbeddedCommentsSection: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let renderPack: VideoDetailEmbeddedCommentsSectionRenderPack
 
     init(

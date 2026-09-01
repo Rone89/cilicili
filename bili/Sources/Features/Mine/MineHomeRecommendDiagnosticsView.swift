@@ -4,6 +4,7 @@ struct MineHomeRecommendDiagnosticsView: View {
     @EnvironmentObject private var diagnosticsStore: HomeRecommendDiagnosticsStore
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject private var feedbackStore = HomeRecommendFeedbackCenter.shared
+    @ObservedObject private var baselineMetricsStore = StageOneBaselineMetricsStore.shared
 
     private var snapshot: HomeRecommendDiagnosticsSnapshot {
         diagnosticsStore.snapshot
@@ -18,6 +19,71 @@ struct MineHomeRecommendDiagnosticsView: View {
                 LabeledContent("Profile", value: snapshot.profile.isEmpty ? "-" : snapshot.profile)
                 LabeledContent("请求时间", value: Self.formattedDate(snapshot.requestStartedAt))
                 LabeledContent("完成时间", value: Self.formattedDate(snapshot.responseFinishedAt))
+                LabeledContent(
+                    "请求耗时",
+                    value: Self.formattedDuration(
+                        from: snapshot.requestStartedAt,
+                        to: snapshot.responseFinishedAt
+                    )
+                )
+            }
+
+            if !(snapshot.keyCounts ?? [:]).isEmpty {
+                Section("请求计数") {
+                    ForEach((snapshot.keyCounts ?? [:]).keys.sorted(), id: \.self) { key in
+                        LabeledContent(key, value: String(snapshot.keyCounts?[key] ?? 0))
+                    }
+                }
+            }
+
+            Section("启动基线") {
+                LabeledContent(
+                    "首页可交互",
+                    value: Self.formattedMilliseconds(
+                        baselineMetricsStore.snapshot.homeFirstInteractiveMilliseconds
+                    )
+                )
+                LabeledContent(
+                    "首页首批数据",
+                    value: Self.formattedMilliseconds(baselineMetricsStore.snapshot.homeFirstDataMilliseconds)
+                )
+                LabeledContent(
+                    "动态首批数据",
+                    value: Self.formattedMilliseconds(baselineMetricsStore.snapshot.dynamicFirstDataMilliseconds)
+                )
+                LabeledContent(
+                    "启动预热开始",
+                    value: Self.formattedMilliseconds(
+                        baselineMetricsStore.snapshot.startupWarmupStartedMilliseconds
+                    )
+                )
+                LabeledContent(
+                    "启动预热完成",
+                    value: Self.formattedMilliseconds(
+                        baselineMetricsStore.snapshot.startupWarmupFinishedMilliseconds
+                    )
+                )
+            }
+
+            Section {
+                LabeledContent(
+                    "本次原始变化",
+                    value: baselineMetricsStore.snapshot.networkRawChangeCount.formatted()
+                )
+                LabeledContent(
+                    "本次刷新批次",
+                    value: baselineMetricsStore.snapshot.networkRefreshBatchCount.formatted()
+                )
+
+                networkSummaryRows(
+                    summary: baselineMetricsStore.history.networkSummary(
+                        excludingLaunchStartedAt: baselineMetricsStore.snapshot.launchStartedAt
+                    )
+                )
+            } header: {
+                Text("网络路径稳定")
+            } footer: {
+                Text("历史汇总不包含本次尚未结束的启动；本次数据会在下次启动后计入。")
             }
 
             if snapshot.fallbackFromSource != nil || snapshot.fallbackReason != nil {
@@ -108,6 +174,11 @@ struct MineHomeRecommendDiagnosticsView: View {
             Section("诊断文件") {
                 LabeledContent("推荐", value: HomeRecommendDiagnosticsStore.latestSnapshotURL.lastPathComponent)
                 LabeledContent("反馈", value: HomeRecommendFeedbackCenter.latestSnapshotURL.lastPathComponent)
+                LabeledContent("基线", value: StageOneBaselineMetricsStore.latestSnapshotURL.lastPathComponent)
+                LabeledContent("历史", value: StageOneBaselineMetricsStore.historyURL.lastPathComponent)
+                ShareLink(item: StageOneBaselineMetricsStore.historyURL) {
+                    Label("导出性能历史", systemImage: "square.and.arrow.up")
+                }
             }
         }
         .tint(libraryStore.appTintColor)
@@ -127,6 +198,36 @@ struct MineHomeRecommendDiagnosticsView: View {
     private static func formattedDate(_ date: Date?) -> String {
         guard let date else { return "-" }
         return date.formatted(date: .numeric, time: .standard)
+    }
+
+    private static func formattedDuration(from start: Date?, to end: Date?) -> String {
+        guard let start, let end else { return "-" }
+        return "\(max(0, Int((end.timeIntervalSince(start) * 1_000).rounded()))) ms"
+    }
+
+    private static func formattedMilliseconds(_ value: Int?) -> String {
+        value.map { "\($0) ms" } ?? "-"
+    }
+
+    @ViewBuilder
+    private func networkSummaryRows(summary: StageOneNetworkSummary) -> some View {
+        LabeledContent("历史样本", value: summary.sessionCount.formatted())
+        LabeledContent(
+            "平均变化",
+            value: summary.sessionCount > 0
+                ? summary.averageRawChangeCount.formatted(.number.precision(.fractionLength(1)))
+                : "-"
+        )
+        LabeledContent(
+            "平均刷新",
+            value: summary.sessionCount > 0
+                ? summary.averageRefreshBatchCount.formatted(.number.precision(.fractionLength(1)))
+                : "-"
+        )
+        LabeledContent(
+            "合并率",
+            value: summary.coalescingRatePercent.map { "\($0)%" } ?? "-"
+        )
     }
 }
 

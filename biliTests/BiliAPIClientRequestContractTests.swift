@@ -3,7 +3,12 @@ import XCTest
 
 @testable import bili
 
-final class BiliAPIClientRequestContractTests: XCTestCase {
+final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
+    override func tearDown() {
+        RequestContractURLProtocol.reset()
+        super.tearDown()
+    }
+
     @MainActor
     func testSearchSuggestBuildsStableEncodedQueryForwardsHeadersAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
@@ -11,6 +16,12 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let requestExpectation = expectation(description: "search request captured")
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
+            guard request.url?.path == "/x/web-interface/search/suggest" else {
+                return Self.response(
+                    for: request,
+                    body: #"{"code":-404,"message":"unexpected"}"#
+                )
+            }
             recorder.record(request)
             requestExpectation.fulfill()
             return Self.response(
@@ -115,7 +126,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             return Self.response(
                 for: request,
                 body: """
-                    {"code":0,"data":{"replies":[{"rpid":12345}],"top_replies":[],"cursor":{"next":"next-cursor","is_end":false}}}
+                    {"code":0,"data":{"replies":[{"rpid":12345,"like":9,"action":1}],"top_replies":[],"cursor":{"next":"next-cursor","is_end":false}}}
                     """
             )
         }
@@ -128,10 +139,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await fulfillment(of: [requestExpectation], timeout: 2)
 
         XCTAssertEqual(page.replies?.map(\.id), [12345])
+        XCTAssertEqual(page.replies?.first?.like, 9)
+        XCTAssertEqual(page.replies?.first?.likeState, 1)
         let request = try XCTUnwrap(recorder.request)
         let url = try XCTUnwrap(request.url)
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/main")
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
         var query = Self.queryValues(in: components)
         let pagination = try XCTUnwrap(query.removeValue(forKey: "pagination_str"))
         let paginationObject = try XCTUnwrap(
@@ -161,7 +175,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             return Self.response(
                 for: request,
                 body: """
-                    {"code":0,"data":{"replies":[{"rpid":67890}],"top_replies":[]}}
+                    {"code":0,"data":{"replies":[{"rpid":67890,"like":4,"action":"1"}],"top_replies":[]}}
                     """
             )
         }
@@ -179,10 +193,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await fulfillment(of: [requestExpectation], timeout: 2)
 
         XCTAssertEqual(page.replies?.map(\.id), [67890])
+        XCTAssertEqual(page.replies?.first?.like, 4)
+        XCTAssertEqual(page.replies?.first?.likeState, 1)
         let request = try XCTUnwrap(recorder.request)
         let url = try XCTUnwrap(request.url)
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/reply")
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
         XCTAssertEqual(
             Self.queryValues(in: components),
             [
@@ -208,7 +225,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             return Self.response(
                 for: request,
                 body: """
-                    {"code":0,"data":{"replies":[{"rpid":24680}],"top_replies":[]}}
+                    {"code":0,"data":{"replies":[{"rpid":24680,"like":6,"action":1}],"top_replies":[]}}
                     """
             )
         }
@@ -220,10 +237,13 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         await fulfillment(of: [requestExpectation], timeout: 2)
 
         XCTAssertEqual(page.replies?.map(\.id), [24680])
+        XCTAssertEqual(page.replies?.first?.like, 6)
+        XCTAssertEqual(page.replies?.first?.likeState, 1)
         let request = try XCTUnwrap(recorder.request)
         let url = try XCTUnwrap(request.url)
         let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(url.path, "/x/v2/reply/dialog/cursor")
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
         XCTAssertEqual(
             Self.queryValues(in: components),
             [
@@ -234,6 +254,112 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
                 "size": "12",
             ]
         )
+    }
+
+    @MainActor
+    func testCommentsRepliesAndDialogForwardExplicitCookieHeader() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "comment reads captured")
+        requestExpectation.expectedFulfillmentCount = 3
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"replies":[{"rpid":13579}],"top_replies":[]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(cookieHeader: "SESSDATA=main-session; DedeUserID=1001")
+        let interactionCookieHeader = "SESSDATA=interaction-session; DedeUserID=2002"
+        let comments = try await api.fetchComments(
+            oid: "456",
+            type: 11,
+            cookieHeader: interactionCookieHeader
+        )
+        let replies = try await api.fetchCommentReplies(
+            oid: "456",
+            type: 11,
+            root: 987,
+            cookieHeader: interactionCookieHeader
+        )
+        let dialog = try await api.fetchCommentDialog(
+            oid: "456",
+            type: 11,
+            root: 987,
+            dialog: 13579,
+            cookieHeader: interactionCookieHeader
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(comments.replies?.map(\.id), [13579])
+        XCTAssertEqual(replies.replies?.map(\.id), [13579])
+        XCTAssertEqual(dialog.replies?.map(\.id), [13579])
+        XCTAssertEqual(recorder.requests.count, 3)
+        for request in recorder.requests {
+            XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+            XCTAssertEqual(
+                cookieValues(in: request.value(forHTTPHeaderField: "Cookie")),
+                ["SESSDATA": "interaction-session", "DedeUserID": "2002"]
+            )
+        }
+    }
+
+    @MainActor
+    func testCommentReadsUseSelectedInteractionAccountByDefault() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "interaction account comment reads captured")
+        requestExpectation.expectedFulfillmentCount = 3
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                    {"code":0,"data":{"replies":[{"rpid":13579,"like":10,"action":1,"like_state":0}],"top_replies":[]}}
+                    """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=main-session; bili_jct=main-csrf; DedeUserID=1001",
+            configure: { sessionStore, libraryStore in
+                _ = try sessionStore.saveAdditionalAccount([
+                    Self.makeCookie(name: "buvid3", value: "interaction-device"),
+                    Self.makeCookie(name: "DedeUserID", value: "2002"),
+                    Self.makeCookie(name: "SESSDATA", value: "interaction-session"),
+                    Self.makeCookie(name: "bili_jct", value: "interaction-csrf"),
+                ])
+                try sessionStore.selectInteractionAccount(mid: 2002)
+                libraryStore.setMultiAccountExperimentEnabled(true)
+            }
+        )
+
+        async let comments = api.fetchComments(oid: "456", type: 11)
+        async let replies = api.fetchCommentReplies(oid: "456", type: 11, root: 987)
+        async let dialog = api.fetchCommentDialog(oid: "456", type: 11, root: 987, dialog: 13579)
+        let pages = try await (comments, replies, dialog)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(pages.0.replies?.first?.like, 10)
+        XCTAssertEqual(pages.0.replies?.first?.likeState, 1)
+        XCTAssertEqual(recorder.requests.count, 3)
+        for request in recorder.requests {
+            XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+            let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
+            XCTAssertEqual(cookies["DedeUserID"], "2002")
+            XCTAssertEqual(cookies["SESSDATA"], "interaction-session")
+        }
     }
 
     @MainActor
@@ -780,12 +906,117 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
     }
 
     @MainActor
+    func testDynamicLikeBuildsInteractionAccountJSONRequest() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "dynamic like requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let cookieHeader = "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        let api = try makeAPI(cookieHeader: cookieHeader)
+        try await api.setDynamicLike(dynamicID: "123456789", liked: true)
+        try await api.setDynamicLike(dynamicID: "123456789", liked: false)
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(recorder.requests.count, 2)
+        for (request, expectedUp) in zip(recorder.requests, [1, 2]) {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/x/dynamic/feed/dyn/thumb")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://t.bilibili.com/123456789")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json; charset=utf-8")
+            XCTAssertEqual(Self.queryValues(for: request), ["csrf": "csrf-value"])
+            let body = try XCTUnwrap(requestBodyData(from: request))
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["dyn_id_str"] as? String, "123456789")
+            XCTAssertEqual(json["up"] as? Int, expectedUp)
+            XCTAssertEqual(
+                cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"],
+                "session-value"
+            )
+        }
+    }
+
+    @MainActor
+    func testCommentLikeBuildsInteractionAccountCSRFForm() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "comment like requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let cookieHeader = "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        let api = try makeAPI(cookieHeader: cookieHeader)
+        let referer = "https://t.bilibili.com/123456789"
+        try await api.setCommentLike(
+            oid: " 987654321 ",
+            type: 17,
+            rpid: 24680,
+            liked: true,
+            referer: referer
+        )
+        try await api.setCommentLike(
+            oid: "987654321",
+            type: 17,
+            rpid: 24680,
+            liked: false,
+            referer: referer
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(recorder.requests.count, 2)
+        for (request, expectedAction) in zip(recorder.requests, ["1", "0"]) {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/x/v2/reply/action")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), referer)
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Content-Type"),
+                "application/x-www-form-urlencoded; charset=UTF-8"
+            )
+            XCTAssertEqual(
+                formValues(in: request),
+                [
+                    "oid": "987654321",
+                    "type": "17",
+                    "rpid": "24680",
+                    "action": expectedAction,
+                    "csrf": "csrf-value",
+                ]
+            )
+            XCTAssertEqual(
+                cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"],
+                "session-value"
+            )
+        }
+    }
+
+    @MainActor
     func testVideoCoinValidatesMultiplyAndBuildsForm() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
         let requestExpectation = expectation(description: "coin request captured")
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
+            guard request.url?.path == "/x/web-interface/coin/add" else {
+                return Self.response(
+                    for: request,
+                    body: #"{"code":-404,"message":"unexpected"}"#
+                )
+            }
             recorder.record(request)
             requestExpectation.fulfill()
             return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
@@ -1930,7 +2161,8 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             if request.url?.path == "/x/web-interface/nav" {
                 return Self.response(
                     for: request,
-                    body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
                 )
             }
             if request.url?.path == "/x/player/wbi/playurl" {
@@ -1993,6 +2225,112 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
             recorder.requests.filter { $0.url?.path == "/x/player/wbi/playurl" }.count,
             1
         )
+    }
+
+    @MainActor
+    func testStartupPlayableFallbackDeadlineReturnsRaceCandidateWithoutCancellingSharedStage() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let bvid = "BV1deadline\(UUID().uuidString)"
+        let playURLRequestCounter = RequestContractCounter()
+        let webpageRequestCounter = RequestContractCounter()
+        let slowWebpageGate = RequestContractAsyncGate()
+        let lowerQualityResponse = Self.playableDASHResponse(
+            quality: 80,
+            acceptedQualities: [112, 80]
+        )
+
+        RequestContractURLProtocol.install { request in
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            guard request.url?.path == "/x/player/wbi/playurl" else {
+                return Self.response(
+                    for: request,
+                    body: #"{"code":-404,"message":"unexpected"}"#
+                )
+            }
+            guard playURLRequestCounter.increment() > 2 else {
+                return Self.response(for: request, body: lowerQualityResponse)
+            }
+            return Self.response(
+                for: request,
+                body: #"{"code":-404,"message":"full fallback unavailable"}"#
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache(),
+            webPagePlayInfoStreamFetch: { _, _ in
+                if webpageRequestCounter.increment() == 1 {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                    return BiliWebPagePlayInfoStreamResult(
+                        json: lowerQualityResponse,
+                        fullPageData: nil,
+                        receivedByteCount: lowerQualityResponse.utf8.count,
+                        expectedByteCount: Int64(lowerQualityResponse.utf8.count),
+                        elapsedMilliseconds: 50
+                    )
+                }
+                await slowWebpageGate.wait()
+                throw URLError(.timedOut)
+            }
+        )
+        api.libraryStore.setPlaybackPlayableFallbackDeadlineExperimentEnabled(true)
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let data = try await api.fetchStartupPlayURL(
+            bvid: bvid,
+            cid: 24_685,
+            preferredQuality: 112,
+            requestSource: StartupPlayURLRequestSource.preload
+        )
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        XCTAssertEqual(data.quality, 80)
+        XCTAssertEqual(data.dash?.video?.first?.id, 80)
+        XCTAssertGreaterThanOrEqual(elapsed, 0.55)
+        XCTAssertLessThan(elapsed, 1.2)
+        XCTAssertGreaterThanOrEqual(playURLRequestCounter.currentValue, 3)
+        XCTAssertGreaterThanOrEqual(webpageRequestCounter.currentValue, 2)
+        let sharedStageRemainedInFlight = await slowWebpageGate.isWaiting
+        let context = await api.playbackAPIRequestContext()
+        let sharedStageKey = BiliAPIClient.playURLFailureCacheKey(
+            stage: "webpagePlayInfo",
+            bvid: bvid,
+            cid: 24_685,
+            qn: 112,
+            cookieMode: "auth-webpage-\(context.playbackStreamSourcePreference.cachePlatform)",
+            credentialVersion: context.playbackCredentialVersion
+        )
+        let pendingSharedStageTask = await api.state.playURLStageTask(for: sharedStageKey)?.task
+        let sharedStageTask = try XCTUnwrap(pendingSharedStageTask)
+        await slowWebpageGate.release()
+        XCTAssertTrue(sharedStageRemainedInFlight)
+        guard case .failure(let sharedStageError) = await sharedStageTask.result else {
+            return XCTFail("Expected the released shared webpage stage to fail")
+        }
+        XCTAssertFalse(sharedStageError is CancellationError)
+        XCTAssertNotEqual((sharedStageError as? URLError)?.code, .cancelled)
+        for _ in 0..<50 {
+            guard await api.state.playURLStageTask(for: sharedStageKey) != nil else { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let remainingSharedStageTask = await api.state.playURLStageTask(for: sharedStageKey)
+        XCTAssertNil(remainingSharedStageTask)
+
+        let diagnostics = try await startupSchedulerDiagnostics(
+            for: bvid,
+            containing: "outcome=deadlineFallback"
+        )
+        XCTAssertTrue(diagnostics.contains("fullFallbackResult=deadline"))
+        XCTAssertTrue(diagnostics.contains("fallbackDeadline=on"))
+        XCTAssertTrue(diagnostics.contains("fallbackDeadlineBudget=650ms"))
     }
 
     @MainActor
@@ -3037,13 +3375,105 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
     }
 
     @MainActor
+    func testRelatedStartupPackageWarmupJoinsPendingEarlyPlayURLPrefetch() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let preloadCenter = VideoPreloadCenter.shared
+        await preloadCenter.clearPlayURLCache()
+        let playURLStarted = expectation(description: "related play URL preload started")
+        let playURLRequestCounter = RequestContractCounter()
+        let responseGate = DispatchSemaphore(value: 0)
+        let webpageGate = RequestContractAsyncGate()
+        RequestContractURLProtocol.install { request in
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(
+                    for: request,
+                    body:
+                        #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#
+                )
+            }
+            if request.url?.path == "/x/player/wbi/playurl" {
+                if playURLRequestCounter.increment() == 1 {
+                    playURLStarted.fulfill()
+                }
+                _ = responseGate.wait(timeout: .now() + 2)
+                return Self.response(for: request, body: Self.playableDASHResponse(quality: 80))
+            }
+            return Self.response(for: request, body: #"{"code":-404,"message":"unexpected"}"#)
+        }
+        defer {
+            for _ in 0..<8 {
+                responseGate.signal()
+            }
+            RequestContractURLProtocol.reset()
+        }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; DedeUserID=1001",
+            playURLCache: PlayURLCache(),
+            webPagePlayInfoStreamFetch: { _, _ in
+                await webpageGate.wait()
+                return BiliWebPagePlayInfoStreamResult(
+                    json: Self.playableDASHResponse(quality: 80),
+                    fullPageData: nil,
+                    receivedByteCount: 128,
+                    expectedByteCount: 128,
+                    elapsedMilliseconds: 1
+                )
+            }
+        )
+        let video = VideoItem(
+            bvid: "BV1relatedPending\(UUID().uuidString)",
+            aid: 1,
+            title: "Related pending preload",
+            pic: nil,
+            desc: nil,
+            duration: 120,
+            pubdate: nil,
+            owner: nil,
+            stat: nil,
+            cid: 24_686,
+            pages: nil,
+            dimension: nil
+        )
+
+        let earlyDisposition = await preloadCenter.preloadRelatedPlayURLAfterFirstFrame(
+            video,
+            api: api,
+            preferredQuality: 80
+        )
+        await fulfillment(of: [playURLStarted], timeout: 2)
+        let warmupDisposition = await preloadCenter.preloadRelatedStartupPackageAfterFirstFrame(
+            video,
+            preferredQuality: 80
+        )
+
+        XCTAssertEqual(earlyDisposition, .started)
+        XCTAssertEqual(warmupDisposition, .joined)
+
+        for _ in 0..<8 {
+            responseGate.signal()
+        }
+        await webpageGate.release()
+        _ = await preloadCenter.pendingPlayURL(
+            for: video.bvid,
+            cid: 24_686,
+            page: nil,
+            preferredQuality: 80,
+            maximumPendingWait: 2_000_000_000
+        )
+        await preloadCenter.cancelAll()
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
         playURLCache: PlayURLCache = .shared,
         guestModeEnabled: Bool = false,
         recommendSource: HomeRecommendFeedSourcePreference = .web,
-        webPagePlayInfoStreamFetch: @escaping @Sendable (URLRequest, Float) async throws
+        configure: ((SessionStore, LibraryStore) throws -> Void)? = nil,
+        webPagePlayInfoStreamFetch:
+            @escaping @Sendable (URLRequest, Float) async throws
             -> BiliWebPagePlayInfoStreamResult = { request, priority in
                 try await BiliWebPagePlayInfoStreamingSession.shared.fetch(
                     request: request,
@@ -3073,6 +3503,7 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         let libraryStore = LibraryStore(userDefaults: UserDefaults(suiteName: keychainService)!)
         libraryStore.setGuestModeEnabled(guestModeEnabled)
         libraryStore.setHomeRecommendFeedSourcePreference(recommendSource)
+        try configure?(sessionStore, libraryStore)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RequestContractURLProtocol.self]
         configuration.urlCache = nil
@@ -3091,6 +3522,18 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
 
     private nonisolated static func response(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         response(for: request, data: Data(body.utf8))
+    }
+
+    private nonisolated static func makeCookie(name: String, value: String) -> HTTPCookie {
+        HTTPCookie(
+            properties: [
+                .domain: ".bilibili.com",
+                .path: "/",
+                .name: name,
+                .value: value,
+                .secure: "TRUE",
+            ]
+        )!
     }
 
     private nonisolated static func response(
@@ -3143,8 +3586,30 @@ final class BiliAPIClientRequestContractTests: XCTestCase {
         return bytes
     }
 
-    private nonisolated static func playableDASHResponse(quality: Int) -> String {
-        #"{"code":0,"data":{"quality":\#(quality),"accept_quality":[\#(quality)],"dash":{"video":[{"id":\#(quality),"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}"#
+    private nonisolated static func playableDASHResponse(
+        quality: Int,
+        acceptedQualities: [Int]? = nil
+    ) -> String {
+        let acceptedQualityList = (acceptedQualities ?? [quality])
+            .map(String.init)
+            .joined(separator: ",")
+        return
+            #"{"code":0,"data":{"quality":\#(quality),"accept_quality":[\#(acceptedQualityList)],"dash":{"video":[{"id":\#(quality),"base_url":"https://video.example.com/video.m4s","codecs":"avc1.640028","codecid":7,"mime_type":"video/mp4"}],"audio":[{"id":30280,"base_url":"https://audio.example.com/audio.m4s","codecs":"mp4a.40.2","mime_type":"audio/mp4"}]}}}"#
+    }
+
+    @MainActor
+    private func startupSchedulerDiagnostics(
+        for metricsID: String,
+        containing expectedText: String
+    ) async throws -> String {
+        for _ in 0..<50 {
+            let message = PlayerPerformanceStore.shared.session(for: metricsID)?.startupSchedulerMessage ?? ""
+            if message.contains(expectedText) {
+                return message
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return PlayerPerformanceStore.shared.session(for: metricsID)?.startupSchedulerMessage ?? ""
     }
 
     private nonisolated static func videoItemResponse(bvid: String, aid: Int) -> String {
@@ -3238,6 +3703,38 @@ private final class RequestContractCounter: @unchecked Sendable {
         defer { lock.unlock() }
         value += 1
         return value
+    }
+
+    var currentValue: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private actor RequestContractAsyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isReleased = false
+    private(set) var isWaiting = false
+
+    func wait() async {
+        guard !isReleased else { return }
+        isWaiting = true
+        await withCheckedContinuation { continuation in
+            if isReleased {
+                isWaiting = false
+                continuation.resume()
+            } else {
+                self.continuation = continuation
+            }
+        }
+    }
+
+    func release() {
+        isReleased = true
+        isWaiting = false
+        continuation?.resume()
+        continuation = nil
     }
 }
 

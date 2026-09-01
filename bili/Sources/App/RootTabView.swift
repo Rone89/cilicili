@@ -8,18 +8,20 @@ struct RootTabView: View {
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
     @StateObject var homeViewModelHolder = RootHomeViewModelHolder()
     @StateObject var mineViewModelHolder = MineViewModelHolder()
+    @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
     @State var selectedTab = Self.initialTab.appTab
-    @State var bottomMode: BottomTabMode = .root
-    @State var rootTabBarRestoreRequestID = 0
-    @State var activeVideo: VideoItem?
-    @State var videoNavigationPath = NavigationPath()
-    @State var rootNavigationPath = NavigationPath()
+    @State var homeNavigationPath = NavigationPath()
+    @State var searchNavigationPath = NavigationPath()
+    @State var dynamicNavigationPath = NavigationPath()
+    @State var liveNavigationPath = NavigationPath()
+    @State var mineNavigationPath = NavigationPath()
+    @State var rootSearchQueryBuffer = ""
+    @State var rootNavigationTitleHiddenByTab: [AppTab: Bool] = [:]
+    @State var homeActionStore = HomeFeedScreenActionStore()
     @State var didConsumeStartupVideo = false
     @State var didConsumeStartupLiveRoom = false
     @State var didConsumeStartupUploader = false
-    @State var isClosingVideo = false
-    @State var closeVideoFallbackTask: Task<Void, Never>?
     @State var inAppBrowserItem: InAppBrowserItem?
     @State var recentPlaybackPreloadTimes: [String: Date] = [:]
     let shouldStartDetail = ProcessInfo.processInfo.arguments.contains("--start-detail")
@@ -28,16 +30,7 @@ struct RootTabView: View {
     let startUploaderMID = Self.argumentInt(after: "--start-uploader-mid")
 
     var body: some View {
-        ZStack {
-            rootNavigationStack
-
-            if bottomMode == .video {
-                videoNavigationHost()
-                    .ignoresSafeArea()
-                    .transition(.identity)
-                    .zIndex(2)
-            }
-        }
+        rootTabBar
         .environment(\.openVideoAction, openVideo)
         .environment(\.openLiveRoomAction, openLiveRoom)
         .environment(\.prewarmVideoRouteAction, beginPlaybackPreload)
@@ -52,8 +45,6 @@ struct RootTabView: View {
             openAppURL(url)
             return .handled
         })
-        .background(NavigationChromeInstaller(isStandardChromeEnabled: bottomMode == .video))
-        .animation(.smooth(duration: 0.28), value: bottomMode)
         .preferredColorScheme(runtimeSettings.appearanceMode.preferredColorScheme)
         .sheet(item: $inAppBrowserItem) { item in
             InAppBrowserView(url: item.url)
@@ -65,11 +56,17 @@ struct RootTabView: View {
                 await restoreVideoPlaybackUIForPictureInPicture(video)
             }
             runtimeSettings.bind(dependencies.libraryStore)
+            mineViewModelHolder.configure(
+                api: dependencies.api,
+                sessionStore: dependencies.sessionStore,
+                accountMessageService: dependencies.accountMessageService
+            )
+            configureSearchViewModelIfNeeded()
             repairSelectedTabIfNeeded(visibleTabs: runtimeSettings.visibleRootTabs)
             openStartupVideoIfNeeded()
             openStartupLiveRoomIfNeeded()
             openStartupUploaderIfNeeded()
-            dependencies.scheduleDeferredStartupWorkIfNeeded()
+            dependencies.scheduleStartupWorkIfNeeded()
         }
         .task(id: homeMessageUnreadRefreshTaskID) {
             await refreshHomeMessageUnreadIfNeeded()
@@ -105,27 +102,14 @@ struct RootTabView: View {
         }
     }
 
-    private var rootNavigationStack: some View {
-        NavigationStack(path: $rootNavigationPath) {
-            rootTabBar
-                .navigationDestination(for: MineOverlayRoute.self) { route in
-                    RootMineNavigationDestination(
-                        route: route,
-                        holder: mineViewModelHolder,
-                        libraryStore: libraryStore,
-                        sessionStore: dependencies.sessionStore,
-                        api: dependencies.api
-                    )
-                }
-                .videoDestinations(hidesRootTabBar: false)
-        }
-    }
-
     private var rootTabBar: some View {
         TabView(selection: tabSelection) {
             ForEach(visibleRootTabs) { tab in
                 Tab(value: tab) {
-                    rootTabContent(for: tab)
+                    rootTabNavigationStack(
+                        for: tab,
+                        detailPath: rootNavigationPathBinding(for: tab)
+                    )
                 } label: {
                     Label(tab.title, systemImage: tab.systemImage)
                 }
@@ -136,18 +120,135 @@ struct RootTabView: View {
             SearchTabBottomAccessory(store: searchBottomAccessoryStore)
         }
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
-        .restoresRootTabBarWhenRequested(requestID: rootTabBarRestoreRequestID)
-        .background(RootTabBarAppearanceInstaller(tintColorHex: libraryStore.appTintColorHex))
+        .background(
+            RootTabBarAppearanceInstaller(
+                tintColorHex: libraryStore.appTintColorHex,
+                glassStyle: libraryStore.videoDetailSegmentedPickerGlassStyle
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func rootTabNavigationStack(
+        for tab: AppTab,
+        detailPath: Binding<NavigationPath>
+    ) -> some View {
+        NavigationStack(path: detailPath) {
+            rootTabContentWithChrome(for: tab, detailPath: detailPath)
+                .toolbarVisibility(.visible, for: .navigationBar)
+                .toolbarBackground(.automatic, for: .navigationBar)
+                .navigationTitle(rootNavigationTitle(for: tab))
+                .toolbarTitleDisplayMode(.inline)
+                .environment(
+                    \.rootNavigationTitleHidden,
+                    rootNavigationTitleBinding(for: tab, detailPath: detailPath)
+                )
+                .navigationDestination(for: MineOverlayRoute.self) { route in
+                    RootMineNavigationDestination(
+                        route: route,
+                        holder: mineViewModelHolder,
+                        libraryStore: libraryStore,
+                        sessionStore: dependencies.sessionStore,
+                        api: dependencies.api
+                    )
+                }
+                .videoDestinations()
+                .dynamicDetailDestinations(
+                    path: detailPath,
+                    api: dependencies.api
+                )
+        }
+        .coordinatesRootTabBarTransitions(
+            isDetailPresented: !detailPath.wrappedValue.isEmpty
+        )
+    }
+
+    @ViewBuilder
+    private func rootTabContentWithChrome(
+        for tab: AppTab,
+        detailPath: Binding<NavigationPath>
+    ) -> some View {
+        Group {
+            if tab == .home, let viewModel = homeViewModelHolder.viewModel {
+                rootTabContent(for: tab, detailPath: detailPath)
+                    .homeFeedNavigationChrome(
+                        viewModel: viewModel,
+                        modeActions: homeActionStore.mode,
+                        scrollActions: homeActionStore.scroll,
+                        nativeRefreshActionStore: homeActionStore.nativeRefresh,
+                        accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
+                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
+                        onOpenAccountMessages: {
+                            openMineOverlayRoute(.accountMessages)
+                        }
+                    )
+            } else {
+                rootTabContent(for: tab, detailPath: detailPath)
+            }
+        }
+        .nativeNavigationSearch(
+            text: rootSearchQueryBinding,
+            isPresented: $searchBottomAccessoryStore.isSearchFocused,
+            isEnabled: tab == .search
+                && selectedTab == .search
+                && detailPath.wrappedValue.isEmpty,
+            prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
+            title: "搜索",
+            onSubmit: submitRootSearch
+        )
+    }
+
+    @ViewBuilder
+    private func rootTabContent(
+        for tab: AppTab,
+        detailPath: Binding<NavigationPath>
+    ) -> some View {
+        switch tab {
+        case .home:
+            homePage(detailPath: detailPath)
+        case .dynamic:
+            DynamicView()
+        case .live:
+            LiveView()
+        case .mine:
+            MineView(
+                holder: mineViewModelHolder,
+                onOpenRoute: openMineOverlayRoute
+            )
+        case .search:
+            SearchView(
+                holder: searchViewModelHolder,
+                accessoryStore: searchBottomAccessoryStore
+            )
+        }
+    }
+
+    private func rootNavigationTitle(for tab: AppTab) -> String {
+        if tab == .home { return "" }
+        return rootNavigationTitleHiddenByTab[tab] == true ? "" : tab.title
+    }
+
+    private func rootNavigationTitleBinding(
+        for tab: AppTab,
+        detailPath: Binding<NavigationPath>
+    ) -> Binding<Bool> {
+        Binding(
+            get: { rootNavigationTitleHiddenByTab[tab] ?? false },
+            set: { isHidden in
+                guard detailPath.wrappedValue.isEmpty else { return }
+                rootNavigationTitleHiddenByTab[tab] = isHidden
+            }
+        )
     }
 
     private var showsSearchBottomAccessory: Bool {
         guard visibleRootTabs.contains(.search),
               selectedTab == .search,
+              searchNavigationPath.isEmpty,
               searchBottomAccessoryStore.viewModel != nil,
               !searchBottomAccessoryStore.isSearchFocused else {
             return false
         }
-        // Keep the accessory alive under pushed and overlay detail pages so it does not reappear late on return.
         return true
     }
 
@@ -172,6 +273,8 @@ struct RootTabView: View {
             HomeView(
                 viewModel: viewModel,
                 detailPath: detailPath,
+                actionStore: homeActionStore,
+                showsNavigationChrome: false,
                 launchConfiguration: HomeFeedLaunchConfiguration(
                     autoOpenDetail: shouldAutoOpenDetail,
                     startVideo: startBVID.map(Self.seedVideo),
@@ -197,36 +300,82 @@ struct RootTabView: View {
         }
     }
 
-    @ViewBuilder
-    private func rootTabContent(for tab: AppTab) -> some View {
+    private var rootSearchQueryBinding: Binding<String> {
+        Binding(
+            get: { searchViewModelHolder.viewModel?.query ?? rootSearchQueryBuffer },
+            set: { query in
+                rootSearchQueryBuffer = query
+                guard let viewModel = searchViewModelHolder.viewModel else { return }
+                viewModel.query = query
+                viewModel.queryChanged()
+            }
+        )
+    }
+
+    private func configureSearchViewModelIfNeeded() {
+        searchViewModelHolder.configure(api: dependencies.api)
+        guard let viewModel = searchViewModelHolder.viewModel else { return }
+        if !rootSearchQueryBuffer.isEmpty, viewModel.query != rootSearchQueryBuffer {
+            viewModel.query = rootSearchQueryBuffer
+            viewModel.queryChanged()
+        } else {
+            rootSearchQueryBuffer = viewModel.query
+        }
+    }
+
+    private func submitRootSearch() {
+        guard let viewModel = searchViewModelHolder.viewModel else { return }
+        Task { await viewModel.search() }
+    }
+
+    var activeRootNavigationPathIsEmpty: Bool {
+        activeRootNavigationPath.wrappedValue.isEmpty
+    }
+
+    var activeRootNavigationPathCount: Int {
+        activeRootNavigationPath.wrappedValue.count
+    }
+
+    func appendActiveRootRoute<Route: Hashable>(_ route: Route) {
+        activeRootNavigationPath.wrappedValue.append(route)
+    }
+
+    func replaceActiveRootNavigationPath(with path: NavigationPath) {
+        activeRootNavigationPath.wrappedValue = path
+    }
+
+    func removeLastRootRoute() {
+        let path = activeRootNavigationPath
+        guard !path.wrappedValue.isEmpty else { return }
+        path.wrappedValue.removeLast()
+    }
+
+    private var activeRootNavigationPath: Binding<NavigationPath> {
+        rootNavigationPathBinding(for: selectedTab)
+    }
+
+    private func rootNavigationPathBinding(for tab: AppTab) -> Binding<NavigationPath> {
         switch tab {
         case .home:
-            homePage(detailPath: $rootNavigationPath)
-        case .dynamic:
-            DynamicView()
-        case .live:
-            LiveView()
-        case .mine:
-            MineView(
-                holder: mineViewModelHolder,
-                onOpenRoute: openMineOverlayRoute
-            )
+            return $homeNavigationPath
         case .search:
-            SearchView(accessoryStore: searchBottomAccessoryStore)
+            return $searchNavigationPath
+        case .dynamic:
+            return $dynamicNavigationPath
+        case .live:
+            return $liveNavigationPath
+        case .mine:
+            return $mineNavigationPath
         }
     }
 
     private var homeMessageUnreadRefreshTaskID: HomeMessageUnreadRefreshTaskID {
         HomeMessageUnreadRefreshTaskID(
-            homeNavigationExperimentEnabled: libraryStore.homeNavigationModeSwitcherExperimentEnabled,
             credentialVersion: dependencies.sessionStore.playbackCredentialVersion
         )
     }
 
     private func refreshHomeMessageUnreadIfNeeded() async {
-        guard libraryStore.homeNavigationModeSwitcherExperimentEnabled else {
-            return
-        }
         mineViewModelHolder.configure(
             api: dependencies.api,
             sessionStore: dependencies.sessionStore,
@@ -242,6 +391,5 @@ struct RootTabView: View {
 }
 
 private struct HomeMessageUnreadRefreshTaskID: Hashable {
-    let homeNavigationExperimentEnabled: Bool
     let credentialVersion: Int
 }

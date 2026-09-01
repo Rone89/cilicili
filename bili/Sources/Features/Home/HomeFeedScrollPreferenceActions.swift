@@ -11,17 +11,4 @@ extension HomeFeedScrollPreferenceModifier {
             state: viewportState
         )
     }
-
-    func updatePullRefreshDistance(_ pullDistance: CGFloat) {
-        viewportState = scrollActions.updatePullRefreshDistance(
-            pullDistance: pullDistance,
-            state: viewportState,
-            triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
-            isRefreshing: viewModel.isRefreshing,
-            refreshActions: refreshActions
-        ) {
-            await viewModel.refreshFromUserPull()
-            return viewModel.state == .loaded
-        }
-    }
 }

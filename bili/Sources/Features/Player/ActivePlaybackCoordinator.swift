@@ -50,7 +50,7 @@ final class ActivePlaybackCoordinator {
     }
 
     func pauseActivePlaybackForNavigation() {
-        registeredPlayersIncludingActive().forEach { $0.pauseForNavigation() }
+        activePlayer?.pauseForNavigation()
     }
 
     @discardableResult

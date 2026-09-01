@@ -2,10 +2,11 @@ import SwiftUI
 import UIKit
 
 enum AppThemeTintColor {
-    nonisolated static let defaultHex = "#EE719E"
+    nonisolated static let defaultHex = "#FB7299"
+    nonisolated static let previousDefaultHex = "#EE719E"
     nonisolated static let legacyDefaultHexes = ["#007AFF", "#FF2D55"]
     nonisolated static let toneHexes = [
-        "#EE719E", "#FF2D55", "#AF52DE", "#5856D6",
+        "#FB7299", "#FF2D55", "#AF52DE", "#5856D6",
         "#007AFF", "#5AC8FA", "#34C759", "#FF9500"
     ]
 

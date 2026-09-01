@@ -196,7 +196,7 @@ struct LiveDanmakuSettingsSheet: View {
                 )
             }
             .navigationTitle("弹幕设置")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 VideoDetailDoneToolbar(finish: { dismiss() })
             }

@@ -8,6 +8,7 @@ struct DynamicRichTextView: View {
     let emoteSize: CGFloat
     let maxLines: Int?
     let preferredWidth: CGFloat?
+    let onNonLinkTap: (() -> Void)?
     private let textInput: DynamicAttributedTextInput
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -18,7 +19,8 @@ struct DynamicRichTextView: View {
         textColor: Color,
         emoteSize: CGFloat,
         maxLines: Int?,
-        preferredWidth: CGFloat? = nil
+        preferredWidth: CGFloat? = nil,
+        onNonLinkTap: (() -> Void)? = nil
     ) {
         self.segments = segments
         self.font = font
@@ -26,6 +28,7 @@ struct DynamicRichTextView: View {
         self.emoteSize = emoteSize
         self.maxLines = maxLines
         self.preferredWidth = preferredWidth
+        self.onNonLinkTap = onNonLinkTap
 
         self.textInput = DynamicAttributedTextInput(
             segments: segments.isEmpty ? [.text(" ")] : segments,
@@ -37,13 +40,18 @@ struct DynamicRichTextView: View {
         )
     }
 
-    init(input: DynamicAttributedTextInput, preferredWidth: CGFloat? = nil) {
+    init(
+        input: DynamicAttributedTextInput,
+        preferredWidth: CGFloat? = nil,
+        onNonLinkTap: (() -> Void)? = nil
+    ) {
         self.segments = input.segments
         self.font = input.baseFont
         self.textColor = Color(input.textColor)
         self.emoteSize = input.emoteSize
         self.maxLines = input.maxLines
         self.preferredWidth = preferredWidth
+        self.onNonLinkTap = onNonLinkTap
         self.textInput = input
     }
 
@@ -51,23 +59,37 @@ struct DynamicRichTextView: View {
         let input = resolvedTextInput
 
         if let plainText = input.nativePlainText {
-            Text(input.nativeAttributedPlainText(plainText))
-                .font(input.nativeSwiftUIFont)
-                .foregroundStyle(Color(input.textColor))
-                .lineLimit(input.maxLines)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(plainText)
+            plainTextView(input: input, plainText: plainText)
         } else {
             DynamicAttributedTextLabel(
                 input: input,
                 preferredWidth: preferredWidth,
                 onURLTap: { url in
                     openAppURL?(url)
-                }
+                },
+                onNonLinkTap: onNonLinkTap
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func plainTextView(input: DynamicAttributedTextInput, plainText: String) -> some View {
+        let text = Text(input.nativeAttributedPlainText(plainText))
+            .font(input.nativeSwiftUIFont)
+            .foregroundStyle(Color(input.textColor))
+            .lineLimit(input.maxLines)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(plainText)
+
+        if let onNonLinkTap {
+            text
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onNonLinkTap)
+        } else {
+            text
         }
     }
 

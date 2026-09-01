@@ -9,14 +9,13 @@ import UIKit
 /// 播放器由 UIKit 容器接管布局，内容区复用现有 SwiftUI 内容
 /// `VideoDetailShellContentView`。
 /// - 复用现有 `VideoDetailViewModel`（load playurl）、`stablePlayerViewModel`
-///   + `VideoSurfaceView` 渲染、`VideoDetailFullscreenCoordinator`（不改造）。
+///   + `VideoSurfaceView` 渲染。
 /// - 自己接管布局：竖屏 = 顶部按视频宽高比的播放器 + 下方内容区；横屏 = 播放器全屏。
 /// - 旋转走全局 `AppOrientationLock`，`viewWillTransition` 协调块驱动 frame，
 ///   completion 控制内容区隐藏（照搬原型已验证的防闪黑逻辑）。
 @MainActor
 final class VideoDetailShellViewController: UIViewController {
     private let viewModel: VideoDetailViewModel
-    private let fullscreenCoordinator: VideoDetailFullscreenCoordinator
     private let runtimeSettings: VideoDetailRuntimeSettingsStore
     private let dependencies: AppDependencies
     private let onShowDanmakuSettings: () -> Void
@@ -42,6 +41,7 @@ final class VideoDetailShellViewController: UIViewController {
     private weak var videoSurfaceHost: VideoDetailShellSurfaceHost?
     private let contentHost: UIHostingController<VideoDetailShellContentView>
     private let contentState = VideoDetailShellContentView.State()
+    private let contentUpdateGate: VideoDetailContentUpdateGate
     /// 暂停下翻收缩时的折叠工具条（主题色遮罩），盖在 playerContainer 上。
     private var collapsedBarHost: UIHostingController<VideoDetailShellCollapsedBar>?
     private let collapsedDimmingView = UIView()
@@ -67,11 +67,15 @@ final class VideoDetailShellViewController: UIViewController {
     private var pendingRotationCompletionRecoveryGeneration: Int?
     private var rotationCompletionRecoveryNotBefore: TimeInterval?
     private var rotationCompletionRecoveryGeneration = 0
+    private var rotationRecoveryWatchdogTask: Task<Void, Never>?
+    private var rotationRequestCoalescer = VideoDetailRotationRequestCoalescer()
     /// VC 是否处于可见活跃态（viewDidAppear~viewWillDisappear 之间）。
     /// 用于防止 $detail sink 在 VC 消失后重新解锁横屏，导致全局朝向锁卡在 landscape。
     private var isViewActive = false
+    private var isBackgroundRenderFreezeActive = false
     private let selectedContentTabBinding: Binding<VideoDetailContentTab>
     private var activeContentTab: VideoDetailContentTab
+    private var visitedContentTabs: Set<VideoDetailContentTab>
     private var scrollOffsets: [VideoDetailContentTab: CGFloat] = [:]
     private var contentActionSuppressionWorkItem: DispatchWorkItem?
     private var didTearDownPlayerSurface = false
@@ -114,15 +118,10 @@ final class VideoDetailShellViewController: UIViewController {
         view.bounds.width > view.bounds.height
     }
 
-    private var rotationOptimizationPolicy: VideoDetailRotationOptimizationPolicy {
-        VideoDetailRotationOptimizationPolicy(
-            isEnabled: runtimeSettings.videoRotationOptimizationExperimentEnabled
-        )
-    }
+    private let rotationPolicy = VideoDetailRotationPolicy()
 
     init(
         viewModel: VideoDetailViewModel,
-        fullscreenCoordinator: VideoDetailFullscreenCoordinator,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
         dependencies: AppDependencies,
         openVideoOwnerRoute: ((VideoOwner) -> Void)?,
@@ -136,8 +135,8 @@ final class VideoDetailShellViewController: UIViewController {
         onReply: @escaping (Comment) -> Void,
         onNavigateBack: @escaping () -> Void
     ) {
+        let contentUpdateGate = VideoDetailContentUpdateGate()
         self.viewModel = viewModel
-        self.fullscreenCoordinator = fullscreenCoordinator
         self.runtimeSettings = runtimeSettings
         self.dependencies = dependencies
         self.onShowDanmakuSettings = onShowDanmakuSettings
@@ -146,9 +145,12 @@ final class VideoDetailShellViewController: UIViewController {
         self.onNavigateBack = onNavigateBack
         self.selectedContentTabBinding = selectedContentTab
         self.activeContentTab = selectedContentTab.wrappedValue
+        self.visitedContentTabs = [selectedContentTab.wrappedValue]
+        self.contentUpdateGate = contentUpdateGate
         self.contentHost = UIHostingController(
             rootView: VideoDetailShellContentView(
                 viewModel: viewModel,
+                updateGate: contentUpdateGate,
                 runtimeSettings: runtimeSettings,
                 state: contentState,
                 layoutWidth: Self.initialLayoutWidth,
@@ -163,9 +165,16 @@ final class VideoDetailShellViewController: UIViewController {
             )
         )
         super.init(nibName: nil, bundle: nil)
+        viewModel.objectWillChange
+            .sink { [weak contentUpdateGate] _ in
+                contentUpdateGate?.receiveUpdate()
+            }
+            .store(in: &cancellables)
+        bindApplicationLifecycleForRotationRecovery()
         // self 已可用，注入滚动联动缩放回调（值类型 rootView 需整体重设）。
         contentHost.rootView = VideoDetailShellContentView(
             viewModel: viewModel,
+            updateGate: contentUpdateGate,
             runtimeSettings: runtimeSettings,
             state: contentState,
             layoutWidth: Self.initialLayoutWidth,
@@ -217,6 +226,7 @@ final class VideoDetailShellViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        markNavigationLatency(.viewControllerLoaded)
         view.backgroundColor = .black
 
         playerContainer.backgroundColor = .black
@@ -238,9 +248,25 @@ final class VideoDetailShellViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewActive = true
+        contentState.mountsSecondaryContent = true
+        let wasBackgroundRenderFrozen = isBackgroundRenderFreezeActive
+        let shouldHideContent = isLandscape || isPortraitFullscreen
+        if isSystemRotationTransitioning
+            || rotationRequestCoalescer.isTransitioning
+            || contentHost.view.isHidden != shouldHideContent
+        {
+            reconcileStableRotationState()
+        }
         // window 此时已挂载，按视频类型设置朝向锁。
         updateOrientationLock()
         restoreSystemBackGestures()
+        setBackgroundRenderFreezeActive(false)
+        markNavigationLatency(.viewControllerAppeared)
+        markReturnedPageVisibleIfNeeded()
+        markNavigationLatency(
+            .backgroundRenderFreezeReleased,
+            detail: "wasFrozen=\(wasBackgroundRenderFrozen)"
+        )
     }
 
     /// 按视频类型设置朝向锁：横屏视频允许横屏（设备旋转/全屏按钮均可）；
@@ -252,10 +278,10 @@ final class VideoDetailShellViewController: UIViewController {
         let scene = view.window?.windowScene
         if isPortraitVideo {
             AppOrientationLock.update(to: .portrait, in: scene)
-            if rotationOptimizationPolicy.restoresPortraitAfterResolvingPortraitVideo(
+            if rotationPolicy.restoresPortraitAfterResolvingPortraitVideo(
                 isCurrentlyLandscape: isLandscape
             ) {
-                AppOrientationLock.requestGeometryUpdate(to: .portrait, in: scene)
+                requestCoalescedGeometryUpdate(to: .portrait, in: scene)
             }
         } else {
             AppOrientationLock.update(to: .allButUpsideDown, in: scene)
@@ -266,7 +292,15 @@ final class VideoDetailShellViewController: UIViewController {
         super.viewWillDisappear(animated)
         isViewActive = false
         dismissPlayerMoreControls()
+        recoverInterruptedRotationIfNeeded(reason: "viewWillDisappear")
         cancelPendingRotationCompletionRecovery()
+        cancelRotationRecoveryWatchdog()
+        rotationRequestCoalescer.reset()
+        setBackgroundRenderFreezeActive(
+            !isMovingFromParent
+                && !isBeingDismissed
+                && navigationController?.isBeingDismissed != true
+        )
         playerSurfaceController.cancelRotationChromePrewarm()
         rotationFrameProbe.cancel()
         // 离开页面恢复竖屏锁定，避免横屏解锁残留影响其它页面（首页/动态/直播/我的）。
@@ -277,17 +311,26 @@ final class VideoDetailShellViewController: UIViewController {
         super.viewDidDisappear(animated)
         isViewActive = false
         releaseSystemBackGestureOwnership()
+        recoverInterruptedRotationIfNeeded(reason: "viewDidDisappear")
         cancelPendingRotationCompletionRecovery()
+        cancelRotationRecoveryWatchdog()
+        rotationRequestCoalescer.reset()
         playerSurfaceController.cancelRotationChromePrewarm()
         // 双保险：tab 切换等场景 viewWillDisappear 可能不触发，这里再兜一次。
         AppOrientationLock.restorePortrait(in: view.window?.windowScene)
         if isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true {
+            setBackgroundRenderFreezeActive(false)
             tearDownPlayerSurfaceIfNeeded()
+        } else {
+            setBackgroundRenderFreezeActive(true)
         }
     }
 
     func prepareForDismantle() {
         dismissPlayerMoreControls()
+        recoverInterruptedRotationIfNeeded(reason: "dismantle")
+        cancelRotationRecoveryWatchdog()
+        setBackgroundRenderFreezeActive(false)
         releaseSystemBackGestureOwnership()
         tearDownPlayerSurfaceIfNeeded()
     }
@@ -305,7 +348,7 @@ final class VideoDetailShellViewController: UIViewController {
         super.viewDidLayoutSubviews()
         applyLayout(
             publishesContentLayout: !isSystemRotationTransitioning
-                || rotationOptimizationPolicy.publishesContentLayoutDuringSystemTransition
+                || rotationPolicy.publishesContentLayoutDuringSystemTransition
         )
         // 全屏 UIKit 容器会盖住导航控制器的边缘返回区，需主动恢复
         // interactivePopGestureRecognizer（含 iOS26 全局右滑的 content pop）。
@@ -318,12 +361,24 @@ final class VideoDetailShellViewController: UIViewController {
     ) {
         super.viewWillTransition(to: size, with: coordinator)
         let toLandscape = size.width > size.height
+        let policy = rotationPolicy
+        rotationRequestCoalescer.beginTransition()
+        let usesPrewarmedFastRecovery = policy.usesPrewarmedFastRecovery(
+            hasPrewarmedRotationChrome: playerSurfaceController.isRotationChromePrewarmed
+        )
+        let recoverySettleDelay = usesPrewarmedFastRecovery
+            ? 0
+            : PlaybackDetailRotationTiming.recoverySettleDelay
+        let recoveryStrategy = usesPrewarmedFastRecovery
+            ? "prewarmedTwoDisplayFrames"
+            : "retainedChromeStagedDisplayFrames"
         if toLandscape {
             dismissPlayerMoreControls()
         }
         rotationCompletionRecoveryGeneration &+= 1
         let completionRecoveryGeneration = rotationCompletionRecoveryGeneration
         cancelPendingRotationCompletionRecovery()
+        cancelRotationRecoveryWatchdog()
         playerSurfaceController.cancelRotationChromePrewarm()
         let performanceContext = PlaybackDetailPerformanceContext.video(viewModel.detail)
         PlaybackDetailPerformanceMonitor.shared.mark(
@@ -335,13 +390,22 @@ final class VideoDetailShellViewController: UIViewController {
         // 转回竖屏时再恢复内容区，避免下方 SwiftUI 列表和播放器一起动画布局。
         startRotationFrameProbe(
             toLandscape: toLandscape,
-            coordinator: coordinator
+            coordinator: coordinator,
+            recoveryStrategy: recoveryStrategy
         )
-        contentHost.view.isHidden = rotationOptimizationPolicy.hidesContentHost(
+        contentHost.view.isHidden = policy.hidesContentHost(
             duringTransitionToLandscape: toLandscape
         )
         contentHost.view.isUserInteractionEnabled = !contentHost.view.isHidden
         isSystemRotationTransitioning = true
+        setContentUpdatesDeferred(true)
+        scheduleRotationRecoveryWatchdog(
+            generation: completionRecoveryGeneration,
+            coordinatorDuration: coordinator.transitionDuration
+        )
+        if policy.hidesPlaybackControlsDuringSystemTransition {
+            videoSurfaceHost?.requestPlaybackControlsHideForRotation()
+        }
         setBareSurfaceTransitionActive(true)
         // 目标方向的控件树在系统动画开始就准备好，避免首次旋转在结束帧冷启动。
         setSurfaceLandscape(toLandscape || isPortraitFullscreen)
@@ -355,7 +419,7 @@ final class VideoDetailShellViewController: UIViewController {
             self.rotationFrameProbe.mark("系统动画布局开始")
             self.applyLayout(
                 forBoundsSize: size,
-                publishesContentLayout: self.rotationOptimizationPolicy
+                publishesContentLayout: self.rotationPolicy
                     .publishesContentLayoutDuringSystemTransition
             )
             self.view.layoutIfNeeded()
@@ -368,21 +432,23 @@ final class VideoDetailShellViewController: UIViewController {
             guard self.rotationCompletionRecoveryGeneration == completionRecoveryGeneration else { return }
             self.finishSystemRotationWithStagedRecovery(
                 toLandscape: toLandscape,
-                generation: completionRecoveryGeneration
+                generation: completionRecoveryGeneration,
+                recoverySettleDelay: recoverySettleDelay,
+                recoveryStrategy: recoveryStrategy
             )
         })
     }
 
     private func startRotationFrameProbe(
         toLandscape: Bool,
-        coordinator: UIViewControllerTransitionCoordinator
+        coordinator: UIViewControllerTransitionCoordinator,
+        recoveryStrategy: String
     ) {
         guard runtimeSettings.videoRotationFrameReportOverlayEnabled else { return }
         let detail = viewModel.detail
         guard !detail.bvid.isEmpty else { return }
         rotationFrameProbeGeneration &+= 1
         let durationMs = Int((coordinator.transitionDuration * 1000).rounded())
-        let recoveryStrategy = "retainedChromeStagedDisplayFrames"
         let coordinatorSummary = "coordinatorDuration=\(durationMs)ms animated=\(coordinator.isAnimated) interactive=\(coordinator.isInteractive) completionRecovery=\(recoveryStrategy)"
         rotationFrameProbe.start(
             metricsID: detail.bvid,
@@ -397,10 +463,12 @@ final class VideoDetailShellViewController: UIViewController {
 
     private func finishSystemRotationWithStagedRecovery(
         toLandscape: Bool,
-        generation: Int
+        generation: Int,
+        recoverySettleDelay: TimeInterval,
+        recoveryStrategy: String
     ) {
         rotationFrameProbe.mark("系统完成：保持视频层与已挂载控件树")
-        contentHost.view.isHidden = rotationOptimizationPolicy.hidesContentHost(
+        contentHost.view.isHidden = rotationPolicy.hidesContentHost(
             duringTransitionToLandscape: toLandscape
         )
         contentHost.view.isUserInteractionEnabled = false
@@ -408,7 +476,7 @@ final class VideoDetailShellViewController: UIViewController {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         applyLayout(
-            publishesContentLayout: rotationOptimizationPolicy
+            publishesContentLayout: rotationPolicy
                 .publishesContentLayoutDuringSystemTransition
         )
         CATransaction.commit()
@@ -416,6 +484,7 @@ final class VideoDetailShellViewController: UIViewController {
 
         scheduleRotationCompletionRecovery(
             generation: generation,
+            settleDelay: recoverySettleDelay,
             preparation: { [weak self] in
                 guard let self,
                       self.rotationCompletionRecoveryGeneration == generation
@@ -436,16 +505,178 @@ final class VideoDetailShellViewController: UIViewController {
                 self.isSystemRotationTransitioning = false
                 self.contentHost.view.isHidden = toLandscape
                 self.contentHost.view.isUserInteractionEnabled = !toLandscape
+                self.setContentUpdatesDeferred(false)
+                self.cancelRotationRecoveryWatchdog()
                 self.rotationFrameProbe.mark("第二帧：内容已恢复")
 
                 self.setBareSurfaceTransitionActive(false)
+                self.videoSurfaceHost?.markRotationChromePrewarmed()
                 self.rotationFrameProbe.mark("第二帧：叠层和手势已恢复")
                 self.recordCompletedSystemRotation(
                     toLandscape: toLandscape,
-                    strategy: "retainedChromeStagedDisplayFrames"
+                    strategy: recoveryStrategy
                 )
+                self.finishRotationRequestCoalescing(toLandscape: toLandscape)
             }
         )
+    }
+
+    private func setContentUpdatesDeferred(_ deferred: Bool) {
+        let shouldDefer = deferred || isBackgroundRenderFreezeActive
+        viewModel.setContentRenderUpdatesDeferred(shouldDefer)
+        viewModel.setPlaybackRenderUpdatesDeferred(
+            shouldDefer
+        )
+        contentUpdateGate.setUpdatesDeferred(shouldDefer)
+    }
+
+    private func setBackgroundRenderFreezeActive(_ active: Bool) {
+        isBackgroundRenderFreezeActive = active
+        setContentUpdatesDeferred(false)
+    }
+
+    private func markNavigationLatency(
+        _ milestone: PlaybackDetailPerformanceMilestone,
+        detail: String? = nil
+    ) {
+        guard dependencies.libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled else {
+            return
+        }
+        PlaybackDetailPerformanceMonitor.shared.mark(
+            milestone,
+            context: .video(viewModel.detail),
+            detail: detail
+        )
+    }
+
+    private func beginBackNavigationLatencyMeasurement(source: String) {
+        guard dependencies.libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled else {
+            return
+        }
+        PlaybackDetailPerformanceMonitor.shared.beginBackNavigation(
+            from: .video(viewModel.detail),
+            source: source
+        )
+    }
+
+    private func markReturnedPageVisibleIfNeeded() {
+        guard dependencies.libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled else {
+            return
+        }
+        PlaybackDetailPerformanceMonitor.shared.markReturnedPageVisible(
+            .video(viewModel.detail)
+        )
+    }
+
+    private func bindApplicationLifecycleForRotationRecovery() {
+        NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleApplicationWillResignActive()
+                }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleApplicationDidBecomeActive()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleApplicationWillResignActive() {
+        guard isViewActive else { return }
+        recoverInterruptedRotationIfNeeded(reason: "applicationWillResignActive")
+    }
+
+    private func handleApplicationDidBecomeActive() {
+        guard isViewActive else { return }
+        if !recoverInterruptedRotationIfNeeded(reason: "applicationDidBecomeActive") {
+            reconcileStableRotationState()
+        }
+        updateOrientationLock()
+    }
+
+    private func scheduleRotationRecoveryWatchdog(
+        generation: Int,
+        coordinatorDuration: TimeInterval
+    ) {
+        cancelRotationRecoveryWatchdog()
+        let delay = VideoDetailRotationRecoveryPolicy().watchdogDelay(
+            coordinatorDuration: coordinatorDuration
+        )
+        rotationRecoveryWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self,
+                  !Task.isCancelled,
+                  self.rotationCompletionRecoveryGeneration == generation,
+                  self.isSystemRotationTransitioning
+            else { return }
+            self.recoverInterruptedRotationIfNeeded(reason: "watchdogTimeout")
+        }
+    }
+
+    private func cancelRotationRecoveryWatchdog() {
+        rotationRecoveryWatchdogTask?.cancel()
+        rotationRecoveryWatchdogTask = nil
+    }
+
+    @discardableResult
+    private func recoverInterruptedRotationIfNeeded(reason: String) -> Bool {
+        guard isSystemRotationTransitioning || rotationRequestCoalescer.isTransitioning else {
+            return false
+        }
+        rotationCompletionRecoveryGeneration &+= 1
+        cancelPendingRotationCompletionRecovery()
+        cancelRotationRecoveryWatchdog()
+        rotationRequestCoalescer.reset()
+        isSystemRotationTransitioning = false
+        reconcileStableRotationState()
+        rotationFrameProbe.finish(reason: "旋转中断自恢复 reason=\(reason)")
+        PlaybackDetailPerformanceMonitor.shared.mark(
+            .fullscreenLayoutUpdated,
+            context: PlaybackDetailPerformanceContext.video(viewModel.detail),
+            detail: "rotationRecovery=\(reason) landscape=\(resolvedLandscapeForRecovery)"
+        )
+        return true
+    }
+
+    private var resolvedLandscapeForRecovery: Bool {
+        VideoDetailRotationRecoveryPolicy().resolvesLandscape(
+            interfaceOrientation: view.window?.windowScene?.effectiveGeometry.interfaceOrientation,
+            fallbackBounds: view.bounds.size
+        )
+    }
+
+    private func reconcileStableRotationState() {
+        guard isViewLoaded else { return }
+        let landscape = resolvedLandscapeForRecovery
+        let hidesContent = landscape || isPortraitFullscreen
+        contentHost.view.isHidden = hidesContent
+        contentHost.view.isUserInteractionEnabled = !hidesContent
+        setSurfaceLandscape(landscape || isPortraitFullscreen)
+        setBareSurfaceTransitionActive(false)
+        setContentUpdatesDeferred(false)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        applyLayout(publishesContentLayout: true)
+        view.layoutIfNeeded()
+        CATransaction.commit()
+        refreshSurfaceLayoutImmediately()
+        setNeedsStatusBarAppearanceUpdate()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+    }
+
+    private func finishRotationRequestCoalescing(toLandscape: Bool) {
+        let scene = view.window?.windowScene
+        let currentOrientation = scene?.effectiveGeometry.interfaceOrientation
+            ?? (toLandscape ? .landscapeRight : .portrait)
+        guard let pendingTarget = rotationRequestCoalescer.completeTransition(
+            currentOrientation: currentOrientation
+        ) else { return }
+        requestCoalescedGeometryUpdate(to: pendingTarget, in: scene)
     }
 
     private func recordCompletedSystemRotation(toLandscape: Bool, strategy: String) {
@@ -461,6 +692,7 @@ final class VideoDetailShellViewController: UIViewController {
 
     private func scheduleRotationCompletionRecovery(
         generation: Int,
+        settleDelay: TimeInterval,
         preparation: @escaping () -> Void,
         recovery: @escaping () -> Void
     ) {
@@ -469,7 +701,7 @@ final class VideoDetailShellViewController: UIViewController {
         pendingRotationCompletionRecovery = recovery
         pendingRotationCompletionRecoveryGeneration = generation
         rotationCompletionRecoveryNotBefore = CACurrentMediaTime()
-            + PlaybackDetailRotationTiming.recoverySettleDelay
+            + settleDelay
         let displayLink = CADisplayLink(
             target: self,
             selector: #selector(runPendingRotationCompletionRecovery(_:))
@@ -607,7 +839,7 @@ final class VideoDetailShellViewController: UIViewController {
             videoAspectRatio: videoAspectRatio,
             videoGravity: .resizeAspect,
             usesLandscapeChrome: usesLandscapeChrome,
-            usesPortraitFullscreen: false,
+            usesPortraitFullscreen: isPortraitFullscreen,
             isTransitioning: isSystemRotationTransitioning
         )
     }
@@ -663,11 +895,11 @@ final class VideoDetailShellViewController: UIViewController {
         } else {
             let scene = view.window?.windowScene
             AppOrientationLock.update(to: .allButUpsideDown, in: scene)
-            let targetOrientation = rotationOptimizationPolicy.preferredLandscapeInterfaceOrientation(
+            let targetOrientation = rotationPolicy.preferredLandscapeInterfaceOrientation(
                 currentInterfaceOrientation: scene?.effectiveGeometry.interfaceOrientation,
                 deviceOrientation: UIDevice.current.orientation
             )
-            AppOrientationLock.requestGeometryUpdate(to: targetOrientation, in: scene)
+            requestCoalescedGeometryUpdate(to: targetOrientation, in: scene)
         }
     }
 
@@ -684,13 +916,23 @@ final class VideoDetailShellViewController: UIViewController {
     private func requestPortrait() {
         let scene = view.window?.windowScene
         AppOrientationLock.update(to: .allButUpsideDown, in: scene)
-        AppOrientationLock.requestGeometryUpdate(to: .portrait, in: scene)
+        requestCoalescedGeometryUpdate(to: .portrait, in: scene)
+    }
+
+    private func requestCoalescedGeometryUpdate(
+        to target: UIInterfaceOrientationMask,
+        in scene: UIWindowScene?
+    ) {
+        guard let target = rotationRequestCoalescer.submit(target) else { return }
+        AppOrientationLock.requestGeometryUpdate(to: target, in: scene)
     }
 
     /// 竖屏视频的「竖屏全屏」态切换：播放器占满整屏、隐藏内容区，带动画。
     private func setPortraitFullscreen(_ active: Bool) {
         guard isPortraitFullscreen != active else { return }
         isPortraitFullscreen = active
+        contentHost.view.isHidden = active
+        contentHost.view.isUserInteractionEnabled = !active
         setSurfaceLandscape(active) // 复用全屏 chrome 样式（隐藏导航栏等）
         UIView.animate(
             withDuration: PlaybackDetailRotationTiming.portraitFullscreenDuration,
@@ -708,6 +950,7 @@ final class VideoDetailShellViewController: UIViewController {
         if isLandscape || isPortraitFullscreen {
             requestExitFullscreen()
         } else {
+            beginBackNavigationLatencyMeasurement(source: "button")
             onNavigateBack()
         }
     }
@@ -720,6 +963,22 @@ final class VideoDetailShellViewController: UIViewController {
     private func handleSelectedTabChange(_ tab: VideoDetailContentTab) {
         guard !isSystemRotationTransitioning else { return }
         guard !isLandscape, !isPortraitFullscreen else { return }
+        if visitedContentTabs.contains(tab) {
+            activeContentTab = tab
+            if let preservedOffset = scrollOffsets[tab] {
+                lastScrollOffset = preservedOffset
+                if preservedOffset <= 0.5 {
+                    currentPlayerHeight = nil
+                    updatePlayerContainerHeight()
+                } else {
+                    applyPlayerHeight(forOffset: preservedOffset)
+                }
+                contentState.requestScrollAdjustment(tab: tab, offset: preservedOffset)
+            }
+            return
+        }
+
+        visitedContentTabs.insert(tab)
         let expanded = expandedPlayerHeight(bounds: view.bounds.size)
         let playerHeight = resolvedPlayerHeight(bounds: view.bounds.size)
         let targetOffset = max(0, expanded - playerHeight)
@@ -990,6 +1249,7 @@ extension VideoDetailShellViewController: UIGestureRecognizerDelegate {
         guard !isLandscape else { return false }
         guard let navigationController else { return true }
         guard navigationController.viewControllers.count > 1 else { return false }
+        beginBackNavigationLatencyMeasurement(source: "gesture")
         suppressContentActionsDuringSystemBackGesture()
         return navigationController.viewControllers.count > 1
     }

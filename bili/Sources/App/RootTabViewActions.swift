@@ -19,7 +19,7 @@ extension RootTabView {
         else { return }
 
         didConsumeStartupLiveRoom = true
-        selectedTab = .live
+        selectAvailableRootTab(.live)
         DispatchQueue.main.async {
             openLiveRoom(Self.seedLiveRoom(roomID: startLiveRoomID))
         }
@@ -32,7 +32,7 @@ extension RootTabView {
         else { return }
 
         didConsumeStartupUploader = true
-        selectedTab = .home
+        selectAvailableRootTab(.home)
         DispatchQueue.main.async {
             openVideoOwnerRoute(Self.seedUploader(mid: startUploaderMID))
         }
@@ -74,38 +74,23 @@ extension RootTabView {
 
     private func pushRootRoute<Route: Hashable>(_ route: Route) {
         AppOrientationLock.restorePortrait()
-        if bottomMode == .video {
-            withAnimation(.smooth(duration: 0.28)) {
-                videoNavigationPath.append(route)
-            }
-            return
-        }
-
         withAnimation(.smooth(duration: 0.30)) {
-            rootNavigationPath.append(route)
+            appendActiveRootRoute(route)
         }
     }
 
     func openLiveRoomFromLink(_ room: LiveRoom) {
-        selectedTab = .live
+        selectAvailableRootTab(.live)
         openLiveRoom(room)
     }
 
     func openLiveRoom(_ room: LiveRoom) {
         AppOrientationLock.restorePortrait()
-        if bottomMode == .video {
-            ActivePlaybackCoordinator.shared.stopActivePlayback()
-            withAnimation(.smooth(duration: 0.28)) {
-                videoNavigationPath.append(room)
-            }
-            return
-        }
-
-        if !rootNavigationPath.isEmpty {
+        if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.stopActivePlayback()
         }
         withAnimation(.smooth(duration: 0.30)) {
-            rootNavigationPath.append(room)
+            appendActiveRootRoute(room)
         }
     }
 
@@ -113,53 +98,30 @@ extension RootTabView {
         openVideoOwnerRoute(owner)
     }
 
-    func videoNavigationHost() -> some View {
-        RootVideoNavigationHost(
-            path: $videoNavigationPath,
-            isClosingVideo: isClosingVideo,
-            onRequestClose: closeVideo,
-            onPopOne: popOneVideoLevel,
-            onCancelledClose: cancelCloseVideoIfNeeded,
-            onCompletedClose: completeCloseVideoIfNeeded
-        ) {
-            guard bottomMode == .video else { return }
-            scheduleCloseVideo()
-        }
-    }
-
     func openMineOverlayRoute(_ route: MineOverlayRoute) {
         withAnimation(.smooth(duration: 0.30)) {
-            rootNavigationPath.append(route)
-        }
-    }
-
-    /// 详情页返回按钮：只 pop 一层（回到上一个详情页或来源页），
-    /// 而非 closeVideo 的清空整栈。count==1 时 removeLast 会清空到 0，
-    /// 触发 onPathEmptied → scheduleCloseVideo，正好回到来源页。
-    func popOneVideoLevel() {
-        guard bottomMode == .video, !videoNavigationPath.isEmpty else { return }
-        withAnimation(.smooth(duration: 0.28)) {
-            videoNavigationPath.removeLast()
+            appendActiveRootRoute(route)
         }
     }
 
     func openVideo(_ video: VideoItem) {
         AppOrientationLock.restorePortrait()
         PlayerMetricsLog.record(.routeOpen, metricsID: video.bvid, title: video.title)
-        if bottomMode == .video {
-            pushVideo(video)
-            return
+        if libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled {
+            PlaybackDetailPerformanceMonitor.shared.beginNavigation(
+                to: .video(video),
+                detail: "source=openVideo \(VideoDetailFormalPerformancePolicy.navigationTraceDetail)"
+            )
         }
-
         beginPlaybackPreload(for: video)
-        if !rootNavigationPath.isEmpty {
+        if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
         }
 
         let opensFromStartup = shouldStartDetail && !didConsumeStartupVideo
         didConsumeStartupVideo = true
         let push = {
-            rootNavigationPath.append(video)
+            appendActiveRootRoute(video)
         }
         if opensFromStartup {
             var transaction = Transaction()
@@ -173,20 +135,21 @@ extension RootTabView {
     func openVideoComment(_ route: VideoCommentRoute) {
         AppOrientationLock.restorePortrait()
         PlayerMetricsLog.record(.routeOpen, metricsID: route.video.bvid, title: route.video.title)
-        if bottomMode == .video {
-            pushVideoComment(route)
-            return
+        if libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled {
+            PlaybackDetailPerformanceMonitor.shared.beginNavigation(
+                to: .video(route.video),
+                detail: "source=openVideoComment \(VideoDetailFormalPerformancePolicy.navigationTraceDetail)"
+            )
         }
-
         beginPlaybackPreload(for: route.video)
-        if !rootNavigationPath.isEmpty {
+        if !activeRootNavigationPathIsEmpty {
             ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
         }
 
         let opensFromStartup = shouldStartDetail && !didConsumeStartupVideo
         didConsumeStartupVideo = true
         let push = {
-            rootNavigationPath.append(route)
+            appendActiveRootRoute(route)
         }
         if opensFromStartup {
             var transaction = Transaction()
@@ -194,30 +157,6 @@ extension RootTabView {
             withTransaction(transaction, push)
         } else {
             withAnimation(.smooth(duration: 0.30), push)
-        }
-    }
-
-    func pushVideo(_ video: VideoItem) {
-        AppOrientationLock.restorePortrait()
-        PlayerMetricsLog.record(.routeOpen, metricsID: video.bvid, title: video.title)
-        ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
-        beginPlaybackPreload(for: video)
-        withAnimation(.smooth(duration: 0.28)) {
-            didConsumeStartupVideo = true
-            isClosingVideo = false
-            videoNavigationPath.append(video)
-        }
-    }
-
-    func pushVideoComment(_ route: VideoCommentRoute) {
-        AppOrientationLock.restorePortrait()
-        PlayerMetricsLog.record(.routeOpen, metricsID: route.video.bvid, title: route.video.title)
-        ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
-        beginPlaybackPreload(for: route.video)
-        withAnimation(.smooth(duration: 0.28)) {
-            didConsumeStartupVideo = true
-            isClosingVideo = false
-            videoNavigationPath.append(route)
         }
     }
 
@@ -231,7 +170,6 @@ extension RootTabView {
         }
         recentPlaybackPreloadTimes[video.bvid] = now
         trimRecentPlaybackPreloads(now: now)
-
         Task {
             let playbackAdaptationProfile = PlayerPerformanceStore.shared.playbackAdaptationProfile(
                 for: video.bvid,
@@ -253,6 +191,7 @@ extension RootTabView {
                 cdnPreference: cdnPreference,
                 priority: .userInitiated,
                 warmsMedia: true,
+                mediaWarmupMode: .full,
                 mediaWarmupDelay: 0,
                 playbackAdaptationProfile: playbackAdaptationProfile
             )
@@ -274,89 +213,19 @@ extension RootTabView {
     }
 
     func restoreVideoPlaybackUIForPictureInPicture(_ video: VideoItem) async -> Bool {
-        closeVideoFallbackTask?.cancel()
-        closeVideoFallbackTask = nil
         AppOrientationLock.restorePortrait()
 
         beginPlaybackPreload(for: video)
         didConsumeStartupVideo = true
-        isClosingVideo = false
-
         var restoredPath = NavigationPath()
         restoredPath.append(video)
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            activeVideo = nil
-            videoNavigationPath = NavigationPath()
-            rootNavigationPath = restoredPath
-            bottomMode = .root
+            replaceActiveRootNavigationPath(with: restoredPath)
         }
 
         await Task.yield()
-        return bottomMode == .root
-            && rootNavigationPath.count == 1
-            && videoNavigationPath.isEmpty
-    }
-
-    func closeVideo() {
-        guard bottomMode == .video else { return }
-        beginDefinitiveVideoClose()
-    }
-
-    func scheduleCloseVideo() {
-        guard bottomMode == .video, !isClosingVideo else {
-            return
-        }
-        isClosingVideo = true
-        ActivePlaybackCoordinator.shared.pauseActivePlaybackForNavigation()
-        closeVideoFallbackTask?.cancel()
-        closeVideoFallbackTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 850_000_000)
-            guard !Task.isCancelled, bottomMode == .video, isClosingVideo else { return }
-            completeCloseVideoIfNeeded()
-        }
-    }
-
-    func beginDefinitiveVideoClose() {
-        isClosingVideo = true
-        closeVideoFallbackTask?.cancel()
-        closeVideoFallbackTask = nil
-        ActivePlaybackCoordinator.shared.stopActivePlayback()
-        AppOrientationLock.restorePortrait()
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            activeVideo = nil
-            videoNavigationPath = NavigationPath()
-            bottomMode = .root
-            isClosingVideo = false
-        }
-        rootTabBarRestoreRequestID &+= 1
-    }
-
-    func cancelCloseVideoIfNeeded() {
-        guard bottomMode == .video, isClosingVideo else { return }
-        closeVideoFallbackTask?.cancel()
-        closeVideoFallbackTask = nil
-        isClosingVideo = false
-        ActivePlaybackCoordinator.shared.resumeActivePlaybackAfterCancelledNavigation()
-    }
-
-    func completeCloseVideoIfNeeded() {
-        guard bottomMode == .video, isClosingVideo else { return }
-        closeVideoFallbackTask?.cancel()
-        closeVideoFallbackTask = nil
-        ActivePlaybackCoordinator.shared.stopActivePlayback()
-        AppOrientationLock.restorePortrait()
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            activeVideo = nil
-            videoNavigationPath = NavigationPath()
-            bottomMode = .root
-            isClosingVideo = false
-        }
-        rootTabBarRestoreRequestID &+= 1
+        return activeRootNavigationPathCount == 1
     }
 }

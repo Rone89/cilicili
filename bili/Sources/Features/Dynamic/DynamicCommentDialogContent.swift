@@ -37,6 +37,7 @@ private struct DynamicCommentDialogStateContent: View {
         } else {
             DynamicCommentDialogLoadedList(
                 snapshot: snapshot,
+                items: snapshot.items,
                 focusReply: focusReply,
                 reloadDialog: reloadDialog
             )
@@ -50,13 +51,17 @@ private struct DynamicCommentDialogStateContent: View {
 
 private struct DynamicCommentDialogLoadedList: View {
     let snapshot: DynamicCommentDialogSnapshot
+    let items: [DynamicCommentDialogItem]
     let focusReply: Comment
     let reloadDialog: () -> Void
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(snapshot.items) { item in
-                DynamicCommentDialogRow(item: item, isFocused: item.id == focusReply.id)
+            ForEach(items) { item in
+                DynamicCommentDialogRow(
+                    item: item,
+                    isFocused: item.id == focusReply.id
+                )
                     .padding(.horizontal, 16)
 
                 Divider()

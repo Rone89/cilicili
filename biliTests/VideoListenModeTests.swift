@@ -671,6 +671,40 @@ final class VideoListenModeTests: XCTestCase {
     }
 
     @MainActor
+    func testRelatedVideoReturnResumesAutoplayWithoutExplicitPlaybackPrompt() async {
+        let defaults = makeUserDefaults()
+        let libraryStore = LibraryStore(userDefaults: defaults)
+        libraryStore.setVideoDetailAutoplayEnabled(true)
+        let viewModel = makeViewModel(
+            video: makeVideo(bvid: "BV-related-return", pages: []),
+            libraryStore: libraryStore,
+            playbackSessionStore: VideoListenPlaybackSessionStore()
+        )
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(
+            videoURL: URL(string: "https://example.com/video.m4s"),
+            audioURL: nil,
+            title: "相关视频返回自动续播",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        defer { player.stop() }
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        player.setPlaybackIntent(true)
+        viewModel.stablePlayerViewModel = player
+
+        viewModel.markRelatedVideoNavigation()
+        viewModel.stopPlaybackForNavigation()
+        await viewModel.resumePlaybackAfterCoveredNavigationIfNeeded()
+
+        XCTAssertFalse(viewModel.isAwaitingRelatedVideoReturnPlayback)
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertFalse(player.showsExplicitPlaybackStartControl)
+    }
+
+    @MainActor
     func testUserPauseDuringInterruptionCancelsAutomaticResume() async {
         let engine = PlayerLifecycleEngineSpy(isPlaying: false)
         let player = PlayerStateViewModel(

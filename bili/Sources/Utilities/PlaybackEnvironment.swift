@@ -332,6 +332,7 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         }
         if didChange {
             DispatchQueue.main.async {
+                StageOneBaselineMetricsStore.shared.recordNetworkRawChange()
                 NotificationCenter.default.post(name: .biliPlaybackNetworkClassDidChange, object: self)
             }
         }

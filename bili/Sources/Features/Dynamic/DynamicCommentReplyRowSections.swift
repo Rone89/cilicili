@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicCommentReplyAuthorLine: View {
+    let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let showsLike: Bool
 
@@ -17,22 +18,9 @@ struct DynamicCommentReplyAuthorLine: View {
 
             if showsLike {
                 Spacer(minLength: 8)
-                DynamicCommentReplyLikeLabel(display: display)
+                CommentLikeButton(comment: comment)
             }
         }
-    }
-}
-
-private struct DynamicCommentReplyLikeLabel: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
-
-    let display: DynamicCommentRowDisplayModel
-
-    var body: some View {
-        Label(display.likeText, systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
-            .appTypography(.action, fallback: .caption)
-            .foregroundStyle(display.isLiked ? appTintColor : .secondary)
-            .labelStyle(.titleAndIcon)
     }
 }
 
@@ -49,7 +37,6 @@ struct DynamicCommentReplyBody: View {
             lineSpacing: 2,
             typographyRole: .commentBody
         )
-
         DynamicCommentImageGrid(images: display.pictures)
     }
 }

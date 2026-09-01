@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class VideoDetailDescriptionRenderStore: ObservableObject {
     @Published private var snapshot = VideoDetailDescriptionRenderSnapshot()
+    private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailDescriptionRenderSnapshot>()
 
     var titleText: String { snapshot.titleText }
     var owner: VideoOwner? { snapshot.owner }
@@ -21,7 +22,14 @@ final class VideoDetailDescriptionRenderStore: ObservableObject {
     var isMutatingInteraction: Bool { snapshot.isMutatingInteraction }
 
     func update(_ next: VideoDetailDescriptionRenderSnapshot) {
-        guard next != snapshot else { return }
+        guard let next = deferredSnapshot.submit(next, current: snapshot, isEquivalent: ==) else {
+            return
+        }
         snapshot = next
+    }
+
+    func setUpdatesDeferred(_ deferred: Bool) {
+        guard let pending = deferredSnapshot.setDeferred(deferred), pending != snapshot else { return }
+        snapshot = pending
     }
 }

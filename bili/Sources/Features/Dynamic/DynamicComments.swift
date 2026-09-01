@@ -12,36 +12,52 @@ struct DynamicCommentsSheet: View {
         _viewModel = StateObject(wrappedValue: DynamicCommentsViewModel(item: item, api: api))
     }
 
-    private var commentContentOwnerMID: Int? {
-        guard let mid = item.author?.mid, mid > 0 else { return nil }
-        return mid
-    }
-
     var body: some View {
         CommentOwnerProfileNavigationContainer {
             ScrollView {
-                DynamicCommentsSheetContent(item: item, viewModel: viewModel) { comment in
-                    replySheetComment = comment
-                }
+                DynamicCommentsSheetContent(
+                    viewModel: viewModel,
+                    highlightedCommentID: nil,
+                    selectSort: selectCommentSort,
+                    showReplies: { comment in
+                        replySheetComment = comment
+                    }
+                )
             }
             .defersRemoteImageLoadsDuringFastScroll()
+            .accessibilityIdentifier("dynamic.comments.scroll")
             .hiddenInlineNavigationTitle()
-            .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+            .nativeTopScrollEdgeEffect()
             .task {
                 runtimeSettings.bind(dependencies.libraryStore)
                 viewModel.setBlocksGoodsComments(runtimeSettings.blocksGoodsComments)
                 await viewModel.loadInitial()
             }
         }
-        .environment(\.commentContentOwnerMID, commentContentOwnerMID)
+        .environment(\.commentContentOwnerMID, item.author?.mid)
+        .commentLikeTarget(
+            oid: item.commentOID,
+            type: item.commentType,
+            referer: "https://t.bilibili.com/\(item.idStr)"
+        )
         .onChange(of: runtimeSettings.blocksGoodsComments) { _, isEnabled in
             viewModel.setBlocksGoodsComments(isEnabled)
         }
         .presentationDetents([.fraction(0.7)])
+        .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
         .sheet(item: $replySheetComment) { comment in
             DynamicCommentRepliesSheet(rootComment: comment, replyStore: viewModel.replyStore)
-                .environment(\.commentContentOwnerMID, commentContentOwnerMID)
+                .environment(\.commentContentOwnerMID, item.author?.mid)
+                .commentLikeTarget(
+                    oid: item.commentOID,
+                    type: item.commentType,
+                    referer: "https://t.bilibili.com/\(item.idStr)"
+                )
         }
+    }
+
+    private func selectCommentSort(_ sort: CommentSort) {
+        Task { await viewModel.selectSort(sort) }
     }
 }

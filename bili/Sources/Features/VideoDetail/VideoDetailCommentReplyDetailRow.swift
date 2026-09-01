@@ -35,11 +35,7 @@ struct CommentReplyDetailRow: View {
 
                     Spacer(minLength: 8)
 
-                    CommentMetricBadge(
-                        text: display.likeText,
-                        systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                        isHighlighted: display.isLiked
-                    )
+                    CommentLikeButton(comment: reply)
                 }
 
                 BiliEmoteText(

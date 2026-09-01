@@ -12,9 +12,11 @@ final class AppDependencies: ObservableObject {
     let sponsorBlockService: SponsorBlockService
     private let networkMetricsRecorder: BiliNetworkMetricsRecorder
     private var sessionCancellables = Set<AnyCancellable>()
-    private var hasScheduledDeferredStartupWork = false
-    private var hasCompletedDeferredStartupWork = false
-    private var deferredStartupWorkTask: Task<Void, Never>?
+    private var hasScheduledStartupWork = false
+    private var hasCompletedStartupMaintenance = false
+    private var startupWarmupTask: Task<Void, Never>?
+    private var startupMaintenanceTask: Task<Void, Never>?
+    private let playbackNetworkRefreshCoordinator = PlaybackNetworkRefreshCoordinator()
 
     init() {
         let sessionStore = SessionStore()
@@ -25,6 +27,7 @@ final class AppDependencies: ObservableObject {
         self.libraryStore = libraryStore
         self.homeRecommendDiagnosticsStore = homeRecommendDiagnosticsStore
         self.networkMetricsRecorder = networkMetricsRecorder
+        StageOneBaselineMetricsStore.shared.beginLaunch()
         let api = BiliAPIClient(
             session: BiliURLSessionFactory.makeAPISession(delegate: networkMetricsRecorder),
             sessionStore: sessionStore,
@@ -91,7 +94,8 @@ final class AppDependencies: ObservableObject {
     }
 
     deinit {
-        deferredStartupWorkTask?.cancel()
+        startupWarmupTask?.cancel()
+        startupMaintenanceTask?.cancel()
     }
 
     func refreshPlaybackCDNProbeIfNeeded() {
@@ -102,46 +106,55 @@ final class AppDependencies: ObservableObject {
         PlaybackCDNProbeCoordinator.shared.refreshOnAppActivationIfNeeded(libraryStore: libraryStore)
     }
 
-    func scheduleDeferredStartupWorkIfNeeded() {
-        guard !hasScheduledDeferredStartupWork else { return }
-        hasScheduledDeferredStartupWork = true
-        deferredStartupWorkTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.runDeferredStartupWork()
-        }
-    }
-
-    private func handleAppDidBecomeActive() {
-        guard hasCompletedDeferredStartupWork else {
-            scheduleDeferredStartupWorkIfNeeded()
-            return
-        }
-        refreshPlaybackCDNProbeOnAppActivationIfNeeded()
-    }
-
-    private func runDeferredStartupWork() {
-        hasCompletedDeferredStartupWork = true
-        refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+    func scheduleStartupWorkIfNeeded() {
+        guard !hasScheduledStartupWork else { return }
+        hasScheduledStartupWork = true
+        StageOneBaselineMetricsStore.shared.markStartupWarmupStarted()
 
         let api = api
         let dynamicFeedIdentityKey = sessionStore.accountCacheIdentityKey(
             for: .dynamicFeed,
             multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
         )
-        Task(priority: .utility) {
+        let shouldPrewarmDynamicFeed = sessionStore.isLoggedIn
+        startupWarmupTask = Task(priority: .utility) {
+            async let startupResources: Void = api.prewarmStartupResources()
+            if shouldPrewarmDynamicFeed {
+                await DynamicFeedWarmCache.shared.prewarm(
+                    api: api,
+                    identityKey: dynamicFeedIdentityKey
+                )
+            }
+            _ = await startupResources
+            StageOneBaselineMetricsStore.shared.markStartupWarmupFinished()
+        }
+
+        startupMaintenanceTask = Task(priority: .utility) { @MainActor [weak self] in
+            guard let self else { return }
             await RemoteImageCache.shared.applyAdaptiveBudget()
             await ResourceCacheCenter.enforceConfiguredLimit()
-            async let startupResources: Void = api.prewarmStartupResources()
-            async let dynamicFeed: Void = DynamicFeedWarmCache.shared.prewarm(
-                api: api,
-                identityKey: dynamicFeedIdentityKey
-            )
-            _ = await (startupResources, dynamicFeed)
+            guard !Task.isCancelled else { return }
+            self.refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+            self.hasCompletedStartupMaintenance = true
         }
     }
 
+    private func handleAppDidBecomeActive() {
+        guard hasCompletedStartupMaintenance else {
+            scheduleStartupWorkIfNeeded()
+            return
+        }
+        refreshPlaybackCDNProbeOnAppActivationIfNeeded()
+    }
+
     private func handlePlaybackNetworkClassChange() {
+        playbackNetworkRefreshCoordinator.submit { [weak self] in
+            self?.refreshForPlaybackNetworkClassChange()
+        }
+    }
+
+    private func refreshForPlaybackNetworkClassChange() {
+        StageOneBaselineMetricsStore.shared.recordNetworkRefreshBatch()
         libraryStore.syncPlaybackCDNProbeSnapshotForCurrentContext()
         Task(priority: .utility) { [libraryStore] in
             await RemoteImageCache.shared.refreshNetworkSessionForPathChange()
@@ -151,4 +164,20 @@ final class AppDependencies: ObservableObject {
         }
     }
 
+}
+
+@MainActor
+final class PlaybackNetworkRefreshCoordinator {
+    private let stabilizationDelay: Duration
+    private let debouncer = TaskDebouncer()
+
+    init(stabilizationDelay: Duration = .seconds(1)) {
+        self.stabilizationDelay = stabilizationDelay
+    }
+
+    func submit(refresh: @escaping @MainActor () -> Void) {
+        debouncer.schedule(delay: stabilizationDelay) {
+            refresh()
+        }
+    }
 }

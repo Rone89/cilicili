@@ -1,10 +1,10 @@
 import SwiftUI
 
-private struct RootNavigationTitleHiddenKey: EnvironmentKey {
+struct RootNavigationTitleHiddenKey: EnvironmentKey {
     static let defaultValue = Binding<Bool>.constant(false)
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var rootNavigationTitleHidden: Binding<Bool> {
         get { self[RootNavigationTitleHiddenKey.self] }
         set { self[RootNavigationTitleHiddenKey.self] = newValue }
@@ -266,6 +266,7 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
 }
 
 struct TopScrollEdgeEffect: ViewModifier {
+    @Environment(\.isPresented) private var isPresented
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
     @Environment(\.scrollEdgeEffectPreference) private var scrollEdgeEffectPreference
     let hidesRootNavigationTitle: Bool
@@ -275,8 +276,12 @@ struct TopScrollEdgeEffect: ViewModifier {
         if hidesRootNavigationTitle {
             nativeStyledContent(content)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top > 18
+                    // contentOffset is already relative to the scroll view's resting content origin.
+                    // Adding contentInsets.top treats the navigation bar safe area as an upward scroll
+                    // during the first layout pass and hides every root title immediately.
+                    geometry.contentOffset.y > 18
                 } action: { _, isHidden in
+                    guard !isPresented else { return }
                     guard rootNavigationTitleHidden.wrappedValue != isHidden else { return }
                     withAnimation(.smooth(duration: 0.18)) {
                         rootNavigationTitleHidden.wrappedValue = isHidden

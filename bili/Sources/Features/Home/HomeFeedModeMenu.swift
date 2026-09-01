@@ -16,12 +16,9 @@ struct HomeFeedModeMenu: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.subheadline.weight(.semibold))
-                .frame(width: 34, height: 34)
-                .contentShape(Circle())
+                .foregroundStyle(.primary)
         }
-        .buttonStyle(.plain)
-        .contentShape(Circle())
-        .biliPlayerClearGlass(interactive: true, in: Circle())
+        .tint(.primary)
         .accessibilityLabel("首页内容")
         .accessibilityValue(currentMode.title)
     }

@@ -1,10 +1,7 @@
 import SwiftUI
 
-private enum LivePullRefreshCoordinateSpace {
-    static let name = "live-feed-pull-refresh"
-}
-
 struct LiveFeedView: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveViewModel
     let pullRefreshTriggerDistance: CGFloat
     @State private var pullRefreshDistance: CGFloat = 0
@@ -12,22 +9,18 @@ struct LiveFeedView: View {
 
     var body: some View {
         ScrollView {
-            HomePullRefreshOffsetReader(
-                coordinateSpaceName: LivePullRefreshCoordinateSpace.name
-            )
-
             LiveFeedContent(viewModel: viewModel)
             .padding(.horizontal, 12)
-            .padding(.top, 18)
             .padding(.bottom, 22)
         }
-        .coordinateSpace(name: LivePullRefreshCoordinateSpace.name)
+        .contentMargins(.top, 0, for: .scrollContent)
         .nativeTopScrollEdgeEffect()
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))
-        .onPreferenceChange(HomePullRefreshDistancePreferenceKey.self) { pullDistance in
-            handlePullRefreshDistanceChange(pullDistance)
-        }
+        .customPullRefreshTracking(
+            isEnabled: libraryStore.usesCustomPullRefresh,
+            onChange: handlePullRefreshChange
+        )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 LiveFeedRefreshButton(viewModel: viewModel)
@@ -36,21 +29,31 @@ struct LiveFeedView: View {
         .task {
             await viewModel.loadInitial()
         }
+        .nativePullRefresh(
+            isEnabled: libraryStore.usesNativePullRefresh,
+            action: viewModel.refresh
+        )
         .homeFeedPullRefreshLayout(
             pullDistance: pullRefreshDistance,
             triggerDistance: pullRefreshTriggerDistance,
-            isRefreshing: viewModel.isRefreshing
+            isRefreshing: viewModel.isRefreshing,
+            isEnabled: libraryStore.usesCustomPullRefresh
         )
         .overlay {
             LiveFeedErrorOverlay(viewModel: viewModel)
         }
     }
 
-    private func handlePullRefreshDistanceChange(_ pullDistance: CGFloat) {
+    private func handlePullRefreshChange(
+        pullDistance: CGFloat,
+        isUserInteracting: Bool
+    ) {
         pullRefreshDistance = pullDistance
+        guard libraryStore.usesCustomPullRefresh else { return }
         pullRefreshActions.handleConfiguredPullRefresh(
             pullDistance: pullDistance,
             triggerDistance: pullRefreshTriggerDistance,
+            isUserInteracting: isUserInteracting,
             isRefreshing: viewModel.isRefreshing
         ) {
             await viewModel.refresh()

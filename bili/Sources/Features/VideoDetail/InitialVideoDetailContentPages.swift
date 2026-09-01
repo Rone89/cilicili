@@ -3,6 +3,7 @@ import SwiftUI
 struct InitialVideoDetailDetailContentPage: View {
     let seedVideo: VideoItem
     let layoutWidth: CGFloat
+    let mountsSecondaryContent: Bool
 
     private var contentWidth: CGFloat {
         PlaybackDetailContentMetrics.contentWidth(for: layoutWidth)
@@ -24,7 +25,7 @@ struct InitialVideoDetailDetailContentPage: View {
                 .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
         }
 
-        if !seedVideo.isPGCEpisode {
+        if mountsSecondaryContent && !seedVideo.isPGCEpisode {
             InitialRelatedSection(layoutWidth: layoutWidth)
         }
     }

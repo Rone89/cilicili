@@ -46,6 +46,20 @@ struct MineHomeSettingsSection: View {
                 )
             }
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.nativePullRefreshEnabled },
+                set: { libraryStore.setNativePullRefreshEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("原生下拉刷新", systemImage: "arrow.clockwise.circle")
+
+                    Text("默认使用系统原生刷新；关闭后可调整自定义触发距离。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             MineHomeRefreshDistanceControl(libraryStore: libraryStore)
         }
     }
@@ -106,38 +120,55 @@ private struct MineHomeRefreshDistanceControl: View {
             HStack {
                 Label("下拉刷新距离", systemImage: "arrow.down.circle")
                 Spacer()
-                Text("\(Int(libraryStore.homeRefreshTriggerDistance)) pt")
+                Text(
+                    libraryStore.nativePullRefreshEnabled
+                        ? "系统默认"
+                        : "\(Int(libraryStore.homeRefreshTriggerDistance)) pt"
+                )
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
 
-            Slider(
-                value: Binding(
-                    get: { libraryStore.homeRefreshTriggerDistance },
-                    set: { libraryStore.setHomeRefreshTriggerDistance($0) }
-                ),
-                in: LibraryStore.homeRefreshDistanceRange,
-                step: 5
-            ) {
-                Text("首页下拉刷新距离")
-            } minimumValueLabel: {
-                Text("近")
-            } maximumValueLabel: {
-                Text("远")
-            }
-
-            HStack {
-                Text("下拉达到设定距离后会刷新推荐内容。")
+            if libraryStore.nativePullRefreshEnabled {
+                Text(refreshDistanceHint)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 12)
-                Button("默认") {
-                    libraryStore.setHomeRefreshTriggerDistance(
-                        LibraryStore.defaultHomeRefreshTriggerDistance
-                    )
+            } else {
+                Slider(
+                    value: Binding(
+                        get: { libraryStore.homeRefreshTriggerDistance },
+                        set: { libraryStore.setHomeRefreshTriggerDistance($0) }
+                    ),
+                    in: LibraryStore.homeRefreshDistanceRange,
+                    step: 5
+                ) {
+                    Text("下拉刷新距离")
+                } minimumValueLabel: {
+                    Text("近")
+                } maximumValueLabel: {
+                    Text("远")
                 }
-                .buttonStyle(.borderless)
+
+                HStack {
+                    Text(refreshDistanceHint)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Button("默认") {
+                        libraryStore.setHomeRefreshTriggerDistance(
+                            LibraryStore.defaultHomeRefreshTriggerDistance
+                        )
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
         }
+    }
+
+    private var refreshDistanceHint: String {
+        if libraryStore.nativePullRefreshEnabled {
+            return "关闭原生下拉刷新后可调整触发距离。"
+        }
+        return "当前使用自定义刷新指示器和触发距离。"
     }
 }

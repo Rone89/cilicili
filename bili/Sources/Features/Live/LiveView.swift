@@ -23,8 +23,6 @@ struct LiveView: View {
                 }
             }
         }
-        .rootNavigationTitle("直播")
-        .nativeTopNavigationChrome()
         .task {
             pullRefreshSettings.bind(dependencies.libraryStore)
         }

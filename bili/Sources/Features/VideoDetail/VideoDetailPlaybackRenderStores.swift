@@ -1,9 +1,10 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 final class VideoDetailPlaybackRenderStore: ObservableObject {
     @Published private var snapshot = VideoDetailPlaybackRenderSnapshot()
+    private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailPlaybackRenderSnapshot>()
     let qualityControlStore = VideoDetailQualityControlRenderStore()
     let placeholderStore = VideoDetailPlayerPlaceholderRenderStore()
     let pageSelectorStore = VideoDetailPageSelectorRenderStore()
@@ -22,6 +23,14 @@ final class VideoDetailPlaybackRenderStore: ObservableObject {
     var hasQualityMenu: Bool { !snapshot.qualityMenuItems.isEmpty }
 
     func update(_ next: VideoDetailPlaybackRenderSnapshot) {
+        guard let next = deferredSnapshot.submit(next, current: snapshot, isEquivalent: ==) else {
+            return
+        }
+        setSnapshot(next)
+    }
+
+    func setUpdatesDeferred(_ deferred: Bool) {
+        guard let next = deferredSnapshot.setDeferred(deferred) else { return }
         setSnapshot(next)
     }
 

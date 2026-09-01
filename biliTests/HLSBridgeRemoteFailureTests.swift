@@ -72,13 +72,22 @@ final class HLSBridgeRemoteFailureTests: XCTestCase {
         XCTAssertEqual(cancelled.category, .cancelled)
         XCTAssertFalse(cancelled.isRecoverableByRebuild)
         XCTAssertFalse(cancelled.shouldRecordSourceFailure)
+        XCTAssertFalse(cancelled.shouldFailPlaybackImmediately)
         XCTAssertEqual(cancelled.proxyHTTPStatus.statusCode, 499)
 
         let timedOut = HLSBridgeRemoteFailure.reason(for: URLError(.timedOut))
         XCTAssertEqual(timedOut.category, .timeout)
         XCTAssertTrue(timedOut.isRecoverableByRebuild)
         XCTAssertTrue(timedOut.allowsSameSourceRecovery)
+        XCTAssertFalse(timedOut.shouldFailPlaybackImmediately)
         XCTAssertEqual(timedOut.proxyHTTPStatus.statusCode, 504)
+    }
+
+    @MainActor
+    func testTerminalRemoteFailureStillFailsPlaybackImmediately() throws {
+        let reason = try XCTUnwrap(HLSBridgeRemoteFailure.reason(forHTTPStatus: 403))
+
+        XCTAssertTrue(reason.shouldFailPlaybackImmediately)
     }
 
     @MainActor

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicFeedCardDisplayModel {
+    let dynamicID: String
     let video: VideoItem?
     let videoDisplay: VideoCardDisplayModel?
     let live: DynamicLive?
@@ -20,6 +21,7 @@ struct DynamicFeedCardDisplayModel {
     let publishTimeText: String
     let usesHomeVideoCardStyle: Bool
     let usesSeparatedDynamicLayout: Bool
+    let supportsDetailNavigation: Bool
     let showsExpandButton: Bool
     let initialLikeCount: Int
     let commentTitle: String
@@ -46,6 +48,7 @@ struct DynamicFeedCardDisplayModel {
             && !item.isForward
             && !(topLevelDisplayText?.isEmpty ?? true)
 
+        self.dynamicID = item.idStr
         self.video = video
         self.videoDisplay = video.map(VideoCardDisplayModel.init(video:))
         self.live = live
@@ -71,6 +74,14 @@ struct DynamicFeedCardDisplayModel {
             || item.isForward
             || (!imageItems.isEmpty && video == nil)
             || isPureTextDynamic
+        self.supportsDetailNavigation = Self.supportsDetailNavigation(
+            hasTopLevelText: !(topLevelDisplayText?.isEmpty ?? true),
+            imageCount: imageItems.count,
+            isForward: item.isForward || item.original != nil,
+            hasVideo: video != nil,
+            hasLive: live != nil,
+            hasPaidContent: paidContent != nil
+        )
         self.showsExpandButton = Self.shouldShowExpandButton(for: topLevelDisplayText ?? "")
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
@@ -83,6 +94,35 @@ struct DynamicFeedCardDisplayModel {
     static func statTitle(count: Int?, fallback: String) -> String {
         guard let count, count > 0 else { return fallback }
         return BiliFormatters.compactCount(count)
+    }
+
+    static func supportsDetailNavigation(
+        hasTopLevelText: Bool,
+        imageCount: Int,
+        isForward: Bool,
+        hasVideo: Bool,
+        hasLive: Bool,
+        hasPaidContent: Bool
+    ) -> Bool {
+        if isForward {
+            return true
+        }
+
+        return !hasVideo
+            && !hasLive
+            && !hasPaidContent
+            && (hasTopLevelText || imageCount > 0)
+    }
+
+    static func supportsDetailNavigation(original: DynamicOriginalItem) -> Bool {
+        supportsDetailNavigation(
+            hasTopLevelText: DynamicTextSegment.displayText(from: original.textSegments)?.isEmpty == false,
+            imageCount: original.imageItems.count,
+            isForward: original.type == "DYNAMIC_TYPE_FORWARD",
+            hasVideo: original.archive != nil,
+            hasLive: original.live != nil,
+            hasPaidContent: original.paidContent != nil
+        )
     }
 
     private static func publishTime(for author: DynamicAuthor?) -> String {

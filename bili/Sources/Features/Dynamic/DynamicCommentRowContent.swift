@@ -7,7 +7,7 @@ struct DynamicCommentRowContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            DynamicCommentRowHeader(display: display)
+            DynamicCommentRowHeader(comment: comment, display: display)
 
             DynamicCommentText(
                 content: comment.content,
@@ -35,9 +35,11 @@ struct DynamicCommentRowContent: View {
             }
         }
     }
+
 }
 
 private struct DynamicCommentRowHeader: View {
+    let comment: Comment
     let display: DynamicCommentRowDisplayModel
 
     var body: some View {
@@ -53,11 +55,7 @@ private struct DynamicCommentRowHeader: View {
 
             Spacer(minLength: 8)
 
-            DynamicCommentMetricBadge(
-                text: display.likeText,
-                systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                isHighlighted: display.isLiked
-            )
+            CommentLikeButton(comment: comment)
         }
     }
 }

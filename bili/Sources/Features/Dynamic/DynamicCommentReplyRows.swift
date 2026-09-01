@@ -18,8 +18,15 @@ struct DynamicCommentReplyRootView: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                DynamicCommentReplyAuthorLine(display: display, showsLike: false)
-                DynamicCommentReplyBody(comment: comment, display: display)
+                DynamicCommentReplyAuthorLine(
+                    comment: comment,
+                    display: display,
+                    showsLike: true
+                )
+                DynamicCommentReplyBody(
+                    comment: comment,
+                    display: display
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -41,7 +48,10 @@ struct DynamicCommentReplyDetailRow: View {
         item.display
     }
 
-    init(item: DynamicCommentReplyItem, showDialog: (() -> Void)?) {
+    init(
+        item: DynamicCommentReplyItem,
+        showDialog: (() -> Void)?
+    ) {
         self.item = item
         self.showDialog = showDialog
     }
@@ -55,8 +65,12 @@ struct DynamicCommentReplyDetailRow: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                DynamicCommentReplyAuthorLine(display: display, showsLike: true)
-                DynamicCommentReplyBody(comment: reply, display: display)
+                DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
+                    .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
+                DynamicCommentReplyBody(
+                    comment: reply,
+                    display: display
+                )
 
                 if let showDialog {
                     Button(action: showDialog) {
@@ -89,7 +103,10 @@ struct DynamicCommentDialogRow: View {
         item.display
     }
 
-    init(item: DynamicCommentDialogItem, isFocused: Bool) {
+    init(
+        item: DynamicCommentDialogItem,
+        isFocused: Bool
+    ) {
         self.item = item
         self.isFocused = isFocused
     }
@@ -103,8 +120,12 @@ struct DynamicCommentDialogRow: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                DynamicCommentReplyAuthorLine(display: display, showsLike: true)
-                DynamicCommentReplyBody(comment: reply, display: display)
+                DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
+                    .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
+                DynamicCommentReplyBody(
+                    comment: reply,
+                    display: display
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)

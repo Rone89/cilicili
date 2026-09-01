@@ -50,6 +50,10 @@ nonisolated struct HLSBridgeFailureReason: Sendable, Equatable {
         }
     }
 
+    var shouldFailPlaybackImmediately: Bool {
+        category != .cancelled && !allowsSameSourceRecovery
+    }
+
     var isRecoverableByRebuild: Bool {
         switch category {
         case .cancelled, .authDenied, .urlExpired, .rateLimited:

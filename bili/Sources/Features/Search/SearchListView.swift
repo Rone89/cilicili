@@ -3,12 +3,10 @@ import SwiftUI
 struct SearchListView: View {
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
-    var topContentInset: CGFloat = 0
-    let scrollEdgeStore: SearchScrollEdgeStore
 
     private let discoveryColumns = [
         GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
+        GridItem(.flexible(), spacing: 10),
     ]
 
     var body: some View {
@@ -25,39 +23,42 @@ struct SearchListView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, topContentInset + 20)
             .padding(.bottom, 18)
-            .background(SearchScrollViewProbe(store: scrollEdgeStore))
         }
+        .contentMargins(.top, 0, for: .scrollContent)
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemGroupedBackground))
-        .ignoresSafeArea(.container, edges: .top)
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
-        .refreshable {
-            await refresh()
-        }
+        .nativeTopScrollEdgeEffect()
     }
 
     @ViewBuilder
     private var discoveryContent: some View {
-        if viewModel.state.isLoading {
-            SearchDiscoveryLoadingCard()
-        }
-
-        if !showsHotSearches {
-            SearchDiscoveryEmptyCard(title: "开始搜索", message: "输入关键词后搜索内容。")
-        } else if viewModel.hotSearchState.isLoading {
-            SearchDiscoveryLoadingCard()
-        } else if viewModel.hotSearches.isEmpty {
-            SearchDiscoveryEmptyCard(title: "暂无热门搜索", message: "输入关键词后搜索。")
+        if viewModel.showsSuggestions {
+            SearchContentSection(title: "搜索建议", systemImage: "sparkle.magnifyingglass") {
+                VStack(spacing: 0) {
+                    ForEach(viewModel.suggestions.prefix(8)) { item in
+                        SearchSuggestionRow(item: item) {
+                            Task { await viewModel.searchSuggestion(item) }
+                        }
+                    }
+                }
+            }
         } else {
-            SearchContentSection(title: "大家都在搜", systemImage: "flame.fill") {
-                LazyVGrid(columns: discoveryColumns, alignment: .leading, spacing: 10) {
-                    ForEach(displayedHotSearches) { item in
-                        SearchDiscoveryChip(item: item) {
-                            Task { await viewModel.searchHotSearch(item) }
+            if !showsHotSearches {
+                SearchDiscoveryEmptyCard(title: "开始搜索", message: "输入关键词后搜索内容。")
+            } else if viewModel.hotSearchState.isLoading {
+                SearchDiscoveryLoadingCard()
+            } else if viewModel.hotSearches.isEmpty {
+                SearchDiscoveryEmptyCard(title: "暂无热门搜索", message: "输入关键词后搜索。")
+            } else {
+                SearchContentSection(title: "大家都在搜", systemImage: "flame.fill") {
+                    LazyVGrid(columns: discoveryColumns, alignment: .leading, spacing: 10) {
+                        ForEach(displayedHotSearches) { item in
+                            SearchDiscoveryChip(item: item) {
+                                Task { await viewModel.searchHotSearch(item) }
+                            }
                         }
                     }
                 }
@@ -68,6 +69,12 @@ struct SearchListView: View {
     @ViewBuilder
     private var resultsContent: some View {
         ForEach(viewModel.results) { result in
+            if shouldShowSectionHeader(for: result) {
+                Label(result.sectionTitle, systemImage: result.sectionSystemImage)
+                    .font(.headline)
+                    .padding(.top, result == viewModel.results.first ? 0 : 8)
+            }
+
             SearchStructuredResultCard(result: result)
                 .equatable()
         }
@@ -90,6 +97,13 @@ struct SearchListView: View {
         Array(viewModel.hotSearches.prefix(10))
     }
 
+    private func shouldShowSectionHeader(for result: SearchResultItem) -> Bool {
+        guard viewModel.selectedScope == .comprehensive else { return false }
+        guard let index = viewModel.results.firstIndex(of: result) else { return false }
+        guard index > 0 else { return true }
+        return viewModel.results[index - 1].sectionTitle != result.sectionTitle
+    }
+
     private var emptyResultsView: some View {
         EmptyStateView(
             title: viewModel.emptyResultsTitle,
@@ -99,13 +113,29 @@ struct SearchListView: View {
         .padding(.top, 10)
     }
 
-    private func refresh() async {
-        if viewModel.showsDiscovery {
-            guard showsHotSearches else { return }
-            await viewModel.loadHotSearch()
-        } else {
-            await viewModel.search(viewModel.query)
+}
+
+private struct SearchSuggestionRow: View {
+    let item: SearchSuggestItem
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                Text(item.value)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.left")
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("搜索建议：\(item.value)")
     }
 }
 
@@ -168,7 +198,7 @@ private struct SearchDiscoveryLoadingCard: View {
             LazyVGrid(
                 columns: [
                     GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
+                    GridItem(.flexible(), spacing: 10),
                 ],
                 spacing: 10
             ) {
@@ -242,6 +272,8 @@ private struct SearchScopedResultSkeletonRow: View {
             SearchNonVideoResultSkeletonRow(style: .user)
         case .bangumi, .movie:
             SearchNonVideoResultSkeletonRow(style: .media)
+        case .article:
+            SearchNonVideoResultSkeletonRow(style: .article)
         case .comprehensive, .video:
             SearchVideoResultSkeletonRow()
         }
@@ -252,6 +284,7 @@ private struct SearchNonVideoResultSkeletonRow: View {
     enum Style {
         case user
         case media
+        case article
     }
 
     let style: Style
@@ -276,6 +309,8 @@ private struct SearchNonVideoResultSkeletonRow: View {
             SkeletonBlock(width: 54, height: 54, shape: .circle)
         case .media:
             SkeletonBlock(width: 76, height: 102, shape: .rounded(10))
+        case .article:
+            SkeletonBlock(width: 78, height: 78, shape: .rounded(8))
         }
     }
 
@@ -296,9 +331,28 @@ private struct SearchNonVideoResultSkeletonRow: View {
                 SkeletonBlock(width: 150, height: 11, shape: .capsule)
                 SkeletonBlock(height: 12, shape: .rounded(5))
                 SkeletonBlock(width: 180, height: 12, shape: .rounded(5))
+            case .article:
+                SkeletonBlock(width: 168, height: 15, shape: .rounded(5))
+                SkeletonBlock(width: 112, height: 11, shape: .capsule)
+                SkeletonBlock(height: 11, shape: .rounded(5))
             }
         }
-        .frame(maxWidth: .infinity, minHeight: style == .user ? 58 : 102, alignment: .topLeading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: minimumHeight,
+            alignment: .topLeading
+        )
+    }
+
+    private var minimumHeight: CGFloat {
+        switch style {
+        case .user:
+            return 58
+        case .media:
+            return 102
+        case .article:
+            return 78
+        }
     }
 
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CommentRowHeader: View {
+    let comment: Comment
     let display: VideoDetailCommentDisplayModel
 
     var body: some View {
@@ -16,11 +17,7 @@ struct CommentRowHeader: View {
 
             Spacer(minLength: 8)
 
-            CommentMetricBadge(
-                text: display.likeText,
-                systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                isHighlighted: display.isLiked
-            )
+            CommentLikeButton(comment: comment)
         }
     }
 }
