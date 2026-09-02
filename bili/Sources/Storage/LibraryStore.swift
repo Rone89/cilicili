@@ -148,6 +148,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var multiAccountExperimentEnabled: Bool
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
+    @Published private(set) var videoDetailSystemBottomBarExperimentEnabled: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -235,6 +236,8 @@ final class LibraryStore: ObservableObject {
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
         "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
+    private static let videoDetailSystemBottomBarExperimentEnabledKey =
+        "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1"
     private static let videoDetailSegmentedPickerGlassStyleKey =
         "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
     private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
@@ -616,6 +619,10 @@ final class LibraryStore: ObservableObject {
             userDefaults.set(nativePullRefreshEnabled, forKey: Self.nativePullRefreshEnabledKey)
         }
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
+        self.videoDetailSystemBottomBarExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey
+            ) as? Bool ?? false
         self.videoDetailSegmentedPickerGlassStyle =
             VideoDetailSegmentedPickerGlassStyle(
                 rawValue: userDefaults.string(
@@ -1267,6 +1274,11 @@ final class LibraryStore: ObservableObject {
     func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
         minimizesTabBarOnScroll = isEnabled
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
+    }
+
+    func setVideoDetailSystemBottomBarExperimentEnabled(_ isEnabled: Bool) {
+        videoDetailSystemBottomBarExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey)
     }
 
     func setVideoDetailSegmentedPickerGlassStyle(

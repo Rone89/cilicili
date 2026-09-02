@@ -497,6 +497,19 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryStorePersistsVideoDetailSystemBottomBarExperiment() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.videoDetailSystemBottomBarExperimentEnabled)
+        store.setVideoDetailSystemBottomBarExperimentEnabled(true)
+
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).videoDetailSystemBottomBarExperimentEnabled
+        )
+    }
+
+    @MainActor
     func testLibraryStoreDefaultsImageDiagnosticsOnAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)

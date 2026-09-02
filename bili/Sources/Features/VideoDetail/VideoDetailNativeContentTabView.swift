@@ -13,6 +13,30 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     let content: (VideoDetailContentTab, Bool) -> Content
 
     var body: some View {
+        Group {
+            if libraryStore.videoDetailSystemBottomBarExperimentEnabled {
+                tabContent
+                    .toolbarVisibility(.hidden, for: .tabBar)
+            } else {
+                tabContent
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        VideoDetailTransparentSegmentedPicker(selection: $selection)
+                            .frame(width: 144, height: 40)
+                            .videoDetailSegmentedPickerGlassEffect(
+                                libraryStore.videoDetailSegmentedPickerGlassStyle
+                            )
+                            .offset(y: 2)
+                            .padding(.horizontal, 16)
+                            .accessibilityIdentifier("video.detail.glass-panel-picker")
+                    }
+                    .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
+            }
+        }
+        .tint(appTintColor)
+    }
+
+    private var tabContent: some View {
         ZStack {
             if selection == .detail {
                 page(for: .detail)
@@ -28,19 +52,6 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         .clipped()
         .animation(.smooth(duration: 0.28), value: selection)
         .background(VideoDetailTheme.background)
-        .ignoresSafeArea(.container, edges: .bottom)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VideoDetailTransparentSegmentedPicker(selection: $selection)
-                .frame(width: 144, height: 40)
-                .videoDetailSegmentedPickerGlassEffect(
-                    libraryStore.videoDetailSegmentedPickerGlassStyle
-                )
-                .offset(y: 2)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("video.detail.glass-panel-picker")
-        }
-        .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
-        .tint(appTintColor)
     }
 
     private func page(for tab: VideoDetailContentTab) -> some View {

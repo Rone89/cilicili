@@ -2,7 +2,9 @@ import SwiftUI
 
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appThemeTintColor) private var appTintColor
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
     private let onRequestClose: (() -> Void)?
@@ -54,6 +56,31 @@ struct VideoDetailView: View {
             .environment(\.markRelatedVideoNavigation) {
                 holder.viewModel?.markRelatedVideoNavigation()
                 }
+        }
+        .toolbarVisibility(.hidden, for: .tabBar)
+        .toolbarVisibility(
+            libraryStore.videoDetailSystemBottomBarExperimentEnabled ? .visible : .hidden,
+            for: .bottomBar
+        )
+        .toolbarBackground(.hidden, for: .bottomBar)
+        .toolbar {
+            if libraryStore.videoDetailSystemBottomBarExperimentEnabled {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    contentTabButton(
+                        .detail,
+                        title: "简介",
+                        symbol: "info.circle",
+                        selectedSymbol: "info.circle.fill"
+                    )
+
+                    contentTabButton(
+                        .comments,
+                        title: "评论",
+                        symbol: "bubble.left",
+                        selectedSymbol: "bubble.left.fill"
+                    )
+                }
+            }
         }
     }
 
@@ -116,5 +143,25 @@ struct VideoDetailView: View {
 
     private func popOneVideoLevel() {
         viewActions.popOneVideoLevel(presentationState: $presentationState)
+    }
+
+    private func contentTabButton(
+        _ tab: VideoDetailContentTab,
+        title: String,
+        symbol: String,
+        selectedSymbol: String
+    ) -> some View {
+        let isSelected = presentationState.selectedContentTab == tab
+
+        return Button {
+            guard !isSelected else { return }
+            presentationState.selectedContentTab = tab
+        } label: {
+            Label(title, systemImage: isSelected ? selectedSymbol : symbol)
+                .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
+                .opacity(isSelected ? 1 : 0.62)
+        }
+        .tint(appTintColor)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
     }
 }

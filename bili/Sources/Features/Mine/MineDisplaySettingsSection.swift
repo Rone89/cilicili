@@ -151,6 +151,20 @@ struct MineDisplaySettingsSection: View {
                 Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
             }
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.videoDetailSystemBottomBarExperimentEnabled },
+                set: { libraryStore.setVideoDetailSystemBottomBarExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("视频详情页系统底栏实验", systemImage: "rectangle.bottomthird.inset.filled")
+
+                    Text("使用系统底部工具栏中的简介、评论按钮替代分段选择器。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Picker(selection: Binding(
                 get: { libraryStore.videoDetailSegmentedPickerGlassStyle },
                 set: { libraryStore.setVideoDetailSegmentedPickerGlassStyle($0) }
