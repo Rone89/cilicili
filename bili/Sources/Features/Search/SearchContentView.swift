@@ -54,7 +54,7 @@ private struct SearchFilterCapsule: View {
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 0) {
             scopeMenu
             orderMenu
         }
@@ -84,6 +84,8 @@ private struct SearchFilterCapsule: View {
             filterLabel(title: viewModel.selectedScope.title)
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .contentShape(Rectangle())
         .accessibilityLabel("搜索类型")
         .accessibilityValue(viewModel.selectedScope.title)
     }
@@ -106,6 +108,8 @@ private struct SearchFilterCapsule: View {
             filterLabel(title: viewModel.selectedOrder.title)
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .contentShape(Rectangle())
         .disabled(!viewModel.selectedScope.supportsOrder)
         .foregroundStyle(viewModel.selectedScope.supportsOrder ? .primary : .secondary)
         .accessibilityLabel("排序方式")
