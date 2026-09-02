@@ -54,55 +54,71 @@ private struct SearchFilterCapsule: View {
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
+        HStack(spacing: 24) {
+            scopeMenu
+            orderMenu
+        }
+        .font(.subheadline.weight(.medium))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .foregroundStyle(.primary)
+    }
+
+    private var scopeMenu: some View {
         Menu {
-            Section("搜索类型") {
-                ForEach(SearchScope.allCases) { scope in
-                    Button {
-                        Task {
-                            await viewModel.selectScope(scope, animation: .smooth(duration: 0.28))
-                        }
-                    } label: {
-                        Label(
-                            scope.title,
-                            systemImage: scope == viewModel.selectedScope
-                                ? "checkmark"
-                                : scope.systemImage
-                        )
+            ForEach(SearchScope.allCases) { scope in
+                Button {
+                    Task {
+                        await viewModel.selectScope(scope, animation: .smooth(duration: 0.28))
                     }
-                }
-            }
-            Section("排序方式") {
-                ForEach(SearchSortOrder.allCases) { order in
-                    Button {
-                        Task { await viewModel.selectOrder(order) }
-                    } label: {
-                        Label(
-                            order.title,
-                            systemImage: order == viewModel.selectedOrder
-                                ? "checkmark"
-                                : "arrow.up.arrow.down"
-                        )
-                    }
-                    .disabled(!viewModel.selectedScope.supportsOrder)
+                } label: {
+                    Label(
+                        scope.title,
+                        systemImage: scope == viewModel.selectedScope
+                            ? "checkmark"
+                            : scope.systemImage
+                    )
                 }
             }
         } label: {
-            HStack(spacing: 8) {
-                Text(viewModel.selectedScope.title)
-                Text("·")
-                    .foregroundStyle(.secondary)
-                Text(viewModel.selectedOrder.shortTitle)
-            }
-            .font(.subheadline.weight(.medium))
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .contentShape(Rectangle())
+            filterLabel(title: viewModel.selectedScope.title)
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
+        .accessibilityLabel("搜索类型")
+        .accessibilityValue(viewModel.selectedScope.title)
+    }
+
+    private var orderMenu: some View {
+        Menu {
+            ForEach(SearchSortOrder.allCases) { order in
+                Button {
+                    Task { await viewModel.selectOrder(order) }
+                } label: {
+                    Label(
+                        order.title,
+                        systemImage: order == viewModel.selectedOrder
+                            ? "checkmark"
+                            : "arrow.up.arrow.down"
+                    )
+                }
+            }
+        } label: {
+            filterLabel(title: viewModel.selectedOrder.title)
+        }
+        .buttonStyle(.plain)
+        .disabled(!viewModel.selectedScope.supportsOrder)
+        .foregroundStyle(viewModel.selectedScope.supportsOrder ? .primary : .secondary)
+        .accessibilityLabel("排序方式")
+        .accessibilityValue(viewModel.selectedOrder.title)
+    }
+
+    private func filterLabel(title: String) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.bold))
+        }
+        .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
-        .foregroundStyle(.primary)
-        .accessibilityLabel("搜索筛选")
-        .accessibilityValue("搜索类型：\(viewModel.selectedScope.title)，排序方式：\(viewModel.selectedOrder.title)")
     }
 }

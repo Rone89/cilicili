@@ -23,19 +23,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var shortTitle: String {
-        switch self {
-        case .comprehensive:
-            return "综合"
-        case .mostPlayed:
-            return "播放"
-        case .newest:
-            return "最新"
-        case .mostSaved:
-            return "收藏"
-        }
-    }
-
     var apiValue: String? {
         switch self {
         case .comprehensive:
@@ -63,7 +50,7 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .comprehensive:
-            return "综合"
+            return "综合内容"
         case .video:
             return "视频"
         case .bangumi:
