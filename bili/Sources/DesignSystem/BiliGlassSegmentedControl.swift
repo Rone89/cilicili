@@ -26,7 +26,7 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
 
     private var controlContent: some View {
         GeometryReader { proxy in
-            let inset: CGFloat = 2
+            let inset: CGFloat = 3
             let contentWidth = max(proxy.size.width - inset * 2, 0)
             let segmentWidth = contentWidth / CGFloat(max(options.count, 1))
 
