@@ -4,7 +4,6 @@ struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.appThemeTintColor) private var appTintColor
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
     private let onRequestClose: (() -> Void)?
@@ -65,21 +64,13 @@ struct VideoDetailView: View {
         .toolbarBackground(.hidden, for: .bottomBar)
         .toolbar {
             if libraryStore.videoDetailSystemBottomBarExperimentEnabled {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    contentTabButton(
-                        .detail,
-                        title: "简介",
-                        symbol: "info.circle",
-                        selectedSymbol: "info.circle.fill"
+                ToolbarItem(placement: .bottomBar) {
+                    VideoDetailGlassPicker(
+                        selection: $presentationState.selectedContentTab
                     )
-
-                    contentTabButton(
-                        .comments,
-                        title: "评论",
-                        symbol: "bubble.left",
-                        selectedSymbol: "bubble.left.fill"
-                    )
+                    .accessibilityIdentifier("video.detail.glass-panel-picker")
                 }
+                .sharedBackgroundVisibility(.hidden)
             }
         }
     }
@@ -144,24 +135,68 @@ struct VideoDetailView: View {
     private func popOneVideoLevel() {
         viewActions.popOneVideoLevel(presentationState: $presentationState)
     }
+}
 
-    private func contentTabButton(
-        _ tab: VideoDetailContentTab,
+struct VideoDetailGlassPicker: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
+    @Binding var selection: VideoDetailContentTab
+
+    @Namespace private var selectionNamespace
+
+    var body: some View {
+        GlassEffectContainer(spacing: 0) {
+            HStack(spacing: 0) {
+                segment(title: "简介", value: .detail)
+                segment(title: "评论", value: .comments)
+            }
+            .padding(3)
+            .frame(width: 144, height: 40)
+            .glassEffect(.regular.interactive(), in: .capsule)
+        }
+    }
+
+    private func segment(
         title: String,
-        symbol: String,
-        selectedSymbol: String
+        value: VideoDetailContentTab
     ) -> some View {
-        let isSelected = presentationState.selectedContentTab == tab
+        let isSelected = selection == value
 
         return Button {
             guard !isSelected else { return }
-            presentationState.selectedContentTab = tab
+
+            withAnimation(.smooth(duration: 0.28)) {
+                selection = value
+            }
         } label: {
-            Label(title, systemImage: isSelected ? selectedSymbol : symbol)
-                .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
-                .opacity(isSelected ? 1 : 0.62)
+            ZStack {
+                if isSelected {
+                    Capsule()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .glassEffect(
+                            .clear
+                                .tint(appTintColor.opacity(0.18))
+                                .interactive(),
+                            in: .capsule
+                        )
+                        .matchedGeometryEffect(
+                            id: "selected-segment",
+                            in: selectionNamespace
+                        )
+                }
+
+                Text(title)
+                    .font(.system(
+                        size: 15,
+                        weight: isSelected ? .semibold : .medium
+                    ))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
-        .tint(appTintColor)
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
         .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
