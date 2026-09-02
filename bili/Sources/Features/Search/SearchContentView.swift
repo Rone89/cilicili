@@ -11,7 +11,7 @@ struct SearchContentView: View {
             showsHotSearches: showsHotSearches
         )
         .safeAreaInset(edge: .bottom, spacing: 8) {
-            if !accessoryStore.isSearchFocused {
+            if !accessoryStore.usesKeyboardControls {
                 SearchSortHeaderButton(viewModel: viewModel)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 16)
@@ -31,6 +31,7 @@ struct SearchContentView: View {
         }
         .onDisappear {
             accessoryStore.isSearchFocused = false
+            accessoryStore.isKeyboardVisible = false
         }
         .toolbar {
             ToolbarItem(placement: .keyboard) {

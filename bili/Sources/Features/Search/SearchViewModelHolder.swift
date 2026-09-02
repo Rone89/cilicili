@@ -29,6 +29,11 @@ final class SearchViewModelHolder: ObservableObject {
 final class SearchBottomAccessoryStore: ObservableObject {
     @Published private(set) var viewModel: SearchViewModel?
     @Published var isSearchFocused = false
+    @Published var isKeyboardVisible = false
+
+    var usesKeyboardControls: Bool {
+        isSearchFocused && isKeyboardVisible
+    }
 
     func attach(_ viewModel: SearchViewModel) {
         guard self.viewModel !== viewModel else { return }

@@ -189,6 +189,7 @@ struct RootTabView: View {
         .nativeNavigationSearch(
             text: rootSearchQueryBinding,
             isPresented: $searchBottomAccessoryStore.isSearchFocused,
+            isKeyboardVisible: $searchBottomAccessoryStore.isKeyboardVisible,
             isEnabled: tab == .search
                 && selectedTab == .search
                 && detailPath.wrappedValue.isEmpty,
@@ -255,7 +256,7 @@ struct RootTabView: View {
               searchBottomAccessoryStore.viewModel != nil else {
             return false
         }
-        return !searchBottomAccessoryStore.isSearchFocused
+        return !searchBottomAccessoryStore.usesKeyboardControls
     }
 
     private func cancelMediaWarmupsIfEnvironmentConstrained() {

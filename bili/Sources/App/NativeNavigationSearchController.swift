@@ -6,6 +6,7 @@ extension View {
     func nativeNavigationSearch(
         text: Binding<String>,
         isPresented: Binding<Bool>,
+        isKeyboardVisible: Binding<Bool> = .constant(false),
         isEnabled: Bool,
         prompt: String,
         title: String = "",
@@ -16,6 +17,7 @@ extension View {
                 NativeNavigationSearchBridge(
                     text: text,
                     isPresented: isPresented,
+                    isKeyboardVisible: isKeyboardVisible,
                     isEnabled: true,
                     prompt: prompt,
                     title: title,
@@ -32,6 +34,7 @@ extension View {
 private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
     @Binding var text: String
     @Binding var isPresented: Bool
+    @Binding var isKeyboardVisible: Bool
     let isEnabled: Bool
     let prompt: String
     let title: String
@@ -52,6 +55,7 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
         controller.update(
             text: $text,
             isPresented: $isPresented,
+            isKeyboardVisible: $isKeyboardVisible,
             isEnabled: isEnabled,
             prompt: prompt,
             title: title,
@@ -72,15 +76,22 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
         }
 
         func searchBarTextDidBeginEditing(_: UISearchBar) {
+            owner?.setKeyboardVisible(true)
             owner?.setPresented(true)
         }
 
+        func searchBarTextDidEndEditing(_: UISearchBar) {
+            owner?.setKeyboardVisible(false)
+        }
+
         func searchBarCancelButtonClicked(_: UISearchBar) {
+            owner?.setKeyboardVisible(false)
             owner?.setPresented(false)
         }
 
         func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
             owner?.syncText(searchBar.text)
+            owner?.setKeyboardVisible(false)
             owner?.setPresented(false)
             owner?.submit()
         }
@@ -89,6 +100,7 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
     final class Controller: UIViewController {
         private var textBinding: Binding<String>?
         private var isPresentedBinding: Binding<Bool>?
+        private var isKeyboardVisibleBinding: Binding<Bool>?
         private var onSubmit: (() -> Void)?
         private var navigationTitleText = ""
         private var isEnabled = false
@@ -124,6 +136,7 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
         func update(
             text: Binding<String>,
             isPresented: Binding<Bool>,
+            isKeyboardVisible: Binding<Bool>,
             isEnabled: Bool,
             prompt: String,
             title: String,
@@ -132,6 +145,7 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
         ) {
             textBinding = text
             isPresentedBinding = isPresented
+            isKeyboardVisibleBinding = isKeyboardVisible
             self.isEnabled = isEnabled
             navigationTitleText = title
             self.onSubmit = onSubmit
@@ -165,6 +179,11 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
 
         func setPresented(_ value: Bool) {
             isPresentedBinding?.wrappedValue = value
+        }
+
+        func setKeyboardVisible(_ value: Bool) {
+            guard isKeyboardVisibleBinding?.wrappedValue != value else { return }
+            isKeyboardVisibleBinding?.wrappedValue = value
         }
 
         func submit() {
@@ -247,6 +266,7 @@ private struct NativeNavigationSearchBridge: UIViewControllerRepresentable {
         }
 
         private func removeSearchController() {
+            setKeyboardVisible(false)
             guard let searchController else { return }
             if installedNavigationItem?.searchController === searchController {
                 installedNavigationItem?.searchController = nil
