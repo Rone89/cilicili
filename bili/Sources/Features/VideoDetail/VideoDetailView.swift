@@ -62,6 +62,7 @@ struct VideoDetailView: View {
             for: .bottomBar
         )
         .toolbarBackground(.hidden, for: .bottomBar)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
         .toolbar {
             if libraryStore.videoDetailSystemBottomBarExperimentEnabled {
                 ToolbarItem(placement: .bottomBar) {
