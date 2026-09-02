@@ -26,27 +26,16 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
     }
 
     private var controlContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(options) { option in
-                        segmentButton(for: option)
-                            .id(option)
-                    }
-                }
-                .padding(.horizontal, 3)
+        HStack(spacing: 0) {
+            ForEach(options) { option in
+                segmentButton(for: option)
+                    .frame(maxWidth: .infinity)
             }
-            .frame(height: 40)
-            .onChange(of: selected) { _, selectedOption in
-                withAnimation(activeAnimation) {
-                    proxy.scrollTo(selectedOption, anchor: .center)
-                }
-            }
-            .onAppear {
-                proxy.scrollTo(selected, anchor: .center)
-            }
-            .accessibilityElement(children: .contain)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 3)
+        .frame(height: 40)
+        .accessibilityElement(children: .contain)
     }
 
     private var selectedFill: Color {
@@ -65,9 +54,10 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
             Text(title(option))
                 .font(.subheadline.weight(.medium))
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                .minimumScaleFactor(0.75)
                 .foregroundStyle(Color.primary.opacity(isSelected ? 1 : 0.72))
-                .padding(.horizontal, 15)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity)
                 .frame(height: 36)
                 .background {
                     if isSelected {
