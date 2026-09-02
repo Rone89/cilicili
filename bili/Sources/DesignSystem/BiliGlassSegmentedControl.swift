@@ -2,7 +2,6 @@ import SwiftUI
 
 struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var selectionNamespace
 
     let options: [Option]
     let selected: Option
@@ -26,16 +25,40 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
     }
 
     private var controlContent: some View {
-        HStack(spacing: 0) {
-            ForEach(options) { option in
-                segmentButton(for: option)
-                    .frame(maxWidth: .infinity)
+        GeometryReader { proxy in
+            let inset: CGFloat = 2
+            let contentWidth = max(proxy.size.width - inset * 2, 0)
+            let segmentWidth = contentWidth / CGFloat(max(options.count, 1))
+
+            ZStack(alignment: .topLeading) {
+                if let selectedIndex {
+                    Capsule()
+                        .fill(selectedFill)
+                        .frame(width: segmentWidth, height: 34)
+                        .offset(
+                            x: inset + CGFloat(selectedIndex) * segmentWidth,
+                            y: 3
+                        )
+                        .animation(activeAnimation, value: selectedIndex)
+                }
+
+                HStack(spacing: 0) {
+                    ForEach(options) { option in
+                        segmentButton(for: option)
+                            .frame(width: segmentWidth)
+                    }
+                }
+                .frame(width: contentWidth, height: 40)
+                .offset(x: inset)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 2)
         .frame(height: 40)
         .accessibilityElement(children: .contain)
+    }
+
+    private var selectedIndex: Int? {
+        options.firstIndex(of: selected)
     }
 
     private var selectedFill: Color {
@@ -59,14 +82,7 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
                 .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity)
                 .frame(height: 36)
-                .background {
-                    if isSelected {
-                        Capsule()
-                            .fill(selectedFill)
-                            .matchedGeometryEffect(id: "selected", in: selectionNamespace)
-                    }
-                }
-                .contentShape(Capsule())
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(height: 40)
