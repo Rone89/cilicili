@@ -50,7 +50,7 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
     }
 
     private var selectedFill: Color {
-        Color.primary.opacity(0.10)
+        Color.primary.opacity(0.12)
     }
 
     private func segmentButton(for option: Option) -> some View {
@@ -67,8 +67,8 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(Color.primary.opacity(isSelected ? 1 : 0.72))
-                .padding(.horizontal, 13)
-                .frame(height: 34)
+                .padding(.horizontal, 15)
+                .frame(height: 36)
                 .background {
                     if isSelected {
                         Capsule()
