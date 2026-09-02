@@ -33,7 +33,7 @@ struct BiliGlassSegmentedControl<Option: Identifiable & Hashable>: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 3)
+        .padding(.horizontal, 2)
         .frame(height: 40)
         .accessibilityElement(children: .contain)
     }
