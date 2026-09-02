@@ -127,9 +127,6 @@ extension RootTabView {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction, push)
-        } else if selectedTab == .search,
-                  libraryStore.searchTabExpansionExperimentEnabled {
-            push()
         } else {
             withAnimation(.smooth(duration: 0.30), push)
         }

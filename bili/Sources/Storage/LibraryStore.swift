@@ -159,12 +159,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
     @Published private(set) var homeRefreshTriggerDistance: Double
-    @Published private(set) var homeNavigationTitleHideDistanceExperimentEnabled: Bool
-    @Published private(set) var homeNavigationTitleHideDistance: Double
     @Published private(set) var homeFeedLayout: HomeFeedLayout
     @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
-    @Published private(set) var searchTabExpansionExperimentEnabled: Bool
 
     private let userDefaults: UserDefaults
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
@@ -318,6 +315,9 @@ final class LibraryStore: ObservableObject {
         "cc.bili.comment.likeExperimentEnabled.v1",
         "cc.bili.dynamic.imageTextDetailExperimentEnabled.v1",
         "cc.bili.home.navigationBarScrollVisibilityExperimentEnabled.v2",
+        "cc.bili.home.navigationTitleHideDistanceExperimentEnabled.v1",
+        "cc.bili.home.navigationTitleHideDistance.v1",
+        "cc.bili.search.tabExpansionExperimentEnabled.v1",
         "cc.bili.playback.relatedEarlyPlayURLPrefetchExperimentEnabled.v1",
         "cc.bili.playback.relatedStartupPackageWarmupExperimentEnabled.v1",
         legacyUnifiedPullRefreshIndicatorExperimentEnabledKey,
@@ -328,14 +328,9 @@ final class LibraryStore: ObservableObject {
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
     private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
-    private static let homeNavigationTitleHideDistanceExperimentEnabledKey =
-        "cc.bili.home.navigationTitleHideDistanceExperimentEnabled.v1"
-    private static let homeNavigationTitleHideDistanceKey = "cc.bili.home.navigationTitleHideDistance.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
-    private static let searchTabExpansionExperimentEnabledKey =
-        "cc.bili.search.tabExpansionExperimentEnabled.v1"
     private static let supportedPlaybackRates = [0.75, 1.0, 1.25, 1.5, 2.0]
     nonisolated static let defaultPreferredVideoQuality = 112
     nonisolated static let defaultCellularPreferredVideoQuality = 64
@@ -350,8 +345,6 @@ final class LibraryStore: ObservableObject {
     nonisolated static let defaultPlaybackCDNProbeRefreshIntervalMinutes = 1440
     nonisolated static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
     nonisolated static let defaultHomeRefreshTriggerDistance = 110.0
-    nonisolated static let homeNavigationTitleHideDistanceRange: ClosedRange<Double> = 10...120
-    nonisolated static let defaultHomeNavigationTitleHideDistance = 18.0
     nonisolated static let supportedRecommendMinimumDurations = [0, 30, 60, 90, 120]
     nonisolated static let supportedRecommendMinimumViews = [0, 50, 100, 500, 1000]
     nonisolated static let supportedRecommendMinimumLikeRatios = [0, 1, 2, 3, 4]
@@ -661,13 +654,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double
                 ?? Self.defaultHomeRefreshTriggerDistance
         )
-        self.homeNavigationTitleHideDistanceExperimentEnabled = userDefaults.object(
-            forKey: Self.homeNavigationTitleHideDistanceExperimentEnabledKey
-        ) as? Bool ?? false
-        self.homeNavigationTitleHideDistance = Self.normalizedHomeNavigationTitleHideDistance(
-            userDefaults.object(forKey: Self.homeNavigationTitleHideDistanceKey) as? Double
-                ?? Self.defaultHomeNavigationTitleHideDistance
-        )
         self.homeFeedLayout =
             HomeFeedLayout(
                 rawValue: userDefaults.string(forKey: Self.homeFeedLayoutKey) ?? ""
@@ -677,11 +663,6 @@ final class LibraryStore: ObservableObject {
                 rawValue: userDefaults.string(forKey: Self.homeRecommendFeedSourcePreferenceKey) ?? ""
             ) ?? Self.defaultHomeRecommendFeedSourcePreference
         self.showsHotSearches = userDefaults.object(forKey: Self.showsHotSearchesKey) as? Bool ?? true
-        self.searchTabExpansionExperimentEnabled = userDefaults.object(
-            forKey: Self.searchTabExpansionExperimentEnabledKey
-        ) == nil
-            ? false
-            : userDefaults.bool(forKey: Self.searchTabExpansionExperimentEnabledKey)
     }
 
     func setAppearanceMode(_ mode: AppAppearanceMode) {
@@ -1379,17 +1360,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(normalizedDistance, forKey: Self.homeRefreshTriggerDistanceKey)
     }
 
-    func setHomeNavigationTitleHideDistanceExperimentEnabled(_ isEnabled: Bool) {
-        homeNavigationTitleHideDistanceExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.homeNavigationTitleHideDistanceExperimentEnabledKey)
-    }
-
-    func setHomeNavigationTitleHideDistance(_ distance: Double) {
-        let normalizedDistance = Self.normalizedHomeNavigationTitleHideDistance(distance)
-        homeNavigationTitleHideDistance = normalizedDistance
-        userDefaults.set(normalizedDistance, forKey: Self.homeNavigationTitleHideDistanceKey)
-    }
-
     var usesNativePullRefresh: Bool {
         nativePullRefreshEnabled
     }
@@ -1406,11 +1376,6 @@ final class LibraryStore: ObservableObject {
     func setShowsHotSearches(_ isEnabled: Bool) {
         showsHotSearches = isEnabled
         userDefaults.set(isEnabled, forKey: Self.showsHotSearchesKey)
-    }
-
-    func setSearchTabExpansionExperimentEnabled(_ isEnabled: Bool) {
-        searchTabExpansionExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.searchTabExpansionExperimentEnabledKey)
     }
 
     private static func normalizedPlaybackRate(_ rate: Double) -> Double {
@@ -1448,13 +1413,6 @@ final class LibraryStore: ObservableObject {
 
     private static func normalizedHomeRefreshDistance(_ distance: Double) -> Double {
         min(max(distance, homeRefreshDistanceRange.lowerBound), homeRefreshDistanceRange.upperBound)
-    }
-
-    private static func normalizedHomeNavigationTitleHideDistance(_ distance: Double) -> Double {
-        min(
-            max(distance, homeNavigationTitleHideDistanceRange.lowerBound),
-            homeNavigationTitleHideDistanceRange.upperBound
-        )
     }
 
     private func persistBlockedDynamicKeywords() {

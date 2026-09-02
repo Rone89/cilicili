@@ -105,37 +105,17 @@ struct RootTabView: View {
     private var rootTabBar: some View {
         TabView(selection: tabSelection) {
             ForEach(visibleRootTabs) { tab in
-                if tab == .search,
-                   libraryStore.searchTabExpansionExperimentEnabled {
-                    Tab(
-                        tab.title,
-                        systemImage: tab.systemImage,
-                        value: tab,
-                        role: .search
-                    ) {
-                        rootTabNavigationStack(
-                            for: tab,
-                            detailPath: rootNavigationPathBinding(for: tab)
-                        )
-                    }
-                } else {
-                    Tab(value: tab) {
-                        rootTabNavigationStack(
-                            for: tab,
-                            detailPath: rootNavigationPathBinding(for: tab)
-                        )
-                    } label: {
-                        Label(tab.title, systemImage: tab.systemImage)
-                    }
+                Tab(value: tab) {
+                    rootTabNavigationStack(
+                        for: tab,
+                        detailPath: rootNavigationPathBinding(for: tab)
+                    )
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
                 }
             }
         }
         .tint(libraryStore.appTintColor)
-        .tabViewSearchActivation(
-            libraryStore.searchTabExpansionExperimentEnabled
-                ? .searchTabSelection
-                : .automatic
-        )
         .tabViewBottomAccessory(isEnabled: showsSearchBottomAccessory) {
             SearchTabBottomAccessory(store: searchBottomAccessoryStore)
         }
@@ -178,18 +158,8 @@ struct RootTabView: View {
                     api: dependencies.api
                 )
         }
-        .systemSearchTab(
-            text: rootSearchQueryBinding,
-            isEnabled: tab == .search
-                && libraryStore.searchTabExpansionExperimentEnabled,
-            prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-            onSubmit: submitRootSearch
-        )
         .coordinatesRootTabBarTransitions(
-            isDetailPresented: !detailPath.wrappedValue.isEmpty,
-            isEnabled: tab != .search
-                || !libraryStore.searchTabExpansionExperimentEnabled
-                || !detailPath.wrappedValue.isEmpty
+            isDetailPresented: !detailPath.wrappedValue.isEmpty
         )
     }
 
@@ -221,8 +191,7 @@ struct RootTabView: View {
             isPresented: $searchBottomAccessoryStore.isSearchFocused,
             isEnabled: tab == .search
                 && selectedTab == .search
-                && detailPath.wrappedValue.isEmpty
-                && !libraryStore.searchTabExpansionExperimentEnabled,
+                && detailPath.wrappedValue.isEmpty,
             prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
             title: "搜索",
             onSubmit: submitRootSearch
@@ -284,9 +253,6 @@ struct RootTabView: View {
               selectedTab == .search,
               searchNavigationPath.isEmpty,
               searchBottomAccessoryStore.viewModel != nil else {
-            return false
-        }
-        if libraryStore.searchTabExpansionExperimentEnabled {
             return false
         }
         return !searchBottomAccessoryStore.isSearchFocused
@@ -449,26 +415,5 @@ final class RecentPlaybackPreloadGate {
             recentTimes = recentTimes.filter { keptKeys.contains($0.key) }
         }
         return true
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func systemSearchTab(
-        text: Binding<String>,
-        isEnabled: Bool,
-        prompt: String,
-        onSubmit: @escaping () -> Void
-    ) -> some View {
-        if isEnabled {
-            searchable(
-                text: text,
-                placement: .automatic,
-                prompt: Text(prompt)
-            )
-            .onSubmit(of: .search, onSubmit)
-        } else {
-            self
-        }
     }
 }

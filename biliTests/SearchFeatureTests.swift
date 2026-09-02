@@ -11,21 +11,6 @@ final class SearchFeatureTests: XCTestCase {
         XCTAssertTrue(SearchScope.comprehensive.supportsOrder)
     }
 
-    func testSearchTabExpansionExperimentDefaultsOffAndPersists() {
-        let suiteName = "SearchFeatureTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.searchTabExpansionExperimentEnabled)
-
-        store.setSearchTabExpansionExperimentEnabled(true)
-
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).searchTabExpansionExperimentEnabled
-        )
-    }
-
     func testRecentPlaybackPreloadGateSuppressesImmediateDuplicates() {
         let gate = RecentPlaybackPreloadGate()
         let start = Date(timeIntervalSince1970: 1_000)

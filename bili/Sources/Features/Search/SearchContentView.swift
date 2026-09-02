@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct SearchContentView: View {
-    @Environment(\.isSearching) private var isSearching
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     @ObservedObject var accessoryStore: SearchBottomAccessoryStore
-    let usesSearchTabExpansion: Bool
 
     var body: some View {
         SearchListView(
@@ -13,14 +11,7 @@ struct SearchContentView: View {
             showsHotSearches: showsHotSearches
         )
         .safeAreaInset(edge: .bottom, spacing: 8) {
-            if usesSearchTabExpansion {
-                GlassEffectContainer(spacing: 8) {
-                    SearchBottomControls(viewModel: viewModel)
-                }
-                .padding(.vertical, 4)
-                .padding(.bottom, isSearching ? 56 : 0)
-            } else if !usesSearchTabExpansion,
-                      !accessoryStore.isSearchFocused {
+            if !accessoryStore.isSearchFocused {
                 SearchSortHeaderButton(viewModel: viewModel)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, 16)
@@ -42,10 +33,8 @@ struct SearchContentView: View {
             accessoryStore.isSearchFocused = false
         }
         .toolbar {
-            if !usesSearchTabExpansion {
-                ToolbarItem(placement: .keyboard) {
-                    SearchBottomControls(viewModel: viewModel)
-                }
+            ToolbarItem(placement: .keyboard) {
+                SearchBottomControls(viewModel: viewModel)
             }
         }
     }
