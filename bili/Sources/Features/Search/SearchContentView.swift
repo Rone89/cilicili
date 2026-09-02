@@ -10,14 +10,6 @@ struct SearchContentView: View {
             viewModel: viewModel,
             showsHotSearches: showsHotSearches
         )
-        .safeAreaInset(edge: .bottom, spacing: 8) {
-            if !accessoryStore.usesKeyboardControls {
-                SearchSortHeaderButton(viewModel: viewModel)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-            }
-        }
         .overlay {
             if case .failed(let message) = viewModel.state, viewModel.results.isEmpty {
                 ErrorStateView(title: "搜索失败", message: message) {
@@ -35,7 +27,7 @@ struct SearchContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .keyboard) {
-                SearchBottomControls(viewModel: viewModel)
+                SearchFilterCapsule(viewModel: viewModel)
             }
         }
     }
@@ -45,95 +37,72 @@ struct SearchContentView: View {
     }
 }
 
-struct SearchBottomControls: View {
-    @ObservedObject var viewModel: SearchViewModel
-    var showsGlass = true
-
-    var body: some View {
-        HStack(spacing: 8) {
-            SearchScopeBottomControl(viewModel: viewModel, showsGlass: showsGlass)
-
-            SearchSortHeaderButton(viewModel: viewModel, showsContainer: showsGlass)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 40)
-        .padding(.horizontal, 16)
-    }
-}
-
-private struct SearchScopeBottomControl: View {
-    @ObservedObject var viewModel: SearchViewModel
-    var showsGlass = true
-
-    var body: some View {
-        BiliGlassSegmentedControl(
-            options: Array(SearchScope.allCases),
-            selected: viewModel.selectedScope,
-            title: { $0.title },
-            select: { scope in
-                Task {
-                    await viewModel.selectScope(scope, animation: .smooth(duration: 0.28))
-                }
-            },
-            showsContainer: showsGlass
-        )
-        .frame(maxWidth: .infinity)
-    }
-}
-
 struct SearchTabBottomAccessory: View {
-    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     @ObservedObject var store: SearchBottomAccessoryStore
 
     @ViewBuilder
     var body: some View {
         if let viewModel = store.viewModel {
-            if placement == .inline {
-                SearchInlineScopeControl(viewModel: viewModel)
-            } else {
-                SearchScopeBottomControl(viewModel: viewModel, showsGlass: false)
-                    .frame(height: 40)
-                    .padding(.horizontal, 16)
-            }
+            SearchFilterCapsule(viewModel: viewModel)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .padding(.horizontal, 16)
         }
     }
 }
 
-private struct SearchInlineScopeControl: View {
+private struct SearchFilterCapsule: View {
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
         Menu {
-            ForEach(SearchScope.allCases) { scope in
-                Button {
-                    Task {
-                        await viewModel.selectScope(scope, animation: .smooth(duration: 0.28))
+            Section("搜索类型") {
+                ForEach(SearchScope.allCases) { scope in
+                    Button {
+                        Task {
+                            await viewModel.selectScope(scope, animation: .smooth(duration: 0.28))
+                        }
+                    } label: {
+                        Label(
+                            scope.title,
+                            systemImage: scope == viewModel.selectedScope
+                                ? "checkmark"
+                                : scope.systemImage
+                        )
                     }
-                } label: {
-                    Label(
-                        scope.title,
-                        systemImage: scope == viewModel.selectedScope
-                            ? "checkmark"
-                            : scope.systemImage
-                    )
+                }
+            }
+            Section("排序方式") {
+                ForEach(SearchSortOrder.allCases) { order in
+                    Button {
+                        Task { await viewModel.selectOrder(order) }
+                    } label: {
+                        Label(
+                            order.title,
+                            systemImage: order == viewModel.selectedOrder
+                                ? "checkmark"
+                                : "arrow.up.arrow.down"
+                        )
+                    }
+                    .disabled(!viewModel.selectedScope.supportsOrder)
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 8) {
                 Text(viewModel.selectedScope.title)
-                Image(systemName: "chevron.down")
-                    .imageScale(.small)
+                Text("·")
+                    .foregroundStyle(.secondary)
+                Text(viewModel.selectedOrder.shortTitle)
             }
-            .font(.caption.weight(.semibold))
+            .font(.subheadline.weight(.medium))
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 40)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .foregroundStyle(.primary)
-        .accessibilityLabel("搜索类型")
-        .accessibilityValue(viewModel.selectedScope.title)
+        .accessibilityLabel("搜索筛选")
+        .accessibilityValue("搜索类型：\(viewModel.selectedScope.title)，排序方式：\(viewModel.selectedOrder.title)")
     }
 }
