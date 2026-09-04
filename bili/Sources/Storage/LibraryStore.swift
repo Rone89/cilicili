@@ -148,10 +148,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var multiAccountExperimentEnabled: Bool
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
-    @Published private(set) var videoDetailSystemBottomBarExperimentEnabled: Bool
-    @Published private(set) var softPrimaryPageTopEdgeEffectExperimentEnabled: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
-    @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
     @Published private(set) var remoteImageQualityPreference: RemoteImageQualityPreference
     @Published private(set) var videoCoverBadgeShadowOpacity: Double
@@ -237,13 +234,8 @@ final class LibraryStore: ObservableObject {
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
         "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
-    private static let videoDetailSystemBottomBarExperimentEnabledKey =
-        "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1"
-    private static let softPrimaryPageTopEdgeEffectExperimentEnabledKey =
-        "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1"
     private static let videoDetailSegmentedPickerGlassStyleKey =
         "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
-    private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
     private static let liquidGlassStylePreferenceKey = AppLiquidGlassStylePreference.storageKey
     private static let remoteImageQualityPreferenceKey = RemoteImageQualityPreference.storageKey
     private static let videoCoverBadgeShadowOpacityKey = VideoCoverBadgeShadow.storageKey
@@ -255,6 +247,9 @@ final class LibraryStore: ObservableObject {
         "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",
         "cc.bili.videoDetail.sharedSystemTabBarExperimentEnabled.v1",
         "cc.bili.display.singleOwnerTabBarExperimentEnabled.v1",
+        "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1",
+        "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
+        "cc.bili.display.scrollEdgeEffectPreference.v1",
         "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
         "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
         "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
@@ -622,24 +617,12 @@ final class LibraryStore: ObservableObject {
             userDefaults.set(nativePullRefreshEnabled, forKey: Self.nativePullRefreshEnabledKey)
         }
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
-        self.videoDetailSystemBottomBarExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey
-            ) as? Bool ?? false
-        self.softPrimaryPageTopEdgeEffectExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.softPrimaryPageTopEdgeEffectExperimentEnabledKey
-            ) as? Bool ?? false
         self.videoDetailSegmentedPickerGlassStyle =
             VideoDetailSegmentedPickerGlassStyle(
                 rawValue: userDefaults.string(
                     forKey: Self.videoDetailSegmentedPickerGlassStyleKey
                 ) ?? ""
             ) ?? .clear
-        self.scrollEdgeEffectPreference =
-            AppScrollEdgeEffectPreference(
-                rawValue: userDefaults.string(forKey: Self.scrollEdgeEffectPreferenceKey) ?? ""
-            ) ?? .soft
         self.liquidGlassStylePreference = AppLiquidGlassStylePreference(
             storedRawValue: userDefaults.string(forKey: Self.liquidGlassStylePreferenceKey)
         )
@@ -1283,26 +1266,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
     }
 
-    func setVideoDetailSystemBottomBarExperimentEnabled(_ isEnabled: Bool) {
-        videoDetailSystemBottomBarExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey)
-    }
-
-    func setSoftPrimaryPageTopEdgeEffectExperimentEnabled(_ isEnabled: Bool) {
-        softPrimaryPageTopEdgeEffectExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.softPrimaryPageTopEdgeEffectExperimentEnabledKey)
-    }
-
     func setVideoDetailSegmentedPickerGlassStyle(
         _ glassStyle: VideoDetailSegmentedPickerGlassStyle
     ) {
         videoDetailSegmentedPickerGlassStyle = glassStyle
         userDefaults.set(glassStyle.rawValue, forKey: Self.videoDetailSegmentedPickerGlassStyleKey)
-    }
-
-    func setScrollEdgeEffectPreference(_ preference: AppScrollEdgeEffectPreference) {
-        scrollEdgeEffectPreference = preference
-        userDefaults.set(preference.rawValue, forKey: Self.scrollEdgeEffectPreferenceKey)
     }
 
     func setLiquidGlassStylePreference(_ preference: AppLiquidGlassStylePreference) {
@@ -1548,25 +1516,6 @@ enum AppAppearanceMode: String, CaseIterable, Identifiable {
             return .light
         case .dark:
             return .dark
-        }
-    }
-}
-
-enum AppScrollEdgeEffectPreference: String, CaseIterable, Identifiable {
-    case soft
-    case hard
-    case automatic
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .soft:
-            return "Soft"
-        case .hard:
-            return "Hard"
-        case .automatic:
-            return "Automatic"
         }
     }
 }

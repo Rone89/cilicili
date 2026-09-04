@@ -2,7 +2,6 @@ import SwiftUI
 
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.dismiss) private var dismiss
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
@@ -55,24 +54,6 @@ struct VideoDetailView: View {
             .environment(\.markRelatedVideoNavigation) {
                 holder.viewModel?.markRelatedVideoNavigation()
                 }
-        }
-        .toolbarVisibility(.hidden, for: .tabBar)
-        .toolbarVisibility(
-            libraryStore.videoDetailSystemBottomBarExperimentEnabled ? .visible : .hidden,
-            for: .bottomBar
-        )
-        .toolbarBackgroundVisibility(.hidden, for: .bottomBar)
-        .scrollEdgeEffectHidden(true, for: .bottom)
-        .toolbar {
-            if libraryStore.videoDetailSystemBottomBarExperimentEnabled {
-                ToolbarItem(placement: .bottomBar) {
-                    VideoDetailGlassPicker(
-                        selection: $presentationState.selectedContentTab
-                    )
-                    .accessibilityIdentifier("video.detail.glass-panel-picker")
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
         }
     }
 
@@ -135,69 +116,5 @@ struct VideoDetailView: View {
 
     private func popOneVideoLevel() {
         viewActions.popOneVideoLevel(presentationState: $presentationState)
-    }
-}
-
-struct VideoDetailGlassPicker: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
-    @Binding var selection: VideoDetailContentTab
-
-    @Namespace private var selectionNamespace
-
-    var body: some View {
-        GlassEffectContainer(spacing: 0) {
-            HStack(spacing: 0) {
-                segment(title: "简介", value: .detail)
-                segment(title: "评论", value: .comments)
-            }
-            .padding(3)
-            .frame(width: 144, height: 40)
-            .glassEffect(.regular.interactive(), in: .capsule)
-        }
-    }
-
-    private func segment(
-        title: String,
-        value: VideoDetailContentTab
-    ) -> some View {
-        let isSelected = selection == value
-
-        return Button {
-            guard !isSelected else { return }
-
-            withAnimation(.smooth(duration: 0.28)) {
-                selection = value
-            }
-        } label: {
-            ZStack {
-                if isSelected {
-                    Capsule()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .glassEffect(
-                            .clear
-                                .tint(appTintColor.opacity(0.18))
-                                .interactive(),
-                            in: .capsule
-                        )
-                        .matchedGeometryEffect(
-                            id: "selected-segment",
-                            in: selectionNamespace
-                        )
-                }
-
-                Text(title)
-                    .font(.system(
-                        size: 15,
-                        weight: isSelected ? .semibold : .medium
-                    ))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityValue(isSelected ? "已选择" : "未选择")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

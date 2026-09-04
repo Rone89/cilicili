@@ -26,7 +26,7 @@ struct DynamicFeedScrollContent: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemBackground))
-        .nativeTopScrollEdgeEffect(isPrimaryPage: true)
+        .nativeTopScrollEdgeEffect()
         .customPullRefreshTracking(
             isEnabled: libraryStore.usesCustomPullRefresh,
             onChange: handlePullRefreshChange

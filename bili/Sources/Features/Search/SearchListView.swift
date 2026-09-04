@@ -30,7 +30,7 @@ struct SearchListView: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemGroupedBackground))
-        .nativeTopScrollEdgeEffect(isPrimaryPage: true)
+        .nativeTopScrollEdgeEffect()
     }
 
     @ViewBuilder

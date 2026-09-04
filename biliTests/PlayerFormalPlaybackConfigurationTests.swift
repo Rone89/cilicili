@@ -416,6 +416,9 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
             "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",
             "cc.bili.display.singleOwnerTabBarExperimentEnabled.v1",
+            "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1",
+            "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
+            "cc.bili.display.scrollEdgeEffectPreference.v1",
             "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
             "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
             "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
@@ -494,35 +497,6 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         let restoredStore = LibraryStore(userDefaults: defaults)
         XCTAssertEqual(restoredStore.videoDetailSegmentedPickerGlassStyle, .regular)
-    }
-
-    @MainActor
-    func testLibraryStorePersistsVideoDetailSystemBottomBarExperiment() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.videoDetailSystemBottomBarExperimentEnabled)
-        store.setVideoDetailSystemBottomBarExperimentEnabled(true)
-
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).videoDetailSystemBottomBarExperimentEnabled
-        )
-    }
-
-    @MainActor
-    func testLibraryStorePersistsSoftPrimaryPageTopEdgeEffectExperiment() {
-        let defaults = makeUserDefaults()
-        let key = "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1"
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.softPrimaryPageTopEdgeEffectExperimentEnabled)
-        store.setSoftPrimaryPageTopEdgeEffectExperimentEnabled(true)
-        XCTAssertTrue(defaults.bool(forKey: key))
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).softPrimaryPageTopEdgeEffectExperimentEnabled)
-
-        store.setSoftPrimaryPageTopEdgeEffectExperimentEnabled(false)
-        XCTAssertFalse(defaults.bool(forKey: key))
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).softPrimaryPageTopEdgeEffectExperimentEnabled)
     }
 
     @MainActor

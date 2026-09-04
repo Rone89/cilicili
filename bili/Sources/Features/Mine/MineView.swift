@@ -31,7 +31,6 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .environment(\.scrollEdgeEffectPreference, libraryStore.scrollEdgeEffectPreference)
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
                 switch sheet {

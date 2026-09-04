@@ -13,6 +13,6 @@ struct SearchLoadingList: View {
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))
-        .nativeTopScrollEdgeEffect(isPrimaryPage: true)
+        .nativeTopScrollEdgeEffect()
     }
 }

@@ -11,27 +11,6 @@ extension EnvironmentValues {
     }
 }
 
-private struct ScrollEdgeEffectPreferenceKey: EnvironmentKey {
-    static let defaultValue: AppScrollEdgeEffectPreference = .soft
-}
-
-extension EnvironmentValues {
-    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference {
-        get { self[ScrollEdgeEffectPreferenceKey.self] }
-        set { self[ScrollEdgeEffectPreferenceKey.self] = newValue }
-    }
-
-    var softPrimaryPageTopEdgeEffectExperimentEnabled: Bool {
-        get { self[SoftPrimaryPageTopEdgeEffectExperimentKey.self] }
-        set { self[SoftPrimaryPageTopEdgeEffectExperimentKey.self] = newValue }
-    }
-
-}
-
-private struct SoftPrimaryPageTopEdgeEffectExperimentKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
 extension View {
     @ViewBuilder
     func rootFloatingTabBarContentPadding(extra: CGFloat = 0) -> some View {
@@ -96,14 +75,12 @@ extension View {
     @ViewBuilder
     func nativeTopScrollEdgeEffect(
         hidesRootNavigationTitle: Bool = true,
-        navigationTitleHideDistance: CGFloat = TopScrollEdgeEffect.defaultNavigationTitleHideDistance,
-        isPrimaryPage: Bool = false
+        navigationTitleHideDistance: CGFloat = TopScrollEdgeEffect.defaultNavigationTitleHideDistance
     ) -> some View {
         modifier(
             TopScrollEdgeEffect(
                 hidesRootNavigationTitle: hidesRootNavigationTitle,
-                navigationTitleHideDistance: navigationTitleHideDistance,
-                isPrimaryPage: isPrimaryPage
+                navigationTitleHideDistance: navigationTitleHideDistance
             )
         )
     }
@@ -289,13 +266,9 @@ struct TopScrollEdgeEffect: ViewModifier {
 
     @Environment(\.isPresented) private var isPresented
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
-    @Environment(\.scrollEdgeEffectPreference) private var scrollEdgeEffectPreference
-    @Environment(\.softPrimaryPageTopEdgeEffectExperimentEnabled)
-    private var softPrimaryPageTopEdgeEffectExperimentEnabled
     @State private var scrollState = TopScrollEdgeEffectScrollState()
     let hidesRootNavigationTitle: Bool
     let navigationTitleHideDistance: CGFloat
-    let isPrimaryPage: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -329,18 +302,7 @@ struct TopScrollEdgeEffect: ViewModifier {
 
     @ViewBuilder
     private func nativeStyledContent(_ content: Content) -> some View {
-        if isPrimaryPage && softPrimaryPageTopEdgeEffectExperimentEnabled {
-            content.scrollEdgeEffectStyle(.soft, for: .top)
-        } else {
-            switch scrollEdgeEffectPreference {
-            case .soft:
-                content.scrollEdgeEffectStyle(.soft, for: .top)
-            case .hard:
-                content.scrollEdgeEffectStyle(.hard, for: .top)
-            case .automatic:
-                content.scrollEdgeEffectStyle(.automatic, for: .top)
-            }
-        }
+        content.scrollEdgeEffectStyle(.soft, for: .top)
     }
 }
 
