@@ -2,7 +2,8 @@ import SwiftUI
 
 struct DynamicDetailBottomInteractionBar: View {
     private enum Metrics {
-        static let controlSide: CGFloat = 44
+        static let visualSide: CGFloat = 36
+        static let touchSide: CGFloat = 44
         static let groupSpacing: CGFloat = 8
     }
 
@@ -85,11 +86,12 @@ struct DynamicDetailBottomInteractionBar: View {
                     systemImage: "bubble.left"
                 )
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: Metrics.controlSide)
+                .frame(maxWidth: .infinity, minHeight: Metrics.visualSide)
                 .padding(.horizontal, 12)
             }
             .biliGlassButtonStyle()
             .buttonBorderShape(.capsule)
+            .frame(minHeight: Metrics.touchSide)
             .accessibilityLabel("评论")
             .accessibilityValue("共 \(commentCount) 条")
             .disabled(!canComment)
@@ -98,10 +100,11 @@ struct DynamicDetailBottomInteractionBar: View {
                 errorMessage = "动态收藏接口暂未提供"
             } label: {
                 Image(systemName: "star")
-                    .frame(width: Metrics.controlSide, height: Metrics.controlSide)
+                    .frame(width: Metrics.visualSide, height: Metrics.visualSide)
             }
             .biliGlassButtonStyle()
             .buttonBorderShape(.circle)
+            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
             .accessibilityLabel("收藏")
             .accessibilityValue("动态收藏不可用")
         }
@@ -114,9 +117,10 @@ struct DynamicDetailBottomInteractionBar: View {
                 isComposerPresented = false
             } label: {
                 Image(systemName: "xmark")
-                    .frame(width: Metrics.controlSide, height: Metrics.controlSide)
+                    .frame(width: Metrics.visualSide, height: Metrics.visualSide)
             }
             .buttonStyle(.plain)
+            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
             .accessibilityLabel("取消评论")
 
             TextField("友善发言，理性讨论", text: $commentDraft, axis: .vertical)
@@ -132,11 +136,12 @@ struct DynamicDetailBottomInteractionBar: View {
                     ProgressView()
                 } else {
                     Image(systemName: "paperplane.fill")
+                        .frame(width: Metrics.visualSide, height: Metrics.visualSide)
                 }
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .frame(width: Metrics.controlSide, height: Metrics.controlSide)
+            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
             .disabled(isSubmittingComment || commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("发送评论")
         }
@@ -158,9 +163,10 @@ struct DynamicDetailBottomInteractionBar: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: Metrics.controlSide, height: Metrics.controlSide)
+                .frame(width: Metrics.visualSide, height: Metrics.visualSide)
         }
         .biliGlassButtonStyle()
+        .frame(width: Metrics.touchSide, height: Metrics.touchSide)
         .foregroundStyle(selected ? appTintColor : .primary)
         .disabled(disabled)
         .accessibilityLabel(label)
