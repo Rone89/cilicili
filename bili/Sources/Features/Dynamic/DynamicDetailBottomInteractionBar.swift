@@ -134,6 +134,11 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
                 .focused($isCommentFieldFocused)
                 .submitLabel(.send)
                 .accessibilityLabel("评论内容")
+                .task {
+                    await Task.yield()
+                    guard !Task.isCancelled, isComposerPresented else { return }
+                    isCommentFieldFocused = true
+                }
                 .onSubmit { submitCommentIfPossible() }
 
             Button(action: submitCommentIfPossible) {
@@ -151,11 +156,6 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     private func openComposer() {
         guard canComment else { return }
         isComposerPresented = true
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
-            guard isComposerPresented else { return }
-            isCommentFieldFocused = true
-        }
     }
 
     private func toggleLike() {
