@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct DynamicDetailBottomInteractionBar: View {
+struct DynamicDetailBottomInteractionBar: ToolbarContent {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var sessionStore: SessionStore
@@ -41,16 +41,36 @@ struct DynamicDetailBottomInteractionBar: View {
         ))
     }
 
-    var body: some View {
-        Group {
-            if isComposerPresented {
+    @ToolbarContentBuilder
+    var body: some ToolbarContent {
+        if isComposerPresented {
+            ToolbarItem(placement: .bottomBar) {
                 composer
-            } else {
-                defaultActions
+            }
+        } else {
+            ToolbarItem(placement: .bottomBar) {
+                likeButton
+            }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                commentButton
+            }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                favoriteButton
             }
         }
-        .animation(.smooth(duration: 0.22), value: isComposerPresented)
-        .accessibilityIdentifier("dynamic.detail.experimental.bottom-interaction-bar")
+    }
+
+    private var likeButton: some View {
+        Button(action: toggleLike) {
+            Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
+        }
+        .foregroundStyle(likeState.isLiked ? appTintColor : .primary)
+        .disabled(isMutatingLike)
+        .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
+        .accessibilityValue("\(likeState.isLiked ? "已点赞" : "未点赞")，\(likeState.likeCount) 个赞")
+        .accessibilityAddTraits(likeState.isLiked ? .isSelected : [])
         .alert("评论失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -61,41 +81,26 @@ struct DynamicDetailBottomInteractionBar: View {
         }
     }
 
-    private var defaultActions: some View {
-        HStack {
-            interactionButton(
-                systemImage: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                label: likeState.isLiked ? "点赞，已点赞" : "点赞，未点赞",
-                value: "\(likeState.likeCount) 个赞",
-                selected: likeState.isLiked,
-                disabled: isMutatingLike,
-                action: toggleLike
+    private var commentButton: some View {
+        Button(action: openComposer) {
+            Label(
+                commentCount > 0 ? BiliFormatters.compactCount(commentCount) : "说点什么…",
+                systemImage: "bubble.left"
             )
-            .buttonBorderShape(.circle)
-
-            Button(action: openComposer) {
-                Label(
-                    commentCount > 0 ? BiliFormatters.compactCount(commentCount) : "评论",
-                    systemImage: "bubble.left"
-                )
-                .lineLimit(1)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.capsule)
-            .accessibilityLabel("评论")
-            .accessibilityValue("共 \(commentCount) 条")
-            .disabled(!canComment)
-
-            Button {
-                errorMessage = "动态收藏接口暂未提供"
-            } label: {
-                Image(systemName: "star")
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("收藏")
-            .accessibilityValue("动态收藏不可用")
         }
+        .accessibilityLabel("评论")
+        .accessibilityValue("共 \(commentCount) 条")
+        .disabled(!canComment)
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            errorMessage = "动态收藏接口暂未提供"
+        } label: {
+            Image(systemName: "star")
+        }
+        .accessibilityLabel("收藏")
+        .accessibilityValue("动态收藏不可用")
     }
 
     private var composer: some View {
@@ -106,7 +111,6 @@ struct DynamicDetailBottomInteractionBar: View {
             } label: {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.glass)
             .accessibilityLabel("取消评论")
 
             TextField("友善发言，理性讨论", text: $commentDraft, axis: .vertical)
@@ -124,30 +128,9 @@ struct DynamicDetailBottomInteractionBar: View {
                     Image(systemName: "paperplane.fill")
                 }
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
             .disabled(isSubmittingComment || commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("发送评论")
         }
-    }
-
-    private func interactionButton(
-        systemImage: String,
-        label: String,
-        value: String,
-        selected: Bool,
-        disabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-        }
-        .buttonStyle(.glass)
-        .foregroundStyle(selected ? appTintColor : .primary)
-        .disabled(disabled)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func openComposer() {

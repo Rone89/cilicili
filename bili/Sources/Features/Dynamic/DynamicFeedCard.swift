@@ -301,16 +301,14 @@ private struct DynamicDetailView: View {
         .background(Color(.systemBackground))
         .toolbar {
             if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
-                ToolbarItem(placement: .bottomBar) {
-                    DynamicDetailBottomInteractionBar(
-                        display: display,
-                        initialIsLiked: item.isLiked,
-                        initialLikeCount: display.initialLikeCount,
-                        commentCount: item.replyCount ?? 0,
-                        canComment: commentsViewModel.canLoadComments,
-                        submitComment: submitComment
-                    )
-                }
+                DynamicDetailBottomInteractionBar(
+                    display: display,
+                    initialIsLiked: item.isLiked,
+                    initialLikeCount: display.initialLikeCount,
+                    commentCount: item.replyCount ?? 0,
+                    canComment: commentsViewModel.canLoadComments,
+                    submitComment: submitComment
+                )
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
