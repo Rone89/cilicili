@@ -22,6 +22,21 @@ struct MineInterfaceSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("native-typography-refinement-experiment-toggle")
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled },
+                    set: { libraryStore.setDynamicDetailBottomInteractionBarExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("动态详情底部互动栏", systemImage: "bubble.left.and.bubble.right")
+
+                        Text("在动态详情页底部固定显示点赞、评论和收藏操作，并支持直接展开评论输入框。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("dynamic-detail-bottom-interaction-bar-experiment-toggle")
             }
         }
         .tint(libraryStore.appTintColor)

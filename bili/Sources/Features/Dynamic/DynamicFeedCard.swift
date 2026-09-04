@@ -300,11 +300,24 @@ private struct DynamicDetailView: View {
         )
         .background(Color(.systemBackground))
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            DynamicDetailActionBar(
-                display: display,
-                initialIsLiked: item.isLiked,
-                initialLikeCount: display.initialLikeCount
-            )
+            Group {
+                if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+                    DynamicDetailBottomInteractionBar(
+                        display: display,
+                        initialIsLiked: item.isLiked,
+                        initialLikeCount: display.initialLikeCount,
+                        commentCount: item.replyCount ?? 0,
+                        canComment: commentsViewModel.canLoadComments,
+                        submitComment: submitComment
+                    )
+                } else {
+                    DynamicDetailActionBar(
+                        display: display,
+                        initialIsLiked: item.isLiked,
+                        initialLikeCount: display.initialLikeCount
+                    )
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 6)
@@ -357,6 +370,14 @@ private struct DynamicDetailView: View {
     }
 
     private func refreshDetail() async {
+        await commentsViewModel.reload()
+    }
+
+    private func submitComment(_ message: String) async throws {
+        guard let oid = item.commentOID, let type = item.commentType else {
+            throw BiliAPIError.missingPayload
+        }
+        try await api.addDynamicComment(oid: oid, type: type, message: message)
         await commentsViewModel.reload()
     }
 }

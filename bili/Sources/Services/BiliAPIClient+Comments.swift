@@ -1,6 +1,36 @@
 import Foundation
 
 extension BiliAPIClient {
+    func addDynamicComment(oid: String, type: Int, message: String) async throws {
+        let normalizedOID = oid.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedOID.isEmpty, type > 0, !normalizedMessage.isEmpty else {
+            throw BiliAPIError.missingPayload
+        }
+        let interactionContext = await interactionRequestContext()
+        guard interactionContext.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+        guard let csrf = interactionContext.csrfToken, !csrf.isEmpty else {
+            throw BiliAPIError.missingCSRF
+        }
+        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
+            base: baseURL,
+            path: "/x/v2/reply/add",
+            body: [
+                "oid": normalizedOID,
+                "type": String(type),
+                "message": normalizedMessage,
+                "plat": "1",
+                "csrf": csrf,
+            ],
+            referer: "https://t.bilibili.com/",
+            cookieHeader: interactionContext.cookieHeader,
+            retryPolicy: .idempotentMutation
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+    }
+
     func setCommentLike(
         oid: String,
         type: Int,

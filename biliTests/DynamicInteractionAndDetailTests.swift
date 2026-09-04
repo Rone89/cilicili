@@ -26,6 +26,21 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         }
     }
 
+    func testDynamicDetailBottomInteractionBarExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.dynamic-detail-bottom-bar.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.dynamicDetailBottomInteractionBarExperimentEnabled)
+
+        store.setDynamicDetailBottomInteractionBarExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
+
+        store.setDynamicDetailBottomInteractionBarExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
+    }
+
 
     func testOptimisticStateUpdatesLikeCountAndReturnsToOriginalState() {
         let original = DynamicLikeDisplayState(isLiked: false, likeCount: 7)
