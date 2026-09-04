@@ -3,7 +3,7 @@ import SwiftUI
 struct DynamicDetailBottomInteractionBar: View {
     private enum Metrics {
         static let controlSide: CGFloat = 44
-        static let groupSpacing: CGFloat = 12
+        static let groupSpacing: CGFloat = 8
     }
 
     @EnvironmentObject private var dependencies: AppDependencies
@@ -108,13 +108,13 @@ struct DynamicDetailBottomInteractionBar: View {
     }
 
     private var composer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Metrics.groupSpacing) {
             Button {
                 isCommentFieldFocused = false
                 isComposerPresented = false
             } label: {
                 Image(systemName: "xmark")
-                    .frame(width: 36, height: 44)
+                    .frame(width: Metrics.controlSide, height: Metrics.controlSide)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("取消评论")
