@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct DynamicDetailBottomInteractionBar: View {
+    private enum Metrics {
+        static let controlSide: CGFloat = 44
+        static let groupSpacing: CGFloat = 12
+    }
+
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var sessionStore: SessionStore
@@ -42,13 +47,14 @@ struct DynamicDetailBottomInteractionBar: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
+        GlassEffectContainer(spacing: Metrics.groupSpacing) {
             if isComposerPresented {
                 composer
             } else {
                 defaultActions
             }
         }
+        .padding(.horizontal, 4)
         .animation(.smooth(duration: 0.22), value: isComposerPresented)
         .accessibilityIdentifier("dynamic.detail.experimental.bottom-interaction-bar")
         .alert("评论失败", isPresented: Binding(
@@ -62,11 +68,11 @@ struct DynamicDetailBottomInteractionBar: View {
     }
 
     private var defaultActions: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Metrics.groupSpacing) {
             interactionButton(
                 systemImage: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
                 label: likeState.isLiked ? "点赞，已点赞" : "点赞，未点赞",
-                value: "(likeState.likeCount) 个赞",
+                value: "\(likeState.likeCount) 个赞",
                 selected: likeState.isLiked,
                 disabled: isMutatingLike,
                 action: toggleLike
@@ -79,20 +85,20 @@ struct DynamicDetailBottomInteractionBar: View {
                     systemImage: "bubble.left"
                 )
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: Metrics.controlSide)
                 .padding(.horizontal, 12)
             }
             .biliGlassButtonStyle()
             .buttonBorderShape(.capsule)
             .accessibilityLabel("评论")
-            .accessibilityValue("共 (commentCount) 条")
+            .accessibilityValue("共 \(commentCount) 条")
             .disabled(!canComment)
 
             Button {
                 errorMessage = "动态收藏接口暂未提供"
             } label: {
                 Image(systemName: "star")
-                    .frame(width: 44, height: 44)
+                    .frame(width: Metrics.controlSide, height: Metrics.controlSide)
             }
             .biliGlassButtonStyle()
             .buttonBorderShape(.circle)
@@ -115,6 +121,7 @@ struct DynamicDetailBottomInteractionBar: View {
 
             TextField("友善发言，理性讨论", text: $commentDraft, axis: .vertical)
                 .lineLimit(1...5)
+                .textFieldStyle(.roundedBorder)
                 .focused($isCommentFieldFocused)
                 .submitLabel(.send)
                 .accessibilityLabel("评论内容")
@@ -127,9 +134,9 @@ struct DynamicDetailBottomInteractionBar: View {
                     Image(systemName: "paperplane.fill")
                 }
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .frame(width: 44, height: 44)
+            .frame(width: Metrics.controlSide, height: Metrics.controlSide)
             .disabled(isSubmittingComment || commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("发送评论")
         }
@@ -151,9 +158,9 @@ struct DynamicDetailBottomInteractionBar: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: 44, height: 44)
+                .frame(width: Metrics.controlSide, height: Metrics.controlSide)
         }
-        .biliGlassButtonStyle(prominent: selected)
+        .biliGlassButtonStyle()
         .foregroundStyle(selected ? appTintColor : .primary)
         .disabled(disabled)
         .accessibilityLabel(label)
