@@ -84,7 +84,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     private var commentButton: some View {
         Button(action: openComposer) {
             Label(
-                commentCount > 0 ? BiliFormatters.compactCount(commentCount) : "说点什么…",
+                "点击发送电波",
                 systemImage: "bubble.left"
             )
         }
