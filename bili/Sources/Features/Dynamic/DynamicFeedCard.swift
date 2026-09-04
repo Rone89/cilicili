@@ -226,6 +226,8 @@ private struct DynamicDetailView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
+    @State private var commentComposerTarget: DynamicCommentComposerTarget?
+    @State private var commentDrafts = [String: String]()
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -266,7 +268,8 @@ private struct DynamicDetailView: View {
                     selectSort: selectCommentSort,
                     showReplies: { comment in
                         replySheetComment = comment
-                    }
+                    },
+                    replyToComment: replyToCommentAction
                 )
                 .padding(.top, 10)
                 .accessibilityIdentifier("dynamic.detail.inlineComments")
@@ -305,9 +308,11 @@ private struct DynamicDetailView: View {
                     display: display,
                     initialIsLiked: item.isLiked,
                     initialLikeCount: display.initialLikeCount,
-                    commentCount: item.replyCount ?? 0,
+                    commentCount: commentsViewModel.displayedReplyCount ?? 0,
                     canComment: commentsViewModel.canLoadComments,
-                    submitComment: submitComment
+                    openComment: {
+                        commentComposerTarget = .dynamic
+                    }
                 )
             }
         }
@@ -342,13 +347,26 @@ private struct DynamicDetailView: View {
             commentsViewModel.setBlocksGoodsComments(isEnabled)
         }
         .sheet(item: $replySheetComment) { comment in
-            DynamicCommentRepliesSheet(rootComment: comment, replyStore: commentsViewModel.replyStore)
+            DynamicCommentRepliesSheet(
+                rootComment: comment,
+                replyStore: commentsViewModel.replyStore,
+                submitReply: submitReplyAction
+            )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
                     oid: item.commentOID,
                     type: item.commentType,
                     referer: "https://t.bilibili.com/\(item.idStr)"
                 )
+        }
+        .sheet(item: $commentComposerTarget) { target in
+            DynamicCommentComposerSheet(
+                draft: commentDraftBinding(for: target),
+                target: target,
+                submit: { message in
+                    try await submitComment(target, message)
+                }
+            )
         }
     }
 
@@ -379,11 +397,42 @@ private struct DynamicDetailView: View {
         await commentsViewModel.reload()
     }
 
-    private func submitComment(_ message: String) async throws {
+    private func submitComment(
+        _ target: DynamicCommentComposerTarget,
+        _ message: String
+    ) async throws {
         guard let oid = item.commentOID, let type = item.commentType else {
             throw BiliAPIError.missingPayload
         }
-        try await api.addDynamicComment(oid: oid, type: type, message: message)
+        try await api.addDynamicComment(
+            oid: oid,
+            type: type,
+            message: message,
+            root: target.rootID,
+            parent: target.parentID
+        )
+        commentsViewModel.registerSubmittedComment()
         await commentsViewModel.reload()
+    }
+
+    private var replyToCommentAction: ((Comment) -> Void)? {
+        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled else { return nil }
+        return { comment in
+            commentComposerTarget = .reply(root: comment, parent: comment)
+        }
+    }
+
+    private var submitReplyAction: ((DynamicCommentComposerTarget, String) async throws -> Void)? {
+        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled else { return nil }
+        return { target, message in
+            try await submitComment(target, message)
+        }
+    }
+
+    private func commentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<String> {
+        Binding(
+            get: { commentDrafts[target.id] ?? "" },
+            set: { commentDrafts[target.id] = $0 }
+        )
     }
 }

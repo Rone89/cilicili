@@ -4,6 +4,7 @@ struct DynamicCommentRowContent: View {
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let showReplies: () -> Void
+    let replyToComment: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -19,6 +20,14 @@ struct DynamicCommentRowContent: View {
             )
 
             DynamicCommentImageGrid(images: display.pictures)
+
+            if let replyToComment {
+                DynamicCommentInlineActionPill(
+                    title: "回复",
+                    systemImage: "arrowshape.turn.up.left",
+                    action: replyToComment
+                )
+            }
 
             DynamicCommentReplyPreviewButton(
                 replies: display.replyPreviews,

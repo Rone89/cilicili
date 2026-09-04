@@ -11,15 +11,11 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     let initialLikeCount: Int
     let commentCount: Int
     let canComment: Bool
-    let submitComment: (String) async throws -> Void
+    let openComment: () -> Void
 
     @State private var likeState: DynamicLikeDisplayState
     @State private var isMutatingLike = false
-    @State private var isComposerPresented = false
-    @State private var commentDraft = ""
-    @State private var isSubmittingComment = false
     @State private var errorMessage: String?
-    @FocusState private var isCommentFieldFocused: Bool
 
     init(
         display: DynamicFeedCardDisplayModel,
@@ -27,14 +23,14 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         initialLikeCount: Int,
         commentCount: Int,
         canComment: Bool,
-        submitComment: @escaping (String) async throws -> Void
+        openComment: @escaping () -> Void
     ) {
         self.display = display
         self.initialIsLiked = initialIsLiked
         self.initialLikeCount = initialLikeCount
         self.commentCount = commentCount
         self.canComment = canComment
-        self.submitComment = submitComment
+        self.openComment = openComment
         _likeState = State(initialValue: DynamicLikeDisplayState(
             isLiked: initialIsLiked,
             likeCount: initialLikeCount
@@ -43,22 +39,16 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
-        if isComposerPresented {
-            ToolbarItem(placement: .bottomBar) {
-                composer
-            }
-        } else {
-            ToolbarItem(placement: .bottomBar) {
-                likeButton
-            }
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                commentButton
-            }
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                shareButton
-            }
+        ToolbarItem(placement: .bottomBar) {
+            likeButton
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            commentButton
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            shareButton
         }
     }
 
@@ -74,7 +64,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
         .accessibilityValue("\(likeState.isLiked ? "已点赞" : "未点赞")，\(likeState.likeCount) 个赞")
         .accessibilityAddTraits(likeState.isLiked ? .isSelected : [])
-        .alert("评论失败", isPresented: Binding(
+        .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -85,7 +75,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     }
 
     private var commentButton: some View {
-        Button(action: openComposer) {
+        Button(action: openComment) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "bubble.left")
                     .font(.body)
@@ -118,46 +108,6 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         URL(string: "https://t.bilibili.com/\(display.dynamicID)")!
     }
 
-    private var composer: some View {
-        HStack {
-            Button {
-                isCommentFieldFocused = false
-                isComposerPresented = false
-            } label: {
-                Image(systemName: "xmark")
-            }
-            .accessibilityLabel("取消评论")
-
-            TextField("友善发言，理性讨论", text: $commentDraft, axis: .vertical)
-                .lineLimit(1...5)
-                .textFieldStyle(.roundedBorder)
-                .focused($isCommentFieldFocused)
-                .submitLabel(.send)
-                .accessibilityLabel("评论内容")
-                .task {
-                    await Task.yield()
-                    guard !Task.isCancelled, isComposerPresented else { return }
-                    isCommentFieldFocused = true
-                }
-                .onSubmit { submitCommentIfPossible() }
-
-            Button(action: submitCommentIfPossible) {
-                if isSubmittingComment {
-                    ProgressView()
-                } else {
-                    Image(systemName: "paperplane.fill")
-                }
-            }
-            .disabled(isSubmittingComment || commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityLabel("发送评论")
-        }
-    }
-
-    private func openComposer() {
-        guard canComment else { return }
-        isComposerPresented = true
-    }
-
     private func toggleLike() {
         let account = sessionStore.credentialSnapshot(
             for: .interaction,
@@ -187,21 +137,4 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         }
     }
 
-    private func submitCommentIfPossible() {
-        let message = commentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !isSubmittingComment else { return }
-        isSubmittingComment = true
-        Task { @MainActor in
-            do {
-                try await submitComment(message)
-                commentDraft = ""
-                isCommentFieldFocused = false
-                isComposerPresented = false
-                Haptics.success()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isSubmittingComment = false
-        }
-    }
 }

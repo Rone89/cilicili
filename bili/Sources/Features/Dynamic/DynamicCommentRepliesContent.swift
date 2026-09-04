@@ -5,6 +5,7 @@ struct DynamicCommentRepliesContent: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    var replyToComment: ((Comment) -> Void)? = nil
 
     var body: some View {
         let snapshot = replyStore.repliesSnapshot(for: rootComment)
@@ -14,7 +15,8 @@ struct DynamicCommentRepliesContent: View {
             rootComment: rootComment,
             replyStore: replyStore,
             highlightedReplyID: highlightedReplyID,
-            showDialog: showDialog
+            showDialog: showDialog,
+            replyToComment: replyToComment
         )
     }
 }
@@ -25,6 +27,7 @@ private struct DynamicCommentRepliesStateContent: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
         if snapshot.replies.isEmpty && snapshot.state.isLoading {
@@ -46,7 +49,8 @@ private struct DynamicCommentRepliesStateContent: View {
                 rootComment: rootComment,
                 replyStore: replyStore,
                 highlightedReplyID: highlightedReplyID,
-                showDialog: showDialog
+                showDialog: showDialog,
+                replyToComment: replyToComment
             )
         }
     }
@@ -64,6 +68,7 @@ private struct DynamicCommentRepliesLoadedList: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -72,7 +77,10 @@ private struct DynamicCommentRepliesLoadedList: View {
                     item: replyItem,
                     showDialog: replyItem.canShowDialog ? {
                         showDialog(replyItem.reply)
-                    } : nil
+                    } : nil,
+                    reply: replyToComment.map { action in
+                        { action(replyItem.reply) }
+                    }
                 )
                 .padding(.horizontal, 16)
                 .background(

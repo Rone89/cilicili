@@ -4,6 +4,7 @@ struct DynamicCommentsListContent: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    var replyToComment: ((Comment) -> Void)? = nil
 
     @ViewBuilder
     var body: some View {
@@ -30,7 +31,8 @@ struct DynamicCommentsListContent: View {
             DynamicCommentsLoadedList(
                 viewModel: viewModel,
                 highlightedCommentID: highlightedCommentID,
-                showReplies: showReplies
+                showReplies: showReplies,
+                replyToComment: replyToComment
             )
         }
     }
@@ -41,13 +43,18 @@ private struct DynamicCommentsLoadedList: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(viewModel.commentItems) { item in
-                DynamicCommentRow(item: item) {
-                    showReplies(item.comment)
-                }
+                DynamicCommentRow(
+                    item: item,
+                    showReplies: { showReplies(item.comment) },
+                    replyToComment: replyToComment.map { action in
+                        { action(item.comment) }
+                    }
+                )
                 .padding(.horizontal, 14)
                 .background(
                     item.id == highlightedCommentID ? appTintColor.opacity(0.10) : Color.clear,

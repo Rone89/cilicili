@@ -1005,6 +1005,103 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testDynamicCommentAddBuildsTopLevelAndReplyForms() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "dynamic comment requests captured")
+        requestExpectation.expectedFulfillmentCount = 2
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        )
+        try await api.addDynamicComment(
+            oid: " 987654321 ",
+            type: 17,
+            message: " 顶级评论 "
+        )
+        try await api.addDynamicComment(
+            oid: "987654321",
+            type: 17,
+            message: " 回复内容 ",
+            root: 101,
+            parent: 202
+        )
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(recorder.requests.count, 2)
+        for request in recorder.requests {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/x/v2/reply/add")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://t.bilibili.com/")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Content-Type"),
+                "application/x-www-form-urlencoded; charset=UTF-8"
+            )
+        }
+        XCTAssertEqual(
+            formValues(in: recorder.requests[0]),
+            [
+                "oid": "987654321",
+                "type": "17",
+                "message": "顶级评论",
+                "plat": "1",
+                "csrf": "csrf-value",
+            ]
+        )
+        XCTAssertEqual(
+            formValues(in: recorder.requests[1]),
+            [
+                "oid": "987654321",
+                "type": "17",
+                "message": "回复内容",
+                "plat": "1",
+                "csrf": "csrf-value",
+                "root": "101",
+                "parent": "202",
+            ]
+        )
+    }
+
+    @MainActor
+    func testDynamicCommentAddDoesNotRetryAmbiguousPostFailure() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "dynamic comment failure captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            throw URLError(.timedOut)
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        )
+        do {
+            try await api.addDynamicComment(
+                oid: "987654321",
+                type: 17,
+                message: "不会自动重试"
+            )
+            XCTFail("Expected the network error to be propagated")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+        }
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
     func testVideoCoinValidatesMultiplyAndBuildsForm() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 

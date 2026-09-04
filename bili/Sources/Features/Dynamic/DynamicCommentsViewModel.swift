@@ -97,6 +97,10 @@ final class DynamicCommentsViewModel: ObservableObject {
         )
     }
 
+    func registerSubmittedComment() {
+        displayedReplyCount = max(0, (displayedReplyCount ?? comments.count) + 1)
+    }
+
     private var commentOID: String? {
         item.commentOID
     }

@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicCommentRow: View {
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
+    let replyToComment: (() -> Void)?
 
     private var comment: Comment {
         item.comment
@@ -14,10 +15,12 @@ struct DynamicCommentRow: View {
 
     init(
         item: DynamicCommentRowItem,
-        showReplies: @escaping () -> Void
+        showReplies: @escaping () -> Void,
+        replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.showReplies = showReplies
+        self.replyToComment = replyToComment
     }
 
     var body: some View {
@@ -31,7 +34,8 @@ struct DynamicCommentRow: View {
             DynamicCommentRowContent(
                 comment: comment,
                 display: display,
-                showReplies: showReplies
+                showReplies: showReplies,
+                replyToComment: replyToComment
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)

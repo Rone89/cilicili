@@ -41,6 +41,27 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
     }
 
+    func testDynamicCommentComposerTargetSeparatesTopLevelAndReplyDrafts() {
+        let topLevel = DynamicCommentComposerTarget.dynamic
+        let rootReply = DynamicCommentComposerTarget(
+            rootID: 101,
+            parentID: 101,
+            authorName: "根评论作者"
+        )
+        let nestedReply = DynamicCommentComposerTarget(
+            rootID: 101,
+            parentID: 202,
+            authorName: "楼中楼作者"
+        )
+
+        XCTAssertEqual(topLevel.id, "dynamic")
+        XCTAssertEqual(rootReply.id, "reply:101:101")
+        XCTAssertEqual(nestedReply.id, "reply:101:202")
+        XCTAssertNotEqual(rootReply, nestedReply)
+        XCTAssertEqual(nestedReply.title, "回复评论")
+        XCTAssertEqual(nestedReply.prompt, "回复 @楼中楼作者")
+    }
+
 
     func testOptimisticStateUpdatesLikeCountAndReturnsToOriginalState() {
         let original = DynamicLikeDisplayState(isLiked: false, likeCount: 7)

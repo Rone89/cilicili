@@ -2,10 +2,12 @@ import SwiftUI
 
 struct DynamicCommentReplyRootView: View {
     let comment: Comment
+    let reply: (() -> Void)?
     private let display: DynamicCommentRowDisplayModel
 
-    init(comment: Comment) {
+    init(comment: Comment, reply: (() -> Void)? = nil) {
         self.comment = comment
+        self.reply = reply
         self.display = DynamicCommentRowDisplayModel(comment: comment)
     }
 
@@ -27,6 +29,14 @@ struct DynamicCommentReplyRootView: View {
                     comment: comment,
                     display: display
                 )
+
+                if let reply {
+                    DynamicCommentInlineActionPill(
+                        title: "回复",
+                        systemImage: "arrowshape.turn.up.left",
+                        action: reply
+                    )
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -39,6 +49,7 @@ struct DynamicCommentReplyDetailRow: View {
 
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
+    let replyAction: (() -> Void)?
 
     private var reply: Comment {
         item.reply
@@ -50,10 +61,12 @@ struct DynamicCommentReplyDetailRow: View {
 
     init(
         item: DynamicCommentReplyItem,
-        showDialog: (() -> Void)?
+        showDialog: (() -> Void)?,
+        reply: (() -> Void)? = nil
     ) {
         self.item = item
         self.showDialog = showDialog
+        self.replyAction = reply
     }
 
     var body: some View {
@@ -72,13 +85,25 @@ struct DynamicCommentReplyDetailRow: View {
                     display: display
                 )
 
-                if let showDialog {
-                    Button(action: showDialog) {
-                        Label("查看对话", systemImage: "text.bubble")
-                            .font(.caption.weight(.semibold))
+                if showDialog != nil || replyAction != nil {
+                    HStack(spacing: 8) {
+                        if let replyAction {
+                            DynamicCommentInlineActionPill(
+                                title: "回复",
+                                systemImage: "arrowshape.turn.up.left",
+                                action: replyAction
+                            )
+                        }
+
+                        if let showDialog {
+                            Button(action: showDialog) {
+                                Label("查看对话", systemImage: "text.bubble")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(appTintColor)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(appTintColor)
                     .padding(.top, 2)
                 }
             }

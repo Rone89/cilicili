@@ -124,6 +124,17 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(viewModel.state, .loaded)
     }
 
+    @MainActor
+    func testRegisterSubmittedCommentUpdatesDisplayedReplyCount() throws {
+        let viewModel = DynamicCommentsViewModel(item: try makeCommentableItem(), api: try makeCommentsAPI())
+
+        XCTAssertNil(viewModel.displayedReplyCount)
+        viewModel.registerSubmittedComment()
+        XCTAssertEqual(viewModel.displayedReplyCount, 1)
+        viewModel.registerSubmittedComment()
+        XCTAssertEqual(viewModel.displayedReplyCount, 2)
+    }
+
     private func decodeOriginal(_ json: String) throws -> DynamicOriginalItem {
         try JSONDecoder.bili.decode(DynamicOriginalItem.self, from: Data(json.utf8))
     }

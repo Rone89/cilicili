@@ -5,6 +5,7 @@ struct DynamicCommentsSheetContent: View {
     let highlightedCommentID: Int?
     let selectSort: @MainActor @Sendable (CommentSort) -> Void
     let showReplies: (Comment) -> Void
+    var replyToComment: ((Comment) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,7 +23,8 @@ struct DynamicCommentsSheetContent: View {
             DynamicCommentsListContent(
                 viewModel: viewModel,
                 highlightedCommentID: highlightedCommentID,
-                showReplies: showReplies
+                showReplies: showReplies,
+                replyToComment: replyToComment
             )
         }
     }

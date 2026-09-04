@@ -1,10 +1,22 @@
 import Foundation
 
 extension BiliAPIClient {
-    func addDynamicComment(oid: String, type: Int, message: String) async throws {
+    func addDynamicComment(
+        oid: String,
+        type: Int,
+        message: String,
+        root: Int? = nil,
+        parent: Int? = nil
+    ) async throws {
         let normalizedOID = oid.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedOID.isEmpty, type > 0, !normalizedMessage.isEmpty else {
+        guard !normalizedOID.isEmpty,
+              type > 0,
+              !normalizedMessage.isEmpty,
+              root.map({ $0 > 0 }) ?? true,
+              parent.map({ $0 > 0 }) ?? true,
+              (root == nil) == (parent == nil)
+        else {
             throw BiliAPIError.missingPayload
         }
         let interactionContext = await interactionRequestContext()
@@ -12,19 +24,24 @@ extension BiliAPIClient {
         guard let csrf = interactionContext.csrfToken, !csrf.isEmpty else {
             throw BiliAPIError.missingCSRF
         }
+        var body = [
+            "oid": normalizedOID,
+            "type": String(type),
+            "message": normalizedMessage,
+            "plat": "1",
+            "csrf": csrf,
+        ]
+        if let root, let parent {
+            body["root"] = String(root)
+            body["parent"] = String(parent)
+        }
         let response: BiliResponse<EmptyBiliPayload> = try await postForm(
             base: baseURL,
             path: "/x/v2/reply/add",
-            body: [
-                "oid": normalizedOID,
-                "type": String(type),
-                "message": normalizedMessage,
-                "plat": "1",
-                "csrf": csrf,
-            ],
+            body: body,
             referer: "https://t.bilibili.com/",
             cookieHeader: interactionContext.cookieHeader,
-            retryPolicy: .idempotentMutation
+            retryPolicy: .api
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
