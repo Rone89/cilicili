@@ -59,7 +59,10 @@ struct DynamicCommentRow: View {
         } reply: {
             if display.visibleReplyCount > 0 {
                 Button(action: showReplies) {
-                    DynamicCommentReplyPreviewContainer {
+                    CommentReplyPreviewContainer(
+                        replyCount: display.visibleReplyCount,
+                        showsPreview: !display.replyPreviews.isEmpty
+                    ) {
                         ForEach(display.replyPreviews) { reply in
                             DynamicReplyPreviewRow(reply: reply)
                         }
