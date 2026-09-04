@@ -431,6 +431,11 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertNil(AppTypography.Role.feedVideoTitle.nativeWeight)
         XCTAssertNil(AppTypography.Role.author.nativeWeight)
         XCTAssertEqual(AppTypography.Role.commentAuthor.nativeWeight, .semibold)
+        XCTAssertEqual(
+            AppTypography.Role.diagnostic.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.caption1.rawValue
+        )
+        XCTAssertEqual(AppTypography.Role.diagnostic.design, .monospaced)
     }
 
     @MainActor

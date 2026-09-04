@@ -185,8 +185,10 @@ enum AppTypography {
                 return .subheadline
             case .tertiaryMetadata:
                 return .caption
-            case .badge, .diagnostic:
+            case .badge:
                 return .caption2
+            case .diagnostic:
+                return .caption
             }
         }
 
@@ -212,8 +214,10 @@ enum AppTypography {
                 return .subheadline
             case .tertiaryMetadata:
                 return .caption1
-            case .badge, .diagnostic:
+            case .badge:
                 return .caption2
+            case .diagnostic:
+                return .caption1
             }
         }
 
