@@ -119,7 +119,7 @@ private struct DynamicCommentSwipeReplyModifier: ViewModifier {
     func body(content: Content) -> some View {
         if isEnabled {
             content
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(action: action) {
                         Label("回复", systemImage: "arrowshape.turn.up.left")
                     }
