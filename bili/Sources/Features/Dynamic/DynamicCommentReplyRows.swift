@@ -19,20 +19,26 @@ struct DynamicCommentReplyRootView: View {
                 size: 40
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 DynamicCommentReplyAuthorLine(
                     comment: comment,
                     display: display,
                     showsLike: true
                 )
-                DynamicCommentReplyBody(
-                    comment: comment,
-                    display: display
+                DynamicCommentText(
+                    content: comment.content,
+                    font: .subheadline,
+                    textColor: .primary,
+                    emoteSize: 22,
+                    lineSpacing: 1,
+                    typographyRole: .commentBody
                 )
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { reply?() }
                 .accessibilityHint(reply == nil ? "" : "轻点以回复")
+
+                DynamicCommentImageGrid(images: display.pictures)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -73,22 +79,30 @@ struct DynamicCommentReplyDetailRow: View {
                 size: 36
             )
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
                     .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
-                DynamicCommentReplyBody(
-                    comment: reply,
-                    display: display
+                DynamicCommentText(
+                    content: reply.content,
+                    font: .subheadline,
+                    textColor: .primary,
+                    emoteSize: 22,
+                    lineSpacing: 1,
+                    typographyRole: .commentBody
                 )
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { replyAction?() }
                 .accessibilityHint(replyAction == nil ? "" : "轻点以回复")
 
+                DynamicCommentImageGrid(images: display.pictures)
+
                 if let showDialog {
                     Button(action: showDialog) {
                         Label("查看对话", systemImage: "text.bubble")
-                            .font(.caption.weight(.semibold))
+                            .appTypography(.action, fallback: .caption.weight(.semibold))
+                            .padding(.horizontal, 9)
+                            .frame(height: 26)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(appTintColor)
@@ -98,7 +112,7 @@ struct DynamicCommentReplyDetailRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 9)
     }
 }
 
@@ -132,18 +146,25 @@ struct DynamicCommentDialogRow: View {
                 size: 36
             )
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 11) {
                 DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
                     .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
-                DynamicCommentReplyBody(
-                    comment: reply,
-                    display: display
+                DynamicCommentText(
+                    content: reply.content,
+                    font: .subheadline,
+                    textColor: .primary,
+                    emoteSize: 22,
+                    lineSpacing: 2,
+                    typographyRole: .commentBody
                 )
+                .fixedSize(horizontal: false, vertical: true)
+
+                DynamicCommentImageGrid(images: display.pictures)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .padding(.horizontal, isFocused ? 10 : 0)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
