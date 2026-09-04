@@ -4,6 +4,7 @@ import SwiftUI
 struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
     var minimizesTabBarOnScroll = true
+    var softPrimaryPageTopEdgeEffectExperimentEnabled = false
     var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference = .soft
     var visibleRootTabs: [AppTab] = AppTab.defaultVisibleTabs
 }
@@ -16,6 +17,9 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
+    var softPrimaryPageTopEdgeEffectExperimentEnabled: Bool {
+        snapshot.softPrimaryPageTopEdgeEffectExperimentEnabled
+    }
     var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference { snapshot.scrollEdgeEffectPreference }
     var visibleRootTabs: [AppTab] { snapshot.visibleRootTabs }
 
@@ -38,6 +42,8 @@ final class RootRuntimeSettingsStore: ObservableObject {
         let next = RootRuntimeSettingsSnapshot(
             appearanceMode: libraryStore.appearanceMode,
             minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
+            softPrimaryPageTopEdgeEffectExperimentEnabled:
+                libraryStore.softPrimaryPageTopEdgeEffectExperimentEnabled,
             scrollEdgeEffectPreference: libraryStore.scrollEdgeEffectPreference,
             visibleRootTabs: libraryStore.visibleRootTabs
         )

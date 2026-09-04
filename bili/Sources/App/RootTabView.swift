@@ -40,6 +40,10 @@ struct RootTabView: View {
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
         .environment(\.scrollEdgeEffectPreference, runtimeSettings.scrollEdgeEffectPreference)
+        .environment(
+            \.softPrimaryPageTopEdgeEffectExperimentEnabled,
+            runtimeSettings.softPrimaryPageTopEdgeEffectExperimentEnabled
+        )
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
             openAppURL(url)

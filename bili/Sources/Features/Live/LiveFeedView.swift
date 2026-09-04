@@ -14,7 +14,7 @@ struct LiveFeedView: View {
             .padding(.bottom, 22)
         }
         .contentMargins(.top, 0, for: .scrollContent)
-        .nativeTopScrollEdgeEffect()
+        .nativeTopScrollEdgeEffect(isPrimaryPage: true)
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))
         .customPullRefreshTracking(

@@ -510,6 +510,22 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryStorePersistsSoftPrimaryPageTopEdgeEffectExperiment() {
+        let defaults = makeUserDefaults()
+        let key = "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1"
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.softPrimaryPageTopEdgeEffectExperimentEnabled)
+        store.setSoftPrimaryPageTopEdgeEffectExperimentEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: key))
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).softPrimaryPageTopEdgeEffectExperimentEnabled)
+
+        store.setSoftPrimaryPageTopEdgeEffectExperimentEnabled(false)
+        XCTAssertFalse(defaults.bool(forKey: key))
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).softPrimaryPageTopEdgeEffectExperimentEnabled)
+    }
+
+    @MainActor
     func testLibraryStoreDefaultsImageDiagnosticsOnAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)

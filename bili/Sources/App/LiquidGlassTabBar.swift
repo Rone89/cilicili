@@ -21,6 +21,15 @@ extension EnvironmentValues {
         set { self[ScrollEdgeEffectPreferenceKey.self] = newValue }
     }
 
+    var softPrimaryPageTopEdgeEffectExperimentEnabled: Bool {
+        get { self[SoftPrimaryPageTopEdgeEffectExperimentKey.self] }
+        set { self[SoftPrimaryPageTopEdgeEffectExperimentKey.self] = newValue }
+    }
+
+}
+
+private struct SoftPrimaryPageTopEdgeEffectExperimentKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 extension View {
@@ -87,12 +96,14 @@ extension View {
     @ViewBuilder
     func nativeTopScrollEdgeEffect(
         hidesRootNavigationTitle: Bool = true,
-        navigationTitleHideDistance: CGFloat = TopScrollEdgeEffect.defaultNavigationTitleHideDistance
+        navigationTitleHideDistance: CGFloat = TopScrollEdgeEffect.defaultNavigationTitleHideDistance,
+        isPrimaryPage: Bool = false
     ) -> some View {
         modifier(
             TopScrollEdgeEffect(
                 hidesRootNavigationTitle: hidesRootNavigationTitle,
-                navigationTitleHideDistance: navigationTitleHideDistance
+                navigationTitleHideDistance: navigationTitleHideDistance,
+                isPrimaryPage: isPrimaryPage
             )
         )
     }
@@ -279,9 +290,12 @@ struct TopScrollEdgeEffect: ViewModifier {
     @Environment(\.isPresented) private var isPresented
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
     @Environment(\.scrollEdgeEffectPreference) private var scrollEdgeEffectPreference
+    @Environment(\.softPrimaryPageTopEdgeEffectExperimentEnabled)
+    private var softPrimaryPageTopEdgeEffectExperimentEnabled
     @State private var scrollState = TopScrollEdgeEffectScrollState()
     let hidesRootNavigationTitle: Bool
     let navigationTitleHideDistance: CGFloat
+    let isPrimaryPage: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -315,13 +329,17 @@ struct TopScrollEdgeEffect: ViewModifier {
 
     @ViewBuilder
     private func nativeStyledContent(_ content: Content) -> some View {
-        switch scrollEdgeEffectPreference {
-        case .soft:
+        if isPrimaryPage && softPrimaryPageTopEdgeEffectExperimentEnabled {
             content.scrollEdgeEffectStyle(.soft, for: .top)
-        case .hard:
-            content.scrollEdgeEffectStyle(.hard, for: .top)
-        case .automatic:
-            content.scrollEdgeEffectStyle(.automatic, for: .top)
+        } else {
+            switch scrollEdgeEffectPreference {
+            case .soft:
+                content.scrollEdgeEffectStyle(.soft, for: .top)
+            case .hard:
+                content.scrollEdgeEffectStyle(.hard, for: .top)
+            case .automatic:
+                content.scrollEdgeEffectStyle(.automatic, for: .top)
+            }
         }
     }
 }

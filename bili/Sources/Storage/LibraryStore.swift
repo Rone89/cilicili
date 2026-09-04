@@ -149,6 +149,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var videoDetailSystemBottomBarExperimentEnabled: Bool
+    @Published private(set) var softPrimaryPageTopEdgeEffectExperimentEnabled: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -238,6 +239,8 @@ final class LibraryStore: ObservableObject {
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
     private static let videoDetailSystemBottomBarExperimentEnabledKey =
         "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1"
+    private static let softPrimaryPageTopEdgeEffectExperimentEnabledKey =
+        "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1"
     private static let videoDetailSegmentedPickerGlassStyleKey =
         "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
     private static let scrollEdgeEffectPreferenceKey = "cc.bili.display.scrollEdgeEffectPreference.v1"
@@ -622,6 +625,10 @@ final class LibraryStore: ObservableObject {
         self.videoDetailSystemBottomBarExperimentEnabled =
             userDefaults.object(
                 forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey
+            ) as? Bool ?? false
+        self.softPrimaryPageTopEdgeEffectExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.softPrimaryPageTopEdgeEffectExperimentEnabledKey
             ) as? Bool ?? false
         self.videoDetailSegmentedPickerGlassStyle =
             VideoDetailSegmentedPickerGlassStyle(
@@ -1279,6 +1286,11 @@ final class LibraryStore: ObservableObject {
     func setVideoDetailSystemBottomBarExperimentEnabled(_ isEnabled: Bool) {
         videoDetailSystemBottomBarExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.videoDetailSystemBottomBarExperimentEnabledKey)
+    }
+
+    func setSoftPrimaryPageTopEdgeEffectExperimentEnabled(_ isEnabled: Bool) {
+        softPrimaryPageTopEdgeEffectExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.softPrimaryPageTopEdgeEffectExperimentEnabledKey)
     }
 
     func setVideoDetailSegmentedPickerGlassStyle(

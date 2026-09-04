@@ -152,6 +152,20 @@ struct MineDisplaySettingsSection: View {
             }
 
             Toggle(isOn: Binding(
+                get: { libraryStore.softPrimaryPageTopEdgeEffectExperimentEnabled },
+                set: { libraryStore.setSoftPrimaryPageTopEdgeEffectExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("柔和顶部滚动边缘", systemImage: "rectangle.topthird.inset.filled")
+
+                    Text("一级页面内容滑入顶部栏时，使用系统渐进模糊代替明显的实色边界。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.videoDetailSystemBottomBarExperimentEnabled },
                 set: { libraryStore.setVideoDetailSystemBottomBarExperimentEnabled($0) }
             )) {
