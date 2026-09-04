@@ -333,6 +333,7 @@ private struct DynamicDetailView: View {
                 .padding(.bottom, 6)
             }
         }
+        .environment(\.usesDynamicDetailCommentRowLayout, libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled)
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicCommentRow: View {
+    @Environment(\.usesDynamicDetailCommentRowLayout) private var usesSharedCommentLayout
+
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
     let replyToComment: (() -> Void)?
@@ -24,6 +26,51 @@ struct DynamicCommentRow: View {
     }
 
     var body: some View {
+        if usesSharedCommentLayout {
+            sharedCommentLayout
+        } else {
+            legacyCommentLayout
+        }
+    }
+
+    private var sharedCommentLayout: some View {
+        CommentRowLayout {
+            DynamicCommentAvatar(
+                urlString: display.avatarURLString,
+                owner: display.authorOwner,
+                size: 38
+            )
+        } header: {
+            DynamicCommentRowHeader(comment: comment, display: display)
+        } bodyContent: {
+            DynamicCommentText(
+                content: comment.content,
+                font: .subheadline,
+                textColor: .primary,
+                emoteSize: 21,
+                lineSpacing: 1,
+                typographyRole: .commentBody
+            )
+            .contentShape(Rectangle())
+            .onTapGesture { replyToComment?() }
+            .accessibilityHint(replyToComment == nil ? "" : "轻点以回复")
+        } media: {
+            DynamicCommentImageGrid(images: display.pictures)
+        } reply: {
+            if display.visibleReplyCount > 0 {
+                Button(action: showReplies) {
+                    DynamicCommentReplyPreviewContainer {
+                        ForEach(display.replyPreviews) { reply in
+                            DynamicReplyPreviewRow(reply: reply)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var legacyCommentLayout: some View {
         HStack(alignment: .top, spacing: 10) {
             DynamicCommentAvatar(
                 urlString: display.avatarURLString,

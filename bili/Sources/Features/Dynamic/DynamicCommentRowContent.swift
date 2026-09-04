@@ -45,7 +45,7 @@ struct DynamicCommentRowContent: View {
 
 }
 
-private struct DynamicCommentRowHeader: View {
+struct DynamicCommentRowHeader: View {
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
 
@@ -67,7 +67,7 @@ private struct DynamicCommentRowHeader: View {
     }
 }
 
-private struct DynamicCommentReplyPreviewButton: View {
+struct DynamicCommentReplyPreviewButton: View {
     let replies: [Comment]
     let showReplies: () -> Void
 

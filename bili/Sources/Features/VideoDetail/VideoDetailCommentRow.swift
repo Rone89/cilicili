@@ -23,39 +23,36 @@ struct CommentRow: View, Equatable {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        CommentRowLayout {
             CommentAvatar(
                 urlString: display.avatarURLString,
                 owner: display.authorOwner,
                 size: 38
             )
-
-            VStack(alignment: .leading, spacing: 5) {
-                CommentRowHeader(comment: comment, display: display)
-
-                BiliEmoteText(
-                    content: comment.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 21,
-                    typographyRole: .commentBody
-                )
-                    .lineSpacing(1)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                CommentImageButton(
-                    images: display.pictures,
-                    transitionScope: comment.id.description
-                )
-
-                CommentRowReplyPreviewSection(
-                    display: display,
-                    isEnabled: style.showsReplyPreviewContainer,
-                    showReplies: showReplies
-                )
-            }
+        } header: {
+            CommentRowHeader(comment: comment, display: display)
+        } bodyContent: {
+            BiliEmoteText(
+                content: comment.content,
+                font: .subheadline,
+                textColor: .primary,
+                emoteSize: 21,
+                typographyRole: .commentBody
+            )
+                .lineSpacing(1)
+                .fixedSize(horizontal: false, vertical: true)
+        } media: {
+            CommentImageButton(
+                images: display.pictures,
+                transitionScope: comment.id.description
+            )
+        } reply: {
+            CommentRowReplyPreviewSection(
+                display: display,
+                isEnabled: style.showsReplyPreviewContainer,
+                showReplies: showReplies
+            )
         }
-        .padding(.vertical, 8)
         .commentCopyContextMenu(text: comment.content?.message, title: "复制评论")
     }
 }
