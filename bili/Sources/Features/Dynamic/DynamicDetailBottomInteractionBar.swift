@@ -9,6 +9,9 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
     let initialLikeCount: Int
+    let commentCount: Int
+    let canComment: Bool
+    let openComment: () -> Void
 
     @State private var likeState: DynamicLikeDisplayState
     @State private var isMutatingLike = false
@@ -17,11 +20,17 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     init(
         display: DynamicFeedCardDisplayModel,
         initialIsLiked: Bool,
-        initialLikeCount: Int
+        initialLikeCount: Int,
+        commentCount: Int,
+        canComment: Bool,
+        openComment: @escaping () -> Void
     ) {
         self.display = display
         self.initialIsLiked = initialIsLiked
         self.initialLikeCount = initialLikeCount
+        self.commentCount = commentCount
+        self.canComment = canComment
+        self.openComment = openComment
         _likeState = State(initialValue: DynamicLikeDisplayState(
             isLiked: initialIsLiked,
             likeCount: initialLikeCount
@@ -32,6 +41,10 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItem(placement: .bottomBar) {
             likeButton
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            commentButton
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
@@ -59,6 +72,25 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         } message: {
             Text(errorMessage ?? "请稍后重试")
         }
+    }
+
+    private var commentButton: some View {
+        Button(action: openComment) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "bubble.left")
+                    .font(.body)
+                Text("点击发送电波")
+                    .font(.body)
+            }
+            .padding(.horizontal, 6)
+        }
+        .controlSize(.small)
+        .imageScale(.medium)
+        .foregroundStyle(.primary)
+        .buttonBorderShape(.capsule)
+        .accessibilityLabel("评论")
+        .accessibilityValue("共 \(commentCount) 条")
+        .disabled(!canComment)
     }
 
     private var shareButton: some View {

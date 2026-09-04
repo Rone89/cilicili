@@ -29,8 +29,10 @@ struct DynamicCommentReplyRootView: View {
                     comment: comment,
                     display: display
                 )
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { reply?() }
+                .accessibilityHint(reply == nil ? "" : "轻点以回复")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -78,8 +80,10 @@ struct DynamicCommentReplyDetailRow: View {
                     comment: reply,
                     display: display
                 )
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { replyAction?() }
+                .accessibilityHint(replyAction == nil ? "" : "轻点以回复")
 
                 if let showDialog {
                     Button(action: showDialog) {
