@@ -10,24 +10,22 @@ struct DynamicCommentRowContent: View {
         VStack(alignment: .leading, spacing: 6) {
             DynamicCommentRowHeader(comment: comment, display: display)
 
-            VStack(alignment: .leading, spacing: 6) {
-                DynamicCommentText(
-                    content: comment.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 21,
-                    lineSpacing: 1,
-                    typographyRole: .commentBody
-                )
-
-                DynamicCommentImageGrid(images: display.pictures)
-            }
+            DynamicCommentText(
+                content: comment.content,
+                font: .subheadline,
+                textColor: .primary,
+                emoteSize: 21,
+                lineSpacing: 1,
+                typographyRole: .commentBody
+            )
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
                 replyToComment?()
             }
             .accessibilityHint(replyToComment == nil ? "" : "轻点以回复")
+
+            DynamicCommentImageGrid(images: display.pictures)
 
             DynamicCommentReplyPreviewButton(
                 replies: display.replyPreviews,
