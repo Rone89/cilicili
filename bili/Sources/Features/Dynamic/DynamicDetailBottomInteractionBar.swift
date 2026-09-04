@@ -66,7 +66,8 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         Button(action: toggleLike) {
             Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
         }
-        .controlSize(.small)
+        .controlSize(.mini)
+        .imageScale(.small)
         .foregroundStyle(likeState.isLiked ? appTintColor : .primary)
         .disabled(isMutatingLike)
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
@@ -89,8 +90,9 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
                 Text("点击发送电波")
             }
         }
-        .controlSize(.small)
-        .font(.footnote)
+        .controlSize(.mini)
+        .font(.caption2)
+        .imageScale(.small)
         .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
         .accessibilityValue("共 \(commentCount) 条")
@@ -103,7 +105,8 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         } label: {
             Image(systemName: "star")
         }
-        .controlSize(.small)
+        .controlSize(.mini)
+        .imageScale(.small)
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏不可用")
     }
