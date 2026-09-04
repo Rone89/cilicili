@@ -83,12 +83,11 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
 
     private var commentButton: some View {
         Button(action: openComposer) {
-            Label(
-                "点击发送电波",
-                systemImage: "bubble.left"
-            )
+            HStack(spacing: 4) {
+                Image(systemName: "bubble.left")
+                Text("点击发送电波")
+            }
         }
-        .labelStyle(.titleAndIcon)
         .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
         .accessibilityValue("共 \(commentCount) 条")
