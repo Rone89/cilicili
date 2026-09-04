@@ -29,14 +29,8 @@ struct DynamicCommentReplyRootView: View {
                     comment: comment,
                     display: display
                 )
-
-                if let reply {
-                    DynamicCommentInlineActionPill(
-                        title: "回复",
-                        systemImage: "arrowshape.turn.up.left",
-                        action: reply
-                    )
-                }
+                .contentShape(Rectangle())
+                .onTapGesture { reply?() }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -84,26 +78,16 @@ struct DynamicCommentReplyDetailRow: View {
                     comment: reply,
                     display: display
                 )
+                .contentShape(Rectangle())
+                .onTapGesture { replyAction?() }
 
-                if showDialog != nil || replyAction != nil {
-                    HStack(spacing: 8) {
-                        if let replyAction {
-                            DynamicCommentInlineActionPill(
-                                title: "回复",
-                                systemImage: "arrowshape.turn.up.left",
-                                action: replyAction
-                            )
-                        }
-
-                        if let showDialog {
-                            Button(action: showDialog) {
-                                Label("查看对话", systemImage: "text.bubble")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(appTintColor)
-                        }
+                if let showDialog {
+                    Button(action: showDialog) {
+                        Label("查看对话", systemImage: "text.bubble")
+                            .font(.caption.weight(.semibold))
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(appTintColor)
                     .padding(.top, 2)
                 }
             }

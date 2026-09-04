@@ -18,16 +18,13 @@ struct DynamicCommentRowContent: View {
                 lineSpacing: 1,
                 typographyRole: .commentBody
             )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                replyToComment?()
+            }
+            .accessibilityHint(replyToComment == nil ? "" : "轻点以回复")
 
             DynamicCommentImageGrid(images: display.pictures)
-
-            if let replyToComment {
-                DynamicCommentInlineActionPill(
-                    title: "回复",
-                    systemImage: "arrowshape.turn.up.left",
-                    action: replyToComment
-                )
-            }
 
             DynamicCommentReplyPreviewButton(
                 replies: display.replyPreviews,

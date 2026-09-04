@@ -61,6 +61,12 @@ struct DynamicCommentComposerSheet: View {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $draft)
                         .focused($isEditorFocused)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(
+                            Color(uiColor: .secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
                         .accessibilityLabel("评论内容")
                         .accessibilityIdentifier("dynamic.comment.composer.editor")
 
