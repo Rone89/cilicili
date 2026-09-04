@@ -23,15 +23,20 @@ struct CommentReplyDetailRow: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                        .foregroundStyle(.secondary)
-
-                    if !display.timeText.isEmpty {
-                        Text(display.timeText)
-                            .appTypography(.metadata, fallback: .caption)
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                             .foregroundStyle(.secondary)
+
+                        Spacer(minLength: 0)
+
+                        if !display.timeText.isEmpty {
+                            Text(display.timeText)
+                                .appTypography(.metadata, fallback: .caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .frame(minHeight: 36, alignment: .top)
 
                     Spacer(minLength: 8)
 
@@ -57,7 +62,6 @@ struct CommentReplyDetailRow: View {
                     Button(action: showDialog) {
                         Label("查看对话", systemImage: "text.bubble")
                             .appTypography(.action, fallback: .caption.weight(.semibold))
-                            .padding(.horizontal, 9)
                             .frame(height: 26)
                     }
                     .buttonStyle(.plain)

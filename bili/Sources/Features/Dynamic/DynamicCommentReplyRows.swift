@@ -23,7 +23,8 @@ struct DynamicCommentReplyRootView: View {
                 DynamicCommentReplyAuthorLine(
                     comment: comment,
                     display: display,
-                    showsLike: true
+                    showsLike: true,
+                    avatarHeight: 40
                 )
                 DynamicCommentText(
                     content: comment.content,
@@ -101,7 +102,6 @@ struct DynamicCommentReplyDetailRow: View {
                     Button(action: showDialog) {
                         Label("查看对话", systemImage: "text.bubble")
                             .appTypography(.action, fallback: .caption.weight(.semibold))
-                            .padding(.horizontal, 9)
                             .frame(height: 26)
                     }
                     .buttonStyle(.plain)

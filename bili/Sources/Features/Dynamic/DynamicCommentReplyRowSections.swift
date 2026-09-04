@@ -4,6 +4,7 @@ struct DynamicCommentReplyAuthorLine: View {
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let showsLike: Bool
+    var avatarHeight: CGFloat = 36
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -11,12 +12,15 @@ struct DynamicCommentReplyAuthorLine: View {
                 CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                     .foregroundStyle(.secondary)
 
+                Spacer(minLength: 0)
+
                 if !display.timeText.isEmpty {
                     Text(display.timeText)
                         .appTypography(.metadata, fallback: .caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(minHeight: avatarHeight, alignment: .top)
 
             if showsLike {
                 Spacer(minLength: 8)

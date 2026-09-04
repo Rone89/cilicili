@@ -10,12 +10,15 @@ struct CommentRowHeader: View {
                 CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                     .foregroundStyle(.primary)
 
+                Spacer(minLength: 0)
+
                 if !display.timeText.isEmpty {
                     Text(display.timeText)
                         .appTypography(.metadata, fallback: .caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(minHeight: 38, alignment: .top)
 
             Spacer(minLength: 8)
 
