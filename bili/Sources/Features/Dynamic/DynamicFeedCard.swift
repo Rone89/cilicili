@@ -307,12 +307,7 @@ private struct DynamicDetailView: View {
                 DynamicDetailBottomInteractionBar(
                     display: display,
                     initialIsLiked: item.isLiked,
-                    initialLikeCount: display.initialLikeCount,
-                    commentCount: commentsViewModel.displayedReplyCount ?? 0,
-                    canComment: commentsViewModel.canLoadComments,
-                    openComment: {
-                        commentComposerTarget = .dynamic
-                    }
+                    initialLikeCount: display.initialLikeCount
                 )
             }
         }
