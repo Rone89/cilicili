@@ -57,7 +57,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                favoriteButton
+                shareButton
             }
         }
     }
@@ -103,18 +103,19 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .disabled(!canComment)
     }
 
-    private var favoriteButton: some View {
-        Button {
-            errorMessage = "动态收藏接口暂未提供"
-        } label: {
-            Image(systemName: "star")
+    private var shareButton: some View {
+        ShareLink(item: dynamicShareURL) {
+            Image(systemName: "square.and.arrow.up")
                 .font(.body)
         }
         .controlSize(.small)
         .imageScale(.medium)
         .foregroundStyle(.primary)
-        .accessibilityLabel("收藏")
-        .accessibilityValue("动态收藏不可用")
+        .accessibilityLabel("分享动态")
+    }
+
+    private var dynamicShareURL: URL {
+        URL(string: "https://t.bilibili.com/\(display.dynamicID)")!
     }
 
     private var composer: some View {
