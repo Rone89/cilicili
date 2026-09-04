@@ -5,6 +5,7 @@ struct DynamicCommentsListContent: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
+    let enablesSwipeReply: Bool
     var replyToComment: ((Comment) -> Void)? = nil
 
     init(
@@ -12,12 +13,14 @@ struct DynamicCommentsListContent: View {
         highlightedCommentID: Int?,
         showReplies: @escaping (Comment) -> Void,
         dividerHorizontalPadding: CGFloat = 14,
+        enablesSwipeReply: Bool = false,
         replyToComment: ((Comment) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.highlightedCommentID = highlightedCommentID
         self.showReplies = showReplies
         self.dividerHorizontalPadding = dividerHorizontalPadding
+        self.enablesSwipeReply = enablesSwipeReply
         self.replyToComment = replyToComment
     }
 
@@ -48,6 +51,7 @@ struct DynamicCommentsListContent: View {
                 highlightedCommentID: highlightedCommentID,
                 showReplies: showReplies,
                 dividerHorizontalPadding: dividerHorizontalPadding,
+                enablesSwipeReply: enablesSwipeReply,
                 replyToComment: replyToComment
             )
         }
@@ -60,6 +64,7 @@ private struct DynamicCommentsLoadedList: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
+    let enablesSwipeReply: Bool
     let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
@@ -68,6 +73,7 @@ private struct DynamicCommentsLoadedList: View {
                 DynamicCommentRow(
                     item: item,
                     showReplies: { showReplies(item.comment) },
+                    enablesSwipeReply: enablesSwipeReply,
                     replyToComment: replyToComment.map { action in
                         { action(item.comment) }
                     }

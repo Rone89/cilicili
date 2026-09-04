@@ -5,6 +5,7 @@ struct DynamicCommentRow: View {
 
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
+    let enablesSwipeReply: Bool
     let replyToComment: (() -> Void)?
 
     private var comment: Comment {
@@ -18,18 +19,34 @@ struct DynamicCommentRow: View {
     init(
         item: DynamicCommentRowItem,
         showReplies: @escaping () -> Void,
+        enablesSwipeReply: Bool = false,
         replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.showReplies = showReplies
+        self.enablesSwipeReply = enablesSwipeReply
         self.replyToComment = replyToComment
     }
 
     var body: some View {
-        if usesSharedCommentLayout {
-            sharedCommentLayout
+        Group {
+            if usesSharedCommentLayout {
+                sharedCommentLayout
+            } else {
+                legacyCommentLayout
+            }
+        }
+        .modifier(DynamicCommentSwipeReplyModifier(
+            isEnabled: enablesSwipeReply,
+            action: replyAction
+        ))
+    }
+
+    private func replyAction() {
+        if let replyToComment {
+            replyToComment()
         } else {
-            legacyCommentLayout
+            showReplies()
         }
     }
 
@@ -91,5 +108,25 @@ struct DynamicCommentRow: View {
             .layoutPriority(1)
         }
         .padding(.vertical, 10)
+    }
+}
+
+private struct DynamicCommentSwipeReplyModifier: ViewModifier {
+    let isEnabled: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(action: action) {
+                        Label("回复", systemImage: "arrowshape.turn.up.left")
+                    }
+                    .tint(.accentColor)
+                }
+        } else {
+            content
+        }
     }
 }

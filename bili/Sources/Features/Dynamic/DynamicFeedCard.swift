@@ -269,6 +269,7 @@ private struct DynamicDetailView: View {
                     showReplies: { comment in
                         replySheetComment = comment
                     },
+                    enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                     replyToComment: replyToCommentAction
                 )
                 .padding(.top, 10)

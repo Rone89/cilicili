@@ -22,7 +22,8 @@ struct DynamicCommentsSheet: View {
                     showReplies: { comment in
                         replySheetComment = comment
                     },
-                    dividerHorizontalPadding: 0
+                    dividerHorizontalPadding: 0,
+                    enablesSwipeReply: dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled
                 )
             }
             .defersRemoteImageLoadsDuringFastScroll()
