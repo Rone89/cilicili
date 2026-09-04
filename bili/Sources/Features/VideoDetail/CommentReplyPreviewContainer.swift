@@ -20,6 +20,7 @@ struct CommentReplyPreviewContainer<Content: View>: View {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(appTintColor.opacity(0.42))
                         .frame(width: 3)
+                        .frame(maxHeight: .infinity, alignment: .top)
                         .padding(.vertical, 2)
 
                     VStack(alignment: .leading, spacing: 6) {
