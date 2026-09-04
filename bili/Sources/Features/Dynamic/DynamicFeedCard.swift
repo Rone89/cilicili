@@ -311,6 +311,11 @@ private struct DynamicDetailView: View {
                 )
             }
         }
+        .toolbarRole(
+            libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
+                ? .editor
+                : .automatic
+        )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
                 DynamicDetailActionBar(
