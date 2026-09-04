@@ -5,6 +5,7 @@ struct DynamicCommentsSheetContent: View {
     let highlightedCommentID: Int?
     let selectSort: @MainActor @Sendable (CommentSort) -> Void
     let showReplies: (Comment) -> Void
+    var dividerHorizontalPadding: CGFloat = 14
     var replyToComment: ((Comment) -> Void)? = nil
 
     var body: some View {
@@ -24,6 +25,7 @@ struct DynamicCommentsSheetContent: View {
                 viewModel: viewModel,
                 highlightedCommentID: highlightedCommentID,
                 showReplies: showReplies,
+                dividerHorizontalPadding: dividerHorizontalPadding,
                 replyToComment: replyToComment
             )
         }

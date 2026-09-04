@@ -4,7 +4,22 @@ struct DynamicCommentsListContent: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    let dividerHorizontalPadding: CGFloat
     var replyToComment: ((Comment) -> Void)? = nil
+
+    init(
+        viewModel: DynamicCommentsViewModel,
+        highlightedCommentID: Int?,
+        showReplies: @escaping (Comment) -> Void,
+        dividerHorizontalPadding: CGFloat = 14,
+        replyToComment: ((Comment) -> Void)? = nil
+    ) {
+        self.viewModel = viewModel
+        self.highlightedCommentID = highlightedCommentID
+        self.showReplies = showReplies
+        self.dividerHorizontalPadding = dividerHorizontalPadding
+        self.replyToComment = replyToComment
+    }
 
     @ViewBuilder
     var body: some View {
@@ -32,6 +47,7 @@ struct DynamicCommentsListContent: View {
                 viewModel: viewModel,
                 highlightedCommentID: highlightedCommentID,
                 showReplies: showReplies,
+                dividerHorizontalPadding: dividerHorizontalPadding,
                 replyToComment: replyToComment
             )
         }
@@ -43,6 +59,7 @@ private struct DynamicCommentsLoadedList: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    let dividerHorizontalPadding: CGFloat
     let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
@@ -63,7 +80,7 @@ private struct DynamicCommentsLoadedList: View {
                 .id(item.id)
 
                 Divider()
-                    .padding(.leading, 62)
+                    .padding(.horizontal, dividerHorizontalPadding)
             }
 
             DynamicCommentsFooter(viewModel: viewModel)

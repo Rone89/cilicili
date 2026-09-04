@@ -90,7 +90,6 @@ private struct DynamicCommentRepliesLoadedList: View {
                 .id(replyItem.id)
 
                 Divider()
-                    .padding(.leading, 66)
             }
 
             DynamicCommentRepliesFooter(
@@ -122,7 +121,7 @@ private struct DynamicCommentRepliesFooter: View {
             Button(action: loadMore) {
                 Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
             }
             .buttonStyle(.plain)

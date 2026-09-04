@@ -6,14 +6,16 @@ struct DynamicCommentReplyAuthorLine: View {
     let showsLike: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                .foregroundStyle(.secondary)
-
-            if !display.timeText.isEmpty {
-                Text(display.timeText)
-                    .appTypography(.metadata, fallback: .caption)
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                     .foregroundStyle(.secondary)
+
+                if !display.timeText.isEmpty {
+                    Text(display.timeText)
+                        .appTypography(.metadata, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if showsLike {

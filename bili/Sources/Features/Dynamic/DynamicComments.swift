@@ -21,7 +21,8 @@ struct DynamicCommentsSheet: View {
                     selectSort: selectCommentSort,
                     showReplies: { comment in
                         replySheetComment = comment
-                    }
+                    },
+                    dividerHorizontalPadding: 0
                 )
             }
             .defersRemoteImageLoadsDuringFastScroll()

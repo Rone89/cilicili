@@ -36,7 +36,7 @@ struct CommentReplyPreviewContainer<Content: View>: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 0)
         .padding(.vertical, 7)
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }

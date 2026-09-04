@@ -25,7 +25,7 @@ struct CommentsSectionLoadedList: View {
                 .padding(.horizontal, style.horizontalPadding)
 
                 Divider()
-                    .padding(.leading, 56)
+                    .padding(.horizontal, 14)
             }
 
             CommentsSectionLoadedListFooter(
