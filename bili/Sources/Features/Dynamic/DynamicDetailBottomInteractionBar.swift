@@ -95,6 +95,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         }
         .controlSize(.small)
         .imageScale(.medium)
+        .foregroundStyle(.primary)
         .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
         .accessibilityValue("共 \(commentCount) 条")
@@ -110,6 +111,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         }
         .controlSize(.small)
         .imageScale(.medium)
+        .foregroundStyle(.primary)
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏不可用")
     }
