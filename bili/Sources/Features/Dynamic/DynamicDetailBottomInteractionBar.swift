@@ -88,6 +88,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
                 systemImage: "bubble.left"
             )
         }
+        .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
         .accessibilityValue("共 \(commentCount) 条")
         .disabled(!canComment)
