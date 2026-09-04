@@ -4,6 +4,7 @@ import UIKit
 struct BiliEmoteText: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.appTypographyMode) private var typographyMode
 
     let content: CommentContent?
     let plainText: String?
@@ -62,7 +63,8 @@ struct BiliEmoteText: View {
                 leadingNameColor: UIColor(leadingNameColor),
                 leadingNameFont: resolvedLeadingNameUIFont,
                 emoteSize: resolvedEmoteSize,
-                lineLimit: lineLimit
+                lineLimit: lineLimit,
+                lineSpacing: typographyMode == .nativeRefined ? 0 : 2
             ),
             onURLTap: { url in
                 openAppURL?(url)
@@ -74,7 +76,8 @@ struct BiliEmoteText: View {
     private var resolvedUIFont: UIFont {
         if let typographyRole {
             return typographyRole.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+                mode: typographyMode
             )
         }
         let textStyle: UIFont.TextStyle = emoteSize <= 18 ? .caption1 : .subheadline
@@ -86,7 +89,8 @@ struct BiliEmoteText: View {
             return nil
         }
         return leadingNameTypographyRole.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+            mode: typographyMode
         )
     }
 
@@ -133,7 +137,8 @@ struct BiliLinkedText: View {
                 leadingNameColor: .secondaryLabel,
                 leadingNameFont: nil,
                 emoteSize: font.lineHeight,
-                lineLimit: lineLimit
+                lineLimit: lineLimit,
+                lineSpacing: 0
             ),
             onURLTap: { url in
                 openAppURL?(url)
@@ -593,6 +598,7 @@ private struct BiliEmoteRenderInput {
     let leadingNameFont: UIFont?
     let emoteSize: CGFloat
     let lineLimit: Int?
+    let lineSpacing: CGFloat
 
     init(
         content: CommentContent?,
@@ -605,7 +611,8 @@ private struct BiliEmoteRenderInput {
         leadingNameColor: UIColor,
         leadingNameFont: UIFont?,
         emoteSize: CGFloat,
-        lineLimit: Int?
+        lineLimit: Int?,
+        lineSpacing: CGFloat
     ) {
         self.content = content
         self.inlineEmotes = inlineEmotes
@@ -618,6 +625,7 @@ private struct BiliEmoteRenderInput {
         self.leadingNameFont = leadingNameFont
         self.emoteSize = emoteSize
         self.lineLimit = lineLimit
+        self.lineSpacing = lineSpacing
     }
 
     private var message: String {
@@ -655,7 +663,8 @@ private struct BiliEmoteRenderInput {
             "\(textColor.rgbaCacheKey)",
             "\(leadingNameColor.rgbaCacheKey)",
             "\(emoteSize)",
-            "\(lineLimit ?? -1)"
+            "\(lineLimit ?? -1)",
+            "\(lineSpacing)"
         ].joined(separator: "\u{1f}")
     }
 
@@ -697,7 +706,7 @@ private struct BiliEmoteRenderInput {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 2
+        style.lineSpacing = lineSpacing
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style

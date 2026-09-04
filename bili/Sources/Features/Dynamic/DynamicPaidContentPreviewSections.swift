@@ -54,7 +54,7 @@ struct DynamicPaidContentTitle: View {
 
     var body: some View {
         Text(content.title)
-            .font(FeedTypography.titleFont)
+            .appTypography(.feedVideoTitle, legacyFont: FeedTypography.titleFont)
             .foregroundStyle(.primary)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)

@@ -6,7 +6,10 @@ struct VideoTitleText: View {
 
     var body: some View {
         Text(text)
-            .font(.title3.weight(.semibold))
+            .appTypography(
+                .videoDetailTitle,
+                legacyFont: .title3.weight(.semibold)
+            )
             .foregroundStyle(.primary)
             .lineLimit(3)
             .multilineTextAlignment(.leading)

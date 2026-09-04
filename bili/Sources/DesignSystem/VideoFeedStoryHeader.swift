@@ -15,7 +15,7 @@ struct VideoFeedStoryHeader: View {
             .mediaShadow(.subtle)
 
             Text(display.authorName)
-                .font(.subheadline.weight(.semibold))
+                .appTypography(.author, legacyFont: .subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 

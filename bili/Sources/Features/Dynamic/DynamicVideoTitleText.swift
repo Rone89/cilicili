@@ -13,6 +13,15 @@ struct DynamicVideoTitleText: View {
                 FeedTypography.titleFont
             }
         }
+
+        var typographyRole: AppTypography.Role {
+            switch self {
+            case .feed:
+                return .feedVideoTitle
+            case .compact:
+                return .compactVideoTitle
+            }
+        }
     }
 
     let title: String
@@ -27,10 +36,7 @@ struct DynamicVideoTitleText: View {
 
     var body: some View {
         Text(attributedTitle)
-            .appTypography(
-                .dynamicBody,
-                fallback: style.font
-            )
+            .appTypography(style.typographyRole, legacyFont: style.font)
             .foregroundStyle(.primary)
             .lineLimit(lineLimit)
             .truncationMode(.tail)

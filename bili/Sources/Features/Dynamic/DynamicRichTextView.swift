@@ -12,6 +12,7 @@ struct DynamicRichTextView: View {
     private let textInput: DynamicAttributedTextInput
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.appTypographyMode) private var typographyMode
 
     init(
         segments: [DynamicTextSegment],
@@ -76,7 +77,7 @@ struct DynamicRichTextView: View {
     @ViewBuilder
     private func plainTextView(input: DynamicAttributedTextInput, plainText: String) -> some View {
         let text = Text(input.nativeAttributedPlainText(plainText))
-            .font(input.nativeSwiftUIFont)
+            .font(input.nativeSwiftUIFont(mode: typographyMode))
             .foregroundStyle(Color(input.textColor))
             .lineLimit(input.maxLines)
             .multilineTextAlignment(.leading)
@@ -95,7 +96,8 @@ struct DynamicRichTextView: View {
 
     private var resolvedTextInput: DynamicAttributedTextInput {
         textInput.resolvingTypography(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+            mode: typographyMode
         )
     }
 }

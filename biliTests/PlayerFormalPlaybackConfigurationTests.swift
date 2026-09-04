@@ -383,6 +383,24 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryStoreDefaultsNativeTypographyRefinementOffAndPersistsToggle() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.nativeTypographyRefinementExperimentEnabled)
+
+        store.setNativeTypographyRefinementExperimentEnabled(true)
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).nativeTypographyRefinementExperimentEnabled
+        )
+
+        store.setNativeTypographyRefinementExperimentEnabled(false)
+        XCTAssertFalse(
+            LibraryStore(userDefaults: defaults).nativeTypographyRefinementExperimentEnabled
+        )
+    }
+
+    @MainActor
     func testAppTypographyScalesSemanticVideoTitleRoles() {
         let regular = AppTypography.Role.feedVideoTitle.uiFont(contentSizeCategory: .large)
         let compact = AppTypography.Role.compactVideoTitle.uiFont(contentSizeCategory: .large)
@@ -393,6 +411,66 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(regular.pointSize, 15, accuracy: 0.001)
         XCTAssertEqual(compact.pointSize, 14, accuracy: 0.001)
         XCTAssertGreaterThan(accessibility.pointSize, regular.pointSize)
+    }
+
+    @MainActor
+    func testNativeTypographyMapsRolesToSystemStylesAndConservativeWeights() {
+        XCTAssertEqual(
+            AppTypography.Role.videoDetailTitle.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.title3.rawValue
+        )
+        XCTAssertEqual(
+            AppTypography.Role.feedVideoTitle.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.headline.rawValue
+        )
+        XCTAssertEqual(
+            AppTypography.Role.dynamicBody.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.body.rawValue
+        )
+        XCTAssertEqual(AppTypography.Role.videoDetailTitle.nativeWeight, .semibold)
+        XCTAssertNil(AppTypography.Role.feedVideoTitle.nativeWeight)
+        XCTAssertNil(AppTypography.Role.author.nativeWeight)
+        XCTAssertEqual(AppTypography.Role.commentAuthor.nativeWeight, .semibold)
+    }
+
+    @MainActor
+    func testNativeTypographyUsesPreferredUIKitFontAndResetsRichTextLineSpacing() {
+        let preferred = UIFont.preferredFont(forTextStyle: .body)
+        let nativeBody = AppTypography.Role.dynamicBody.uiFont(
+            contentSizeCategory: .large,
+            mode: .nativeRefined
+        )
+        XCTAssertEqual(nativeBody.pointSize, preferred.pointSize, accuracy: 0.001)
+
+        let input = DynamicAttributedTextInput.dynamicFeedBody(
+            segments: [.text("正文 [doge]")],
+            emoteSize: 20,
+            maxLines: nil
+        )
+        let resolved = input.resolvingTypography(
+            contentSizeCategory: .accessibilityExtraExtraLarge,
+            mode: .nativeRefined
+        )
+        XCTAssertEqual(resolved.typographyMode, .nativeRefined)
+        XCTAssertGreaterThan(resolved.emoteSize, input.emoteSize)
+
+        let rendered = resolved.render().attributedString
+        let paragraphStyle = rendered.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(paragraphStyle?.lineSpacing ?? -1, 0, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testRetiredTypographyKeyDoesNotEnableNativeRefinement() {
+        let defaults = makeUserDefaults()
+        defaults.set(true, forKey: "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1")
+
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.nativeTypographyRefinementExperimentEnabled)
     }
 
     @MainActor

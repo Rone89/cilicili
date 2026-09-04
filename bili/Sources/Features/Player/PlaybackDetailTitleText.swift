@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Shared primary title treatment for playback detail pages.
 struct PlaybackDetailTitleText: View {
+    @Environment(\.appTypographyMode) private var typographyMode
+
     let text: String
     let lineLimit: Int?
     let typographyRole: AppTypography.Role
@@ -19,7 +21,7 @@ struct PlaybackDetailTitleText: View {
     var body: some View {
         Text(text)
             .appTypography(typographyRole, fallback: .callout.weight(.semibold))
-            .lineSpacing(1.5)
+            .lineSpacing(typographyMode == .nativeRefined ? 0 : 1.5)
             .foregroundStyle(.primary)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)

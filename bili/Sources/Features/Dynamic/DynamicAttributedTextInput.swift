@@ -8,7 +8,26 @@ struct DynamicAttributedTextInput: Equatable {
     let emoteSize: CGFloat
     let maxLines: Int?
     let typographyRole: AppTypography.Role?
+    let typographyMode: AppTypographyMode
     static let feedBodyFont = FeedTypography.bodyUIFont
+
+    init(
+        segments: [DynamicTextSegment],
+        baseFont: UIFont,
+        textColor: UIColor,
+        emoteSize: CGFloat,
+        maxLines: Int?,
+        typographyRole: AppTypography.Role?,
+        typographyMode: AppTypographyMode = .legacy
+    ) {
+        self.segments = segments
+        self.baseFont = baseFont
+        self.textColor = textColor
+        self.emoteSize = emoteSize
+        self.maxLines = maxLines
+        self.typographyRole = typographyRole
+        self.typographyMode = typographyMode
+    }
 
     static func dynamicFeedBody(
         segments: [DynamicTextSegment],
@@ -21,7 +40,8 @@ struct DynamicAttributedTextInput: Equatable {
             textColor: .label,
             emoteSize: emoteSize,
             maxLines: maxLines,
-            typographyRole: .dynamicBody
+            typographyRole: .dynamicBody,
+            typographyMode: .legacy
         )
     }
 
@@ -33,6 +53,7 @@ struct DynamicAttributedTextInput: Equatable {
             && lhs.emoteSize == rhs.emoteSize
             && lhs.maxLines == rhs.maxLines
             && lhs.typographyRole == rhs.typographyRole
+            && lhs.typographyMode == rhs.typographyMode
     }
 
     var cacheKey: String {
@@ -57,23 +78,29 @@ struct DynamicAttributedTextInput: Equatable {
             "\(textColor.dynamicRGBAKey)",
             "\(emoteSize)",
             "\(maxLines ?? -1)",
-            typographyRole?.rawValue ?? ""
+            typographyRole?.rawValue ?? "",
+            "\(typographyMode)"
         ].joined(separator: "\u{1e}")
     }
 
     func resolvingTypography(
-        contentSizeCategory: UIContentSizeCategory
+        contentSizeCategory: UIContentSizeCategory,
+        mode: AppTypographyMode = .legacy
     ) -> DynamicAttributedTextInput {
         guard let typographyRole else { return self }
 
-        let resolvedFont = typographyRole.uiFont(contentSizeCategory: contentSizeCategory)
+        let resolvedFont = typographyRole.uiFont(
+            contentSizeCategory: contentSizeCategory,
+            mode: mode
+        )
         return DynamicAttributedTextInput(
             segments: segments,
             baseFont: resolvedFont,
             textColor: textColor,
             emoteSize: emoteSize * resolvedFont.pointSize / typographyRole.pointSize,
             maxLines: maxLines,
-            typographyRole: typographyRole
+            typographyRole: typographyRole,
+            typographyMode: mode
         )
     }
 
@@ -88,15 +115,18 @@ struct DynamicAttributedTextInput: Equatable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    var nativeSwiftUIFont: Font {
-        .system(size: baseFont.pointSize, weight: baseFont.feedFontWeight)
+    func nativeSwiftUIFont(mode: AppTypographyMode) -> Font {
+        if mode == .nativeRefined, let typographyRole {
+            return typographyRole.nativeFont()
+        }
+        return .system(size: baseFont.pointSize, weight: baseFont.feedFontWeight)
     }
 
     func nativeAttributedPlainText(_ text: String) -> AttributedString {
         DynamicTextLineBreakStyle.attributedString(
             for: text,
             lineLimit: maxLines,
-            lineSpacing: FeedTypography.bodyLineSpacing
+            lineSpacing: additionalLineSpacing
         )
     }
 
@@ -140,10 +170,14 @@ struct DynamicAttributedTextInput: Equatable {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = FeedTypography.bodyLineSpacing
+        style.lineSpacing = additionalLineSpacing
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style
+    }
+
+    private var additionalLineSpacing: CGFloat {
+        typographyMode == .nativeRefined ? 0 : FeedTypography.bodyLineSpacing
     }
 
     var lineBreakMode: NSLineBreakMode {

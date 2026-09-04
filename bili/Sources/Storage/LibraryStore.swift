@@ -102,6 +102,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appTintColorHex: String
     @Published private(set) var followsSystemFontSize: Bool
     @Published private(set) var manualFontSize: AppManualFontSize
+    @Published private(set) var nativeTypographyRefinementExperimentEnabled: Bool
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var playbackHistorySyncThresholdSeconds: Int
     @Published private(set) var preferredVideoQuality: Int?
@@ -168,6 +169,8 @@ final class LibraryStore: ObservableObject {
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
     private static let followsSystemFontSizeKey = "cc.bili.appearance.followsSystemFontSize.v1"
     private static let manualFontSizeKey = "cc.bili.appearance.manualFontSize.v1"
+    private static let nativeTypographyRefinementExperimentEnabledKey =
+        "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
     private static let appTintColorDefaultToneMigrationKey = "cc.bili.appearance.tintColorDefaultToneMigration.v2"
     private static let appTintColorPreviousDefaultMigrationKey =
@@ -432,6 +435,9 @@ final class LibraryStore: ObservableObject {
         self.manualFontSize =
             (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
             .flatMap(AppManualFontSize.init(rawValue:)) ?? .defaultValue
+        self.nativeTypographyRefinementExperimentEnabled = userDefaults.object(
+            forKey: Self.nativeTypographyRefinementExperimentEnabledKey
+        ) as? Bool ?? false
         let storedAppTintColorHex = AppThemeTintColor.normalizedHex(
             userDefaults.string(forKey: Self.appTintColorHexKey)
         )
@@ -680,6 +686,11 @@ final class LibraryStore: ObservableObject {
     func setManualFontSize(_ size: AppManualFontSize) {
         manualFontSize = size
         userDefaults.set(size.rawValue, forKey: Self.manualFontSizeKey)
+    }
+
+    func setNativeTypographyRefinementExperimentEnabled(_ isEnabled: Bool) {
+        nativeTypographyRefinementExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.nativeTypographyRefinementExperimentEnabledKey)
     }
 
     @discardableResult

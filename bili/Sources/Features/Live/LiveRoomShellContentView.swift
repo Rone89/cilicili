@@ -356,6 +356,7 @@ private struct LiveRoomPlainDanmakuTimeline: View {
 
 private struct LiveRoomPlainDanmakuRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.appTypographyMode) private var typographyMode
 
     let item: DanmakuItem
     let usesDarkForeground: Bool
@@ -418,7 +419,8 @@ private struct LiveRoomPlainDanmakuRow: View {
     private var senderFont: Font {
         Font(
             AppTypography.Role.liveChatName.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+                mode: typographyMode
             )
         )
     }
@@ -426,7 +428,8 @@ private struct LiveRoomPlainDanmakuRow: View {
     private var messageFont: Font {
         Font(
             AppTypography.Role.liveChatBody.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+                mode: typographyMode
             )
         )
     }
