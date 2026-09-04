@@ -106,11 +106,6 @@ struct DynamicCommentComposerSheet: View {
                     .accessibilityIdentifier("dynamic.comment.composer.send")
                 }
 
-                ToolbarItem(placement: .keyboard) {
-                    Button("完成") {
-                        isEditorFocused = false
-                    }
-                }
             }
         }
         .presentationDetents([.medium, .large], selection: $selectedDetent)

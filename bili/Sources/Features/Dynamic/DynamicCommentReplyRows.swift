@@ -53,6 +53,7 @@ struct DynamicCommentReplyDetailRow: View {
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
     let replyAction: (() -> Void)?
+    let enablesSwipeReply: Bool
 
     private var reply: Comment {
         item.reply
@@ -65,10 +66,12 @@ struct DynamicCommentReplyDetailRow: View {
     init(
         item: DynamicCommentReplyItem,
         showDialog: (() -> Void)?,
+        enablesSwipeReply: Bool = false,
         reply: (() -> Void)? = nil
     ) {
         self.item = item
         self.showDialog = showDialog
+        self.enablesSwipeReply = enablesSwipeReply
         self.replyAction = reply
     }
 
@@ -113,6 +116,19 @@ struct DynamicCommentReplyDetailRow: View {
             .layoutPriority(1)
         }
         .padding(.vertical, 9)
+        .modifier(DynamicCommentSwipeReplyModifier(
+            isEnabled: enablesSwipeReply,
+            action: triggerSwipeReply
+        ))
+    }
+
+    private func triggerSwipeReply() {
+        Haptics.light()
+        if let replyAction {
+            replyAction()
+        } else if let showDialog {
+            showDialog()
+        }
     }
 }
 

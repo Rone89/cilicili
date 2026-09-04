@@ -38,7 +38,7 @@ struct DynamicCommentRow: View {
         }
         .modifier(DynamicCommentSwipeReplyModifier(
             isEnabled: enablesSwipeReply,
-            action: replyAction
+            action: triggerSwipeReply
         ))
     }
 
@@ -48,6 +48,11 @@ struct DynamicCommentRow: View {
         } else {
             showReplies()
         }
+    }
+
+    private func triggerSwipeReply() {
+        Haptics.light()
+        replyAction()
     }
 
     private var sharedCommentLayout: some View {
@@ -111,7 +116,7 @@ struct DynamicCommentRow: View {
     }
 }
 
-private struct DynamicCommentSwipeReplyModifier: ViewModifier {
+struct DynamicCommentSwipeReplyModifier: ViewModifier {
     let isEnabled: Bool
     let action: () -> Void
 

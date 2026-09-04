@@ -49,7 +49,12 @@ struct DynamicCommentsSheet: View {
         .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
         .sheet(item: $replySheetComment) { comment in
-            DynamicCommentRepliesSheet(rootComment: comment, replyStore: viewModel.replyStore)
+            DynamicCommentRepliesSheet(
+                rootComment: comment,
+                replyStore: viewModel.replyStore,
+                submitReply: submitReplyAction,
+                enablesSwipeReply: dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled
+            )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
                     oid: item.commentOID,
@@ -61,5 +66,22 @@ struct DynamicCommentsSheet: View {
 
     private func selectCommentSort(_ sort: CommentSort) {
         Task { await viewModel.selectSort(sort) }
+    }
+
+    private var submitReplyAction: ((DynamicCommentComposerTarget, String) async throws -> Void)? {
+        guard dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled else { return nil }
+        return { target, message in
+            guard let oid = item.commentOID, let type = item.commentType else {
+                throw BiliAPIError.missingPayload
+            }
+            try await dependencies.api.addDynamicComment(
+                oid: oid,
+                type: type,
+                message: message,
+                root: target.rootID,
+                parent: target.parentID
+            )
+            await viewModel.reload()
+        }
     }
 }

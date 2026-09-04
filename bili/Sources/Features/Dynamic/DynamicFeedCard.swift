@@ -352,7 +352,8 @@ private struct DynamicDetailView: View {
             DynamicCommentRepliesSheet(
                 rootComment: comment,
                 replyStore: commentsViewModel.replyStore,
-                submitReply: submitReplyAction
+                submitReply: submitReplyAction,
+                enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
