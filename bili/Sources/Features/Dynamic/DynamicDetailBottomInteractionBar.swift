@@ -92,6 +92,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
                 Text("点击发送电波")
                     .font(.body)
             }
+            .padding(.horizontal, 6)
         }
         .controlSize(.small)
         .imageScale(.medium)
