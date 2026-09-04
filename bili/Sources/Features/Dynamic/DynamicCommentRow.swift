@@ -84,6 +84,7 @@ struct DynamicCommentRow: View {
                 lineSpacing: 1,
                 typographyRole: .commentBody
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { contentReplyAction?() }
             .accessibilityHint(contentReplyAction == nil ? "" : "轻点以回复")

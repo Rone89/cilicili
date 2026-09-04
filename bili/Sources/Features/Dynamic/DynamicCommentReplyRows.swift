@@ -34,6 +34,7 @@ struct DynamicCommentReplyRootView: View {
                     lineSpacing: 1,
                     typographyRole: .commentBody
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { reply?() }
