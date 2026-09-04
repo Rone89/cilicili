@@ -65,6 +65,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     private var likeButton: some View {
         Button(action: toggleLike) {
             Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                .font(.body)
         }
         .controlSize(.small)
         .imageScale(.medium)
@@ -85,13 +86,14 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
 
     private var commentButton: some View {
         Button(action: openComposer) {
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "bubble.left")
+                    .font(.body)
                 Text("点击发送电波")
+                    .font(.body)
             }
         }
         .controlSize(.small)
-        .font(.footnote)
         .imageScale(.medium)
         .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
@@ -104,6 +106,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
             errorMessage = "动态收藏接口暂未提供"
         } label: {
             Image(systemName: "star")
+                .font(.body)
         }
         .controlSize(.small)
         .imageScale(.medium)
