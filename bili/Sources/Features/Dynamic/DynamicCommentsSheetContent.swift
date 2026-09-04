@@ -7,6 +7,7 @@ struct DynamicCommentsSheetContent: View {
     let showReplies: (Comment) -> Void
     var dividerHorizontalPadding: CGFloat = 14
     var enablesSwipeReply: Bool = false
+    var enablesExpandedReplyTap: Bool = false
     var replyToComment: ((Comment) -> Void)? = nil
 
     var body: some View {
@@ -28,6 +29,7 @@ struct DynamicCommentsSheetContent: View {
                 showReplies: showReplies,
                 dividerHorizontalPadding: dividerHorizontalPadding,
                 enablesSwipeReply: enablesSwipeReply,
+                enablesExpandedReplyTap: enablesExpandedReplyTap,
                 replyToComment: replyToComment
             )
         }

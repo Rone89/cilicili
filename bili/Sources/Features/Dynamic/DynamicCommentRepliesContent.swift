@@ -6,6 +6,7 @@ struct DynamicCommentRepliesContent: View {
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
     let enablesSwipeReply: Bool
+    let enablesExpandedReplyTap: Bool
     var replyToComment: ((Comment) -> Void)? = nil
 
     var body: some View {
@@ -18,6 +19,7 @@ struct DynamicCommentRepliesContent: View {
             highlightedReplyID: highlightedReplyID,
             showDialog: showDialog,
             enablesSwipeReply: enablesSwipeReply,
+            enablesExpandedReplyTap: enablesExpandedReplyTap,
             replyToComment: replyToComment
         )
     }
@@ -30,6 +32,7 @@ private struct DynamicCommentRepliesStateContent: View {
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
     let enablesSwipeReply: Bool
+    let enablesExpandedReplyTap: Bool
     let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
@@ -54,6 +57,7 @@ private struct DynamicCommentRepliesStateContent: View {
                 highlightedReplyID: highlightedReplyID,
                 showDialog: showDialog,
                 enablesSwipeReply: enablesSwipeReply,
+                enablesExpandedReplyTap: enablesExpandedReplyTap,
                 replyToComment: replyToComment
             )
         }
@@ -73,6 +77,7 @@ private struct DynamicCommentRepliesLoadedList: View {
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
     let enablesSwipeReply: Bool
+    let enablesExpandedReplyTap: Bool
     let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
@@ -84,6 +89,7 @@ private struct DynamicCommentRepliesLoadedList: View {
                         showDialog(replyItem.reply)
                     } : nil,
                     enablesSwipeReply: enablesSwipeReply,
+                    enablesExpandedReplyTap: enablesExpandedReplyTap,
                     reply: replyToComment.map { action in
                         { action(replyItem.reply) }
                     }

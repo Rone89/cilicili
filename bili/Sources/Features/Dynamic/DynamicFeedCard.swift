@@ -270,6 +270,7 @@ private struct DynamicDetailView: View {
                         replySheetComment = comment
                     },
                     enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
+                    enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled,
                     replyToComment: replyToCommentAction
                 )
                 .padding(.top, 10)
@@ -353,7 +354,8 @@ private struct DynamicDetailView: View {
                 rootComment: comment,
                 replyStore: commentsViewModel.replyStore,
                 submitReply: submitReplyAction,
-                enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled
+                enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
+                enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
@@ -419,14 +421,17 @@ private struct DynamicDetailView: View {
     }
 
     private var replyToCommentAction: ((Comment) -> Void)? {
-        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled else { return nil }
+        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
+                || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
         return { comment in
             commentComposerTarget = .reply(root: comment, parent: comment)
         }
     }
 
     private var submitReplyAction: ((DynamicCommentComposerTarget, String) async throws -> Void)? {
-        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled else { return nil }
+        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
+                || libraryStore.dynamicCommentSwipeReplyExperimentEnabled
+                || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
         return { target, message in
             try await submitComment(target, message)
         }

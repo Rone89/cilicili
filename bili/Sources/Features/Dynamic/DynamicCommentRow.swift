@@ -6,6 +6,7 @@ struct DynamicCommentRow: View {
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
     let enablesSwipeReply: Bool
+    let enablesExpandedReplyTap: Bool
     let replyToComment: (() -> Void)?
 
     private var comment: Comment {
@@ -20,18 +21,20 @@ struct DynamicCommentRow: View {
         item: DynamicCommentRowItem,
         showReplies: @escaping () -> Void,
         enablesSwipeReply: Bool = false,
+        enablesExpandedReplyTap: Bool = false,
         replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.showReplies = showReplies
         self.enablesSwipeReply = enablesSwipeReply
+        self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyToComment = replyToComment
     }
 
     var body: some View {
         Group {
             if usesSharedCommentLayout {
-                sharedCommentLayout
+            sharedCommentLayout
             } else {
                 legacyCommentLayout
             }
@@ -42,7 +45,11 @@ struct DynamicCommentRow: View {
         ))
     }
 
-    private func replyAction() {
+    private var contentReplyAction: (() -> Void)? {
+        enablesExpandedReplyTap ? performReply : replyToComment
+    }
+
+    private func performReply() {
         if let replyToComment {
             replyToComment()
         } else {
@@ -52,7 +59,7 @@ struct DynamicCommentRow: View {
 
     private func triggerSwipeReply() {
         Haptics.light()
-        replyAction()
+        performReply()
     }
 
     private var sharedCommentLayout: some View {
@@ -63,7 +70,11 @@ struct DynamicCommentRow: View {
                 size: 38
             )
         } header: {
-            DynamicCommentRowHeader(comment: comment, display: display)
+            DynamicCommentRowHeader(
+                comment: comment,
+                display: display,
+                replyAction: contentReplyAction
+            )
         } bodyContent: {
             DynamicCommentText(
                 content: comment.content,
@@ -74,8 +85,8 @@ struct DynamicCommentRow: View {
                 typographyRole: .commentBody
             )
             .contentShape(Rectangle())
-            .onTapGesture { replyToComment?() }
-            .accessibilityHint(replyToComment == nil ? "" : "轻点以回复")
+            .onTapGesture { contentReplyAction?() }
+            .accessibilityHint(contentReplyAction == nil ? "" : "轻点以回复")
         } media: {
             DynamicCommentImageGrid(images: display.pictures)
         } reply: {
@@ -107,7 +118,8 @@ struct DynamicCommentRow: View {
                 comment: comment,
                 display: display,
                 showReplies: showReplies,
-                replyToComment: replyToComment
+                replyToComment: replyToComment,
+                replyAction: contentReplyAction
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)

@@ -105,6 +105,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var nativeTypographyRefinementExperimentEnabled: Bool
     @Published private(set) var dynamicDetailBottomInteractionBarExperimentEnabled: Bool
     @Published private(set) var dynamicCommentSwipeReplyExperimentEnabled: Bool
+    @Published private(set) var dynamicCommentExpandedReplyTapExperimentEnabled: Bool
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var playbackHistorySyncThresholdSeconds: Int
     @Published private(set) var preferredVideoQuality: Int?
@@ -177,6 +178,8 @@ final class LibraryStore: ObservableObject {
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1"
     private static let dynamicCommentSwipeReplyExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentSwipeReplyExperimentEnabled.v1"
+    private static let dynamicCommentExpandedReplyTapExperimentEnabledKey =
+        "cc.bili.experimental.dynamicCommentExpandedReplyTapExperimentEnabled.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
     private static let appTintColorDefaultToneMigrationKey = "cc.bili.appearance.tintColorDefaultToneMigration.v2"
     private static let appTintColorPreviousDefaultMigrationKey =
@@ -450,6 +453,9 @@ final class LibraryStore: ObservableObject {
         self.dynamicCommentSwipeReplyExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey
         ) as? Bool ?? false
+        self.dynamicCommentExpandedReplyTapExperimentEnabled = userDefaults.object(
+            forKey: Self.dynamicCommentExpandedReplyTapExperimentEnabledKey
+        ) as? Bool ?? false
         let storedAppTintColorHex = AppThemeTintColor.normalizedHex(
             userDefaults.string(forKey: Self.appTintColorHexKey)
         )
@@ -713,6 +719,11 @@ final class LibraryStore: ObservableObject {
     func setDynamicCommentSwipeReplyExperimentEnabled(_ isEnabled: Bool) {
         dynamicCommentSwipeReplyExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey)
+    }
+
+    func setDynamicCommentExpandedReplyTapExperimentEnabled(_ isEnabled: Bool) {
+        dynamicCommentExpandedReplyTapExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.dynamicCommentExpandedReplyTapExperimentEnabledKey)
     }
 
     @discardableResult

@@ -54,6 +54,7 @@ struct DynamicCommentReplyDetailRow: View {
     let showDialog: (() -> Void)?
     let replyAction: (() -> Void)?
     let enablesSwipeReply: Bool
+    let enablesExpandedReplyTap: Bool
 
     private var reply: Comment {
         item.reply
@@ -67,11 +68,13 @@ struct DynamicCommentReplyDetailRow: View {
         item: DynamicCommentReplyItem,
         showDialog: (() -> Void)?,
         enablesSwipeReply: Bool = false,
+        enablesExpandedReplyTap: Bool = false,
         reply: (() -> Void)? = nil
     ) {
         self.item = item
         self.showDialog = showDialog
         self.enablesSwipeReply = enablesSwipeReply
+        self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyAction = reply
     }
 
@@ -84,7 +87,12 @@ struct DynamicCommentReplyDetailRow: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
+                DynamicCommentReplyAuthorLine(
+                    comment: reply,
+                    display: display,
+                    showsLike: true,
+                    replyAction: enablesExpandedReplyTap ? replyAction : nil
+                )
                     .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
                 DynamicCommentText(
                     content: reply.content,
@@ -97,7 +105,7 @@ struct DynamicCommentReplyDetailRow: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { replyAction?() }
-                .accessibilityHint(replyAction == nil ? "" : "轻点以回复")
+                .accessibilityHint((enablesExpandedReplyTap && replyAction != nil) ? "轻点以回复" : "")
 
                 DynamicCommentImageGrid(images: display.pictures)
 

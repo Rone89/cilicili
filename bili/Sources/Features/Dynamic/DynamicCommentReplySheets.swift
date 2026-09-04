@@ -5,6 +5,7 @@ struct DynamicCommentRepliesSheet: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     var submitReply: ((DynamicCommentComposerTarget, String) async throws -> Void)? = nil
     var enablesSwipeReply = false
+    var enablesExpandedReplyTap = false
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var commentDrafts = [String: String]()
@@ -32,6 +33,7 @@ struct DynamicCommentRepliesSheet: View {
                             dialogReply = reply
                         },
                         enablesSwipeReply: enablesSwipeReply,
+                        enablesExpandedReplyTap: enablesExpandedReplyTap,
                         replyToComment: submitReply == nil ? nil : { reply in
                             composerTarget = .reply(root: rootComment, parent: reply)
                         }
