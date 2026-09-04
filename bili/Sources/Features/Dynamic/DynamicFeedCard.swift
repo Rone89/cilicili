@@ -299,9 +299,9 @@ private struct DynamicDetailView: View {
             isEnabled: libraryStore.usesCustomPullRefresh
         )
         .background(Color(.systemBackground))
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Group {
-                if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+        .toolbar {
+            if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+                ToolbarItem(placement: .bottomBar) {
                     DynamicDetailBottomInteractionBar(
                         display: display,
                         initialIsLiked: item.isLiked,
@@ -310,17 +310,20 @@ private struct DynamicDetailView: View {
                         canComment: commentsViewModel.canLoadComments,
                         submitComment: submitComment
                     )
-                } else {
-                    DynamicDetailActionBar(
-                        display: display,
-                        initialIsLiked: item.isLiked,
-                        initialLikeCount: display.initialLikeCount
-                    )
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+                DynamicDetailActionBar(
+                    display: display,
+                    initialIsLiked: item.isLiked,
+                    initialLikeCount: display.initialLikeCount
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+            }
         }
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(

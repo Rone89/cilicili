@@ -1,12 +1,6 @@
 import SwiftUI
 
 struct DynamicDetailBottomInteractionBar: View {
-    private enum Metrics {
-        static let visualSide: CGFloat = 36
-        static let touchSide: CGFloat = 44
-        static let groupSpacing: CGFloat = 8
-    }
-
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var sessionStore: SessionStore
@@ -48,14 +42,13 @@ struct DynamicDetailBottomInteractionBar: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: Metrics.groupSpacing) {
+        Group {
             if isComposerPresented {
                 composer
             } else {
                 defaultActions
             }
         }
-        .padding(.horizontal, 4)
         .animation(.smooth(duration: 0.22), value: isComposerPresented)
         .accessibilityIdentifier("dynamic.detail.experimental.bottom-interaction-bar")
         .alert("评论失败", isPresented: Binding(
@@ -69,7 +62,7 @@ struct DynamicDetailBottomInteractionBar: View {
     }
 
     private var defaultActions: some View {
-        HStack(spacing: Metrics.groupSpacing) {
+        HStack {
             interactionButton(
                 systemImage: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
                 label: likeState.isLiked ? "点赞，已点赞" : "点赞，未点赞",
@@ -86,12 +79,9 @@ struct DynamicDetailBottomInteractionBar: View {
                     systemImage: "bubble.left"
                 )
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: Metrics.visualSide)
-                .padding(.horizontal, 12)
             }
-            .biliGlassButtonStyle()
+            .buttonStyle(.glass)
             .buttonBorderShape(.capsule)
-            .frame(minHeight: Metrics.touchSide)
             .accessibilityLabel("评论")
             .accessibilityValue("共 \(commentCount) 条")
             .disabled(!canComment)
@@ -100,27 +90,23 @@ struct DynamicDetailBottomInteractionBar: View {
                 errorMessage = "动态收藏接口暂未提供"
             } label: {
                 Image(systemName: "star")
-                    .frame(width: Metrics.visualSide, height: Metrics.visualSide)
             }
-            .biliGlassButtonStyle()
+            .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
             .accessibilityLabel("收藏")
             .accessibilityValue("动态收藏不可用")
         }
     }
 
     private var composer: some View {
-        HStack(spacing: Metrics.groupSpacing) {
+        HStack {
             Button {
                 isCommentFieldFocused = false
                 isComposerPresented = false
             } label: {
                 Image(systemName: "xmark")
-                    .frame(width: Metrics.visualSide, height: Metrics.visualSide)
             }
-            .buttonStyle(.plain)
-            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
+            .buttonStyle(.glass)
             .accessibilityLabel("取消评论")
 
             TextField("友善发言，理性讨论", text: $commentDraft, axis: .vertical)
@@ -136,22 +122,14 @@ struct DynamicDetailBottomInteractionBar: View {
                     ProgressView()
                 } else {
                     Image(systemName: "paperplane.fill")
-                        .frame(width: Metrics.visualSide, height: Metrics.visualSide)
                 }
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .frame(width: Metrics.touchSide, height: Metrics.touchSide)
             .disabled(isSubmittingComment || commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("发送评论")
         }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, minHeight: 56)
-        .biliGlassButtonStyle()
-        .glassEffectID("dynamic-comment-composer", in: composerNamespace)
     }
-
-    @Namespace private var composerNamespace
 
     private func interactionButton(
         systemImage: String,
@@ -163,10 +141,8 @@ struct DynamicDetailBottomInteractionBar: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: Metrics.visualSide, height: Metrics.visualSide)
         }
-        .biliGlassButtonStyle()
-        .frame(width: Metrics.touchSide, height: Metrics.touchSide)
+        .buttonStyle(.glass)
         .foregroundStyle(selected ? appTintColor : .primary)
         .disabled(disabled)
         .accessibilityLabel(label)
