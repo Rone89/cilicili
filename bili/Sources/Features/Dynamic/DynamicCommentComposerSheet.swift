@@ -66,7 +66,7 @@ struct DynamicCommentComposerSheet: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     if let authorName = target.authorName, !authorName.isEmpty {
                         Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
@@ -81,7 +81,7 @@ struct DynamicCommentComposerSheet: View {
                 }
                 .padding(16)
 
-                if showsInlinePhotoPicker {
+                if showsInlinePhotoPicker && !showsEmotePicker {
                     inlinePhotoPicker
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -198,6 +198,8 @@ struct DynamicCommentComposerSheet: View {
             Button {
                 withAnimation(.smooth) {
                     showsInlinePhotoPicker.toggle()
+                    showsEmotePicker = false
+                    isEditorFocused = !showsInlinePhotoPicker
                 }
             } label: {
                 Image(systemName: "photo")
