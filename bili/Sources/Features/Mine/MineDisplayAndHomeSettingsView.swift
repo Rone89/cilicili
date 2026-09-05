@@ -68,6 +68,21 @@ struct MineInterfaceSettingsView: View {
                 }
                 .accessibilityIdentifier("dynamic-comment-expanded-reply-tap-experiment-toggle")
 
+                Toggle(isOn: Binding(
+                    get: { libraryStore.keyboardAnchoredCommentEmotePickerExperimentEnabled },
+                    set: { libraryStore.setKeyboardAnchoredCommentEmotePickerExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("键盘区域表情选择器", systemImage: "face.smiling")
+
+                        Text("将表情选择器固定在评论输入容器中，替代系统弹出菜单。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("keyboard-anchored-comment-emote-picker-experiment-toggle")
+
             }
         }
         .tint(libraryStore.appTintColor)

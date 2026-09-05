@@ -38,6 +38,7 @@ struct DynamicCommentComposerTarget: Identifiable, Equatable, Sendable {
 
 struct DynamicCommentComposerSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var dependencies: AppDependencies
     @Binding var draft: String
     let target: DynamicCommentComposerTarget
     let api: BiliAPIClient
@@ -57,6 +58,10 @@ struct DynamicCommentComposerSheet: View {
 
     private var normalizedDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var usesKeyboardAnchoredEmotePicker: Bool {
+        dependencies.libraryStore.keyboardAnchoredCommentEmotePickerExperimentEnabled
     }
 
     var body: some View {
@@ -79,6 +84,15 @@ struct DynamicCommentComposerSheet: View {
                 if showsInlinePhotoPicker {
                     inlinePhotoPicker
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if showsEmotePicker && usesKeyboardAnchoredEmotePicker {
+                    DynamicInlineCommentEmotePicker(
+                        emotes: emotes,
+                        onSelect: insertEmote,
+                        onDismiss: dismissEmotePicker
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
@@ -121,10 +135,12 @@ struct DynamicCommentComposerSheet: View {
             matching: .images,
             preferredItemEncoding: .current
         )
-        .popover(isPresented: $showsEmotePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+        .popover(isPresented: Binding(
+            get: { showsEmotePicker && !usesKeyboardAnchoredEmotePicker },
+            set: { showsEmotePicker = $0 }
+        ), attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             DynamicCommentEmotePicker(emotes: emotes) { token in
-                draft += token
-                isEditorFocused = true
+                insertEmote(token)
             }
             .presentationCompactAdaptation(.popover)
         }
@@ -190,7 +206,15 @@ struct DynamicCommentComposerSheet: View {
             .accessibilityLabel(showsInlinePhotoPicker ? "收起照片选择器" : "添加图片")
 
             Button {
-                showsEmotePicker = true
+                if usesKeyboardAnchoredEmotePicker {
+                    withAnimation(.smooth) {
+                        showsInlinePhotoPicker = false
+                        showsEmotePicker = true
+                        isEditorFocused = false
+                    }
+                } else {
+                    showsEmotePicker = true
+                }
             } label: {
                 Image(systemName: "face.smiling")
             }
@@ -226,6 +250,18 @@ struct DynamicCommentComposerSheet: View {
         withAnimation(.smooth) {
             showsInlinePhotoPicker = false
         }
+    }
+
+    private func dismissEmotePicker() {
+        withAnimation(.smooth) {
+            showsEmotePicker = false
+        }
+        isEditorFocused = true
+    }
+
+    private func insertEmote(_ token: String) {
+        draft += token
+        dismissEmotePicker()
     }
 
     private func submitDraft() {
@@ -307,6 +343,66 @@ private struct DynamicCommentEmotePicker: View {
                 }
             }
         }
+    }
+}
+
+private struct DynamicInlineCommentEmotePicker: View {
+    let emotes: [BiliInlineEmote]
+    let onSelect: (String) -> Void
+    let onDismiss: () -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 5)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("表情")
+                    .font(.headline)
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("收起表情选择器")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            if emotes.isEmpty {
+                ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 14) {
+                        ForEach(emotes, id: \.token) { emote in
+                            Button {
+                                onSelect(emote.token)
+                            } label: {
+                                VStack(spacing: 5) {
+                                    CachedRemoteImage(url: emote.displayURL.flatMap { URL(string: $0) }, targetPixelSize: 88) { image in
+                                        image.resizable().scaledToFit()
+                                    } placeholder: {
+                                        Image(systemName: "face.smiling").foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 38, height: 38)
+                                    Text(emote.token)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 62)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemBackground))
+        .clipShape(.rect(cornerRadius: 24, style: .continuous))
     }
 }
 
