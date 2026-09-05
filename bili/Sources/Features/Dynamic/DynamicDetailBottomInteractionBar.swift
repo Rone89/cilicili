@@ -233,8 +233,8 @@ struct DynamicDetailComposerBottomBar: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
         .animation(.smooth, value: isComposing)
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
@@ -274,18 +274,21 @@ struct DynamicDetailComposerBottomBar: View {
 
     private var collapsedBar: some View {
         GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                likeButton
+
                 Button(action: beginComposing) {
                     Label("说点什么…", systemImage: "bubble.left")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .font(.body)
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)
+                .controlSize(.large)
                 .disabled(!canComment)
                 .accessibilityLabel("发表评论")
                 .accessibilityValue("共 \(commentCount) 条评论")
 
-                likeButton
                 favoriteButton
             }
         }
@@ -409,10 +412,11 @@ struct DynamicDetailComposerBottomBar: View {
     private var likeButton: some View {
         Button(action: toggleLike) {
             Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
-                .frame(minWidth: 44, minHeight: 44)
+                .font(.title3)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
+        .controlSize(.large)
         .foregroundStyle(likeState.isLiked ? appTintColor : .primary)
         .disabled(isMutatingLike)
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
@@ -426,10 +430,11 @@ struct DynamicDetailComposerBottomBar: View {
             message = "动态收藏暂未接入"
         } label: {
             Image(systemName: "star")
-                .frame(minWidth: 44, minHeight: 44)
+                .font(.title3)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
+        .controlSize(.large)
         .foregroundStyle(.secondary)
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏暂未接入")
