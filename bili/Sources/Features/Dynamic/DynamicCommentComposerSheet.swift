@@ -140,7 +140,7 @@ struct DynamicCommentComposerSheet: View {
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                Text("已选择图片，当前动态评论接口暂不支持发送图片")
+                Text("已选择图片")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
