@@ -114,17 +114,12 @@ struct DynamicCommentComposerSheet: View {
                 .focused($isEditorFocused)
                 .scrollContentBackground(.hidden)
                 .padding(8)
+                .background(
+                    Color(uiColor: .secondarySystemBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
                 .accessibilityLabel("评论内容")
                 .accessibilityIdentifier("dynamic.comment.composer.editor")
-
-            if draft.isEmpty {
-                Text(target.prompt)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 9)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
         }
     }
 
