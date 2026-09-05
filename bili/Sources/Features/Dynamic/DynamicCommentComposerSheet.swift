@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct DynamicCommentComposerTarget: Identifiable, Equatable, Sendable {
     let rootID: Int?
@@ -44,6 +45,9 @@ struct DynamicCommentComposerSheet: View {
     @State private var selectedDetent = PresentationDetent.medium
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var attachedImage: Image?
+    @State private var showsUnsupportedImageAlert = false
 
     private var normalizedDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,56 +62,19 @@ struct DynamicCommentComposerSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $draft)
-                        .focused($isEditorFocused)
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .background(
-                            Color(uiColor: .secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
-                        .accessibilityLabel("评论内容")
-                        .accessibilityIdentifier("dynamic.comment.composer.editor")
-
-                    if draft.isEmpty {
-                        Text(target.prompt)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 9)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                }
+                editor
                 .frame(maxHeight: .infinity)
+
+                attachmentPreview
             }
             .padding(16)
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
+            .padding(12)
             .navigationTitle(target.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
-                        isEditorFocused = false
-                        dismiss()
-                    }
-                    .disabled(isSubmitting)
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(action: submitDraft) {
-                        if isSubmitting {
-                            ProgressView()
-                        } else {
-                            Text("发送")
-                        }
-                    }
-                    .disabled(normalizedDraft.isEmpty || isSubmitting)
-                    .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
-                    .accessibilityIdentifier("dynamic.comment.composer.send")
-                }
-
-            }
+            .toolbar { composerToolbar }
         }
+        .presentationBackground(.clear)
         .presentationDetents([.medium, .large], selection: $selectedDetent)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isSubmitting)
@@ -116,6 +83,21 @@ struct DynamicCommentComposerSheet: View {
             guard !Task.isCancelled else { return }
             isEditorFocused = true
         }
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            Task {
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let uiImage = UIImage(data: data)
+                else { return }
+                attachedImage = Image(uiImage: uiImage)
+                showsUnsupportedImageAlert = true
+            }
+        }
+        .alert("暂不支持图片评论", isPresented: $showsUnsupportedImageAlert) {
+            Button("知道了", role: .cancel) { }
+        } message: {
+            Text("当前动态评论接口仅支持文字，图片已保留在输入框中，暂不能发送。")
+        }
         .alert("评论发送失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -123,6 +105,93 @@ struct DynamicCommentComposerSheet: View {
             Button("好", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "请稍后重试")
+        }
+    }
+
+    private var editor: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $draft)
+                .focused($isEditorFocused)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .accessibilityLabel("评论内容")
+                .accessibilityIdentifier("dynamic.comment.composer.editor")
+
+            if draft.isEmpty {
+                Text(target.prompt)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 9)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentPreview: some View {
+        if let attachedImage {
+            HStack(spacing: 8) {
+                attachedImage
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Text("已选择图片，当前动态评论接口暂不支持发送图片")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    selectedPhoto = nil
+                    self.attachedImage = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("移除图片")
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var composerToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("取消") {
+                isEditorFocused = false
+                dismiss()
+            }
+            .disabled(isSubmitting)
+        }
+
+        ToolbarItem(placement: .confirmationAction) {
+            Button(action: submitDraft) {
+                if isSubmitting {
+                    ProgressView()
+                } else {
+                    Text("发送")
+                }
+            }
+            .disabled(normalizedDraft.isEmpty || isSubmitting)
+            .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
+            .accessibilityIdentifier("dynamic.comment.composer.send")
+        }
+
+        ToolbarItemGroup(placement: .bottomBar) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Label("图片", systemImage: "photo")
+            }
+            .accessibilityIdentifier("dynamic.comment.composer.photo")
+
+            Button {
+                isEditorFocused = true
+            } label: {
+                Label("表情", systemImage: "face.smiling")
+            }
+            .accessibilityHint("使用系统键盘输入表情")
         }
     }
 
