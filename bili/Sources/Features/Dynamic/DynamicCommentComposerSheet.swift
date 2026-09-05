@@ -155,10 +155,26 @@ struct DynamicCommentComposerSheet: View {
     @ToolbarContentBuilder
     private var composerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("取消") {
-                isEditorFocused = false
-                dismiss()
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Image(systemName: "photo")
+                    }
+                    .accessibilityIdentifier("dynamic.comment.composer.photo")
+                    .accessibilityLabel("添加图片")
+
+                    Button {
+                        isEditorFocused = true
+                    } label: {
+                        Image(systemName: "face.smiling")
+                    }
+                    .accessibilityLabel("输入表情")
+                    .accessibilityHint("使用系统键盘输入表情")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             }
+            .glassEffect(.regular.interactive(), in: .capsule)
             .disabled(isSubmitting)
         }
 
@@ -175,23 +191,6 @@ struct DynamicCommentComposerSheet: View {
             .accessibilityIdentifier("dynamic.comment.composer.send")
         }
 
-        ToolbarItem(placement: .principal) {
-            HStack(spacing: 18) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Image(systemName: "photo")
-            }
-            .accessibilityIdentifier("dynamic.comment.composer.photo")
-            .accessibilityLabel("添加图片")
-
-            Button {
-                isEditorFocused = true
-            } label: {
-                    Image(systemName: "face.smiling")
-            }
-            .accessibilityHint("使用系统键盘输入表情")
-            .accessibilityLabel("输入表情")
-            }
-        }
     }
 
     private func submitDraft() {
