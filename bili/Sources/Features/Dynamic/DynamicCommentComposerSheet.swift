@@ -151,9 +151,9 @@ struct DynamicCommentComposerSheet: View {
                 .accessibilityLabel("评论内容")
                 .accessibilityIdentifier("dynamic.comment.composer.editor")
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .bottomLeading) {
             photoControls
-                .padding(8)
+                .padding(12)
         }
     }
 
@@ -213,9 +213,10 @@ struct DynamicCommentComposerSheet: View {
     private var photoControls: some View {
         GlassEffectContainer(spacing: 8) {
             if showsPhotoPanel {
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Image(systemName: "photo")
+                        Label("照片", systemImage: "photo")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .photosPickerStyle(.compact)
                     .accessibilityLabel("照片")
@@ -224,7 +225,8 @@ struct DynamicCommentComposerSheet: View {
                         guard UIImagePickerController.isSourceTypeAvailable(.camera) else { return }
                         showsCamera = true
                     } label: {
-                        Image(systemName: "camera")
+                        Label("相机", systemImage: "camera")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                     .accessibilityLabel("相机")
@@ -232,13 +234,16 @@ struct DynamicCommentComposerSheet: View {
                     Button {
                         showsFileImporter = true
                     } label: {
-                        Image(systemName: "folder")
+                        Label("文件", systemImage: "paperclip")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .accessibilityLabel("浏览文件")
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .font(.body)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .frame(minWidth: 180)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28, style: .continuous))
                 .glassEffectID("dynamic-comment-photo-panel", in: photoNamespace)
             } else {
                 Button {
