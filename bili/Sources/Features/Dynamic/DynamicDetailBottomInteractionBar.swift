@@ -234,6 +234,7 @@ struct DynamicDetailComposerBottomBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.top, 3)
+        .padding(.bottom, 8)
         .animation(.smooth, value: isComposing)
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
