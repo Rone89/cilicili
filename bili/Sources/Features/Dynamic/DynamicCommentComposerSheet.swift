@@ -47,8 +47,10 @@ struct DynamicCommentComposerSheet: View {
     @State private var selectedDetent = PresentationDetent.medium
     @State private var isSubmitting = false
     @State private var errorMessage: String?
-    @State private var selectedPhoto: PhotosPickerItem?
-    @State private var attachedImageData: Data?
+    @State private var selectedPhotos = [PhotosPickerItem]()
+    @State private var attachedImageDatas = [Data]()
+    @State private var showsInlinePhotoPicker = false
+    @State private var showsFullPhotoPicker = false
     @State private var isUploadingImage = false
     @State private var emotes = [BiliInlineEmote]()
     @State private var showsEmotePicker = false
@@ -59,19 +61,28 @@ struct DynamicCommentComposerSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                if let authorName = target.authorName, !authorName.isEmpty {
-                    Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            ZStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let authorName = target.authorName, !authorName.isEmpty {
+                        Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    editor
+                        .frame(maxHeight: .infinity)
+
+                    attachmentPreview
                 }
+                .padding(16)
 
-                editor
-                    .frame(maxHeight: .infinity)
-
-                attachmentPreview
+                if showsInlinePhotoPicker {
+                    inlinePhotoPicker
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .padding(16)
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
             .padding(12)
             .navigationTitle("")
@@ -88,15 +99,30 @@ struct DynamicCommentComposerSheet: View {
             isEditorFocused = true
             emotes = (try? await api.fetchCommentEmotes()) ?? []
         }
-        .onChange(of: selectedPhoto) { _, item in
-            guard let item else { return }
+        .onChange(of: selectedPhotos) { _, items in
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let uiImage = UIImage(data: data)
-                else { return }
-                attachedImageData = uiImage.jpegData(compressionQuality: 0.9) ?? data
+                var imageDatas = [Data]()
+                for item in items {
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          let uiImage = UIImage(data: data)
+                    else { continue }
+                    imageDatas.append(uiImage.jpegData(compressionQuality: 0.9) ?? data)
+                }
+                attachedImageDatas = imageDatas
+                if !imageDatas.isEmpty {
+                    withAnimation(.smooth) {
+                        showsInlinePhotoPicker = false
+                    }
+                }
             }
         }
+        .photosPicker(
+            isPresented: $showsFullPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: 9,
+            matching: .images,
+            preferredItemEncoding: .current
+        )
         .popover(isPresented: $showsEmotePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             DynamicCommentEmotePicker(emotes: emotes) { token in
                 draft += token
@@ -131,17 +157,17 @@ struct DynamicCommentComposerSheet: View {
 
     @ViewBuilder
     private var attachmentPreview: some View {
-        if attachedImageData != nil {
+        if !attachedImageDatas.isEmpty {
             HStack(spacing: 8) {
-                Text("已选择图片")
+                Text("已选择 \(attachedImageDatas.count) 张图片")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
 
                 Button {
-                    selectedPhoto = nil
-                    attachedImageData = nil
+                    selectedPhotos = []
+                    attachedImageDatas = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -155,12 +181,15 @@ struct DynamicCommentComposerSheet: View {
     @ToolbarContentBuilder
     private var composerToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+            Button {
+                withAnimation(.smooth) {
+                    showsInlinePhotoPicker.toggle()
+                }
+            } label: {
                 Image(systemName: "photo")
             }
-            .photosPickerStyle(.compact)
             .accessibilityIdentifier("dynamic.comment.composer.photo")
-            .accessibilityLabel("添加图片")
+            .accessibilityLabel(showsInlinePhotoPicker ? "收起照片选择器" : "添加图片")
 
             Button {
                 showsEmotePicker = true
@@ -186,6 +215,54 @@ struct DynamicCommentComposerSheet: View {
 
     }
 
+    private var inlinePhotoPicker: some View {
+        ZStack(alignment: .bottom) {
+            PhotosPicker(
+                selection: $selectedPhotos,
+                maxSelectionCount: 9,
+                selectionBehavior: .continuous,
+                matching: .images,
+                preferredItemEncoding: .current
+            ) {
+                Color.clear
+            }
+            .photosPickerStyle(.inline)
+            .photosPickerAccessoryVisibility(.hidden)
+            .photosPickerDisabledCapabilities(.selectionActions)
+
+            HStack {
+                Button {
+                    withAnimation(.smooth) {
+                        showsInlinePhotoPicker = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("收起照片选择器")
+
+                Spacer()
+
+                Button {
+                    showsFullPhotoPicker = true
+                } label: {
+                    Text("全部照片")
+                        .font(.headline)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel("打开全部照片")
+            }
+            .padding(12)
+        }
+        .frame(maxHeight: 520)
+        .clipShape(.rect(cornerRadius: 28, style: .continuous))
+    }
+
     private func submitDraft() {
         let message = normalizedDraft
         guard !message.isEmpty, !isSubmitting, !isUploadingImage else { return }
@@ -193,17 +270,19 @@ struct DynamicCommentComposerSheet: View {
         Task { @MainActor in
             do {
                 var pictures: [DynamicCommentImage]?
-                if let attachedImageData {
+                if !attachedImageDatas.isEmpty {
                     isUploadingImage = true
-                    let image = try await api.uploadDynamicCommentImage(attachedImageData)
-                    pictures = [image]
+                    pictures = []
+                    for imageData in attachedImageDatas {
+                        pictures?.append(try await api.uploadDynamicCommentImage(imageData))
+                    }
                     isUploadingImage = false
                 }
                 try await submit(message, pictures)
                 draft = ""
                 isEditorFocused = false
-                selectedPhoto = nil
-                attachedImageData = nil
+                selectedPhotos = []
+                attachedImageDatas = []
                 Haptics.success()
                 dismiss()
             } catch {
