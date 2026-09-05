@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
+import UIKit
 
 struct DynamicCommentComposerTarget: Identifiable, Equatable, Sendable {
     let rootID: Int?
@@ -47,8 +49,10 @@ struct DynamicCommentComposerSheet: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var attachedImage: Image?
     @State private var attachedImageData: Data?
+    @State private var showsPhotoPanel = false
+    @State private var showsCamera = false
+    @State private var showsFileImporter = false
     @State private var isUploadingImage = false
     @State private var emotes = [BiliInlineEmote]()
     @State private var showsEmotePicker = false
@@ -67,7 +71,7 @@ struct DynamicCommentComposerSheet: View {
                 }
 
                 editor
-                .frame(maxHeight: .infinity)
+                    .frame(maxHeight: .infinity)
 
                 attachmentPreview
             }
@@ -94,9 +98,28 @@ struct DynamicCommentComposerSheet: View {
                 guard let data = try? await item.loadTransferable(type: Data.self),
                       let uiImage = UIImage(data: data)
                 else { return }
-                attachedImage = Image(uiImage: uiImage)
                 attachedImageData = uiImage.jpegData(compressionQuality: 0.9) ?? data
+                showsPhotoPanel = false
             }
+        }
+        .sheet(isPresented: $showsCamera) {
+            DynamicCommentCameraPicker { image in
+                attachedImageData = image.jpegData(compressionQuality: 0.9)
+                showsCamera = false
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(
+            isPresented: $showsFileImporter,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            guard url.startAccessingSecurityScopedResource() else { return }
+            defer { url.stopAccessingSecurityScopedResource() }
+            guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else { return }
+            attachedImageData = image.jpegData(compressionQuality: 0.9) ?? data
+            showsPhotoPanel = false
         }
         .popover(isPresented: $showsEmotePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             DynamicCommentEmotePicker(emotes: emotes) { token in
@@ -128,18 +151,16 @@ struct DynamicCommentComposerSheet: View {
                 .accessibilityLabel("评论内容")
                 .accessibilityIdentifier("dynamic.comment.composer.editor")
         }
+        .overlay(alignment: .topTrailing) {
+            photoControls
+                .padding(8)
+        }
     }
 
     @ViewBuilder
     private var attachmentPreview: some View {
-        if let attachedImage {
+        if attachedImageData != nil {
             HStack(spacing: 8) {
-                attachedImage
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
                 Text("已选择图片")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -148,7 +169,6 @@ struct DynamicCommentComposerSheet: View {
 
                 Button {
                     selectedPhoto = nil
-                    self.attachedImage = nil
                     attachedImageData = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -163,12 +183,6 @@ struct DynamicCommentComposerSheet: View {
     @ToolbarContentBuilder
     private var composerToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Image(systemName: "photo")
-            }
-            .accessibilityIdentifier("dynamic.comment.composer.photo")
-            .accessibilityLabel("添加图片")
-
             Button {
                 showsEmotePicker = true
             } label: {
@@ -193,6 +207,53 @@ struct DynamicCommentComposerSheet: View {
 
     }
 
+    @Namespace private var photoNamespace
+
+    @ViewBuilder
+    private var photoControls: some View {
+        GlassEffectContainer(spacing: 8) {
+            if showsPhotoPanel {
+                HStack(spacing: 8) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Image(systemName: "photo")
+                    }
+                    .photosPickerStyle(.compact)
+                    .accessibilityLabel("照片")
+
+                    Button {
+                        guard UIImagePickerController.isSourceTypeAvailable(.camera) else { return }
+                        showsCamera = true
+                    } label: {
+                        Image(systemName: "camera")
+                    }
+                    .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                    .accessibilityLabel("相机")
+
+                    Button {
+                        showsFileImporter = true
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .accessibilityLabel("浏览文件")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .glassEffectID("dynamic-comment-photo-panel", in: photoNamespace)
+            } else {
+                Button {
+                    showsPhotoPanel = true
+                } label: {
+                    Image(systemName: "photo")
+                }
+                .accessibilityLabel("添加图片")
+                .glassEffect(.regular.interactive(), in: .circle)
+                .glassEffectID("dynamic-comment-photo-panel", in: photoNamespace)
+            }
+        }
+        .animation(.smooth, value: showsPhotoPanel)
+    }
+
     private func submitDraft() {
         let message = normalizedDraft
         guard !message.isEmpty, !isSubmitting, !isUploadingImage else { return }
@@ -210,7 +271,6 @@ struct DynamicCommentComposerSheet: View {
                 draft = ""
                 isEditorFocused = false
                 selectedPhoto = nil
-                attachedImage = nil
                 attachedImageData = nil
                 Haptics.success()
                 dismiss()
@@ -270,6 +330,46 @@ private struct DynamicCommentEmotePicker: View {
                     Button("完成") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+private struct DynamicCommentCameraPicker: UIViewControllerRepresentable {
+    let onCapture: (UIImage) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCapture: onCapture)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        picker.allowsEditing = false
+        return picker
+    }
+
+    func updateUIViewController(_ picker: UIImagePickerController, context: Context) { }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onCapture: (UIImage) -> Void
+
+        init(onCapture: @escaping (UIImage) -> Void) {
+            self.onCapture = onCapture
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onCapture(image)
+            }
+            picker.dismiss(animated: true)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
         }
     }
 }
