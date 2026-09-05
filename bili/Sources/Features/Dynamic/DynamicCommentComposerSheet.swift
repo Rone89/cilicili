@@ -154,26 +154,20 @@ struct DynamicCommentComposerSheet: View {
 
     @ToolbarContentBuilder
     private var composerToolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            HStack(spacing: 8) {
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Image(systemName: "photo")
-                }
-                .accessibilityIdentifier("dynamic.comment.composer.photo")
-                .accessibilityLabel("添加图片")
-
-                Button {
-                    isEditorFocused = true
-                } label: {
-                    Image(systemName: "face.smiling")
-                }
-                .accessibilityLabel("输入表情")
-                .accessibilityHint("使用系统键盘输入表情")
+        ToolbarItemGroup(placement: .topBarLeading) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Image(systemName: "photo")
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .disabled(isSubmitting)
+            .accessibilityIdentifier("dynamic.comment.composer.photo")
+            .accessibilityLabel("添加图片")
+
+            Button {
+                isEditorFocused = true
+            } label: {
+                Image(systemName: "face.smiling")
+            }
+            .accessibilityLabel("输入表情")
+            .accessibilityHint("使用系统键盘输入表情")
         }
 
         ToolbarItem(placement: .confirmationAction) {
