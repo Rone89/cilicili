@@ -127,10 +127,6 @@ struct DynamicCommentComposerSheet: View {
                 .accessibilityLabel("评论内容")
                 .accessibilityIdentifier("dynamic.comment.composer.editor")
         }
-        .overlay(alignment: .bottomLeading) {
-            photoControls
-                .padding(12)
-        }
     }
 
     @ViewBuilder
@@ -159,6 +155,13 @@ struct DynamicCommentComposerSheet: View {
     @ToolbarContentBuilder
     private var composerToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Image(systemName: "photo")
+            }
+            .photosPickerStyle(.compact)
+            .accessibilityIdentifier("dynamic.comment.composer.photo")
+            .accessibilityLabel("添加图片")
+
             Button {
                 showsEmotePicker = true
             } label: {
@@ -181,16 +184,6 @@ struct DynamicCommentComposerSheet: View {
             .accessibilityIdentifier("dynamic.comment.composer.send")
         }
 
-    }
-
-    @ViewBuilder
-    private var photoControls: some View {
-        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-            Image(systemName: "photo")
-        }
-        .photosPickerStyle(.compact)
-        .accessibilityLabel("添加图片")
-        .glassEffect(.regular.interactive(), in: .circle)
     }
 
     private func submitDraft() {
