@@ -53,6 +53,7 @@ struct DynamicCommentsSheet: View {
             DynamicCommentRepliesSheet(
                 rootComment: comment,
                 replyStore: viewModel.replyStore,
+                api: dependencies.api,
                 submitReply: submitReplyAction,
                 enablesSwipeReply: dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                 enablesExpandedReplyTap: dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
@@ -70,10 +71,10 @@ struct DynamicCommentsSheet: View {
         Task { await viewModel.selectSort(sort) }
     }
 
-    private var submitReplyAction: ((DynamicCommentComposerTarget, String) async throws -> Void)? {
+    private var submitReplyAction: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? {
         guard dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled
                 || dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
-        return { target, message in
+        return { target, message, pictures in
             guard let oid = item.commentOID, let type = item.commentType else {
                 throw BiliAPIError.missingPayload
             }
@@ -82,7 +83,8 @@ struct DynamicCommentsSheet: View {
                 type: type,
                 message: message,
                 root: target.rootID,
-                parent: target.parentID
+                parent: target.parentID,
+                pictures: pictures
             )
             await viewModel.reload()
         }

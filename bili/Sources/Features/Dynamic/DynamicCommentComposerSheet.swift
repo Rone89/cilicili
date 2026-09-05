@@ -39,7 +39,8 @@ struct DynamicCommentComposerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var draft: String
     let target: DynamicCommentComposerTarget
-    let submit: (String) async throws -> Void
+    let api: BiliAPIClient
+    let submit: (String, [DynamicCommentImage]?) async throws -> Void
 
     @FocusState private var isEditorFocused: Bool
     @State private var selectedDetent = PresentationDetent.medium
@@ -47,7 +48,10 @@ struct DynamicCommentComposerSheet: View {
     @State private var errorMessage: String?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var attachedImage: Image?
-    @State private var showsUnsupportedImageAlert = false
+    @State private var attachedImageData: Data?
+    @State private var isUploadingImage = false
+    @State private var emotes = [BiliInlineEmote]()
+    @State private var showsEmotePicker = false
 
     private var normalizedDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,6 +86,7 @@ struct DynamicCommentComposerSheet: View {
             await Task.yield()
             guard !Task.isCancelled else { return }
             isEditorFocused = true
+            emotes = (try? await api.fetchCommentEmotes()) ?? []
         }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
@@ -90,13 +95,15 @@ struct DynamicCommentComposerSheet: View {
                       let uiImage = UIImage(data: data)
                 else { return }
                 attachedImage = Image(uiImage: uiImage)
-                showsUnsupportedImageAlert = true
+                attachedImageData = uiImage.jpegData(compressionQuality: 0.9) ?? data
             }
         }
-        .alert("暂不支持图片评论", isPresented: $showsUnsupportedImageAlert) {
-            Button("知道了", role: .cancel) { }
-        } message: {
-            Text("当前动态评论接口仅支持文字，图片已保留在输入框中，暂不能发送。")
+        .sheet(isPresented: $showsEmotePicker) {
+            DynamicCommentEmotePicker(emotes: emotes) { token in
+                draft += token
+                isEditorFocused = true
+            }
+            .presentationDetents([.medium, .large])
         }
         .alert("评论发送失败", isPresented: Binding(
             get: { errorMessage != nil },
@@ -142,6 +149,7 @@ struct DynamicCommentComposerSheet: View {
                 Button {
                     selectedPhoto = nil
                     self.attachedImage = nil
+                    attachedImageData = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -162,12 +170,13 @@ struct DynamicCommentComposerSheet: View {
             .accessibilityLabel("添加图片")
 
             Button {
-                isEditorFocused = true
+                showsEmotePicker = true
             } label: {
                 Image(systemName: "face.smiling")
             }
             .accessibilityLabel("输入表情")
             .accessibilityHint("使用系统键盘输入表情")
+            .onTapGesture { showsEmotePicker = true }
         }
 
         ToolbarItem(placement: .confirmationAction) {
@@ -187,19 +196,81 @@ struct DynamicCommentComposerSheet: View {
 
     private func submitDraft() {
         let message = normalizedDraft
-        guard !message.isEmpty, !isSubmitting else { return }
+        guard !message.isEmpty, !isSubmitting, !isUploadingImage else { return }
         isSubmitting = true
         Task { @MainActor in
             do {
-                try await submit(message)
+                var pictures: [DynamicCommentImage]?
+                if let attachedImageData {
+                    isUploadingImage = true
+                    let image = try await api.uploadDynamicCommentImage(attachedImageData)
+                    pictures = [image]
+                    isUploadingImage = false
+                }
+                try await submit(message, pictures)
                 draft = ""
                 isEditorFocused = false
+                selectedPhoto = nil
+                attachedImage = nil
+                attachedImageData = nil
                 Haptics.success()
                 dismiss()
             } catch {
+                isUploadingImage = false
                 errorMessage = error.localizedDescription
             }
             isSubmitting = false
+        }
+    }
+}
+
+private struct DynamicCommentEmotePicker: View {
+    let emotes: [BiliInlineEmote]
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 5)
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if emotes.isEmpty {
+                    ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 14) {
+                            ForEach(emotes, id: \.token) { emote in
+                                Button {
+                                    onSelect(emote.token)
+                                    dismiss()
+                                } label: {
+                                    VStack(spacing: 5) {
+                                        CachedRemoteImage(url: emote.displayURL.flatMap(URL.init(string:)), targetPixelSize: 88) { image in
+                                            image.resizable().scaledToFit()
+                                        } placeholder: {
+                                            Image(systemName: "face.smiling").foregroundStyle(.secondary)
+                                        }
+                                        .frame(width: 38, height: 38)
+                                        Text(emote.token)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 62)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("表情")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
         }
     }
 }

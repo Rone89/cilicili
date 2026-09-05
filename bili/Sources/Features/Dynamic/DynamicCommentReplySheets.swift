@@ -3,7 +3,8 @@ import SwiftUI
 struct DynamicCommentRepliesSheet: View {
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
-    var submitReply: ((DynamicCommentComposerTarget, String) async throws -> Void)? = nil
+    let api: BiliAPIClient
+    var submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? = nil
     var enablesSwipeReply = false
     var enablesExpandedReplyTap = false
     @State private var dialogReply: Comment?
@@ -56,9 +57,10 @@ struct DynamicCommentRepliesSheet: View {
             DynamicCommentComposerSheet(
                 draft: commentDraftBinding(for: target),
                 target: target,
-                submit: { message in
+                api: api,
+                submit: { message, pictures in
                     guard let submitReply else { return }
-                    try await submitReply(target, message)
+                    try await submitReply(target, message, pictures)
                     await replyStore.reloadReplies(for: rootComment)
                 }
             )

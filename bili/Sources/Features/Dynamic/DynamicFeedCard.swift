@@ -353,6 +353,7 @@ private struct DynamicDetailView: View {
             DynamicCommentRepliesSheet(
                 rootComment: comment,
                 replyStore: commentsViewModel.replyStore,
+                api: api,
                 submitReply: submitReplyAction,
                 enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                 enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
@@ -368,8 +369,9 @@ private struct DynamicDetailView: View {
             DynamicCommentComposerSheet(
                 draft: commentDraftBinding(for: target),
                 target: target,
-                submit: { message in
-                    try await submitComment(target, message)
+                api: api,
+                submit: { message, pictures in
+                    try await submitComment(target, message, pictures: pictures)
                 }
             )
         }
@@ -404,7 +406,8 @@ private struct DynamicDetailView: View {
 
     private func submitComment(
         _ target: DynamicCommentComposerTarget,
-        _ message: String
+        _ message: String,
+        pictures: [DynamicCommentImage]? = nil
     ) async throws {
         guard let oid = item.commentOID, let type = item.commentType else {
             throw BiliAPIError.missingPayload
@@ -414,7 +417,8 @@ private struct DynamicDetailView: View {
             type: type,
             message: message,
             root: target.rootID,
-            parent: target.parentID
+            parent: target.parentID,
+            pictures: pictures
         )
         commentsViewModel.registerSubmittedComment()
         await commentsViewModel.reload()
@@ -428,12 +432,12 @@ private struct DynamicDetailView: View {
         }
     }
 
-    private var submitReplyAction: ((DynamicCommentComposerTarget, String) async throws -> Void)? {
+    private var submitReplyAction: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? {
         guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
                 || libraryStore.dynamicCommentSwipeReplyExperimentEnabled
                 || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
-        return { target, message in
-            try await submitComment(target, message)
+        return { target, message, pictures in
+            try await submitComment(target, message, pictures: pictures)
         }
     }
 

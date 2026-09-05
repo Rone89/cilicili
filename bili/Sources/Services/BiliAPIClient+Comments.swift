@@ -1,12 +1,60 @@
 import Foundation
 
+struct DynamicCommentImage: Encodable, Equatable, Sendable {
+    let imageURL: String
+    let width: Int
+    let height: Int
+    let size: Int
+
+    enum CodingKeys: String, CodingKey {
+        case imageURL = "img_src"
+        case width = "img_width"
+        case height = "img_height"
+        case size = "img_size"
+    }
+}
+
+private nonisolated struct DynamicCommentImageUploadPayload: Decodable, Sendable {
+    let imageURL: String?
+    let width: Int?
+    let height: Int?
+    let size: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case imageURL = "image_url"
+        case width = "image_width"
+        case height = "image_height"
+        case size = "img_size"
+    }
+}
+
+private nonisolated struct CommentEmotePanelPayload: Decodable, Sendable {
+    let packages: [CommentEmotePackage]?
+}
+
+private nonisolated struct CommentEmotePackage: Decodable, Sendable {
+    let emotes: [DynamicCommentPanelEmote]?
+
+    enum CodingKeys: String, CodingKey {
+        case emotes = "emote"
+    }
+}
+
+private nonisolated struct DynamicCommentPanelEmote: Decodable, Sendable {
+    let text: String?
+    let url: String?
+    let width: Double?
+    let height: Double?
+}
+
 extension BiliAPIClient {
     func addDynamicComment(
         oid: String,
         type: Int,
         message: String,
         root: Int? = nil,
-        parent: Int? = nil
+        parent: Int? = nil,
+        pictures: [DynamicCommentImage]? = nil
     ) async throws {
         let normalizedOID = oid.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -35,6 +83,12 @@ extension BiliAPIClient {
             body["root"] = String(root)
             body["parent"] = String(parent)
         }
+        if let pictures, !pictures.isEmpty {
+            body["pictures"] = String(
+                decoding: try JSONEncoder().encode(pictures),
+                as: UTF8.self
+            )
+        }
         let response: BiliResponse<EmptyBiliPayload> = try await postForm(
             base: baseURL,
             path: "/x/v2/reply/add",
@@ -46,6 +100,69 @@ extension BiliAPIClient {
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
+    }
+
+    func uploadDynamicCommentImage(_ imageData: Data) async throws -> DynamicCommentImage {
+        let csrf = try await requireCSRF()
+        let response: BiliResponse<DynamicCommentImageUploadPayload> = try await postMultipart(
+            base: baseURL,
+            path: "/x/dynamic/feed/draw/upload_bfs",
+            fields: [
+                "biz": "new_dyn",
+                "category": "daily",
+                "csrf": csrf
+            ],
+            fileField: "file_up",
+            fileName: "comment.jpg",
+            mimeType: "image/jpeg",
+            fileData: imageData,
+            referer: "https://t.bilibili.com/"
+        )
+        guard response.code == 0,
+              let payload = response.payload,
+              let imageURL = payload.imageURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !imageURL.isEmpty,
+              let width = payload.width,
+              let height = payload.height
+        else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        return DynamicCommentImage(
+            imageURL: imageURL.normalizedBiliURL(),
+            width: width,
+            height: height,
+            size: payload.size ?? imageData.count
+        )
+    }
+
+    func fetchCommentEmotes() async throws -> [BiliInlineEmote] {
+        let response: BiliResponse<CommentEmotePanelPayload> = try await get(
+            base: baseURL,
+            path: "/x/emote/user/panel/web",
+            query: [
+                "business": "reply",
+                "web_location": "333.1245"
+            ],
+            referer: "https://www.bilibili.com/"
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        return (response.payload?.packages ?? [])
+            .flatMap { $0.emotes ?? [] }
+            .compactMap { emote in
+                guard let text = emote.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !text.isEmpty,
+                      let url = emote.url?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !url.isEmpty
+                else { return nil }
+                return BiliInlineEmote(
+                    token: text,
+                    url: url,
+                    width: emote.width,
+                    height: emote.height
+                )
+            }
     }
 
     func setCommentLike(
