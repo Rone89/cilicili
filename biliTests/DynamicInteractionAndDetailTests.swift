@@ -41,6 +41,38 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
     }
 
+    func testDynamicDetailComposerExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.dynamic-detail-composer.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.dynamicDetailComposerExperimentEnabled)
+
+        store.setDynamicDetailComposerExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
+
+        store.setDynamicDetailComposerExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
+    }
+
+    func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {
+        let target = DynamicCommentComposerTarget(
+            rootID: 101,
+            parentID: 202,
+            authorName: "评论作者"
+        )
+
+        XCTAssertEqual(
+            DynamicCommentComposerState.replying(target: target),
+            .replying(target: target)
+        )
+        XCTAssertEqual(
+            DynamicCommentComposerState.failed(message: "网络错误"),
+            .failed(message: "网络错误")
+        )
+    }
+
     func testDynamicCommentComposerTargetSeparatesTopLevelAndReplyDrafts() {
         let topLevel = DynamicCommentComposerTarget.dynamic
         let rootReply = DynamicCommentComposerTarget(

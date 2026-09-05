@@ -305,7 +305,8 @@ private struct DynamicDetailView: View {
         )
         .background(Color(.systemBackground))
         .toolbar {
-            if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+            if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled,
+               !libraryStore.dynamicDetailComposerExperimentEnabled {
                 DynamicDetailBottomInteractionBar(
                     display: display,
                     initialIsLiked: item.isLiked,
@@ -320,11 +321,25 @@ private struct DynamicDetailView: View {
         }
         .toolbarRole(
             libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
+                && !libraryStore.dynamicDetailComposerExperimentEnabled
                 ? .editor
                 : .automatic
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
+            if libraryStore.dynamicDetailComposerExperimentEnabled {
+                DynamicDetailComposerBottomBar(
+                    display: display,
+                    initialIsLiked: item.isLiked,
+                    initialLikeCount: display.initialLikeCount,
+                    commentCount: commentsViewModel.displayedReplyCount ?? 0,
+                    canComment: commentsViewModel.canLoadComments,
+                    draft: commentDraftBinding(for: .dynamic),
+                    api: api,
+                    submit: { message, pictures in
+                        try await submitComment(.dynamic, message, pictures: pictures)
+                    }
+                )
+            } else if !libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled {
                 DynamicDetailActionBar(
                     display: display,
                     initialIsLiked: item.isLiked,

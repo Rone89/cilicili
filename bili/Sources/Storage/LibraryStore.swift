@@ -104,6 +104,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var manualFontSize: AppManualFontSize
     @Published private(set) var nativeTypographyRefinementExperimentEnabled: Bool
     @Published private(set) var dynamicDetailBottomInteractionBarExperimentEnabled: Bool
+    @Published private(set) var dynamicDetailComposerExperimentEnabled: Bool
     @Published private(set) var dynamicCommentSwipeReplyExperimentEnabled: Bool
     @Published private(set) var dynamicCommentExpandedReplyTapExperimentEnabled: Bool
     @Published private(set) var keyboardAnchoredCommentEmotePickerExperimentEnabled: Bool
@@ -177,6 +178,8 @@ final class LibraryStore: ObservableObject {
         "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1"
     private static let dynamicDetailBottomInteractionBarExperimentEnabledKey =
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1"
+    private static let dynamicDetailComposerExperimentEnabledKey =
+        "cc.bili.experimental.dynamicDetailComposer.v1"
     private static let dynamicCommentSwipeReplyExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentSwipeReplyExperimentEnabled.v1"
     private static let dynamicCommentExpandedReplyTapExperimentEnabledKey =
@@ -455,6 +458,9 @@ final class LibraryStore: ObservableObject {
         self.dynamicDetailBottomInteractionBarExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicDetailBottomInteractionBarExperimentEnabledKey
         ) as? Bool ?? false
+        self.dynamicDetailComposerExperimentEnabled = userDefaults.object(
+            forKey: Self.dynamicDetailComposerExperimentEnabledKey
+        ) as? Bool ?? false
         self.dynamicCommentSwipeReplyExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey
         ) as? Bool ?? false
@@ -722,6 +728,11 @@ final class LibraryStore: ObservableObject {
     func setDynamicDetailBottomInteractionBarExperimentEnabled(_ isEnabled: Bool) {
         dynamicDetailBottomInteractionBarExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.dynamicDetailBottomInteractionBarExperimentEnabledKey)
+    }
+
+    func setDynamicDetailComposerExperimentEnabled(_ isEnabled: Bool) {
+        dynamicDetailComposerExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.dynamicDetailComposerExperimentEnabledKey)
     }
 
     func setDynamicCommentSwipeReplyExperimentEnabled(_ isEnabled: Bool) {

@@ -39,6 +39,21 @@ struct MineInterfaceSettingsView: View {
                 .accessibilityIdentifier("dynamic-detail-bottom-interaction-bar-experiment-toggle")
 
                 Toggle(isOn: Binding(
+                    get: { libraryStore.dynamicDetailComposerExperimentEnabled },
+                    set: { libraryStore.setDynamicDetailComposerExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("动态详情交互栏实验", systemImage: "text.bubble")
+
+                        Text("使用可展开的底部输入栏发表评论、表情和图片，并统一动态的点赞与收藏操作。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("dynamic-detail-composer-experiment-toggle")
+
+                Toggle(isOn: Binding(
                     get: { libraryStore.dynamicCommentSwipeReplyExperimentEnabled },
                     set: { libraryStore.setDynamicCommentSwipeReplyExperimentEnabled($0) }
                 )) {
