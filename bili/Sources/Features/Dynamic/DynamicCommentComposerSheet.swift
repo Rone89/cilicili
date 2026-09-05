@@ -122,9 +122,7 @@ struct DynamicCommentComposerSheet: View {
                 }
                 attachedImageDatas = imageDatas
                 if !imageDatas.isEmpty {
-                    withAnimation(.smooth) {
-                        showsInlinePhotoPicker = false
-                    }
+                    dismissInlinePhotoPicker()
                 }
             }
         }
@@ -196,10 +194,14 @@ struct DynamicCommentComposerSheet: View {
     private var composerToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             Button {
+                let shouldShowPhotoPicker = !showsInlinePhotoPicker
                 withAnimation(.smooth) {
-                    showsInlinePhotoPicker.toggle()
+                    showsInlinePhotoPicker = shouldShowPhotoPicker
                     showsEmotePicker = false
-                    isEditorFocused = !showsInlinePhotoPicker
+                    isEditorFocused = !shouldShowPhotoPicker
+                    if shouldShowPhotoPicker {
+                        selectedDetent = .large
+                    }
                 }
             } label: {
                 Image(systemName: "photo")
@@ -213,9 +215,14 @@ struct DynamicCommentComposerSheet: View {
                         showsInlinePhotoPicker = false
                         showsEmotePicker = true
                         isEditorFocused = false
+                        selectedDetent = .large
                     }
                 } else {
-                    showsEmotePicker = true
+                    withAnimation(.smooth) {
+                        showsEmotePicker = true
+                        isEditorFocused = false
+                        selectedDetent = .large
+                    }
                 }
             } label: {
                 Image(systemName: "face.smiling")
@@ -251,12 +258,15 @@ struct DynamicCommentComposerSheet: View {
     private func dismissInlinePhotoPicker() {
         withAnimation(.smooth) {
             showsInlinePhotoPicker = false
+            selectedDetent = .medium
         }
+        isEditorFocused = true
     }
 
     private func dismissEmotePicker() {
         withAnimation(.smooth) {
             showsEmotePicker = false
+            selectedDetent = .medium
         }
         isEditorFocused = true
     }
