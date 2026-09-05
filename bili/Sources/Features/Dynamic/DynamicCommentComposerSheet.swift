@@ -70,7 +70,7 @@ struct DynamicCommentComposerSheet: View {
             .padding(16)
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
             .padding(12)
-            .navigationTitle(target.title)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { composerToolbar }
         }
@@ -175,18 +175,22 @@ struct DynamicCommentComposerSheet: View {
             .accessibilityIdentifier("dynamic.comment.composer.send")
         }
 
-        ToolbarItemGroup(placement: .bottomBar) {
+        ToolbarItem(placement: .principal) {
+            HStack(spacing: 18) {
             PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Label("图片", systemImage: "photo")
+                    Image(systemName: "photo")
             }
             .accessibilityIdentifier("dynamic.comment.composer.photo")
+            .accessibilityLabel("添加图片")
 
             Button {
                 isEditorFocused = true
             } label: {
-                Label("表情", systemImage: "face.smiling")
+                    Image(systemName: "face.smiling")
             }
             .accessibilityHint("使用系统键盘输入表情")
+            .accessibilityLabel("输入表情")
+            }
         }
     }
 
