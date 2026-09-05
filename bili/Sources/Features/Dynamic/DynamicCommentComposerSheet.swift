@@ -38,6 +38,7 @@ struct DynamicCommentComposerTarget: Identifiable, Equatable, Sendable {
 
 struct DynamicCommentComposerSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var dependencies: AppDependencies
     @Binding var draft: String
     let target: DynamicCommentComposerTarget
     let api: BiliAPIClient
@@ -77,10 +78,18 @@ struct DynamicCommentComposerSheet: View {
                 .padding(16)
 
                 if showsInlinePhotoPicker {
-                    inlinePhotoPicker
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    if dependencies.libraryStore.keyboardAnchoredCommentPhotoPickerExperimentEnabled {
+                        KeyboardAnchoredCommentPhotoPicker(
+                            selection: $selectedPhotos,
+                            showsFullPicker: $showsFullPhotoPicker,
+                            onDismiss: dismissInlinePhotoPicker
+                        )
+                    } else {
+                        inlinePhotoPicker
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
             }
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24, style: .continuous))
@@ -216,51 +225,17 @@ struct DynamicCommentComposerSheet: View {
     }
 
     private var inlinePhotoPicker: some View {
-        ZStack(alignment: .bottom) {
-            PhotosPicker(
-                selection: $selectedPhotos,
-                maxSelectionCount: 9,
-                selectionBehavior: .continuous,
-                matching: .images,
-                preferredItemEncoding: .current
-            ) {
-                Color.clear
-            }
-            .photosPickerStyle(.inline)
-            .photosPickerAccessoryVisibility(.hidden)
-            .photosPickerDisabledCapabilities(.selectionActions)
+        DynamicInlinePhotoPickerPanel(
+            selection: $selectedPhotos,
+            showsFullPicker: $showsFullPhotoPicker,
+            onDismiss: dismissInlinePhotoPicker
+        )
+    }
 
-            HStack {
-                Button {
-                    withAnimation(.smooth) {
-                        showsInlinePhotoPicker = false
-                    }
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("收起照片选择器")
-
-                Spacer()
-
-                Button {
-                    showsFullPhotoPicker = true
-                } label: {
-                    Text("全部照片")
-                        .font(.headline)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.capsule)
-                .accessibilityLabel("打开全部照片")
-            }
-            .padding(12)
+    private func dismissInlinePhotoPicker() {
+        withAnimation(.smooth) {
+            showsInlinePhotoPicker = false
         }
-        .frame(maxHeight: 520)
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
     }
 
     private func submitDraft() {
@@ -342,5 +317,140 @@ private struct DynamicCommentEmotePicker: View {
                 }
             }
         }
+    }
+}
+
+private struct DynamicInlinePhotoPickerPanel: View {
+    @Binding var selection: [PhotosPickerItem]
+    @Binding var showsFullPicker: Bool
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            PhotosPicker(
+                selection: $selection,
+                maxSelectionCount: 9,
+                selectionBehavior: .continuous,
+                matching: .images,
+                preferredItemEncoding: .current
+            ) {
+                Color.clear
+            }
+            .photosPickerStyle(.inline)
+            .photosPickerAccessoryVisibility(.hidden)
+            .photosPickerDisabledCapabilities(.selectionActions)
+
+            HStack {
+                Button(action: onDismiss) {
+                    Image(systemName: "chevron.down")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("收起照片选择器")
+
+                Spacer()
+
+                Button {
+                    showsFullPicker = true
+                } label: {
+                    Text("全部照片")
+                        .font(.headline)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel("打开全部照片")
+            }
+            .padding(12)
+        }
+        .frame(maxHeight: 520)
+        .clipShape(.rect(cornerRadius: 28, style: .continuous))
+    }
+}
+
+private struct KeyboardAnchoredCommentPhotoPicker: UIViewControllerRepresentable {
+    @Binding var selection: [PhotosPickerItem]
+    @Binding var showsFullPicker: Bool
+    let onDismiss: () -> Void
+
+    func makeUIViewController(context: Context) -> KeyboardAnchoredPhotoPickerController {
+        KeyboardAnchoredPhotoPickerController(
+            selection: $selection,
+            showsFullPicker: $showsFullPicker,
+            onDismiss: onDismiss
+        )
+    }
+
+    func updateUIViewController(
+        _ controller: KeyboardAnchoredPhotoPickerController,
+        context: Context
+    ) {
+        controller.update(
+            selection: $selection,
+            showsFullPicker: $showsFullPicker,
+            onDismiss: onDismiss
+        )
+    }
+}
+
+private final class KeyboardAnchoredPhotoPickerController: UIViewController {
+    private var selection: Binding<[PhotosPickerItem]>
+    private var showsFullPicker: Binding<Bool>
+    private var onDismiss: () -> Void
+    private var hostingController: UIHostingController<DynamicInlinePhotoPickerPanel>?
+
+    init(
+        selection: Binding<[PhotosPickerItem]>,
+        showsFullPicker: Binding<Bool>,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.selection = selection
+        self.showsFullPicker = showsFullPicker
+        self.onDismiss = onDismiss
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        let hostingController = UIHostingController(rootView: panel)
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            hostingController.view.heightAnchor.constraint(equalToConstant: 520)
+        ])
+        hostingController.didMove(toParent: self)
+        self.hostingController = hostingController
+    }
+
+    func update(
+        selection: Binding<[PhotosPickerItem]>,
+        showsFullPicker: Binding<Bool>,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.selection = selection
+        self.showsFullPicker = showsFullPicker
+        self.onDismiss = onDismiss
+        hostingController?.rootView = panel
+    }
+
+    private var panel: DynamicInlinePhotoPickerPanel {
+        DynamicInlinePhotoPickerPanel(
+            selection: selection,
+            showsFullPicker: showsFullPicker,
+            onDismiss: onDismiss
+        )
     }
 }

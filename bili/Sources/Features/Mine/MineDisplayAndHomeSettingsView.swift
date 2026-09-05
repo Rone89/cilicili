@@ -67,6 +67,21 @@ struct MineInterfaceSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("dynamic-comment-expanded-reply-tap-experiment-toggle")
+
+                Toggle(isOn: Binding(
+                    get: { libraryStore.keyboardAnchoredCommentPhotoPickerExperimentEnabled },
+                    set: { libraryStore.setKeyboardAnchoredCommentPhotoPickerExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("键盘区域照片选择器", systemImage: "keyboard")
+
+                        Text("将嵌入式照片选择器固定在系统键盘上方。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("keyboard-anchored-comment-photo-picker-experiment-toggle")
             }
         }
         .tint(libraryStore.appTintColor)
