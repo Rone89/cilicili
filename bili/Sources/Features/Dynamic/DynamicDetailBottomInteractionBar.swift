@@ -232,9 +232,8 @@ struct DynamicDetailComposerBottomBar: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .animation(.smooth, value: isComposing)
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
@@ -273,18 +272,18 @@ struct DynamicDetailComposerBottomBar: View {
     }
 
     private var collapsedBar: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
+        GlassEffectContainer(spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 likeButton
 
                 Button(action: beginComposing) {
                     Label("说点什么…", systemImage: "bubble.left")
                         .font(.body)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: Capsule())
                 .disabled(!canComment)
                 .accessibilityLabel("发表评论")
                 .accessibilityValue("共 \(commentCount) 条评论")
@@ -298,8 +297,8 @@ struct DynamicDetailComposerBottomBar: View {
         VStack(spacing: 8) {
             attachmentPreview
 
-            GlassEffectContainer(spacing: 8) {
-                HStack(alignment: .bottom, spacing: 8) {
+            GlassEffectContainer(spacing: 6) {
+                HStack(alignment: .bottom, spacing: 6) {
                     editorSurface
                     sendButton
                 }
@@ -340,7 +339,7 @@ struct DynamicDetailComposerBottomBar: View {
                 togglePanel(.photos)
             } label: {
                 Image(systemName: activePanel == .photos ? "photo.fill" : "photo")
-                    .frame(width: 42, height: 42)
+                    .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -351,7 +350,7 @@ struct DynamicDetailComposerBottomBar: View {
                 togglePanel(.emotes)
             } label: {
                 Image(systemName: activePanel == .emotes ? "face.smiling.inverse" : "face.smiling")
-                    .frame(width: 42, height: 42)
+                    .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -359,9 +358,10 @@ struct DynamicDetailComposerBottomBar: View {
             .accessibilityLabel(activePanel == .emotes ? "收起表情选择器" : "选择表情")
         }
         .padding(.trailing, 2)
+        .frame(minHeight: 40)
         .background(
             Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
     }
 
@@ -374,10 +374,10 @@ struct DynamicDetailComposerBottomBar: View {
                     Image(systemName: "paperplane.fill")
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.tint(appTintColor).interactive(), in: Circle())
         .disabled(!canSend)
         .accessibilityLabel(composerState == .sending ? "正在发送评论" : "发送评论")
         .accessibilityIdentifier("dynamic.detail.composer.send")
@@ -412,11 +412,12 @@ struct DynamicDetailComposerBottomBar: View {
     private var likeButton: some View {
         Button(action: toggleLike) {
             Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
-                .font(.title3)
+                .font(.body)
+                .frame(width: 40, height: 40)
+                .contentShape(Circle().inset(by: -2))
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
         .foregroundStyle(likeState.isLiked ? appTintColor : .primary)
         .disabled(isMutatingLike)
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
@@ -430,11 +431,12 @@ struct DynamicDetailComposerBottomBar: View {
             message = "动态收藏暂未接入"
         } label: {
             Image(systemName: "star")
-                .font(.title3)
+                .font(.body)
+                .frame(width: 40, height: 40)
+                .contentShape(Circle().inset(by: -2))
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
         .foregroundStyle(.secondary)
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏暂未接入")
