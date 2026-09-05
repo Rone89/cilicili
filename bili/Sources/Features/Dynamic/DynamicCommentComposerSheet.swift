@@ -366,18 +366,11 @@ private struct DynamicInlineCommentEmotePicker: View {
     private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 5)
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
             HStack {
                 Text("表情")
                     .font(.headline)
-
-                Spacer()
-
-                Button(action: onDismiss) {
-                    Image(systemName: "chevron.down")
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel("收起表情选择器")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -411,10 +404,21 @@ private struct DynamicInlineCommentEmotePicker: View {
                     .padding(16)
                 }
             }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Button(action: onDismiss) {
+                Image(systemName: "chevron.down")
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .accessibilityLabel("收起表情选择器")
+            .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
-        .clipShape(.rect(cornerRadius: 24, style: .continuous))
+        .clipShape(.rect(cornerRadius: 28, style: .continuous))
     }
 }
 
