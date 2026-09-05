@@ -98,12 +98,12 @@ struct DynamicCommentComposerSheet: View {
                 attachedImageData = uiImage.jpegData(compressionQuality: 0.9) ?? data
             }
         }
-        .sheet(isPresented: $showsEmotePicker) {
+        .popover(isPresented: $showsEmotePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             DynamicCommentEmotePicker(emotes: emotes) { token in
                 draft += token
                 isEditorFocused = true
             }
-            .presentationDetents([.medium, .large])
+            .presentationCompactAdaptation(.popover)
         }
         .alert("评论发送失败", isPresented: Binding(
             get: { errorMessage != nil },
@@ -176,7 +176,6 @@ struct DynamicCommentComposerSheet: View {
             }
             .accessibilityLabel("输入表情")
             .accessibilityHint("使用系统键盘输入表情")
-            .onTapGesture { showsEmotePicker = true }
         }
 
         ToolbarItem(placement: .confirmationAction) {
