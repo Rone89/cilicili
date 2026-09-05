@@ -10,6 +10,11 @@ enum DynamicCommentComposerState: Equatable {
     case failed(message: String)
 }
 
+private enum DynamicDetailComposerPanel: Equatable {
+    case emotes
+    case photos
+}
+
 struct DynamicDetailBottomInteractionBar: ToolbarContent {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
@@ -171,7 +176,8 @@ struct DynamicDetailComposerBottomBar: View {
     @State private var attachedImageDatas = [Data]()
     @State private var isLoadingImages = false
     @State private var emotes = [BiliInlineEmote]()
-    @State private var showsEmotePanel = false
+    @State private var activePanel: DynamicDetailComposerPanel?
+    @State private var showsFullPhotoPicker = false
     @State private var message: String?
     @FocusState private var isEditorFocused: Bool
 
@@ -233,6 +239,13 @@ struct DynamicDetailComposerBottomBar: View {
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
         }
+        .onChange(of: isEditorFocused) { _, isFocused in
+            guard isFocused else {
+                collapseIfPossible()
+                return
+            }
+            activePanel = nil
+        }
         .task {
             guard emotes.isEmpty else { return }
             emotes = (try? await api.fetchCommentEmotes()) ?? []
@@ -249,6 +262,13 @@ struct DynamicDetailComposerBottomBar: View {
         } message: {
             Text(message ?? "请稍后重试")
         }
+        .photosPicker(
+            isPresented: $showsFullPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: 9,
+            matching: .images,
+            preferredItemEncoding: .current
+        )
         .accessibilityIdentifier("dynamic.detail.composer.bottomBar")
     }
 
@@ -273,80 +293,91 @@ struct DynamicDetailComposerBottomBar: View {
 
     private var expandedComposer: some View {
         VStack(spacing: 8) {
-            if showsEmotePanel {
-                DynamicDetailComposerEmotePanel(
-                    emotes: emotes,
-                    onSelect: insertEmote,
-                    onDismiss: dismissEmotePanel
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
             attachmentPreview
 
-            HStack(alignment: .bottom, spacing: 8) {
-                Button(action: endComposing) {
-                    Image(systemName: "chevron.down")
+            GlassEffectContainer(spacing: 8) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    editorSurface
+                    sendButton
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("收起评论输入")
+            }
 
-                TextField("发表评论", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .focused($isEditorFocused)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        Color(uiColor: .secondarySystemBackground),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    )
-                    .accessibilityLabel("评论内容")
-                    .accessibilityIdentifier("dynamic.detail.composer.editor")
-
-                Button {
-                    withAnimation(.smooth) {
-                        showsEmotePanel.toggle()
-                    }
-                    isEditorFocused = false
-                } label: {
-                    Image(systemName: "face.smiling")
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("选择表情")
-
-                PhotosPicker(
+            if activePanel == .emotes {
+                DynamicInlineCommentEmotePicker(
+                    emotes: emotes,
+                    onSelect: insertEmote,
+                    onDismiss: dismissActivePanel
+                )
+                .frame(height: 300)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if activePanel == .photos {
+                DynamicInlinePhotoPickerPanel(
                     selection: $selectedPhotos,
-                    maxSelectionCount: 9,
-                    matching: .images,
-                    preferredItemEncoding: .current
-                ) {
-                    Image(systemName: "photo")
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .simultaneousGesture(TapGesture().onEnded {
-                    showsEmotePanel = false
-                    isEditorFocused = false
-                })
-                .accessibilityLabel("添加图片")
-
-                Button(action: submitDraft) {
-                    if composerState == .sending || isLoadingImages {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                    }
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .disabled(!canSend)
-                .accessibilityLabel(composerState == .sending ? "正在发送评论" : "发送评论")
-                .accessibilityIdentifier("dynamic.detail.composer.send")
+                    showsFullPicker: $showsFullPhotoPicker,
+                    onDismiss: dismissActivePanel
+                )
+                .frame(height: 300)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+    }
+
+    private var editorSurface: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            TextField("发表评论", text: $draft, axis: .vertical)
+                .lineLimit(1...5)
+                .focused($isEditorFocused)
+                .textFieldStyle(.plain)
+                .padding(.leading, 12)
+                .padding(.vertical, 11)
+                .accessibilityLabel("评论内容")
+                .accessibilityIdentifier("dynamic.detail.composer.editor")
+
+            Button {
+                togglePanel(.photos)
+            } label: {
+                Image(systemName: activePanel == .photos ? "photo.fill" : "photo")
+                    .frame(width: 42, height: 42)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(activePanel == .photos ? appTintColor : .secondary)
+            .accessibilityLabel(activePanel == .photos ? "收起照片选择器" : "添加图片")
+
+            Button {
+                togglePanel(.emotes)
+            } label: {
+                Image(systemName: activePanel == .emotes ? "face.smiling.inverse" : "face.smiling")
+                    .frame(width: 42, height: 42)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(activePanel == .emotes ? appTintColor : .secondary)
+            .accessibilityLabel(activePanel == .emotes ? "收起表情选择器" : "选择表情")
+        }
+        .padding(.trailing, 2)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
+        )
+    }
+
+    private var sendButton: some View {
+        Button(action: submitDraft) {
+            Group {
+                if composerState == .sending || isLoadingImages {
+                    ProgressView()
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
+            }
+            .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.circle)
+        .disabled(!canSend)
+        .accessibilityLabel(composerState == .sending ? "正在发送评论" : "发送评论")
+        .accessibilityIdentifier("dynamic.detail.composer.send")
     }
 
     @ViewBuilder
@@ -411,33 +442,42 @@ struct DynamicDetailComposerBottomBar: View {
     private func beginComposing() {
         guard canComment else { return }
         composerState = .composing
-        showsEmotePanel = false
+        activePanel = nil
         Task { @MainActor in
             await Task.yield()
             isEditorFocused = true
         }
     }
 
-    private func endComposing() {
-        showsEmotePanel = false
-        isEditorFocused = false
-        if normalizedDraft.isEmpty && attachedImageDatas.isEmpty {
-            composerState = .idle
-        } else {
-            composerState = .composing
-        }
-    }
-
-    private func dismissEmotePanel() {
+    private func dismissActivePanel() {
         withAnimation(.smooth) {
-            showsEmotePanel = false
+            activePanel = nil
         }
         isEditorFocused = true
     }
 
     private func insertEmote(_ token: String) {
         draft += token
-        dismissEmotePanel()
+    }
+
+    private func togglePanel(_ panel: DynamicDetailComposerPanel) {
+        let shouldPresent = activePanel != panel
+        isEditorFocused = false
+        withAnimation(.smooth) {
+            activePanel = shouldPresent ? panel : nil
+        }
+        if !shouldPresent {
+            isEditorFocused = true
+        }
+    }
+
+    private func collapseIfPossible() {
+        guard activePanel == nil,
+              normalizedDraft.isEmpty,
+              attachedImageDatas.isEmpty,
+              composerState != .sending
+        else { return }
+        composerState = .idle
     }
 
     private func loadSelectedPhotos(_ items: [PhotosPickerItem]) {
@@ -457,7 +497,7 @@ struct DynamicDetailComposerBottomBar: View {
             }
             attachedImageDatas = imageDatas
             isLoadingImages = false
-            showsEmotePanel = false
+            activePanel = nil
             isEditorFocused = true
         }
     }
@@ -479,7 +519,7 @@ struct DynamicDetailComposerBottomBar: View {
                 draft = ""
                 selectedPhotos = []
                 attachedImageDatas = []
-                showsEmotePanel = false
+                activePanel = nil
                 isEditorFocused = false
                 composerState = .idle
                 Haptics.success()
@@ -522,63 +562,5 @@ struct DynamicDetailComposerBottomBar: View {
             }
             isMutatingLike = false
         }
-    }
-}
-
-private struct DynamicDetailComposerEmotePanel: View {
-    let emotes: [BiliInlineEmote]
-    let onSelect: (String) -> Void
-    let onDismiss: () -> Void
-
-    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 5)
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            if emotes.isEmpty {
-                ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 14) {
-                        ForEach(emotes, id: \.token) { emote in
-                            Button {
-                                onSelect(emote.token)
-                            } label: {
-                                VStack(spacing: 5) {
-                                    CachedRemoteImage(
-                                        url: emote.displayURL.flatMap { URL(string: $0) },
-                                        targetPixelSize: 88
-                                    ) { image in
-                                        image.resizable().scaledToFit()
-                                    } placeholder: {
-                                        Image(systemName: "face.smiling")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .frame(width: 38, height: 38)
-                                    Text(emote.token)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 62)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(16)
-                }
-            }
-
-            Button(action: onDismiss) {
-                Image(systemName: "chevron.down")
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("收起表情选择器")
-            .padding(12)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
     }
 }

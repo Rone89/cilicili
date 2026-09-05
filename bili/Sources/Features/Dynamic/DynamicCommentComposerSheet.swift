@@ -358,7 +358,7 @@ private struct DynamicCommentEmotePicker: View {
     }
 }
 
-private struct DynamicInlineCommentEmotePicker: View {
+struct DynamicInlineCommentEmotePicker: View {
     let emotes: [BiliInlineEmote]
     let onSelect: (String) -> Void
     let onDismiss: () -> Void
@@ -422,7 +422,7 @@ private struct DynamicInlineCommentEmotePicker: View {
     }
 }
 
-private struct DynamicInlinePhotoPickerPanel: View {
+struct DynamicInlinePhotoPickerPanel: View {
     @Binding var selection: [PhotosPickerItem]
     @Binding var showsFullPicker: Bool
     let onDismiss: () -> Void
