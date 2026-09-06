@@ -416,7 +416,11 @@ struct DynamicInlineCommentEmotePicker: View {
             .frame(minHeight: 44)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .glassEffect(.regular, in: .rect(cornerRadius: 0, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .biliGlassEffect(
+            interactive: true,
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
         .accessibilityIdentifier("dynamic.comment.emotePicker")
     }
 }

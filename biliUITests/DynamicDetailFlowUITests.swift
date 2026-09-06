@@ -52,6 +52,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(emotePicker.waitForExistence(timeout: 3))
         XCTAssertEqual(emotePicker.frame.minX, window.minX, accuracy: 1)
         XCTAssertEqual(emotePicker.frame.width, window.width, accuracy: 1)
+        XCTAssertGreaterThan(emotePicker.frame.height, window.height * 0.65)
     }
 
     @MainActor
