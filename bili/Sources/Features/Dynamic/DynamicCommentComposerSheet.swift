@@ -363,62 +363,62 @@ struct DynamicInlineCommentEmotePicker: View {
     let onSelect: (String) -> Void
     let onDismiss: () -> Void
 
-    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 10), count: 5)
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 40), spacing: 4), count: 7)
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-            HStack {
-                Text("表情")
-                    .font(.headline)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
+        VStack(spacing: 0) {
             if emotes.isEmpty {
                 ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 14) {
+                    LazyVGrid(columns: columns, spacing: 6) {
                         ForEach(emotes, id: \.token) { emote in
                             Button {
                                 onSelect(emote.token)
                             } label: {
-                                VStack(spacing: 5) {
-                                    CachedRemoteImage(url: emote.displayURL.flatMap { URL(string: $0) }, targetPixelSize: 88) { image in
-                                        image.resizable().scaledToFit()
-                                    } placeholder: {
-                                        Image(systemName: "face.smiling").foregroundStyle(.secondary)
-                                    }
-                                    .frame(width: 38, height: 38)
-                                    Text(emote.token)
-                                        .font(.caption2)
+                                CachedRemoteImage(url: emote.displayURL.flatMap { URL(string: $0) }, targetPixelSize: 96) { image in
+                                    image.resizable().scaledToFit()
+                                } placeholder: {
+                                    Image(systemName: "face.smiling")
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(1)
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 62)
+                                .frame(width: 36, height: 36)
+                                .frame(maxWidth: .infinity, minHeight: 48)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(emote.token)
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                 }
             }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Button(action: onDismiss) {
-                Image(systemName: "chevron.down")
-                    .frame(width: 44, height: 44)
+            Divider()
+
+            HStack(spacing: 10) {
+                Label("表情", systemImage: "face.smiling")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .frame(width: 44, height: 40)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("切换至键盘")
             }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("收起表情选择器")
-            .padding(12)
+            .padding(.leading, 14)
+            .padding(.trailing, 6)
+            .frame(minHeight: 44)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
+        .background(Color(uiColor: .secondarySystemBackground))
+        .clipShape(.rect(cornerRadius: 18, style: .continuous))
+        .accessibilityIdentifier("dynamic.comment.emotePicker")
     }
 }
 
