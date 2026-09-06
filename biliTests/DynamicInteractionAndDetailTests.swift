@@ -113,7 +113,7 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
 
         XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 30)
+        XCTAssertEqual(layout.bottomPadding, 8)
     }
 
     func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {

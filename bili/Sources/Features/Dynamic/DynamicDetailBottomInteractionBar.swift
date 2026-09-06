@@ -28,7 +28,11 @@ struct DynamicComposerLayout {
     var horizontalPadding: CGFloat { usesCompactInsets ? 26 : 8 }
 
     var bottomPadding: CGFloat {
-        usesCompactInsets
+        if isComposing {
+            return 8
+        }
+
+        return usesCompactInsets
             ? (usesTelegramInputStyle ? 10 : 8) + min(bottomSafeArea, 20) - bottomSafeArea
             : 8
     }
