@@ -675,7 +675,7 @@ struct DynamicDetailComposerBottomBar: View {
         if shouldPresent {
             activePanelHeight = switch panel {
             case .emotes:
-                max(max(keyboardHeight, mostRecentKeyboardHeight) - bottomSafeArea, 1)
+                max(max(keyboardHeight, mostRecentKeyboardHeight), 1)
             case .photos:
                 300
             }
