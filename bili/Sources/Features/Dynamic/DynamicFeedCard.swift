@@ -229,6 +229,7 @@ private struct DynamicDetailView: View {
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
     @State private var commentDrafts = [String: String]()
     @State private var composerBottomSafeArea: CGFloat = 0
+    @State private var keyboardHeight: CGFloat = 0
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -339,6 +340,7 @@ private struct DynamicDetailView: View {
                     canComment: commentsViewModel.canLoadComments,
                     usesTelegramInputStyle: libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled,
                     bottomSafeArea: composerBottomSafeArea,
+                    keyboardHeight: keyboardHeight,
                     draft: commentDraftBinding(for: .dynamic),
                     api: api,
                     submit: { message, pictures in
@@ -364,6 +366,11 @@ private struct DynamicDetailView: View {
                     composerBottomSafeArea = bottomInset
                 }
                 .ignoresSafeArea(.keyboard)
+        }
+        .background {
+            DynamicKeyboardHeightReader(height: $keyboardHeight)
+                .ignoresSafeArea(.keyboard)
+                .allowsHitTesting(false)
         }
         .environment(
             \.usesDynamicDetailCommentRowLayout,

@@ -10,6 +10,40 @@ enum DynamicCommentComposerState: Equatable {
     case failed(message: String)
 }
 
+struct DynamicKeyboardHeightReader: UIViewRepresentable {
+    @Binding var height: CGFloat
+
+    func makeUIView(context: Context) -> DynamicKeyboardHeightProbeView {
+        let view = DynamicKeyboardHeightProbeView()
+        view.onHeightChange = { height in
+            self.height = height
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: DynamicKeyboardHeightProbeView, context: Context) {
+        uiView.onHeightChange = { height in
+            self.height = height
+        }
+    }
+}
+
+final class DynamicKeyboardHeightProbeView: UIView {
+    var onHeightChange: ((CGFloat) -> Void)?
+    private var reportedHeight: CGFloat = -.infinity
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        let height = keyboardLayoutGuide.layoutFrame.height
+        guard abs(height - reportedHeight) > 0.5 else { return }
+        reportedHeight = height
+        DispatchQueue.main.async { [weak self] in
+            self?.onHeightChange?(height)
+        }
+    }
+}
+
 private enum DynamicDetailComposerPanel: Equatable {
     case emotes
     case photos
@@ -185,6 +219,7 @@ struct DynamicDetailComposerBottomBar: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let bottomSafeArea: CGFloat
+    let keyboardHeight: CGFloat
 
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
@@ -204,6 +239,7 @@ struct DynamicDetailComposerBottomBar: View {
     @State private var isLoadingImages = false
     @State private var emotes = [BiliInlineEmote]()
     @State private var activePanel: DynamicDetailComposerPanel?
+    @State private var activePanelHeight: CGFloat = 300
     @State private var showsFullPhotoPicker = false
     @State private var message: String?
     @FocusState private var isEditorFocused: Bool
@@ -216,6 +252,7 @@ struct DynamicDetailComposerBottomBar: View {
         canComment: Bool,
         usesTelegramInputStyle: Bool = false,
         bottomSafeArea: CGFloat = 0,
+        keyboardHeight: CGFloat = 0,
         draft: Binding<String>,
         api: BiliAPIClient,
         submit: @escaping (String, [DynamicCommentImage]?) async throws -> Void
@@ -227,6 +264,7 @@ struct DynamicDetailComposerBottomBar: View {
         self.canComment = canComment
         self.usesTelegramInputStyle = usesTelegramInputStyle
         self.bottomSafeArea = bottomSafeArea
+        self.keyboardHeight = keyboardHeight
         self._draft = draft
         self.api = api
         self.submit = submit
@@ -428,7 +466,7 @@ struct DynamicDetailComposerBottomBar: View {
                 onSelect: insertEmote,
                 onDismiss: dismissActivePanel
             )
-            .frame(height: 300)
+            .frame(height: activePanelHeight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
             DynamicInlinePhotoPickerPanel(
@@ -436,7 +474,7 @@ struct DynamicDetailComposerBottomBar: View {
                 showsFullPicker: $showsFullPhotoPicker,
                 onDismiss: dismissActivePanel
             )
-            .frame(height: 300)
+            .frame(height: activePanelHeight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -624,6 +662,9 @@ struct DynamicDetailComposerBottomBar: View {
 
     private func togglePanel(_ panel: DynamicDetailComposerPanel) {
         let shouldPresent = activePanel != panel
+        if shouldPresent, panel == .emotes {
+            activePanelHeight = max(keyboardHeight, 300)
+        }
         withAnimation(.smooth) {
             activePanel = shouldPresent ? panel : nil
         }
