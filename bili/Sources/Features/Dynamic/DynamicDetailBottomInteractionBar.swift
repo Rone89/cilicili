@@ -240,6 +240,7 @@ struct DynamicDetailComposerBottomBar: View {
     @State private var emotes = [BiliInlineEmote]()
     @State private var activePanel: DynamicDetailComposerPanel?
     @State private var activePanelHeight: CGFloat = 300
+    @State private var mostRecentKeyboardHeight: CGFloat = 300
     @State private var showsFullPhotoPicker = false
     @State private var message: String?
     @FocusState private var isEditorFocused: Bool
@@ -316,6 +317,10 @@ struct DynamicDetailComposerBottomBar: View {
         .padding(.top, 3)
         .padding(.bottom, presentsFullWidthEmotePanel ? 0 : layout.bottomPadding)
         .animation(.smooth, value: isComposing)
+        .onChange(of: keyboardHeight) { _, height in
+            guard height > bottomSafeArea else { return }
+            mostRecentKeyboardHeight = height
+        }
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
         }
@@ -670,7 +675,7 @@ struct DynamicDetailComposerBottomBar: View {
         if shouldPresent {
             activePanelHeight = switch panel {
             case .emotes:
-                max(keyboardHeight - bottomSafeArea, 1)
+                max(max(keyboardHeight, mostRecentKeyboardHeight) - bottomSafeArea, 1)
             case .photos:
                 300
             }
