@@ -89,8 +89,7 @@ struct DynamicCommentComposerSheet: View {
                 if showsEmotePicker && usesKeyboardAnchoredEmotePicker {
                     DynamicInlineCommentEmotePicker(
                         emotes: emotes,
-                        onSelect: insertEmote,
-                        onDismiss: dismissEmotePicker
+                        onSelect: insertEmote
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -361,7 +360,6 @@ private struct DynamicCommentEmotePicker: View {
 struct DynamicInlineCommentEmotePicker: View {
     let emotes: [BiliInlineEmote]
     let onSelect: (String) -> Void
-    let onDismiss: () -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(minimum: 40), spacing: 4), count: 7)
 
@@ -394,26 +392,6 @@ struct DynamicInlineCommentEmotePicker: View {
                 }
             }
 
-            Divider()
-
-            HStack(spacing: 10) {
-                Label("表情", systemImage: "face.smiling")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 0)
-
-                Button(action: onDismiss) {
-                    Image(systemName: "keyboard.chevron.compact.down")
-                        .frame(width: 44, height: 40)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("切换至键盘")
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 6)
-            .frame(minHeight: 44)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))

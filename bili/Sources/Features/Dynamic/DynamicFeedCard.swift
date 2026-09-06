@@ -230,7 +230,6 @@ private struct DynamicDetailView: View {
     @State private var commentDrafts = [String: String]()
     @State private var composerBottomSafeArea: CGFloat = 0
     @State private var keyboardHeight: CGFloat = 0
-    @State private var composerContainerHeight: CGFloat = 0
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -342,7 +341,6 @@ private struct DynamicDetailView: View {
                     usesTelegramInputStyle: libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled,
                     bottomSafeArea: composerBottomSafeArea,
                     keyboardHeight: keyboardHeight,
-                    containerHeight: composerContainerHeight,
                     draft: commentDraftBinding(for: .dynamic),
                     api: api,
                     submit: { message, pictures in
@@ -366,15 +364,6 @@ private struct DynamicDetailView: View {
                     geometry.safeAreaInsets.bottom
                 } action: { bottomInset in
                     composerBottomSafeArea = bottomInset
-                }
-                .ignoresSafeArea(.keyboard)
-        }
-        .background {
-            Color.clear
-                .onGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.size.height
-                } action: { height in
-                    composerContainerHeight = height
                 }
                 .ignoresSafeArea(.keyboard)
         }

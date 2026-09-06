@@ -220,7 +220,6 @@ struct DynamicDetailComposerBottomBar: View {
 
     let bottomSafeArea: CGFloat
     let keyboardHeight: CGFloat
-    let containerHeight: CGFloat
 
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
@@ -254,7 +253,6 @@ struct DynamicDetailComposerBottomBar: View {
         usesTelegramInputStyle: Bool = false,
         bottomSafeArea: CGFloat = 0,
         keyboardHeight: CGFloat = 0,
-        containerHeight: CGFloat = 0,
         draft: Binding<String>,
         api: BiliAPIClient,
         submit: @escaping (String, [DynamicCommentImage]?) async throws -> Void
@@ -267,7 +265,6 @@ struct DynamicDetailComposerBottomBar: View {
         self.usesTelegramInputStyle = usesTelegramInputStyle
         self.bottomSafeArea = bottomSafeArea
         self.keyboardHeight = keyboardHeight
-        self.containerHeight = containerHeight
         self._draft = draft
         self.api = api
         self.submit = submit
@@ -471,10 +468,9 @@ struct DynamicDetailComposerBottomBar: View {
         if activePanel == .emotes {
             DynamicInlineCommentEmotePicker(
                 emotes: emotes,
-                onSelect: insertEmote,
-                onDismiss: dismissActivePanel
+                onSelect: insertEmote
             )
-            .frame(height: emotePanelHeight)
+            .frame(height: activePanelHeight)
             .ignoresSafeArea(.container, edges: .bottom)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
@@ -486,10 +482,6 @@ struct DynamicDetailComposerBottomBar: View {
             .frame(height: activePanelHeight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-    }
-
-    private var emotePanelHeight: CGFloat {
-        max(keyboardHeight, max(containerHeight - 72, 300))
     }
 
     private func composerPanelButton(
@@ -675,8 +667,13 @@ struct DynamicDetailComposerBottomBar: View {
 
     private func togglePanel(_ panel: DynamicDetailComposerPanel) {
         let shouldPresent = activePanel != panel
-        if shouldPresent, panel == .emotes {
-            activePanelHeight = max(keyboardHeight, 300)
+        if shouldPresent {
+            activePanelHeight = switch panel {
+            case .emotes:
+                max(keyboardHeight - bottomSafeArea, 1)
+            case .photos:
+                300
+            }
         }
         withAnimation(.smooth) {
             activePanel = shouldPresent ? panel : nil
