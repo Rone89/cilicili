@@ -473,17 +473,12 @@ struct DynamicDetailComposerBottomBar: View {
     @ViewBuilder
     private var activeComposerPanel: some View {
         if activePanel == .emotes {
-            Color.clear
-                .frame(height: max(0, activePanelHeight - bottomSafeArea))
-                .overlay(alignment: .top) {
-                    DynamicInlineCommentEmotePicker(
-                        emotes: emotes,
-                        onSelect: insertEmote
-                    )
-                    .frame(height: activePanelHeight)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            DynamicInlineCommentEmotePicker(
+                emotes: emotes,
+                onSelect: insertEmote
+            )
+            .frame(height: activePanelHeight)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
             DynamicInlinePhotoPickerPanel(
                 selection: $selectedPhotos,
