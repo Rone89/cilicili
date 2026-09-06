@@ -6,16 +6,21 @@ import XCTest
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
     func testCompactComposerMatchesReferenceInsets() {
-        let layout = DynamicComposerLayout(bottomSafeArea: 34, isCompact: true, isComposing: false)
+        let layout = DynamicComposerLayout(
+            bottomSafeArea: 34,
+            isCompact: true,
+            isComposing: false,
+            usesTelegramInputStyle: false
+        )
         XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 30)
+        XCTAssertEqual(34 + layout.bottomPadding, 28)
     }
 
     func testComposerPreservesKeyboardAndNonCompactInsets() {
         for layout in [
-            DynamicComposerLayout(bottomSafeArea: 336, isCompact: true, isComposing: true),
-            DynamicComposerLayout(bottomSafeArea: 21, isCompact: false, isComposing: false),
-            DynamicComposerLayout(bottomSafeArea: 0, isCompact: true, isComposing: false)
+            DynamicComposerLayout(bottomSafeArea: 336, isCompact: true, isComposing: true, usesTelegramInputStyle: false),
+            DynamicComposerLayout(bottomSafeArea: 21, isCompact: false, isComposing: false, usesTelegramInputStyle: false),
+            DynamicComposerLayout(bottomSafeArea: 0, isCompact: true, isComposing: false, usesTelegramInputStyle: false)
         ] {
             XCTAssertEqual(layout.horizontalPadding, 8)
             XCTAssertEqual(layout.bottomPadding, 8)
@@ -88,8 +93,13 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
     }
 
-    func testComposerLayoutMatchesCompactReferenceMetrics() {
-        let layout = DynamicComposerLayout(bottomSafeArea: 34, isCompact: true, isComposing: false)
+    func testTelegramComposerLayoutMatchesCompactReferenceMetrics() {
+        let layout = DynamicComposerLayout(
+            bottomSafeArea: 34,
+            isCompact: true,
+            isComposing: false,
+            usesTelegramInputStyle: true
+        )
         XCTAssertEqual(layout.horizontalPadding, 26)
         XCTAssertEqual(34 + layout.bottomPadding, 30)
     }

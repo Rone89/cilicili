@@ -15,21 +15,21 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
 
-        let like = app.buttons["dynamic.detail.composer.like"]
+        let share = app.buttons["dynamic.detail.composer.share"]
         let comment = app.buttons["dynamic.detail.composer.comment"]
-        let favorite = app.buttons["dynamic.detail.composer.favorite"]
-        XCTAssertTrue(like.waitForExistence(timeout: 5))
+        let like = app.buttons["dynamic.detail.composer.like"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
         XCTAssertTrue(comment.exists)
-        XCTAssertTrue(favorite.exists)
+        XCTAssertTrue(like.exists)
 
         let window = app.windows.firstMatch.frame
+        XCTAssertEqual(share.frame.width, 44, accuracy: 1)
         XCTAssertEqual(like.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(favorite.frame.width, 44, accuracy: 1)
         XCTAssertEqual(comment.frame.height, 40, accuracy: 1)
-        XCTAssertEqual(like.frame.minX - window.minX, 24, accuracy: 1)
-        XCTAssertEqual(window.maxX - favorite.frame.maxX, 24, accuracy: 1)
-        XCTAssertEqual(window.maxY - like.frame.maxY, 28, accuracy: 1)
-        XCTAssertEqual(like.frame.minY, favorite.frame.minY, accuracy: 1)
+        XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
+        XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
+        XCTAssertEqual(window.maxY - share.frame.maxY, 28, accuracy: 1)
+        XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
     }
 
     @MainActor

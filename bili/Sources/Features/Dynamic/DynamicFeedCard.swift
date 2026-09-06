@@ -336,6 +336,7 @@ private struct DynamicDetailView: View {
                     initialLikeCount: display.initialLikeCount,
                     commentCount: commentsViewModel.displayedReplyCount ?? 0,
                     canComment: commentsViewModel.canLoadComments,
+                    usesTelegramInputStyle: libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled,
                     bottomSafeArea: composerBottomSafeArea,
                     draft: commentDraftBinding(for: .dynamic),
                     api: api,

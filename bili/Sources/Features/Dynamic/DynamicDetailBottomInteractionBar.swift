@@ -19,6 +19,7 @@ struct DynamicComposerLayout {
     let bottomSafeArea: CGFloat
     let isCompact: Bool
     let isComposing: Bool
+    let usesTelegramInputStyle: Bool
 
     var usesCompactInsets: Bool {
         isCompact && !isComposing && bottomSafeArea > 0
@@ -27,7 +28,9 @@ struct DynamicComposerLayout {
     var horizontalPadding: CGFloat { usesCompactInsets ? 26 : 8 }
 
     var bottomPadding: CGFloat {
-        usesCompactInsets ? 10 + min(bottomSafeArea, 20) - bottomSafeArea : 8
+        usesCompactInsets
+            ? (usesTelegramInputStyle ? 10 : 8) + min(bottomSafeArea, 20) - bottomSafeArea
+            : 8
     }
 }
 
@@ -184,6 +187,7 @@ struct DynamicDetailComposerBottomBar: View {
     let initialLikeCount: Int
     let commentCount: Int
     let canComment: Bool
+    let usesTelegramInputStyle: Bool
     @Binding var draft: String
     let api: BiliAPIClient
     let submit: (String, [DynamicCommentImage]?) async throws -> Void
@@ -206,6 +210,7 @@ struct DynamicDetailComposerBottomBar: View {
         initialLikeCount: Int,
         commentCount: Int,
         canComment: Bool,
+        usesTelegramInputStyle: Bool = false,
         bottomSafeArea: CGFloat = 0,
         draft: Binding<String>,
         api: BiliAPIClient,
@@ -216,6 +221,7 @@ struct DynamicDetailComposerBottomBar: View {
         self.initialLikeCount = initialLikeCount
         self.commentCount = commentCount
         self.canComment = canComment
+        self.usesTelegramInputStyle = usesTelegramInputStyle
         self.bottomSafeArea = bottomSafeArea
         self._draft = draft
         self.api = api
@@ -247,7 +253,8 @@ struct DynamicDetailComposerBottomBar: View {
         DynamicComposerLayout(
             bottomSafeArea: bottomSafeArea,
             isCompact: horizontalSizeClass == .compact,
-            isComposing: isComposing
+            isComposing: isComposing,
+            usesTelegramInputStyle: usesTelegramInputStyle
         )
     }
 
@@ -305,7 +312,11 @@ struct DynamicDetailComposerBottomBar: View {
     private var collapsedBar: some View {
         GlassEffectContainer(spacing: 6) {
             HStack(alignment: .center, spacing: 6) {
-                likeButton
+                if usesTelegramInputStyle {
+                    shareButton
+                } else {
+                    likeButton
+                }
 
                 Button(action: beginComposing) {
                     Label("说点什么…", systemImage: "bubble.left")
@@ -320,7 +331,11 @@ struct DynamicDetailComposerBottomBar: View {
                 .accessibilityValue("共 \(commentCount) 条评论")
                 .accessibilityIdentifier("dynamic.detail.composer.comment")
 
-                favoriteButton
+                if usesTelegramInputStyle {
+                    likeButton
+                } else {
+                    favoriteButton
+                }
             }
         }
     }
@@ -474,6 +489,24 @@ struct DynamicDetailComposerBottomBar: View {
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏暂未接入")
         .accessibilityIdentifier("dynamic.detail.composer.favorite")
+    }
+
+    private var shareButton: some View {
+        ShareLink(item: dynamicShareURL) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.body)
+                .frame(width: 40, height: 40)
+                .contentShape(Circle().inset(by: -2))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .foregroundStyle(.primary)
+        .accessibilityLabel("分享动态")
+        .accessibilityIdentifier("dynamic.detail.composer.share")
+    }
+
+    private var dynamicShareURL: URL {
+        URL(string: "https://t.bilibili.com/\(display.dynamicID)")!
     }
 
     private var sourceLikeState: DynamicLikeDisplayState {
