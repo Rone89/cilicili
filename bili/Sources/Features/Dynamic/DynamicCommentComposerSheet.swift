@@ -359,9 +359,20 @@ private struct DynamicCommentEmotePicker: View {
 
 struct DynamicInlineCommentEmotePicker: View {
     let emotes: [BiliInlineEmote]
+    var bottomGlassExtension: CGFloat = 0
     let onSelect: (String) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(minimum: 40), spacing: 4), count: 7)
+
+    private var panelShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 24,
+            bottomLeadingRadius: bottomGlassExtension > 0 ? 0 : 24,
+            bottomTrailingRadius: bottomGlassExtension > 0 ? 0 : 24,
+            topTrailingRadius: 24,
+            style: .continuous
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -394,11 +405,20 @@ struct DynamicInlineCommentEmotePicker: View {
 
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .biliGlassEffect(
-            interactive: true,
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
+        .clipShape(panelShape)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .frame(
+                        width: proxy.size.width,
+                        height: proxy.size.height + bottomGlassExtension
+                    )
+                    .biliGlassEffect(
+                        interactive: true,
+                        in: panelShape
+                    )
+            }
+        }
         .accessibilityIdentifier("dynamic.comment.emotePicker")
     }
 }

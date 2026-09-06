@@ -475,6 +475,7 @@ struct DynamicDetailComposerBottomBar: View {
         if activePanel == .emotes {
             DynamicInlineCommentEmotePicker(
                 emotes: emotes,
+                bottomGlassExtension: bottomSafeArea,
                 onSelect: insertEmote
             )
             .frame(height: activePanelHeight)
