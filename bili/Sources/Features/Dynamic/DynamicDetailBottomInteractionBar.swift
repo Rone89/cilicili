@@ -35,7 +35,9 @@ final class DynamicKeyboardHeightProbeView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        let height = keyboardLayoutGuide.layoutFrame.height
+        guard let window else { return }
+        let keyboardFrame = convert(keyboardLayoutGuide.layoutFrame, to: window)
+        let height = max(0, window.bounds.maxY - keyboardFrame.minY)
         guard abs(height - reportedHeight) > 0.5 else { return }
         reportedHeight = height
         DispatchQueue.main.async { [weak self] in
@@ -240,7 +242,7 @@ struct DynamicDetailComposerBottomBar: View {
     @State private var emotes = [BiliInlineEmote]()
     @State private var activePanel: DynamicDetailComposerPanel?
     @State private var activePanelHeight: CGFloat = 300
-    @State private var mostRecentKeyboardHeight: CGFloat = 300
+    @State private var mostRecentKeyboardHeight: CGFloat?
     @State private var showsFullPhotoPicker = false
     @State private var message: String?
     @FocusState private var isEditorFocused: Bool
@@ -317,7 +319,7 @@ struct DynamicDetailComposerBottomBar: View {
         .padding(.top, 3)
         .padding(.bottom, presentsFullWidthEmotePanel ? 0 : layout.bottomPadding)
         .animation(.smooth, value: isComposing)
-        .onChange(of: keyboardHeight) { _, height in
+        .onChange(of: keyboardHeight, initial: true) { _, height in
             guard height > bottomSafeArea else { return }
             mostRecentKeyboardHeight = height
         }
@@ -471,13 +473,17 @@ struct DynamicDetailComposerBottomBar: View {
     @ViewBuilder
     private var activeComposerPanel: some View {
         if activePanel == .emotes {
-            DynamicInlineCommentEmotePicker(
-                emotes: emotes,
-                onSelect: insertEmote
-            )
-            .frame(height: activePanelHeight)
-            .ignoresSafeArea(.container, edges: .bottom)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            Color.clear
+                .frame(height: max(0, activePanelHeight - bottomSafeArea))
+                .overlay(alignment: .top) {
+                    DynamicInlineCommentEmotePicker(
+                        emotes: emotes,
+                        onSelect: insertEmote
+                    )
+                    .frame(height: activePanelHeight)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
             DynamicInlinePhotoPickerPanel(
                 selection: $selectedPhotos,
@@ -675,7 +681,9 @@ struct DynamicDetailComposerBottomBar: View {
         if shouldPresent {
             activePanelHeight = switch panel {
             case .emotes:
-                max(max(keyboardHeight, mostRecentKeyboardHeight), 1)
+                keyboardHeight > bottomSafeArea
+                    ? keyboardHeight
+                    : (mostRecentKeyboardHeight ?? 300)
             case .photos:
                 300
             }

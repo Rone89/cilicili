@@ -2,7 +2,7 @@ import XCTest
 
 final class DynamicDetailFlowUITests: XCTestCase {
     @MainActor
-    func testTelegramInputStyleInteractionBarGeometry() {
+    func testTelegramInputStyleInteractionBarGeometry() throws {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
@@ -37,6 +37,17 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
+        let keyboardSettled = NSPredicate { _, _ in
+            keyboard.exists && keyboard.frame.minY < window.maxY - 100
+                && abs(keyboard.frame.maxY - window.maxY) < 2
+        }
+        let keyboardReady = XCTWaiter.wait(
+            for: [expectation(for: keyboardSettled, evaluatedWith: nil)],
+            timeout: 5
+        )
+        guard keyboardReady == .completed else {
+            throw XCTSkip("Show the simulator software keyboard before running the keyboard/panel geometry test.")
+        }
         XCTAssertTrue(share.exists)
         XCTAssertTrue(like.exists)
         XCTAssertEqual(share.frame.width, 44, accuracy: 1)
@@ -47,12 +58,26 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
         XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
         XCTAssertLessThanOrEqual(share.frame.maxY, keyboard.frame.minY + 1)
+        let keyboardFrame = keyboard.frame
+        let keyboardBarFrame = share.frame
+        let keyboardAttachment = XCTAttachment(screenshot: app.screenshot())
+        keyboardAttachment.name = "Keyboard layout"
+        keyboardAttachment.lifetime = .keepAlways
+        add(keyboardAttachment)
         app.buttons["选择表情"].tap()
         let emotePicker = app.scrollViews["dynamic.comment.emotePicker"]
         XCTAssertTrue(emotePicker.waitForExistence(timeout: 3))
         XCTAssertEqual(emotePicker.frame.minX, window.minX, accuracy: 1)
         XCTAssertEqual(emotePicker.frame.width, window.width, accuracy: 1)
-        XCTAssertGreaterThan(emotePicker.frame.height, 0)
+        let panelAttachment = XCTAttachment(screenshot: app.screenshot())
+        panelAttachment.name = "Emote panel layout"
+        panelAttachment.lifetime = .keepAlways
+        add(panelAttachment)
+        print("LAYOUT window=\(window) keyboard=\(keyboardFrame) barBefore=\(keyboardBarFrame) panel=\(emotePicker.frame) barAfter=\(share.frame)")
+        XCTAssertEqual(emotePicker.frame.minY, keyboardFrame.minY, accuracy: 2)
+        XCTAssertEqual(emotePicker.frame.maxY, window.maxY, accuracy: 2)
+        XCTAssertEqual(share.frame.minY, keyboardBarFrame.minY, accuracy: 2)
+        XCTAssertEqual(emotePicker.frame.minY - share.frame.maxY, keyboardFrame.minY - keyboardBarFrame.maxY, accuracy: 2)
         XCTAssertFalse(app.buttons["切换至键盘"].exists)
     }
 
