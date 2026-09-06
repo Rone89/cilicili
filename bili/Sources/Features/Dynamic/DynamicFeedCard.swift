@@ -364,7 +364,11 @@ private struct DynamicDetailView: View {
                 }
                 .ignoresSafeArea(.keyboard)
         }
-        .environment(\.usesDynamicDetailCommentRowLayout, libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled)
+        .environment(
+            \.usesDynamicDetailCommentRowLayout,
+            libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
+                || libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled
+        )
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
