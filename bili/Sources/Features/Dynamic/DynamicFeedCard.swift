@@ -228,6 +228,7 @@ private struct DynamicDetailView: View {
     @State private var replySheetComment: Comment?
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
     @State private var commentDrafts = [String: String]()
+    @State private var composerBottomSafeArea: CGFloat = 0
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -333,6 +334,7 @@ private struct DynamicDetailView: View {
                     initialLikeCount: display.initialLikeCount,
                     commentCount: commentsViewModel.displayedReplyCount ?? 0,
                     canComment: commentsViewModel.canLoadComments,
+                    bottomSafeArea: composerBottomSafeArea,
                     draft: commentDraftBinding(for: .dynamic),
                     api: api,
                     submit: { message, pictures in
@@ -349,6 +351,15 @@ private struct DynamicDetailView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 6)
             }
+        }
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.safeAreaInsets.bottom
+                } action: { bottomInset in
+                    composerBottomSafeArea = bottomInset
+                }
+                .ignoresSafeArea(.keyboard)
         }
         .environment(\.usesDynamicDetailCommentRowLayout, libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled)
         .environment(\.commentContentOwnerMID, item.author?.mid)

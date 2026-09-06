@@ -1,6 +1,41 @@
 import XCTest
 
 final class DynamicDetailFlowUITests: XCTestCase {
+    @MainActor
+    func testComposerCompactControlGeometry() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-dynamic-composer"
+        ]
+        app.launch()
+        let content = app.staticTexts["图文动态测试内容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 5))
+        content.tap()
+
+        let comment = app.buttons["发表评论"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        let like = app.buttons["dynamic.detail.composer.like"]
+        let favorite = app.buttons["dynamic.detail.composer.favorite"]
+        XCTAssertTrue(like.exists)
+        XCTAssertTrue(favorite.exists)
+        let window = app.windows.firstMatch.frame
+        let likeSurface = like.frame.insetBy(dx: 2, dy: 2)
+        let favoriteSurface = favorite.frame.insetBy(dx: 2, dy: 2)
+        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(favorite.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(likeSurface.height, 40, accuracy: 1)
+        XCTAssertEqual(favoriteSurface.height, 40, accuracy: 1)
+        XCTAssertEqual(comment.frame.height, 40, accuracy: 1)
+        XCTAssertEqual(likeSurface.minX - window.minX, 26, accuracy: 1)
+        XCTAssertEqual(window.maxX - favoriteSurface.maxX, 26, accuracy: 1)
+        XCTAssertEqual(window.maxY - comment.frame.maxY, 28, accuracy: 1)
+        XCTAssertEqual(comment.frame.minX - likeSurface.maxX, 6, accuracy: 1)
+        XCTAssertEqual(favoriteSurface.minX - comment.frame.maxX, 6, accuracy: 1)
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

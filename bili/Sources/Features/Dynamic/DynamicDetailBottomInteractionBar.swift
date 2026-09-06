@@ -15,6 +15,22 @@ private enum DynamicDetailComposerPanel: Equatable {
     case photos
 }
 
+struct DynamicComposerLayout {
+    let bottomSafeArea: CGFloat
+    let isCompact: Bool
+    let isComposing: Bool
+
+    var usesCompactInsets: Bool {
+        isCompact && !isComposing && bottomSafeArea > 0
+    }
+
+    var horizontalPadding: CGFloat { usesCompactInsets ? 26 : 8 }
+
+    var bottomPadding: CGFloat {
+        usesCompactInsets ? 8 + min(bottomSafeArea, 20) - bottomSafeArea : 8
+    }
+}
+
 struct DynamicDetailBottomInteractionBar: ToolbarContent {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
@@ -159,6 +175,9 @@ struct DynamicDetailComposerBottomBar: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    let bottomSafeArea: CGFloat
 
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
@@ -187,6 +206,7 @@ struct DynamicDetailComposerBottomBar: View {
         initialLikeCount: Int,
         commentCount: Int,
         canComment: Bool,
+        bottomSafeArea: CGFloat = 0,
         draft: Binding<String>,
         api: BiliAPIClient,
         submit: @escaping (String, [DynamicCommentImage]?) async throws -> Void
@@ -196,6 +216,7 @@ struct DynamicDetailComposerBottomBar: View {
         self.initialLikeCount = initialLikeCount
         self.commentCount = commentCount
         self.canComment = canComment
+        self.bottomSafeArea = bottomSafeArea
         self._draft = draft
         self.api = api
         self.submit = submit
@@ -222,6 +243,14 @@ struct DynamicDetailComposerBottomBar: View {
         !normalizedDraft.isEmpty && composerState != .sending && !isLoadingImages
     }
 
+    private var layout: DynamicComposerLayout {
+        DynamicComposerLayout(
+            bottomSafeArea: bottomSafeArea,
+            isCompact: horizontalSizeClass == .compact,
+            isComposing: isComposing
+        )
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             if isComposing {
@@ -232,9 +261,9 @@ struct DynamicDetailComposerBottomBar: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, layout.horizontalPadding)
         .padding(.top, 3)
-        .padding(.bottom, 8)
+        .padding(.bottom, layout.bottomPadding)
         .animation(.smooth, value: isComposing)
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
@@ -269,6 +298,7 @@ struct DynamicDetailComposerBottomBar: View {
             matching: .images,
             preferredItemEncoding: .current
         )
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dynamic.detail.composer.bottomBar")
     }
 
@@ -424,6 +454,7 @@ struct DynamicDetailComposerBottomBar: View {
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
         .accessibilityValue("\(likeState.isLiked ? "已点赞" : "未点赞")，\(likeState.likeCount) 个赞")
         .accessibilityAddTraits(likeState.isLiked ? .isSelected : [])
+        .accessibilityIdentifier("dynamic.detail.composer.like")
         .contentTransition(.symbolEffect(.replace))
     }
 
@@ -441,6 +472,7 @@ struct DynamicDetailComposerBottomBar: View {
         .foregroundStyle(.secondary)
         .accessibilityLabel("收藏")
         .accessibilityValue("动态收藏暂未接入")
+        .accessibilityIdentifier("dynamic.detail.composer.favorite")
     }
 
     private var sourceLikeState: DynamicLikeDisplayState {

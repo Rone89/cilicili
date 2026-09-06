@@ -5,6 +5,23 @@ import XCTest
 
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
+    func testCompactComposerMatchesReferenceInsets() {
+        let layout = DynamicComposerLayout(bottomSafeArea: 34, isCompact: true, isComposing: false)
+        XCTAssertEqual(layout.horizontalPadding, 26)
+        XCTAssertEqual(34 + layout.bottomPadding, 28)
+    }
+
+    func testComposerPreservesKeyboardAndNonCompactInsets() {
+        for layout in [
+            DynamicComposerLayout(bottomSafeArea: 336, isCompact: true, isComposing: true),
+            DynamicComposerLayout(bottomSafeArea: 21, isCompact: false, isComposing: false),
+            DynamicComposerLayout(bottomSafeArea: 0, isCompact: true, isComposing: false)
+        ] {
+            XCTAssertEqual(layout.horizontalPadding, 8)
+            XCTAssertEqual(layout.bottomPadding, 8)
+        }
+    }
+
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
