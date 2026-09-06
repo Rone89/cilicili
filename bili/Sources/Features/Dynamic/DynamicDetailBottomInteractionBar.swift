@@ -475,10 +475,11 @@ struct DynamicDetailComposerBottomBar: View {
         if activePanel == .emotes {
             DynamicInlineCommentEmotePicker(
                 emotes: emotes,
-                bottomGlassExtension: bottomSafeArea,
+                bottomSafeAreaInset: bottomSafeArea,
                 onSelect: insertEmote
             )
-            .frame(height: activePanelHeight)
+            .frame(height: activePanelHeight + bottomSafeArea)
+            .padding(.bottom, -bottomSafeArea)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
             DynamicInlinePhotoPickerPanel(
