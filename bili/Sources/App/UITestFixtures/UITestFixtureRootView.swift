@@ -27,6 +27,9 @@ struct UITestFixtureRootView: View {
                 dependencies.libraryStore.setDynamicDetailComposerExperimentEnabled(
                     ProcessInfo.processInfo.arguments.contains("--ui-test-dynamic-composer")
                 )
+                dependencies.libraryStore.setDynamicDetailBottomInteractionBarExperimentEnabled(
+                    ProcessInfo.processInfo.arguments.contains("--ui-test-dynamic-bottom-interaction-bar")
+                )
                 dependencies.libraryStore.setDynamicDetailTelegramInputStyleExperimentEnabled(
                     ProcessInfo.processInfo.arguments.contains("--ui-test-telegram-input-style")
                 )

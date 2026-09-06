@@ -307,7 +307,8 @@ private struct DynamicDetailView: View {
         .background(Color(.systemBackground))
         .toolbar {
             if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled,
-               !libraryStore.dynamicDetailComposerExperimentEnabled {
+               !libraryStore.dynamicDetailComposerExperimentEnabled,
+               !libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled {
                 DynamicDetailBottomInteractionBar(
                     display: display,
                     initialIsLiked: item.isLiked,

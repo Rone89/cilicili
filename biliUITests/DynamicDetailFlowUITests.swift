@@ -8,6 +8,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
             "--ui-test-fixture", "dynamicDetail",
             "--ui-test-reset-state",
             "--ui-test-root-tab-shell",
+            "--ui-test-dynamic-bottom-interaction-bar",
             "--ui-test-telegram-input-style"
         ]
         app.launch()
@@ -34,7 +35,8 @@ final class DynamicDetailFlowUITests: XCTestCase {
         comment.tap()
         let editor = app.textFields["dynamic.detail.composer.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
         XCTAssertTrue(share.exists)
         XCTAssertTrue(like.exists)
         XCTAssertEqual(share.frame.width, 44, accuracy: 1)
@@ -43,6 +45,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
         XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
         XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
+        XCTAssertLessThanOrEqual(share.frame.maxY, keyboard.frame.minY + 1)
     }
 
     @MainActor
