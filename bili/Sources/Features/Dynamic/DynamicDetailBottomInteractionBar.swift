@@ -51,6 +51,215 @@ private enum DynamicDetailComposerPanel: Equatable {
     case photos
 }
 
+private struct DynamicComposerTextView: UIViewRepresentable {
+    @Binding var text: String
+    let isFocused: Bool
+    let usesEmoteInputView: Bool
+    let emoteInputHeight: CGFloat
+    let emotes: [BiliInlineEmote]
+    let onFocusChange: (Bool) -> Void
+    let onHeightChange: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            text: $text,
+            onFocusChange: onFocusChange,
+            onHeightChange: onHeightChange
+        )
+    }
+
+    func makeUIView(context: Context) -> DynamicComposerUIKitTextView {
+        let textView = DynamicComposerUIKitTextView()
+        textView.delegate = context.coordinator
+        textView.configureEmoteInputView(
+            isPresented: usesEmoteInputView,
+            height: emoteInputHeight,
+            emotes: emotes
+        )
+        return textView
+    }
+
+    func updateUIView(_ textView: DynamicComposerUIKitTextView, context: Context) {
+        context.coordinator.onFocusChange = onFocusChange
+        context.coordinator.onHeightChange = onHeightChange
+        textView.configureEmoteInputView(
+            isPresented: usesEmoteInputView,
+            height: emoteInputHeight,
+            emotes: emotes
+        )
+
+        if textView.text != text {
+            textView.text = text
+            textView.reportHeightIfNeeded()
+        }
+
+        textView.setFocused(isFocused)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        @Binding var text: String
+        var onFocusChange: (Bool) -> Void
+        var onHeightChange: (CGFloat) -> Void
+
+        init(
+            text: Binding<String>,
+            onFocusChange: @escaping (Bool) -> Void,
+            onHeightChange: @escaping (CGFloat) -> Void
+        ) {
+            _text = text
+            self.onFocusChange = onFocusChange
+            self.onHeightChange = onHeightChange
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text = textView.text
+            (textView as? DynamicComposerUIKitTextView)?.reportHeightIfNeeded()
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            onFocusChange(true)
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            onFocusChange(false)
+        }
+    }
+}
+
+private final class DynamicComposerUIKitTextView: UITextView {
+    private var emoteInputView: DynamicComposerEmoteInputView?
+    private var currentInputModeIsEmotes = false
+    private var reportedHeight: CGFloat = 0
+    private var wantsFocus = false
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        backgroundColor = .clear
+        font = .preferredFont(forTextStyle: .body)
+        textColor = .label
+        adjustsFontForContentSizeCategory = true
+        textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        textContainer?.lineFragmentPadding = 0
+        isScrollEnabled = true
+        showsVerticalScrollIndicator = false
+        accessibilityLabel = "评论内容"
+        accessibilityIdentifier = "dynamic.detail.composer.editor"
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportHeightIfNeeded()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setFocused(wantsFocus)
+    }
+
+    func setFocused(_ isFocused: Bool) {
+        wantsFocus = isFocused
+        guard window != nil else { return }
+        if isFocused, !isFirstResponder {
+            becomeFirstResponder()
+        } else if !isFocused, isFirstResponder {
+            resignFirstResponder()
+        }
+    }
+
+    func configureEmoteInputView(
+        isPresented: Bool,
+        height: CGFloat,
+        emotes: [BiliInlineEmote]
+    ) {
+        let resolvedHeight = max(216, height)
+        if isPresented {
+            let inputView = emoteInputView ?? DynamicComposerEmoteInputView(
+                frame: .zero,
+                inputViewStyle: .keyboard
+            )
+            inputView.configure(
+                height: resolvedHeight,
+                emotes: emotes,
+                insertEmote: { [weak self] token in
+                    self?.insertText(token)
+                }
+            )
+            emoteInputView = inputView
+            self.inputView = inputView
+        } else {
+            inputView = nil
+        }
+
+        guard currentInputModeIsEmotes != isPresented else { return }
+        currentInputModeIsEmotes = isPresented
+        if isFirstResponder {
+            reloadInputViews()
+        }
+    }
+
+    func reportHeightIfNeeded() {
+        let usableWidth = max(bounds.width, 1)
+        let fittingSize = sizeThatFits(CGSize(width: usableWidth, height: .greatestFiniteMagnitude))
+        let height = min(max(fittingSize.height, 40), 120)
+        guard abs(height - reportedHeight) > 0.5 else { return }
+        reportedHeight = height
+        (delegate as? DynamicComposerTextView.Coordinator)?.onHeightChange(height)
+    }
+}
+
+private final class DynamicComposerEmoteInputView: UIInputView {
+    private let hostingController = UIHostingController(rootView: AnyView(EmptyView()))
+    private var panelHeight: CGFloat = 216
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: panelHeight)
+    }
+
+    override init(frame: CGRect, inputViewStyle: UIInputView.Style) {
+        super.init(frame: frame, inputViewStyle: inputViewStyle)
+        allowsSelfSizing = true
+        backgroundColor = .clear
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width, height: panelHeight)
+    }
+
+    func configure(
+        height: CGFloat,
+        emotes: [BiliInlineEmote],
+        insertEmote: @escaping (String) -> Void
+    ) {
+        if abs(panelHeight - height) > 0.5 {
+            panelHeight = height
+            invalidateIntrinsicContentSize()
+        }
+        hostingController.rootView = AnyView(
+            DynamicInlineCommentEmotePicker(
+                emotes: emotes,
+                onSelect: insertEmote
+            )
+        )
+    }
+}
+
 struct DynamicComposerLayout {
     let bottomSafeArea: CGFloat
     let isCompact: Bool
@@ -243,8 +452,10 @@ struct DynamicDetailComposerBottomBar: View {
     @State private var activePanel: DynamicDetailComposerPanel?
     @State private var activePanelHeight: CGFloat = 300
     @State private var mostRecentKeyboardHeight: CGFloat?
+    @State private var editorHeight: CGFloat = 40
     @State private var showsFullPhotoPicker = false
     @State private var message: String?
+    @State private var isNativeEditorFocused = false
     @FocusState private var isEditorFocused: Bool
 
     init(
@@ -303,6 +514,17 @@ struct DynamicDetailComposerBottomBar: View {
         )
     }
 
+    private var usesEmoteInputView: Bool {
+        usesTelegramInputStyle && activePanel == .emotes
+    }
+
+    private var emoteInputHeight: CGFloat {
+        if keyboardHeight > bottomSafeArea {
+            return keyboardHeight
+        }
+        return mostRecentKeyboardHeight ?? 300
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             if usesTelegramInputStyle {
@@ -327,11 +549,12 @@ struct DynamicDetailComposerBottomBar: View {
             loadSelectedPhotos(items)
         }
         .onChange(of: isEditorFocused) { _, isFocused in
-            guard isFocused else {
-                collapseIfPossible()
-                return
-            }
-            activePanel = nil
+            guard !usesTelegramInputStyle else { return }
+            handleEditorFocusChange(isFocused)
+        }
+        .onChange(of: isNativeEditorFocused) { _, isFocused in
+            guard usesTelegramInputStyle else { return }
+            handleEditorFocusChange(isFocused)
         }
         .task {
             guard emotes.isEmpty else { return }
@@ -414,14 +637,18 @@ struct DynamicDetailComposerBottomBar: View {
     private var telegramCommentControl: some View {
         if isComposing {
             HStack(alignment: .center, spacing: 2) {
-                TextField("说点什么…", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .focused($isEditorFocused)
-                    .textFieldStyle(.plain)
-                    .padding(.leading, 12)
-                    .padding(.vertical, 10)
-                    .accessibilityLabel("评论内容")
-                    .accessibilityIdentifier("dynamic.detail.composer.editor")
+                DynamicComposerTextView(
+                    text: $draft,
+                    isFocused: isNativeEditorFocused,
+                    usesEmoteInputView: usesEmoteInputView,
+                    emoteInputHeight: emoteInputHeight,
+                    emotes: emotes,
+                    onFocusChange: { isNativeEditorFocused = $0 },
+                    onHeightChange: { editorHeight = $0 }
+                )
+                .frame(height: editorHeight)
+                .padding(.leading, 12)
+                .padding(.vertical, 2)
 
                 composerPanelButton(.photos, systemImage: "photo")
                 composerPanelButton(.emotes, systemImage: "face.smiling")
@@ -472,7 +699,7 @@ struct DynamicDetailComposerBottomBar: View {
 
     @ViewBuilder
     private var activeComposerPanel: some View {
-        if activePanel == .emotes {
+        if activePanel == .emotes, !usesEmoteInputView {
             DynamicInlineCommentEmotePicker(
                 emotes: emotes,
                 bottomSafeAreaInset: bottomSafeArea,
@@ -658,7 +885,7 @@ struct DynamicDetailComposerBottomBar: View {
         activePanel = nil
         Task { @MainActor in
             await Task.yield()
-            isEditorFocused = true
+            setEditorFocused(true)
         }
     }
 
@@ -666,7 +893,7 @@ struct DynamicDetailComposerBottomBar: View {
         withAnimation(.smooth) {
             activePanel = nil
         }
-        isEditorFocused = true
+        setEditorFocused(true)
     }
 
     private func insertEmote(_ token: String) {
@@ -675,6 +902,17 @@ struct DynamicDetailComposerBottomBar: View {
 
     private func togglePanel(_ panel: DynamicDetailComposerPanel) {
         let shouldPresent = activePanel != panel
+        if panel == .emotes, usesTelegramInputStyle {
+            withAnimation(.smooth) {
+                activePanel = shouldPresent ? .emotes : nil
+            }
+            if !shouldPresent {
+                composerState = .composing
+                setEditorFocused(true)
+            }
+            return
+        }
+
         if shouldPresent {
             activePanelHeight = switch panel {
             case .emotes:
@@ -689,10 +927,28 @@ struct DynamicDetailComposerBottomBar: View {
             activePanel = shouldPresent ? panel : nil
         }
         if shouldPresent {
-            isEditorFocused = false
+            setEditorFocused(false)
         } else {
             composerState = .composing
-            isEditorFocused = true
+            setEditorFocused(true)
+        }
+    }
+
+    private func setEditorFocused(_ isFocused: Bool) {
+        if usesTelegramInputStyle {
+            isNativeEditorFocused = isFocused
+        } else {
+            isEditorFocused = isFocused
+        }
+    }
+
+    private func handleEditorFocusChange(_ isFocused: Bool) {
+        guard isFocused else {
+            collapseIfPossible()
+            return
+        }
+        if !usesEmoteInputView {
+            activePanel = nil
         }
     }
 
@@ -723,7 +979,7 @@ struct DynamicDetailComposerBottomBar: View {
             attachedImageDatas = imageDatas
             isLoadingImages = false
             activePanel = nil
-            isEditorFocused = true
+            setEditorFocused(true)
         }
     }
 
@@ -745,7 +1001,7 @@ struct DynamicDetailComposerBottomBar: View {
                 selectedPhotos = []
                 attachedImageDatas = []
                 activePanel = nil
-                isEditorFocused = false
+                setEditorFocused(false)
                 composerState = .idle
                 Haptics.success()
             } catch {
