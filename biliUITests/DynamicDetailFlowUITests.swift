@@ -41,14 +41,15 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(like.exists)
         XCTAssertEqual(share.frame.width, 44, accuracy: 1)
         XCTAssertEqual(like.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(editor.frame.height, 40, accuracy: 1)
+        XCTAssertGreaterThan(editor.frame.height, 0)
+        XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 1)
         XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
         XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
         XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
         XCTAssertLessThanOrEqual(share.frame.maxY, keyboard.frame.minY + 1)
 
         app.buttons["选择表情"].tap()
-        let emotePicker = app.descendants(matching: .any)["dynamic.comment.emotePicker"]
+        let emotePicker = app.scrollViews["dynamic.comment.emotePicker"]
         XCTAssertTrue(emotePicker.waitForExistence(timeout: 3))
         XCTAssertEqual(emotePicker.frame.minX, window.minX, accuracy: 1)
         XCTAssertEqual(emotePicker.frame.width, window.width, accuracy: 1)

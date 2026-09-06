@@ -475,6 +475,7 @@ struct DynamicDetailComposerBottomBar: View {
                 onDismiss: dismissActivePanel
             )
             .frame(height: emotePanelHeight)
+            .ignoresSafeArea(.container, edges: .bottom)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if activePanel == .photos {
             DynamicInlinePhotoPickerPanel(
