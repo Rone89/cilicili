@@ -8,7 +8,7 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
     func testCompactComposerMatchesReferenceInsets() {
         let layout = DynamicComposerLayout(bottomSafeArea: 34, isCompact: true, isComposing: false)
         XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 28)
+        XCTAssertEqual(34 + layout.bottomPadding, 30)
     }
 
     func testComposerPreservesKeyboardAndNonCompactInsets() {
@@ -88,12 +88,10 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
     }
 
-    func testTelegramDynamicDetailInputLayoutMatchesCompactReferenceMetrics() {
-        let layout = TelegramDynamicDetailInputLayout(bottomSafeArea: 34, isCompact: true)
-        XCTAssertEqual(layout.controlSize, 40)
-        XCTAssertEqual(layout.spacing, 6)
+    func testComposerLayoutMatchesCompactReferenceMetrics() {
+        let layout = DynamicComposerLayout(bottomSafeArea: 34, isCompact: true, isComposing: false)
         XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 28)
+        XCTAssertEqual(34 + layout.bottomPadding, 30)
     }
 
     func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {

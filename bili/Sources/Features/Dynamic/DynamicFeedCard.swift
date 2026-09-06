@@ -328,11 +328,8 @@ private struct DynamicDetailView: View {
                 : .automatic
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled {
-                TelegramDynamicDetailInputStyleBar(
-                    bottomSafeArea: composerBottomSafeArea
-                )
-            } else if libraryStore.dynamicDetailComposerExperimentEnabled {
+            if libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled
+                || libraryStore.dynamicDetailComposerExperimentEnabled {
                 DynamicDetailComposerBottomBar(
                     display: display,
                     initialIsLiked: item.isLiked,

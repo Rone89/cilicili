@@ -2,7 +2,7 @@ import XCTest
 
 final class DynamicDetailFlowUITests: XCTestCase {
     @MainActor
-    func testTelegramInputStylePreviewGeometry() {
+    func testTelegramInputStyleInteractionBarGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
@@ -15,20 +15,21 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
 
-        let attachment = app.buttons["dynamic.detail.telegramStyle.paperclip"]
-        let input = app.buttons["dynamic.detail.telegramStyle.input"]
-        let microphone = app.buttons["dynamic.detail.telegramStyle.mic"]
-        XCTAssertTrue(attachment.waitForExistence(timeout: 5))
-        XCTAssertTrue(input.exists)
-        XCTAssertTrue(microphone.exists)
+        let like = app.buttons["dynamic.detail.composer.like"]
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        let favorite = app.buttons["dynamic.detail.composer.favorite"]
+        XCTAssertTrue(like.waitForExistence(timeout: 5))
+        XCTAssertTrue(comment.exists)
+        XCTAssertTrue(favorite.exists)
 
         let window = app.windows.firstMatch.frame
-        XCTAssertEqual(attachment.frame.width, 40, accuracy: 1)
-        XCTAssertEqual(microphone.frame.width, 40, accuracy: 1)
-        XCTAssertEqual(attachment.frame.minX - window.minX, 26, accuracy: 1)
-        XCTAssertEqual(window.maxX - microphone.frame.maxX, 26, accuracy: 1)
-        XCTAssertEqual(window.maxY - attachment.frame.maxY, 28, accuracy: 1)
-        XCTAssertEqual(attachment.frame.minY, microphone.frame.minY, accuracy: 1)
+        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(favorite.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(comment.frame.height, 40, accuracy: 1)
+        XCTAssertEqual(like.frame.minX - window.minX, 24, accuracy: 1)
+        XCTAssertEqual(window.maxX - favorite.frame.maxX, 24, accuracy: 1)
+        XCTAssertEqual(window.maxY - like.frame.maxY, 28, accuracy: 1)
+        XCTAssertEqual(like.frame.minY, favorite.frame.minY, accuracy: 1)
     }
 
     @MainActor
