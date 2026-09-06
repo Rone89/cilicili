@@ -312,9 +312,9 @@ struct DynamicDetailComposerBottomBar: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, layout.horizontalPadding)
+        .padding(.horizontal, presentsFullWidthEmotePanel ? 0 : layout.horizontalPadding)
         .padding(.top, 3)
-        .padding(.bottom, layout.bottomPadding)
+        .padding(.bottom, presentsFullWidthEmotePanel ? 0 : layout.bottomPadding)
         .animation(.smooth, value: isComposing)
         .onChange(of: selectedPhotos) { _, items in
             loadSelectedPhotos(items)
@@ -393,9 +393,14 @@ struct DynamicDetailComposerBottomBar: View {
                     telegramTrailingButton
                 }
             }
+            .padding(.horizontal, presentsFullWidthEmotePanel ? layout.horizontalPadding : 0)
 
             activeComposerPanel
         }
+    }
+
+    private var presentsFullWidthEmotePanel: Bool {
+        usesTelegramInputStyle && activePanel == .emotes
     }
 
     @ViewBuilder
