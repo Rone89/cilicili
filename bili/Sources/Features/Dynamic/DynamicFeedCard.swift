@@ -369,6 +369,7 @@ private struct DynamicDetailView: View {
         }
         .background {
             DynamicKeyboardHeightReader(height: $keyboardHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.keyboard)
                 .allowsHitTesting(false)
         }
