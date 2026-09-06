@@ -104,6 +104,18 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertEqual(34 + layout.bottomPadding, 30)
     }
 
+    func testTelegramComposerKeepsCompactInsetsWhileEditing() {
+        let layout = DynamicComposerLayout(
+            bottomSafeArea: 34,
+            isCompact: true,
+            isComposing: true,
+            usesTelegramInputStyle: true
+        )
+
+        XCTAssertEqual(layout.horizontalPadding, 26)
+        XCTAssertEqual(34 + layout.bottomPadding, 30)
+    }
+
     func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {
         let target = DynamicCommentComposerTarget(
             rootID: 101,

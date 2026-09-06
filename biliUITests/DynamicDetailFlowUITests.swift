@@ -30,6 +30,19 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
         XCTAssertEqual(window.maxY - share.frame.maxY, 28, accuracy: 1)
         XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
+
+        comment.tap()
+        let editor = app.textFields["dynamic.detail.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(share.exists)
+        XCTAssertTrue(like.exists)
+        XCTAssertEqual(share.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(editor.frame.height, 40, accuracy: 1)
+        XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
+        XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
+        XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
     }
 
     @MainActor

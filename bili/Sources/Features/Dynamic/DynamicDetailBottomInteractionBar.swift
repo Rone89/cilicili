@@ -22,7 +22,7 @@ struct DynamicComposerLayout {
     let usesTelegramInputStyle: Bool
 
     var usesCompactInsets: Bool {
-        isCompact && !isComposing && bottomSafeArea > 0
+        isCompact && (!isComposing || usesTelegramInputStyle) && bottomSafeArea > 0
     }
 
     var horizontalPadding: CGFloat { usesCompactInsets ? 26 : 8 }
@@ -260,7 +260,9 @@ struct DynamicDetailComposerBottomBar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if isComposing {
+            if usesTelegramInputStyle {
+                telegramComposer
+            } else if isComposing {
                 expandedComposer
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
@@ -340,6 +342,65 @@ struct DynamicDetailComposerBottomBar: View {
         }
     }
 
+    private var telegramComposer: some View {
+        VStack(spacing: 8) {
+            GlassEffectContainer(spacing: 6) {
+                HStack(alignment: .center, spacing: 6) {
+                    shareButton
+                    telegramCommentControl
+                    telegramTrailingButton
+                }
+            }
+
+            activeComposerPanel
+        }
+    }
+
+    @ViewBuilder
+    private var telegramCommentControl: some View {
+        if isComposing {
+            HStack(alignment: .center, spacing: 2) {
+                TextField("说点什么…", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .focused($isEditorFocused)
+                    .textFieldStyle(.plain)
+                    .padding(.leading, 12)
+                    .padding(.vertical, 10)
+                    .accessibilityLabel("评论内容")
+                    .accessibilityIdentifier("dynamic.detail.composer.editor")
+
+                composerPanelButton(.photos, systemImage: "photo")
+                composerPanelButton(.emotes, systemImage: "face.smiling")
+            }
+            .padding(.trailing, 2)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            Button(action: beginComposing) {
+                Label("说点什么…", systemImage: "bubble.left")
+                    .font(.body)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Capsule())
+            .disabled(!canComment)
+            .accessibilityLabel("发表评论")
+            .accessibilityValue("共 \(commentCount) 条评论")
+            .accessibilityIdentifier("dynamic.detail.composer.comment")
+        }
+    }
+
+    private var telegramTrailingButton: some View {
+        Group {
+            if isComposing && canSend {
+                sendButton
+            } else {
+                likeButton
+            }
+        }
+    }
+
     private var expandedComposer: some View {
         VStack(spacing: 8) {
             attachmentPreview
@@ -351,24 +412,47 @@ struct DynamicDetailComposerBottomBar: View {
                 }
             }
 
-            if activePanel == .emotes {
-                DynamicInlineCommentEmotePicker(
-                    emotes: emotes,
-                    onSelect: insertEmote,
-                    onDismiss: dismissActivePanel
-                )
-                .frame(height: 300)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if activePanel == .photos {
-                DynamicInlinePhotoPickerPanel(
-                    selection: $selectedPhotos,
-                    showsFullPicker: $showsFullPhotoPicker,
-                    onDismiss: dismissActivePanel
-                )
-                .frame(height: 300)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            activeComposerPanel
         }
+    }
+
+    @ViewBuilder
+    private var activeComposerPanel: some View {
+        if activePanel == .emotes {
+            DynamicInlineCommentEmotePicker(
+                emotes: emotes,
+                onSelect: insertEmote,
+                onDismiss: dismissActivePanel
+            )
+            .frame(height: 300)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if activePanel == .photos {
+            DynamicInlinePhotoPickerPanel(
+                selection: $selectedPhotos,
+                showsFullPicker: $showsFullPhotoPicker,
+                onDismiss: dismissActivePanel
+            )
+            .frame(height: 300)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private func composerPanelButton(
+        _ panel: DynamicDetailComposerPanel,
+        systemImage: String
+    ) -> some View {
+        Button {
+            togglePanel(panel)
+        } label: {
+            Image(systemName: activePanel == panel
+                ? (panel == .photos ? "photo.fill" : "face.smiling.inverse")
+                : systemImage)
+                .frame(width: 32, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(activePanel == panel ? appTintColor : .secondary)
+        .accessibilityLabel(panel == .photos ? "添加图片" : "选择表情")
     }
 
     private var editorSurface: some View {
@@ -536,11 +620,13 @@ struct DynamicDetailComposerBottomBar: View {
 
     private func togglePanel(_ panel: DynamicDetailComposerPanel) {
         let shouldPresent = activePanel != panel
-        isEditorFocused = false
         withAnimation(.smooth) {
             activePanel = shouldPresent ? panel : nil
         }
-        if !shouldPresent {
+        if shouldPresent {
+            isEditorFocused = false
+        } else {
+            composerState = .composing
             isEditorFocused = true
         }
     }
