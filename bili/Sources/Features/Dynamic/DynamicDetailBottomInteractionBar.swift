@@ -31,6 +31,90 @@ struct DynamicComposerLayout {
     }
 }
 
+struct TelegramDynamicDetailInputLayout {
+    let bottomSafeArea: CGFloat
+    let isCompact: Bool
+
+    let controlSize: CGFloat = 40
+    let spacing: CGFloat = 6
+
+    var usesCompactInsets: Bool {
+        isCompact && bottomSafeArea > 0
+    }
+
+    var horizontalPadding: CGFloat { usesCompactInsets ? 26 : 8 }
+
+    var bottomPadding: CGFloat {
+        usesCompactInsets ? 8 + min(bottomSafeArea, 20) - bottomSafeArea : 8
+    }
+}
+
+struct TelegramDynamicDetailInputStyleBar: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    let bottomSafeArea: CGFloat
+
+    private var layout: TelegramDynamicDetailInputLayout {
+        TelegramDynamicDetailInputLayout(
+            bottomSafeArea: bottomSafeArea,
+            isCompact: horizontalSizeClass == .compact
+        )
+    }
+
+    var body: some View {
+        GlassEffectContainer(spacing: layout.spacing) {
+            HStack(spacing: layout.spacing) {
+                previewButton(systemImage: "paperclip", label: "附件按钮样式预览")
+
+                Button {} label: {
+                    HStack(spacing: 8) {
+                        Text("输入消息")
+                            .font(.system(size: 17))
+                            .foregroundStyle(.secondary)
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: layout.controlSize)
+                .glassEffect(.regular, in: Capsule())
+                .accessibilityLabel("输入框样式预览")
+                .accessibilityIdentifier("dynamic.detail.telegramStyle.input")
+
+                previewButton(systemImage: "mic", label: "语音按钮样式预览")
+            }
+        }
+        .padding(.horizontal, layout.horizontalPadding)
+        .padding(.top, 3)
+        .padding(.bottom, layout.bottomPadding)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dynamic.detail.telegramStyle.bottomBar")
+    }
+
+    private func previewButton(systemImage: String, label: String) -> some View {
+        Button {} label: {
+            ZStack {
+                Circle()
+                    .fill(.clear)
+                Image(systemName: systemImage)
+                    .font(.system(size: 24))
+            }
+            .contentShape(Circle())
+            .frame(width: layout.controlSize, height: layout.controlSize)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular, in: Circle())
+        .foregroundStyle(.primary)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("dynamic.detail.telegramStyle.\(systemImage)")
+    }
+}
+
 struct DynamicDetailBottomInteractionBar: ToolbarContent {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore

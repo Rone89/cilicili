@@ -2,6 +2,36 @@ import XCTest
 
 final class DynamicDetailFlowUITests: XCTestCase {
     @MainActor
+    func testTelegramInputStylePreviewGeometry() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-telegram-input-style"
+        ]
+        app.launch()
+        let content = app.staticTexts["图文动态测试内容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 5))
+        content.tap()
+
+        let attachment = app.buttons["dynamic.detail.telegramStyle.paperclip"]
+        let input = app.buttons["dynamic.detail.telegramStyle.input"]
+        let microphone = app.buttons["dynamic.detail.telegramStyle.mic"]
+        XCTAssertTrue(attachment.waitForExistence(timeout: 5))
+        XCTAssertTrue(input.exists)
+        XCTAssertTrue(microphone.exists)
+
+        let window = app.windows.firstMatch.frame
+        XCTAssertEqual(attachment.frame.width, 40, accuracy: 1)
+        XCTAssertEqual(microphone.frame.width, 40, accuracy: 1)
+        XCTAssertEqual(attachment.frame.minX - window.minX, 26, accuracy: 1)
+        XCTAssertEqual(window.maxX - microphone.frame.maxX, 26, accuracy: 1)
+        XCTAssertEqual(window.maxY - attachment.frame.maxY, 28, accuracy: 1)
+        XCTAssertEqual(attachment.frame.minY, microphone.frame.minY, accuracy: 1)
+    }
+
+    @MainActor
     func testComposerCompactControlGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [

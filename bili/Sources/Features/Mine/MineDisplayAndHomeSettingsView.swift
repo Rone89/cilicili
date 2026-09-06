@@ -54,6 +54,21 @@ struct MineInterfaceSettingsView: View {
                 .accessibilityIdentifier("dynamic-detail-composer-experiment-toggle")
 
                 Toggle(isOn: Binding(
+                    get: { libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled },
+                    set: { libraryStore.setDynamicDetailTelegramInputStyleExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Telegram 输入栏样式", systemImage: "text.bubble")
+
+                        Text("在动态详情页预览附件、输入框和语音按钮的 Telegram 尺寸与位置，不执行互动操作。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("dynamic-detail-telegram-input-style-experiment-toggle")
+
+                Toggle(isOn: Binding(
                     get: { libraryStore.dynamicCommentSwipeReplyExperimentEnabled },
                     set: { libraryStore.setDynamicCommentSwipeReplyExperimentEnabled($0) }
                 )) {

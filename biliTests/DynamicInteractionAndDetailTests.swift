@@ -73,6 +73,29 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
     }
 
+    func testDynamicDetailTelegramInputStyleExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.dynamic-detail-telegram-input-style.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.dynamicDetailTelegramInputStyleExperimentEnabled)
+
+        store.setDynamicDetailTelegramInputStyleExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
+
+        store.setDynamicDetailTelegramInputStyleExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
+    }
+
+    func testTelegramDynamicDetailInputLayoutMatchesCompactReferenceMetrics() {
+        let layout = TelegramDynamicDetailInputLayout(bottomSafeArea: 34, isCompact: true)
+        XCTAssertEqual(layout.controlSize, 40)
+        XCTAssertEqual(layout.spacing, 6)
+        XCTAssertEqual(layout.horizontalPadding, 26)
+        XCTAssertEqual(34 + layout.bottomPadding, 28)
+    }
+
     func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {
         let target = DynamicCommentComposerTarget(
             rootID: 101,

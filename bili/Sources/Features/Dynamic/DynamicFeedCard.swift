@@ -323,11 +323,16 @@ private struct DynamicDetailView: View {
         .toolbarRole(
             libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
                 && !libraryStore.dynamicDetailComposerExperimentEnabled
+                && !libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled
                 ? .editor
                 : .automatic
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if libraryStore.dynamicDetailComposerExperimentEnabled {
+            if libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled {
+                TelegramDynamicDetailInputStyleBar(
+                    bottomSafeArea: composerBottomSafeArea
+                )
+            } else if libraryStore.dynamicDetailComposerExperimentEnabled {
                 DynamicDetailComposerBottomBar(
                     display: display,
                     initialIsLiked: item.isLiked,
