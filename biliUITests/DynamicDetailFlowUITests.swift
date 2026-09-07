@@ -1,169 +1,6 @@
 import XCTest
 
 final class DynamicDetailFlowUITests: XCTestCase {
-    @MainActor
-    func testTelegramInputStyleInteractionBarGeometry() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-dynamic-bottom-interaction-bar",
-            "--ui-test-telegram-input-style"
-        ]
-        app.launch()
-        let content = app.staticTexts["图文动态测试内容"]
-        XCTAssertTrue(content.waitForExistence(timeout: 5))
-        content.tap()
-
-        let share = app.buttons["dynamic.detail.composer.share"]
-        let comment = app.buttons["dynamic.detail.composer.comment"]
-        let like = app.buttons["dynamic.detail.composer.like"]
-        XCTAssertTrue(share.waitForExistence(timeout: 5))
-        XCTAssertTrue(comment.exists)
-        XCTAssertTrue(like.exists)
-
-        let window = app.windows.firstMatch.frame
-        XCTAssertEqual(share.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(comment.frame.height, 40, accuracy: 1)
-        XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
-        XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
-        XCTAssertEqual(window.maxY - share.frame.maxY, 28, accuracy: 1)
-        XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
-
-        comment.tap()
-        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
-        let keyboardSettled = NSPredicate { _, _ in
-            keyboard.exists && keyboard.frame.minY < window.maxY - 100
-                && abs(keyboard.frame.maxY - window.maxY) < 2
-        }
-        let keyboardReady = XCTWaiter.wait(
-            for: [expectation(for: keyboardSettled, evaluatedWith: nil)],
-            timeout: 5
-        )
-        guard keyboardReady == .completed else {
-            throw XCTSkip("Show the simulator software keyboard before running the keyboard/panel geometry test.")
-        }
-        XCTAssertTrue(share.exists)
-        XCTAssertTrue(like.exists)
-        XCTAssertEqual(share.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
-        XCTAssertGreaterThan(editor.frame.height, 0)
-        XCTAssertLessThanOrEqual(editor.frame.maxY, keyboard.frame.minY + 1)
-        XCTAssertEqual(share.frame.minX - window.minX, 24, accuracy: 1)
-        XCTAssertEqual(window.maxX - like.frame.maxX, 24, accuracy: 1)
-        XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
-        XCTAssertLessThanOrEqual(share.frame.maxY, keyboard.frame.minY + 1)
-        let keyboardFrame = keyboard.frame
-        let keyboardBarFrame = share.frame
-        let keyboardAttachment = XCTAttachment(screenshot: app.screenshot())
-        keyboardAttachment.name = "Keyboard layout"
-        keyboardAttachment.lifetime = .keepAlways
-        add(keyboardAttachment)
-        app.buttons["选择表情"].tap()
-        let emotePicker = app.scrollViews["dynamic.comment.emotePicker"]
-        XCTAssertTrue(emotePicker.waitForExistence(timeout: 3))
-        XCTAssertEqual(emotePicker.frame.minX, window.minX, accuracy: 1)
-        XCTAssertEqual(emotePicker.frame.width, window.width, accuracy: 1)
-        let panelAttachment = XCTAttachment(screenshot: app.screenshot())
-        panelAttachment.name = "Emote panel layout"
-        panelAttachment.lifetime = .keepAlways
-        add(panelAttachment)
-        print("LAYOUT window=\(window) keyboard=\(keyboardFrame) barBefore=\(keyboardBarFrame) panel=\(emotePicker.frame) barAfter=\(share.frame)")
-        XCTAssertEqual(emotePicker.frame.minY, keyboardFrame.minY, accuracy: 2)
-        XCTAssertEqual(emotePicker.frame.maxY, window.maxY, accuracy: 2)
-        XCTAssertEqual(share.frame.minY, keyboardBarFrame.minY, accuracy: 2)
-        XCTAssertEqual(emotePicker.frame.minY - share.frame.maxY, keyboardFrame.minY - keyboardBarFrame.maxY, accuracy: 2)
-        XCTAssertFalse(app.buttons["切换至键盘"].exists)
-    }
-
-    @MainActor
-    func testTappingEditorAfterEmotePanelRestoresSystemKeyboard() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-dynamic-bottom-interaction-bar",
-            "--ui-test-telegram-input-style"
-        ]
-        app.launch()
-
-        let content = app.staticTexts["图文动态测试内容"]
-        XCTAssertTrue(content.waitForExistence(timeout: 5))
-        content.tap()
-
-        let comment = app.buttons["dynamic.detail.composer.comment"]
-        XCTAssertTrue(comment.waitForExistence(timeout: 5))
-        comment.tap()
-
-        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-
-        let emoteButton = app.buttons["选择表情"]
-        XCTAssertTrue(emoteButton.waitForExistence(timeout: 3))
-        emoteButton.tap()
-
-        let closeEmotePicker = app.buttons["收起表情选择器"]
-        XCTAssertTrue(closeEmotePicker.waitForExistence(timeout: 3))
-        let panel = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
-        XCTAssertTrue(panel.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(panel.frame.height, 200)
-
-        editor.tap()
-
-        let systemKeyboard = app.keyboards.firstMatch
-        let keyboardRaised = NSPredicate { _, _ in
-            systemKeyboard.exists
-                && systemKeyboard.frame.minY < app.windows.firstMatch.frame.maxY - 100
-        }
-        let keyboardReady = XCTWaiter.wait(
-            for: [expectation(for: keyboardRaised, evaluatedWith: nil)],
-            timeout: 5
-        )
-        XCTAssertEqual(keyboardReady, .completed)
-        XCTAssertTrue(app.buttons["选择表情"].waitForExistence(timeout: 3))
-    }
-
-    @MainActor
-    func testTappingComposerEditorExplicitlyRestoresFocus() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-dynamic-bottom-interaction-bar",
-            "--ui-test-telegram-input-style"
-        ]
-        app.launch()
-
-        app.staticTexts["图文动态测试内容"].tap()
-        let comment = app.buttons["dynamic.detail.composer.comment"]
-        XCTAssertTrue(comment.waitForExistence(timeout: 5))
-        comment.tap()
-
-        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
-
-        let photoButton = app.buttons["添加图片"]
-        XCTAssertTrue(photoButton.waitForExistence(timeout: 3))
-        photoButton.tap()
-        XCTAssertTrue(app.buttons["收起照片选择器"].waitForExistence(timeout: 3))
-        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
-
-        editor.tap()
-
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
-        editor.typeText("keyboard")
-        XCTAssertEqual(editor.value as? String, "keyboard")
-    }
 
     @MainActor
     func testRichCommentComposerUsesNativeTextEditorAndEmoteInputView() throws {
@@ -171,8 +8,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
             "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-rich-comment-composer"
+            "--ui-test-root-tab-shell"
         ]
         app.launch()
 
@@ -238,8 +74,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
             "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-rich-comment-composer"
+            "--ui-test-root-tab-shell"
         ]
         app.launch()
         app.staticTexts["图文动态测试内容"].tap()
@@ -273,8 +108,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
             "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-rich-comment-composer"
+            "--ui-test-root-tab-shell"
         ]
         app.launch()
         app.staticTexts["图文动态测试内容"].tap()
@@ -292,40 +126,6 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(editor.waitForNonExistence(timeout: 3))
     }
 
-    @MainActor
-    func testComposerCompactControlGeometry() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-dynamic-composer"
-        ]
-        app.launch()
-        let content = app.staticTexts["图文动态测试内容"]
-        XCTAssertTrue(content.waitForExistence(timeout: 5))
-        content.tap()
-
-        let comment = app.buttons["发表评论"]
-        XCTAssertTrue(comment.waitForExistence(timeout: 5))
-        let like = app.buttons["dynamic.detail.composer.like"]
-        let favorite = app.buttons["dynamic.detail.composer.favorite"]
-        XCTAssertTrue(like.exists)
-        XCTAssertTrue(favorite.exists)
-        let window = app.windows.firstMatch.frame
-        let likeSurface = like.frame.insetBy(dx: 2, dy: 2)
-        let favoriteSurface = favorite.frame.insetBy(dx: 2, dy: 2)
-        XCTAssertEqual(like.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(favorite.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(likeSurface.height, 40, accuracy: 1)
-        XCTAssertEqual(favoriteSurface.height, 40, accuracy: 1)
-        XCTAssertEqual(comment.frame.height, 40, accuracy: 1)
-        XCTAssertEqual(likeSurface.minX - window.minX, 26, accuracy: 1)
-        XCTAssertEqual(window.maxX - favoriteSurface.maxX, 26, accuracy: 1)
-        XCTAssertEqual(window.maxY - comment.frame.maxY, 28, accuracy: 1)
-        XCTAssertEqual(comment.frame.minX - likeSurface.maxX, 6, accuracy: 1)
-        XCTAssertEqual(favoriteSurface.minX - comment.frame.maxX, 6, accuracy: 1)
-    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -343,8 +143,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(detailScroll.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["图文动态测试内容"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["dynamic.detail.inlineComments"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["dynamic.detail.bottomActionBar"].exists)
-        XCTAssertTrue(app.buttons["评论回复"].exists)
+        XCTAssertTrue(app.buttons["dynamic.detail.composer.comment"].exists)
+        XCTAssertTrue(app.buttons["dynamic.detail.composer.like"].exists)
+        XCTAssertTrue(app.buttons["dynamic.detail.composer.share"].exists)
 
         let navigationBar = app.navigationBars.firstMatch
         let navigationTitle = app.staticTexts["动态详情"]

@@ -8,7 +8,6 @@ struct DynamicAttributedTextInput: Equatable {
     let emoteSize: CGFloat
     let maxLines: Int?
     let typographyRole: AppTypography.Role?
-    let typographyMode: AppTypographyMode
     static let feedBodyFont = FeedTypography.bodyUIFont
 
     init(
@@ -17,8 +16,7 @@ struct DynamicAttributedTextInput: Equatable {
         textColor: UIColor,
         emoteSize: CGFloat,
         maxLines: Int?,
-        typographyRole: AppTypography.Role?,
-        typographyMode: AppTypographyMode = .legacy
+        typographyRole: AppTypography.Role?
     ) {
         self.segments = segments
         self.baseFont = baseFont
@@ -26,7 +24,6 @@ struct DynamicAttributedTextInput: Equatable {
         self.emoteSize = emoteSize
         self.maxLines = maxLines
         self.typographyRole = typographyRole
-        self.typographyMode = typographyMode
     }
 
     static func dynamicFeedBody(
@@ -40,8 +37,7 @@ struct DynamicAttributedTextInput: Equatable {
             textColor: .label,
             emoteSize: emoteSize,
             maxLines: maxLines,
-            typographyRole: .dynamicBody,
-            typographyMode: .legacy
+            typographyRole: .dynamicBody
         )
     }
 
@@ -53,7 +49,6 @@ struct DynamicAttributedTextInput: Equatable {
             && lhs.emoteSize == rhs.emoteSize
             && lhs.maxLines == rhs.maxLines
             && lhs.typographyRole == rhs.typographyRole
-            && lhs.typographyMode == rhs.typographyMode
     }
 
     var cacheKey: String {
@@ -78,29 +73,21 @@ struct DynamicAttributedTextInput: Equatable {
             "\(textColor.dynamicRGBAKey)",
             "\(emoteSize)",
             "\(maxLines ?? -1)",
-            typographyRole?.rawValue ?? "",
-            "\(typographyMode)"
+            typographyRole?.rawValue ?? ""
         ].joined(separator: "\u{1e}")
     }
 
-    func resolvingTypography(
-        contentSizeCategory: UIContentSizeCategory,
-        mode: AppTypographyMode = .legacy
-    ) -> DynamicAttributedTextInput {
+    func resolvingTypography(contentSizeCategory: UIContentSizeCategory) -> DynamicAttributedTextInput {
         guard let typographyRole else { return self }
 
-        let resolvedFont = typographyRole.uiFont(
-            contentSizeCategory: contentSizeCategory,
-            mode: mode
-        )
+        let resolvedFont = typographyRole.uiFont(contentSizeCategory: contentSizeCategory)
         return DynamicAttributedTextInput(
             segments: segments,
             baseFont: resolvedFont,
             textColor: textColor,
             emoteSize: emoteSize * resolvedFont.pointSize / typographyRole.pointSize,
             maxLines: maxLines,
-            typographyRole: typographyRole,
-            typographyMode: mode
+            typographyRole: typographyRole
         )
     }
 
@@ -115,8 +102,8 @@ struct DynamicAttributedTextInput: Equatable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    func nativeSwiftUIFont(mode: AppTypographyMode) -> Font {
-        if mode == .nativeRefined, let typographyRole {
+    func nativeSwiftUIFont() -> Font {
+        if let typographyRole {
             return typographyRole.nativeFont()
         }
         return .system(size: baseFont.pointSize, weight: baseFont.feedFontWeight)
@@ -176,9 +163,7 @@ struct DynamicAttributedTextInput: Equatable {
         return style
     }
 
-    private var additionalLineSpacing: CGFloat {
-        typographyMode == .nativeRefined ? 0 : FeedTypography.bodyLineSpacing
-    }
+    private var additionalLineSpacing: CGFloat { 0 }
 
     var lineBreakMode: NSLineBreakMode {
         plainTextForLineBreaking.prefersCharacterWrappingForCJKText ? .byCharWrapping : .byWordWrapping

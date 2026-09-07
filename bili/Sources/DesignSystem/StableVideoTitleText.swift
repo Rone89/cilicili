@@ -3,7 +3,6 @@ import UIKit
 
 struct StableVideoTitleText: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.appTypographyMode) private var typographyMode
 
     enum Style {
         case feedStory
@@ -59,18 +58,15 @@ struct StableVideoTitleText: View {
             font: resolvedFont,
             lineLimit: lineLimit,
             preferredWidth: preferredWidth,
-            adjustsFontForContentSizeCategory: typographyMode == .nativeRefined,
-            allowsNaturalHeight: typographyMode == .nativeRefined
+            adjustsFontForContentSizeCategory: true,
+            allowsNaturalHeight: true
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(title)
     }
 
     private var resolvedFont: UIFont {
-        style.typographyRole.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-            mode: typographyMode
-        )
+        style.typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
     }
 }
 

@@ -383,33 +383,23 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStoreDefaultsNativeTypographyRefinementOffAndPersistsToggle() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.nativeTypographyRefinementExperimentEnabled)
-
-        store.setNativeTypographyRefinementExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).nativeTypographyRefinementExperimentEnabled
-        )
-
-        store.setNativeTypographyRefinementExperimentEnabled(false)
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).nativeTypographyRefinementExperimentEnabled
-        )
-    }
-
-    @MainActor
-    func testAppTypographyScalesSemanticVideoTitleRoles() {
+    func testAppTypographyUsesSemanticVideoTitleRoles() {
         let regular = AppTypography.Role.feedVideoTitle.uiFont(contentSizeCategory: .large)
         let compact = AppTypography.Role.compactVideoTitle.uiFont(contentSizeCategory: .large)
         let accessibility = AppTypography.Role.feedVideoTitle.uiFont(
             contentSizeCategory: .accessibilityExtraLarge
         )
 
-        XCTAssertEqual(regular.pointSize, 15, accuracy: 0.001)
-        XCTAssertEqual(compact.pointSize, 14, accuracy: 0.001)
+        XCTAssertEqual(
+            regular.pointSize,
+            UIFont.preferredFont(forTextStyle: .headline).pointSize,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            compact.pointSize,
+            UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
+            accuracy: 0.001
+        )
         XCTAssertGreaterThan(accessibility.pointSize, regular.pointSize)
     }
 
@@ -441,10 +431,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     @MainActor
     func testNativeTypographyUsesPreferredUIKitFontAndResetsRichTextLineSpacing() {
         let preferred = UIFont.preferredFont(forTextStyle: .body)
-        let nativeBody = AppTypography.Role.dynamicBody.uiFont(
-            contentSizeCategory: .large,
-            mode: .nativeRefined
-        )
+        let nativeBody = AppTypography.Role.dynamicBody.uiFont(contentSizeCategory: .large)
         XCTAssertEqual(nativeBody.pointSize, preferred.pointSize, accuracy: 0.001)
 
         let input = DynamicAttributedTextInput.dynamicFeedBody(
@@ -453,10 +440,8 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             maxLines: nil
         )
         let resolved = input.resolvingTypography(
-            contentSizeCategory: .accessibilityExtraExtraLarge,
-            mode: .nativeRefined
+            contentSizeCategory: .accessibilityExtraExtraLarge
         )
-        XCTAssertEqual(resolved.typographyMode, .nativeRefined)
         XCTAssertGreaterThan(resolved.emoteSize, input.emoteSize)
 
         let rendered = resolved.render().attributedString
@@ -469,13 +454,16 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testRetiredTypographyKeyDoesNotEnableNativeRefinement() {
+    func testRetiredTypographyKeyDoesNotChangeNativeTypography() {
         let defaults = makeUserDefaults()
         defaults.set(true, forKey: "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1")
 
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.nativeTypographyRefinementExperimentEnabled)
+        _ = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(
+            AppTypography.Role.dynamicBody.uiFont(contentSizeCategory: .large).pointSize,
+            UIFont.preferredFont(forTextStyle: .body).pointSize,
+            accuracy: 0.001
+        )
     }
 
     @MainActor
@@ -521,6 +509,11 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.mineSingleStackNavigationExperimentEnabled.v1",
             "cc.bili.display.fixedVideoTitleTypographyExperimentEnabled.v1",
             "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1",
+            "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailComposer.v1",
+            "cc.bili.display.richCommentComposerExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1",
             "cc.bili.display.highQualityImageViewerExperimentEnabled.v1",
             "cc.bili.account.messageCenterExperimentEnabled.v1",
             "cc.bili.display.telegramTopEdgeBlurExperimentEnabled.v1",

@@ -226,12 +226,8 @@ private struct DynamicDetailView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
-    @State private var commentComposerTarget: DynamicCommentComposerTarget?
     @State private var richCommentComposerTarget: DynamicCommentComposerTarget?
-    @State private var commentDrafts = [String: String]()
     @State private var richCommentDrafts = [String: RichCommentDraft]()
-    @State private var composerBottomSafeArea: CGFloat = 0
-    @State private var keyboardHeight: CGFloat = 0
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -309,8 +305,7 @@ private struct DynamicDetailView: View {
         )
         .background(Color(.systemBackground))
         .toolbar {
-            if libraryStore.richCommentComposerExperimentEnabled,
-               richCommentComposerTarget == nil {
+            if richCommentComposerTarget == nil {
                 DynamicDetailBottomInteractionBar(
                     display: display,
                     initialIsLiked: item.isLiked,
@@ -321,100 +316,27 @@ private struct DynamicDetailView: View {
                         richCommentComposerTarget = .dynamic
                     }
                 )
-            } else if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled,
-               !libraryStore.dynamicDetailComposerExperimentEnabled,
-               !libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled {
-                DynamicDetailBottomInteractionBar(
-                    display: display,
-                    initialIsLiked: item.isLiked,
-                    initialLikeCount: display.initialLikeCount,
-                    commentCount: commentsViewModel.displayedReplyCount ?? 0,
-                    canComment: commentsViewModel.canLoadComments,
-                    openComment: {
-                        commentComposerTarget = .dynamic
-                    }
-                )
             }
         }
-        .toolbarRole(
-            libraryStore.richCommentComposerExperimentEnabled
-                || (libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
-                && !libraryStore.dynamicDetailComposerExperimentEnabled
-                && !libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled)
-                ? .editor
-                : .automatic
-        )
+        .toolbarRole(.editor)
         .toolbar(
-            libraryStore.richCommentComposerExperimentEnabled && richCommentComposerTarget != nil
+            richCommentComposerTarget != nil
                 ? .hidden
                 : .automatic,
             for: .bottomBar
         )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !libraryStore.richCommentComposerExperimentEnabled,
-               libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled
-                || libraryStore.dynamicDetailComposerExperimentEnabled {
-                DynamicDetailComposerBottomBar(
-                    display: display,
-                    initialIsLiked: item.isLiked,
-                    initialLikeCount: display.initialLikeCount,
-                    commentCount: commentsViewModel.displayedReplyCount ?? 0,
-                    canComment: commentsViewModel.canLoadComments,
-                    usesTelegramInputStyle: libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled,
-                    bottomSafeArea: composerBottomSafeArea,
-                    keyboardHeight: keyboardHeight,
-                    draft: commentDraftBinding(for: .dynamic),
-                    api: api,
-                    submit: { message, pictures in
-                        try await submitComment(.dynamic, message, pictures: pictures)
-                    }
-                )
-            } else if !libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled,
-                      !libraryStore.richCommentComposerExperimentEnabled {
-                DynamicDetailActionBar(
-                    display: display,
-                    initialIsLiked: item.isLiked,
-                    initialLikeCount: display.initialLikeCount
-                )
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-            }
-        }
         .background {
-            Color.clear
-                .onGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.safeAreaInsets.bottom
-                } action: { bottomInset in
-                    composerBottomSafeArea = bottomInset
+            RichCommentComposerPresenter(
+                target: $richCommentComposerTarget,
+                draft: richCommentDraftBinding,
+                api: api,
+                submit: { submissionTarget, message, pictures in
+                    try await submitComment(submissionTarget, message, pictures: pictures)
                 }
-                .ignoresSafeArea(.keyboard)
+            )
+            .allowsHitTesting(false)
         }
-        .background {
-            DynamicKeyboardHeightReader(height: $keyboardHeight)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.keyboard)
-                .allowsHitTesting(false)
-        }
-        .background {
-            if libraryStore.richCommentComposerExperimentEnabled {
-                RichCommentComposerPresenter(
-                    target: $richCommentComposerTarget,
-                    draft: richCommentDraftBinding,
-                    api: api,
-                    submit: { submissionTarget, message, pictures in
-                        try await submitComment(submissionTarget, message, pictures: pictures)
-                    }
-                )
-                .allowsHitTesting(false)
-            }
-        }
-        .environment(
-            \.usesDynamicDetailCommentRowLayout,
-            libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
-                || libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled
-                || libraryStore.richCommentComposerExperimentEnabled
-        )
+        .environment(\.usesDynamicDetailCommentRowLayout, true)
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
@@ -435,8 +357,7 @@ private struct DynamicDetailView: View {
                 api: api,
                 submitReply: submitReplyAction,
                 enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
-                enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled,
-                usesRichCommentComposer: libraryStore.richCommentComposerExperimentEnabled
+                enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
@@ -444,16 +365,6 @@ private struct DynamicDetailView: View {
                     type: item.commentType,
                     referer: "https://t.bilibili.com/\(item.idStr)"
                 )
-        }
-        .sheet(item: $commentComposerTarget) { target in
-            DynamicCommentComposerSheet(
-                draft: commentDraftBinding(for: target),
-                target: target,
-                api: api,
-                submit: { message, pictures in
-                    try await submitComment(target, message, pictures: pictures)
-                }
-            )
         }
     }
 
@@ -505,34 +416,16 @@ private struct DynamicDetailView: View {
     }
 
     private var replyToCommentAction: ((Comment) -> Void)? {
-        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
-                || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
-                || libraryStore.richCommentComposerExperimentEnabled else { return nil }
         return { comment in
             let target = DynamicCommentComposerTarget.reply(root: comment, parent: comment)
-            if libraryStore.richCommentComposerExperimentEnabled {
-                richCommentComposerTarget = target
-            } else {
-                commentComposerTarget = target
-            }
+            richCommentComposerTarget = target
         }
     }
 
     private var submitReplyAction: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? {
-        guard libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
-                || libraryStore.dynamicCommentSwipeReplyExperimentEnabled
-                || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
-                || libraryStore.richCommentComposerExperimentEnabled else { return nil }
         return { target, message, pictures in
             try await submitComment(target, message, pictures: pictures)
         }
-    }
-
-    private func commentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<String> {
-        Binding(
-            get: { commentDrafts[target.id] ?? "" },
-            set: { commentDrafts[target.id] = $0 }
-        )
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {

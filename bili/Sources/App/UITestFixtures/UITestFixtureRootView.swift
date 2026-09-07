@@ -22,22 +22,6 @@ struct UITestFixtureRootView: View {
         .environmentObject(dependencies)
         .environmentObject(dependencies.libraryStore)
         .environmentObject(dependencies.sessionStore)
-        .task {
-            if UITestFixtureScenario.resetsPersistedState {
-                dependencies.libraryStore.setDynamicDetailComposerExperimentEnabled(
-                    ProcessInfo.processInfo.arguments.contains("--ui-test-dynamic-composer")
-                )
-                dependencies.libraryStore.setRichCommentComposerExperimentEnabled(
-                    ProcessInfo.processInfo.arguments.contains("--ui-test-rich-comment-composer")
-                )
-                dependencies.libraryStore.setDynamicDetailBottomInteractionBarExperimentEnabled(
-                    ProcessInfo.processInfo.arguments.contains("--ui-test-dynamic-bottom-interaction-bar")
-                )
-                dependencies.libraryStore.setDynamicDetailTelegramInputStyleExperimentEnabled(
-                    ProcessInfo.processInfo.arguments.contains("--ui-test-telegram-input-style")
-                )
-            }
-        }
     }
 }
 

@@ -38,12 +38,6 @@ struct RootTabView: View {
         .environment(\.openVideoOwnerRouteAction, openVideoOwnerRoute)
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
-        .environment(
-            \.appTypographyMode,
-            libraryStore.nativeTypographyRefinementExperimentEnabled
-                ? .nativeRefined
-                : .legacy
-        )
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }

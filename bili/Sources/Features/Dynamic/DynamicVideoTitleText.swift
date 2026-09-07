@@ -36,7 +36,7 @@ struct DynamicVideoTitleText: View {
 
     var body: some View {
         Text(attributedTitle)
-            .appTypography(style.typographyRole, legacyFont: style.font)
+            .appTypography(style.typographyRole)
             .foregroundStyle(.primary)
             .lineLimit(lineLimit)
             .truncationMode(.tail)

@@ -8,14 +8,14 @@ struct DynamicPaidArticleTextPreview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(content.title)
-                .appTypography(.feedVideoTitle, legacyFont: FeedTypography.titleFont)
+                .appTypography(.feedVideoTitle)
                 .foregroundStyle(.primary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let subtitle = content.subtitle, !subtitle.isEmpty {
                 Text(subtitle)
-                    .appTypography(.dynamicBody, legacyFont: FeedTypography.bodyFont)
+                    .appTypography(.dynamicBody)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)

@@ -5,28 +5,6 @@ import XCTest
 
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
-    func testCompactComposerMatchesReferenceInsets() {
-        let layout = DynamicComposerLayout(
-            bottomSafeArea: 34,
-            isCompact: true,
-            isComposing: false,
-            usesTelegramInputStyle: false
-        )
-        XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 28)
-    }
-
-    func testComposerPreservesKeyboardAndNonCompactInsets() {
-        for layout in [
-            DynamicComposerLayout(bottomSafeArea: 336, isCompact: true, isComposing: true, usesTelegramInputStyle: false),
-            DynamicComposerLayout(bottomSafeArea: 21, isCompact: false, isComposing: false, usesTelegramInputStyle: false),
-            DynamicComposerLayout(bottomSafeArea: 0, isCompact: true, isComposing: false, usesTelegramInputStyle: false)
-        ] {
-            XCTAssertEqual(layout.horizontalPadding, 8)
-            XCTAssertEqual(layout.bottomPadding, 8)
-        }
-    }
-
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -46,108 +24,6 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         for key in retiredKeys {
             XCTAssertNil(defaults.object(forKey: key))
         }
-    }
-
-    func testDynamicDetailBottomInteractionBarExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.dynamic-detail-bottom-bar.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicDetailBottomInteractionBarExperimentEnabled)
-
-        store.setDynamicDetailBottomInteractionBarExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
-
-        store.setDynamicDetailBottomInteractionBarExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailBottomInteractionBarExperimentEnabled)
-    }
-
-    func testDynamicDetailComposerExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.dynamic-detail-composer.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicDetailComposerExperimentEnabled)
-
-        store.setDynamicDetailComposerExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
-
-        store.setDynamicDetailComposerExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
-    }
-
-    func testRichCommentComposerExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.rich-comment-composer.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(true, forKey: "cc.bili.experimental.dynamicDetailComposer.v1")
-        defaults.set(true, forKey: "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1")
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.richCommentComposerExperimentEnabled)
-
-        store.setRichCommentComposerExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).richCommentComposerExperimentEnabled)
-
-        store.setRichCommentComposerExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).richCommentComposerExperimentEnabled)
-    }
-
-    func testDynamicDetailTelegramInputStyleExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.dynamic-detail-telegram-input-style.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicDetailTelegramInputStyleExperimentEnabled)
-
-        store.setDynamicDetailTelegramInputStyleExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
-
-        store.setDynamicDetailTelegramInputStyleExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailTelegramInputStyleExperimentEnabled)
-    }
-
-    func testTelegramComposerLayoutMatchesCompactReferenceMetrics() {
-        let layout = DynamicComposerLayout(
-            bottomSafeArea: 34,
-            isCompact: true,
-            isComposing: false,
-            usesTelegramInputStyle: true
-        )
-        XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(34 + layout.bottomPadding, 30)
-    }
-
-    func testTelegramComposerKeepsCompactInsetsWhileEditing() {
-        let layout = DynamicComposerLayout(
-            bottomSafeArea: 34,
-            isCompact: true,
-            isComposing: true,
-            usesTelegramInputStyle: true
-        )
-
-        XCTAssertEqual(layout.horizontalPadding, 26)
-        XCTAssertEqual(layout.bottomPadding, 8)
-    }
-
-    func testDynamicCommentComposerStateRepresentsFailureWithoutDroppingReplyTarget() {
-        let target = DynamicCommentComposerTarget(
-            rootID: 101,
-            parentID: 202,
-            authorName: "评论作者"
-        )
-
-        XCTAssertEqual(
-            DynamicCommentComposerState.replying(target: target),
-            .replying(target: target)
-        )
-        XCTAssertEqual(
-            DynamicCommentComposerState.failed(message: "网络错误"),
-            .failed(message: "网络错误")
-        )
     }
 
     func testDynamicCommentComposerTargetSeparatesTopLevelAndReplyDrafts() {

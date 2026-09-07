@@ -8,7 +8,6 @@ struct VideoTitleText: View {
         Text(text)
             .appTypography(
                 .videoDetailTitle,
-                legacyFont: .title3.weight(.semibold)
             )
             .foregroundStyle(.primary)
             .lineLimit(3)

@@ -102,14 +102,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appTintColorHex: String
     @Published private(set) var followsSystemFontSize: Bool
     @Published private(set) var manualFontSize: AppManualFontSize
-    @Published private(set) var nativeTypographyRefinementExperimentEnabled: Bool
-    @Published private(set) var dynamicDetailBottomInteractionBarExperimentEnabled: Bool
-    @Published private(set) var dynamicDetailComposerExperimentEnabled: Bool
-    @Published private(set) var richCommentComposerExperimentEnabled: Bool
-    @Published private(set) var dynamicDetailTelegramInputStyleExperimentEnabled: Bool
     @Published private(set) var dynamicCommentSwipeReplyExperimentEnabled: Bool
     @Published private(set) var dynamicCommentExpandedReplyTapExperimentEnabled: Bool
-    @Published private(set) var keyboardAnchoredCommentEmotePickerExperimentEnabled: Bool
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var playbackHistorySyncThresholdSeconds: Int
     @Published private(set) var preferredVideoQuality: Int?
@@ -176,22 +170,10 @@ final class LibraryStore: ObservableObject {
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
     private static let followsSystemFontSizeKey = "cc.bili.appearance.followsSystemFontSize.v1"
     private static let manualFontSizeKey = "cc.bili.appearance.manualFontSize.v1"
-    private static let nativeTypographyRefinementExperimentEnabledKey =
-        "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1"
-    private static let dynamicDetailBottomInteractionBarExperimentEnabledKey =
-        "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1"
-    private static let dynamicDetailComposerExperimentEnabledKey =
-        "cc.bili.experimental.dynamicDetailComposer.v1"
-    private static let richCommentComposerExperimentEnabledKey =
-        "cc.bili.display.richCommentComposerExperimentEnabled.v1"
-    private static let dynamicDetailTelegramInputStyleExperimentEnabledKey =
-        "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1"
     private static let dynamicCommentSwipeReplyExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentSwipeReplyExperimentEnabled.v1"
     private static let dynamicCommentExpandedReplyTapExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentExpandedReplyTapExperimentEnabled.v1"
-    private static let keyboardAnchoredCommentEmotePickerExperimentEnabledKey =
-        "cc.bili.experimental.keyboardAnchoredCommentEmotePickerExperimentEnabled.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
     private static let appTintColorDefaultToneMigrationKey = "cc.bili.appearance.tintColorDefaultToneMigration.v2"
     private static let appTintColorPreviousDefaultMigrationKey =
@@ -274,6 +256,11 @@ final class LibraryStore: ObservableObject {
         "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1",
         "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
         "cc.bili.display.scrollEdgeEffectPreference.v1",
+        "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1",
+        "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
+        "cc.bili.experimental.dynamicDetailComposer.v1",
+        "cc.bili.display.richCommentComposerExperimentEnabled.v1",
+        "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1",
         "cc.bili.experimental.keyboardAnchoredCommentPhotoPickerExperimentEnabled.v1",
         "cc.bili.experimental.keyboardAnchoredCommentEmotePickerExperimentEnabled.v1",
         "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
@@ -458,29 +445,11 @@ final class LibraryStore: ObservableObject {
         self.manualFontSize =
             (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
             .flatMap(AppManualFontSize.init(rawValue:)) ?? .defaultValue
-        self.nativeTypographyRefinementExperimentEnabled = userDefaults.object(
-            forKey: Self.nativeTypographyRefinementExperimentEnabledKey
-        ) as? Bool ?? false
-        self.dynamicDetailBottomInteractionBarExperimentEnabled = userDefaults.object(
-            forKey: Self.dynamicDetailBottomInteractionBarExperimentEnabledKey
-        ) as? Bool ?? false
-        self.dynamicDetailComposerExperimentEnabled = userDefaults.object(
-            forKey: Self.dynamicDetailComposerExperimentEnabledKey
-        ) as? Bool ?? false
-        self.richCommentComposerExperimentEnabled = userDefaults.object(
-            forKey: Self.richCommentComposerExperimentEnabledKey
-        ) as? Bool ?? false
-        self.dynamicDetailTelegramInputStyleExperimentEnabled = userDefaults.object(
-            forKey: Self.dynamicDetailTelegramInputStyleExperimentEnabledKey
-        ) as? Bool ?? false
         self.dynamicCommentSwipeReplyExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey
         ) as? Bool ?? false
         self.dynamicCommentExpandedReplyTapExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicCommentExpandedReplyTapExperimentEnabledKey
-        ) as? Bool ?? false
-        self.keyboardAnchoredCommentEmotePickerExperimentEnabled = userDefaults.object(
-            forKey: Self.keyboardAnchoredCommentEmotePickerExperimentEnabledKey
         ) as? Bool ?? false
         let storedAppTintColorHex = AppThemeTintColor.normalizedHex(
             userDefaults.string(forKey: Self.appTintColorHexKey)
@@ -732,31 +701,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(size.rawValue, forKey: Self.manualFontSizeKey)
     }
 
-    func setNativeTypographyRefinementExperimentEnabled(_ isEnabled: Bool) {
-        nativeTypographyRefinementExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.nativeTypographyRefinementExperimentEnabledKey)
-    }
-
-    func setDynamicDetailBottomInteractionBarExperimentEnabled(_ isEnabled: Bool) {
-        dynamicDetailBottomInteractionBarExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.dynamicDetailBottomInteractionBarExperimentEnabledKey)
-    }
-
-    func setDynamicDetailComposerExperimentEnabled(_ isEnabled: Bool) {
-        dynamicDetailComposerExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.dynamicDetailComposerExperimentEnabledKey)
-    }
-
-    func setRichCommentComposerExperimentEnabled(_ isEnabled: Bool) {
-        richCommentComposerExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.richCommentComposerExperimentEnabledKey)
-    }
-
-    func setDynamicDetailTelegramInputStyleExperimentEnabled(_ isEnabled: Bool) {
-        dynamicDetailTelegramInputStyleExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.dynamicDetailTelegramInputStyleExperimentEnabledKey)
-    }
-
     func setDynamicCommentSwipeReplyExperimentEnabled(_ isEnabled: Bool) {
         dynamicCommentSwipeReplyExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey)
@@ -765,11 +709,6 @@ final class LibraryStore: ObservableObject {
     func setDynamicCommentExpandedReplyTapExperimentEnabled(_ isEnabled: Bool) {
         dynamicCommentExpandedReplyTapExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.dynamicCommentExpandedReplyTapExperimentEnabledKey)
-    }
-
-    func setKeyboardAnchoredCommentEmotePickerExperimentEnabled(_ isEnabled: Bool) {
-        keyboardAnchoredCommentEmotePickerExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.keyboardAnchoredCommentEmotePickerExperimentEnabledKey)
     }
 
     @discardableResult

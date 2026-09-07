@@ -4,7 +4,6 @@ import UIKit
 struct BiliEmoteText: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.appTypographyMode) private var typographyMode
 
     let content: CommentContent?
     let plainText: String?
@@ -64,7 +63,7 @@ struct BiliEmoteText: View {
                 leadingNameFont: resolvedLeadingNameUIFont,
                 emoteSize: resolvedEmoteSize,
                 lineLimit: lineLimit,
-                lineSpacing: typographyMode == .nativeRefined ? 0 : 2
+                lineSpacing: 0
             ),
             onURLTap: { url in
                 openAppURL?(url)
@@ -75,10 +74,7 @@ struct BiliEmoteText: View {
 
     private var resolvedUIFont: UIFont {
         if let typographyRole {
-            return typographyRole.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-                mode: typographyMode
-            )
+            return typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
         }
         let textStyle: UIFont.TextStyle = emoteSize <= 18 ? .caption1 : .subheadline
         return UIFont.preferredFont(forTextStyle: textStyle)
@@ -88,10 +84,7 @@ struct BiliEmoteText: View {
         guard let leadingNameTypographyRole else {
             return nil
         }
-        return leadingNameTypographyRole.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-            mode: typographyMode
-        )
+        return leadingNameTypographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
     }
 
     private var resolvedEmoteSize: CGFloat {

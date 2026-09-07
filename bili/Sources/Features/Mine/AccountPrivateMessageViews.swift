@@ -1356,7 +1356,6 @@ private struct AccountPrivateMessageBubble: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.appTypographyMode) private var typographyMode
 
     var body: some View {
         HStack {
@@ -1500,8 +1499,7 @@ private struct AccountPrivateMessageBubble: View {
             measuredText = measuredText.replacingOccurrences(of: token, with: "口")
         }
         let font = AppTypography.Role.messageBody.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-            mode: typographyMode
+            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
         )
         let bounds = (measuredText as NSString).boundingRect(
             with: CGSize(width: maximumWidth, height: .greatestFiniteMagnitude),

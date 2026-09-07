@@ -1,22 +1,6 @@
 import SwiftUI
 import UIKit
 
-enum AppTypographyMode: Equatable {
-    case legacy
-    case nativeRefined
-}
-
-private struct AppTypographyModeKey: EnvironmentKey {
-    static let defaultValue: AppTypographyMode = .legacy
-}
-
-extension EnvironmentValues {
-    var appTypographyMode: AppTypographyMode {
-        get { self[AppTypographyModeKey.self] }
-        set { self[AppTypographyModeKey.self] = newValue }
-    }
-}
-
 enum AppManualFontSize: Int, CaseIterable, Identifiable {
     case extraSmall
     case small
@@ -106,59 +90,6 @@ enum AppTypography {
             }
         }
 
-        var weight: Weight {
-            switch self {
-            case .pageTitle:
-                return .bold
-            case .navigationTitle, .sectionTitle, .badge:
-                return .semibold
-            case .author, .compactAuthor, .commentAuthor, .action, .liveRoomTitle, .liveChatName, .messageName:
-                return .medium
-            case .videoDetailTitle, .feedVideoTitle, .compactVideoTitle, .dynamicBody,
-                 .commentBody, .metadata, .tertiaryMetadata, .liveChatBody,
-                 .messagePreview, .messageBody, .settingsRow, .settingsSubtitle, .diagnostic:
-                return .regular
-            }
-        }
-
-        var relativeTextStyle: Font.TextStyle {
-            switch self {
-            case .pageTitle:
-                return .largeTitle
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .feedVideoTitle, .liveRoomTitle:
-                return .headline
-            case .compactVideoTitle, .author, .commentAuthor, .liveChatBody, .messagePreview:
-                return .subheadline
-            case .dynamicBody, .commentBody, .messageName, .messageBody, .settingsRow:
-                return .body
-            case .compactAuthor, .liveChatName, .metadata, .action, .diagnostic:
-                return .caption
-            case .tertiaryMetadata, .badge:
-                return .caption2
-            case .settingsSubtitle:
-                return .footnote
-            }
-        }
-
-        var uiTextStyle: UIFont.TextStyle {
-            switch self {
-            case .pageTitle:
-                return .largeTitle
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .feedVideoTitle, .liveRoomTitle:
-                return .headline
-            case .compactVideoTitle, .author, .commentAuthor, .liveChatBody, .messagePreview:
-                return .subheadline
-            case .dynamicBody, .commentBody, .messageName, .messageBody, .settingsRow:
-                return .body
-            case .compactAuthor, .liveChatName, .metadata, .action, .diagnostic:
-                return .caption1
-            case .tertiaryMetadata, .badge:
-                return .caption2
-            case .settingsSubtitle:
-                return .footnote
-            }
-        }
-
         var design: Design {
             self == .diagnostic ? .monospaced : .default
         }
@@ -234,10 +165,6 @@ enum AppTypography {
             }
         }
 
-        func font(pointSize: CGFloat) -> Font {
-            .system(size: pointSize, weight: weight.swiftUIWeight, design: design.swiftUIDesign)
-        }
-
         func nativeFont() -> Font {
             if let nativeWeight {
                 return .system(
@@ -249,14 +176,7 @@ enum AppTypography {
             return .system(nativeTextStyle, design: design.swiftUIDesign)
         }
 
-        func uiFont(
-            contentSizeCategory: UIContentSizeCategory,
-            mode: AppTypographyMode = .legacy
-        ) -> UIFont {
-            guard mode == .nativeRefined else {
-                return legacyUIFont(contentSizeCategory: contentSizeCategory)
-            }
-
+        func uiFont(contentSizeCategory: UIContentSizeCategory) -> UIFont {
             let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
             let preferredFont = UIFont.preferredFont(
                 forTextStyle: nativeUITextStyle,
@@ -273,14 +193,6 @@ enum AppTypography {
             return UIFont(descriptor: descriptor, size: preferredFont.pointSize)
         }
 
-        private func legacyUIFont(contentSizeCategory: UIContentSizeCategory) -> UIFont {
-            let baseFont = AppTypography.baseUIFont(for: self)
-            let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
-            return UIFontMetrics(forTextStyle: uiTextStyle).scaledFont(
-                for: baseFont,
-                compatibleWith: traits
-            )
-        }
     }
 
     enum Weight: Equatable {
@@ -327,54 +239,13 @@ enum AppTypography {
         }
     }
 
-    private static func baseUIFont(for role: Role) -> UIFont {
-        let font = UIFont.systemFont(ofSize: role.pointSize, weight: role.weight.uiKitWeight)
-        guard let design = role.design.uiKitDesign,
-              let descriptor = font.fontDescriptor.withDesign(design)
-        else {
-            return font
-        }
-        return UIFont(descriptor: descriptor, size: role.pointSize)
-    }
 }
 
 private struct AppTypographyModifier: ViewModifier {
-    @ScaledMetric private var scaledPointSize: CGFloat
-
     let role: AppTypography.Role
-    @Environment(\.appTypographyMode) private var typographyMode
-
-    init(role: AppTypography.Role) {
-        self.role = role
-        _scaledPointSize = ScaledMetric(
-            wrappedValue: role.pointSize,
-            relativeTo: role.relativeTextStyle
-        )
-    }
 
     func body(content: Content) -> some View {
-        switch typographyMode {
-        case .legacy:
-            content.font(role.font(pointSize: scaledPointSize))
-        case .nativeRefined:
-            content.font(role.nativeFont())
-        }
-    }
-}
-
-private struct AppTypographyLegacyFallbackModifier: ViewModifier {
-    @Environment(\.appTypographyMode) private var typographyMode
-
-    let role: AppTypography.Role
-    let legacyFont: Font
-
-    func body(content: Content) -> some View {
-        switch typographyMode {
-        case .legacy:
-            content.font(legacyFont)
-        case .nativeRefined:
-            content.font(role.nativeFont())
-        }
+        content.font(role.nativeFont())
     }
 }
 
@@ -387,14 +258,6 @@ extension View {
         modifier(AppTypographyModifier(role: role))
     }
 
-    func appTypography(_ role: AppTypography.Role, legacyFont: Font) -> some View {
-        modifier(
-            AppTypographyLegacyFallbackModifier(
-                role: role,
-                legacyFont: legacyFont
-            )
-        )
-    }
 }
 
 extension DynamicTypeSize {

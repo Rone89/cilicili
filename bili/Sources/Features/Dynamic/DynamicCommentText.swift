@@ -3,7 +3,6 @@ import SwiftUI
 struct DynamicCommentText: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.appTypographyMode) private var typographyMode
 
     let content: CommentContent?
     let font: Font
@@ -41,7 +40,6 @@ struct DynamicCommentText: View {
             if let nativeText {
                 Text(nativeText)
                     .lineLimit(lineLimit)
-                    .lineSpacing(typographyMode == .nativeRefined ? 0 : lineSpacing)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +53,6 @@ struct DynamicCommentText: View {
                     leadingNameColor: leadingNameColor,
                     typographyRole: typographyRole
                 )
-                .lineSpacing(typographyMode == .nativeRefined ? 0 : lineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -103,12 +100,7 @@ struct DynamicCommentText: View {
         guard let typographyRole else {
             return font
         }
-        return Font(
-            typographyRole.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-                mode: typographyMode
-            )
-        )
+        return Font(typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory))
     }
 }
 
