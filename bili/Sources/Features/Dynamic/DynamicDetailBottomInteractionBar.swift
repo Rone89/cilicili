@@ -207,7 +207,10 @@ private final class DynamicComposerUIKitTextView: UITextView {
         let height = min(max(fittingSize.height, 40), 120)
         guard abs(height - reportedHeight) > 0.5 else { return }
         reportedHeight = height
-        (delegate as? DynamicComposerTextView.Coordinator)?.onHeightChange(height)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            (self.delegate as? DynamicComposerTextView.Coordinator)?.onHeightChange(height)
+        }
     }
 }
 

@@ -33,7 +33,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertEqual(share.frame.minY, like.frame.minY, accuracy: 1)
 
         comment.tap()
-        let editor = app.textFields["dynamic.detail.composer.editor"]
+        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
