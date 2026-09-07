@@ -1012,7 +1012,8 @@ struct RichCommentComposerView: View {
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
-                .tint(appTintColor)
+                .tint(canSend ? appTintColor : .secondary)
+                .foregroundStyle(canSend ? Color.white : .secondary)
                 .disabled(!canSend)
                 .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
                 .accessibilityIdentifier("dynamic.comment.composer.send")
