@@ -426,14 +426,18 @@ private struct DynamicDetailView: View {
         }
         .sheet(item: $commentComposerTarget) { target in
             if libraryStore.richCommentComposerExperimentEnabled {
-                RichCommentComposerView(
-                    draft: richCommentDraftBinding(for: target),
-                    target: target,
-                    api: api,
-                    submit: { submissionTarget, message, pictures in
-                        try await submitComment(submissionTarget, message, pictures: pictures)
-                    }
-                )
+                ZStack {
+                    Color.clear
+                    RichCommentComposerView(
+                        draft: richCommentDraftBinding(for: target),
+                        target: target,
+                        api: api,
+                        submit: { submissionTarget, message, pictures in
+                            try await submitComment(submissionTarget, message, pictures: pictures)
+                        }
+                    )
+                }
+                .presentationBackground(Color.clear)
             } else {
                 DynamicCommentComposerSheet(
                     draft: commentDraftBinding(for: target),

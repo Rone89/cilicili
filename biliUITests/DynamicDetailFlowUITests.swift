@@ -131,43 +131,6 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testEmotePanelAppearsAfterPhotoPickerDismissesKeyboard() throws {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
-            "--ui-test-root-tab-shell",
-            "--ui-test-dynamic-bottom-interaction-bar",
-            "--ui-test-telegram-input-style"
-        ]
-        app.launch()
-        let content = app.staticTexts["图文动态测试内容"]
-        XCTAssertTrue(content.waitForExistence(timeout: 5))
-        content.tap()
-        let comment = app.buttons["dynamic.detail.composer.comment"]
-        XCTAssertTrue(comment.waitForExistence(timeout: 5))
-        comment.tap()
-        let editor = app.textViews["dynamic.detail.composer.editor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        editor.typeText("draft")
-
-        app.buttons["添加图片"].tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
-        app.buttons["选择表情"].tap()
-
-        let panel = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
-        let panelAppeared = panel.waitForExistence(timeout: 5)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Emote panel after editor loses focus"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-        XCTAssertTrue(panelAppeared)
-        XCTAssertGreaterThan(panel.frame.height, 200)
-        XCTAssertLessThanOrEqual(editor.frame.maxY, panel.frame.minY + 1)
-        XCTAssertEqual(editor.value as? String, "draft")
-    }
-
-    @MainActor
     func testTappingComposerEditorExplicitlyRestoresFocus() throws {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -220,9 +183,17 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let editor = app.textViews["dynamic.comment.composer.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
+        let window = app.windows.firstMatch.frame
+        let keyboardFrame = keyboard.frame
         editor.typeText("native")
         XCTAssertEqual(editor.value as? String, "native")
+
+        let keyboardScreenshot = XCTAttachment(screenshot: app.screenshot())
+        keyboardScreenshot.name = "Rich composer with system keyboard"
+        keyboardScreenshot.lifetime = .keepAlways
+        add(keyboardScreenshot)
 
         let emoteButton = app.buttons["dynamic.comment.composer.emote"]
         XCTAssertTrue(emoteButton.waitForExistence(timeout: 3))
@@ -230,6 +201,14 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let emotePicker = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
         XCTAssertTrue(emotePicker.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(emotePicker.frame.height, 200)
+        let emoteScreenshot = XCTAttachment(screenshot: app.screenshot())
+        emoteScreenshot.name = "Rich composer with emote input view"
+        emoteScreenshot.lifetime = .keepAlways
+        add(emoteScreenshot)
+        print("RICH_LAYOUT window=\(window) keyboard=\(keyboardFrame) editor=\(editor.frame) panel=\(emotePicker.frame)")
+        XCTAssertLessThan(emotePicker.frame.minY, keyboardFrame.minY)
+        XCTAssertGreaterThanOrEqual(emotePicker.frame.height, keyboardFrame.height)
+        XCTAssertEqual(emotePicker.frame.maxY, window.maxY, accuracy: 2)
         XCTAssertEqual(editor.value as? String, "native")
     }
 

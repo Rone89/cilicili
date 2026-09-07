@@ -456,6 +456,11 @@ final class RichCommentUIKitTextView: UITextView {
     private var wantsFocus = false
     private var lastInputViewHeight: CGFloat = 0
     private var reportedHeight: CGFloat = 0
+    private var measuredKeyboardHeight: CGFloat = 0
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -483,7 +488,31 @@ final class RichCommentUIKitTextView: UITextView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        NotificationCenter.default.removeObserver(self)
+        if window != nil {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyboardFrameChanged(_:)),
+                name: UIResponder.keyboardDidChangeFrameNotification,
+                object: nil
+            )
+        }
         setFocused(wantsFocus)
+    }
+
+    @objc private func keyboardFrameChanged(_ notification: Notification) {
+        guard let window,
+              let value = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
+        else { return }
+        let screenFrame = value.cgRectValue
+        let keyboardFrame = window.coordinateSpace.convert(
+            screenFrame,
+            from: window.screen.coordinateSpace
+        )
+        let height = max(0, window.bounds.maxY - keyboardFrame.minY)
+        if height > 0 {
+            measuredKeyboardHeight = max(measuredKeyboardHeight, height)
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -514,7 +543,7 @@ final class RichCommentUIKitTextView: UITextView {
         emotes: [BiliInlineEmote]
     ) {
         availableEmotes = emotes
-        let resolvedHeight = max(height, 216)
+        let resolvedHeight = max(height, max(measuredKeyboardHeight, 216))
         var shouldReload = inputMode != mode
         if mode == .emotes {
             let inputView = emoteInputView ?? RichCommentEmoteInputView(
@@ -571,6 +600,7 @@ final class RichCommentEmoteInputView: UIInputView {
         allowsSelfSizing = true
         backgroundColor = .clear
         hostingController.view.backgroundColor = .clear
+        hostingController.view.insetsLayoutMarginsFromSafeArea = false
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hostingController.view)
         NSLayoutConstraint.activate([
@@ -603,6 +633,7 @@ final class RichCommentEmoteInputView: UIInputView {
                 emotes: emotes,
                 onSelect: insertEmote
             )
+            .ignoresSafeArea(.container, edges: .bottom)
         )
     }
 }
@@ -671,7 +702,6 @@ struct RichCommentComposerView: View {
     @State private var inputMode: RichCommentInputMode = .keyboard
     @State private var isEditorFocused = false
     @State private var editorHeight: CGFloat = 44
-    @State private var keyboardHeight: CGFloat = 0
     @State private var emotes = [BiliInlineEmote]()
     @State private var selectedPhotos = [PhotosPickerItem]()
     @State private var isLoadingImages = false
@@ -707,9 +737,7 @@ struct RichCommentComposerView: View {
             && !isLoadingImages
     }
 
-    private var resolvedInputViewHeight: CGFloat {
-        keyboardHeight > 0 ? keyboardHeight : 300
-    }
+    private let resolvedInputViewHeight: CGFloat = 216
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -799,14 +827,10 @@ struct RichCommentComposerView: View {
         .frame(maxWidth: .infinity)
         .biliGlassEffect(interactive: true, in: .rect(cornerRadius: 24, style: .continuous))
         .padding(12)
-        .presentationBackground(.clear)
+        .presentationBackground(Color.clear)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isSubmitting)
-        .background {
-            DynamicKeyboardHeightReader(height: $keyboardHeight)
-                .allowsHitTesting(false)
-        }
         .task {
             if draft.replyTarget == nil {
                 draft.replyTarget = activeReplyTarget
