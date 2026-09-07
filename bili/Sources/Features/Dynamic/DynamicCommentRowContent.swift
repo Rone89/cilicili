@@ -6,13 +6,15 @@ struct DynamicCommentRowContent: View {
     let showReplies: () -> Void
     let replyToComment: (() -> Void)?
     let replyAction: (() -> Void)?
+    let showsReplyTapArea: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             DynamicCommentRowHeader(
                 comment: comment,
                 display: display,
-                replyAction: replyAction
+                replyAction: replyAction,
+                showsReplyTapArea: showsReplyTapArea
             )
 
             DynamicCommentText(
@@ -26,6 +28,7 @@ struct DynamicCommentRowContent: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { (replyAction ?? replyToComment)?() }
+            .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea)
             .accessibilityHint((replyAction ?? replyToComment) == nil ? "" : "轻点以回复")
 
             DynamicCommentImageGrid(images: display.pictures)
@@ -52,15 +55,18 @@ struct DynamicCommentRowHeader: View {
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let replyAction: (() -> Void)?
+    let showsReplyTapArea: Bool
 
     init(
         comment: Comment,
         display: DynamicCommentRowDisplayModel,
-        replyAction: (() -> Void)? = nil
+        replyAction: (() -> Void)? = nil,
+        showsReplyTapArea: Bool = false
     ) {
         self.comment = comment
         self.display = display
         self.replyAction = replyAction
+        self.showsReplyTapArea = showsReplyTapArea
     }
 
     var body: some View {
@@ -80,6 +86,7 @@ struct DynamicCommentRowHeader: View {
             .frame(minHeight: 38, alignment: .top)
             .contentShape(Rectangle())
             .onTapGesture { replyAction?() }
+            .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
 
             Spacer(minLength: 8)
 

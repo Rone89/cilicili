@@ -6,6 +6,7 @@ struct DynamicCommentReplyAuthorLine: View {
     let showsLike: Bool
     var avatarHeight: CGFloat = 36
     var replyAction: (() -> Void)? = nil
+    var showsReplyTapArea = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -24,6 +25,7 @@ struct DynamicCommentReplyAuthorLine: View {
             .frame(minHeight: avatarHeight, alignment: .top)
             .contentShape(Rectangle())
             .onTapGesture { replyAction?() }
+            .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
 
             if showsLike {
                 Spacer(minLength: 8)

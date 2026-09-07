@@ -3,11 +3,17 @@ import SwiftUI
 struct DynamicCommentReplyRootView: View {
     let comment: Comment
     let reply: (() -> Void)?
+    var showsReplyTapArea = false
     private let display: DynamicCommentRowDisplayModel
 
-    init(comment: Comment, reply: (() -> Void)? = nil) {
+    init(
+        comment: Comment,
+        reply: (() -> Void)? = nil,
+        showsReplyTapArea: Bool = false
+    ) {
         self.comment = comment
         self.reply = reply
+        self.showsReplyTapArea = showsReplyTapArea
         self.display = DynamicCommentRowDisplayModel(comment: comment)
     }
 
@@ -38,6 +44,7 @@ struct DynamicCommentReplyRootView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { reply?() }
+                .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && reply != nil)
                 .accessibilityHint(reply == nil ? "" : "轻点以回复")
 
                 DynamicCommentImageGrid(images: display.pictures)
@@ -92,7 +99,8 @@ struct DynamicCommentReplyDetailRow: View {
                     comment: reply,
                     display: display,
                     showsLike: true,
-                    replyAction: enablesExpandedReplyTap ? replyAction : nil
+                    replyAction: enablesExpandedReplyTap ? replyAction : nil,
+                    showsReplyTapArea: enablesExpandedReplyTap && replyAction != nil
                 )
                     .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
                 DynamicCommentText(
@@ -106,6 +114,9 @@ struct DynamicCommentReplyDetailRow: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { replyAction?() }
+                .dynamicCommentReplyTapArea(
+                    isEnabled: enablesExpandedReplyTap && replyAction != nil
+                )
                 .accessibilityHint((enablesExpandedReplyTap && replyAction != nil) ? "轻点以回复" : "")
 
                 DynamicCommentImageGrid(images: display.pictures)

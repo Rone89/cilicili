@@ -73,7 +73,8 @@ struct DynamicCommentRow: View {
             DynamicCommentRowHeader(
                 comment: comment,
                 display: display,
-                replyAction: contentReplyAction
+                replyAction: contentReplyAction,
+                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil
             )
         } bodyContent: {
             DynamicCommentText(
@@ -87,6 +88,9 @@ struct DynamicCommentRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { contentReplyAction?() }
+            .dynamicCommentReplyTapArea(
+                isEnabled: enablesExpandedReplyTap && contentReplyAction != nil
+            )
             .accessibilityHint(contentReplyAction == nil ? "" : "轻点以回复")
         } media: {
             DynamicCommentImageGrid(images: display.pictures)
@@ -120,12 +124,35 @@ struct DynamicCommentRow: View {
                 display: display,
                 showReplies: showReplies,
                 replyToComment: replyToComment,
-                replyAction: contentReplyAction
+                replyAction: contentReplyAction,
+                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
         }
         .padding(.vertical, 10)
+    }
+}
+
+private struct DynamicCommentReplyTapAreaModifier: ViewModifier {
+    @Environment(\.appThemeTintColor) private var appTintColor
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        content.background {
+            if isEnabled {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(appTintColor.opacity(0.12))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+extension View {
+    func dynamicCommentReplyTapArea(isEnabled: Bool) -> some View {
+        modifier(DynamicCommentReplyTapAreaModifier(isEnabled: isEnabled))
     }
 }
 

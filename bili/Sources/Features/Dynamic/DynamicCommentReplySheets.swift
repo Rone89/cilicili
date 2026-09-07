@@ -19,7 +19,8 @@ struct DynamicCommentRepliesSheet: View {
                         comment: rootComment,
                         reply: submitReply == nil ? nil : {
                             composerTarget = .reply(root: rootComment, parent: rootComment)
-                        }
+                        },
+                        showsReplyTapArea: enablesExpandedReplyTap
                     )
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
