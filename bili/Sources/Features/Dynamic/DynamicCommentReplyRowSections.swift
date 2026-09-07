@@ -22,7 +22,11 @@ struct DynamicCommentReplyAuthorLine: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(minHeight: avatarHeight, alignment: .top)
+            .frame(
+                maxWidth: showsReplyTapArea && replyAction != nil ? .infinity : nil,
+                minHeight: avatarHeight,
+                alignment: .topLeading
+            )
             .contentShape(Rectangle())
             .onTapGesture { replyAction?() }
             .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)

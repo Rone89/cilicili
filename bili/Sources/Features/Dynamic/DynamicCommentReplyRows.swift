@@ -40,7 +40,11 @@ struct DynamicCommentReplyRootView: View {
                     lineSpacing: 1,
                     typographyRole: .commentBody
                 )
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: showsReplyTapArea && reply != nil ? 44 : nil,
+                    alignment: .leading
+                )
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())
                 .onTapGesture { reply?() }
@@ -110,6 +114,11 @@ struct DynamicCommentReplyDetailRow: View {
                     emoteSize: 22,
                     lineSpacing: 1,
                     typographyRole: .commentBody
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: enablesExpandedReplyTap && replyAction != nil ? 44 : nil,
+                    alignment: .leading
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 .contentShape(Rectangle())

@@ -85,7 +85,11 @@ struct DynamicCommentRow: View {
                 lineSpacing: 1,
                 typographyRole: .commentBody
             )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: enablesExpandedReplyTap && contentReplyAction != nil ? 44 : nil,
+                alignment: .leading
+            )
             .contentShape(Rectangle())
             .onTapGesture { contentReplyAction?() }
             .dynamicCommentReplyTapArea(

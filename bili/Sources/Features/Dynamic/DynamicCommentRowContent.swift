@@ -83,7 +83,11 @@ struct DynamicCommentRowHeader: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(minHeight: 38, alignment: .top)
+            .frame(
+                maxWidth: showsReplyTapArea && replyAction != nil ? .infinity : nil,
+                minHeight: 38,
+                alignment: .topLeading
+            )
             .contentShape(Rectangle())
             .onTapGesture { replyAction?() }
             .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
