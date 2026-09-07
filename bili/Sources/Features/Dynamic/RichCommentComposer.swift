@@ -908,6 +908,7 @@ struct RichCommentComposerView: View {
             HStack(spacing: 12) {
                 Button(action: toggleEmotes) {
                     Image(systemName: inputMode == .emotes ? "keyboard" : "face.smiling")
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(inputMode == .emotes ? "切换至系统键盘" : "选择表情")
@@ -982,20 +983,20 @@ struct RichCommentComposerView: View {
 
     private func focusEditor() {
         guard !isSubmitting else { return }
-        if inputMode != .keyboard {
-            withOptionalAnimation {
+        withOptionalAnimation {
+            if inputMode != .keyboard {
                 inputMode = .keyboard
             }
+            isEditorFocused = true
         }
-        isEditorFocused = true
     }
 
     private func toggleEmotes() {
         guard !isSubmitting else { return }
         withOptionalAnimation {
             inputMode = inputMode == .emotes ? .keyboard : .emotes
+            isEditorFocused = true
         }
-        isEditorFocused = true
     }
 
     private func withOptionalAnimation(_ action: () -> Void) {
