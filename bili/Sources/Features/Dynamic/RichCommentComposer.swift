@@ -900,6 +900,10 @@ struct RichCommentComposerView: View {
         static let maximumImageCount = 9
     }
 
+    private enum ControlLayout {
+        static let size: CGFloat = 36
+    }
+
     init(
         draft: Binding<RichCommentDraft>,
         target: DynamicCommentComposerTarget,
@@ -985,6 +989,7 @@ struct RichCommentComposerView: View {
                 Button(action: toggleEmotes) {
                     Image(systemName: inputMode == .emotes ? "keyboard" : "face.smiling")
                         .contentTransition(.symbolEffect(.replace))
+                        .frame(width: ControlLayout.size, height: ControlLayout.size)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
@@ -996,6 +1001,7 @@ struct RichCommentComposerView: View {
                     showsPhotoPicker = true
                 } label: {
                     Image(systemName: "photo")
+                        .frame(width: ControlLayout.size, height: ControlLayout.size)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
@@ -1010,8 +1016,10 @@ struct RichCommentComposerView: View {
                     if isSubmitting {
                         ProgressView()
                             .controlSize(.small)
+                            .frame(width: ControlLayout.size, height: ControlLayout.size)
                     } else {
                         Image(systemName: "paperplane.fill")
+                            .frame(width: ControlLayout.size, height: ControlLayout.size)
                     }
                 }
                 .buttonStyle(.glassProminent)

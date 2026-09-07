@@ -198,6 +198,14 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let emoteButton = app.buttons["dynamic.comment.composer.emote"]
         XCTAssertTrue(emoteButton.waitForExistence(timeout: 3))
+        let photoButton = app.buttons["dynamic.comment.composer.photo"]
+        let sendButton = app.buttons["dynamic.comment.composer.send"]
+        XCTAssertTrue(photoButton.exists)
+        XCTAssertTrue(sendButton.exists)
+        XCTAssertEqual(emoteButton.frame.size, sendButton.frame.size)
+        XCTAssertEqual(photoButton.frame.size, sendButton.frame.size)
+        XCTAssertEqual(emoteButton.frame.midY, sendButton.frame.midY, accuracy: 1)
+        XCTAssertEqual(photoButton.frame.midY, sendButton.frame.midY, accuracy: 1)
         emoteButton.tap()
         let emotePicker = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
         XCTAssertTrue(emotePicker.waitForExistence(timeout: 5))
@@ -214,6 +222,8 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let deleteButton = app.buttons["删除"]
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 3), "表情面板应提供删除按钮")
+        XCTAssertEqual(deleteButton.frame.size, sendButton.frame.size)
+        XCTAssertEqual(deleteButton.frame.midX, sendButton.frame.midX, accuracy: 1)
         let firstEmote = app.buttons["[doge_金箍]"]
         XCTAssertTrue(firstEmote.waitForExistence(timeout: 3), "表情面板应提供可插入的表情")
         firstEmote.tap()
