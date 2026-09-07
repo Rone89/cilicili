@@ -410,11 +410,11 @@ struct DynamicInlineCommentEmotePicker: View {
             if let onDelete {
                 Button(action: onDelete) {
                     Image(systemName: "delete.left")
-                        .frame(width: 36, height: 36)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .padding(.top, 12)
                 .padding(.trailing, 26)
                 .accessibilityLabel("删除")

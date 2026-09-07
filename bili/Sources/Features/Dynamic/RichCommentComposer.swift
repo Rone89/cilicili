@@ -901,7 +901,7 @@ struct RichCommentComposerView: View {
     }
 
     private enum ControlLayout {
-        static let size: CGFloat = 36
+        static let size: CGFloat = 32
     }
 
     init(
@@ -993,7 +993,7 @@ struct RichCommentComposerView: View {
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .accessibilityLabel(inputMode == .emotes ? "切换至系统键盘" : "选择表情")
                 .accessibilityIdentifier("dynamic.comment.composer.emote")
 
@@ -1005,7 +1005,7 @@ struct RichCommentComposerView: View {
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .disabled(draft.images.count >= Limits.maximumImageCount || isSubmitting)
                 .accessibilityLabel("添加图片")
                 .accessibilityIdentifier("dynamic.comment.composer.photo")
@@ -1024,7 +1024,7 @@ struct RichCommentComposerView: View {
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .tint(canSend ? appTintColor : .secondary)
                 .foregroundStyle(canSend ? Color.white : .secondary)
                 .disabled(!canSend)
