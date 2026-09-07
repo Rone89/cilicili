@@ -31,6 +31,16 @@ final class RichCommentDraftTests: XCTestCase {
         XCTAssertEqual(removed.serializedMessage, "前中后")
     }
 
+    func testRichDraftRemovesItsOnlyEmote() {
+        let draft = RichCommentDraft(elements: [.emote("[doge]")])
+
+        let removed = draft.replacing(NSRange(location: 0, length: 1), with: [])
+
+        XCTAssertTrue(removed.elements.isEmpty)
+        XCTAssertEqual(removed.displayText, "")
+        XCTAssertEqual(removed.serializedMessage, "")
+    }
+
     func testRichDraftRejectsImageOnlySubmissionBecauseExistingAPIRequiresMessage() {
         let image = RichCommentImageDraft(sourceIdentifier: "photo-1", data: Data([1, 2, 3]))
         let draft = RichCommentDraft(images: [image])

@@ -361,6 +361,7 @@ struct DynamicInlineCommentEmotePicker: View {
     let emotes: [BiliInlineEmote]
     var bottomSafeAreaInset: CGFloat = 0
     let onSelect: (String) -> Void
+    var onDelete: (() -> Void)? = nil
 
     private let columns = Array(repeating: GridItem(.flexible(minimum: 40), spacing: 4), count: 7)
 
@@ -375,35 +376,49 @@ struct DynamicInlineCommentEmotePicker: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if emotes.isEmpty {
-                ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 6) {
-                        ForEach(emotes, id: \.token) { emote in
-                            Button {
-                                onSelect(emote.token)
-                            } label: {
-                                CachedRemoteImage(url: emote.displayURL.flatMap { URL(string: $0) }, targetPixelSize: 96) { image in
-                                    image.resizable().scaledToFit()
-                                } placeholder: {
-                                    Image(systemName: "face.smiling")
-                                        .foregroundStyle(.secondary)
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                if emotes.isEmpty {
+                    ContentUnavailableView("暂无可用表情", systemImage: "face.smiling")
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 6) {
+                            ForEach(emotes, id: \.token) { emote in
+                                Button {
+                                    onSelect(emote.token)
+                                } label: {
+                                    CachedRemoteImage(url: emote.displayURL.flatMap { URL(string: $0) }, targetPixelSize: 96) { image in
+                                        image.resizable().scaledToFit()
+                                    } placeholder: {
+                                        Image(systemName: "face.smiling")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 36, height: 36)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
                                 }
-                                .frame(width: 36, height: 36)
-                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(emote.token)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(emote.token)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.top, onDelete == nil ? 8 : 56)
+                        .padding(.bottom, 8 + bottomSafeAreaInset)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8 + bottomSafeAreaInset)
                 }
             }
 
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "delete.left")
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
+                .padding(12)
+                .accessibilityLabel("删除")
+                .accessibilityHint("删除光标前的文字或表情")
+                .accessibilityIdentifier("dynamic.comment.emotePicker.delete")
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(panelShape)

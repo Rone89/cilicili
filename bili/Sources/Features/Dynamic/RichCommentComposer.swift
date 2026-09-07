@@ -419,16 +419,12 @@ struct RichCommentTextView: UIViewRepresentable {
                   let richTextView = textView as? RichCommentUIKitTextView
             else { return false }
 
-            var updatedDraft = draft.replacing(
+            applyReplacement(
                 range,
-                with: text.isEmpty ? [] : [.text(text)]
+                with: text.isEmpty ? [] : [.text(text)],
+                selectionLocation: range.location + text.utf16.count,
+                to: richTextView
             )
-            updatedDraft.selection = RichCommentSelection(NSRange(
-                location: range.location + text.utf16.count,
-                length: 0
-            ))
-            draft = updatedDraft
-            applyIfNeeded(draft: updatedDraft, to: richTextView, emotes: richTextView.availableEmotes)
             return false
         }
 
@@ -452,18 +448,48 @@ struct RichCommentTextView: UIViewRepresentable {
             guard let emote = textView.availableEmotes.first(where: { $0.token == token }) else { return }
             let range = draft.selection?.nsRange
                 ?? textView.selectedRange
-            var updatedDraft = draft.replacing(range, with: [.emote(emote.token)])
-            updatedDraft.selection = RichCommentSelection(NSRange(
-                location: range.location + 1,
-                length: 0
-            ))
-            draft = updatedDraft
-            applyIfNeeded(draft: updatedDraft, to: textView, emotes: textView.availableEmotes)
+            applyReplacement(
+                range,
+                with: [.emote(emote.token)],
+                selectionLocation: range.location + 1,
+                to: textView
+            )
+            textView.becomeFirstResponder()
+        }
+
+        func deleteBackward(in textView: RichCommentUIKitTextView) {
+            let selection = textView.selectedRange
+            guard selection.length > 0 || selection.location > 0 else { return }
+
+            let range: NSRange
+            if selection.length > 0 {
+                range = selection
+            } else {
+                range = (textView.text as NSString).rangeOfComposedCharacterSequence(
+                    at: selection.location - 1
+                )
+            }
+            applyReplacement(range, with: [], selectionLocation: range.location, to: textView)
             textView.becomeFirstResponder()
         }
 
         func reportHeight(_ height: CGFloat) {
             onHeightChange(height)
+        }
+
+        private func applyReplacement(
+            _ range: NSRange,
+            with replacement: [RichCommentDraftElement],
+            selectionLocation: Int,
+            to textView: RichCommentUIKitTextView
+        ) {
+            var updatedDraft = draft.replacing(range, with: replacement)
+            updatedDraft.selection = RichCommentSelection(NSRange(location: selectionLocation, length: 0))
+            if updatedDraft.elements.isEmpty {
+                renderedElements = []
+            }
+            draft = updatedDraft
+            applyIfNeeded(draft: updatedDraft, to: textView, emotes: textView.availableEmotes)
         }
 
         private func loadMissingImages(
@@ -684,6 +710,12 @@ final class RichCommentUIKitTextView: UITextView {
                           let coordinator = self.delegate as? RichCommentTextView.Coordinator
                     else { return }
                     coordinator.insertEmote(token, into: self)
+                },
+                deleteBackward: { [weak self] in
+                    guard let self,
+                          let coordinator = self.delegate as? RichCommentTextView.Coordinator
+                    else { return }
+                    coordinator.deleteBackward(in: self)
                 }
             )
             emoteInputView = inputView
@@ -719,6 +751,7 @@ final class RichCommentEmoteInputView: UIInputView {
     private var bottomSafeAreaInset: CGFloat = 0
     private var currentEmotes = [BiliInlineEmote]()
     private var insertEmote: ((String) -> Void)?
+    private var deleteBackward: (() -> Void)?
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: panelHeight)
@@ -759,7 +792,8 @@ final class RichCommentEmoteInputView: UIInputView {
     func configure(
         height: CGFloat,
         emotes: [BiliInlineEmote],
-        insertEmote: @escaping (String) -> Void
+        insertEmote: @escaping (String) -> Void,
+        deleteBackward: @escaping () -> Void
     ) {
         if abs(panelHeight - height) > 0.5 {
             panelHeight = height
@@ -767,6 +801,7 @@ final class RichCommentEmoteInputView: UIInputView {
         }
         currentEmotes = emotes
         self.insertEmote = insertEmote
+        self.deleteBackward = deleteBackward
         updatePickerRootView()
     }
 
@@ -775,7 +810,8 @@ final class RichCommentEmoteInputView: UIInputView {
             DynamicInlineCommentEmotePicker(
                 emotes: currentEmotes,
                 bottomSafeAreaInset: bottomSafeAreaInset,
-                onSelect: insertEmote ?? { _ in }
+                onSelect: insertEmote ?? { _ in },
+                onDelete: deleteBackward
             )
             .ignoresSafeArea(.container, edges: .bottom)
         )

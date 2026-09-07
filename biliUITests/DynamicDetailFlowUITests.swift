@@ -211,6 +211,14 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertLessThan(emotePicker.frame.height, window.height * 0.75)
         XCTAssertGreaterThanOrEqual(emotePicker.frame.height, keyboardFrame.height)
         XCTAssertEqual(emotePicker.frame.maxY, window.maxY, accuracy: 2)
+
+        let deleteButton = app.buttons["删除"]
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 3), "表情面板应提供删除按钮")
+        let firstEmote = app.buttons["[doge_金箍]"]
+        XCTAssertTrue(firstEmote.waitForExistence(timeout: 3), "表情面板应提供可插入的表情")
+        firstEmote.tap()
+        XCTAssertEqual(editor.value as? String, "native\u{FFFC}")
+        deleteButton.tap()
         XCTAssertEqual(editor.value as? String, "native")
     }
 
