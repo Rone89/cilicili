@@ -105,6 +105,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var nativeTypographyRefinementExperimentEnabled: Bool
     @Published private(set) var dynamicDetailBottomInteractionBarExperimentEnabled: Bool
     @Published private(set) var dynamicDetailComposerExperimentEnabled: Bool
+    @Published private(set) var richCommentComposerExperimentEnabled: Bool
     @Published private(set) var dynamicDetailTelegramInputStyleExperimentEnabled: Bool
     @Published private(set) var dynamicCommentSwipeReplyExperimentEnabled: Bool
     @Published private(set) var dynamicCommentExpandedReplyTapExperimentEnabled: Bool
@@ -181,6 +182,8 @@ final class LibraryStore: ObservableObject {
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1"
     private static let dynamicDetailComposerExperimentEnabledKey =
         "cc.bili.experimental.dynamicDetailComposer.v1"
+    private static let richCommentComposerExperimentEnabledKey =
+        "cc.bili.display.richCommentComposerExperimentEnabled.v1"
     private static let dynamicDetailTelegramInputStyleExperimentEnabledKey =
         "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1"
     private static let dynamicCommentSwipeReplyExperimentEnabledKey =
@@ -464,6 +467,9 @@ final class LibraryStore: ObservableObject {
         self.dynamicDetailComposerExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicDetailComposerExperimentEnabledKey
         ) as? Bool ?? false
+        self.richCommentComposerExperimentEnabled = userDefaults.object(
+            forKey: Self.richCommentComposerExperimentEnabledKey
+        ) as? Bool ?? false
         self.dynamicDetailTelegramInputStyleExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicDetailTelegramInputStyleExperimentEnabledKey
         ) as? Bool ?? false
@@ -739,6 +745,11 @@ final class LibraryStore: ObservableObject {
     func setDynamicDetailComposerExperimentEnabled(_ isEnabled: Bool) {
         dynamicDetailComposerExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.dynamicDetailComposerExperimentEnabledKey)
+    }
+
+    func setRichCommentComposerExperimentEnabled(_ isEnabled: Bool) {
+        richCommentComposerExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.richCommentComposerExperimentEnabledKey)
     }
 
     func setDynamicDetailTelegramInputStyleExperimentEnabled(_ isEnabled: Bool) {

@@ -78,6 +78,23 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicDetailComposerExperimentEnabled)
     }
 
+    func testRichCommentComposerExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.rich-comment-composer.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: "cc.bili.experimental.dynamicDetailComposer.v1")
+        defaults.set(true, forKey: "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1")
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.richCommentComposerExperimentEnabled)
+
+        store.setRichCommentComposerExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).richCommentComposerExperimentEnabled)
+
+        store.setRichCommentComposerExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).richCommentComposerExperimentEnabled)
+    }
+
     func testDynamicDetailTelegramInputStyleExperimentDefaultsOffAndPersists() {
         let suiteName = "cc.bili.tests.dynamic-detail-telegram-input-style.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

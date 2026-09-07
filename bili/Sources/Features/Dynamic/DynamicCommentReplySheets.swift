@@ -7,9 +7,11 @@ struct DynamicCommentRepliesSheet: View {
     var submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? = nil
     var enablesSwipeReply = false
     var enablesExpandedReplyTap = false
+    var usesRichCommentComposer = false
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var commentDrafts = [String: String]()
+    @State private var richCommentDrafts = [String: RichCommentDraft]()
 
     var body: some View {
         CommentOwnerProfileNavigationContainer {
@@ -54,16 +56,29 @@ struct DynamicCommentRepliesSheet: View {
             DynamicCommentDialogSheet(rootComment: rootComment, focusReply: reply, replyStore: replyStore)
         }
         .sheet(item: $composerTarget) { target in
-            DynamicCommentComposerSheet(
-                draft: commentDraftBinding(for: target),
-                target: target,
-                api: api,
-                submit: { message, pictures in
-                    guard let submitReply else { return }
-                    try await submitReply(target, message, pictures)
-                    await replyStore.reloadReplies(for: rootComment)
-                }
-            )
+            if usesRichCommentComposer {
+                RichCommentComposerView(
+                    draft: richCommentDraftBinding(for: target),
+                    target: target,
+                    api: api,
+                    submit: { submissionTarget, message, pictures in
+                        guard let submitReply else { return }
+                        try await submitReply(submissionTarget, message, pictures)
+                        await replyStore.reloadReplies(for: rootComment)
+                    }
+                )
+            } else {
+                DynamicCommentComposerSheet(
+                    draft: commentDraftBinding(for: target),
+                    target: target,
+                    api: api,
+                    submit: { message, pictures in
+                        guard let submitReply else { return }
+                        try await submitReply(target, message, pictures)
+                        await replyStore.reloadReplies(for: rootComment)
+                    }
+                )
+            }
         }
     }
 
@@ -71,6 +86,13 @@ struct DynamicCommentRepliesSheet: View {
         Binding(
             get: { commentDrafts[target.id] ?? "" },
             set: { commentDrafts[target.id] = $0 }
+        )
+    }
+
+    private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { richCommentDrafts[target.id] = $0 }
         )
     }
 }

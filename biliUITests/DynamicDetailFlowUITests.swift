@@ -203,6 +203,37 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testRichCommentComposerUsesNativeTextEditorAndEmoteInputView() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-rich-comment-composer"
+        ]
+        app.launch()
+
+        app.staticTexts["图文动态测试内容"].tap()
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        editor.typeText("native")
+        XCTAssertEqual(editor.value as? String, "native")
+
+        let emoteButton = app.buttons["dynamic.comment.composer.emote"]
+        XCTAssertTrue(emoteButton.waitForExistence(timeout: 3))
+        emoteButton.tap()
+        let emotePicker = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
+        XCTAssertTrue(emotePicker.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(emotePicker.frame.height, 200)
+        XCTAssertEqual(editor.value as? String, "native")
+    }
+
+    @MainActor
     func testComposerCompactControlGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [

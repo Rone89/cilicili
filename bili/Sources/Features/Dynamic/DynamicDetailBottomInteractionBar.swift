@@ -367,6 +367,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .accessibilityLabel(likeState.isLiked ? "取消点赞" : "点赞")
         .accessibilityValue("\(likeState.isLiked ? "已点赞" : "未点赞")，\(likeState.likeCount) 个赞")
         .accessibilityAddTraits(likeState.isLiked ? .isSelected : [])
+        .accessibilityIdentifier("dynamic.detail.composer.like")
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -393,6 +394,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .buttonBorderShape(.capsule)
         .accessibilityLabel("评论")
         .accessibilityValue("共 \(commentCount) 条")
+        .accessibilityIdentifier("dynamic.detail.composer.comment")
         .disabled(!canComment)
     }
 
@@ -405,6 +407,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .imageScale(.medium)
         .foregroundStyle(.primary)
         .accessibilityLabel("分享动态")
+        .accessibilityIdentifier("dynamic.detail.composer.share")
     }
 
     private var dynamicShareURL: URL {

@@ -54,6 +54,21 @@ struct MineInterfaceSettingsView: View {
                 .accessibilityIdentifier("dynamic-detail-composer-experiment-toggle")
 
                 Toggle(isOn: Binding(
+                    get: { libraryStore.richCommentComposerExperimentEnabled },
+                    set: { libraryStore.setRichCommentComposerExperimentEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("原生评论编辑", systemImage: "text.bubble")
+
+                        Text("使用系统 Toolbar、富文本评论编辑器和键盘区域表情切换。")
+                            .appTypography(.settingsSubtitle, fallback: .caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("rich-comment-composer-experiment-toggle")
+
+                Toggle(isOn: Binding(
                     get: { libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled },
                     set: { libraryStore.setDynamicDetailTelegramInputStyleExperimentEnabled($0) }
                 )) {

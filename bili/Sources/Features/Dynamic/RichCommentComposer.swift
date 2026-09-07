@@ -1,0 +1,937 @@
+import PhotosUI
+import SwiftUI
+import UIKit
+
+enum RichCommentDraftElement: Equatable, Sendable {
+    case text(String)
+    case emote(String)
+
+    var displayString: String {
+        switch self {
+        case .text(let value):
+            return value
+        case .emote:
+            return "\u{FFFC}"
+        }
+    }
+
+    var serializedString: String {
+        switch self {
+        case .text(let value), .emote(let value):
+            return value
+        }
+    }
+}
+
+struct RichCommentSelection: Equatable, Sendable {
+    let location: Int
+    let length: Int
+
+    init(_ range: NSRange) {
+        location = range.location
+        length = range.length
+    }
+
+    var nsRange: NSRange {
+        NSRange(location: location, length: length)
+    }
+}
+
+struct RichCommentImageDraft: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let sourceIdentifier: String?
+    let data: Data
+
+    init(id: UUID = UUID(), sourceIdentifier: String?, data: Data) {
+        self.id = id
+        self.sourceIdentifier = sourceIdentifier
+        self.data = data
+    }
+}
+
+struct RichCommentDraft: Equatable, Sendable {
+    var elements: [RichCommentDraftElement]
+    var selection: RichCommentSelection?
+    var images: [RichCommentImageDraft]
+    var replyTarget: DynamicCommentComposerTarget?
+
+    init(
+        elements: [RichCommentDraftElement] = [],
+        selection: RichCommentSelection? = nil,
+        images: [RichCommentImageDraft] = [],
+        replyTarget: DynamicCommentComposerTarget? = nil
+    ) {
+        self.elements = Self.normalized(elements)
+        self.selection = selection
+        self.images = images
+        self.replyTarget = replyTarget
+    }
+
+    var displayText: String {
+        elements.map(\.displayString).joined()
+    }
+
+    var serializedMessage: String {
+        elements.map(\.serializedString).joined()
+    }
+
+    var containsEmote: Bool {
+        elements.contains {
+            if case .emote = $0 { return true }
+            return false
+        }
+    }
+
+    var hasContent: Bool {
+        !serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || containsEmote
+            || !images.isEmpty
+    }
+
+    var canSubmitWithCurrentAPI: Bool {
+        !serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func replacing(_ range: NSRange, with replacement: [RichCommentDraftElement]) -> RichCommentDraft {
+        let displayLength = displayText.utf16.count
+        let start = min(max(range.location, 0), displayLength)
+        let end = min(max(start + max(range.length, 0), start), displayLength)
+        var result = [RichCommentDraftElement]()
+        var cursor = 0
+        var didInsert = false
+
+        for element in elements {
+            let elementLength = element.displayString.utf16.count
+            let elementStart = cursor
+            let elementEnd = cursor + elementLength
+
+            if end <= elementStart {
+                if !didInsert {
+                    Self.append(replacement, to: &result)
+                    didInsert = true
+                }
+                Self.append(element, to: &result)
+            } else if start >= elementEnd {
+                Self.append(element, to: &result)
+            } else {
+                let localStart = max(start - elementStart, 0)
+                let localEnd = min(end - elementStart, elementLength)
+                if case .text(let value) = element {
+                    let nsValue = value as NSString
+                    if localStart > 0 {
+                        Self.append(.text(nsValue.substring(with: NSRange(location: 0, length: localStart))), to: &result)
+                    }
+                    if !didInsert {
+                        Self.append(replacement, to: &result)
+                        didInsert = true
+                    }
+                    if localEnd < elementLength {
+                        Self.append(
+                            .text(nsValue.substring(from: localEnd)),
+                            to: &result
+                        )
+                    }
+                } else if !didInsert {
+                    Self.append(replacement, to: &result)
+                    didInsert = true
+                }
+            }
+            cursor = elementEnd
+        }
+
+        if !didInsert {
+            Self.append(replacement, to: &result)
+        }
+
+        var updated = self
+        updated.elements = Self.normalized(result)
+        return updated
+    }
+
+    func insertingText(_ text: String, at selection: RichCommentSelection?) -> RichCommentDraft {
+        let range = selection?.nsRange ?? NSRange(location: displayText.utf16.count, length: 0)
+        return replacing(range, with: text.isEmpty ? [] : [.text(text)])
+    }
+
+    private static func normalized(_ elements: [RichCommentDraftElement]) -> [RichCommentDraftElement] {
+        var result = [RichCommentDraftElement]()
+        append(elements, to: &result)
+        return result
+    }
+
+    private static func append(_ elements: [RichCommentDraftElement], to result: inout [RichCommentDraftElement]) {
+        elements.forEach { append($0, to: &result) }
+    }
+
+    private static func append(_ element: RichCommentDraftElement, to result: inout [RichCommentDraftElement]) {
+        guard case .text(let value) = element,
+              let last = result.last,
+              case .text(let existing) = last
+        else {
+            result.append(element)
+            return
+        }
+        result[result.count - 1] = .text(existing + value)
+    }
+}
+
+enum RichCommentInputMode: Equatable {
+    case keyboard
+    case emotes
+}
+
+private extension NSAttributedString.Key {
+    static let richCommentEmoteToken = NSAttributedString.Key("cc.bili.richCommentEmoteToken")
+}
+
+struct RichCommentTextView: UIViewRepresentable {
+    @Binding var draft: RichCommentDraft
+    @Binding var isFocused: Bool
+    let inputMode: RichCommentInputMode
+    let inputViewHeight: CGFloat
+    let emotes: [BiliInlineEmote]
+    let dynamicTypeSize: DynamicTypeSize
+    let onFocusChange: (Bool) -> Void
+    let onEditorTap: () -> Void
+    let onHeightChange: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            draft: $draft,
+            onFocusChange: onFocusChange,
+            onHeightChange: onHeightChange
+        )
+    }
+
+    func makeUIView(context: Context) -> RichCommentUIKitTextView {
+        let textView = RichCommentUIKitTextView()
+        textView.delegate = context.coordinator
+        textView.onTap = onEditorTap
+        context.coordinator.applyIfNeeded(draft: draft, to: textView, emotes: emotes)
+        textView.configureInputView(
+            mode: inputMode,
+            height: inputViewHeight,
+            emotes: emotes
+        )
+        textView.setFocused(isFocused)
+        return textView
+    }
+
+    func updateUIView(_ textView: RichCommentUIKitTextView, context: Context) {
+        context.coordinator.onFocusChange = onFocusChange
+        context.coordinator.onHeightChange = onHeightChange
+        textView.onTap = onEditorTap
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.configureInputView(
+            mode: inputMode,
+            height: inputViewHeight,
+            emotes: emotes
+        )
+        context.coordinator.applyIfNeeded(draft: draft, to: textView, emotes: emotes)
+        textView.setFocused(isFocused)
+        textView.reportHeightIfNeeded()
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        @Binding var draft: RichCommentDraft
+        var onFocusChange: (Bool) -> Void
+        var onHeightChange: (CGFloat) -> Void
+        private var isApplyingDraft = false
+        private var renderedElements: [RichCommentDraftElement] = []
+        private var renderedFontPointSize: CGFloat?
+        private var imageTask: Task<Void, Never>?
+
+        init(
+            draft: Binding<RichCommentDraft>,
+            onFocusChange: @escaping (Bool) -> Void,
+            onHeightChange: @escaping (CGFloat) -> Void
+        ) {
+            _draft = draft
+            self.onFocusChange = onFocusChange
+            self.onHeightChange = onHeightChange
+        }
+
+        deinit {
+            imageTask?.cancel()
+        }
+
+        func applyIfNeeded(
+            draft: RichCommentDraft,
+            to textView: RichCommentUIKitTextView,
+            emotes: [BiliInlineEmote]
+        ) {
+            let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
+            let shouldReplaceText = renderedElements != draft.elements
+                || textView.text != draft.displayText
+                || renderedFontPointSize != font.pointSize
+            if shouldReplaceText {
+                isApplyingDraft = true
+                textView.attributedText = Self.attributedString(
+                    for: draft.elements,
+                    font: font,
+                    emotes: emotes
+                )
+                let selection = draft.selection?.nsRange
+                    ?? NSRange(location: textView.text.utf16.count, length: 0)
+                textView.selectedRange = Self.clamped(selection, to: textView.text.utf16.count)
+                isApplyingDraft = false
+                renderedElements = draft.elements
+                renderedFontPointSize = font.pointSize
+                loadMissingImages(in: textView, elements: draft.elements, emotes: emotes)
+            } else if let selection = draft.selection?.nsRange,
+                      textView.selectedRange != selection {
+                textView.selectedRange = Self.clamped(selection, to: textView.text.utf16.count)
+            }
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText text: String
+        ) -> Bool {
+            guard !isApplyingDraft,
+                  let richTextView = textView as? RichCommentUIKitTextView
+            else { return false }
+
+            var updatedDraft = draft.replacing(
+                range,
+                with: text.isEmpty ? [] : [.text(text)]
+            )
+            updatedDraft.selection = RichCommentSelection(NSRange(
+                location: range.location + text.utf16.count,
+                length: 0
+            ))
+            draft = updatedDraft
+            applyIfNeeded(draft: updatedDraft, to: richTextView, emotes: richTextView.availableEmotes)
+            return false
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard !isApplyingDraft else { return }
+            let selection = RichCommentSelection(textView.selectedRange)
+            if draft.selection != selection {
+                draft.selection = selection
+            }
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            onFocusChange(true)
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            onFocusChange(false)
+        }
+
+        func insertEmote(_ token: String, into textView: RichCommentUIKitTextView) {
+            guard let emote = textView.availableEmotes.first(where: { $0.token == token }) else { return }
+            let range = draft.selection?.nsRange
+                ?? textView.selectedRange
+            var updatedDraft = draft.replacing(range, with: [.emote(emote.token)])
+            updatedDraft.selection = RichCommentSelection(NSRange(
+                location: range.location + 1,
+                length: 0
+            ))
+            draft = updatedDraft
+            applyIfNeeded(draft: updatedDraft, to: textView, emotes: textView.availableEmotes)
+            textView.becomeFirstResponder()
+        }
+
+        func reportHeight(_ height: CGFloat) {
+            onHeightChange(height)
+        }
+
+        private func loadMissingImages(
+            in textView: RichCommentUIKitTextView,
+            elements: [RichCommentDraftElement],
+            emotes: [BiliInlineEmote]
+        ) {
+            imageTask?.cancel()
+            let missing = elements.compactMap { element -> (String, URL)? in
+                guard case .emote(let token) = element,
+                      let emote = emotes.first(where: { $0.token == token }),
+                      let urlString = emote.displayURL,
+                      let url = URL(string: urlString),
+                      BiliEmoteImageStore.shared.cachedImage(for: url) == nil
+                else { return nil }
+                return (token, url)
+            }
+            guard !missing.isEmpty else { return }
+
+            imageTask = Task { @MainActor [weak self, weak textView] in
+                for (token, url) in missing {
+                    guard !Task.isCancelled,
+                          let image = await BiliEmoteImageStore.shared.image(for: url),
+                          let self,
+                          let textView
+                    else { return }
+                    self.updateAttachmentImage(image, token: token, in: textView)
+                }
+            }
+        }
+
+        private func updateAttachmentImage(_ image: UIImage, token: String, in textView: RichCommentUIKitTextView) {
+            let range = NSRange(location: 0, length: textView.attributedText.length)
+            textView.textStorage.enumerateAttribute(
+                .richCommentEmoteToken,
+                in: range
+            ) { value, attributeRange, _ in
+                guard value as? String == token,
+                      let attachment = textView.attributedText.attribute(
+                        .attachment,
+                        at: attributeRange.location,
+                        effectiveRange: nil
+                      ) as? NSTextAttachment
+                else { return }
+                attachment.image = image
+                textView.layoutManager.invalidateLayout(forCharacterRange: attributeRange, actualCharacterRange: nil)
+                textView.setNeedsDisplay()
+            }
+        }
+
+        private static func attributedString(
+            for elements: [RichCommentDraftElement],
+            font: UIFont,
+            emotes: [BiliInlineEmote]
+        ) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            let baseAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: UIColor.label
+            ]
+            for element in elements {
+                switch element {
+                case .text(let text):
+                    result.append(NSAttributedString(string: text, attributes: baseAttributes))
+                case .emote(let token):
+                    let emote = emotes.first(where: { $0.token == token })
+                    let size = font.lineHeight
+                    let ratio = (emote?.width ?? 1) / max(emote?.height ?? 1, 1)
+                    let attachment = NSTextAttachment()
+                    if let urlString = emote?.displayURL,
+                       let url = URL(string: urlString),
+                       let image = BiliEmoteImageStore.shared.cachedImage(for: url) {
+                        attachment.image = image
+                    } else {
+                        attachment.image = BiliEmoteImageStore.shared.placeholderImage(size: size)
+                    }
+                    attachment.bounds = CGRect(
+                        x: 0,
+                        y: (font.capHeight - size) / 2,
+                        width: max(size * ratio, size),
+                        height: size
+                    )
+                    let attachmentLocation = result.length
+                    result.append(NSAttributedString(attachment: attachment))
+                    result.addAttributes(
+                        [
+                            .richCommentEmoteToken: token,
+                            .font: font
+                        ],
+                        range: NSRange(location: attachmentLocation, length: 1)
+                    )
+                }
+            }
+            result.addAttribute(
+                .paragraphStyle,
+                value: NSParagraphStyle.default,
+                range: NSRange(location: 0, length: result.length)
+            )
+            return result
+        }
+
+        private static func clamped(_ range: NSRange, to length: Int) -> NSRange {
+            let location = min(max(range.location, 0), length)
+            let available = max(length - location, 0)
+            return NSRange(location: location, length: min(max(range.length, 0), available))
+        }
+    }
+}
+
+final class RichCommentUIKitTextView: UITextView {
+    var onTap: (() -> Void)?
+    var availableEmotes = [BiliInlineEmote]()
+
+    private var emoteInputView: RichCommentEmoteInputView?
+    private var inputMode: RichCommentInputMode = .keyboard
+    private var wantsFocus = false
+    private var lastInputViewHeight: CGFloat = 0
+    private var reportedHeight: CGFloat = 0
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        backgroundColor = .clear
+        font = .preferredFont(forTextStyle: .body)
+        textColor = .label
+        tintColor = .label
+        adjustsFontForContentSizeCategory = true
+        textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        textContainer?.lineFragmentPadding = 0
+        isScrollEnabled = true
+        showsVerticalScrollIndicator = false
+        accessibilityLabel = "评论内容"
+        accessibilityIdentifier = "dynamic.comment.composer.editor"
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportHeightIfNeeded()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setFocused(wantsFocus)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        wantsFocus = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onTap?()
+            if !self.isFirstResponder {
+                self.becomeFirstResponder()
+            }
+        }
+    }
+
+    func setFocused(_ isFocused: Bool) {
+        wantsFocus = isFocused
+        guard window != nil else { return }
+        if isFocused, !isFirstResponder {
+            becomeFirstResponder()
+        } else if !isFocused, isFirstResponder {
+            resignFirstResponder()
+        }
+    }
+
+    func configureInputView(
+        mode: RichCommentInputMode,
+        height: CGFloat,
+        emotes: [BiliInlineEmote]
+    ) {
+        availableEmotes = emotes
+        let resolvedHeight = max(height, 216)
+        var shouldReload = inputMode != mode
+        if mode == .emotes {
+            let inputView = emoteInputView ?? RichCommentEmoteInputView(
+                frame: CGRect(x: 0, y: 0, width: max(bounds.width, 320), height: resolvedHeight),
+                inputViewStyle: .keyboard
+            )
+            inputView.configure(
+                height: resolvedHeight,
+                emotes: emotes,
+                insertEmote: { [weak self] token in
+                    guard let self,
+                          let coordinator = self.delegate as? RichCommentTextView.Coordinator
+                    else { return }
+                    coordinator.insertEmote(token, into: self)
+                }
+            )
+            emoteInputView = inputView
+            self.inputView = inputView
+            shouldReload = shouldReload || abs(lastInputViewHeight - resolvedHeight) > 0.5
+            lastInputViewHeight = resolvedHeight
+        } else {
+            inputView = nil
+        }
+        inputMode = mode
+        if shouldReload, isFirstResponder {
+            reloadInputViews()
+        }
+    }
+
+    func reportHeightIfNeeded() {
+        let fittingSize = sizeThatFits(CGSize(width: max(bounds.width, 1), height: .greatestFiniteMagnitude))
+        let height = min(max(fittingSize.height, 44), 132)
+        guard abs(height - reportedHeight) > 0.5 else { return }
+        reportedHeight = height
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  let coordinator = self.delegate as? RichCommentTextView.Coordinator
+            else { return }
+            coordinator.reportHeight(height)
+        }
+    }
+}
+
+final class RichCommentEmoteInputView: UIInputView {
+    private let hostingController = UIHostingController(rootView: AnyView(EmptyView()))
+    private var panelHeight: CGFloat = 216
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: panelHeight)
+    }
+
+    override init(frame: CGRect, inputViewStyle: UIInputView.Style) {
+        super.init(frame: frame, inputViewStyle: inputViewStyle)
+        allowsSelfSizing = true
+        backgroundColor = .clear
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width, height: panelHeight)
+    }
+
+    func configure(
+        height: CGFloat,
+        emotes: [BiliInlineEmote],
+        insertEmote: @escaping (String) -> Void
+    ) {
+        if abs(panelHeight - height) > 0.5 {
+            panelHeight = height
+            invalidateIntrinsicContentSize()
+        }
+        hostingController.rootView = AnyView(
+            DynamicInlineCommentEmotePicker(
+                emotes: emotes,
+                onSelect: insertEmote
+            )
+        )
+    }
+}
+
+struct RichCommentAttachmentStrip: View {
+    @Binding var images: [RichCommentImageDraft]
+    let isUploading: Bool
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(images) { image in
+                    ZStack(alignment: .topTrailing) {
+                        if let uiImage = UIImage(data: image.data) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 68, height: 68)
+                                .clipShape(.rect(cornerRadius: 12, style: .continuous))
+                        } else {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(.secondary.opacity(0.12))
+                                .frame(width: 68, height: 68)
+                        }
+
+                        if isUploading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(4)
+                                .background(.regularMaterial, in: Circle())
+                        } else {
+                            Button {
+                                images.removeAll { $0.id == image.id }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, .black.opacity(0.65))
+                                    .font(.body)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("移除图片")
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(height: 72)
+        .accessibilityIdentifier("dynamic.comment.composer.attachments")
+    }
+}
+
+struct RichCommentComposerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    @Binding var draft: RichCommentDraft
+    let target: DynamicCommentComposerTarget
+    let api: BiliAPIClient
+    let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+
+    @State private var activeReplyTarget: DynamicCommentComposerTarget?
+    @State private var inputMode: RichCommentInputMode = .keyboard
+    @State private var isEditorFocused = false
+    @State private var editorHeight: CGFloat = 44
+    @State private var keyboardHeight: CGFloat = 0
+    @State private var emotes = [BiliInlineEmote]()
+    @State private var selectedPhotos = [PhotosPickerItem]()
+    @State private var isLoadingImages = false
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+    @State private var photoLoadTask: Task<Void, Never>?
+    @State private var submitTask: Task<Void, Never>?
+
+    private enum Limits {
+        static let maximumImageCount = 9
+    }
+
+    init(
+        draft: Binding<RichCommentDraft>,
+        target: DynamicCommentComposerTarget,
+        api: BiliAPIClient,
+        submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+    ) {
+        self._draft = draft
+        self.target = target
+        self.api = api
+        self.submit = submit
+        _activeReplyTarget = State(initialValue: target.authorName == nil ? nil : target)
+    }
+
+    private var sendableMessage: String {
+        draft.serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSend: Bool {
+        draft.canSubmitWithCurrentAPI
+            && !isSubmitting
+            && !isLoadingImages
+    }
+
+    private var resolvedInputViewHeight: CGFloat {
+        keyboardHeight > 0 ? keyboardHeight : 300
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let activeReplyTarget,
+               let authorName = activeReplyTarget.authorName,
+               !authorName.isEmpty {
+                HStack(spacing: 8) {
+                    Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        self.activeReplyTarget = nil
+                        draft.replyTarget = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("取消回复")
+                }
+            }
+
+            RichCommentTextView(
+                draft: $draft,
+                isFocused: $isEditorFocused,
+                inputMode: inputMode,
+                inputViewHeight: resolvedInputViewHeight,
+                emotes: emotes,
+                dynamicTypeSize: dynamicTypeSize,
+                onFocusChange: { isEditorFocused = $0 },
+                onEditorTap: focusEditor,
+                onHeightChange: { editorHeight = $0 }
+            )
+            .frame(height: min(max(editorHeight, 44), 132))
+            .accessibilityIdentifier("dynamic.comment.composer.editor")
+
+            if !draft.images.isEmpty {
+                RichCommentAttachmentStrip(
+                    images: $draft.images,
+                    isUploading: isSubmitting
+                )
+            }
+
+            HStack(spacing: 12) {
+                Button(action: toggleEmotes) {
+                    Image(systemName: inputMode == .emotes ? "keyboard" : "face.smiling")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(inputMode == .emotes ? "切换至系统键盘" : "选择表情")
+                .accessibilityIdentifier("dynamic.comment.composer.emote")
+
+                PhotosPicker(
+                    selection: $selectedPhotos,
+                    maxSelectionCount: max(0, Limits.maximumImageCount - draft.images.count),
+                    matching: .images,
+                    preferredItemEncoding: .current
+                ) {
+                    Image(systemName: "photo")
+                }
+                .buttonStyle(.plain)
+                .disabled(draft.images.count >= Limits.maximumImageCount || isSubmitting)
+                .accessibilityLabel("添加图片")
+                .accessibilityIdentifier("dynamic.comment.composer.photo")
+
+                Spacer(minLength: 0)
+
+                Button(action: submitDraft) {
+                    if isSubmitting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                    }
+                }
+                .buttonStyle(.glassProminent)
+                .tint(appTintColor)
+                .disabled(!canSend)
+                .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
+                .accessibilityIdentifier("dynamic.comment.composer.send")
+            }
+            .font(.body)
+            .foregroundStyle(.primary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .biliGlassEffect(interactive: true, in: .rect(cornerRadius: 24, style: .continuous))
+        .padding(12)
+        .presentationBackground(.clear)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(isSubmitting)
+        .background {
+            DynamicKeyboardHeightReader(height: $keyboardHeight)
+                .allowsHitTesting(false)
+        }
+        .task {
+            if draft.replyTarget == nil {
+                draft.replyTarget = activeReplyTarget
+            }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            isEditorFocused = true
+            emotes = (try? await api.fetchCommentEmotes()) ?? []
+        }
+        .onChange(of: selectedPhotos) { _, items in
+            loadSelectedPhotos(items)
+        }
+        .onDisappear {
+            photoLoadTask?.cancel()
+            submitTask?.cancel()
+            isEditorFocused = false
+        }
+        .alert("评论发送失败", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("好", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "请稍后重试")
+        }
+    }
+
+    private func focusEditor() {
+        guard !isSubmitting else { return }
+        if inputMode != .keyboard {
+            withOptionalAnimation {
+                inputMode = .keyboard
+            }
+        }
+        isEditorFocused = true
+    }
+
+    private func toggleEmotes() {
+        guard !isSubmitting else { return }
+        withOptionalAnimation {
+            inputMode = inputMode == .emotes ? .keyboard : .emotes
+        }
+        isEditorFocused = true
+    }
+
+    private func withOptionalAnimation(_ action: () -> Void) {
+        if reduceMotion {
+            action()
+        } else {
+            withAnimation(.smooth, action)
+        }
+    }
+
+    private func loadSelectedPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        photoLoadTask?.cancel()
+        let knownIdentifiers = Set(draft.images.compactMap(\.sourceIdentifier))
+        let newItems = items.filter { item in
+            guard let identifier = item.itemIdentifier else { return true }
+            return !knownIdentifiers.contains(identifier)
+        }
+        guard !newItems.isEmpty else {
+            selectedPhotos = []
+            return
+        }
+
+        isLoadingImages = true
+        photoLoadTask = Task { @MainActor in
+            defer {
+                isLoadingImages = false
+                selectedPhotos = []
+            }
+
+            for item in newItems {
+                guard !Task.isCancelled else { return }
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self),
+                          let normalizedData = await Self.normalizedImageData(data)
+                    else { continue }
+                    guard draft.images.count < Limits.maximumImageCount else { return }
+                    draft.images.append(RichCommentImageDraft(
+                        sourceIdentifier: item.itemIdentifier,
+                        data: normalizedData
+                    ))
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+            focusEditor()
+        }
+    }
+
+    private static func normalizedImageData(_ data: Data) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                guard let image = UIImage(data: data) else { return nil }
+                return image.jpegData(compressionQuality: 0.88) ?? data
+            }
+        }.value
+    }
+
+    private func submitDraft() {
+        guard canSend else { return }
+        let submissionTarget = activeReplyTarget ?? .dynamic
+        let message = sendableMessage
+        isSubmitting = true
+        errorMessage = nil
+        submitTask = Task { @MainActor in
+            defer { isSubmitting = false }
+            do {
+                var pictures = [DynamicCommentImage]()
+                for image in draft.images {
+                    try Task.checkCancellation()
+                    pictures.append(try await api.uploadDynamicCommentImage(image.data))
+                }
+                try await submit(submissionTarget, message, pictures.isEmpty ? nil : pictures)
+                draft = RichCommentDraft()
+                isEditorFocused = false
+                Haptics.success()
+                dismiss()
+            } catch is CancellationError {
+                return
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
