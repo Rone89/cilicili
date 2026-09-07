@@ -986,7 +986,9 @@ struct RichCommentComposerView: View {
                     Image(systemName: inputMode == .emotes ? "keyboard" : "face.smiling")
                         .contentTransition(.symbolEffect(.replace))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
                 .accessibilityLabel(inputMode == .emotes ? "切换至系统键盘" : "选择表情")
                 .accessibilityIdentifier("dynamic.comment.composer.emote")
 
@@ -995,7 +997,9 @@ struct RichCommentComposerView: View {
                 } label: {
                     Image(systemName: "photo")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
                 .disabled(draft.images.count >= Limits.maximumImageCount || isSubmitting)
                 .accessibilityLabel("添加图片")
                 .accessibilityIdentifier("dynamic.comment.composer.photo")
@@ -1012,6 +1016,7 @@ struct RichCommentComposerView: View {
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
+                .controlSize(.regular)
                 .tint(canSend ? appTintColor : .secondary)
                 .foregroundStyle(canSend ? Color.white : .secondary)
                 .disabled(!canSend)
