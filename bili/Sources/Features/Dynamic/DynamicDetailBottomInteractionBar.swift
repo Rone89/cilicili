@@ -652,6 +652,14 @@ struct DynamicDetailComposerBottomBar: View {
                 .frame(height: editorHeight)
                 .padding(.leading, 12)
                 .padding(.vertical, 2)
+                .overlay {
+                    if usesEmoteInputView {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: showSystemKeyboard)
+                            .accessibilityHidden(true)
+                    }
+                }
 
                 composerPanelButton(.photos, systemImage: "photo")
                 composerPanelButton(.emotes, systemImage: "face.smiling")
@@ -737,7 +745,11 @@ struct DynamicDetailComposerBottomBar: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(activePanel == panel ? appTintColor : .secondary)
-        .accessibilityLabel(panel == .photos ? "添加图片" : "选择表情")
+        .accessibilityLabel(
+            activePanel == panel
+                ? (panel == .photos ? "收起照片选择器" : "收起表情选择器")
+                : (panel == .photos ? "添加图片" : "选择表情")
+        )
     }
 
     private var editorSurface: some View {
@@ -893,6 +905,14 @@ struct DynamicDetailComposerBottomBar: View {
     }
 
     private func dismissActivePanel() {
+        withAnimation(.smooth) {
+            activePanel = nil
+        }
+        setEditorFocused(true)
+    }
+
+    private func showSystemKeyboard() {
+        guard activePanel == .emotes else { return }
         withAnimation(.smooth) {
             activePanel = nil
         }

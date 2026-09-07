@@ -82,6 +82,52 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testTappingEditorAfterEmotePanelRestoresSystemKeyboard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-dynamic-bottom-interaction-bar",
+            "--ui-test-telegram-input-style"
+        ]
+        app.launch()
+
+        let content = app.staticTexts["图文动态测试内容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 5))
+        content.tap()
+
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+
+        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+
+        let emoteButton = app.buttons["选择表情"]
+        XCTAssertTrue(emoteButton.waitForExistence(timeout: 3))
+        emoteButton.tap()
+
+        let closeEmotePicker = app.buttons["收起表情选择器"]
+        XCTAssertTrue(closeEmotePicker.waitForExistence(timeout: 3))
+
+        editor.tap()
+
+        let systemKeyboard = app.keyboards.firstMatch
+        let keyboardRaised = NSPredicate { _, _ in
+            systemKeyboard.exists
+                && systemKeyboard.frame.minY < app.windows.firstMatch.frame.maxY - 100
+        }
+        let keyboardReady = XCTWaiter.wait(
+            for: [expectation(for: keyboardRaised, evaluatedWith: nil)],
+            timeout: 5
+        )
+        XCTAssertEqual(keyboardReady, .completed)
+        XCTAssertTrue(app.buttons["选择表情"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testComposerCompactControlGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [
