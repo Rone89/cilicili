@@ -195,7 +195,7 @@ private final class DynamicComposerUIKitTextView: UITextView {
         let resolvedHeight = max(216, height)
         if isPresented {
             let inputView = emoteInputView ?? DynamicComposerEmoteInputView(
-                frame: .zero,
+                frame: CGRect(x: 0, y: 0, width: bounds.width, height: resolvedHeight),
                 inputViewStyle: .keyboard
             )
             inputView.configure(
@@ -962,10 +962,8 @@ struct DynamicDetailComposerBottomBar: View {
             withAnimation(.smooth) {
                 activePanel = shouldPresent ? .emotes : nil
             }
-            if !shouldPresent {
-                composerState = .composing
-                setEditorFocused(true)
-            }
+            composerState = .composing
+            setEditorFocused(true)
             return
         }
 

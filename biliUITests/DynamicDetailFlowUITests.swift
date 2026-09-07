@@ -111,6 +111,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let closeEmotePicker = app.buttons["收起表情选择器"]
         XCTAssertTrue(closeEmotePicker.waitForExistence(timeout: 3))
+        let panel = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(panel.frame.height, 200)
 
         editor.tap()
 
@@ -125,6 +128,43 @@ final class DynamicDetailFlowUITests: XCTestCase {
         )
         XCTAssertEqual(keyboardReady, .completed)
         XCTAssertTrue(app.buttons["选择表情"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testEmotePanelAppearsAfterPhotoPickerDismissesKeyboard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-dynamic-bottom-interaction-bar",
+            "--ui-test-telegram-input-style"
+        ]
+        app.launch()
+        let content = app.staticTexts["图文动态测试内容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 5))
+        content.tap()
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+        let editor = app.textViews["dynamic.detail.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.typeText("draft")
+
+        app.buttons["添加图片"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        app.buttons["选择表情"].tap()
+
+        let panel = app.descendants(matching: .any)["dynamic.comment.emotePicker"].firstMatch
+        let panelAppeared = panel.waitForExistence(timeout: 5)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Emote panel after editor loses focus"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(panelAppeared)
+        XCTAssertGreaterThan(panel.frame.height, 200)
+        XCTAssertLessThanOrEqual(editor.frame.maxY, panel.frame.minY + 1)
+        XCTAssertEqual(editor.value as? String, "draft")
     }
 
     @MainActor
