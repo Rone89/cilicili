@@ -609,7 +609,6 @@ final class RichCommentUIKitTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        updateMeasuredKeyboardHeight()
         reportHeightIfNeeded()
     }
 
@@ -638,16 +637,7 @@ final class RichCommentUIKitTextView: UITextView {
         )
         let height = max(0, window.bounds.maxY - keyboardFrame.minY)
         if height > 0 {
-            measuredKeyboardHeight = height
-        }
-    }
-
-    private func updateMeasuredKeyboardHeight() {
-        guard let window else { return }
-        let frame = window.keyboardLayoutGuide.layoutFrame
-        let height = max(0, window.bounds.maxY - frame.minY)
-        if height > 0 {
-            measuredKeyboardHeight = height
+            measuredKeyboardHeight = max(measuredKeyboardHeight, height)
         }
     }
 

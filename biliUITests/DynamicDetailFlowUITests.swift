@@ -207,7 +207,8 @@ final class DynamicDetailFlowUITests: XCTestCase {
         emoteScreenshot.lifetime = .keepAlways
         add(emoteScreenshot)
         print("RICH_LAYOUT window=\(window) keyboard=\(keyboardFrame) editor=\(editor.frame) panel=\(emotePicker.frame)")
-        XCTAssertLessThan(emotePicker.frame.minY, keyboardFrame.minY)
+        XCTAssertGreaterThan(emotePicker.frame.minY, window.minY + window.height * 0.25)
+        XCTAssertLessThan(emotePicker.frame.height, window.height * 0.75)
         XCTAssertGreaterThanOrEqual(emotePicker.frame.height, keyboardFrame.height)
         XCTAssertEqual(emotePicker.frame.maxY, window.maxY, accuracy: 2)
         XCTAssertEqual(editor.value as? String, "native")
