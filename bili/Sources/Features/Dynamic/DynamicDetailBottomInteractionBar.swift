@@ -59,6 +59,7 @@ private struct DynamicComposerTextView: UIViewRepresentable {
     let emotes: [BiliInlineEmote]
     let onFocusChange: (Bool) -> Void
     let onHeightChange: (CGFloat) -> Void
+    let onTap: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -71,6 +72,7 @@ private struct DynamicComposerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> DynamicComposerUIKitTextView {
         let textView = DynamicComposerUIKitTextView()
         textView.delegate = context.coordinator
+        textView.onTap = onTap
         textView.configureEmoteInputView(
             isPresented: usesEmoteInputView,
             height: emoteInputHeight,
@@ -82,6 +84,7 @@ private struct DynamicComposerTextView: UIViewRepresentable {
     func updateUIView(_ textView: DynamicComposerUIKitTextView, context: Context) {
         context.coordinator.onFocusChange = onFocusChange
         context.coordinator.onHeightChange = onHeightChange
+        textView.onTap = onTap
         textView.configureEmoteInputView(
             isPresented: usesEmoteInputView,
             height: emoteInputHeight,
@@ -127,6 +130,7 @@ private struct DynamicComposerTextView: UIViewRepresentable {
 }
 
 private final class DynamicComposerUIKitTextView: UITextView {
+    var onTap: (() -> Void)?
     private var emoteInputView: DynamicComposerEmoteInputView?
     private var currentInputModeIsEmotes = false
     private var reportedHeight: CGFloat = 0
@@ -158,6 +162,19 @@ private final class DynamicComposerUIKitTextView: UITextView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         setFocused(wantsFocus)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        wantsFocus = true
+        DispatchQueue.main.async { [weak self] in
+            self?.onTap?()
+        }
+        guard window != nil, !isFirstResponder else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isFirstResponder else { return }
+            self.becomeFirstResponder()
+        }
     }
 
     func setFocused(_ isFocused: Bool) {
@@ -647,7 +664,8 @@ struct DynamicDetailComposerBottomBar: View {
                     emoteInputHeight: emoteInputHeight,
                     emotes: emotes,
                     onFocusChange: { isNativeEditorFocused = $0 },
-                    onHeightChange: { editorHeight = $0 }
+                    onHeightChange: { editorHeight = $0 },
+                    onTap: handleEditorTap
                 )
                 .frame(height: editorHeight)
                 .padding(.leading, 12)
@@ -758,6 +776,7 @@ struct DynamicDetailComposerBottomBar: View {
                 .lineLimit(1...5)
                 .focused($isEditorFocused)
                 .textFieldStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { handleEditorTap() })
                 .padding(.leading, 12)
                 .padding(.vertical, 11)
                 .accessibilityLabel("评论内容")
@@ -916,6 +935,20 @@ struct DynamicDetailComposerBottomBar: View {
         withAnimation(.smooth) {
             activePanel = nil
         }
+        setEditorFocused(true)
+    }
+
+    private func handleEditorTap() {
+        if usesTelegramInputStyle, activePanel == .emotes {
+            showSystemKeyboard()
+            return
+        }
+        if activePanel != nil {
+            withAnimation(.smooth) {
+                activePanel = nil
+            }
+        }
+        composerState = .composing
         setEditorFocused(true)
     }
 

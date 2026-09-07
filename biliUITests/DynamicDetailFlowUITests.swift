@@ -128,6 +128,41 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testTappingComposerEditorExplicitlyRestoresFocus() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-dynamic-bottom-interaction-bar",
+            "--ui-test-telegram-input-style"
+        ]
+        app.launch()
+
+        app.staticTexts["图文动态测试内容"].tap()
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+
+        let editor = app.descendants(matching: .any)["dynamic.detail.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
+
+        let photoButton = app.buttons["添加图片"]
+        XCTAssertTrue(photoButton.waitForExistence(timeout: 3))
+        photoButton.tap()
+        XCTAssertTrue(app.buttons["收起照片选择器"].waitForExistence(timeout: 3))
+        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
+
+        editor.tap()
+
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
+        editor.typeText("keyboard")
+        XCTAssertEqual(editor.value as? String, "keyboard")
+    }
+
+    @MainActor
     func testComposerCompactControlGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [
