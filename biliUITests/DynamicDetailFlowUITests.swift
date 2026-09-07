@@ -183,6 +183,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let editor = app.textViews["dynamic.comment.composer.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.sheets.firstMatch.exists)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 3))
         let window = app.windows.firstMatch.frame

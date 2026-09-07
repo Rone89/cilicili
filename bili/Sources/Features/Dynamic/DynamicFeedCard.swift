@@ -227,6 +227,7 @@ private struct DynamicDetailView: View {
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
+    @State private var richCommentComposerTarget: DynamicCommentComposerTarget?
     @State private var commentDrafts = [String: String]()
     @State private var richCommentDrafts = [String: RichCommentDraft]()
     @State private var composerBottomSafeArea: CGFloat = 0
@@ -308,7 +309,8 @@ private struct DynamicDetailView: View {
         )
         .background(Color(.systemBackground))
         .toolbar {
-            if libraryStore.richCommentComposerExperimentEnabled {
+            if libraryStore.richCommentComposerExperimentEnabled,
+               richCommentComposerTarget == nil {
                 DynamicDetailBottomInteractionBar(
                     display: display,
                     initialIsLiked: item.isLiked,
@@ -316,7 +318,7 @@ private struct DynamicDetailView: View {
                     commentCount: commentsViewModel.displayedReplyCount ?? 0,
                     canComment: commentsViewModel.canLoadComments,
                     openComment: {
-                        commentComposerTarget = .dynamic
+                        richCommentComposerTarget = .dynamic
                     }
                 )
             } else if libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled,
@@ -388,6 +390,19 @@ private struct DynamicDetailView: View {
                 .ignoresSafeArea(.keyboard)
                 .allowsHitTesting(false)
         }
+        .background {
+            if libraryStore.richCommentComposerExperimentEnabled {
+                RichCommentComposerPresenter(
+                    target: $richCommentComposerTarget,
+                    draft: richCommentDraftBinding,
+                    api: api,
+                    submit: { submissionTarget, message, pictures in
+                        try await submitComment(submissionTarget, message, pictures: pictures)
+                    }
+                )
+                .allowsHitTesting(false)
+            }
+        }
         .environment(
             \.usesDynamicDetailCommentRowLayout,
             libraryStore.dynamicDetailBottomInteractionBarExperimentEnabled
@@ -425,29 +440,14 @@ private struct DynamicDetailView: View {
                 )
         }
         .sheet(item: $commentComposerTarget) { target in
-            if libraryStore.richCommentComposerExperimentEnabled {
-                ZStack {
-                    Color.clear
-                    RichCommentComposerView(
-                        draft: richCommentDraftBinding(for: target),
-                        target: target,
-                        api: api,
-                        submit: { submissionTarget, message, pictures in
-                            try await submitComment(submissionTarget, message, pictures: pictures)
-                        }
-                    )
+            DynamicCommentComposerSheet(
+                draft: commentDraftBinding(for: target),
+                target: target,
+                api: api,
+                submit: { message, pictures in
+                    try await submitComment(target, message, pictures: pictures)
                 }
-                .presentationBackground(Color.clear)
-            } else {
-                DynamicCommentComposerSheet(
-                    draft: commentDraftBinding(for: target),
-                    target: target,
-                    api: api,
-                    submit: { message, pictures in
-                        try await submitComment(target, message, pictures: pictures)
-                    }
-                )
-            }
+            )
         }
     }
 
@@ -503,7 +503,12 @@ private struct DynamicDetailView: View {
                 || libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
                 || libraryStore.richCommentComposerExperimentEnabled else { return nil }
         return { comment in
-            commentComposerTarget = .reply(root: comment, parent: comment)
+            let target = DynamicCommentComposerTarget.reply(root: comment, parent: comment)
+            if libraryStore.richCommentComposerExperimentEnabled {
+                richCommentComposerTarget = target
+            } else {
+                commentComposerTarget = target
+            }
         }
     }
 

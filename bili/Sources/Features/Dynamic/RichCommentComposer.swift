@@ -175,6 +175,111 @@ struct RichCommentDraft: Equatable, Sendable {
     }
 }
 
+struct RichCommentComposerPresenter: UIViewControllerRepresentable {
+    @Binding var target: DynamicCommentComposerTarget?
+    let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>
+    let api: BiliAPIClient
+    let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> PresenterViewController {
+        let controller = PresenterViewController()
+        controller.view.backgroundColor = .clear
+        controller.view.isOpaque = false
+        return controller
+    }
+
+    func updateUIViewController(
+        _ controller: PresenterViewController,
+        context: Context
+    ) {
+        context.coordinator.update(
+            target: target,
+            draft: draft,
+            api: api,
+            submit: submit,
+            presenter: controller,
+            targetBinding: $target
+        )
+    }
+
+    final class PresenterViewController: UIViewController {}
+
+    final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
+        private weak var presentedController: UIHostingController<AnyView>?
+        private var presentedTargetID: String?
+
+        func update(
+            target: DynamicCommentComposerTarget?,
+            draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
+            api: BiliAPIClient,
+            submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
+            presenter: UIViewController,
+            targetBinding: Binding<DynamicCommentComposerTarget?>
+        ) {
+            guard let target else {
+                guard let presentedController else { return }
+                self.presentedController = nil
+                presentedTargetID = nil
+                presentedController.dismiss(animated: true)
+                return
+            }
+
+            let rootView = AnyView(
+                RichCommentComposerPresentationView {
+                    RichCommentComposerView(
+                        draft: draft(target),
+                        target: target,
+                        api: api,
+                        submit: submit,
+                        onDismiss: {
+                            targetBinding.wrappedValue = nil
+                        }
+                    )
+                }
+            )
+
+            if let presentedController {
+                guard presentedTargetID != target.id else { return }
+                presentedTargetID = target.id
+                presentedController.rootView = rootView
+                return
+            }
+
+            let host = UIHostingController(rootView: rootView)
+            host.view.backgroundColor = .clear
+            host.view.isOpaque = false
+            host.modalPresentationStyle = .overFullScreen
+            host.modalTransitionStyle = .coverVertical
+            host.presentationController?.delegate = self
+            presentedController = host
+            presentedTargetID = target.id
+            presenter.present(host, animated: true)
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            presentedController = nil
+            presentedTargetID = nil
+        }
+    }
+}
+
+private struct RichCommentComposerPresentationView<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.clear
+            content()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
+    }
+}
+
 enum RichCommentInputMode: Equatable {
     case keyboard
     case emotes
@@ -261,24 +366,38 @@ struct RichCommentTextView: UIViewRepresentable {
             emotes: [BiliInlineEmote]
         ) {
             let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
-            let shouldReplaceText = renderedElements != draft.elements
-                || textView.text != draft.displayText
+            var effectiveDraft = draft
+            let renderedText = renderedElements.map { $0.displayString }.joined()
+            if draft.elements.isEmpty,
+               !renderedElements.isEmpty,
+               textView.text == renderedText {
+                effectiveDraft.elements = renderedElements
+                effectiveDraft.selection = RichCommentSelection(textView.selectedRange)
+                let recoveredDraft = effectiveDraft
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.draft != recoveredDraft else { return }
+                    self.draft = recoveredDraft
+                }
+            }
+
+            let shouldReplaceText = renderedElements != effectiveDraft.elements
+                || textView.text != effectiveDraft.displayText
                 || renderedFontPointSize != font.pointSize
             if shouldReplaceText {
                 isApplyingDraft = true
                 textView.attributedText = Self.attributedString(
-                    for: draft.elements,
+                    for: effectiveDraft.elements,
                     font: font,
                     emotes: emotes
                 )
-                let selection = draft.selection?.nsRange
+                let selection = effectiveDraft.selection?.nsRange
                     ?? NSRange(location: textView.text.utf16.count, length: 0)
                 textView.selectedRange = Self.clamped(selection, to: textView.text.utf16.count)
                 isApplyingDraft = false
-                renderedElements = draft.elements
+                renderedElements = effectiveDraft.elements
                 renderedFontPointSize = font.pointSize
-                loadMissingImages(in: textView, elements: draft.elements, emotes: emotes)
-            } else if let selection = draft.selection?.nsRange,
+                loadMissingImages(in: textView, elements: effectiveDraft.elements, emotes: emotes)
+            } else if let selection = effectiveDraft.selection?.nsRange,
                       textView.selectedRange != selection {
                 textView.selectedRange = Self.clamped(selection, to: textView.text.utf16.count)
             }
@@ -697,6 +816,7 @@ struct RichCommentComposerView: View {
     let target: DynamicCommentComposerTarget
     let api: BiliAPIClient
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+    let onDismiss: (() -> Void)?
 
     @State private var activeReplyTarget: DynamicCommentComposerTarget?
     @State private var inputMode: RichCommentInputMode = .keyboard
@@ -718,12 +838,14 @@ struct RichCommentComposerView: View {
         draft: Binding<RichCommentDraft>,
         target: DynamicCommentComposerTarget,
         api: BiliAPIClient,
-        submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+        submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
+        onDismiss: (() -> Void)? = nil
     ) {
         self._draft = draft
         self.target = target
         self.api = api
         self.submit = submit
+        self.onDismiss = onDismiss
         _activeReplyTarget = State(initialValue: target.authorName == nil ? nil : target)
     }
 
@@ -950,7 +1072,11 @@ struct RichCommentComposerView: View {
                 draft = RichCommentDraft()
                 isEditorFocused = false
                 Haptics.success()
-                dismiss()
+                if let onDismiss {
+                    onDismiss()
+                } else {
+                    dismiss()
+                }
             } catch is CancellationError {
                 return
             } catch {
