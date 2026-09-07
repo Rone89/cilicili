@@ -214,6 +214,66 @@ final class DynamicDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testRichCommentComposerPhotoPickerSelectionAndRemoval() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-rich-comment-composer"
+        ]
+        app.launch()
+        app.staticTexts["图文动态测试内容"].tap()
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        let photoButton = app.buttons["添加图片"]
+        XCTAssertTrue(photoButton.waitForExistence(timeout: 3))
+        photoButton.tap()
+        sleep(2)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.13, dy: 0.35)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.15)).tap()
+        sleep(2)
+
+        let attachments = app.descendants(matching: .any)[
+            "dynamic.comment.composer.attachments"
+        ].firstMatch
+        XCTAssertTrue(attachments.waitForExistence(timeout: 10))
+        let removeButton = app.buttons["dynamic.comment.composer.removeImage"].firstMatch
+        XCTAssertTrue(removeButton.waitForExistence(timeout: 3))
+        removeButton.tap()
+        XCTAssertTrue(attachments.waitForNonExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testRichCommentComposerDismissesOnOutsideTap() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "dynamicDetail",
+            "--ui-test-reset-state",
+            "--ui-test-root-tab-shell",
+            "--ui-test-rich-comment-composer"
+        ]
+        app.launch()
+        app.staticTexts["图文动态测试内容"].tap()
+
+        let comment = app.buttons["dynamic.detail.composer.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.tap()
+
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        let outside = app.windows.firstMatch.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)
+        )
+        outside.tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 3))
+    }
+
+    @MainActor
     func testComposerCompactControlGeometry() {
         let app = XCUIApplication()
         app.launchArguments = [

@@ -344,6 +344,12 @@ private struct DynamicDetailView: View {
                 ? .editor
                 : .automatic
         )
+        .toolbar(
+            libraryStore.richCommentComposerExperimentEnabled && richCommentComposerTarget != nil
+                ? .hidden
+                : .automatic,
+            for: .bottomBar
+        )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !libraryStore.richCommentComposerExperimentEnabled,
                libraryStore.dynamicDetailTelegramInputStyleExperimentEnabled

@@ -229,7 +229,11 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             }
 
             let rootView = AnyView(
-                RichCommentComposerPresentationView {
+                RichCommentComposerPresentationView(
+                    onBackgroundTap: {
+                        targetBinding.wrappedValue = nil
+                    }
+                ) {
                     RichCommentComposerView(
                         draft: draft(target),
                         target: target,
@@ -243,7 +247,6 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             )
 
             if let presentedController {
-                guard presentedTargetID != target.id else { return }
                 presentedTargetID = target.id
                 presentedController.rootView = rootView
                 return
@@ -268,11 +271,15 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
 }
 
 private struct RichCommentComposerPresentationView<Content: View>: View {
+    let onBackgroundTap: () -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
             Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onBackgroundTap)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             content()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -602,6 +609,7 @@ final class RichCommentUIKitTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        updateMeasuredKeyboardHeight()
         reportHeightIfNeeded()
     }
 
@@ -630,7 +638,16 @@ final class RichCommentUIKitTextView: UITextView {
         )
         let height = max(0, window.bounds.maxY - keyboardFrame.minY)
         if height > 0 {
-            measuredKeyboardHeight = max(measuredKeyboardHeight, height)
+            measuredKeyboardHeight = height
+        }
+    }
+
+    private func updateMeasuredKeyboardHeight() {
+        guard let window else { return }
+        let frame = window.keyboardLayoutGuide.layoutFrame
+        let height = max(0, window.bounds.maxY - frame.minY)
+        if height > 0 {
+            measuredKeyboardHeight = height
         }
     }
 
@@ -709,6 +726,9 @@ final class RichCommentUIKitTextView: UITextView {
 final class RichCommentEmoteInputView: UIInputView {
     private let hostingController = UIHostingController(rootView: AnyView(EmptyView()))
     private var panelHeight: CGFloat = 216
+    private var bottomSafeAreaInset: CGFloat = 0
+    private var currentEmotes = [BiliInlineEmote]()
+    private var insertEmote: ((String) -> Void)?
 
     override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: panelHeight)
@@ -738,6 +758,14 @@ final class RichCommentEmoteInputView: UIInputView {
         CGSize(width: size.width, height: panelHeight)
     }
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        let inset = safeAreaInsets.bottom
+        guard abs(bottomSafeAreaInset - inset) > 0.5 else { return }
+        bottomSafeAreaInset = inset
+        updatePickerRootView()
+    }
+
     func configure(
         height: CGFloat,
         emotes: [BiliInlineEmote],
@@ -747,10 +775,17 @@ final class RichCommentEmoteInputView: UIInputView {
             panelHeight = height
             invalidateIntrinsicContentSize()
         }
+        currentEmotes = emotes
+        self.insertEmote = insertEmote
+        updatePickerRootView()
+    }
+
+    private func updatePickerRootView() {
         hostingController.rootView = AnyView(
             DynamicInlineCommentEmotePicker(
-                emotes: emotes,
-                onSelect: insertEmote
+                emotes: currentEmotes,
+                bottomSafeAreaInset: bottomSafeAreaInset,
+                onSelect: insertEmote ?? { _ in }
             )
             .ignoresSafeArea(.container, edges: .bottom)
         )
@@ -793,7 +828,10 @@ struct RichCommentAttachmentStrip: View {
                                     .font(.body)
                             }
                             .buttonStyle(.plain)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                             .accessibilityLabel("移除图片")
+                            .accessibilityIdentifier("dynamic.comment.composer.removeImage")
                         }
                     }
                     .accessibilityElement(children: .contain)
@@ -824,6 +862,8 @@ struct RichCommentComposerView: View {
     @State private var editorHeight: CGFloat = 44
     @State private var emotes = [BiliInlineEmote]()
     @State private var selectedPhotos = [PhotosPickerItem]()
+    @State private var pendingSelectedPhotos = [PhotosPickerItem]()
+    @State private var showsPhotoPicker = false
     @State private var isLoadingImages = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
@@ -903,6 +943,16 @@ struct RichCommentComposerView: View {
                     images: $draft.images,
                     isUploading: isSubmitting
                 )
+            } else if isLoadingImages {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在读取图片")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("dynamic.comment.composer.imageLoading")
             }
 
             HStack(spacing: 12) {
@@ -914,12 +964,9 @@ struct RichCommentComposerView: View {
                 .accessibilityLabel(inputMode == .emotes ? "切换至系统键盘" : "选择表情")
                 .accessibilityIdentifier("dynamic.comment.composer.emote")
 
-                PhotosPicker(
-                    selection: $selectedPhotos,
-                    maxSelectionCount: max(0, Limits.maximumImageCount - draft.images.count),
-                    matching: .images,
-                    preferredItemEncoding: .current
-                ) {
+                Button {
+                    showsPhotoPicker = true
+                } label: {
                     Image(systemName: "photo")
                 }
                 .buttonStyle(.plain)
@@ -938,6 +985,7 @@ struct RichCommentComposerView: View {
                     }
                 }
                 .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
                 .tint(appTintColor)
                 .disabled(!canSend)
                 .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
@@ -964,8 +1012,23 @@ struct RichCommentComposerView: View {
             emotes = (try? await api.fetchCommentEmotes()) ?? []
         }
         .onChange(of: selectedPhotos) { _, items in
-            loadSelectedPhotos(items)
+            guard !items.isEmpty else { return }
+            pendingSelectedPhotos = items
+            if !showsPhotoPicker {
+                processPendingPhotos()
+            }
         }
+        .onChange(of: showsPhotoPicker) { _, isPresented in
+            guard !isPresented else { return }
+            processPendingPhotos()
+        }
+        .photosPicker(
+            isPresented: $showsPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: max(0, Limits.maximumImageCount - draft.images.count),
+            matching: .images,
+            preferredItemEncoding: .current
+        )
         .onDisappear {
             photoLoadTask?.cancel()
             submitTask?.cancel()
@@ -1030,20 +1093,34 @@ struct RichCommentComposerView: View {
             for item in newItems {
                 guard !Task.isCancelled else { return }
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self),
-                          let normalizedData = await Self.normalizedImageData(data)
-                    else { continue }
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        errorMessage = "无法读取所选图片"
+                        continue
+                    }
+                    guard let normalizedData = await Self.normalizedImageData(data) else {
+                        errorMessage = "无法处理所选图片"
+                        continue
+                    }
                     guard draft.images.count < Limits.maximumImageCount else { return }
-                    draft.images.append(RichCommentImageDraft(
+                    var updatedDraft = draft
+                    updatedDraft.images.append(RichCommentImageDraft(
                         sourceIdentifier: item.itemIdentifier,
                         data: normalizedData
                     ))
+                    draft = updatedDraft
                 } catch {
                     errorMessage = error.localizedDescription
                 }
             }
             focusEditor()
         }
+    }
+
+    private func processPendingPhotos() {
+        let items = pendingSelectedPhotos.isEmpty ? selectedPhotos : pendingSelectedPhotos
+        guard !items.isEmpty else { return }
+        pendingSelectedPhotos = []
+        loadSelectedPhotos(items)
     }
 
     private static func normalizedImageData(_ data: Data) async -> Data? {
