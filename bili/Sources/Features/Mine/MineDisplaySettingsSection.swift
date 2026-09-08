@@ -180,6 +180,20 @@ struct MineDisplaySettingsSection: View {
 
         Section("实验功能") {
             Toggle(isOn: Binding(
+                get: { libraryStore.scrollMinimizingTabBarExperimentEnabled },
+                set: { libraryStore.setScrollMinimizingTabBarExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("滚动缩小标签栏", systemImage: "arrow.down.right.and.arrow.up.left")
+
+                    Text("使用浮动标签栏；向下浏览时整条标签栏缩小，反向滚动或点按标签栏时恢复。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.dynamicDetailCommentSpacingExperimentEnabled },
                 set: { libraryStore.setDynamicDetailCommentSpacingExperimentEnabled($0) }
             )) {

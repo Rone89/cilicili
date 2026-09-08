@@ -43,6 +43,25 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
+    func testScrollMinimizingTabBarExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.scroll-minimizing-tab-bar.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.scrollMinimizingTabBarExperimentEnabled)
+
+        store.setScrollMinimizingTabBarExperimentEnabled(true)
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).scrollMinimizingTabBarExperimentEnabled
+        )
+
+        store.setScrollMinimizingTabBarExperimentEnabled(false)
+        XCTAssertFalse(
+            LibraryStore(userDefaults: defaults).scrollMinimizingTabBarExperimentEnabled
+        )
+    }
+
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

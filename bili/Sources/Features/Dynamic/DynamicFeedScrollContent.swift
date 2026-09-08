@@ -22,6 +22,7 @@ struct DynamicFeedScrollContent: View {
             .padding(.bottom, 18)
         }
         .rootFloatingTabBarContentPadding()
+        .observesRootTabBarScroll(for: .dynamic)
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()

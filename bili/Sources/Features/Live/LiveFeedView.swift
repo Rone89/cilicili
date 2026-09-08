@@ -14,6 +14,8 @@ struct LiveFeedView: View {
             .padding(.bottom, 22)
         }
         .contentMargins(.top, 0, for: .scrollContent)
+        .observesRootTabBarScroll(for: .live)
+        .scrollMinimizingTabBarContentPadding()
         .nativeTopScrollEdgeEffect()
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))

@@ -26,6 +26,8 @@ struct SearchListView: View {
             .padding(.bottom, 18)
         }
         .contentMargins(.top, 0, for: .scrollContent)
+        .observesRootTabBarScroll(for: .search)
+        .scrollMinimizingTabBarContentPadding()
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()

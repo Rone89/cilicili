@@ -59,6 +59,7 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 }
             }
             .rootFloatingTabBarContentPadding()
+            .observesRootTabBarScroll(for: .home)
             .contentMargins(.top, 0, for: .scrollContent)
             .background(HomeViewportHeightReader())
             .homeFeedScrollPreferenceHandling(
