@@ -336,6 +336,10 @@ private struct DynamicDetailView: View {
         }
         .environment(\.usesDynamicDetailCommentRowLayout, true)
         .environment(
+            \.usesDynamicDetailCommentSpacing,
+            libraryStore.dynamicDetailCommentSpacingExperimentEnabled
+        )
+        .environment(
             \.dynamicCommentHitAreaVisualizationEnabled,
             libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
         )

@@ -24,6 +24,25 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
+    func testDynamicDetailCommentSpacingExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.dynamic-detail-comment-spacing.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let initialStore = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(initialStore.dynamicDetailCommentSpacingExperimentEnabled)
+
+        initialStore.setDynamicDetailCommentSpacingExperimentEnabled(true)
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).dynamicDetailCommentSpacingExperimentEnabled
+        )
+
+        initialStore.setDynamicDetailCommentSpacingExperimentEnabled(false)
+        XCTAssertFalse(
+            LibraryStore(userDefaults: defaults).dynamicDetailCommentSpacingExperimentEnabled
+        )
+    }
+
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

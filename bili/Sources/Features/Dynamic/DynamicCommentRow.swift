@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DynamicCommentRow: View {
     @Environment(\.usesDynamicDetailCommentRowLayout) private var usesSharedCommentLayout
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
@@ -72,7 +73,7 @@ struct DynamicCommentRow: View {
             )
             .frame(
                 maxWidth: .infinity,
-                minHeight: 44,
+                minHeight: usesRefinedSpacing ? nil : 44,
                 alignment: .leading
             )
         } media: {

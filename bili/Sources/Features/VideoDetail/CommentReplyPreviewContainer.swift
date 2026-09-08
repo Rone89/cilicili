@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentReplyPreviewContainer<Content: View>: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let replyCount: Int
     let showsPreview: Bool
@@ -14,9 +15,9 @@ struct CommentReplyPreviewContainer<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: usesRefinedSpacing ? 6 : 8) {
             if showsPreview {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 5 : 6) {
                     content
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,7 +38,7 @@ struct CommentReplyPreviewContainer<Content: View>: View {
                 .minimumScaleFactor(0.82)
         }
         .padding(.horizontal, 0)
-        .padding(.vertical, 7)
+        .padding(.vertical, usesRefinedSpacing ? 5 : 7)
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }

@@ -180,6 +180,20 @@ struct MineDisplaySettingsSection: View {
 
         Section("实验功能") {
             Toggle(isOn: Binding(
+                get: { libraryStore.dynamicDetailCommentSpacingExperimentEnabled },
+                set: { libraryStore.setDynamicDetailCommentSpacingExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("动态详情评论间距优化", systemImage: "text.line.first.and.arrowtriangle.forward")
+
+                    Text("收紧作者、正文和回复模块的留白，使动态详情评论层级更接近 iOS 系统应用。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
                 set: { libraryStore.setDynamicCommentHitAreaVisualizationExperimentEnabled($0) }
             )) {

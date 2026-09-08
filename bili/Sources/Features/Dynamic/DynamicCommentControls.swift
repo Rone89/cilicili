@@ -4,16 +4,22 @@ typealias DynamicCommentAvatar = CommentAvatar
 typealias DynamicCommentMetricBadge = CommentMetricBadge
 
 struct DynamicCommentImageGrid: View {
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
+
     let images: [DynamicImageItem]
 
     var body: some View {
-        CompactDynamicImageMosaicGrid(
-            images: images,
-            accessibilityName: "评论图片",
-            placeholderFill: Color(.secondarySystemGroupedBackground)
-        )
-        .padding(.top, 2)
-        .dynamicCommentHitArea(.control)
+        if usesRefinedSpacing && images.isEmpty {
+            EmptyView()
+        } else {
+            CompactDynamicImageMosaicGrid(
+                images: images,
+                accessibilityName: "评论图片",
+                placeholderFill: Color(.secondarySystemGroupedBackground)
+            )
+            .padding(.top, usesRefinedSpacing ? 0 : 2)
+            .dynamicCommentHitArea(.control)
+        }
     }
 }
 
