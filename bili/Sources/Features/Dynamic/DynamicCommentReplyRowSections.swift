@@ -7,6 +7,7 @@ struct DynamicCommentReplyAuthorLine: View {
     var avatarHeight: CGFloat = 36
     var replyAction: (() -> Void)? = nil
     var showsReplyTapArea = false
+    var usesFullRowReplyTarget = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -28,7 +29,11 @@ struct DynamicCommentReplyAuthorLine: View {
                 alignment: .topLeading
             )
             .contentShape(Rectangle())
-            .onTapGesture { replyAction?() }
+            .dynamicCommentDirectReply(
+                isEnabled: !usesFullRowReplyTarget && replyAction != nil
+            ) {
+                replyAction?()
+            }
             .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
 
             if showsLike {

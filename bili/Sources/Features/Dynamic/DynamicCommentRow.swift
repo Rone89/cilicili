@@ -63,7 +63,10 @@ struct DynamicCommentRow: View {
     }
 
     private var sharedCommentLayout: some View {
-        CommentRowLayout {
+        CommentRowLayout(
+            fullRowReplyAction: enablesExpandedReplyTap ? contentReplyAction : nil,
+            fullRowReplyAccessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
             DynamicCommentAvatar(
                 urlString: display.avatarURLString,
                 owner: display.authorOwner,
@@ -74,7 +77,8 @@ struct DynamicCommentRow: View {
                 comment: comment,
                 display: display,
                 replyAction: contentReplyAction,
-                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil
+                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil,
+                usesFullRowReplyTarget: enablesExpandedReplyTap
             )
         } bodyContent: {
             DynamicCommentText(
@@ -91,7 +95,11 @@ struct DynamicCommentRow: View {
                 alignment: .leading
             )
             .contentShape(Rectangle())
-            .onTapGesture { contentReplyAction?() }
+            .dynamicCommentDirectReply(
+                isEnabled: !enablesExpandedReplyTap && contentReplyAction != nil
+            ) {
+                contentReplyAction?()
+            }
             .dynamicCommentReplyTapArea(
                 isEnabled: enablesExpandedReplyTap && contentReplyAction != nil
             )
@@ -116,25 +124,31 @@ struct DynamicCommentRow: View {
     }
 
     private var legacyCommentLayout: some View {
-        HStack(alignment: .top, spacing: 10) {
-            DynamicCommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 38
-            )
+        DynamicCommentFullRowReplyTarget(
+            action: enablesExpandedReplyTap ? contentReplyAction : nil,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                DynamicCommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 38
+                )
 
-            DynamicCommentRowContent(
-                comment: comment,
-                display: display,
-                showReplies: showReplies,
-                replyToComment: replyToComment,
-                replyAction: contentReplyAction,
-                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
+                DynamicCommentRowContent(
+                    comment: comment,
+                    display: display,
+                    showReplies: showReplies,
+                    replyToComment: replyToComment,
+                    replyAction: contentReplyAction,
+                    showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil,
+                    usesFullRowReplyTarget: enablesExpandedReplyTap
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+            }
+            .padding(.vertical, 10)
         }
-        .padding(.vertical, 10)
     }
 }
 
@@ -155,6 +169,18 @@ private struct DynamicCommentReplyTapAreaModifier: ViewModifier {
 }
 
 extension View {
+    @ViewBuilder
+    func dynamicCommentDirectReply(
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        if isEnabled {
+            onTapGesture(perform: action)
+        } else {
+            self
+        }
+    }
+
     func dynamicCommentReplyTapArea(isEnabled: Bool) -> some View {
         modifier(DynamicCommentReplyTapAreaModifier(isEnabled: isEnabled))
     }

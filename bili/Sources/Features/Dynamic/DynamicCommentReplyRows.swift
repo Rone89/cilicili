@@ -18,43 +18,50 @@ struct DynamicCommentReplyRootView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            DynamicCommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 40
-            )
+        DynamicCommentFullRowReplyTarget(
+            action: showsReplyTapArea ? reply : nil,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                DynamicCommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 40
+                )
 
-            VStack(alignment: .leading, spacing: 6) {
-                DynamicCommentReplyAuthorLine(
-                    comment: comment,
-                    display: display,
-                    showsLike: true,
-                    avatarHeight: 40
-                )
-                DynamicCommentText(
-                    content: comment.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 22,
-                    lineSpacing: 1,
-                    typographyRole: .commentBody
-                )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: showsReplyTapArea && reply != nil ? 44 : nil,
-                    alignment: .leading
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                .contentShape(Rectangle())
-                .onTapGesture { reply?() }
-                .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && reply != nil)
-                .accessibilityHint(reply == nil ? "" : "轻点以回复")
+                VStack(alignment: .leading, spacing: 6) {
+                    DynamicCommentReplyAuthorLine(
+                        comment: comment,
+                        display: display,
+                        showsLike: true,
+                        avatarHeight: 40
+                    )
+                    DynamicCommentText(
+                        content: comment.content,
+                        font: .subheadline,
+                        textColor: .primary,
+                        emoteSize: 22,
+                        lineSpacing: 1,
+                        typographyRole: .commentBody
+                    )
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: showsReplyTapArea && reply != nil ? 44 : nil,
+                        alignment: .leading
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentShape(Rectangle())
+                    .dynamicCommentDirectReply(isEnabled: !showsReplyTapArea && reply != nil) {
+                        reply?()
+                    }
+                    .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && reply != nil)
+                    .accessibilityHint(reply == nil ? "" : "轻点以回复")
 
-                DynamicCommentImageGrid(images: display.pictures)
+                    DynamicCommentImageGrid(images: display.pictures)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
         }
     }
 }
@@ -91,60 +98,70 @@ struct DynamicCommentReplyDetailRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            DynamicCommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 36
-            )
-
-            VStack(alignment: .leading, spacing: 8) {
-                DynamicCommentReplyAuthorLine(
-                    comment: reply,
-                    display: display,
-                    showsLike: true,
-                    replyAction: enablesExpandedReplyTap ? replyAction : nil,
-                    showsReplyTapArea: enablesExpandedReplyTap && replyAction != nil
+        DynamicCommentFullRowReplyTarget(
+            action: enablesExpandedReplyTap ? replyAction : nil,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                DynamicCommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 36
                 )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    DynamicCommentReplyAuthorLine(
+                        comment: reply,
+                        display: display,
+                        showsLike: true,
+                        replyAction: enablesExpandedReplyTap ? replyAction : nil,
+                        showsReplyTapArea: enablesExpandedReplyTap && replyAction != nil,
+                        usesFullRowReplyTarget: enablesExpandedReplyTap
+                    )
                     .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
-                DynamicCommentText(
-                    content: reply.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 22,
-                    lineSpacing: 1,
-                    typographyRole: .commentBody
-                )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: enablesExpandedReplyTap && replyAction != nil ? 44 : nil,
-                    alignment: .leading
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                .contentShape(Rectangle())
-                .onTapGesture { replyAction?() }
-                .dynamicCommentReplyTapArea(
-                    isEnabled: enablesExpandedReplyTap && replyAction != nil
-                )
-                .accessibilityHint((enablesExpandedReplyTap && replyAction != nil) ? "轻点以回复" : "")
-
-                DynamicCommentImageGrid(images: display.pictures)
-
-                if let showDialog {
-                    Button(action: showDialog) {
-                        Label("查看对话", systemImage: "text.bubble")
-                            .appTypography(.action, fallback: .caption.weight(.semibold))
-                            .frame(height: 26)
+                    DynamicCommentText(
+                        content: reply.content,
+                        font: .subheadline,
+                        textColor: .primary,
+                        emoteSize: 22,
+                        lineSpacing: 1,
+                        typographyRole: .commentBody
+                    )
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: enablesExpandedReplyTap && replyAction != nil ? 44 : nil,
+                        alignment: .leading
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentShape(Rectangle())
+                    .dynamicCommentDirectReply(
+                        isEnabled: !enablesExpandedReplyTap && replyAction != nil
+                    ) {
+                        replyAction?()
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(appTintColor)
-                    .padding(.top, 2)
+                    .dynamicCommentReplyTapArea(
+                        isEnabled: enablesExpandedReplyTap && replyAction != nil
+                    )
+                    .accessibilityHint((enablesExpandedReplyTap && replyAction != nil) ? "轻点以回复" : "")
+
+                    DynamicCommentImageGrid(images: display.pictures)
+
+                    if let showDialog {
+                        Button(action: showDialog) {
+                            Label("查看对话", systemImage: "text.bubble")
+                                .appTypography(.action, fallback: .caption.weight(.semibold))
+                                .frame(height: 26)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(appTintColor)
+                        .padding(.top, 2)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
+            .padding(.vertical, 9)
         }
-        .padding(.vertical, 9)
         .modifier(DynamicCommentSwipeReplyModifier(
             isEnabled: enablesSwipeReply,
             action: triggerSwipeReply

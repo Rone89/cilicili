@@ -7,6 +7,7 @@ struct DynamicCommentRowContent: View {
     let replyToComment: (() -> Void)?
     let replyAction: (() -> Void)?
     let showsReplyTapArea: Bool
+    let usesFullRowReplyTarget: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -14,7 +15,8 @@ struct DynamicCommentRowContent: View {
                 comment: comment,
                 display: display,
                 replyAction: replyAction,
-                showsReplyTapArea: showsReplyTapArea
+                showsReplyTapArea: showsReplyTapArea,
+                usesFullRowReplyTarget: usesFullRowReplyTarget
             )
 
             DynamicCommentText(
@@ -27,7 +29,11 @@ struct DynamicCommentRowContent: View {
             )
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture { (replyAction ?? replyToComment)?() }
+            .dynamicCommentDirectReply(
+                isEnabled: !usesFullRowReplyTarget && (replyAction ?? replyToComment) != nil
+            ) {
+                (replyAction ?? replyToComment)?()
+            }
             .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea)
             .accessibilityHint((replyAction ?? replyToComment) == nil ? "" : "轻点以回复")
 
@@ -56,17 +62,20 @@ struct DynamicCommentRowHeader: View {
     let display: DynamicCommentRowDisplayModel
     let replyAction: (() -> Void)?
     let showsReplyTapArea: Bool
+    let usesFullRowReplyTarget: Bool
 
     init(
         comment: Comment,
         display: DynamicCommentRowDisplayModel,
         replyAction: (() -> Void)? = nil,
-        showsReplyTapArea: Bool = false
+        showsReplyTapArea: Bool = false,
+        usesFullRowReplyTarget: Bool = false
     ) {
         self.comment = comment
         self.display = display
         self.replyAction = replyAction
         self.showsReplyTapArea = showsReplyTapArea
+        self.usesFullRowReplyTarget = usesFullRowReplyTarget
     }
 
     var body: some View {
@@ -89,7 +98,11 @@ struct DynamicCommentRowHeader: View {
                 alignment: .topLeading
             )
             .contentShape(Rectangle())
-            .onTapGesture { replyAction?() }
+            .dynamicCommentDirectReply(
+                isEnabled: !usesFullRowReplyTarget && replyAction != nil
+            ) {
+                replyAction?()
+            }
             .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
 
             Spacer(minLength: 8)
