@@ -7,6 +7,8 @@ struct DynamicCommentsSheet: View {
     @StateObject private var viewModel: DynamicCommentsViewModel
     @StateObject private var runtimeSettings = DynamicCommentsRuntimeSettingsStore()
     @State private var replySheetComment: Comment?
+    @State private var composerTarget: DynamicCommentComposerTarget?
+    @State private var richCommentDrafts = [String: RichCommentDraft]()
 
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
@@ -23,7 +25,10 @@ struct DynamicCommentsSheet: View {
                     showReplies: { comment in
                         replySheetComment = comment
                     },
-                    dividerHorizontalPadding: 0
+                    dividerHorizontalPadding: 0,
+                    replyToComment: { comment in
+                        composerTarget = .reply(root: comment, parent: comment)
+                    }
                 )
             }
             .defersRemoteImageLoadsDuringFastScroll()
@@ -70,10 +75,26 @@ struct DynamicCommentsSheet: View {
                     referer: "https://t.bilibili.com/\(item.idStr)"
                 )
         }
+        .background {
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: richCommentDraftBinding,
+                api: dependencies.api,
+                submit: submitReplyAction
+            )
+            .allowsHitTesting(false)
+        }
     }
 
     private func selectCommentSort(_ sort: CommentSort) {
         Task { await viewModel.selectSort(sort) }
+    }
+
+    private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { richCommentDrafts[target.id] = $0 }
+        )
     }
 
     private var submitReplyAction: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void {
