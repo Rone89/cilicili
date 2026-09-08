@@ -1071,6 +1071,39 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testDynamicCommentImageUploadDecodesMixedDimensionTypes() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+
+        let requestExpectation = expectation(description: "dynamic comment image upload captured")
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            requestExpectation.fulfill()
+            return Self.response(
+                for: request,
+                body: """
+                {"code":0,"data":{"image_url":"//i0.hdslb.com/bfs/dynamic/comment.jpg","image_width":"1920","image_height":1080,"img_size":"512.5"}}
+                """
+            )
+        }
+        defer { RequestContractURLProtocol.reset() }
+
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001"
+        )
+        let image = try await api.uploadDynamicCommentImage(Data([0xFF, 0xD8, 0xFF]))
+
+        await fulfillment(of: [requestExpectation], timeout: 2)
+
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.requests[0].url?.path, "/x/dynamic/feed/draw/upload_bfs")
+        XCTAssertEqual(image.imageURL, "https://i0.hdslb.com/bfs/dynamic/comment.jpg")
+        XCTAssertEqual(image.width, 1_920)
+        XCTAssertEqual(image.height, 1_080)
+        XCTAssertEqual(image.size, 512)
+    }
+
+    @MainActor
     func testDynamicCommentAddDoesNotRetryAmbiguousPostFailure() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 

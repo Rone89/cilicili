@@ -26,6 +26,14 @@ private nonisolated struct DynamicCommentImageUploadPayload: Decodable, Sendable
         case height = "image_height"
         case size = "img_size"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+        width = container.decodeLossyIntIfPresent(forKey: .width)
+        height = container.decodeLossyIntIfPresent(forKey: .height)
+        size = container.decodeLossyDoubleIfPresent(forKey: .size).map(Int.init)
+    }
 }
 
 private nonisolated struct CommentEmotePanelPayload: Decodable, Sendable {

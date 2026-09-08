@@ -66,6 +66,10 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
         .accessibilityAddTraits(likeState.isLiked ? .isSelected : [])
         .accessibilityIdentifier("dynamic.detail.composer.like")
         .dynamicCommentHitArea(.control)
+        .onChange(of: sourceLikeState) { _, state in
+            guard !isMutatingLike else { return }
+            likeState = state
+        }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -112,6 +116,10 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
 
     private var dynamicShareURL: URL {
         URL(string: "https://t.bilibili.com/\(display.dynamicID)")!
+    }
+
+    private var sourceLikeState: DynamicLikeDisplayState {
+        DynamicLikeDisplayState(isLiked: initialIsLiked, likeCount: initialLikeCount)
     }
 
     private func toggleLike() {

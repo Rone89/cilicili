@@ -149,7 +149,7 @@ extension BiliAPIClient {
                 "x-bili-device-req-json": #"{"platform":"web","device":"pc","spmid":"333.1330"}"#,
             ],
             cookieHeader: cookieHeader,
-            responseCachePolicy: .brief
+            cachePolicy: .reloadIgnoringLocalCacheData
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)

@@ -49,6 +49,20 @@ final class DynamicRichTextInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testTextInputDetectsContentBeyondItsMaximumLineCount() {
+        let input = DynamicAttributedTextInput(
+            segments: [.text("1\n2\n3\n4\n5\n6\n7")],
+            baseFont: UIFont.systemFont(ofSize: 17),
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+
+        XCTAssertTrue(input.exceedsMaximumLineCount(fittingWidth: 320))
+    }
+
+    @MainActor
     private func makeInput(segments: [DynamicTextSegment]) -> DynamicAttributedTextInput {
         DynamicAttributedTextInput(
             segments: segments,

@@ -166,27 +166,28 @@ private struct DynamicDetailDestination: View {
     let api: BiliAPIClient
     let navigationPath: Binding<NavigationPath>
     @State private var remoteItem: DynamicFeedItem?
+    @State private var loadedDetailItem: DynamicFeedItem?
     @State private var errorMessage: String?
     @State private var retryID = 0
-    @State private var isNavigationTitleHidden = false
 
     var body: some View {
         Group {
             switch target {
             case .loaded(let item):
                 DynamicDetailView(
-                    item: item,
+                    item: loadedDetailItem ?? item,
                     api: api,
-                    navigationPath: navigationPath,
-                    isNavigationTitleHidden: $isNavigationTitleHidden
+                    navigationPath: navigationPath
                 )
+                .task(id: item.idStr) {
+                    await refreshLoadedDetail(id: item.idStr)
+                }
             case .remote(let id):
                 if let remoteItem {
                     DynamicDetailView(
                         item: remoteItem,
                         api: api,
-                        navigationPath: navigationPath,
-                        isNavigationTitleHidden: $isNavigationTitleHidden
+                        navigationPath: navigationPath
                     )
                 } else {
                     Group {
@@ -213,16 +214,19 @@ private struct DynamicDetailDestination: View {
                 }
             }
         }
-        .navigationTitle("")
+        .navigationTitle("动态详情")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("动态详情")
-                    .opacity(isNavigationTitleHidden ? 0 : 1)
-                    .accessibilityHidden(isNavigationTitleHidden)
-            }
-        }
         .toolbarBackground(.automatic, for: .navigationBar)
+    }
+
+    private func refreshLoadedDetail(id: String) async {
+        do {
+            loadedDetailItem = try await api.fetchDynamicDetail(id: id)
+        } catch is CancellationError {
+            return
+        } catch {
+            // The feed item remains usable when a background state refresh fails.
+        }
     }
 }
 
@@ -230,7 +234,6 @@ private struct DynamicDetailView: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
     let navigationPath: Binding<NavigationPath>
-    @Binding private var isNavigationTitleHidden: Bool
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
@@ -245,13 +248,11 @@ private struct DynamicDetailView: View {
     init(
         item: DynamicFeedItem,
         api: BiliAPIClient,
-        navigationPath: Binding<NavigationPath>,
-        isNavigationTitleHidden: Binding<Bool>
+        navigationPath: Binding<NavigationPath>
     ) {
         self.item = item
         self.api = api
         self.navigationPath = navigationPath
-        self._isNavigationTitleHidden = isNavigationTitleHidden
         self.display = DynamicFeedCardDisplayModel(item: item)
         _commentsViewModel = StateObject(wrappedValue: DynamicCommentsViewModel(item: item, api: api))
     }
@@ -295,14 +296,6 @@ private struct DynamicDetailView: View {
         } action: { _, width in
             guard width > 1 else { return }
             detailContentWidth = width
-        }
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top > 18
-        } action: { _, isHidden in
-            guard isNavigationTitleHidden != isHidden else { return }
-            withAnimation(.smooth(duration: 0.18)) {
-                isNavigationTitleHidden = isHidden
-            }
         }
         .customPullRefreshTracking(
             isEnabled: libraryStore.usesCustomPullRefresh,

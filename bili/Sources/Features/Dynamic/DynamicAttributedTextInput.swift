@@ -117,6 +117,41 @@ struct DynamicAttributedTextInput: Equatable {
         )
     }
 
+    func exceedsMaximumLineCount(fittingWidth width: CGFloat) -> Bool {
+        guard let maxLines, maxLines > 0, width.isFinite, width > 1 else { return false }
+
+        let textStorage = NSTextStorage(attributedString: render().attributedString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = lineBreakMode
+        textContainer.maximumNumberOfLines = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        var lineCount = 0
+        var glyphIndex = glyphRange.location
+        let glyphRangeEnd = NSMaxRange(glyphRange)
+
+        while glyphIndex < glyphRangeEnd {
+            var lineRange = NSRange()
+            layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineRange)
+            guard lineRange.length > 0 else { break }
+
+            lineCount += 1
+            if lineCount > maxLines {
+                return true
+            }
+            glyphIndex = NSMaxRange(lineRange)
+        }
+
+        return false
+    }
+
     func render() -> (attributedString: NSAttributedString, missingImageURLs: [URL]) {
         let result = NSMutableAttributedString()
         var missingImageURLs = [URL]()

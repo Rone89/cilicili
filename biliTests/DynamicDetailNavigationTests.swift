@@ -43,7 +43,9 @@ final class DynamicDetailNavigationTests: XCTestCase {
             requestExpectation.fulfill()
             return dynamicDetailResponse(
                 for: request,
-                body: #"{"code":0,"data":{"item":{"id_str":"dynamic-detail-123","type":"DYNAMIC_TYPE_WORD","modules":{"module_dynamic":{"desc":{"text":"decoded detail"}}}}}}"#
+                body: """
+                {"code":0,"data":{"item":{"id_str":"dynamic-detail-123","type":"DYNAMIC_TYPE_WORD","modules":{"module_dynamic":{"desc":{"text":"decoded detail"}},"module_stat":{"like":{"count":42,"status":true}}}}}}
+                """
             )
         }
 
@@ -54,6 +56,8 @@ final class DynamicDetailNavigationTests: XCTestCase {
 
         XCTAssertEqual(item.idStr, "dynamic-detail-123")
         XCTAssertEqual(item.displayText, "decoded detail")
+        XCTAssertTrue(item.isLiked)
+        XCTAssertEqual(item.likeCount, 42)
 
         let request = try XCTUnwrap(recorder.request)
         let url = try XCTUnwrap(request.url)
