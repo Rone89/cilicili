@@ -11,7 +11,12 @@ struct LiveFeedView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if libraryStore.scrollableTabHeadersExperimentEnabled {
-                    ScrollableTabHeader("直播")
+                    ScrollableTabHeader("直播") {
+                        LiveFeedRefreshButton(viewModel: viewModel)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                            .biliRegularGlassEffect(interactive: true, in: Circle())
+                    }
                 }
 
                 LiveFeedContent(viewModel: viewModel)
@@ -28,8 +33,10 @@ struct LiveFeedView: View {
             onChange: handlePullRefreshChange
         )
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                LiveFeedRefreshButton(viewModel: viewModel)
+            if !libraryStore.scrollableTabHeadersExperimentEnabled {
+                ToolbarItem(placement: .topBarTrailing) {
+                    LiveFeedRefreshButton(viewModel: viewModel)
+                }
             }
         }
         .task {

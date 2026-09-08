@@ -137,7 +137,7 @@ struct RootTabView: View {
                 .rootTopLevelNavigationChrome(
                     title: rootNavigationTitle(for: tab),
                     isEnabled: libraryStore.scrollableTabHeadersExperimentEnabled,
-                    keepsToolbarVisible: tab == .live || tab == .search
+                    keepsToolbarVisible: tab == .search
                 )
                 .environment(
                     \.rootNavigationTitleHidden,

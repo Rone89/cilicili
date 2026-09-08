@@ -122,6 +122,9 @@ extension View {
 }
 
 struct HomeScrollableTabHeader: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var headerControlSize = 44
+    @ScaledMetric(relativeTo: .body) private var modeControlWidth = 148
     @ObservedObject var viewModel: HomeViewModel
     let modeActions: HomeFeedModeActions
     let scrollActions: HomeFeedScrollActions
@@ -130,22 +133,60 @@ struct HomeScrollableTabHeader: View {
     let onOpenAccountMessages: () -> Void
 
     var body: some View {
-        ScrollableTabHeader("首页") {
-            HStack(spacing: 8) {
-                Picker("首页内容", selection: modeBinding) {
-                    ForEach(HomeFeedMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        title
+                        Spacer(minLength: 12)
+                        notificationButton
                     }
+                    modePicker
+                        .frame(maxWidth: .infinity)
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(minWidth: 132, maxWidth: 168)
-                .accessibilityValue(viewModel.mode.title)
+            } else {
+                ZStack {
+                    HStack {
+                        title
+                        Spacer(minLength: 12)
+                        notificationButton
+                    }
 
-                accountMessageButton
-                    .frame(minWidth: 44, minHeight: 44)
+                    modePicker
+                        .frame(width: modeControlWidth)
+                }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+    }
+
+    private var title: some View {
+        Text("首页")
+            .font(.largeTitle.bold())
+            .foregroundStyle(.primary)
+            .frame(height: headerControlSize, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var modePicker: some View {
+        Picker("首页内容", selection: modeBinding) {
+            ForEach(HomeFeedMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .accessibilityValue(viewModel.mode.title)
+    }
+
+    private var notificationButton: some View {
+        accountMessageButton
+            .frame(width: headerControlSize, height: headerControlSize)
+            .contentShape(Circle())
+            .biliRegularGlassEffect(interactive: true, in: Circle())
     }
 
     private var modeBinding: Binding<HomeFeedMode> {

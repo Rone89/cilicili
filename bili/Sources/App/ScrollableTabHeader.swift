@@ -2,13 +2,16 @@ import SwiftUI
 
 struct ScrollableTabHeader<Trailing: View>: View {
     let title: String
+    let bottomPadding: CGFloat
     @ViewBuilder let trailing: () -> Trailing
 
     init(
         _ title: String,
+        bottomPadding: CGFloat = 14,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
         self.title = title
+        self.bottomPadding = bottomPadding
         self.trailing = trailing
     }
 
@@ -28,7 +31,7 @@ struct ScrollableTabHeader<Trailing: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 14)
+        .padding(.bottom, bottomPadding)
     }
 
     private var titleView: some View {
@@ -40,8 +43,8 @@ struct ScrollableTabHeader<Trailing: View>: View {
 }
 
 extension ScrollableTabHeader where Trailing == EmptyView {
-    init(_ title: String) {
-        self.init(title) { EmptyView() }
+    init(_ title: String, bottomPadding: CGFloat = 14) {
+        self.init(title, bottomPadding: bottomPadding) { EmptyView() }
     }
 }
 
