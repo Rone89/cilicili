@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentReplyDetailRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let item: VideoDetailCommentReplyDisplayItem
     let showDialog: (() -> Void)?
@@ -22,7 +23,7 @@ struct CommentReplyDetailRow: View {
                 size: 36
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 8) {
                 HStack(alignment: .top, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
                         CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
@@ -50,13 +51,24 @@ struct CommentReplyDetailRow: View {
                     emoteSize: 22,
                     typographyRole: .commentBody
                 )
+                    .padding(.top, usesRefinedSpacing ? 4 : 0)
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(
-                    images: display.pictures,
-                    transitionScope: reply.id.description
-                )
+                if usesRefinedSpacing {
+                    if !display.pictures.isEmpty {
+                        CommentImageButton(
+                            images: display.pictures,
+                            transitionScope: reply.id.description
+                        )
+                        .padding(.top, 8)
+                    }
+                } else {
+                    CommentImageButton(
+                        images: display.pictures,
+                        transitionScope: reply.id.description
+                    )
+                }
 
                 if let showDialog {
                     Button(action: showDialog) {
@@ -66,11 +78,11 @@ struct CommentReplyDetailRow: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(appTintColor)
-                    .padding(.top, 2)
+                    .padding(.top, usesRefinedSpacing ? 8 : 2)
                 }
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, usesRefinedSpacing ? 10 : 9)
         .commentCopyContextMenu(text: reply.content?.message, title: "复制回复")
     }
 }

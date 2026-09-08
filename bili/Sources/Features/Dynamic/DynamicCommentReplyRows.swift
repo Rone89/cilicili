@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicCommentReplyRootView: View {
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
+
     let comment: Comment
     let reply: (() -> Void)?
     private let display: DynamicCommentRowDisplayModel
@@ -26,7 +28,7 @@ struct DynamicCommentReplyRootView: View {
                     size: 40
                 )
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 6) {
                     DynamicCommentReplyAuthorLine(
                         comment: comment,
                         display: display,
@@ -42,24 +44,34 @@ struct DynamicCommentReplyRootView: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: reply
                     )
+                    .padding(.top, usesRefinedSpacing ? 4 : 0)
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: 44,
+                        minHeight: usesRefinedSpacing ? nil : 44,
                         alignment: .leading
                     )
                     .fixedSize(horizontal: false, vertical: true)
 
-                    DynamicCommentImageGrid(images: display.pictures)
+                    if usesRefinedSpacing {
+                        if !display.pictures.isEmpty {
+                            DynamicCommentImageGrid(images: display.pictures)
+                                .padding(.top, 8)
+                        }
+                    } else {
+                        DynamicCommentImageGrid(images: display.pictures)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
+            .padding(.vertical, usesRefinedSpacing ? 10 : 0)
         }
     }
 }
 
 struct DynamicCommentReplyDetailRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
@@ -95,7 +107,7 @@ struct DynamicCommentReplyDetailRow: View {
                     size: 36
                 )
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 8) {
                     DynamicCommentReplyAuthorLine(
                         comment: reply,
                         display: display,
@@ -111,14 +123,22 @@ struct DynamicCommentReplyDetailRow: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: replyAction
                     )
+                    .padding(.top, usesRefinedSpacing ? 4 : 0)
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: 44,
+                        minHeight: usesRefinedSpacing ? nil : 44,
                         alignment: .leading
                     )
                     .fixedSize(horizontal: false, vertical: true)
 
-                    DynamicCommentImageGrid(images: display.pictures)
+                    if usesRefinedSpacing {
+                        if !display.pictures.isEmpty {
+                            DynamicCommentImageGrid(images: display.pictures)
+                                .padding(.top, 8)
+                        }
+                    } else {
+                        DynamicCommentImageGrid(images: display.pictures)
+                    }
 
                     if let showDialog {
                         Button(action: showDialog) {
@@ -129,7 +149,7 @@ struct DynamicCommentReplyDetailRow: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appTintColor)
-                        .padding(.top, 2)
+                        .padding(.top, usesRefinedSpacing ? 8 : 2)
                         .zIndex(1)
                         .dynamicCommentHitArea(.control)
                         .accessibilityIdentifier("dynamic.comment.reply.showDialog.\(item.id)")
@@ -138,13 +158,14 @@ struct DynamicCommentReplyDetailRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
-            .padding(.vertical, 9)
+            .padding(.vertical, usesRefinedSpacing ? 10 : 9)
         }
     }
 }
 
 struct DynamicCommentDialogRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let item: DynamicCommentDialogItem
     let isFocused: Bool
@@ -180,7 +201,7 @@ struct DynamicCommentDialogRow: View {
                     size: 36
                 )
 
-                VStack(alignment: .leading, spacing: 11) {
+                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 11) {
                     DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
                         .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
                     DynamicCommentText(
@@ -192,9 +213,17 @@ struct DynamicCommentDialogRow: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: replyAction
                     )
+                    .padding(.top, usesRefinedSpacing ? 4 : 0)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    DynamicCommentImageGrid(images: display.pictures)
+                    if usesRefinedSpacing {
+                        if !display.pictures.isEmpty {
+                            DynamicCommentImageGrid(images: display.pictures)
+                                .padding(.top, 8)
+                        }
+                    } else {
+                        DynamicCommentImageGrid(images: display.pictures)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)

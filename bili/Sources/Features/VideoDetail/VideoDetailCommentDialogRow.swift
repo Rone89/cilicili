@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentDialogRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
 
     let item: VideoDetailCommentDialogDisplayItem
     let isFocused: Bool
@@ -22,7 +23,7 @@ struct CommentDialogRow: View {
                 size: 36
             )
 
-            VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 11) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                         .foregroundStyle(.secondary)
@@ -45,13 +46,24 @@ struct CommentDialogRow: View {
                     emoteSize: 22,
                     typographyRole: .commentBody
                 )
+                    .padding(.top, usesRefinedSpacing ? 4 : 0)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(
-                    images: display.pictures,
-                    transitionScope: reply.id.description
-                )
+                if usesRefinedSpacing {
+                    if !display.pictures.isEmpty {
+                        CommentImageButton(
+                            images: display.pictures,
+                            transitionScope: reply.id.description
+                        )
+                        .padding(.top, 8)
+                    }
+                } else {
+                    CommentImageButton(
+                        images: display.pictures,
+                        transitionScope: reply.id.description
+                    )
+                }
             }
         }
         .padding(.vertical, 10)
