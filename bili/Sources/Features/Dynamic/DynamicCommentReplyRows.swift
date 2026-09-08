@@ -148,6 +148,7 @@ struct DynamicCommentDialogRow: View {
 
     let item: DynamicCommentDialogItem
     let isFocused: Bool
+    let replyAction: (() -> Void)?
 
     private var reply: Comment {
         item.reply
@@ -159,37 +160,45 @@ struct DynamicCommentDialogRow: View {
 
     init(
         item: DynamicCommentDialogItem,
-        isFocused: Bool
+        isFocused: Bool,
+        reply: (() -> Void)? = nil
     ) {
         self.item = item
         self.isFocused = isFocused
+        replyAction = reply
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            DynamicCommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 36
-            )
-
-            VStack(alignment: .leading, spacing: 11) {
-                DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
-                    .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
-                DynamicCommentText(
-                    content: reply.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 22,
-                    lineSpacing: 2,
-                    typographyRole: .commentBody
+        DynamicCommentFullRowReplyTarget(
+            action: replyAction,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                DynamicCommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 36
                 )
-                .fixedSize(horizontal: false, vertical: true)
 
-                DynamicCommentImageGrid(images: display.pictures)
+                VStack(alignment: .leading, spacing: 11) {
+                    DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
+                        .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
+                    DynamicCommentText(
+                        content: reply.content,
+                        font: .subheadline,
+                        textColor: .primary,
+                        emoteSize: 22,
+                        lineSpacing: 2,
+                        typographyRole: .commentBody,
+                        onNonLinkTap: replyAction
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    DynamicCommentImageGrid(images: display.pictures)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
         }
         .padding(.vertical, 10)
         .padding(.horizontal, isFocused ? 10 : 0)

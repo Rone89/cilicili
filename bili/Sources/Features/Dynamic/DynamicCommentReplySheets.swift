@@ -47,7 +47,13 @@ struct DynamicCommentRepliesSheet: View {
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .sheet(item: $dialogReply) { reply in
-            DynamicCommentDialogSheet(rootComment: rootComment, focusReply: reply, replyStore: replyStore)
+            DynamicCommentDialogSheet(
+                rootComment: rootComment,
+                focusReply: reply,
+                replyStore: replyStore,
+                api: api,
+                submitReply: submitReply
+            )
         }
         .background {
             RichCommentComposerPresenter(
@@ -75,12 +81,21 @@ private struct DynamicCommentDialogSheet: View {
     let rootComment: Comment
     let focusReply: Comment
     let replyStore: DynamicCommentReplyStore
+    let api: BiliAPIClient
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+    @State private var composerTarget: DynamicCommentComposerTarget?
+    @State private var richCommentDrafts = [String: RichCommentDraft]()
 
     var body: some View {
         CommentOwnerProfileNavigationContainer {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    DynamicCommentReplyRootView(comment: rootComment)
+                    DynamicCommentReplyRootView(
+                        comment: rootComment,
+                        reply: {
+                            composerTarget = .reply(root: rootComment, parent: rootComment)
+                        }
+                    )
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
 
@@ -89,6 +104,9 @@ private struct DynamicCommentDialogSheet: View {
                     DynamicCommentDialogContent(
                         rootComment: rootComment,
                         focusReply: focusReply,
+                        replyToComment: { reply in
+                            composerTarget = .reply(root: rootComment, parent: reply)
+                        },
                         replyStore: replyStore
                     )
                 }
@@ -102,5 +120,24 @@ private struct DynamicCommentDialogSheet: View {
         }
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
+        .background {
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: richCommentDraftBinding,
+                api: api,
+                submit: { submissionTarget, message, pictures in
+                    try await submitReply(submissionTarget, message, pictures)
+                    await replyStore.reloadDialog(for: rootComment, reply: focusReply)
+                }
+            )
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { richCommentDrafts[target.id] = $0 }
+        )
     }
 }

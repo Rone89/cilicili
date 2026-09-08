@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicCommentDialogContent: View {
     let rootComment: Comment
     let focusReply: Comment
+    let replyToComment: (Comment) -> Void
     @ObservedObject var replyStore: DynamicCommentReplyStore
 
     var body: some View {
@@ -12,6 +13,7 @@ struct DynamicCommentDialogContent: View {
             snapshot: snapshot,
             rootComment: rootComment,
             focusReply: focusReply,
+            replyToComment: replyToComment,
             replyStore: replyStore
         )
     }
@@ -21,6 +23,7 @@ private struct DynamicCommentDialogStateContent: View {
     let snapshot: DynamicCommentDialogSnapshot
     let rootComment: Comment
     let focusReply: Comment
+    let replyToComment: (Comment) -> Void
     @ObservedObject var replyStore: DynamicCommentReplyStore
 
     var body: some View {
@@ -39,6 +42,7 @@ private struct DynamicCommentDialogStateContent: View {
                 snapshot: snapshot,
                 items: snapshot.items,
                 focusReply: focusReply,
+                replyToComment: replyToComment,
                 reloadDialog: reloadDialog
             )
         }
@@ -53,6 +57,7 @@ private struct DynamicCommentDialogLoadedList: View {
     let snapshot: DynamicCommentDialogSnapshot
     let items: [DynamicCommentDialogItem]
     let focusReply: Comment
+    let replyToComment: (Comment) -> Void
     let reloadDialog: () -> Void
 
     var body: some View {
@@ -60,7 +65,8 @@ private struct DynamicCommentDialogLoadedList: View {
             ForEach(items) { item in
                 DynamicCommentDialogRow(
                     item: item,
-                    isFocused: item.id == focusReply.id
+                    isFocused: item.id == focusReply.id,
+                    reply: { replyToComment(item.reply) }
                 )
                     .padding(.horizontal, 16)
 
