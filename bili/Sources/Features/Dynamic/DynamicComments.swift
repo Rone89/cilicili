@@ -45,6 +45,10 @@ struct DynamicCommentsSheet: View {
             \.dynamicCommentHitAreaVisualizationEnabled,
             libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
         )
+        .environment(
+            \.usesDynamicDetailCommentRowLayout,
+            libraryStore.dynamicDetailCommentSpacingExperimentEnabled
+        )
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
