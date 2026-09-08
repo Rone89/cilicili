@@ -83,6 +83,7 @@ struct DynamicCommentReplyPreviewButton: View {
                 }
             }
             .buttonStyle(.plain)
+            .dynamicCommentHitArea(.control)
         }
     }
 }

@@ -23,14 +23,17 @@ struct CommentAvatar: View {
     }
 
     var body: some View {
-        if let owner {
-            VideoOwnerRouteLink(owner: owner) {
+        Group {
+            if let owner {
+                VideoOwnerRouteLink(owner: owner) {
+                    avatarImage
+                }
+                .accessibilityLabel("查看 \(owner.name) 的个人主页")
+            } else {
                 avatarImage
             }
-            .accessibilityLabel("查看 \(owner.name) 的个人主页")
-        } else {
-            avatarImage
         }
+        .dynamicCommentHitArea(.control)
     }
 
     private var avatarImage: some View {

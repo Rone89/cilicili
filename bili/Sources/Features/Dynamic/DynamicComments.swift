@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicCommentsSheet: View {
     let item: DynamicFeedItem
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var viewModel: DynamicCommentsViewModel
     @StateObject private var runtimeSettings = DynamicCommentsRuntimeSettingsStore()
     @State private var replySheetComment: Comment?
@@ -35,6 +36,10 @@ struct DynamicCommentsSheet: View {
                 await viewModel.loadInitial()
             }
         }
+        .environment(
+            \.dynamicCommentHitAreaVisualizationEnabled,
+            libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
+        )
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
@@ -54,6 +59,10 @@ struct DynamicCommentsSheet: View {
                 api: dependencies.api,
                 submitReply: submitReplyAction
             )
+                .environment(
+                    \.dynamicCommentHitAreaVisualizationEnabled,
+                    libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
+                )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
                     oid: item.commentOID,

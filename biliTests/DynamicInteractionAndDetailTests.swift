@@ -5,6 +5,25 @@ import XCTest
 
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
+    func testDynamicCommentHitAreaVisualizationExperimentDefaultsOffAndPersists() {
+        let suiteName = "cc.bili.tests.dynamic-comment-hit-area.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let initialStore = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(initialStore.dynamicCommentHitAreaVisualizationExperimentEnabled)
+
+        initialStore.setDynamicCommentHitAreaVisualizationExperimentEnabled(true)
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).dynamicCommentHitAreaVisualizationExperimentEnabled
+        )
+
+        initialStore.setDynamicCommentHitAreaVisualizationExperimentEnabled(false)
+        XCTAssertFalse(
+            LibraryStore(userDefaults: defaults).dynamicCommentHitAreaVisualizationExperimentEnabled
+        )
+    }
+
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

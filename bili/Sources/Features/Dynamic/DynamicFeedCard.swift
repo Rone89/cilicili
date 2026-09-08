@@ -335,6 +335,10 @@ private struct DynamicDetailView: View {
             .allowsHitTesting(false)
         }
         .environment(\.usesDynamicDetailCommentRowLayout, true)
+        .environment(
+            \.dynamicCommentHitAreaVisualizationEnabled,
+            libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
+        )
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
@@ -355,6 +359,10 @@ private struct DynamicDetailView: View {
                 api: api,
                 submitReply: submitReplyAction
             )
+                .environment(
+                    \.dynamicCommentHitAreaVisualizationEnabled,
+                    libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
+                )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
                     oid: item.commentOID,

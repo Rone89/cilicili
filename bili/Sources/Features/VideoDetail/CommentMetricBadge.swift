@@ -108,6 +108,7 @@ struct CommentLikeButton: View {
         } message: {
             Text(errorMessage ?? "操作失败")
         }
+        .dynamicCommentHitArea(.control)
     }
 
     private var badge: some View {

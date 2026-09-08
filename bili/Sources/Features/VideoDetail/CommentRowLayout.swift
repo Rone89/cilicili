@@ -110,5 +110,6 @@ struct DynamicCommentFullRowReplyTarget<Content: View>: View {
             minHeight: action == nil ? nil : 44,
             alignment: .topLeading
         )
+        .dynamicCommentHitArea(.reply)
     }
 }

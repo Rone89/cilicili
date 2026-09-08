@@ -129,6 +129,7 @@ struct DynamicCommentReplyDetailRow: View {
                         .foregroundStyle(appTintColor)
                         .padding(.top, 2)
                         .zIndex(1)
+                        .dynamicCommentHitArea(.control)
                         .accessibilityIdentifier("dynamic.comment.reply.showDialog.\(item.id)")
                     }
                 }

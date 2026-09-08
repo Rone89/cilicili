@@ -13,6 +13,7 @@ struct DynamicCommentImageGrid: View {
             placeholderFill: Color(.secondarySystemGroupedBackground)
         )
         .padding(.top, 2)
+        .dynamicCommentHitArea(.control)
     }
 }
 
@@ -35,5 +36,6 @@ struct DynamicCommentInlineActionPill: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(appTintColor)
+        .dynamicCommentHitArea(.control)
     }
 }

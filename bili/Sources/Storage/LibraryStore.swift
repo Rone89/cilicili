@@ -146,6 +146,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountExperimentEnabled: Bool
+    @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
@@ -229,6 +230,8 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
+    private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
+        "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let nativePullRefreshEnabledKey =
         "cc.bili.home.nativePullRefreshEnabled.v1"
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
@@ -611,6 +614,10 @@ final class LibraryStore: ObservableObject {
         self.multiAccountExperimentEnabled =
             userDefaults.object(
                 forKey: Self.multiAccountExperimentEnabledKey
+            ) as? Bool ?? false
+        self.dynamicCommentHitAreaVisualizationExperimentEnabled =
+            userDefaults.object(
+                forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
         let storedNativePullRefreshEnabled =
             userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
@@ -1261,6 +1268,14 @@ final class LibraryStore: ObservableObject {
     func setMultiAccountExperimentEnabled(_ isEnabled: Bool) {
         multiAccountExperimentEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.multiAccountExperimentEnabledKey)
+    }
+
+    func setDynamicCommentHitAreaVisualizationExperimentEnabled(_ isEnabled: Bool) {
+        dynamicCommentHitAreaVisualizationExperimentEnabled = isEnabled
+        userDefaults.set(
+            isEnabled,
+            forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
+        )
     }
 
     func setNativePullRefreshEnabled(_ isEnabled: Bool) {

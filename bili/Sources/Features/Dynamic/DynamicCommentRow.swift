@@ -89,6 +89,7 @@ struct DynamicCommentRow: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .dynamicCommentHitArea(.control)
             }
         }
     }

@@ -173,6 +173,22 @@ struct MineDisplaySettingsSection: View {
                     Text("开启后滑动会强制使用 120Hz，可能会引起耗电增加，请谨慎开启。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
+        Section("实验功能") {
+            Toggle(isOn: Binding(
+                get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
+                set: { libraryStore.setDynamicCommentHitAreaVisualizationExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("动态评论点击区域可视化", systemImage: "hand.tap")
+
+                    Text("用半透明色块标示动态详情和评论弹窗中的回复与独立操作区域。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
