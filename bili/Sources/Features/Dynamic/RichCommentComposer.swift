@@ -1022,11 +1022,8 @@ struct RichCommentComposerView: View {
                             .frame(width: ControlLayout.size, height: ControlLayout.size)
                     }
                 }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
+                .modifier(RichCommentSendButtonAppearance(isEnabled: canSend, tint: appTintColor))
                 .controlSize(.small)
-                .tint(canSend ? appTintColor : .secondary)
-                .foregroundStyle(canSend ? Color.white : .secondary)
                 .disabled(!canSend)
                 .accessibilityLabel(isSubmitting ? "正在发送评论" : "发送评论")
                 .accessibilityIdentifier("dynamic.comment.composer.send")
@@ -1200,6 +1197,26 @@ struct RichCommentComposerView: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+private struct RichCommentSendButtonAppearance: ViewModifier {
+    let isEnabled: Bool
+    let tint: Color
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(tint)
+                .foregroundStyle(.white)
+        } else {
+            content
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
         }
     }
 }
