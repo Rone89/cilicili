@@ -98,6 +98,11 @@ struct DynamicCommentFullRowReplyTarget<Content: View>: View {
             }
 
             content()
+                .contentShape(Rectangle())
+                .gesture(
+                    TapGesture().onEnded { action?() },
+                    including: .gesture
+                )
                 .zIndex(1)
         }
         .frame(
