@@ -269,7 +269,6 @@ private struct DynamicDetailView: View {
                     showReplies: { comment in
                         replySheetComment = comment
                     },
-                    enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled,
                     replyToComment: replyToCommentAction
                 )
                 .padding(.top, 10)
@@ -354,8 +353,7 @@ private struct DynamicDetailView: View {
                 rootComment: comment,
                 replyStore: commentsViewModel.replyStore,
                 api: api,
-                submitReply: submitReplyAction,
-                enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
+                submitReply: submitReplyAction
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
                 .commentLikeTarget(
@@ -413,15 +411,15 @@ private struct DynamicDetailView: View {
         await commentsViewModel.reload()
     }
 
-    private var replyToCommentAction: ((Comment) -> Void)? {
-        return { comment in
+    private var replyToCommentAction: (Comment) -> Void {
+        { comment in
             let target = DynamicCommentComposerTarget.reply(root: comment, parent: comment)
             richCommentComposerTarget = target
         }
     }
 
-    private var submitReplyAction: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? {
-        return { target, message, pictures in
+    private var submitReplyAction: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void {
+        { target, message, pictures in
             try await submitComment(target, message, pictures: pictures)
         }
     }

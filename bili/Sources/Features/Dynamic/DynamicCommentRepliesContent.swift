@@ -5,8 +5,7 @@ struct DynamicCommentRepliesContent: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
-    let enablesExpandedReplyTap: Bool
-    var replyToComment: ((Comment) -> Void)? = nil
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         let snapshot = replyStore.repliesSnapshot(for: rootComment)
@@ -17,7 +16,6 @@ struct DynamicCommentRepliesContent: View {
             replyStore: replyStore,
             highlightedReplyID: highlightedReplyID,
             showDialog: showDialog,
-            enablesExpandedReplyTap: enablesExpandedReplyTap,
             replyToComment: replyToComment
         )
     }
@@ -29,8 +27,7 @@ private struct DynamicCommentRepliesStateContent: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
-    let enablesExpandedReplyTap: Bool
-    let replyToComment: ((Comment) -> Void)?
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         if snapshot.replies.isEmpty && snapshot.state.isLoading {
@@ -53,7 +50,6 @@ private struct DynamicCommentRepliesStateContent: View {
                 replyStore: replyStore,
                 highlightedReplyID: highlightedReplyID,
                 showDialog: showDialog,
-                enablesExpandedReplyTap: enablesExpandedReplyTap,
                 replyToComment: replyToComment
             )
         }
@@ -72,8 +68,7 @@ private struct DynamicCommentRepliesLoadedList: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
-    let enablesExpandedReplyTap: Bool
-    let replyToComment: ((Comment) -> Void)?
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -83,10 +78,7 @@ private struct DynamicCommentRepliesLoadedList: View {
                     showDialog: replyItem.canShowDialog ? {
                         showDialog(replyItem.reply)
                     } : nil,
-                    enablesExpandedReplyTap: enablesExpandedReplyTap,
-                    reply: replyToComment.map { action in
-                        { action(replyItem.reply) }
-                    }
+                    reply: { replyToComment(replyItem.reply) }
                 )
                 .padding(.horizontal, 16)
                 .background(

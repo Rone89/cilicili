@@ -5,7 +5,6 @@ struct DynamicCommentRow: View {
 
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
-    let enablesExpandedReplyTap: Bool
     let replyToComment: (() -> Void)?
 
     private var comment: Comment {
@@ -19,12 +18,10 @@ struct DynamicCommentRow: View {
     init(
         item: DynamicCommentRowItem,
         showReplies: @escaping () -> Void,
-        enablesExpandedReplyTap: Bool = false,
         replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.showReplies = showReplies
-        self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyToComment = replyToComment
     }
 
@@ -38,21 +35,19 @@ struct DynamicCommentRow: View {
         }
     }
 
-    private var contentReplyAction: (() -> Void)? {
-        enablesExpandedReplyTap ? performReply : replyToComment
-    }
-
-    private func performReply() {
-        if let replyToComment {
-            replyToComment()
-        } else {
-            showReplies()
+    private var contentReplyAction: () -> Void {
+        {
+            if let replyToComment {
+                replyToComment()
+            } else {
+                showReplies()
+            }
         }
     }
 
     private var sharedCommentLayout: some View {
         CommentRowLayout(
-            fullRowReplyAction: enablesExpandedReplyTap ? contentReplyAction : nil,
+            fullRowReplyAction: contentReplyAction,
             fullRowReplyAccessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             DynamicCommentAvatar(
@@ -63,10 +58,7 @@ struct DynamicCommentRow: View {
         } header: {
             DynamicCommentRowHeader(
                 comment: comment,
-                display: display,
-                replyAction: contentReplyAction,
-                showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil,
-                usesFullRowReplyTarget: enablesExpandedReplyTap
+                display: display
             )
         } bodyContent: {
             DynamicCommentText(
@@ -79,19 +71,9 @@ struct DynamicCommentRow: View {
             )
             .frame(
                 maxWidth: .infinity,
-                minHeight: enablesExpandedReplyTap && contentReplyAction != nil ? 44 : nil,
+                minHeight: 44,
                 alignment: .leading
             )
-            .contentShape(Rectangle())
-            .dynamicCommentDirectReply(
-                isEnabled: !enablesExpandedReplyTap && contentReplyAction != nil
-            ) {
-                contentReplyAction?()
-            }
-            .dynamicCommentReplyTapArea(
-                isEnabled: enablesExpandedReplyTap && contentReplyAction != nil
-            )
-            .accessibilityHint(contentReplyAction == nil ? "" : "轻点以回复")
         } media: {
             DynamicCommentImageGrid(images: display.pictures)
         } reply: {
@@ -113,7 +95,7 @@ struct DynamicCommentRow: View {
 
     private var legacyCommentLayout: some View {
         DynamicCommentFullRowReplyTarget(
-            action: enablesExpandedReplyTap ? contentReplyAction : nil,
+            action: contentReplyAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -126,50 +108,12 @@ struct DynamicCommentRow: View {
                 DynamicCommentRowContent(
                     comment: comment,
                     display: display,
-                    showReplies: showReplies,
-                    replyToComment: replyToComment,
-                    replyAction: contentReplyAction,
-                    showsReplyTapArea: enablesExpandedReplyTap && contentReplyAction != nil,
-                    usesFullRowReplyTarget: enablesExpandedReplyTap
+                    showReplies: showReplies
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
             .padding(.vertical, 10)
         }
-    }
-}
-
-private struct DynamicCommentReplyTapAreaModifier: ViewModifier {
-    @Environment(\.appThemeTintColor) private var appTintColor
-    let isEnabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        content.background {
-            if isEnabled {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(appTintColor.opacity(0.12))
-                    .allowsHitTesting(false)
-            }
-        }
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func dynamicCommentDirectReply(
-        isEnabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        if isEnabled {
-            onTapGesture(perform: action)
-        } else {
-            self
-        }
-    }
-
-    func dynamicCommentReplyTapArea(isEnabled: Bool) -> some View {
-        modifier(DynamicCommentReplyTapAreaModifier(isEnabled: isEnabled))
     }
 }

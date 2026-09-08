@@ -5,9 +5,6 @@ struct DynamicCommentReplyAuthorLine: View {
     let display: DynamicCommentRowDisplayModel
     let showsLike: Bool
     var avatarHeight: CGFloat = 36
-    var replyAction: (() -> Void)? = nil
-    var showsReplyTapArea = false
-    var usesFullRowReplyTarget = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -23,18 +20,7 @@ struct DynamicCommentReplyAuthorLine: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(
-                maxWidth: showsReplyTapArea && replyAction != nil ? .infinity : nil,
-                minHeight: avatarHeight,
-                alignment: .topLeading
-            )
-            .contentShape(Rectangle())
-            .dynamicCommentDirectReply(
-                isEnabled: !usesFullRowReplyTarget && replyAction != nil
-            ) {
-                replyAction?()
-            }
-            .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && replyAction != nil)
+            .frame(minHeight: avatarHeight, alignment: .topLeading)
 
             if showsLike {
                 Spacer(minLength: 8)

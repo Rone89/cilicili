@@ -3,23 +3,20 @@ import SwiftUI
 struct DynamicCommentReplyRootView: View {
     let comment: Comment
     let reply: (() -> Void)?
-    var showsReplyTapArea = false
     private let display: DynamicCommentRowDisplayModel
 
     init(
         comment: Comment,
-        reply: (() -> Void)? = nil,
-        showsReplyTapArea: Bool = false
+        reply: (() -> Void)? = nil
     ) {
         self.comment = comment
         self.reply = reply
-        self.showsReplyTapArea = showsReplyTapArea
         self.display = DynamicCommentRowDisplayModel(comment: comment)
     }
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: showsReplyTapArea ? reply : nil,
+            action: reply,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -46,16 +43,10 @@ struct DynamicCommentReplyRootView: View {
                     )
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: showsReplyTapArea && reply != nil ? 44 : nil,
+                        minHeight: 44,
                         alignment: .leading
                     )
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentShape(Rectangle())
-                    .dynamicCommentDirectReply(isEnabled: !showsReplyTapArea && reply != nil) {
-                        reply?()
-                    }
-                    .dynamicCommentReplyTapArea(isEnabled: showsReplyTapArea && reply != nil)
-                    .accessibilityHint(reply == nil ? "" : "轻点以回复")
 
                     DynamicCommentImageGrid(images: display.pictures)
                 }
@@ -72,7 +63,6 @@ struct DynamicCommentReplyDetailRow: View {
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
     let replyAction: (() -> Void)?
-    let enablesExpandedReplyTap: Bool
 
     private var reply: Comment {
         item.reply
@@ -85,18 +75,16 @@ struct DynamicCommentReplyDetailRow: View {
     init(
         item: DynamicCommentReplyItem,
         showDialog: (() -> Void)?,
-        enablesExpandedReplyTap: Bool = false,
         reply: (() -> Void)? = nil
     ) {
         self.item = item
         self.showDialog = showDialog
-        self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyAction = reply
     }
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: enablesExpandedReplyTap ? replyAction : nil,
+            action: replyAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -110,10 +98,7 @@ struct DynamicCommentReplyDetailRow: View {
                     DynamicCommentReplyAuthorLine(
                         comment: reply,
                         display: display,
-                        showsLike: true,
-                        replyAction: enablesExpandedReplyTap ? replyAction : nil,
-                        showsReplyTapArea: enablesExpandedReplyTap && replyAction != nil,
-                        usesFullRowReplyTarget: enablesExpandedReplyTap
+                        showsLike: true
                     )
                     .accessibilityIdentifier("ui.dynamicComments.reply.author.\(item.id)")
                     DynamicCommentText(
@@ -126,20 +111,10 @@ struct DynamicCommentReplyDetailRow: View {
                     )
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: enablesExpandedReplyTap && replyAction != nil ? 44 : nil,
+                        minHeight: 44,
                         alignment: .leading
                     )
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentShape(Rectangle())
-                    .dynamicCommentDirectReply(
-                        isEnabled: !enablesExpandedReplyTap && replyAction != nil
-                    ) {
-                        replyAction?()
-                    }
-                    .dynamicCommentReplyTapArea(
-                        isEnabled: enablesExpandedReplyTap && replyAction != nil
-                    )
-                    .accessibilityHint((enablesExpandedReplyTap && replyAction != nil) ? "轻点以回复" : "")
 
                     DynamicCommentImageGrid(images: display.pictures)
 
