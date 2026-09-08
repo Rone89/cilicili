@@ -5,7 +5,6 @@ struct DynamicCommentRepliesSheet: View {
     @ObservedObject var replyStore: DynamicCommentReplyStore
     let api: BiliAPIClient
     var submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? = nil
-    var enablesSwipeReply = false
     var enablesExpandedReplyTap = false
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
@@ -34,7 +33,6 @@ struct DynamicCommentRepliesSheet: View {
                         showDialog: { reply in
                             dialogReply = reply
                         },
-                        enablesSwipeReply: enablesSwipeReply,
                         enablesExpandedReplyTap: enablesExpandedReplyTap,
                         replyToComment: submitReply == nil ? nil : { reply in
                             composerTarget = .reply(root: rootComment, parent: reply)

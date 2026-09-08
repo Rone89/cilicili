@@ -269,7 +269,6 @@ private struct DynamicDetailView: View {
                     showReplies: { comment in
                         replySheetComment = comment
                     },
-                    enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                     enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled,
                     replyToComment: replyToCommentAction
                 )
@@ -356,7 +355,6 @@ private struct DynamicDetailView: View {
                 replyStore: commentsViewModel.replyStore,
                 api: api,
                 submitReply: submitReplyAction,
-                enablesSwipeReply: libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                 enablesExpandedReplyTap: libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)

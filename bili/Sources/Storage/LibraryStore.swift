@@ -102,7 +102,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appTintColorHex: String
     @Published private(set) var followsSystemFontSize: Bool
     @Published private(set) var manualFontSize: AppManualFontSize
-    @Published private(set) var dynamicCommentSwipeReplyExperimentEnabled: Bool
     @Published private(set) var dynamicCommentExpandedReplyTapExperimentEnabled: Bool
     @Published private(set) var defaultPlaybackRate: Double
     @Published private(set) var playbackHistorySyncThresholdSeconds: Int
@@ -170,8 +169,6 @@ final class LibraryStore: ObservableObject {
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
     private static let followsSystemFontSizeKey = "cc.bili.appearance.followsSystemFontSize.v1"
     private static let manualFontSizeKey = "cc.bili.appearance.manualFontSize.v1"
-    private static let dynamicCommentSwipeReplyExperimentEnabledKey =
-        "cc.bili.experimental.dynamicCommentSwipeReplyExperimentEnabled.v1"
     private static let dynamicCommentExpandedReplyTapExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentExpandedReplyTapExperimentEnabled.v1"
     private static let appTintColorDefaultMigrationKey = "cc.bili.appearance.tintColorDefaultPinkMigration.v1"
@@ -445,9 +442,6 @@ final class LibraryStore: ObservableObject {
         self.manualFontSize =
             (userDefaults.object(forKey: Self.manualFontSizeKey) as? Int)
             .flatMap(AppManualFontSize.init(rawValue:)) ?? .defaultValue
-        self.dynamicCommentSwipeReplyExperimentEnabled = userDefaults.object(
-            forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey
-        ) as? Bool ?? false
         self.dynamicCommentExpandedReplyTapExperimentEnabled = userDefaults.object(
             forKey: Self.dynamicCommentExpandedReplyTapExperimentEnabledKey
         ) as? Bool ?? false
@@ -699,11 +693,6 @@ final class LibraryStore: ObservableObject {
     func setManualFontSize(_ size: AppManualFontSize) {
         manualFontSize = size
         userDefaults.set(size.rawValue, forKey: Self.manualFontSizeKey)
-    }
-
-    func setDynamicCommentSwipeReplyExperimentEnabled(_ isEnabled: Bool) {
-        dynamicCommentSwipeReplyExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.dynamicCommentSwipeReplyExperimentEnabledKey)
     }
 
     func setDynamicCommentExpandedReplyTapExperimentEnabled(_ isEnabled: Bool) {

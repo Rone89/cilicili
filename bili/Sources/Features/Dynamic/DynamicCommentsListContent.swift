@@ -5,7 +5,6 @@ struct DynamicCommentsListContent: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
-    let enablesSwipeReply: Bool
     let enablesExpandedReplyTap: Bool
     var replyToComment: ((Comment) -> Void)? = nil
 
@@ -14,7 +13,6 @@ struct DynamicCommentsListContent: View {
         highlightedCommentID: Int?,
         showReplies: @escaping (Comment) -> Void,
         dividerHorizontalPadding: CGFloat = 14,
-        enablesSwipeReply: Bool = false,
         enablesExpandedReplyTap: Bool = false,
         replyToComment: ((Comment) -> Void)? = nil
     ) {
@@ -22,7 +20,6 @@ struct DynamicCommentsListContent: View {
         self.highlightedCommentID = highlightedCommentID
         self.showReplies = showReplies
         self.dividerHorizontalPadding = dividerHorizontalPadding
-        self.enablesSwipeReply = enablesSwipeReply
         self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyToComment = replyToComment
     }
@@ -54,7 +51,6 @@ struct DynamicCommentsListContent: View {
                 highlightedCommentID: highlightedCommentID,
                 showReplies: showReplies,
                 dividerHorizontalPadding: dividerHorizontalPadding,
-                enablesSwipeReply: enablesSwipeReply,
                 enablesExpandedReplyTap: enablesExpandedReplyTap,
                 replyToComment: replyToComment
             )
@@ -68,7 +64,6 @@ private struct DynamicCommentsLoadedList: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
-    let enablesSwipeReply: Bool
     let enablesExpandedReplyTap: Bool
     let replyToComment: ((Comment) -> Void)?
 
@@ -78,7 +73,6 @@ private struct DynamicCommentsLoadedList: View {
                 DynamicCommentRow(
                     item: item,
                     showReplies: { showReplies(item.comment) },
-                    enablesSwipeReply: enablesSwipeReply,
                     enablesExpandedReplyTap: enablesExpandedReplyTap,
                     replyToComment: replyToComment.map { action in
                         { action(item.comment) }

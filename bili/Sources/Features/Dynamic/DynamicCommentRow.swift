@@ -5,7 +5,6 @@ struct DynamicCommentRow: View {
 
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
-    let enablesSwipeReply: Bool
     let enablesExpandedReplyTap: Bool
     let replyToComment: (() -> Void)?
 
@@ -20,13 +19,11 @@ struct DynamicCommentRow: View {
     init(
         item: DynamicCommentRowItem,
         showReplies: @escaping () -> Void,
-        enablesSwipeReply: Bool = false,
         enablesExpandedReplyTap: Bool = false,
         replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.showReplies = showReplies
-        self.enablesSwipeReply = enablesSwipeReply
         self.enablesExpandedReplyTap = enablesExpandedReplyTap
         self.replyToComment = replyToComment
     }
@@ -39,10 +36,6 @@ struct DynamicCommentRow: View {
                 legacyCommentLayout
             }
         }
-        .modifier(DynamicCommentSwipeReplyModifier(
-            isEnabled: enablesSwipeReply,
-            action: triggerSwipeReply
-        ))
     }
 
     private var contentReplyAction: (() -> Void)? {
@@ -55,11 +48,6 @@ struct DynamicCommentRow: View {
         } else {
             showReplies()
         }
-    }
-
-    private func triggerSwipeReply() {
-        Haptics.light()
-        performReply()
     }
 
     private var sharedCommentLayout: some View {
@@ -183,25 +171,5 @@ extension View {
 
     func dynamicCommentReplyTapArea(isEnabled: Bool) -> some View {
         modifier(DynamicCommentReplyTapAreaModifier(isEnabled: isEnabled))
-    }
-}
-
-struct DynamicCommentSwipeReplyModifier: ViewModifier {
-    let isEnabled: Bool
-    let action: () -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(action: action) {
-                        Label("回复", systemImage: "arrowshape.turn.up.left")
-                    }
-                    .tint(.accentColor)
-                }
-        } else {
-            content
-        }
     }
 }

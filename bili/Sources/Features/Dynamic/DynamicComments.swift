@@ -23,8 +23,7 @@ struct DynamicCommentsSheet: View {
                         replySheetComment = comment
                     },
                     dividerHorizontalPadding: 0,
-                    enablesSwipeReply: dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
-                    enablesExpandedReplyTap: dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled,
+                    enablesExpandedReplyTap: dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
                 )
             }
             .defersRemoteImageLoadsDuringFastScroll()
@@ -55,7 +54,6 @@ struct DynamicCommentsSheet: View {
                 replyStore: viewModel.replyStore,
                 api: dependencies.api,
                 submitReply: submitReplyAction,
-                enablesSwipeReply: dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled,
                 enablesExpandedReplyTap: dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled
             )
                 .environment(\.commentContentOwnerMID, item.author?.mid)
@@ -72,8 +70,7 @@ struct DynamicCommentsSheet: View {
     }
 
     private var submitReplyAction: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)? {
-        guard dependencies.libraryStore.dynamicCommentSwipeReplyExperimentEnabled
-                || dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
+        guard dependencies.libraryStore.dynamicCommentExpandedReplyTapExperimentEnabled else { return nil }
         return { target, message, pictures in
             guard let oid = item.commentOID, let type = item.commentType else {
                 throw BiliAPIError.missingPayload
