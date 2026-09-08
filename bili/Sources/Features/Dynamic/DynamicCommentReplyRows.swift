@@ -201,7 +201,6 @@ struct DynamicCommentDialogRow: View {
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, isFocused ? 10 : 0)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
