@@ -12,17 +12,22 @@ struct DynamicFeedScrollContent: View {
 
     var body: some View {
         ScrollView {
-            DynamicFeedBodyContent(
-                api: api,
-                viewModel: viewModel,
-                isLoggedIn: isLoggedIn,
-                contentWidth: contentWidth
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 18)
+            VStack(spacing: 0) {
+                if libraryStore.scrollableTabHeadersExperimentEnabled {
+                    ScrollableTabHeader("动态")
+                }
+
+                DynamicFeedBodyContent(
+                    api: api,
+                    viewModel: viewModel,
+                    isLoggedIn: isLoggedIn,
+                    contentWidth: contentWidth
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
+            }
         }
         .rootFloatingTabBarContentPadding()
-        .observesRootTabBarScroll(for: .dynamic)
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()

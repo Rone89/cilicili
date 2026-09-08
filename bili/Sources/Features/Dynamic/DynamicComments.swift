@@ -45,10 +45,6 @@ struct DynamicCommentsSheet: View {
             \.dynamicCommentHitAreaVisualizationEnabled,
             libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled
         )
-        .environment(
-            \.usesDynamicDetailCommentRowLayout,
-            libraryStore.dynamicDetailCommentSpacingExperimentEnabled
-        )
         .environment(\.commentContentOwnerMID, item.author?.mid)
         .commentLikeTarget(
             oid: item.commentOID,
@@ -58,9 +54,7 @@ struct DynamicCommentsSheet: View {
         .onChange(of: runtimeSettings.blocksGoodsComments) { _, isEnabled in
             viewModel.setBlocksGoodsComments(isEnabled)
         }
-        .presentationDetents([.fraction(0.7)])
-        .presentationContentInteraction(.scrolls)
-        .presentationDragIndicator(.visible)
+        .commentSheetPresentation()
         .sheet(item: $replySheetComment) { comment in
             DynamicCommentRepliesSheet(
                 rootComment: comment,

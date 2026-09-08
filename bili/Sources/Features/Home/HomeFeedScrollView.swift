@@ -13,7 +13,7 @@ enum HomeNativeRefreshLayout {
     }
 }
 
-struct HomeFeedScrollView<FeedContent: View>: View {
+struct HomeFeedScrollView<Header: View, FeedContent: View>: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
     @ObservedObject var runtimeSettings: HomeRuntimeSettingsStore
@@ -22,17 +22,22 @@ struct HomeFeedScrollView<FeedContent: View>: View {
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
     let refreshActions: HomeFeedRefreshActions
     let layout: HomeFeedLayout
+    @ViewBuilder let header: () -> Header
     @ViewBuilder let feedContent: () -> FeedContent
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                HomeFeedScrollContent(
-                    isShowingInitialPlaceholder: viewModel.videos.isEmpty && (viewModel.state == .idle || viewModel.state.isLoading),
-                    isEmpty: viewModel.videos.isEmpty,
-                    mode: viewModel.mode,
-                    feedContent: feedContent
-                )
+                VStack(spacing: 0) {
+                    header()
+
+                    HomeFeedScrollContent(
+                        isShowingInitialPlaceholder: viewModel.videos.isEmpty && (viewModel.state == .idle || viewModel.state.isLoading),
+                        isEmpty: viewModel.videos.isEmpty,
+                        mode: viewModel.mode,
+                        feedContent: feedContent
+                    )
+                }
                 .id(HomeFeedScrollAnchor.top)
                 .background {
                     HomeFeedWidthReader()
@@ -59,7 +64,6 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 }
             }
             .rootFloatingTabBarContentPadding()
-            .observesRootTabBarScroll(for: .home)
             .contentMargins(.top, 0, for: .scrollContent)
             .background(HomeViewportHeightReader())
             .homeFeedScrollPreferenceHandling(

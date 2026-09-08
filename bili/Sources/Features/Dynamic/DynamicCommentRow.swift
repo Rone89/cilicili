@@ -1,9 +1,6 @@
 import SwiftUI
 
 struct DynamicCommentRow: View {
-    @Environment(\.usesDynamicDetailCommentRowLayout) private var usesSharedCommentLayout
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
     let replyToComment: (() -> Void)?
@@ -27,13 +24,7 @@ struct DynamicCommentRow: View {
     }
 
     var body: some View {
-        Group {
-            if usesSharedCommentLayout {
-            sharedCommentLayout
-            } else {
-                legacyCommentLayout
-            }
-        }
+        sharedCommentLayout
     }
 
     private var contentReplyAction: () -> Void {
@@ -71,11 +62,7 @@ struct DynamicCommentRow: View {
                 typographyRole: .commentBody,
                 onNonLinkTap: contentReplyAction
             )
-            .frame(
-                maxWidth: .infinity,
-                minHeight: usesRefinedSpacing ? nil : 44,
-                alignment: .leading
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         } media: {
             DynamicCommentImageGrid(images: display.pictures)
         } reply: {
@@ -93,31 +80,6 @@ struct DynamicCommentRow: View {
                 .buttonStyle(.plain)
                 .dynamicCommentHitArea(.control)
             }
-        }
-    }
-
-    private var legacyCommentLayout: some View {
-        DynamicCommentFullRowReplyTarget(
-            action: contentReplyAction,
-            accessibilityLabel: "回复 \(display.authorName) 的评论"
-        ) {
-            HStack(alignment: .top, spacing: 10) {
-                DynamicCommentAvatar(
-                    urlString: display.avatarURLString,
-                    owner: display.authorOwner,
-                    size: 38
-                )
-
-                DynamicCommentRowContent(
-                    comment: comment,
-                    display: display,
-                    showReplies: showReplies,
-                    replyToComment: contentReplyAction
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
-            }
-            .padding(.vertical, 10)
         }
     }
 }

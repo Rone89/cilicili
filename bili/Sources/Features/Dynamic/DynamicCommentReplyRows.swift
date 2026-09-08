@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct DynamicCommentReplyRootView: View {
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let comment: Comment
     let reply: (() -> Void)?
     private let display: DynamicCommentRowDisplayModel
@@ -28,7 +26,7 @@ struct DynamicCommentReplyRootView: View {
                     size: 40
                 )
 
-                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 6) {
+                VStack(alignment: .leading, spacing: 0) {
                     DynamicCommentReplyAuthorLine(
                         comment: comment,
                         display: display,
@@ -44,35 +42,25 @@ struct DynamicCommentReplyRootView: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: reply
                     )
-                    .padding(.top, usesRefinedSpacing ? 4 : 0)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: usesRefinedSpacing ? nil : 44,
-                        alignment: .leading
-                    )
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    if usesRefinedSpacing {
-                        if !display.pictures.isEmpty {
-                            DynamicCommentImageGrid(images: display.pictures)
-                                .padding(.top, 8)
-                        }
-                    } else {
+                    if !display.pictures.isEmpty {
                         DynamicCommentImageGrid(images: display.pictures)
+                            .padding(.top, 8)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
-            .padding(.vertical, usesRefinedSpacing ? 10 : 0)
+            .padding(.vertical, 10)
         }
     }
 }
 
 struct DynamicCommentReplyDetailRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
     let replyAction: (() -> Void)?
@@ -107,7 +95,7 @@ struct DynamicCommentReplyDetailRow: View {
                     size: 36
                 )
 
-                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     DynamicCommentReplyAuthorLine(
                         comment: reply,
                         display: display,
@@ -123,33 +111,26 @@ struct DynamicCommentReplyDetailRow: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: replyAction
                     )
-                    .padding(.top, usesRefinedSpacing ? 4 : 0)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: usesRefinedSpacing ? nil : 44,
-                        alignment: .leading
-                    )
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    if usesRefinedSpacing {
-                        if !display.pictures.isEmpty {
-                            DynamicCommentImageGrid(images: display.pictures)
-                                .padding(.top, 8)
-                        }
-                    } else {
+                    if !display.pictures.isEmpty {
                         DynamicCommentImageGrid(images: display.pictures)
+                            .padding(.top, 8)
                     }
 
                     if let showDialog {
                         Button(action: showDialog) {
-                            Label("查看对话", systemImage: "text.bubble")
-                                .appTypography(.action, fallback: .caption.weight(.semibold))
-                                .frame(height: 26)
+                            CommentInlineActionLabel(
+                                title: "查看对话",
+                                systemImage: "text.bubble"
+                            )
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appTintColor)
-                        .padding(.top, usesRefinedSpacing ? 8 : 2)
+                        .padding(.top, 8)
                         .zIndex(1)
                         .dynamicCommentHitArea(.control)
                         .accessibilityIdentifier("dynamic.comment.reply.showDialog.\(item.id)")
@@ -158,15 +139,13 @@ struct DynamicCommentReplyDetailRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
-            .padding(.vertical, usesRefinedSpacing ? 10 : 9)
+            .padding(.vertical, 10)
         }
     }
 }
 
 struct DynamicCommentDialogRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let item: DynamicCommentDialogItem
     let isFocused: Bool
     let replyAction: (() -> Void)?
@@ -201,7 +180,7 @@ struct DynamicCommentDialogRow: View {
                     size: 36
                 )
 
-                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 11) {
+                VStack(alignment: .leading, spacing: 0) {
                     DynamicCommentReplyAuthorLine(comment: reply, display: display, showsLike: true)
                         .accessibilityIdentifier("ui.dynamicComments.dialog.author.\(item.id)")
                     DynamicCommentText(
@@ -213,16 +192,12 @@ struct DynamicCommentDialogRow: View {
                         typographyRole: .commentBody,
                         onNonLinkTap: replyAction
                     )
-                    .padding(.top, usesRefinedSpacing ? 4 : 0)
+                    .padding(.top, 4)
                     .fixedSize(horizontal: false, vertical: true)
 
-                    if usesRefinedSpacing {
-                        if !display.pictures.isEmpty {
-                            DynamicCommentImageGrid(images: display.pictures)
-                                .padding(.top, 8)
-                        }
-                    } else {
+                    if !display.pictures.isEmpty {
                         DynamicCommentImageGrid(images: display.pictures)
+                            .padding(.top, 8)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

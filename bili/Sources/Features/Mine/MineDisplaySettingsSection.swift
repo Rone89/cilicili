@@ -180,27 +180,13 @@ struct MineDisplaySettingsSection: View {
 
         Section("实验功能") {
             Toggle(isOn: Binding(
-                get: { libraryStore.scrollMinimizingTabBarExperimentEnabled },
-                set: { libraryStore.setScrollMinimizingTabBarExperimentEnabled($0) }
+                get: { libraryStore.scrollableTabHeadersExperimentEnabled },
+                set: { libraryStore.setScrollableTabHeadersExperimentEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("滚动缩小标签栏", systemImage: "arrow.down.right.and.arrow.up.left")
+                    Label("一级页面滚动标题", systemImage: "text.line.first.and.arrowtriangle.forward")
 
-                    Text("使用浮动标签栏；向下浏览时整条标签栏缩小，反向滚动或点按标签栏时恢复。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.dynamicDetailCommentSpacingExperimentEnabled },
-                set: { libraryStore.setDynamicDetailCommentSpacingExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("评论区间距优化", systemImage: "text.line.first.and.arrowtriangle.forward")
-
-                    Text("收紧视频与动态的评论、回复和对话布局留白，使层级更接近 iOS 系统应用。")
+                    Text("将首页、动态、直播、搜索和我的标题放入页面内容，随内容滚动消失。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

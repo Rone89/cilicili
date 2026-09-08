@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct CommentReplyRootView: View {
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let comment: Comment
     private let display: CommentRowDisplayModel
 
@@ -19,7 +17,7 @@ struct CommentReplyRootView: View {
                 size: 40
             )
 
-            VStack(alignment: .leading, spacing: usesRefinedSpacing ? 0 : 6) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                         .foregroundStyle(.secondary)
@@ -42,26 +40,19 @@ struct CommentReplyRootView: View {
                     emoteSize: 22,
                     typographyRole: .commentBody
                 )
-                    .padding(.top, usesRefinedSpacing ? 4 : 0)
+                    .padding(.top, 4)
                     .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if usesRefinedSpacing {
-                    if !display.pictures.isEmpty {
-                        CommentImageButton(
-                            images: display.pictures,
-                            transitionScope: comment.id.description
-                        )
-                        .padding(.top, 8)
-                    }
-                } else {
+                if !display.pictures.isEmpty {
                     CommentImageButton(
                         images: display.pictures,
                         transitionScope: comment.id.description
                     )
+                    .padding(.top, 8)
                 }
             }
         }
-        .padding(.vertical, usesRefinedSpacing ? 10 : 0)
+        .padding(.vertical, 10)
     }
 }

@@ -5,7 +5,6 @@ struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var dependencies: AppDependencies
     @EnvironmentObject var libraryStore: LibraryStore
-    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
     @StateObject var homeViewModelHolder = RootHomeViewModelHolder()
     @StateObject var mineViewModelHolder = MineViewModelHolder()
@@ -25,7 +24,6 @@ struct RootTabView: View {
     @State var didConsumeStartupUploader = false
     @State var inAppBrowserItem: InAppBrowserItem?
     @State var recentPlaybackPreloadGate = RecentPlaybackPreloadGate()
-    @StateObject private var scrollMinimizingTabBarState = ScrollMinimizingTabBarState()
     let shouldStartDetail = ProcessInfo.processInfo.arguments.contains("--start-detail")
     let startBVID = Self.argumentValue(after: "--start-bvid")
     let startLiveRoomID = Self.argumentInt(after: "--start-live-room")
@@ -40,16 +38,7 @@ struct RootTabView: View {
         .environment(\.openVideoOwnerRouteAction, openVideoOwnerRoute)
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
-        .environment(
-            \.usesDynamicDetailCommentSpacing,
-            libraryStore.dynamicDetailCommentSpacingExperimentEnabled
-        )
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
-        .environment(\.scrollMinimizingTabBarState, scrollMinimizingTabBarState)
-        .environment(
-            \.scrollMinimizingTabBarExperimentEnabled,
-            libraryStore.scrollMinimizingTabBarExperimentEnabled
-        )
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
             openAppURL(url)
@@ -61,8 +50,6 @@ struct RootTabView: View {
                 .ignoresSafeArea()
         }
         .task {
-            scrollMinimizingTabBarState.configure(reducesMotion: reducesMotion)
-            scrollMinimizingTabBarState.select(selectedTab)
             AppIconController.apply(libraryStore.appIconPreference)
             PictureInPictureRestoreCoordinator.shared.restoreHandler = { video in
                 await restoreVideoPlaybackUIForPictureInPicture(video)
@@ -88,17 +75,6 @@ struct RootTabView: View {
         }
         .onChange(of: libraryStore.appIconPreference) { _, preference in
             AppIconController.apply(preference)
-        }
-        .onChange(of: selectedTab) { _, tab in
-            scrollMinimizingTabBarState.select(tab)
-        }
-        .onChange(of: reducesMotion) { _, isEnabled in
-            scrollMinimizingTabBarState.configure(reducesMotion: isEnabled)
-        }
-        .onChange(of: libraryStore.scrollMinimizingTabBarExperimentEnabled) { _, isEnabled in
-            if !isEnabled {
-                scrollMinimizingTabBarState.expand()
-            }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -139,30 +115,10 @@ struct RootTabView: View {
             }
         }
         .tint(libraryStore.appTintColor)
-        .tabViewBottomAccessory(
-            isEnabled: showsSearchBottomAccessory
-                && !libraryStore.scrollMinimizingTabBarExperimentEnabled
-        ) {
+        .tabViewBottomAccessory(isEnabled: showsSearchBottomAccessory) {
             SearchTabBottomAccessory(store: searchBottomAccessoryStore)
         }
-        .tabBarMinimizeBehavior(
-            libraryStore.scrollMinimizingTabBarExperimentEnabled ? .never : rootTabBarMinimizeBehavior
-        )
-        .toolbarVisibility(
-            libraryStore.scrollMinimizingTabBarExperimentEnabled ? .hidden : .automatic,
-            for: .tabBar
-        )
-        .overlay(alignment: .bottom) {
-            if showsScrollMinimizingTabBar {
-                ScrollMinimizingTabBar(
-                    selection: tabSelection,
-                    tabs: visibleRootTabs,
-                    tintColor: libraryStore.appTintColor,
-                    state: scrollMinimizingTabBarState,
-                    selectTab: selectAvailableRootTab
-                )
-            }
-        }
+        .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
         .background(
             RootTabBarAppearanceInstaller(
                 tintColorHex: libraryStore.appTintColorHex,
@@ -178,10 +134,11 @@ struct RootTabView: View {
     ) -> some View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
-                .toolbarVisibility(.visible, for: .navigationBar)
-                .toolbarBackground(.automatic, for: .navigationBar)
-                .navigationTitle(rootNavigationTitle(for: tab))
-                .toolbarTitleDisplayMode(.inline)
+                .rootTopLevelNavigationChrome(
+                    title: rootNavigationTitle(for: tab),
+                    isEnabled: libraryStore.scrollableTabHeadersExperimentEnabled,
+                    keepsToolbarVisible: tab == .live || tab == .search
+                )
                 .environment(
                     \.rootNavigationTitleHidden,
                     rootNavigationTitleBinding(for: tab, detailPath: detailPath)
@@ -201,13 +158,8 @@ struct RootTabView: View {
                     api: dependencies.api
                 )
         }
-        .toolbarVisibility(
-            libraryStore.scrollMinimizingTabBarExperimentEnabled ? .hidden : .automatic,
-            for: .tabBar
-        )
         .coordinatesRootTabBarTransitions(
-            isDetailPresented: !detailPath.wrappedValue.isEmpty,
-            isEnabled: !libraryStore.scrollMinimizingTabBarExperimentEnabled
+            isDetailPresented: !detailPath.wrappedValue.isEmpty
         )
     }
 
@@ -218,18 +170,22 @@ struct RootTabView: View {
     ) -> some View {
         Group {
             if tab == .home, let viewModel = homeViewModelHolder.viewModel {
-                rootTabContent(for: tab, detailPath: detailPath)
-                    .homeFeedNavigationChrome(
-                        viewModel: viewModel,
-                        modeActions: homeActionStore.mode,
-                        scrollActions: homeActionStore.scroll,
-                        nativeRefreshActionStore: homeActionStore.nativeRefresh,
-                        accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
-                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
-                        onOpenAccountMessages: {
-                            openMineOverlayRoute(.accountMessages)
-                        }
-                    )
+                if libraryStore.scrollableTabHeadersExperimentEnabled {
+                    rootTabContent(for: tab, detailPath: detailPath)
+                } else {
+                    rootTabContent(for: tab, detailPath: detailPath)
+                        .homeFeedNavigationChrome(
+                            viewModel: viewModel,
+                            modeActions: homeActionStore.mode,
+                            scrollActions: homeActionStore.scroll,
+                            nativeRefreshActionStore: homeActionStore.nativeRefresh,
+                            accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
+                            isDetailPresented: !detailPath.wrappedValue.isEmpty,
+                            onOpenAccountMessages: {
+                                openMineOverlayRoute(.accountMessages)
+                            }
+                        )
+                }
             } else {
                 rootTabContent(for: tab, detailPath: detailPath)
             }
@@ -242,7 +198,7 @@ struct RootTabView: View {
                 && selectedTab == .search
                 && detailPath.wrappedValue.isEmpty,
             prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-            title: "搜索",
+            title: libraryStore.scrollableTabHeadersExperimentEnabled ? "" : "搜索",
             onSubmit: submitRootSearch
         )
     }
@@ -295,12 +251,6 @@ struct RootTabView: View {
             return .onScrollDown
         }
         return runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never
-    }
-
-    private var showsScrollMinimizingTabBar: Bool {
-        libraryStore.scrollMinimizingTabBarExperimentEnabled
-            && activeRootNavigationPathIsEmpty
-            && !searchBottomAccessoryStore.isKeyboardVisible
     }
 
     private var showsSearchBottomAccessory: Bool {

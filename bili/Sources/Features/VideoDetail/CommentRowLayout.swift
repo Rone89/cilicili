@@ -1,41 +1,15 @@
 import SwiftUI
 
-private struct DynamicDetailCommentRowLayoutKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-private struct DynamicDetailCommentSpacingKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var usesDynamicDetailCommentRowLayout: Bool {
-        get { self[DynamicDetailCommentRowLayoutKey.self] }
-        set { self[DynamicDetailCommentRowLayoutKey.self] = newValue }
-    }
-
-    var usesDynamicDetailCommentSpacing: Bool {
-        get { self[DynamicDetailCommentSpacingKey.self] }
-        set { self[DynamicDetailCommentSpacingKey.self] = newValue }
-    }
-}
-
 struct CommentRowLayout<Avatar: View, Header: View, BodyContent: View, Media: View, Reply: View>: View {
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let avatar: Avatar
     let header: Header
     let bodyContent: BodyContent
     let media: Media
     let reply: Reply
-    let contentSpacing: CGFloat
-    let verticalPadding: CGFloat
     let fullRowReplyAction: (() -> Void)?
     let fullRowReplyAccessibilityLabel: String
 
     init(
-        contentSpacing: CGFloat = 5,
-        verticalPadding: CGFloat = 8,
         fullRowReplyAction: (() -> Void)? = nil,
         fullRowReplyAccessibilityLabel: String = "回复评论",
         @ViewBuilder avatar: () -> Avatar,
@@ -49,8 +23,6 @@ struct CommentRowLayout<Avatar: View, Header: View, BodyContent: View, Media: Vi
         self.bodyContent = bodyContent()
         self.media = media()
         self.reply = reply()
-        self.contentSpacing = contentSpacing
-        self.verticalPadding = verticalPadding
         self.fullRowReplyAction = fullRowReplyAction
         self.fullRowReplyAccessibilityLabel = fullRowReplyAccessibilityLabel
     }
@@ -63,27 +35,16 @@ struct CommentRowLayout<Avatar: View, Header: View, BodyContent: View, Media: Vi
             HStack(alignment: .top, spacing: 10) {
                 avatar
 
-                Group {
-                    if usesRefinedSpacing {
-                        VStack(alignment: .leading, spacing: 0) {
-                            header
-                            bodyContent.padding(.top, 4)
-                            media.padding(.top, 8)
-                            reply.padding(.top, 8)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: contentSpacing) {
-                            header
-                            bodyContent
-                            media
-                            reply
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    bodyContent.padding(.top, 4)
+                    media.padding(.top, 8)
+                    reply.padding(.top, 8)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
             }
-            .padding(.vertical, usesRefinedSpacing ? 10 : verticalPadding)
+            .padding(.vertical, 10)
         }
     }
 }

@@ -9,13 +9,17 @@ struct LiveFeedView: View {
 
     var body: some View {
         ScrollView {
-            LiveFeedContent(viewModel: viewModel)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 22)
+            VStack(spacing: 0) {
+                if libraryStore.scrollableTabHeadersExperimentEnabled {
+                    ScrollableTabHeader("直播")
+                }
+
+                LiveFeedContent(viewModel: viewModel)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 22)
+            }
         }
         .contentMargins(.top, 0, for: .scrollContent)
-        .observesRootTabBarScroll(for: .live)
-        .scrollMinimizingTabBarContentPadding()
         .nativeTopScrollEdgeEffect()
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))

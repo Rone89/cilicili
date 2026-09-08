@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SearchListView: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
 
@@ -12,6 +13,11 @@ struct SearchListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
+                if libraryStore.scrollableTabHeadersExperimentEnabled {
+                    ScrollableTabHeader("搜索")
+                        .padding(.horizontal, -16)
+                }
+
                 if viewModel.showsDiscovery {
                     discoveryContent
                 } else if viewModel.results.isEmpty && viewModel.state.isLoading {
@@ -26,8 +32,6 @@ struct SearchListView: View {
             .padding(.bottom, 18)
         }
         .contentMargins(.top, 0, for: .scrollContent)
-        .observesRootTabBarScroll(for: .search)
-        .scrollMinimizingTabBarContentPadding()
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()

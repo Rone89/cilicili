@@ -12,6 +12,13 @@ struct MineContentView: View {
 
     var body: some View {
         Form {
+            if libraryStore.scrollableTabHeadersExperimentEnabled {
+                ScrollableTabHeader("我的")
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             MineAccountSection(
                 viewModel: viewModel,
                 sessionStore: sessionStore,
@@ -38,8 +45,6 @@ struct MineContentView: View {
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
         .contentMargins(.top, 0, for: .scrollContent)
-        .observesRootTabBarScroll(for: .mine)
-        .scrollMinimizingTabBarContentPadding()
         .nativeTopScrollEdgeEffect()
     }
 }

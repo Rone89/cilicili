@@ -121,6 +121,63 @@ extension View {
     }
 }
 
+struct HomeScrollableTabHeader: View {
+    @ObservedObject var viewModel: HomeViewModel
+    let modeActions: HomeFeedModeActions
+    let scrollActions: HomeFeedScrollActions
+    let nativeRefreshActionStore: HomeNativeRefreshActionStore
+    let accountMessageViewModel: AccountMessageCenterViewModel?
+    let onOpenAccountMessages: () -> Void
+
+    var body: some View {
+        ScrollableTabHeader("首页") {
+            HStack(spacing: 8) {
+                Picker("首页内容", selection: modeBinding) {
+                    ForEach(HomeFeedMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(minWidth: 132, maxWidth: 168)
+                .accessibilityValue(viewModel.mode.title)
+
+                accountMessageButton
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+        }
+    }
+
+    private var modeBinding: Binding<HomeFeedMode> {
+        Binding(
+            get: { viewModel.mode },
+            set: { mode in
+                modeActions.switchMode(
+                    mode,
+                    viewModel: viewModel,
+                    scrollActions: scrollActions,
+                    nativeRefreshActionStore: nativeRefreshActionStore
+                )
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var accountMessageButton: some View {
+        if let accountMessageViewModel {
+            HomeAccountMessageButton(
+                viewModel: accountMessageViewModel,
+                action: onOpenAccountMessages
+            )
+        } else {
+            HomeAccountMessageButtonContent(
+                hasUnread: false,
+                action: onOpenAccountMessages
+            )
+        }
+    }
+}
+
 private struct HomeAccountMessageButton: View {
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let action: () -> Void

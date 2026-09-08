@@ -2,8 +2,6 @@ import SwiftUI
 
 struct CommentReplyPreviewContainer<Content: View>: View {
     @Environment(\.appThemeTintColor) private var appTintColor
-    @Environment(\.usesDynamicDetailCommentSpacing) private var usesRefinedSpacing
-
     let replyCount: Int
     let showsPreview: Bool
     let content: Content
@@ -15,9 +13,9 @@ struct CommentReplyPreviewContainer<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: usesRefinedSpacing ? 6 : 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if showsPreview {
-                VStack(alignment: .leading, spacing: usesRefinedSpacing ? 5 : 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     content
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -30,15 +28,28 @@ struct CommentReplyPreviewContainer<Content: View>: View {
                 }
             }
 
-            Label("\(replyCount) 条回复", systemImage: "bubble.left.and.bubble.right")
-                .font(.caption.weight(.semibold))
-                .labelStyle(.titleAndIcon)
-                .foregroundStyle(appTintColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+            CommentInlineActionLabel(
+                title: "\(replyCount) 条回复",
+                systemImage: "bubble.left.and.bubble.right"
+            )
+            .foregroundStyle(appTintColor)
         }
         .padding(.horizontal, 0)
-        .padding(.vertical, usesRefinedSpacing ? 5 : 7)
+        .padding(.vertical, showsPreview ? 5 : 0)
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+}
+
+struct CommentInlineActionLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .frame(height: 26, alignment: .leading)
     }
 }

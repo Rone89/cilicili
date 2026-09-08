@@ -24,44 +24,6 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
-    func testDynamicDetailCommentSpacingExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.dynamic-detail-comment-spacing.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let initialStore = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(initialStore.dynamicDetailCommentSpacingExperimentEnabled)
-
-        initialStore.setDynamicDetailCommentSpacingExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).dynamicDetailCommentSpacingExperimentEnabled
-        )
-
-        initialStore.setDynamicDetailCommentSpacingExperimentEnabled(false)
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).dynamicDetailCommentSpacingExperimentEnabled
-        )
-    }
-
-    func testScrollMinimizingTabBarExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.scroll-minimizing-tab-bar.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.scrollMinimizingTabBarExperimentEnabled)
-
-        store.setScrollMinimizingTabBarExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).scrollMinimizingTabBarExperimentEnabled
-        )
-
-        store.setScrollMinimizingTabBarExperimentEnabled(false)
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).scrollMinimizingTabBarExperimentEnabled
-        )
-    }
-
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -72,7 +34,9 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
             "cc.bili.comment.likeExperimentEnabled.v1",
             "cc.bili.dynamic.imageTextDetailExperimentEnabled.v1",
             "cc.bili.dynamic.commentPublishExperimentEnabled.v1",
-            "cc.bili.dynamic.commentReplyPublishExperimentEnabled.v1"
+            "cc.bili.dynamic.commentReplyPublishExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailCommentSpacing.v1",
+            "cc.bili.experimental.scrollMinimizingTabBar.v1"
         ]
         retiredKeys.forEach { defaults.set(false, forKey: $0) }
 

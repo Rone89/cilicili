@@ -41,10 +41,22 @@ struct HomeFeedScreenContent: View {
             detailPath: $detailPath,
             contentActions: renderPack.contentActions,
             actionStore: actionStore,
-            launchConfiguration: launchConfiguration
+            launchConfiguration: launchConfiguration,
+            header: {
+                if dependencies.libraryStore.scrollableTabHeadersExperimentEnabled {
+                    HomeScrollableTabHeader(
+                        viewModel: viewModel,
+                        modeActions: actionStore.mode,
+                        scrollActions: actionStore.scroll,
+                        nativeRefreshActionStore: actionStore.nativeRefresh,
+                        accountMessageViewModel: accountMessageViewModel,
+                        onOpenAccountMessages: onOpenAccountMessages
+                    )
+                }
+            }
         )
         Group {
-            if showsNavigationChrome {
+            if showsNavigationChrome, !dependencies.libraryStore.scrollableTabHeadersExperimentEnabled {
                 content
                     .homeFeedNavigationChrome(
                         viewModel: viewModel,

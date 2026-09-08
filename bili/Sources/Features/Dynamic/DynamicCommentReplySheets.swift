@@ -44,8 +44,7 @@ struct DynamicCommentRepliesSheet: View {
                 await replyStore.loadReplies(for: rootComment)
             }
         }
-        .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.visible)
+        .commentSheetPresentation()
         .sheet(item: $dialogReply) { reply in
             DynamicCommentDialogSheet(
                 rootComment: rootComment,
@@ -118,8 +117,7 @@ private struct DynamicCommentDialogSheet: View {
                 await replyStore.loadDialog(for: rootComment, reply: focusReply)
             }
         }
-        .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.visible)
+        .commentSheetPresentation()
         .background {
             RichCommentComposerPresenter(
                 target: $composerTarget,

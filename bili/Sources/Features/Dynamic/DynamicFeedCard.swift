@@ -334,11 +334,6 @@ private struct DynamicDetailView: View {
             )
             .allowsHitTesting(false)
         }
-        .environment(\.usesDynamicDetailCommentRowLayout, true)
-        .environment(
-            \.usesDynamicDetailCommentSpacing,
-            libraryStore.dynamicDetailCommentSpacingExperimentEnabled
-        )
         .environment(
             \.dynamicCommentHitAreaVisualizationEnabled,
             libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled

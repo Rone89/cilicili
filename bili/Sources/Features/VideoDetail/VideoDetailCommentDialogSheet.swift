@@ -57,8 +57,7 @@ struct CommentDialogSheet: View {
                 }
             }
         }
-        .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.visible)
+        .commentSheetPresentation()
     }
 
     private var dialogReplyIDs: [Int] {

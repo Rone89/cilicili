@@ -43,8 +43,7 @@ struct CommentRepliesSheet: View {
                 loadReplies: loadReplies
             )
         }
-        .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.visible)
+        .commentSheetPresentation()
         .sheet(item: $dialogReply) { reply in
             CommentDialogSheet(
                 rootComment: rootComment,

@@ -147,10 +147,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
-    @Published private(set) var dynamicDetailCommentSpacingExperimentEnabled: Bool
+    @Published private(set) var scrollableTabHeadersExperimentEnabled: Bool
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
-    @Published private(set) var scrollMinimizingTabBarExperimentEnabled: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
     @Published private(set) var remoteImageQualityPreference: RemoteImageQualityPreference
@@ -234,15 +233,13 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
-    private static let dynamicDetailCommentSpacingExperimentEnabledKey =
-        "cc.bili.experimental.dynamicDetailCommentSpacing.v1"
+    private static let scrollableTabHeadersExperimentEnabledKey =
+        "cc.bili.experimental.scrollableTabHeaders.v1"
     private static let nativePullRefreshEnabledKey =
         "cc.bili.home.nativePullRefreshEnabled.v1"
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
         "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
-    private static let scrollMinimizingTabBarExperimentEnabledKey =
-        "cc.bili.experimental.scrollMinimizingTabBar.v1"
     private static let videoDetailSegmentedPickerGlassStyleKey =
         "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
     private static let liquidGlassStylePreferenceKey = AppLiquidGlassStylePreference.storageKey
@@ -260,12 +257,14 @@ final class LibraryStore: ObservableObject {
         "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
         "cc.bili.display.scrollEdgeEffectPreference.v1",
         "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1",
+        "cc.bili.experimental.dynamicDetailCommentSpacing.v1",
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
         "cc.bili.experimental.dynamicDetailComposer.v1",
         "cc.bili.display.richCommentComposerExperimentEnabled.v1",
         "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1",
         "cc.bili.experimental.keyboardAnchoredCommentPhotoPickerExperimentEnabled.v1",
         "cc.bili.experimental.keyboardAnchoredCommentEmotePickerExperimentEnabled.v1",
+        "cc.bili.experimental.scrollMinimizingTabBar.v1",
         "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
         "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
         "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
@@ -625,10 +624,10 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
-        self.dynamicDetailCommentSpacingExperimentEnabled =
+        self.scrollableTabHeadersExperimentEnabled =
             userDefaults.object(
-                forKey: Self.dynamicDetailCommentSpacingExperimentEnabledKey
-            ) as? Bool ?? false
+                forKey: Self.scrollableTabHeadersExperimentEnabledKey
+            ) as? Bool ?? true
         let storedNativePullRefreshEnabled =
             userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
         let nativePullRefreshEnabled = storedNativePullRefreshEnabled
@@ -641,11 +640,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.set(nativePullRefreshEnabled, forKey: Self.nativePullRefreshEnabledKey)
         }
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
-        self.scrollMinimizingTabBarExperimentEnabled = userDefaults.object(
-            forKey: Self.scrollMinimizingTabBarExperimentEnabledKey
-        ) as? Bool ?? userDefaults.bool(
-            forKey: Self.scrollMinimizingTabBarExperimentEnabledKey
-        )
         self.videoDetailSegmentedPickerGlassStyle =
             VideoDetailSegmentedPickerGlassStyle(
                 rawValue: userDefaults.string(
@@ -1293,12 +1287,9 @@ final class LibraryStore: ObservableObject {
         )
     }
 
-    func setDynamicDetailCommentSpacingExperimentEnabled(_ isEnabled: Bool) {
-        dynamicDetailCommentSpacingExperimentEnabled = isEnabled
-        userDefaults.set(
-            isEnabled,
-            forKey: Self.dynamicDetailCommentSpacingExperimentEnabledKey
-        )
+    func setScrollableTabHeadersExperimentEnabled(_ isEnabled: Bool) {
+        scrollableTabHeadersExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.scrollableTabHeadersExperimentEnabledKey)
     }
 
     func setNativePullRefreshEnabled(_ isEnabled: Bool) {
@@ -1309,11 +1300,6 @@ final class LibraryStore: ObservableObject {
     func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
         minimizesTabBarOnScroll = isEnabled
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
-    }
-
-    func setScrollMinimizingTabBarExperimentEnabled(_ isEnabled: Bool) {
-        scrollMinimizingTabBarExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.scrollMinimizingTabBarExperimentEnabledKey)
     }
 
     func setVideoDetailSegmentedPickerGlassStyle(
