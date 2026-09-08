@@ -98,6 +98,7 @@ struct DynamicCommentFullRowReplyTarget<Content: View>: View {
             }
 
             content()
+                .zIndex(1)
         }
         .frame(
             maxWidth: .infinity,
