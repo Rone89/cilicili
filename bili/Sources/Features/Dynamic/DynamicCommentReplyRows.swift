@@ -39,7 +39,8 @@ struct DynamicCommentReplyRootView: View {
                         textColor: .primary,
                         emoteSize: 22,
                         lineSpacing: 1,
-                        typographyRole: .commentBody
+                        typographyRole: .commentBody,
+                        onNonLinkTap: reply
                     )
                     .frame(
                         maxWidth: .infinity,
@@ -107,7 +108,8 @@ struct DynamicCommentReplyDetailRow: View {
                         textColor: .primary,
                         emoteSize: 22,
                         lineSpacing: 1,
-                        typographyRole: .commentBody
+                        typographyRole: .commentBody,
+                        onNonLinkTap: replyAction
                     )
                     .frame(
                         maxWidth: .infinity,

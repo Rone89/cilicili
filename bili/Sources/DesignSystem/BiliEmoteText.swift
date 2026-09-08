@@ -17,6 +17,7 @@ struct BiliEmoteText: View {
     let fillsAvailableWidth: Bool
     let typographyRole: AppTypography.Role?
     let leadingNameTypographyRole: AppTypography.Role?
+    let onNonLinkTap: (() -> Void)?
 
     @Environment(\.lineLimit) private var lineLimit
     @Environment(\.openAppURLAction) private var openAppURL
@@ -33,7 +34,8 @@ struct BiliEmoteText: View {
         showsLinkButtons: Bool = true,
         fillsAvailableWidth: Bool = true,
         typographyRole: AppTypography.Role? = nil,
-        leadingNameTypographyRole: AppTypography.Role? = nil
+        leadingNameTypographyRole: AppTypography.Role? = nil,
+        onNonLinkTap: (() -> Void)? = nil
     ) {
         self.content = content
         self.plainText = plainText
@@ -47,6 +49,7 @@ struct BiliEmoteText: View {
         self.fillsAvailableWidth = fillsAvailableWidth
         self.typographyRole = typographyRole
         self.leadingNameTypographyRole = leadingNameTypographyRole
+        self.onNonLinkTap = onNonLinkTap
     }
 
     var body: some View {
@@ -67,7 +70,8 @@ struct BiliEmoteText: View {
             ),
             onURLTap: { url in
                 openAppURL?(url)
-            }
+            },
+            onNonLinkTap: onNonLinkTap
         )
         .frame(maxWidth: fillsAvailableWidth ? .infinity : nil, alignment: .leading)
     }
@@ -135,7 +139,8 @@ struct BiliLinkedText: View {
             ),
             onURLTap: { url in
                 openAppURL?(url)
-            }
+            },
+            onNonLinkTap: nil
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -144,6 +149,7 @@ struct BiliLinkedText: View {
 private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     let input: BiliEmoteRenderInput
     let onURLTap: (URL) -> Void
+    let onNonLinkTap: (() -> Void)?
     private static let sharedRenderCache = BiliEmoteRenderCache()
 
     static func clearRenderCache() {
@@ -168,6 +174,7 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
 
     func updateUIView(_ label: BiliInteractiveAttributedLabel, context: Context) {
         label.onLinkTap = onURLTap
+        label.onNonLinkTap = onNonLinkTap
         label.numberOfLines = input.lineLimit ?? 0
         label.lineBreakMode = input.lineBreakMode
         if #available(iOS 14.0, *) {
@@ -281,6 +288,7 @@ extension NSAttributedString.Key {
 
 final class BiliInteractiveAttributedLabel: UILabel {
     var onLinkTap: ((URL) -> Void)?
+    var onNonLinkTap: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -302,11 +310,13 @@ final class BiliInteractiveAttributedLabel: UILabel {
         guard recognizer.state == .ended,
               let attributedText,
               attributedText.length > 0,
-              let onLinkTap,
               let characterIndex = characterIndex(at: recognizer.location(in: self)),
               characterIndex >= 0,
               characterIndex < attributedText.length
-        else { return }
+        else {
+            onNonLinkTap?()
+            return
+        }
 
         let attribute = attributedText.attribute(.biliMentionURL, at: characterIndex, effectiveRange: nil)
         let url: URL?
@@ -319,7 +329,9 @@ final class BiliInteractiveAttributedLabel: UILabel {
         }
 
         if let url {
-            onLinkTap(url)
+            onLinkTap?(url)
+        } else {
+            onNonLinkTap?()
         }
     }
 

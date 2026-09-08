@@ -67,7 +67,8 @@ struct DynamicCommentRow: View {
                 textColor: .primary,
                 emoteSize: 21,
                 lineSpacing: 1,
-                typographyRole: .commentBody
+                typographyRole: .commentBody,
+                onNonLinkTap: contentReplyAction
             )
             .frame(
                 maxWidth: .infinity,
@@ -109,7 +110,8 @@ struct DynamicCommentRow: View {
                 DynamicCommentRowContent(
                     comment: comment,
                     display: display,
-                    showReplies: showReplies
+                    showReplies: showReplies,
+                    replyToComment: contentReplyAction
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)

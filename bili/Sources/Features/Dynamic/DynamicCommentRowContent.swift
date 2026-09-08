@@ -4,6 +4,7 @@ struct DynamicCommentRowContent: View {
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let showReplies: () -> Void
+    let replyToComment: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -18,7 +19,8 @@ struct DynamicCommentRowContent: View {
                 textColor: .primary,
                 emoteSize: 21,
                 lineSpacing: 1,
-                typographyRole: .commentBody
+                typographyRole: .commentBody,
+                onNonLinkTap: replyToComment
             )
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
 
