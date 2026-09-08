@@ -12,13 +12,6 @@ struct MineContentView: View {
 
     var body: some View {
         Form {
-            if libraryStore.scrollableTabHeadersExperimentEnabled {
-                ScrollableTabHeader("我的", bottomPadding: 2)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
             MineAccountSection(
                 viewModel: viewModel,
                 sessionStore: sessionStore,

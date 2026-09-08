@@ -13,7 +13,7 @@ enum HomeNativeRefreshLayout {
     }
 }
 
-struct HomeFeedScrollView<Header: View, FeedContent: View>: View {
+struct HomeFeedScrollView<FeedContent: View>: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
     @ObservedObject var runtimeSettings: HomeRuntimeSettingsStore
@@ -22,15 +22,12 @@ struct HomeFeedScrollView<Header: View, FeedContent: View>: View {
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
     let refreshActions: HomeFeedRefreshActions
     let layout: HomeFeedLayout
-    @ViewBuilder let header: () -> Header
     @ViewBuilder let feedContent: () -> FeedContent
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
-                    header()
-
                     HomeFeedScrollContent(
                         isShowingInitialPlaceholder: viewModel.videos.isEmpty && (viewModel.state == .idle || viewModel.state.isLoading),
                         isEmpty: viewModel.videos.isEmpty,

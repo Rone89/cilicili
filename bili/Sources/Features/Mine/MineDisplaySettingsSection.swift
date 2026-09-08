@@ -180,20 +180,6 @@ struct MineDisplaySettingsSection: View {
 
         Section("实验功能") {
             Toggle(isOn: Binding(
-                get: { libraryStore.scrollableTabHeadersExperimentEnabled },
-                set: { libraryStore.setScrollableTabHeadersExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("一级页面滚动标题", systemImage: "text.line.first.and.arrowtriangle.forward")
-
-                    Text("将首页、动态、直播、搜索和我的标题放入页面内容，随内容滚动消失。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
                 get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
                 set: { libraryStore.setDynamicCommentHitAreaVisualizationExperimentEnabled($0) }
             )) {

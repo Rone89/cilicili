@@ -6,17 +6,19 @@ struct DynamicFeedCard: View {
     let item: DynamicFeedItem
     let api: BiliAPIClient
     let contentWidth: CGFloat?
+    let usesExternalHorizontalInsets: Bool
     let allowsDetailNavigation: Bool
     let allowsOriginalDetailNavigation: Bool
     let showsActionBar: Bool
     private let display: DynamicFeedCardDisplayModel
     @State private var commentsTarget: DynamicFeedItem?
-    @State private var isTextExpanded = false
+    @State private var isTextExpanded: Bool
 
     init(
         item: DynamicFeedItem,
         api: BiliAPIClient,
         contentWidth: CGFloat? = nil,
+        usesExternalHorizontalInsets: Bool? = nil,
         allowsDetailNavigation: Bool = true,
         allowsOriginalDetailNavigation: Bool = true,
         showsActionBar: Bool = true
@@ -24,11 +26,13 @@ struct DynamicFeedCard: View {
         self.item = item
         self.api = api
         self.contentWidth = contentWidth
+        self.usesExternalHorizontalInsets = usesExternalHorizontalInsets ?? (contentWidth != nil)
         self.allowsDetailNavigation = allowsDetailNavigation
         self.allowsOriginalDetailNavigation = allowsOriginalDetailNavigation
         self.showsActionBar = showsActionBar
         let display = DynamicFeedCardDisplayModel(item: item)
         self.display = display
+        _isTextExpanded = State(initialValue: !allowsDetailNavigation)
     }
 
     var body: some View {
@@ -38,6 +42,8 @@ struct DynamicFeedCard: View {
                     video: video,
                     display: display,
                     initialIsLiked: item.isLiked,
+                    contentWidth: contentWidth,
+                    usesExternalHorizontalInsets: usesExternalHorizontalInsets,
                     onShowComments: showComments
                 )
             } else if display.usesSeparatedDynamicLayout {
@@ -45,6 +51,7 @@ struct DynamicFeedCard: View {
                     item: item,
                     display: display,
                     contentWidth: contentWidth,
+                    usesExternalHorizontalInsets: usesExternalHorizontalInsets,
                     isTextExpanded: $isTextExpanded,
                     onShowComments: showComments,
                     onOpenDetail: openDetailAction,
@@ -56,6 +63,7 @@ struct DynamicFeedCard: View {
                     item: item,
                     display: display,
                     contentWidth: contentWidth,
+                    usesExternalHorizontalInsets: usesExternalHorizontalInsets,
                     isTextExpanded: $isTextExpanded,
                     onShowComments: showComments,
                     onOpenDetail: openDetailAction,
@@ -231,6 +239,7 @@ private struct DynamicDetailView: View {
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var isPullRefreshing = false
     @State private var pullRefreshActions = HomeFeedRefreshActions()
+    @State private var detailContentWidth: CGFloat?
     private let display: DynamicFeedCardDisplayModel
 
     init(
@@ -253,6 +262,8 @@ private struct DynamicDetailView: View {
                 DynamicFeedCard(
                     item: item,
                     api: api,
+                    contentWidth: detailContentWidth,
+                    usesExternalHorizontalInsets: false,
                     allowsDetailNavigation: false,
                     showsActionBar: false
                 )
@@ -279,6 +290,12 @@ private struct DynamicDetailView: View {
         .accessibilityIdentifier("dynamic.detail.scroll")
         .scrollIndicators(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            max(floor(geometry.size.width - 24), 0)
+        } action: { _, width in
+            guard width > 1 else { return }
+            detailContentWidth = width
+        }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 18
         } action: { _, isHidden in

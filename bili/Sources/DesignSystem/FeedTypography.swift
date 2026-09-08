@@ -102,9 +102,9 @@ enum AppTypography {
                 return .title3
             case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
                 return .headline
-            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+            case .dynamicBody, .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return .subheadline
-            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
+            case .commentBody, .messageBody, .settingsRow:
                 return .body
             case .author:
                 return .subheadline
@@ -131,9 +131,9 @@ enum AppTypography {
                 return .title3
             case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
                 return .headline
-            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+            case .dynamicBody, .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return .subheadline
-            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
+            case .commentBody, .messageBody, .settingsRow:
                 return .body
             case .author:
                 return .subheadline

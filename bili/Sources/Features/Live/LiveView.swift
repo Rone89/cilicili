@@ -2,7 +2,6 @@ import SwiftUI
 
 struct LiveView: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var holder = LiveViewModelHolder()
     @StateObject private var pullRefreshSettings = PullRefreshRuntimeSettingsStore()
 
@@ -16,10 +15,6 @@ struct LiveView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
-                        if libraryStore.scrollableTabHeadersExperimentEnabled {
-                            ScrollableTabHeader("直播")
-                        }
-
                         LiveFeedSkeletonList(horizontalPadding: 12, topPadding: 18)
                     }
                 }

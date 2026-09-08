@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct HomeFeedScreenBody<Header: View>: View {
+struct HomeFeedScreenBody: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var viewModel: HomeViewModel
@@ -11,7 +11,6 @@ struct HomeFeedScreenBody<Header: View>: View {
     let contentActions: HomeFeedContentActions
     let actionStore: HomeFeedScreenActionStore
     let launchConfiguration: HomeFeedLaunchConfiguration
-    @ViewBuilder let header: () -> Header
 
     var body: some View {
         let layout = effectiveLayout
@@ -29,8 +28,7 @@ struct HomeFeedScreenBody<Header: View>: View {
             scrollActions: actionStore.scroll,
             nativeRefreshActionStore: actionStore.nativeRefresh,
             refreshActions: actionStore.refresh,
-            layout: layout,
-            header: header
+            layout: layout
         ) {
             HomeFeedContentSection(
                 metrics: layoutMetrics,

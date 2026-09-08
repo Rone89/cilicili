@@ -17,6 +17,7 @@ struct DynamicFeedCardTextSection: View {
                 onOpenDetail: onOpenDetail,
                 isExpanded: $isTextExpanded
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -34,8 +35,4 @@ struct DynamicFeedCardActionSection: View {
             onShowComments: onShowComments
         )
     }
-}
-
-func dynamicInsetWidth(_ contentWidth: CGFloat?, inset: CGFloat) -> CGFloat? {
-    contentWidth.map { max(floor($0 - inset * 2), 0) }
 }

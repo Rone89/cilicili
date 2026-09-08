@@ -4,6 +4,7 @@ struct DynamicStandardFeedCardContent: View {
     let item: DynamicFeedItem
     let display: DynamicFeedCardDisplayModel
     let contentWidth: CGFloat?
+    let usesExternalHorizontalInsets: Bool
     @Binding var isTextExpanded: Bool
     let onShowComments: () -> Void
     let onOpenDetail: (() -> Void)?
@@ -14,7 +15,7 @@ struct DynamicStandardFeedCardContent: View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
                 authorHeader
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, horizontalContentInset)
 
                 DynamicFeedCardTextSection(
                     display: display,
@@ -22,13 +23,13 @@ struct DynamicStandardFeedCardContent: View {
                     onOpenDetail: onOpenDetail,
                     isTextExpanded: $isTextExpanded
                 )
-                .padding(.horizontal, 12)
+                .padding(.horizontal, horizontalContentInset)
 
                 if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
                     DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: display.paidChargeURL) {
                         DynamicPaidArticleTextPreview(content: paidContent)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, horizontalContentInset)
                 } else if let paidContent = display.paidContent {
                     DynamicPaidContentRouteLink(content: paidContent, video: display.paidVideo) {
                         DynamicPaidContentPreview(content: paidContent, style: .large)
@@ -61,10 +62,10 @@ struct DynamicStandardFeedCardContent: View {
                             { action(original) }
                         }
                     )
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, horizontalContentInset)
                 } else if item.isForward {
                     DynamicForwardUnavailableView()
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, horizontalContentInset)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,7 +92,11 @@ struct DynamicStandardFeedCardContent: View {
     }
 
     private var textWidth: CGFloat? {
-        dynamicInsetWidth(contentWidth, inset: 12)
+        contentWidth
+    }
+
+    private var horizontalContentInset: CGFloat {
+        usesExternalHorizontalInsets ? 0 : 12
     }
 }
 

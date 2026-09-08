@@ -134,11 +134,10 @@ struct RootTabView: View {
     ) -> some View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
-                .rootTopLevelNavigationChrome(
-                    title: rootNavigationTitle(for: tab),
-                    isEnabled: libraryStore.scrollableTabHeadersExperimentEnabled,
-                    keepsToolbarVisible: tab == .search
-                )
+                .toolbarVisibility(.visible, for: .navigationBar)
+                .toolbarBackground(.automatic, for: .navigationBar)
+                .navigationTitle(rootNavigationTitle(for: tab))
+                .toolbarTitleDisplayMode(.inline)
                 .environment(
                     \.rootNavigationTitleHidden,
                     rootNavigationTitleBinding(for: tab, detailPath: detailPath)
@@ -170,22 +169,18 @@ struct RootTabView: View {
     ) -> some View {
         Group {
             if tab == .home, let viewModel = homeViewModelHolder.viewModel {
-                if libraryStore.scrollableTabHeadersExperimentEnabled {
-                    rootTabContent(for: tab, detailPath: detailPath)
-                } else {
-                    rootTabContent(for: tab, detailPath: detailPath)
-                        .homeFeedNavigationChrome(
-                            viewModel: viewModel,
-                            modeActions: homeActionStore.mode,
-                            scrollActions: homeActionStore.scroll,
-                            nativeRefreshActionStore: homeActionStore.nativeRefresh,
-                            accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
-                            isDetailPresented: !detailPath.wrappedValue.isEmpty,
-                            onOpenAccountMessages: {
-                                openMineOverlayRoute(.accountMessages)
-                            }
-                        )
-                }
+                rootTabContent(for: tab, detailPath: detailPath)
+                    .homeFeedNavigationChrome(
+                        viewModel: viewModel,
+                        modeActions: homeActionStore.mode,
+                        scrollActions: homeActionStore.scroll,
+                        nativeRefreshActionStore: homeActionStore.nativeRefresh,
+                        accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
+                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
+                        onOpenAccountMessages: {
+                            openMineOverlayRoute(.accountMessages)
+                        }
+                    )
             } else {
                 rootTabContent(for: tab, detailPath: detailPath)
             }
@@ -198,7 +193,7 @@ struct RootTabView: View {
                 && selectedTab == .search
                 && detailPath.wrappedValue.isEmpty,
             prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-            title: libraryStore.scrollableTabHeadersExperimentEnabled ? "" : "搜索",
+            title: "搜索",
             onSubmit: submitRootSearch
         )
     }

@@ -81,6 +81,7 @@ struct DynamicRichTextView: View {
             .lineLimit(input.maxLines)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: preferredWidth, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(plainText)
 

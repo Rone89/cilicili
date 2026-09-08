@@ -1,9 +1,5 @@
 import SwiftUI
 
-private enum DynamicFeedScrollAnchor {
-    static let top = "dynamic-feed-top"
-}
-
 struct DynamicFeedScrollContent: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     let api: BiliAPIClient
@@ -15,34 +11,16 @@ struct DynamicFeedScrollContent: View {
     @State private var pullRefreshActions = HomeFeedRefreshActions()
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    if libraryStore.scrollableTabHeadersExperimentEnabled {
-                        ScrollableTabHeader("动态") {
-                            Button {
-                                refreshFromHeader(proxy)
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            .frame(width: 44, height: 44)
-                            .contentShape(Circle())
-                            .biliRegularGlassEffect(interactive: true, in: Circle())
-                            .disabled(viewModel.isRefreshing || !isLoggedIn)
-                            .accessibilityLabel("刷新动态")
-                        }
-                    }
-
-                    DynamicFeedBodyContent(
-                        api: api,
-                        viewModel: viewModel,
-                        isLoggedIn: isLoggedIn,
-                        contentWidth: contentWidth
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 18)
-                }
-                .id(DynamicFeedScrollAnchor.top)
+        ScrollView {
+            VStack(spacing: 0) {
+                DynamicFeedBodyContent(
+                    api: api,
+                    viewModel: viewModel,
+                    isLoggedIn: isLoggedIn,
+                    contentWidth: contentWidth
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
             }
         }
         .rootFloatingTabBarContentPadding()
@@ -95,12 +73,6 @@ struct DynamicFeedScrollContent: View {
         await viewModel.refresh()
     }
 
-    private func refreshFromHeader(_ proxy: ScrollViewProxy) {
-        withAnimation(.smooth(duration: 0.28)) {
-            proxy.scrollTo(DynamicFeedScrollAnchor.top, anchor: .top)
-        }
-        Task { await refreshFromNativePull() }
-    }
 }
 
 private struct DynamicFeedBodyContent: View {

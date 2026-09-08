@@ -4,6 +4,7 @@ struct DynamicSeparatedFeedCardContent: View {
     let item: DynamicFeedItem
     let display: DynamicFeedCardDisplayModel
     let contentWidth: CGFloat?
+    let usesExternalHorizontalInsets: Bool
     @Binding var isTextExpanded: Bool
     let onShowComments: () -> Void
     let onOpenDetail: (() -> Void)?
@@ -13,13 +14,22 @@ struct DynamicSeparatedFeedCardContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             authorHeader
-                .padding(.horizontal, 12)
+                .padding(.horizontal, horizontalContentInset)
                 .dynamicDetailTapAction(
                     onOpenDetail,
                     identifier: "dynamic.feed.detailTapArea.\(display.dynamicID).author"
                 )
 
             separatedStoryCard
+
+            if showsActionBar {
+                DynamicFeedCardActionSection(
+                    item: item,
+                    display: display,
+                    onShowComments: onShowComments
+                )
+                .padding(.top, 1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -67,15 +77,8 @@ struct DynamicSeparatedFeedCardContent: View {
                 identifier: "dynamic.feed.detailTapArea.\(display.dynamicID).content"
             )
 
-            if showsActionBar {
-                DynamicFeedCardActionSection(
-                    item: item,
-                    display: display,
-                    onShowComments: onShowComments
-                )
-            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalContentInset)
         .padding(.top, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -83,7 +86,7 @@ struct DynamicSeparatedFeedCardContent: View {
     private var imageSquareGrid: some View {
         DynamicImageThumbnailStrip(
             images: display.imageItems,
-            horizontalBleed: 12,
+            horizontalBleed: horizontalContentInset,
             availableWidth: textWidth
         )
     }
@@ -93,6 +96,10 @@ struct DynamicSeparatedFeedCardContent: View {
     }
 
     private var textWidth: CGFloat? {
-        dynamicInsetWidth(contentWidth, inset: 12)
+        contentWidth
+    }
+
+    private var horizontalContentInset: CGFloat {
+        usesExternalHorizontalInsets ? 0 : 12
     }
 }
