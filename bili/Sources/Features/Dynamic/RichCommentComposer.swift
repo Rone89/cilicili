@@ -1215,7 +1215,8 @@ private struct RichCommentSendButtonAppearance: ViewModifier {
                 .foregroundStyle(.white)
         } else {
             content
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
                 .foregroundStyle(.primary)
         }
     }
