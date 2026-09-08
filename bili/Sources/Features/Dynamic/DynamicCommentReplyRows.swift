@@ -151,10 +151,13 @@ struct DynamicCommentReplyDetailRow: View {
                             Label("查看对话", systemImage: "text.bubble")
                                 .appTypography(.action, fallback: .caption.weight(.semibold))
                                 .frame(height: 26)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appTintColor)
                         .padding(.top, 2)
+                        .zIndex(1)
+                        .accessibilityIdentifier("dynamic.comment.reply.showDialog.\(item.id)")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

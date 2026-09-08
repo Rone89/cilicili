@@ -54,10 +54,10 @@ struct DynamicCommentRepliesSheet: View {
         .sheet(item: $dialogReply) { reply in
             DynamicCommentDialogSheet(rootComment: rootComment, focusReply: reply, replyStore: replyStore)
         }
-        .sheet(item: $composerTarget) { target in
-            RichCommentComposerView(
-                draft: richCommentDraftBinding(for: target),
-                target: target,
+        .background {
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: richCommentDraftBinding,
                 api: api,
                 submit: { submissionTarget, message, pictures in
                     guard let submitReply else { return }
@@ -65,6 +65,7 @@ struct DynamicCommentRepliesSheet: View {
                     await replyStore.reloadReplies(for: rootComment)
                 }
             )
+            .allowsHitTesting(false)
         }
     }
 
