@@ -20,7 +20,9 @@ enum PlaybackRotationPhase: Equatable {
 final class PlaybackRotationCoordinator: ObservableObject {
     @Published private(set) var phase: PlaybackRotationPhase = .embedded
     @Published private(set) var isSystemRotationTransitioning = false
+    @Published private(set) var isLandscape = false
     @Published private(set) var isPortraitFullscreen = false
+    @Published private(set) var prewarmLandscape: Bool?
 
     private var requestCoalescer = VideoDetailRotationRequestCoalescer()
     private(set) var isViewActive = false
@@ -29,13 +31,40 @@ final class PlaybackRotationCoordinator: ObservableObject {
         isSystemRotationTransitioning || requestCoalescer.isTransitioning
     }
 
+    var chromeLandscape: Bool {
+        if let prewarmLandscape {
+            return prewarmLandscape
+        }
+        switch phase {
+        case .preparingLandscape, .landscape:
+            return true
+        case .preparingPortrait, .embedded, .portraitFullscreen, .recovering:
+            return isLandscape
+        }
+    }
+
+    /// 几何布局在系统转场期间使用目标方向；播放器控件树则继续使用
+    /// `chromeLandscape`，直到系统完成转场后再切换，避免控件闪烁。
+    var layoutLandscape: Bool {
+        switch phase {
+        case .preparingLandscape:
+            return true
+        case .preparingPortrait:
+            return false
+        case .embedded, .landscape, .portraitFullscreen, .recovering:
+            return isLandscape
+        }
+    }
+
     var pendingTarget: UIInterfaceOrientationMask? {
         requestCoalescer.pendingTarget
     }
 
     func activate(isLandscape: Bool, isPortraitFullscreen: Bool = false) {
         isViewActive = true
+        self.isLandscape = isLandscape
         self.isPortraitFullscreen = isPortraitFullscreen
+        prewarmLandscape = nil
         isSystemRotationTransitioning = false
         requestCoalescer.reset()
         setStablePhase(isLandscape: isLandscape, isPortraitFullscreen: isPortraitFullscreen)
@@ -53,6 +82,8 @@ final class PlaybackRotationCoordinator: ObservableObject {
         currentOrientation: UIInterfaceOrientation
     ) -> UIInterfaceOrientationMask? {
         isSystemRotationTransitioning = false
+        isLandscape = toLandscape
+        prewarmLandscape = nil
         setStablePhase(isLandscape: toLandscape, isPortraitFullscreen: isPortraitFullscreen)
         return requestCoalescer.completeTransition(currentOrientation: currentOrientation)
     }
@@ -63,7 +94,9 @@ final class PlaybackRotationCoordinator: ObservableObject {
     ) {
         phase = .recovering
         isSystemRotationTransitioning = false
+        self.isLandscape = isLandscape
         self.isPortraitFullscreen = isPortraitFullscreen
+        prewarmLandscape = nil
         requestCoalescer.reset()
         setStablePhase(isLandscape: isLandscape, isPortraitFullscreen: isPortraitFullscreen)
     }
@@ -73,14 +106,25 @@ final class PlaybackRotationCoordinator: ObservableObject {
         isPortraitFullscreen: Bool = false
     ) {
         isSystemRotationTransitioning = false
+        self.isLandscape = isLandscape
         self.isPortraitFullscreen = isPortraitFullscreen
+        prewarmLandscape = nil
         setStablePhase(isLandscape: isLandscape, isPortraitFullscreen: isPortraitFullscreen)
     }
 
     func setPortraitFullscreen(_ active: Bool) {
         guard isPortraitFullscreen != active else { return }
+        isLandscape = false
         isPortraitFullscreen = active
         setStablePhase(isLandscape: false, isPortraitFullscreen: active)
+    }
+
+    func beginChromePrewarm(for landscape: Bool) {
+        prewarmLandscape = landscape
+    }
+
+    func endChromePrewarm() {
+        prewarmLandscape = nil
     }
 
     /// 提交一次几何请求。转场中只保留最后一个请求，转场完成后由调用方再次
@@ -118,13 +162,15 @@ final class PlaybackRotationCoordinator: ObservableObject {
         isViewActive = false
         requestCoalescer.reset()
         isSystemRotationTransitioning = false
+        isLandscape = false
+        isPortraitFullscreen = false
+        prewarmLandscape = nil
         AppOrientationLock.restorePortrait(in: scene)
     }
 
     func deactivate(in scene: UIWindowScene?) {
         phase = .recovering
         restorePortrait(in: scene)
-        isPortraitFullscreen = false
         phase = .embedded
     }
 

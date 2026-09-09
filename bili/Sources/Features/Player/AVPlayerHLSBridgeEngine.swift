@@ -202,6 +202,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     var onLoadingProgressChange: (@MainActor (Double) -> Void)?
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)?
 
+#if DEBUG
+    var debugPlayerIdentity: ObjectIdentifier? {
+        ObjectIdentifier(player)
+    }
+
+    var debugPlayerItemIdentity: ObjectIdentifier? {
+        player.currentItem.map { ObjectIdentifier($0) }
+    }
+#endif
+
     init() {
         nativeDolbyVideoOverlay.onReadyForDisplay = { [weak self] in
             self?.handleNativeDolbyVideoOverlayReady()

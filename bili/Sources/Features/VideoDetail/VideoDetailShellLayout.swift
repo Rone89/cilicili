@@ -60,9 +60,9 @@ struct VideoDetailShellLayout: Equatable {
         videoAspectRatio: CGFloat,
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
+        isLandscape: Bool,
         isPortraitFullscreen: Bool
     ) -> Self {
-        let isLandscape = bounds.width > bounds.height
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
         let expanded = expandedPlayerHeight(
             bounds: bounds.size,

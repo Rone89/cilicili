@@ -100,6 +100,31 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoDetailPlayerFullscreenRoundTripKeepsDetailShellMounted() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state",
+            "--start-tab", "home",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        app.launch()
+
+        let picker = app.segmentedControls["video.detail.glass-panel-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+
+        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreen.isHittable)
+        fullscreen.tap()
+
+        XCUIDevice.shared.orientation = .portrait
+
+        let detailMarker = app.staticTexts["相关推荐"].firstMatch
+        XCTAssertTrue(detailMarker.waitForExistence(timeout: 5))
+        XCTAssertTrue(picker.exists)
+    }
+
+    @MainActor
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
     }

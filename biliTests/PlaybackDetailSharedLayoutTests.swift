@@ -164,6 +164,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             videoAspectRatio: 16.0 / 9.0,
             currentPlayerHeight: 54,
             isPlaybackActive: false,
+            isLandscape: false,
             isPortraitFullscreen: false
         )
 
@@ -198,6 +199,30 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         )
         XCTAssertEqual(coordinator.phase, .landscape)
         XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+        XCTAssertTrue(coordinator.isLandscape)
+        XCTAssertTrue(coordinator.layoutLandscape)
+        XCTAssertTrue(coordinator.chromeLandscape)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorUsesTargetDirectionForLayoutDuringTransition() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: true)
+
+        coordinator.beginSystemTransition(toLandscape: false)
+
+        XCTAssertTrue(coordinator.isLandscape)
+        XCTAssertFalse(coordinator.layoutLandscape)
+        XCTAssertTrue(coordinator.chromeLandscape)
+
+        coordinator.finishSystemTransition(
+            toLandscape: false,
+            currentOrientation: .portrait
+        )
+
+        XCTAssertFalse(coordinator.isLandscape)
+        XCTAssertFalse(coordinator.layoutLandscape)
+        XCTAssertFalse(coordinator.chromeLandscape)
     }
 
     @MainActor

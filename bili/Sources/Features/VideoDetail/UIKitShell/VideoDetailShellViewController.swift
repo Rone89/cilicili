@@ -57,6 +57,7 @@ final class VideoDetailShellViewController: UIViewController {
     private var playbackStateCancellable: AnyCancellable?
     /// 旋转状态集中由 coordinator 持有；这里仅读取稳定状态驱动 surface 布局。
     private let rotationCoordinator = PlaybackRotationCoordinator()
+    private let playbackDiagnostics = VideoDetailPlaybackDiagnostics()
     private let rotationFrameProbe = VideoRotationFrameProbe()
     private var rotationFrameProbeGeneration = 0
     private var rotationCompletionRecoveryDisplayLink: CADisplayLink?
@@ -118,7 +119,7 @@ final class VideoDetailShellViewController: UIViewController {
     }
 
     private var isLandscape: Bool {
-        view.bounds.width > view.bounds.height
+        rotationCoordinator.isLandscape
     }
 
     private let rotationPolicy = VideoDetailRotationPolicy()
@@ -229,6 +230,10 @@ final class VideoDetailShellViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        playbackDiagnostics.begin(
+            metricsID: viewModel.detail.bvid,
+            title: viewModel.detail.title
+        )
         markNavigationLatency(.viewControllerLoaded)
         view.backgroundColor = .black
 
@@ -312,6 +317,7 @@ final class VideoDetailShellViewController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        playbackDiagnostics.markPageDisappeared()
         isViewActive = false
         releaseSystemBackGestureOwnership()
         recoverInterruptedRotationIfNeeded(reason: "viewDidDisappear")
@@ -367,6 +373,7 @@ final class VideoDetailShellViewController: UIViewController {
         let toLandscape = size.width > size.height
         let policy = rotationPolicy
         rotationCoordinator.beginSystemTransition(toLandscape: toLandscape)
+        playbackDiagnostics.markRotationStarted(toLandscape: toLandscape)
         let usesPrewarmedFastRecovery = policy.usesPrewarmedFastRecovery(
             hasPrewarmedRotationChrome: playerSurfaceController.isRotationChromePrewarmed
         )
@@ -411,7 +418,6 @@ final class VideoDetailShellViewController: UIViewController {
         }
         setBareSurfaceTransitionActive(true)
         // 目标方向的控件树在系统动画开始就准备好，避免首次旋转在结束帧冷启动。
-        setSurfaceLandscape(toLandscape || isPortraitFullscreen)
         rotationFrameProbe.mark("旋转开始：目标方向控件已预热")
         // 转回竖屏时重置缩放高度为默认（最大），避免横屏前的缩放残留。
         if !toLandscape {
@@ -496,7 +502,6 @@ final class VideoDetailShellViewController: UIViewController {
                 // 先单独让 SwiftUI 控件树切到目标方向，仍保持 bare surface。
                 // 下一次显示刷新再把控件、手势与交互加回来，避免压在系统结束帧。
                 self.rotationFrameProbe.mark("第一帧：预热已挂载控件状态")
-                self.setSurfaceLandscape(toLandscape || self.isPortraitFullscreen)
                 self.rotationFrameProbe.mark("第一帧：控件方向已就绪")
             },
             recovery: { [weak self] in
@@ -638,6 +643,7 @@ final class VideoDetailShellViewController: UIViewController {
         )
         reconcileStableRotationState()
         rotationFrameProbe.finish(reason: "旋转中断自恢复 reason=\(reason)")
+        playbackDiagnostics.markRotationRecovered(reason: reason)
         PlaybackDetailPerformanceMonitor.shared.mark(
             .fullscreenLayoutUpdated,
             context: PlaybackDetailPerformanceContext.video(viewModel.detail),
@@ -663,7 +669,6 @@ final class VideoDetailShellViewController: UIViewController {
         let hidesContent = landscape || isPortraitFullscreen
         contentHost.view.isHidden = hidesContent
         contentHost.view.isUserInteractionEnabled = !hidesContent
-        setSurfaceLandscape(landscape || isPortraitFullscreen)
         setBareSurfaceTransitionActive(false)
         setContentUpdatesDeferred(false)
 
@@ -694,6 +699,7 @@ final class VideoDetailShellViewController: UIViewController {
             context: PlaybackDetailPerformanceContext.video(viewModel.detail),
             detail: "landscape=\(toLandscape) strategy=\(strategy)"
         )
+        playbackDiagnostics.markRotationFinished(toLandscape: toLandscape)
         rotationFrameProbe.finish(
             reason: "系统旋转完成 landscape=\(toLandscape) strategy=\(strategy)"
         )
@@ -782,7 +788,7 @@ final class VideoDetailShellViewController: UIViewController {
         publishesContentLayout: Bool = true
     ) {
         let bounds = CGRect(origin: .zero, size: size ?? view.bounds.size)
-        let landscape = bounds.width > bounds.height
+        let landscape = rotationCoordinator.layoutLandscape
 
         view.backgroundColor = .black
         let shellLayout = VideoDetailShellLayout.resolve(
@@ -791,6 +797,7 @@ final class VideoDetailShellViewController: UIViewController {
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: currentPlayerHeight,
             isPlaybackActive: isPlaybackActiveForCollapsedChrome,
+            isLandscape: landscape,
             isPortraitFullscreen: isPortraitFullscreen
         )
         playerContainer.frame = shellLayout.playerFrame
@@ -816,6 +823,7 @@ final class VideoDetailShellViewController: UIViewController {
             detailViewModel: viewModel,
             dependencies: dependencies,
             runtimeSettings: runtimeSettings,
+            rotationCoordinator: rotationCoordinator,
             onShowMoreControls: { [weak self] onDismiss in
                 guard let self else {
                     onDismiss()
@@ -877,10 +885,6 @@ final class VideoDetailShellViewController: UIViewController {
         onDismissPlayerMoreControls()
     }
 
-    private func setSurfaceLandscape(_ landscape: Bool) {
-        playerSurfaceController.setLandscape(landscape)
-    }
-
     private func setSurfaceBareTransitionActive(_ active: Bool, retainsChromeTree: Bool) {
         playerSurfaceController.setBareSurfaceTransitionActive(
             active,
@@ -938,7 +942,6 @@ final class VideoDetailShellViewController: UIViewController {
         rotationCoordinator.setPortraitFullscreen(active)
         contentHost.view.isHidden = active
         contentHost.view.isUserInteractionEnabled = !active
-        setSurfaceLandscape(active) // 复用全屏 chrome 样式（隐藏导航栏等）
         UIView.animate(
             withDuration: PlaybackDetailRotationTiming.portraitFullscreenDuration,
             delay: 0,
@@ -1167,6 +1170,7 @@ final class VideoDetailShellViewController: UIViewController {
     private func bindPlaybackState(to playerViewModel: PlayerStateViewModel?) {
         playbackStateCancellable = nil
         removeCollapsedBarHost()
+        playbackDiagnostics.observe(player: playerViewModel)
         guard let playerViewModel else {
             return
         }

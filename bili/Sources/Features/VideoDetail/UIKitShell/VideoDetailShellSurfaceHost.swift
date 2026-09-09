@@ -12,8 +12,6 @@ import UIKit
 final class VideoDetailShellSurfaceHost: UIView {
     @MainActor
     final class State: ObservableObject {
-        @Published var isLandscape = false
-        @Published var isPortraitFullscreen = false
         @Published var isBareSurfaceTransitionActive = false
         @Published var retainsChromeDuringBareSurfaceTransition = false
         @Published var isCollapsedChromeActive = false
@@ -46,12 +44,12 @@ final class VideoDetailShellSurfaceHost: UIView {
     private let overlayState: VideoDetailShellOverlayState
     private let experimentState: VideoDetailPerformanceExperimentState
     private let libraryStore: LibraryStore
+    private let rotationCoordinator: PlaybackRotationCoordinator
     private let surfaceHostView: any VideoDetailPlayerSurfaceHostingView
     private let overlayHostingController: UIHostingController<PlayerOverlayHostRoot>
     private var cancellables = Set<AnyCancellable>()
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
-    private var rotationChromePrewarmOriginalLandscape: Bool?
     private(set) var isRotationChromePrewarmed = false
     private var isTornDown = false
 
@@ -60,6 +58,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         detailViewModel: VideoDetailViewModel,
         dependencies: AppDependencies,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
+        rotationCoordinator: PlaybackRotationCoordinator,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
         onRequestFullscreen: @escaping () -> Void,
@@ -81,6 +80,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.overlayState = overlayState
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
+        self.rotationCoordinator = rotationCoordinator
         self.surfaceHostView = VideoDetailSwiftUISurfaceHostingView(
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.pictureInPictureEnabled
@@ -89,6 +89,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         let overlayRoot = PlayerOverlayHostRoot(
             detailViewModel: detailViewModel,
             state: state,
+            rotationCoordinator: rotationCoordinator,
             overlayState: overlayState,
             experimentState: experimentState,
             runtimeSettings: runtimeSettings,
@@ -167,12 +168,6 @@ final class VideoDetailShellSurfaceHost: UIView {
         overlayHostingController.removeFromParent()
     }
 
-    /// 容器 VC 旋转时调用，切换横屏/竖屏控件形态。
-    func setLandscape(_ landscape: Bool) {
-        guard state.isLandscape != landscape else { return }
-        state.isLandscape = landscape
-    }
-
     func requestPlaybackControlsHideForRotation() {
         state.requestPlaybackControlsHideForRotation()
     }
@@ -215,12 +210,11 @@ final class VideoDetailShellSurfaceHost: UIView {
         isRotationChromePrewarming = true
         rotationChromePrewarmGeneration &+= 1
         let generation = rotationChromePrewarmGeneration
-        let originalLandscape = state.isLandscape
-        rotationChromePrewarmOriginalLandscape = originalLandscape
+        let prewarmLandscape = !rotationCoordinator.isLandscape
 
         UIView.performWithoutAnimation {
             state.setBareSurfaceTransitionActive(true, retainsChromeTree: true)
-            state.isLandscape = !originalLandscape
+            rotationCoordinator.beginChromePrewarm(for: prewarmLandscape)
         }
         DispatchQueue.main.async { [weak self] in
             guard let self,
@@ -229,7 +223,7 @@ final class VideoDetailShellSurfaceHost: UIView {
             else { return }
             self.layoutRotationChromePrewarm()
             UIView.performWithoutAnimation {
-                self.state.isLandscape = originalLandscape
+                self.rotationCoordinator.endChromePrewarm()
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self,
@@ -241,7 +235,6 @@ final class VideoDetailShellSurfaceHost: UIView {
                     self.state.setBareSurfaceTransitionActive(false, retainsChromeTree: true)
                 }
                 self.isRotationChromePrewarming = false
-                self.rotationChromePrewarmOriginalLandscape = nil
                 self.isRotationChromePrewarmed = true
             }
         }
@@ -251,12 +244,8 @@ final class VideoDetailShellSurfaceHost: UIView {
         guard isRotationChromePrewarming else { return }
         rotationChromePrewarmGeneration &+= 1
         isRotationChromePrewarming = false
-        let originalLandscape = rotationChromePrewarmOriginalLandscape
-        rotationChromePrewarmOriginalLandscape = nil
         UIView.performWithoutAnimation {
-            if let originalLandscape {
-                state.isLandscape = originalLandscape
-            }
+            rotationCoordinator.endChromePrewarm()
             state.setBareSurfaceTransitionActive(false, retainsChromeTree: true)
         }
     }
@@ -296,10 +285,9 @@ final class VideoDetailShellSurfaceHost: UIView {
 extension VideoDetailShellSurfaceHost: PlayerSurfaceHosting {
     var surfaceView: UIView { self }
 
-    func setPortraitFullscreen(_ active: Bool) {
-        guard state.isPortraitFullscreen != active else { return }
-        state.isPortraitFullscreen = active
-    }
+    func setLandscape(_: Bool) {}
+
+    func setPortraitFullscreen(_: Bool) {}
 }
 
 private struct VideoDetailShellOverlaySnapshot: Equatable {
@@ -457,6 +445,7 @@ private final class VideoDetailPlayerOverlayLegacyObservationBridge: ObservableO
 private struct PlayerOverlayHostRoot: View {
     let detailViewModel: VideoDetailViewModel
     @ObservedObject var state: VideoDetailShellSurfaceHost.State
+    @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     @ObservedObject var overlayState: VideoDetailShellOverlayState
     let experimentState: VideoDetailPerformanceExperimentState
     let runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -475,13 +464,12 @@ private struct PlayerOverlayHostRoot: View {
         let overlay = SurfaceOnlyPlayerOverlayRoot(
             viewModel: state.playerViewModel,
             detailViewModel: detailViewModel,
+            rotationCoordinator: rotationCoordinator,
             overlaySnapshot: overlaySnapshot,
             experimentState: experimentState,
             runtimeSettings: runtimeSettings,
             usesNarrowObservation: usesNarrowObservation,
             dependencies: dependencies,
-            isLandscape: state.isLandscape,
-            isPortraitFullscreen: state.isPortraitFullscreen,
             isBareSurfaceTransitionActive: state.isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
             isCollapsedChromeActive: state.isCollapsedChromeActive,
@@ -518,8 +506,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let experimentState: VideoDetailPerformanceExperimentState
     let usesNarrowObservation: Bool
     let dependencies: AppDependencies
-    let isLandscape: Bool
-    let isPortraitFullscreen: Bool
+    @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
@@ -549,16 +536,23 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @State private var isMoreControlsButtonPressed = false
     @State private var isVideoListenQueuePresented = false
 
+    private var isLandscape: Bool {
+        rotationCoordinator.chromeLandscape
+    }
+
+    private var isPortraitFullscreen: Bool {
+        rotationCoordinator.isPortraitFullscreen
+    }
+
     init(
         viewModel: PlayerStateViewModel,
         detailViewModel: VideoDetailViewModel,
+        rotationCoordinator: PlaybackRotationCoordinator,
         overlaySnapshot: VideoDetailShellOverlaySnapshot,
         experimentState: VideoDetailPerformanceExperimentState,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
         usesNarrowObservation: Bool,
         dependencies: AppDependencies,
-        isLandscape: Bool,
-        isPortraitFullscreen: Bool,
         isBareSurfaceTransitionActive: Bool,
         retainsChromeDuringBareSurfaceTransition: Bool,
         isCollapsedChromeActive: Bool,
@@ -574,14 +568,13 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     ) {
         self.viewModel = viewModel
         self.detailViewModel = detailViewModel
+        self.rotationCoordinator = rotationCoordinator
         self.overlaySnapshot = overlaySnapshot
         self.experimentState = experimentState
         self.runtimeSettings = runtimeSettings
         self.usesNarrowObservation = usesNarrowObservation
         self.dependencies = dependencies
         _libraryStore = ObservedObject(wrappedValue: dependencies.libraryStore)
-        self.isLandscape = isLandscape
-        self.isPortraitFullscreen = isPortraitFullscreen
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
         self.isCollapsedChromeActive = isCollapsedChromeActive
