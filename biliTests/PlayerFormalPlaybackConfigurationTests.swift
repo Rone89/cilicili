@@ -492,6 +492,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.scrollEdgeEffectPreference.v1",
             "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
             "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
+            "cc.bili.experimental.videoDetailToolbarSegmentedPicker.v1",
             "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
             "cc.bili.home.navigationToolbarScrollVisibilityExperimentEnabled.v1",
             "cc.bili.home.navigationChromeDelayedReturnExperimentEnabled.v1",
