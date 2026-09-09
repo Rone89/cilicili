@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// UIKit 外壳用：暂停下翻收缩时的折叠工具条。
-/// 背景由 `VideoDetailShellViewController` 的主题色遮罩提供。
+/// 背景由 `VideoDetailRotationBridgeViewController` 的主题色遮罩提供。
 struct VideoDetailShellCollapsedBar: View {
     @ObservedObject var playerViewModel: PlayerStateViewModel
     let onNavigateBack: () -> Void
