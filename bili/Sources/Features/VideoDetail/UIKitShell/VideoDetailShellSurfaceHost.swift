@@ -196,6 +196,15 @@ final class VideoDetailShellSurfaceHost: UIView {
             setNeedsLayout()
             layoutIfNeeded()
             surfaceHostView.refreshLayoutImmediately()
+#if DEBUG
+            let drawableFrame = surfaceHostView.hostedView.convert(
+                surfaceHostView.hostedView.bounds,
+                to: self
+            )
+            print(
+                "[VideoDetailGeometry] surfaceFrame=\(surfaceHostView.hostedView.frame) surfaceBounds=\(surfaceHostView.hostedView.bounds) drawableFrame=\(drawableFrame) window=\(window?.bounds as Any) root=\(superview?.bounds as Any) safeArea=\(safeAreaInsets)"
+            )
+#endif
             if !state.isBareSurfaceTransitionActive {
                 overlayHostingController.view.setNeedsLayout()
                 overlayHostingController.view.layoutIfNeeded()

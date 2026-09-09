@@ -472,6 +472,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         addChild(hostingController)
+        hostingController.safeAreaRegions = []
         hostingController.view.backgroundColor = .clear
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hostingController.view)
