@@ -81,7 +81,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.overlayState = overlayState
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
-        self.surfaceHostView = DirectUIKitPlayerSurfaceHostView(
+        self.surfaceHostView = VideoDetailSwiftUISurfaceHostingView(
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.pictureInPictureEnabled
                 && !playerViewModel.isAudioOnlyPlayback

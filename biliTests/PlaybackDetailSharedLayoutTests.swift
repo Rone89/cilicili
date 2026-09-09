@@ -152,6 +152,99 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNil(layout.contentTopInset)
     }
 
+    @MainActor
+    func testVideoDetailShellLayoutKeepsExpandedInsetStableWhilePlayerShrinks() {
+        let expanded = VideoDetailShellLayout.expandedPlayerHeight(
+            bounds: CGSize(width: 393, height: 852),
+            videoAspectRatio: 16.0 / 9.0
+        )
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 393, height: 852),
+            safeAreaTop: 59,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: 54,
+            isPlaybackActive: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(layout.playerFrame.height, 54)
+        XCTAssertEqual(layout.contentTopInset, expanded)
+        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 59, width: 393, height: 793))
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorCoalescesRequestsAndPublishesStablePhase() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.beginSystemTransition(toLandscape: true)
+        XCTAssertEqual(coordinator.phase, .preparingLandscape)
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .landscapeLeft, in: nil)
+        )
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .landscapeRight, in: nil)
+        )
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .portrait, in: nil)
+        )
+        XCTAssertEqual(coordinator.pendingTarget, .portrait)
+
+        XCTAssertEqual(
+            coordinator.finishSystemTransition(
+                toLandscape: true,
+                currentOrientation: .landscapeRight
+            ),
+            .portrait
+        )
+        XCTAssertEqual(coordinator.phase, .landscape)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+    }
+
+    @MainActor
+    func testPortraitFullscreenDoesNotRequestSystemRotation() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+
+        coordinator.setPortraitFullscreen(true)
+
+        XCTAssertEqual(coordinator.phase, .portraitFullscreen)
+        XCTAssertTrue(coordinator.isPortraitFullscreen)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+
+        coordinator.setPortraitFullscreen(false)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isPortraitFullscreen)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorRecoversToStableStateAfterInterruptedTransition() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.beginSystemTransition(toLandscape: true)
+
+        coordinator.recover(isLandscape: false)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+        XCTAssertFalse(coordinator.isTransitioning)
+        XCTAssertNil(coordinator.pendingTarget)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorDeactivationClearsFullscreenAndRestoresInactiveState() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.setPortraitFullscreen(true)
+
+        coordinator.deactivate(in: nil)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isPortraitFullscreen)
+        XCTAssertFalse(coordinator.isViewActive)
+        XCTAssertFalse(coordinator.isTransitioning)
+    }
+
     func testRotationPolicyPreservesContentAndFreezesLayoutDuringTransition() {
         let policy = VideoDetailRotationPolicy()
 

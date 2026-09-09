@@ -51,14 +51,12 @@ final class VideoDetailShellViewController: UIViewController {
 
     /// 竖屏拖动缩放：当前播放器高度，nil 表示用默认（standardHeight）。
     private var currentPlayerHeight: CGFloat?
-    /// 竖屏视频的「竖屏全屏」态：播放器占满整屏、不旋转、隐藏内容区。
-    private var isPortraitFullscreen = false
     /// 上次滚动偏移，用于暂停时按当前位置重算高度（暂停后 min 变小可继续收缩）。
     private var lastScrollOffset: CGFloat = 0
     /// 播放状态订阅（player 实例变化时重建）。
     private var playbackStateCancellable: AnyCancellable?
-    /// 系统旋转期间冻结 SwiftUI chrome/滚动联动，让 live surface 跟随 UIKit frame 动画。
-    private var isSystemRotationTransitioning = false
+    /// 旋转状态集中由 coordinator 持有；这里仅读取稳定状态驱动 surface 布局。
+    private let rotationCoordinator = PlaybackRotationCoordinator()
     private let rotationFrameProbe = VideoRotationFrameProbe()
     private var rotationFrameProbeGeneration = 0
     private var rotationCompletionRecoveryDisplayLink: CADisplayLink?
@@ -68,7 +66,6 @@ final class VideoDetailShellViewController: UIViewController {
     private var rotationCompletionRecoveryNotBefore: TimeInterval?
     private var rotationCompletionRecoveryGeneration = 0
     private var rotationRecoveryWatchdogTask: Task<Void, Never>?
-    private var rotationRequestCoalescer = VideoDetailRotationRequestCoalescer()
     /// VC 是否处于可见活跃态（viewDidAppear~viewWillDisappear 之间）。
     /// 用于防止 $detail sink 在 VC 消失后重新解锁横屏，导致全局朝向锁卡在 landscape。
     private var isViewActive = false
@@ -80,9 +77,17 @@ final class VideoDetailShellViewController: UIViewController {
     private var contentActionSuppressionWorkItem: DispatchWorkItem?
     private var didTearDownPlayerSurface = false
 
+    private var isSystemRotationTransitioning: Bool {
+        rotationCoordinator.isSystemRotationTransitioning
+    }
+
+    private var isPortraitFullscreen: Bool {
+        rotationCoordinator.isPortraitFullscreen
+    }
+
     /// 竖屏标准高度（对齐原项目：固定 16:9，与视频真实比例无关）。
     private func standardPlayerHeight(forWidth width: CGFloat) -> CGFloat {
-        PlaybackDetailShellLayout.standardPlayerHeight(for: width)
+        VideoDetailShellLayout.standardPlayerHeight(forWidth: width)
     }
 
     /// 是否竖屏视频（aspectRatio < 0.9，对齐原项目）。
@@ -93,26 +98,24 @@ final class VideoDetailShellViewController: UIViewController {
     /// 缩放上限（对齐原项目 expandedHeight）：竖屏视频放大到屏高 0.65~0.72 区间，
     /// 横屏视频就是 standardHeight。
     private func expandedPlayerHeight(bounds: CGSize) -> CGFloat {
-        let standard = standardPlayerHeight(forWidth: bounds.width)
-        guard isPortraitVideo else { return standard }
-        let proposed = max(bounds.height * 0.65, bounds.width)
-        let maximum = max(standard, bounds.height * 0.72)
-        return max(standard, min(proposed, maximum))
+        VideoDetailShellLayout.expandedPlayerHeight(
+            bounds: bounds,
+            videoAspectRatio: videoAspectRatio
+        )
     }
 
     /// 缩放下限（对齐原项目）：播放中=standardHeight，暂停=58pt 工具条。
     private func minimumPlayerHeight(forWidth width: CGFloat) -> CGFloat {
-        let standard = standardPlayerHeight(forWidth: width)
-        let isPlaybackActive = isPlaybackActiveForCollapsedChrome
-        return isPlaybackActive ? standard : collapsedToolbarHeight
+        VideoDetailShellLayout.minimumPlayerHeight(
+            forWidth: width,
+            isPlaybackActive: isPlaybackActiveForCollapsedChrome
+        )
     }
 
     private var isPlaybackActiveForCollapsedChrome: Bool {
         guard let player = viewModel.stablePlayerViewModel else { return false }
         return player.isPlaying || player.isUserSeeking
     }
-
-    private let collapsedToolbarHeight: CGFloat = 54
 
     private var isLandscape: Bool {
         view.bounds.width > view.bounds.height
@@ -248,11 +251,15 @@ final class VideoDetailShellViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewActive = true
+        rotationCoordinator.activate(
+            isLandscape: resolvedLandscapeForRecovery,
+            isPortraitFullscreen: isPortraitFullscreen
+        )
         contentState.mountsSecondaryContent = true
         let wasBackgroundRenderFrozen = isBackgroundRenderFreezeActive
         let shouldHideContent = isLandscape || isPortraitFullscreen
         if isSystemRotationTransitioning
-            || rotationRequestCoalescer.isTransitioning
+            || rotationCoordinator.isTransitioning
             || contentHost.view.isHidden != shouldHideContent
         {
             reconcileStableRotationState()
@@ -276,16 +283,13 @@ final class VideoDetailShellViewController: UIViewController {
     private func updateOrientationLock() {
         guard isViewActive else { return }
         let scene = view.window?.windowScene
-        if isPortraitVideo {
-            AppOrientationLock.update(to: .portrait, in: scene)
-            if rotationPolicy.restoresPortraitAfterResolvingPortraitVideo(
+        rotationCoordinator.updateOrientationLock(
+            isPortraitVideo: isPortraitVideo,
+            isCurrentlyLandscape: rotationPolicy.restoresPortraitAfterResolvingPortraitVideo(
                 isCurrentlyLandscape: isLandscape
-            ) {
-                requestCoalescedGeometryUpdate(to: .portrait, in: scene)
-            }
-        } else {
-            AppOrientationLock.update(to: .allButUpsideDown, in: scene)
-        }
+            ),
+            in: scene
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -295,7 +299,7 @@ final class VideoDetailShellViewController: UIViewController {
         recoverInterruptedRotationIfNeeded(reason: "viewWillDisappear")
         cancelPendingRotationCompletionRecovery()
         cancelRotationRecoveryWatchdog()
-        rotationRequestCoalescer.reset()
+        rotationCoordinator.deactivate(in: view.window?.windowScene)
         setBackgroundRenderFreezeActive(
             !isMovingFromParent
                 && !isBeingDismissed
@@ -304,7 +308,6 @@ final class VideoDetailShellViewController: UIViewController {
         playerSurfaceController.cancelRotationChromePrewarm()
         rotationFrameProbe.cancel()
         // 离开页面恢复竖屏锁定，避免横屏解锁残留影响其它页面（首页/动态/直播/我的）。
-        AppOrientationLock.restorePortrait(in: view.window?.windowScene)
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -314,10 +317,10 @@ final class VideoDetailShellViewController: UIViewController {
         recoverInterruptedRotationIfNeeded(reason: "viewDidDisappear")
         cancelPendingRotationCompletionRecovery()
         cancelRotationRecoveryWatchdog()
-        rotationRequestCoalescer.reset()
+        rotationCoordinator.deactivate(in: view.window?.windowScene)
         playerSurfaceController.cancelRotationChromePrewarm()
         // 双保险：tab 切换等场景 viewWillDisappear 可能不触发，这里再兜一次。
-        AppOrientationLock.restorePortrait(in: view.window?.windowScene)
+        rotationCoordinator.restorePortrait(in: view.window?.windowScene)
         if isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true {
             setBackgroundRenderFreezeActive(false)
             tearDownPlayerSurfaceIfNeeded()
@@ -330,6 +333,7 @@ final class VideoDetailShellViewController: UIViewController {
         dismissPlayerMoreControls()
         recoverInterruptedRotationIfNeeded(reason: "dismantle")
         cancelRotationRecoveryWatchdog()
+        rotationCoordinator.deactivate(in: view.window?.windowScene)
         setBackgroundRenderFreezeActive(false)
         releaseSystemBackGestureOwnership()
         tearDownPlayerSurfaceIfNeeded()
@@ -362,7 +366,7 @@ final class VideoDetailShellViewController: UIViewController {
         super.viewWillTransition(to: size, with: coordinator)
         let toLandscape = size.width > size.height
         let policy = rotationPolicy
-        rotationRequestCoalescer.beginTransition()
+        rotationCoordinator.beginSystemTransition(toLandscape: toLandscape)
         let usesPrewarmedFastRecovery = policy.usesPrewarmedFastRecovery(
             hasPrewarmedRotationChrome: playerSurfaceController.isRotationChromePrewarmed
         )
@@ -397,7 +401,6 @@ final class VideoDetailShellViewController: UIViewController {
             duringTransitionToLandscape: toLandscape
         )
         contentHost.view.isUserInteractionEnabled = !contentHost.view.isHidden
-        isSystemRotationTransitioning = true
         setContentUpdatesDeferred(true)
         scheduleRotationRecoveryWatchdog(
             generation: completionRecoveryGeneration,
@@ -502,7 +505,6 @@ final class VideoDetailShellViewController: UIViewController {
                 else { return }
 
                 self.rotationFrameProbe.mark("第二帧：恢复内容开始")
-                self.isSystemRotationTransitioning = false
                 self.contentHost.view.isHidden = toLandscape
                 self.contentHost.view.isUserInteractionEnabled = !toLandscape
                 self.setContentUpdatesDeferred(false)
@@ -624,14 +626,16 @@ final class VideoDetailShellViewController: UIViewController {
 
     @discardableResult
     private func recoverInterruptedRotationIfNeeded(reason: String) -> Bool {
-        guard isSystemRotationTransitioning || rotationRequestCoalescer.isTransitioning else {
+        guard rotationCoordinator.isTransitioning else {
             return false
         }
         rotationCompletionRecoveryGeneration &+= 1
         cancelPendingRotationCompletionRecovery()
         cancelRotationRecoveryWatchdog()
-        rotationRequestCoalescer.reset()
-        isSystemRotationTransitioning = false
+        rotationCoordinator.recover(
+            isLandscape: resolvedLandscapeForRecovery,
+            isPortraitFullscreen: isPortraitFullscreen
+        )
         reconcileStableRotationState()
         rotationFrameProbe.finish(reason: "旋转中断自恢复 reason=\(reason)")
         PlaybackDetailPerformanceMonitor.shared.mark(
@@ -652,6 +656,10 @@ final class VideoDetailShellViewController: UIViewController {
     private func reconcileStableRotationState() {
         guard isViewLoaded else { return }
         let landscape = resolvedLandscapeForRecovery
+        rotationCoordinator.reconcileStableState(
+            isLandscape: landscape,
+            isPortraitFullscreen: isPortraitFullscreen
+        )
         let hidesContent = landscape || isPortraitFullscreen
         contentHost.view.isHidden = hidesContent
         contentHost.view.isUserInteractionEnabled = !hidesContent
@@ -673,7 +681,8 @@ final class VideoDetailShellViewController: UIViewController {
         let scene = view.window?.windowScene
         let currentOrientation = scene?.effectiveGeometry.interfaceOrientation
             ?? (toLandscape ? .landscapeRight : .portrait)
-        guard let pendingTarget = rotationRequestCoalescer.completeTransition(
+        guard let pendingTarget = rotationCoordinator.finishSystemTransition(
+            toLandscape: toLandscape,
             currentOrientation: currentOrientation
         ) else { return }
         requestCoalescedGeometryUpdate(to: pendingTarget, in: scene)
@@ -775,17 +784,14 @@ final class VideoDetailShellViewController: UIViewController {
         let bounds = CGRect(origin: .zero, size: size ?? view.bounds.size)
         let landscape = bounds.width > bounds.height
 
-        let usesFullscreenLayout = landscape || isPortraitFullscreen
         view.backgroundColor = .black
-        let expanded = expandedPlayerHeight(bounds: bounds.size)
-        let shellLayout = PlaybackDetailShellLayout(
+        let shellLayout = VideoDetailShellLayout.resolve(
             bounds: bounds,
             safeAreaTop: view.safeAreaInsets.top,
-            playerHeight: usesFullscreenLayout
-                ? bounds.height
-                : resolvedPlayerHeight(bounds: bounds.size),
-            contentTopInset: expanded,
-            usesFullscreenLayout: usesFullscreenLayout
+            videoAspectRatio: videoAspectRatio,
+            currentPlayerHeight: currentPlayerHeight,
+            isPlaybackActive: isPlaybackActiveForCollapsedChrome,
+            isPortraitFullscreen: isPortraitFullscreen
         )
         playerContainer.frame = shellLayout.playerFrame
         contentHost.view.frame = shellLayout.contentFrame
@@ -894,7 +900,7 @@ final class VideoDetailShellViewController: UIViewController {
             setPortraitFullscreen(true)
         } else {
             let scene = view.window?.windowScene
-            AppOrientationLock.update(to: .allButUpsideDown, in: scene)
+            rotationCoordinator.allowLandscape(in: scene)
             let targetOrientation = rotationPolicy.preferredLandscapeInterfaceOrientation(
                 currentInterfaceOrientation: scene?.effectiveGeometry.interfaceOrientation,
                 deviceOrientation: UIDevice.current.orientation
@@ -915,7 +921,7 @@ final class VideoDetailShellViewController: UIViewController {
     /// 旋转回竖屏。
     private func requestPortrait() {
         let scene = view.window?.windowScene
-        AppOrientationLock.update(to: .allButUpsideDown, in: scene)
+        rotationCoordinator.allowLandscape(in: scene)
         requestCoalescedGeometryUpdate(to: .portrait, in: scene)
     }
 
@@ -923,14 +929,13 @@ final class VideoDetailShellViewController: UIViewController {
         to target: UIInterfaceOrientationMask,
         in scene: UIWindowScene?
     ) {
-        guard let target = rotationRequestCoalescer.submit(target) else { return }
-        AppOrientationLock.requestGeometryUpdate(to: target, in: scene)
+        rotationCoordinator.requestGeometryUpdate(to: target, in: scene)
     }
 
     /// 竖屏视频的「竖屏全屏」态切换：播放器占满整屏、隐藏内容区，带动画。
     private func setPortraitFullscreen(_ active: Bool) {
         guard isPortraitFullscreen != active else { return }
-        isPortraitFullscreen = active
+        rotationCoordinator.setPortraitFullscreen(active)
         contentHost.view.isHidden = active
         contentHost.view.isUserInteractionEnabled = !active
         setSurfaceLandscape(active) // 复用全屏 chrome 样式（隐藏导航栏等）
@@ -990,9 +995,12 @@ final class VideoDetailShellViewController: UIViewController {
     }
 
     private func resolvedPlayerHeight(bounds: CGSize) -> CGFloat {
-        let expanded = expandedPlayerHeight(bounds: bounds)
-        let minimum = minimumPlayerHeight(forWidth: bounds.width)
-        return max(minimum, min(currentPlayerHeight ?? expanded, expanded))
+        VideoDetailShellLayout.resolvedPlayerHeight(
+            bounds: bounds,
+            videoAspectRatio: videoAspectRatio,
+            currentPlayerHeight: currentPlayerHeight,
+            isPlaybackActive: isPlaybackActiveForCollapsedChrome
+        )
     }
 
     private func handleScrollOffset(tab: VideoDetailContentTab, offset: CGFloat) {
