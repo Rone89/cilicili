@@ -4,7 +4,9 @@ struct VideoDetailToolbarSegmentedPickerView: View {
     static let compactWidth: CGFloat = 144
     private static let height: CGFloat = 38
 
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var selection: VideoDetailContentTab
+    @Namespace private var selectionIndicatorNamespace
 
     var body: some View {
         HStack(spacing: 0) {
@@ -15,11 +17,14 @@ struct VideoDetailToolbarSegmentedPickerView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("内容")
         .accessibilityIdentifier("video.detail.toolbar-picker")
+        .animation(.smooth(duration: 0.22), value: selection)
     }
 
     private func segment(title: String, tab: VideoDetailContentTab) -> some View {
         Button {
-            selection = tab
+            withAnimation(.smooth(duration: 0.22)) {
+                selection = tab
+            }
         } label: {
             Text(title)
                 .font(.subheadline.weight(.medium))
@@ -28,7 +33,16 @@ struct VideoDetailToolbarSegmentedPickerView: View {
                 .background {
                     if selection == tab {
                         Capsule()
-                            .fill(.primary.opacity(0.12))
+                            .fill(selectionFill)
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
+                            }
+                            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                            .matchedGeometryEffect(
+                                id: "video-detail-toolbar-selection",
+                                in: selectionIndicatorNamespace
+                            )
                     }
                 }
         }
@@ -36,6 +50,10 @@ struct VideoDetailToolbarSegmentedPickerView: View {
         .accessibilityLabel(title)
         .accessibilityValue(selection == tab ? "已选中" : "未选中")
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
+    }
+
+    private var selectionFill: Color {
+        colorScheme == .light ? .white.opacity(0.92) : .primary.opacity(0.14)
     }
 }
 
