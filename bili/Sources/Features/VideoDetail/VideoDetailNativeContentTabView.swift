@@ -1,10 +1,8 @@
 import SwiftUI
-import UIKit
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
-    @EnvironmentObject private var libraryStore: LibraryStore
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
@@ -20,17 +18,17 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
             Color.clear.frame(height: topInset).accessibilityHidden(true)
             tabContent
         }
-        .overlay(alignment: .bottom) {
-            VideoDetailTransparentSegmentedPicker(selection: $selection)
-                .frame(width: 144, height: segmentedPickerHeight)
-                .glassEffect(
-                    libraryStore.videoDetailSegmentedPickerGlassStyle == .clear
-                        ? .clear.interactive() : .regular.interactive(),
-                    in: .capsule
-                )
-                .padding(.bottom, bottomInset + 8)
+        .ignoresSafeArea(.container, edges: .bottom)
+        .toolbar {
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer(minLength: 0)
+                VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                    .frame(width: VideoDetailToolbarSegmentedPickerView.compactWidth)
+                Spacer(minLength: 0)
+            }
         }
-        .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
+        .toolbarBackground(.hidden, for: .bottomBar)
+        .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
     }
 
@@ -96,81 +94,5 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
             guard let adjustment, adjustment.tab == tab else { return }
             position.scrollTo(y: adjustment.offset)
         }
-    }
-}
-
-private struct VideoDetailTransparentSegmentedPicker: UIViewRepresentable {
-    @Binding var selection: VideoDetailContentTab
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
-    }
-
-    func makeUIView(context: Context) -> VideoDetailSegmentedControl {
-        let control = VideoDetailSegmentedControl(items: ["简介", "评论"])
-        control.backgroundColor = .clear
-        control.tintColor = .label
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 15, weight: .medium)
-        ]
-        control.setTitleTextAttributes(titleAttributes, for: .normal)
-        control.setTitleTextAttributes(titleAttributes, for: .selected)
-        control.addTarget(
-            context.coordinator,
-            action: #selector(Coordinator.selectionChanged(_:)),
-            for: .valueChanged
-        )
-        control.accessibilityIdentifier = "video.detail.glass-panel-picker"
-        control.accessibilityLabel = "切换视图"
-        update(control)
-        return control
-    }
-
-    func updateUIView(_ control: VideoDetailSegmentedControl, context: Context) {
-        context.coordinator.selection = $selection
-        update(control)
-    }
-
-    private func update(_ control: VideoDetailSegmentedControl) {
-        control.selectedSegmentIndex = selection == .detail ? 0 : 1
-        control.accessibilityValue = selection.title
-    }
-
-    final class Coordinator: NSObject {
-        var selection: Binding<VideoDetailContentTab>
-
-        init(selection: Binding<VideoDetailContentTab>) {
-            self.selection = selection
-        }
-
-        @objc func selectionChanged(_ sender: UISegmentedControl) {
-            selection.wrappedValue = sender.selectedSegmentIndex == 0 ? .detail : .comments
-        }
-    }
-}
-
-private final class VideoDetailSegmentedControl: UISegmentedControl {
-    #if DEBUG
-        private var lastWindowFrame = CGRect.null
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            let windowFrame = convert(bounds, to: window)
-            if windowFrame != lastWindowFrame {
-                lastWindowFrame = windowFrame
-                print("[VideoDetailGeometry] headerFrame(window)=\(windowFrame)")
-            }
-        }
-    #endif
-    override var intrinsicContentSize: CGSize {
-        var size = super.intrinsicContentSize
-        size.height = 40
-        return size
-    }
-
-    override func sizeThatFits(_ size: CGSize) -> CGSize {
-        var fittedSize = super.sizeThatFits(size)
-        fittedSize.height = 40
-        return fittedSize
     }
 }
