@@ -63,7 +63,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         _ uiView: VideoDetailShellSurfaceHost,
         coordinator: Coordinator
     ) {
-        coordinator.cancelAttachmentRetry()
+        coordinator.dismantle()
         uiView.tearDown()
     }
 
@@ -97,6 +97,9 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             host: VideoDetailShellSurfaceHost,
             playerViewModel: PlayerStateViewModel
         ) {
+            if self.host !== host {
+                isAttached = false
+            }
             self.host = host
             guard observedPlayer !== playerViewModel else { return }
             playerCancellable = nil
@@ -130,6 +133,10 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         func cancelAttachmentRetry() {
             attachmentRetry?.cancel()
             attachmentRetry = nil
+        }
+
+        func dismantle() {
+            cancelAttachmentRetry()
             playerCancellable = nil
             observedPlayer = nil
             host = nil

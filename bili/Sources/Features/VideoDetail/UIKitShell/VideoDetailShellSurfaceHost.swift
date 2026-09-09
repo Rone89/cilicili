@@ -152,6 +152,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     func attach(to parent: UIViewController) {
         guard !isTornDown else { return }
         surfaceHostView.attach(to: parent)
+        guard overlayHostingController.parent == nil else { return }
         parent.addChild(overlayHostingController)
         overlayHostingController.didMove(toParent: parent)
     }

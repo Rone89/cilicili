@@ -213,10 +213,13 @@ final class VideoDetailFlowUITests: XCTestCase {
         sleep(1)
         app.activate()
 
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
         if !fullscreen.waitForExistence(timeout: 2) {
-            app.buttons["ui.player.surface"].tap()
+            let surface = app.buttons["ui.player.surface"]
+            XCTAssertTrue(surface.waitForExistence(timeout: 5))
+            surface.tap()
         }
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
     }

@@ -1,6 +1,7 @@
 #if DEBUG
 import Combine
 import Foundation
+import OSLog
 import QuartzCore
 
 enum VideoDetailPlaybackDiagnosticSurfaceEvent {
@@ -38,10 +39,13 @@ final class VideoDetailPlaybackDiagnostics {
     private var cancellables = Set<AnyCancellable>()
     private weak var observedPlayer: PlayerStateViewModel?
     private var blackFrameProbeTask: Task<Void, Never>?
+    private var blackFrameProbeStartedAt: CFTimeInterval?
     private var pageStartedAt: CFTimeInterval?
     private var firstPlaybackAt: CFTimeInterval?
     private var firstFrameAt: CFTimeInterval?
     private var rotationStartedAt: CFTimeInterval?
+    private var rotationSignpostState: OSSignpostIntervalState?
+    private var lastSignpostedPlaybackState: String?
     private var lastPlayerID: ObjectIdentifier?
     private var lastPlayerItemID: ObjectIdentifier?
     private var lastSurfaceID: ObjectIdentifier?
@@ -66,6 +70,7 @@ final class VideoDetailPlaybackDiagnostics {
         observedPlayer?.onVideoDetailPlaybackDiagnosticSurfaceEvent = nil
         cancellables.removeAll()
         observedPlayer = player
+        lastSignpostedPlaybackState = nil
         guard let player else {
             record("videoDetail.player detached")
             return
@@ -168,6 +173,7 @@ final class VideoDetailPlaybackDiagnostics {
         rotationStartedAt = startedAt
         blackFrameProbeTask?.cancel()
         blackFrameProbeTask = nil
+        blackFrameProbeStartedAt = nil
         activeRotationRecord = VideoDetailRotationDiagnosticRecord(
             target: toLandscape ? "landscape" : "portrait",
             durationMilliseconds: nil,
@@ -187,6 +193,15 @@ final class VideoDetailPlaybackDiagnostics {
             playbackState: observedPlayer.map { $0.isPlaying ? "playing" : "paused" } ?? "unknown",
             isBuffering: observedPlayer?.isBuffering ?? false
         )
+        rotationSignpostState = PlayerMetricsLog.beginSignpostedInterval(
+            "VideoDetailRotation",
+            message: toLandscape ? "target=landscape" : "target=portrait"
+        )
+        lastSignpostedPlaybackState = nil
+        PlayerMetricsLog.signpostEvent(
+            "VideoDetailRotationStart",
+            message: toLandscape ? "target=landscape" : "target=portrait"
+        )
         record(
             "videoDetail.rotationStart target=\(toLandscape ? "landscape" : "portrait") \(identitySummary)"
         )
@@ -200,11 +215,12 @@ final class VideoDetailPlaybackDiagnostics {
             return
         }
         guard !hasUsableVideoFrame else {
-            activeRotationRecord?.blackFrameDurationMilliseconds = 0
             record("videoDetail.blackFrameDuration=notObserved \(identitySummary)")
             return
         }
         let blackFrameStartedAt = CACurrentMediaTime()
+        blackFrameProbeStartedAt = blackFrameStartedAt
+        PlayerMetricsLog.signpostEvent("VideoDetailBlackFrameStart")
         blackFrameProbeTask = Task { @MainActor [weak self, weak player] in
             for _ in 0..<180 {
                 guard !Task.isCancelled else { return }
@@ -213,12 +229,14 @@ final class VideoDetailPlaybackDiagnostics {
                 if player.debugHasUsableVideoFrame == true {
                     self.finishBlackFrameRecord(duration: CACurrentMediaTime() - blackFrameStartedAt)
                     self.blackFrameProbeTask = nil
+                    self.blackFrameProbeStartedAt = nil
                     return
                 }
             }
             guard let self, !Task.isCancelled else { return }
             self.finishBlackFrameRecord(duration: nil)
             self.blackFrameProbeTask = nil
+            self.blackFrameProbeStartedAt = nil
         }
     }
 
@@ -255,6 +273,7 @@ final class VideoDetailPlaybackDiagnostics {
         hasLoggedPageSummary = true
         blackFrameProbeTask?.cancel()
         blackFrameProbeTask = nil
+        blackFrameProbeStartedAt = nil
         observedPlayer?.onVideoDetailPlaybackDiagnosticSurfaceEvent = nil
         if let rotationStartedAt {
             finishRotationRecord(
@@ -279,6 +298,7 @@ final class VideoDetailPlaybackDiagnostics {
         case let .attached(surfaceID, playerID, playerItemID):
             lastSurfaceID = surfaceID
             activeRotationRecord?.surfaceAttachCount += 1
+            PlayerMetricsLog.signpostEvent("VideoDetailSurfaceAttach")
             updateRecordIdentities(
                 playerID: playerID,
                 playerItemID: playerItemID,
@@ -288,6 +308,7 @@ final class VideoDetailPlaybackDiagnostics {
         case let .detached(surfaceID, playerID, playerItemID):
             lastSurfaceID = surfaceID
             activeRotationRecord?.surfaceDetachCount += 1
+            PlayerMetricsLog.signpostEvent("VideoDetailSurfaceDetach")
             updateRecordIdentities(
                 playerID: playerID,
                 playerItemID: playerItemID,
@@ -313,6 +334,7 @@ final class VideoDetailPlaybackDiagnostics {
     private func markFirstPlaybackIfNeeded() {
         guard firstPlaybackAt == nil else { return }
         firstPlaybackAt = CACurrentMediaTime()
+        PlayerMetricsLog.signpostEvent("VideoDetailFirstPlayback")
         activeRotationRecord?.firstPlaybackLatencyMilliseconds = elapsedMilliseconds(
             from: pageStartedAt,
             to: firstPlaybackAt
@@ -325,6 +347,7 @@ final class VideoDetailPlaybackDiagnostics {
     private func markFirstFrameIfNeeded() {
         guard firstFrameAt == nil else { return }
         firstFrameAt = CACurrentMediaTime()
+        PlayerMetricsLog.signpostEvent("VideoDetailFirstFrame")
         activeRotationRecord?.firstFrameLatencyMilliseconds = elapsedMilliseconds(
             from: pageStartedAt,
             to: firstFrameAt
@@ -336,8 +359,9 @@ final class VideoDetailPlaybackDiagnostics {
 
     private func finishBlackFrameProbeIfPossible(for player: PlayerStateViewModel) {
         guard player.debugHasUsableVideoFrame == true else { return }
-        if activeRotationRecord?.blackFrameDurationMilliseconds == nil {
-            activeRotationRecord?.blackFrameDurationMilliseconds = 0
+        if let blackFrameProbeStartedAt {
+            finishBlackFrameRecord(duration: CACurrentMediaTime() - blackFrameProbeStartedAt)
+            self.blackFrameProbeStartedAt = nil
         }
         blackFrameProbeTask?.cancel()
         blackFrameProbeTask = nil
@@ -347,6 +371,7 @@ final class VideoDetailPlaybackDiagnostics {
         activeRotationRecord?.blackFrameDurationMilliseconds = duration.map {
             max($0, 0) * 1000
         }
+        PlayerMetricsLog.signpostEvent("VideoDetailBlackFrameEnd")
         if let duration {
             record("videoDetail.blackFrameDuration=\(milliseconds(duration)) \(identitySummary)")
         } else {
@@ -385,8 +410,13 @@ final class VideoDetailPlaybackDiagnostics {
     }
 
     private func updateRecordPlaybackState(for player: PlayerStateViewModel) {
-        activeRotationRecord?.playbackState = player.isPlaying ? "playing" : "paused"
+        let playbackState = player.isPlaying ? "playing" : "paused"
+        activeRotationRecord?.playbackState = playbackState
         activeRotationRecord?.isBuffering = player.isBuffering
+        let signpostState = "\(playbackState)|buffering=\(player.isBuffering)"
+        guard lastSignpostedPlaybackState != signpostState else { return }
+        lastSignpostedPlaybackState = signpostState
+        PlayerMetricsLog.signpostEvent("VideoDetailPlaybackState")
     }
 
     private func finishRotationRecord(
@@ -425,6 +455,15 @@ final class VideoDetailPlaybackDiagnostics {
         }
         completedRotationRecords.append(record)
         emit(record)
+        if let rotationSignpostState {
+            PlayerMetricsLog.endSignpostedInterval(
+                "VideoDetailRotation",
+                rotationSignpostState,
+                message: record.recoveryReason ?? "completed"
+            )
+            self.rotationSignpostState = nil
+        }
+        PlayerMetricsLog.signpostEvent("VideoDetailRotationEnd")
         activeRotationRecord = nil
     }
 
