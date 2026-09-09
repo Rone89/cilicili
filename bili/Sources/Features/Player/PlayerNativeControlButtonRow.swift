@@ -54,6 +54,7 @@ struct PlayerNativeControlButtonRow: View {
                     PlayerNativeGlassIconButton(
                         systemName: danmakuControlSymbol,
                         accessibilityLabel: "弹幕设置",
+                        accessibilityIdentifier: "ui.player.danmaku.toggle",
                         metrics: metrics,
                         action: actions.onToggleDanmaku
                     )

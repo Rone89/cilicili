@@ -101,6 +101,7 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     func testVideoDetailPlayerFullscreenRoundTripKeepsDetailShellMounted() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-reset-state",
@@ -117,6 +118,11 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(fullscreen.isHittable)
         fullscreen.tap()
 
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let landscapeBack = app.buttons["ui.player.back"]
+        if landscapeBack.waitForExistence(timeout: 5) {
+            landscapeBack.tap()
+        }
         XCUIDevice.shared.orientation = .portrait
 
         let detailMarker = app.staticTexts["相关推荐"].firstMatch
@@ -125,7 +131,133 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoDetailQualitySwitchKeepsPlayerSurfaceMounted() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+
+        let quality = app.descendants(matching: .any)["ui.player.quality"].firstMatch
+        XCTAssertTrue(quality.waitForExistence(timeout: 5))
+        quality.tap()
+
+        let qualityTitle = app.navigationBars["清晰度"]
+        XCTAssertTrue(qualityTitle.waitForExistence(timeout: 5))
+        let choices = app.buttons
+        XCTAssertGreaterThan(choices.count, 0)
+        choices.element(boundBy: 0).tap()
+
+        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVideoDetailDanmakuInteractionKeepsPlayerSurfaceMounted() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        let settings = app.buttons["弹幕设置"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].exists)
+    }
+
+    @MainActor
+    func testVideoDetailRapidRotationPublishesStableIdentityDiagnostics() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+
+        fullscreen.tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = .landscapeRight
+        XCUIDevice.shared.orientation = .portrait
+
+        let diagnostics = app.descendants(matching: .any)["ui.videoDetail.rotationDiagnostics"].firstMatch
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 15))
+        let value = diagnostics.value as? String ?? ""
+        print("rotationDiagnostics=\(value)")
+        XCTAssertTrue(value.contains("playerViewModelIdentity"))
+        XCTAssertTrue(value.contains("avPlayerIdentity"))
+        XCTAssertTrue(value.contains("avPlayerItemIdentity"))
+        XCTAssertTrue(value.contains("surfaceIdentity"))
+        XCTAssertTrue(value.contains("surfaceAttachCount"))
+        XCTAssertTrue(value.contains("surfaceDetachCount"))
+        XCTAssertTrue(value.contains("playbackState"))
+        XCTAssertTrue(value.contains("isBuffering"))
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVideoDetailRotationDuringInitialBufferingRecoversPlaybackSurface() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+
+        fullscreen.tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
+
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVideoDetailBackgroundRecoveryKeepsPlayerSurfaceMounted() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        app.activate()
+
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
+        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        if !fullscreen.waitForExistence(timeout: 2) {
+            app.buttons["ui.player.surface"].tap()
+        }
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
+
+        fullscreen.tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
+
+        XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
+        app.swipeRight()
+        XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["首页"].isHittable)
+    }
+
+    @MainActor
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
+    }
+
+    @MainActor
+    private func launchVideoDetail(waitForDetailMarker: Bool = true) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state",
+            "--start-tab", "home",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        app.launch()
+        XCTAssertTrue(
+            app.segmentedControls["video.detail.glass-panel-picker"].waitForExistence(timeout: 10)
+        )
+        if waitForDetailMarker {
+            XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
+        }
+        return app
     }
 }

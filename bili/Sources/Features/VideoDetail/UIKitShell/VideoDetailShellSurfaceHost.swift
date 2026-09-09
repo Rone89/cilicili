@@ -51,7 +51,7 @@ final class VideoDetailShellSurfaceHost: UIView {
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
     private(set) var isRotationChromePrewarmed = false
-    private var isTornDown = false
+    private(set) var isTornDown = false
 
     init(
         playerViewModel: PlayerStateViewModel,
@@ -823,6 +823,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     private var backButton: some View {
         VideoDetailPlayerSurfaceBackButtonHost(action: handleBackButton)
             .environment(\.playerNativeControlMetrics, controlMetrics)
+            .accessibilityIdentifier("ui.player.back")
     }
 
     private func handleBackButton() {
@@ -1500,6 +1501,7 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .accessibilityIdentifier("ui.player.quality")
                 }
 
                 if detailViewModel.isVideoListenModeEnabled {
@@ -2988,6 +2990,7 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
             for: [.touchUpInside, .touchUpOutside, .touchCancel]
         )
         button.accessibilityLabel = "更多播放设置"
+        button.accessibilityIdentifier = "ui.player.more"
         return button
     }
 
