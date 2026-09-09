@@ -360,6 +360,11 @@ struct VideoDetailSwiftUIContainer: View {
             }
             .onAppear {
                 DispatchQueue.main.async {
+#if DEBUG
+                    print(
+                        "[VideoDetailGeometry] window=unknown root=\(proxy.size) safeArea=\(proxy.safeAreaInsets) playerFrame=\(layout.playerFrame) contentFrame=\(layout.contentFrame) drawableFrame=\(layout.playerFrame)"
+                    )
+#endif
                     model.synchronize(layout: layout)
                     model.updateCollapsedChrome(bounds: proxy.size)
                 }

@@ -56,7 +56,7 @@ struct VideoDetailShellLayout: Equatable {
 
     static func resolve(
         bounds: CGRect,
-        safeAreaTop: CGFloat,
+        safeAreaTop _: CGFloat,
         videoAspectRatio: CGFloat,
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
@@ -77,8 +77,6 @@ struct VideoDetailShellLayout: Equatable {
                 currentPlayerHeight: currentPlayerHeight,
                 isPlaybackActive: isPlaybackActive
             )
-        let topInset = min(max(safeAreaTop, 0), bounds.height)
-
         if usesFullscreenLayout {
             return Self(
                 playerFrame: bounds,
@@ -96,15 +94,15 @@ struct VideoDetailShellLayout: Equatable {
         return Self(
             playerFrame: CGRect(
                 x: bounds.minX,
-                y: bounds.minY + topInset,
+                y: bounds.minY,
                 width: bounds.width,
                 height: max(playerHeight, 0)
             ),
             contentFrame: CGRect(
                 x: bounds.minX,
-                y: bounds.minY + topInset,
+                y: bounds.minY,
                 width: bounds.width,
-                height: max(bounds.height - topInset, 0)
+                height: max(bounds.height, 0)
             ),
             contentTopInset: max(expanded, 0),
             usesFullscreenLayout: false

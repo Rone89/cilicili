@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
+    private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
     @EnvironmentObject private var libraryStore: LibraryStore
     @Binding var selection: VideoDetailContentTab
@@ -15,13 +16,13 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var body: some View {
         tabContent
             .ignoresSafeArea(.container, edges: .bottom)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            .overlay(alignment: .top) {
                 VideoDetailTransparentSegmentedPicker(selection: $selection)
-                    .frame(width: 144, height: 40)
+                    .frame(width: 144, height: segmentedPickerHeight)
                     .videoDetailSegmentedPickerGlassEffect(
                         libraryStore.videoDetailSegmentedPickerGlassStyle
                     )
-                    .offset(y: 2)
+                    .padding(.top, topInset)
                     .padding(.horizontal, 16)
                     .accessibilityIdentifier("video.detail.glass-panel-picker")
             }
@@ -51,7 +52,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         VideoDetailNativeContentTabPage(
             tab: tab,
             layoutWidth: layoutWidth,
-            topInset: topInset,
+            topInset: topInset + segmentedPickerHeight,
             scrollAdjustment: scrollAdjustment,
             onScrollOffsetChange: onScrollOffsetChange,
             content: { tab in

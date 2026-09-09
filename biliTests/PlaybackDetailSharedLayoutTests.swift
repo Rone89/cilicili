@@ -132,8 +132,8 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             usesFullscreenLayout: false
         )
 
-        XCTAssertEqual(layout.playerFrame, CGRect(x: 0, y: 59, width: 393, height: 221))
-        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 59, width: 393, height: 793))
+        XCTAssertEqual(layout.playerFrame, CGRect(x: 0, y: 0, width: 393, height: 221))
+        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 0, width: 393, height: 852))
         XCTAssertEqual(layout.contentTopInset, 221)
     }
 
@@ -170,7 +170,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
 
         XCTAssertEqual(layout.playerFrame.height, 54)
         XCTAssertEqual(layout.contentTopInset, expanded)
-        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 59, width: 393, height: 793))
+        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 0, width: 393, height: 852))
     }
 
     @MainActor
