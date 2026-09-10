@@ -4,10 +4,20 @@ private struct CommentContentOwnerMIDKey: EnvironmentKey {
     static let defaultValue: Int? = nil
 }
 
+private struct CommentAuthorNameUsesPrimaryStyleKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     var commentContentOwnerMID: Int? {
         get { self[CommentContentOwnerMIDKey.self] }
         set { self[CommentContentOwnerMIDKey.self] = newValue }
+    }
+
+
+    var commentAuthorNameUsesPrimaryStyle: Bool {
+        get { self[CommentAuthorNameUsesPrimaryStyleKey.self] }
+        set { self[CommentAuthorNameUsesPrimaryStyleKey.self] = newValue }
     }
 }
 

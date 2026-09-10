@@ -4,6 +4,7 @@ import Foundation
 struct VideoDetailEmbeddedCommentsSectionActionsBuilder {
     let viewModel: VideoDetailViewModel
     let onReply: (Comment) -> Void
+    let onComposeReply: ((Comment) -> Void)?
 
     var actions: VideoDetailCommentsSectionActions {
         VideoDetailCommentsSectionActions(
@@ -25,6 +26,7 @@ struct VideoDetailEmbeddedCommentsSectionActionsBuilder {
             showReplies: { comment in
                 onReply(comment)
             },
+            replyToComment: onComposeReply,
             showAllComments: nil
         )
     }

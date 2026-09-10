@@ -6,12 +6,14 @@ struct VideoDetailEmbeddedCommentsSection: View {
 
     init(
         viewModel: VideoDetailViewModel,
-        onReply: @escaping (Comment) -> Void
+        onReply: @escaping (Comment) -> Void,
+        onComposeReply: ((Comment) -> Void)?
     ) {
         self.viewModel = viewModel
         renderPack = VideoDetailEmbeddedCommentsSectionRenderPack(
             viewModel: viewModel,
-            onReply: onReply
+            onReply: onReply,
+            onComposeReply: onComposeReply
         )
     }
 

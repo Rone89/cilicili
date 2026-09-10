@@ -129,6 +129,7 @@ final class VideoDetailShellViewController: UIViewController {
         onShowNetworkDiagnostics: @escaping () -> Void,
         onShowFavoriteFolders: @escaping () -> Void,
         onShowCoinPicker: @escaping () -> Void,
+        onOpenCommentComposer: @escaping (Comment?) -> Void,
         onShowDanmakuSettings: @escaping () -> Void,
         onPresentPlayerMoreControls: @escaping (PlayerStateViewModel, @escaping () -> Void) -> Void,
         onDismissPlayerMoreControls: @escaping () -> Void,
@@ -150,6 +151,7 @@ final class VideoDetailShellViewController: UIViewController {
         self.contentHost = UIHostingController(
             rootView: VideoDetailShellContentView(
                 viewModel: viewModel,
+                libraryStore: dependencies.libraryStore,
                 updateGate: contentUpdateGate,
                 runtimeSettings: runtimeSettings,
                 state: contentState,
@@ -158,6 +160,7 @@ final class VideoDetailShellViewController: UIViewController {
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
                 onShowCoinPicker: onShowCoinPicker,
+                onOpenCommentComposer: onOpenCommentComposer,
                 onReply: onReply,
                 openVideoOwnerRoute: openVideoOwnerRoute,
                 onSelectedTabChange: { _ in },
@@ -174,6 +177,7 @@ final class VideoDetailShellViewController: UIViewController {
         // self 已可用，注入滚动联动缩放回调（值类型 rootView 需整体重设）。
         contentHost.rootView = VideoDetailShellContentView(
             viewModel: viewModel,
+            libraryStore: dependencies.libraryStore,
             updateGate: contentUpdateGate,
             runtimeSettings: runtimeSettings,
             state: contentState,
@@ -182,6 +186,7 @@ final class VideoDetailShellViewController: UIViewController {
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
+            onOpenCommentComposer: onOpenCommentComposer,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onSelectedTabChange: { [weak self] tab in
@@ -776,6 +781,9 @@ final class VideoDetailShellViewController: UIViewController {
         let landscape = bounds.width > bounds.height
 
         let usesFullscreenLayout = landscape || isPortraitFullscreen
+        if contentState.hidesBottomToolbar != usesFullscreenLayout {
+            contentState.hidesBottomToolbar = usesFullscreenLayout
+        }
         view.backgroundColor = .black
         let expanded = expandedPlayerHeight(bounds: bounds.size)
         let shellLayout = PlaybackDetailShellLayout(

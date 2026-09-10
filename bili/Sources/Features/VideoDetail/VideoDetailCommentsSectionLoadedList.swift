@@ -19,6 +19,9 @@ struct CommentsSectionLoadedList: View {
                     style: style,
                     showReplies: {
                         actions.showReplies(item.comment)
+                    },
+                    replyToComment: actions.replyToComment.map { action in
+                        { action(item.comment) }
                     }
                 )
                 .equatable()

@@ -15,6 +15,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
     @Binding var isShowingNetworkDiagnostics: Bool
+    let onOpenCommentComposer: (Comment?) -> Void
     let onNavigateBack: () -> Void
 
     func makeUIViewController(context: Context) -> VideoDetailShellViewController {
@@ -30,6 +31,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
             onShowNetworkDiagnostics: { isShowingNetworkDiagnostics = true },
             onShowFavoriteFolders: { isShowingFavoriteFolders = true },
             onShowCoinPicker: { isShowingCoinPicker = true },
+            onOpenCommentComposer: onOpenCommentComposer,
             onShowDanmakuSettings: { isShowingDanmakuSettings = true },
             onPresentPlayerMoreControls: { playerViewModel, onDismiss in
                 guard sheetRoute == nil else {

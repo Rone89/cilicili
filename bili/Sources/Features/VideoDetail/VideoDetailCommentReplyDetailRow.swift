@@ -2,6 +2,8 @@ import SwiftUI
 
 struct CommentReplyDetailRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.videoCommentReplyComposerAction) private var replyToComment
+    @Environment(\.commentAuthorNameUsesPrimaryStyle) private var usesPrimaryAuthorName
     let item: VideoDetailCommentReplyDisplayItem
     let showDialog: (() -> Void)?
 
@@ -14,18 +16,22 @@ struct CommentReplyDetailRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            CommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 36
-            )
+        DynamicCommentFullRowReplyTarget(
+            action: replyAction,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                CommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 36
+                )
 
-            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
                         CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(usesPrimaryAuthorName ? .primary : .secondary)
 
                         Spacer(minLength: 0)
 
@@ -47,7 +53,8 @@ struct CommentReplyDetailRow: View {
                     font: .subheadline,
                     textColor: .primary,
                     emoteSize: 22,
-                    typographyRole: .commentBody
+                    typographyRole: .commentBody,
+                    onNonLinkTap: replyAction
                 )
                     .padding(.top, 4)
                     .lineSpacing(1)
@@ -72,9 +79,14 @@ struct CommentReplyDetailRow: View {
                     .foregroundStyle(appTintColor)
                     .padding(.top, 8)
                 }
+                }
             }
         }
         .padding(.vertical, 10)
         .commentCopyContextMenu(text: reply.content?.message, title: "复制回复")
+    }
+
+    private var replyAction: (() -> Void)? {
+        replyToComment.map { action in { action(reply) } }
     }
 }
