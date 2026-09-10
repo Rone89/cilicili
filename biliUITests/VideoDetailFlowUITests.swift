@@ -101,6 +101,7 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         commentsButton.tap()
         XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["video.detail.summary"].firstMatch.exists)
         detailButton.tap()
         XCTAssertTrue(detailMarker.waitForExistence(timeout: 5))
         XCTAssertEqual(detailMarker.frame.minY, scrolledDetailMarkerY, accuracy: 8)

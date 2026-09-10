@@ -54,7 +54,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
             tab: tab,
             scrollAdjustment: scrollAdjustment,
             onScrollOffsetChange: onScrollOffsetChange,
-            summary: summary,
+            summary: tab == .detail ? summary : nil,
             bottomInset: bottomInset + segmentedPickerHeight + 16,
             content: { tab in
                 content(
