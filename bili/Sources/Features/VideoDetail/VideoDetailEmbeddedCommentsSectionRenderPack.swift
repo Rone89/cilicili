@@ -7,12 +7,14 @@ struct VideoDetailEmbeddedCommentsSectionRenderPack {
 
     init(
         viewModel: VideoDetailViewModel,
-        onReply: @escaping (Comment) -> Void
+        onReply: @escaping (Comment) -> Void,
+        onComposeReply: ((Comment) -> Void)?
     ) {
         store = viewModel.commentsRenderStore
         actions = VideoDetailEmbeddedCommentsSectionActionsBuilder(
             viewModel: viewModel,
-            onReply: onReply
+            onReply: onReply,
+            onComposeReply: onComposeReply
         )
         .actions
     }

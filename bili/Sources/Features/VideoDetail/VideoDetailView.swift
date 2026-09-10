@@ -53,7 +53,7 @@ struct VideoDetailView: View {
             )
             .environment(\.markRelatedVideoNavigation) {
                 holder.viewModel?.markRelatedVideoNavigation()
-                }
+            }
         }
     }
 

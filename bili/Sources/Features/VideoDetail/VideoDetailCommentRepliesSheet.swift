@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentRepliesSheet: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     let rootComment: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let initialReplyID: Int?
@@ -9,7 +11,10 @@ struct CommentRepliesSheet: View {
     let loadMoreReplies: (Comment) async -> Void
     let loadDialog: (Comment, Comment) async -> Void
     let reloadDialog: (Comment, Comment) async -> Void
+    let submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)?
     @State private var dialogReply: Comment?
+    @State private var composerTarget: DynamicCommentComposerTarget?
+    @State private var richCommentDrafts = [String: RichCommentDraft]()
     @State private var didPresentInitialReply = false
 
     init(
@@ -20,7 +25,12 @@ struct CommentRepliesSheet: View {
         reloadReplies: @escaping (Comment) async -> Void,
         loadMoreReplies: @escaping (Comment) async -> Void,
         loadDialog: @escaping (Comment, Comment) async -> Void,
-        reloadDialog: @escaping (Comment, Comment) async -> Void
+        reloadDialog: @escaping (Comment, Comment) async -> Void,
+        submitReply: ((
+            DynamicCommentComposerTarget,
+            String,
+            [DynamicCommentImage]?
+        ) async throws -> Void)?
     ) {
         self.rootComment = rootComment
         self.store = store
@@ -30,6 +40,7 @@ struct CommentRepliesSheet: View {
         self.loadMoreReplies = loadMoreReplies
         self.loadDialog = loadDialog
         self.reloadDialog = reloadDialog
+        self.submitReply = submitReply
     }
 
     var body: some View {
@@ -43,6 +54,11 @@ struct CommentRepliesSheet: View {
                 loadReplies: loadReplies
             )
         }
+        .environment(\.videoCommentReplyComposerAction, replyComposerAction)
+        .environment(
+            \.commentAuthorNameUsesPrimaryStyle,
+            libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled
+        )
         .commentSheetPresentation()
         .sheet(item: $dialogReply) { reply in
             CommentDialogSheet(
@@ -50,8 +66,23 @@ struct CommentRepliesSheet: View {
                 focusReply: reply,
                 store: store,
                 loadDialog: loadDialog,
-                reloadDialog: reloadDialog
+                reloadDialog: reloadDialog,
+                submitReply: submitReply
             )
+        }
+        .background {
+            if let submitReply {
+                RichCommentComposerPresenter(
+                    target: $composerTarget,
+                    draft: richCommentDraftBinding,
+                    api: dependencies.api,
+                    submit: { target, message, pictures in
+                        try await submitReply(target, message, pictures)
+                        await reloadReplies(rootComment)
+                    }
+                )
+                .allowsHitTesting(false)
+            }
         }
         .onChange(of: replyIDs) { _, _ in
             presentInitialReplyIfAvailable()
@@ -63,6 +94,22 @@ struct CommentRepliesSheet: View {
 
     private func showDialog(_ reply: Comment) {
         dialogReply = reply
+    }
+
+    private func openReplyComposer(for parent: Comment) {
+        composerTarget = .reply(root: rootComment, parent: parent)
+    }
+
+    private var replyComposerAction: ((Comment) -> Void)? {
+        guard submitReply != nil else { return nil }
+        return { parent in openReplyComposer(for: parent) }
+    }
+
+    private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { richCommentDrafts[target.id] = $0 }
+        )
     }
 
     private var replyIDs: [Int] {

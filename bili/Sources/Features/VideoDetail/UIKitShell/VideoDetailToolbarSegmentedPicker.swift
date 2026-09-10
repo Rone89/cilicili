@@ -53,7 +53,7 @@ struct VideoDetailToolbarSegmentedPickerView: View {
     }
 
     private var selectionFill: Color {
-        colorScheme == .light ? .white.opacity(0.92) : .primary.opacity(0.14)
+        colorScheme == .light ? .white.opacity(0.75) : .primary.opacity(0.14)
     }
 }
 

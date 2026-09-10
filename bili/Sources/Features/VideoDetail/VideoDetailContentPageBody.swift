@@ -11,6 +11,7 @@ struct VideoDetailContentPageBody: View {
     let onShowCoinPicker: () -> Void
     let onReply: (Comment) -> Void
     var showsSummary = true
+    var onComposeReply: ((Comment) -> Void)? = nil
 
     var body: some View {
         switch tab {
@@ -30,7 +31,8 @@ struct VideoDetailContentPageBody: View {
             if mountsSecondaryContent {
                 VideoDetailLoadedCommentsContentPage(
                     viewModel: viewModel,
-                    onReply: onReply
+                    onReply: onReply,
+                    onComposeReply: onComposeReply
                 )
             } else {
                 Color.clear

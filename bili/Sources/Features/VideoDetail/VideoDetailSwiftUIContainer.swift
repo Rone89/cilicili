@@ -266,6 +266,7 @@ struct VideoDetailSwiftUIContainer: View {
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
+    let onOpenCommentComposer: (Comment?) -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onShowMoreControls: (@escaping () -> Void) -> Void
@@ -287,6 +288,7 @@ struct VideoDetailSwiftUIContainer: View {
             ZStack(alignment: .topLeading) {
                 VideoDetailShellContentView(
                     viewModel: viewModel,
+                    libraryStore: dependencies.libraryStore,
                     updateGate: model.contentUpdateGate,
                     runtimeSettings: runtimeSettings,
                     state: model.contentState,
@@ -295,6 +297,7 @@ struct VideoDetailSwiftUIContainer: View {
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,
                     onShowCoinPicker: onShowCoinPicker,
+                    onOpenCommentComposer: onOpenCommentComposer,
                     onReply: onReply,
                     openVideoOwnerRoute: openVideoOwnerRoute,
                     onSelectedTabChange: { tab in
@@ -407,6 +410,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     private let onShowNetworkDiagnostics: () -> Void
     private let onShowFavoriteFolders: () -> Void
     private let onShowCoinPicker: () -> Void
+    private let onOpenCommentComposer: (Comment?) -> Void
     private let onShowDanmakuSettings: () -> Void
     private let onReply: (Comment) -> Void
     private let onPresentPlayerMoreControls: (PlayerStateViewModel, @escaping () -> Void) -> Void
@@ -434,6 +438,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         onShowNetworkDiagnostics: @escaping () -> Void,
         onShowFavoriteFolders: @escaping () -> Void,
         onShowCoinPicker: @escaping () -> Void,
+        onOpenCommentComposer: @escaping (Comment?) -> Void,
         onShowDanmakuSettings: @escaping () -> Void,
         onPresentPlayerMoreControls: @escaping (PlayerStateViewModel, @escaping () -> Void) -> Void,
         onDismissPlayerMoreControls: @escaping () -> Void,
@@ -449,6 +454,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         self.onShowNetworkDiagnostics = onShowNetworkDiagnostics
         self.onShowFavoriteFolders = onShowFavoriteFolders
         self.onShowCoinPicker = onShowCoinPicker
+        self.onOpenCommentComposer = onOpenCommentComposer
         self.onShowDanmakuSettings = onShowDanmakuSettings
         self.onPresentPlayerMoreControls = onPresentPlayerMoreControls
         self.onDismissPlayerMoreControls = onDismissPlayerMoreControls
@@ -609,6 +615,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
+            onOpenCommentComposer: onOpenCommentComposer,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onShowMoreControls: { [weak self] onDismiss in

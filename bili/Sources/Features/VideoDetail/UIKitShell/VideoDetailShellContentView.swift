@@ -18,6 +18,7 @@ struct VideoDetailShellContentView: View {
         @Published var scrollAdjustment: VideoDetailScrollAdjustment?
         @Published var suppressesInteractiveContentActions = false
         @Published var mountsSecondaryContent = false
+        @Published var hidesBottomToolbar = false
         private var scrollAdjustmentToken = 0
 
         func requestScrollAdjustment(tab: VideoDetailContentTab, offset: CGFloat) {
@@ -31,6 +32,7 @@ struct VideoDetailShellContentView: View {
     }
 
     let viewModel: VideoDetailViewModel
+    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var updateGate: VideoDetailContentUpdateGate
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: State
@@ -39,6 +41,7 @@ struct VideoDetailShellContentView: View {
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
+    let onOpenCommentComposer: (Comment?) -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
@@ -48,6 +51,7 @@ struct VideoDetailShellContentView: View {
         let _ = updateGate.revision
         VideoDetailShellContentBody(
             viewModel: viewModel,
+            libraryStore: libraryStore,
             runtimeSettings: runtimeSettings,
             state: state,
             layoutWidth: layoutWidth,
@@ -55,6 +59,7 @@ struct VideoDetailShellContentView: View {
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
+            onOpenCommentComposer: onOpenCommentComposer,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onSelectedTabChange: onSelectedTabChange,
@@ -65,6 +70,7 @@ struct VideoDetailShellContentView: View {
 
 private struct VideoDetailShellContentBody: View {
     let viewModel: VideoDetailViewModel
+    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: VideoDetailShellContentView.State
     let layoutWidth: CGFloat
@@ -72,6 +78,7 @@ private struct VideoDetailShellContentBody: View {
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
+    let onOpenCommentComposer: (Comment?) -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
@@ -87,6 +94,9 @@ private struct VideoDetailShellContentBody: View {
             scrollAdjustment: state.scrollAdjustment,
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
                 || state.mountsSecondaryContent,
+            hidesBottomToolbar: state.hidesBottomToolbar,
+            showsCommentComposerButton: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled,
+            onOpenCommentComposer: { onOpenCommentComposer(nil) },
             onScrollOffsetChange: onScrollOffsetChange,
             summary: AnyView(
                 VideoDetailLoadedDetailContentPage(
@@ -115,7 +125,10 @@ private struct VideoDetailShellContentBody: View {
                         guard !contentActionsSuppressed else { return }
                         onReply(comment)
                     },
-                    showsSummary: false
+                    showsSummary: false,
+                    onComposeReply: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled
+                        ? { onOpenCommentComposer($0) }
+                        : nil
                 )
             }
         )

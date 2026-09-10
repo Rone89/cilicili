@@ -13,6 +13,8 @@ struct VideoDetailViewContentResolver: View {
     @Binding var isShowingCoinPicker: Bool
     @Binding var isShowingNetworkDiagnostics: Bool
     let onNavigateBack: () -> Void
+    @State private var commentComposerTarget: DynamicCommentComposerTarget?
+    @State private var commentComposerDrafts = [String: RichCommentDraft]()
 
     var body: some View {
         VideoDetailShellRepresentable(
@@ -24,6 +26,7 @@ struct VideoDetailViewContentResolver: View {
             isShowingFavoriteFolders: $isShowingFavoriteFolders,
             isShowingCoinPicker: $isShowingCoinPicker,
             isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics,
+            onOpenCommentComposer: openCommentComposer(for:),
             onNavigateBack: onNavigateBack
         )
         .ignoresSafeArea()
@@ -36,11 +39,75 @@ struct VideoDetailViewContentResolver: View {
                 isShowingCoinPicker: $isShowingCoinPicker,
                 isShowingDanmakuSettings: $isShowingDanmakuSettings,
                 isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics
-            )
+            ),
+            submitReply: videoCommentSheetSubmitAction
         )
+        .background {
+            RichCommentComposerPresenter(
+                target: $commentComposerTarget,
+                draft: commentComposerDraftBinding,
+                api: dependencies.api,
+                submit: { target, message, pictures in
+                    try await submitComment(target: target, message: message, pictures: pictures)
+                }
+            )
+            .allowsHitTesting(false)
+        }
         .task(id: commentAnchorTaskID) {
             await presentPendingCommentIfPossible()
         }
+    }
+
+    private func openCommentComposer(for comment: Comment?) {
+        guard viewModel.commentTarget != nil else { return }
+        commentComposerTarget = comment.map { .reply(root: $0, parent: $0) } ?? .dynamic
+    }
+
+    private var videoCommentSubmitAction: (
+        DynamicCommentComposerTarget,
+        String,
+        [DynamicCommentImage]?
+    ) async throws -> Void {
+        { target, message, pictures in
+            try await submitComment(target: target, message: message, pictures: pictures)
+        }
+    }
+
+    private var videoCommentSheetSubmitAction: ((
+        DynamicCommentComposerTarget,
+        String,
+        [DynamicCommentImage]?
+    ) async throws -> Void)? {
+        guard dependencies.libraryStore.videoDetailToolbarCommentComposerExperimentEnabled else {
+            return nil
+        }
+        return videoCommentSubmitAction
+    }
+
+    private func commentComposerDraftBinding(
+        for target: DynamicCommentComposerTarget
+    ) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { commentComposerDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { commentComposerDrafts[target.id] = $0 }
+        )
+    }
+
+    private func submitComment(
+        target composerTarget: DynamicCommentComposerTarget,
+        message: String,
+        pictures: [DynamicCommentImage]?
+    ) async throws {
+        guard let target = viewModel.commentTarget else { throw BiliAPIError.missingPayload }
+        try await dependencies.api.addDynamicComment(
+            oid: target.oid,
+            type: target.type,
+            message: message,
+            root: composerTarget.rootID,
+            parent: composerTarget.parentID,
+            pictures: pictures
+        )
+        await viewModel.retryComments()
     }
 
     private var commentAnchorTaskID: String {

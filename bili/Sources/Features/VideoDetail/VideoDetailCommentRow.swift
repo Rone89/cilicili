@@ -4,6 +4,7 @@ struct CommentRow: View, Equatable {
     let item: VideoDetailCommentDisplayItem
     let style: CommentSectionStyle
     let showReplies: () -> Void
+    let replyToComment: (() -> Void)?
 
     private var comment: Comment { item.comment }
     private var display: VideoDetailCommentDisplayModel { item.display }
@@ -11,19 +12,26 @@ struct CommentRow: View, Equatable {
     init(
         item: VideoDetailCommentDisplayItem,
         style: CommentSectionStyle,
-        showReplies: @escaping () -> Void
+        showReplies: @escaping () -> Void,
+        replyToComment: (() -> Void)? = nil
     ) {
         self.item = item
         self.style = style
         self.showReplies = showReplies
+        self.replyToComment = replyToComment
     }
 
     static func == (lhs: CommentRow, rhs: CommentRow) -> Bool {
-        lhs.item == rhs.item && lhs.style == rhs.style
+        lhs.item == rhs.item
+            && lhs.style == rhs.style
+            && (lhs.replyToComment != nil) == (rhs.replyToComment != nil)
     }
 
     var body: some View {
-        CommentRowLayout {
+        CommentRowLayout(
+            fullRowReplyAction: replyToComment,
+            fullRowReplyAccessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
             CommentAvatar(
                 urlString: display.avatarURLString,
                 owner: display.authorOwner,
@@ -37,7 +45,8 @@ struct CommentRow: View, Equatable {
                 font: .subheadline,
                 textColor: .primary,
                 emoteSize: 21,
-                typographyRole: .commentBody
+                typographyRole: .commentBody,
+                onNonLinkTap: replyToComment
             )
                 .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)

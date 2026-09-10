@@ -19,6 +19,7 @@ struct DynamicFeedScrollContent: View {
                     isLoggedIn: isLoggedIn,
                     contentWidth: contentWidth
                 )
+                .frame(width: contentWidth, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 18)
             }

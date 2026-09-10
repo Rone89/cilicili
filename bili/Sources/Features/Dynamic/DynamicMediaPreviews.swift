@@ -50,8 +50,7 @@ struct DynamicOriginalPreview: View {
 
     var body: some View {
         originalContent
-        .padding(.leading, 14)
-        .padding(.trailing, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground).opacity(0.78))
@@ -93,7 +92,7 @@ struct DynamicOriginalPreview: View {
                 if topLevelDisplayText?.isEmpty == false {
                     DynamicRichTextView(
                         input: textInput,
-                        preferredWidth: originalTextWidth,
+                        preferredWidth: originalContentWidth,
                         onNonLinkTap: onOpenDetail
                     )
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -127,14 +126,14 @@ struct DynamicOriginalPreview: View {
                 if !imageItems.isEmpty {
                     DynamicImageThumbnailStrip(
                         images: imageItems,
-                        availableWidth: contentWidth
+                        availableWidth: originalContentWidth
                     )
                 }
             }
         }
     }
 
-    private var originalTextWidth: CGFloat? {
+    private var originalContentWidth: CGFloat? {
         contentWidth.map { max(floor($0 - 24), 0) }
     }
 }

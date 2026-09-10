@@ -1,5 +1,16 @@
 import SwiftUI
 
+private struct VideoCommentReplyComposerActionKey: EnvironmentKey {
+    static let defaultValue: ((Comment) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var videoCommentReplyComposerAction: ((Comment) -> Void)? {
+        get { self[VideoCommentReplyComposerActionKey.self] }
+        set { self[VideoCommentReplyComposerActionKey.self] = newValue }
+    }
+}
+
 struct CommentRowLayout<Avatar: View, Header: View, BodyContent: View, Media: View, Reply: View>: View {
     let avatar: Avatar
     let header: Header
