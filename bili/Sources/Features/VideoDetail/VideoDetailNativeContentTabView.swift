@@ -8,6 +8,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
+    var bottomInset: CGFloat = 0
     var scrollAdjustment: VideoDetailScrollAdjustment?
     let mountsSecondaryContent: Bool
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
@@ -18,6 +19,16 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset).accessibilityHidden(true)
             tabContent
+        }
+        .overlay(alignment: .bottom) {
+            VideoDetailTransparentSegmentedPicker(selection: $selection)
+                .frame(width: 144, height: segmentedPickerHeight)
+                .glassEffect(
+                    libraryStore.videoDetailSegmentedPickerGlassStyle == .clear
+                        ? .clear.interactive() : .regular.interactive(),
+                    in: .capsule
+                )
+                .padding(.bottom, bottomInset + 8)
         }
         .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
         .tint(appTintColor)
@@ -39,18 +50,12 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     }
 
     private func page(for tab: VideoDetailContentTab) -> some View {
-        VideoDetailPinnedTabPage(
+        VideoDetailScrollingTabPage(
             tab: tab,
             scrollAdjustment: scrollAdjustment,
             onScrollOffsetChange: onScrollOffsetChange,
             summary: summary,
-            header: {
-                VideoDetailTransparentSegmentedPicker(selection: $selection)
-                    .frame(width: 144, height: segmentedPickerHeight)
-                    .videoDetailSegmentedPickerGlassEffect(libraryStore.videoDetailSegmentedPickerGlassStyle)
-                    .frame(maxWidth: .infinity)
-                    .background(VideoDetailTheme.background)
-            },
+            bottomInset: bottomInset + segmentedPickerHeight + 16,
             content: { tab in
                 content(
                     tab,
@@ -61,27 +66,25 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     }
 }
 
-private struct VideoDetailPinnedTabPage<Header: View, Content: View>: View {
+private struct VideoDetailScrollingTabPage<Content: View>: View {
     let tab: VideoDetailContentTab
     let scrollAdjustment: VideoDetailScrollAdjustment?
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
     let summary: AnyView?
-    @ViewBuilder let header: () -> Header
+    let bottomInset: CGFloat
     @ViewBuilder let content: (VideoDetailContentTab) -> Content
     @State private var position = ScrollPosition()
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+            LazyVStack(spacing: 12) {
                 summary
-                Section {
-                    content(tab)
-                } header: {
-                    header()
-                }
+                content(tab)
             }
+            .padding(.top, 12)
         }
         .scrollPosition($position)
+        .contentMargins(.bottom, bottomInset, for: .scrollContent)
         .scrollIndicators(.hidden)
         .nativeTopScrollEdgeEffect()
         .onScrollGeometryChange(for: CGFloat.self) {
@@ -92,20 +95,6 @@ private struct VideoDetailPinnedTabPage<Header: View, Content: View>: View {
         .onChange(of: scrollAdjustment) { _, adjustment in
             guard let adjustment, adjustment.tab == tab else { return }
             position.scrollTo(y: adjustment.offset)
-        }
-    }
-}
-
-extension View {
-    @ViewBuilder
-    fileprivate func videoDetailSegmentedPickerGlassEffect(
-        _ glassStyle: VideoDetailSegmentedPickerGlassStyle
-    ) -> some View {
-        switch glassStyle {
-        case .clear:
-            glassEffect(.clear.interactive(), in: .capsule)
-        case .regular:
-            glassEffect(.regular.interactive(), in: .capsule)
         }
     }
 }

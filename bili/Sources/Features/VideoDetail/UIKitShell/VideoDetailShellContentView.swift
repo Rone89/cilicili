@@ -14,6 +14,7 @@ struct VideoDetailShellContentView: View {
         /// 内容顶部留白 = 播放器最大（expanded）高度。仅在旋转/比例变化时更新，
         /// 滚动时不变（滚动只改播放器实际高度，不动内容区）。
         @Published var topInset: CGFloat = 0
+        @Published var bottomInset: CGFloat = 0
         @Published var scrollAdjustment: VideoDetailScrollAdjustment?
         @Published var suppressesInteractiveContentActions = false
         @Published var mountsSecondaryContent = false
@@ -82,6 +83,7 @@ private struct VideoDetailShellContentBody: View {
             selection: $selectedContentTab,
             layoutWidth: layoutWidth,
             topInset: state.topInset,
+            bottomInset: state.bottomInset,
             scrollAdjustment: state.scrollAdjustment,
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
                 || state.mountsSecondaryContent,

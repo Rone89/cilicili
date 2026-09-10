@@ -320,9 +320,9 @@ struct VideoDetailSwiftUIContainer: View {
                 )
                 .frame(
                     width: layout.contentFrame.width,
-                    height: max(0, layout.contentFrame.height - model.rootSafeAreaInsets.bottom)
+                    height: layout.contentFrame.height
                 )
-                .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY - model.rootSafeAreaInsets.bottom / 2)
+                .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
                 .opacity(layout.usesFullscreenLayout ? 0 : 1)
                 .allowsHitTesting(
                     !layout.usesFullscreenLayout
@@ -512,6 +512,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.view.safeAreaInsets == insets else { return }
                 self.contentModel.rootSafeAreaInsets = insets
+                self.contentModel.contentState.bottomInset = insets.bottom
             }
         }
     }

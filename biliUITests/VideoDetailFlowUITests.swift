@@ -87,16 +87,17 @@ final class VideoDetailFlowUITests: XCTestCase {
         let summary = app.descendants(matching: .any)["video.detail.summary"].firstMatch
         XCTAssertTrue(summary.exists)
         XCTAssertGreaterThanOrEqual(picker.frame.minY, summary.frame.maxY - 1)
-        XCTAssertLessThanOrEqual(picker.frame.maxY, detailMarker.frame.minY + 1)
+        XCTAssertGreaterThan(picker.frame.minY, appFrame.midY)
         let initialDetailMarkerY = detailMarker.frame.minY
         app.swipeUp()
         let scrolledDetailMarkerY = detailMarker.frame.minY
         XCTAssertLessThan(scrolledDetailMarkerY, initialDetailMarkerY)
         XCTAssertTrue(picker.isHittable)
         let scrolledAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        scrolledAttachment.name = "Portrait pinned header after scrolling"
+        scrolledAttachment.name = "Portrait floating bottom toolbar after scrolling"
         scrolledAttachment.lifetime = .keepAlways
         add(scrolledAttachment)
+        XCTAssertEqual(picker.frame.minY, pickerFrame.minY, accuracy: 2)
 
         commentsButton.tap()
         XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))

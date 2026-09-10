@@ -1,5 +1,13 @@
 # Video Detail Layout Acceptance
 
+## Bottom Picker Correction (2026-09-10)
+
+The requested picker belongs at the floating bottom-bar position, not in a pinned header. The pinned Section has been removed. The existing segmented control now floats in a native Liquid Glass capsule over the content, using the actual bottom safe area. It is a SwiftUI overlay, not a system ToolbarItem: an attempted nested NavigationStack failed startup navigation and was discarded. The existing navigation tree and player lifecycle remain unchanged.
+
+Content is no longer shortened by the bottom safe area. Scroll-content margins reserve the picker footprint so the final row can scroll above it, while the background extends to the bottom. Both page scroll trees remain mounted. The existing clear/regular glass preference is respected.
+
+Xcode 26 Debug test build and Release arm64 simulator build passed. Final focused suite: 31/31 passed (shared layout tests and two VideoDetail UI tests), `/tmp/cilicili-floating-final.xcresult`. Screenshot: `/tmp/cilicili-bottom-toolbar3-images/D8BB0130-422D-4137-8888-0B75FB387583.png`. Xcode diagnostic collection hung after testing; terminating its simctl diagnostic allowed the completed result bundle to close. Runtime publishing and priority-inversion warnings remain. Full unit suite and iPad were not rerun for this correction. A separate top navigation Toolbar has not been restored in this change.
+
 Base: `e12c92d`. Build: 472. Xcode 26.6 (17F113), iOS 26.5 simulator SDK, deployment target 26.1.
 
 ## Changes
