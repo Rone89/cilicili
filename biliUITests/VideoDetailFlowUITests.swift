@@ -158,19 +158,33 @@ final class VideoDetailFlowUITests: XCTestCase {
             object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [completedRotation], timeout: 10), .completed)
+        XCTAssertFalse(picker.waitForExistence(timeout: 2))
         let landscapeAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         landscapeAttachment.name = "Geometry landscape after fullscreen"
         landscapeAttachment.lifetime = .keepAlways
         add(landscapeAttachment)
         let landscapeBack = app.buttons["ui.player.back"]
-        if landscapeBack.waitForExistence(timeout: 5) {
-            landscapeBack.tap()
+        if !landscapeBack.waitForExistence(timeout: 2) || !landscapeBack.isHittable {
+            let surface = app.buttons["ui.player.surface"]
+            XCTAssertTrue(surface.waitForExistence(timeout: 5))
+            surface.tap()
         }
+        XCTAssertTrue(landscapeBack.waitForExistence(timeout: 5))
+        XCTAssertTrue(landscapeBack.isHittable)
+        landscapeBack.tap()
         XCUIDevice.shared.orientation = .portrait
 
+        let portraitWindow = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return frame.height > frame.width
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [portraitWindow], timeout: 10), .completed)
         let detailMarker = app.staticTexts["相关推荐"].firstMatch
         XCTAssertTrue(detailMarker.waitForExistence(timeout: 5))
-        XCTAssertTrue(picker.exists)
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
     }
 
     @MainActor

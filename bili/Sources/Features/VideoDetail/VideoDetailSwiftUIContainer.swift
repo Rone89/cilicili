@@ -105,6 +105,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         }
 #endif
         if playerFrame != layout.playerFrame { playerFrame = layout.playerFrame }
+        if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
+            contentState.hidesBottomToolbar = layout.usesFullscreenLayout
+        }
         guard let contentTopInset = layout.contentTopInset else { return }
         guard abs(contentState.topInset - contentTopInset) > 0.5 else { return }
         contentState.topInset = contentTopInset

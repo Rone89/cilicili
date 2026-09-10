@@ -67,7 +67,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
             }
         }
         .toolbarBackground(.hidden, for: .bottomBar)
-        .toolbarVisibility(hidesBottomToolbar ? .hidden : .automatic, for: .bottomBar)
+        .toolbarVisibility(hidesBottomToolbar ? .hidden : .visible, for: .bottomBar)
         .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
     }
