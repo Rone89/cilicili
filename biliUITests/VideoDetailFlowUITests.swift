@@ -56,7 +56,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testVideoDetailUsesLayeredPagesAndNativeSegmentedPicker() {
+    func testVideoDetailUsesLayeredPagesAndToolbarPicker() {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-reset-state",
@@ -66,11 +66,11 @@ final class VideoDetailFlowUITests: XCTestCase {
         ]
         app.launch()
 
-        let picker = app.segmentedControls["video.detail.glass-panel-picker"]
+        let picker = element("video.detail.toolbar-picker", in: app).firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
         XCTAssertEqual(picker.buttons.count, 2)
         XCTAssertEqual(picker.frame.width, 144, accuracy: 2)
-        XCTAssertEqual(picker.frame.height, 40, accuracy: 2)
+        XCTAssertEqual(picker.frame.height, 38, accuracy: 2)
         let appFrame = app.windows.firstMatch.frame
         let pickerFrame = picker.frame
         XCTAssertGreaterThanOrEqual(pickerFrame.minX, appFrame.minX)
@@ -124,7 +124,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         ]
         app.launch()
 
-        let picker = app.segmentedControls["video.detail.glass-panel-picker"]
+        let picker = element("video.detail.toolbar-picker", in: app).firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
 
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
@@ -313,7 +313,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         ]
         app.launch()
         XCTAssertTrue(
-            app.segmentedControls["video.detail.glass-panel-picker"].waitForExistence(timeout: 10)
+            element("video.detail.toolbar-picker", in: app).firstMatch.waitForExistence(timeout: 10)
         )
         if waitForDetailMarker {
             XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
