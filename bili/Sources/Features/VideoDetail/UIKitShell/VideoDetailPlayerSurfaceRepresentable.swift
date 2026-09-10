@@ -62,6 +62,7 @@ final class VideoDetailSwiftUISurfaceHostingView: UIView, VideoDetailPlayerSurfa
         super.init(frame: .zero)
 
         backgroundColor = .black
+        hostingController.safeAreaRegions = []
         hostingController.view.backgroundColor = .clear
         hostingController.view.isOpaque = false
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false

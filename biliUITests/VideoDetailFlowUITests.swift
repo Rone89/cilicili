@@ -84,10 +84,19 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         let detailMarker = app.staticTexts["相关推荐"].firstMatch
         XCTAssertTrue(detailMarker.waitForExistence(timeout: 10))
+        let summary = app.descendants(matching: .any)["video.detail.summary"].firstMatch
+        XCTAssertTrue(summary.exists)
+        XCTAssertGreaterThanOrEqual(picker.frame.minY, summary.frame.maxY - 1)
+        XCTAssertLessThanOrEqual(picker.frame.maxY, detailMarker.frame.minY + 1)
         let initialDetailMarkerY = detailMarker.frame.minY
         app.swipeUp()
         let scrolledDetailMarkerY = detailMarker.frame.minY
         XCTAssertLessThan(scrolledDetailMarkerY, initialDetailMarkerY)
+        XCTAssertTrue(picker.isHittable)
+        let scrolledAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        scrolledAttachment.name = "Portrait pinned header after scrolling"
+        scrolledAttachment.lifetime = .keepAlways
+        add(scrolledAttachment)
 
         commentsButton.tap()
         XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))
@@ -124,9 +133,33 @@ final class VideoDetailFlowUITests: XCTestCase {
             surface.tap()
         }
         XCTAssertTrue(fullscreen.isHittable)
+        let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
+        portraitAttachment.name = "Geometry portrait before fullscreen"
+        portraitAttachment.lifetime = .keepAlways
+        add(portraitAttachment)
         fullscreen.tap()
 
         XCUIDevice.shared.orientation = .landscapeLeft
+        let landscapeWindow = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return frame.width > frame.height
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [landscapeWindow], timeout: 10), .completed)
+        let diagnostics = app.descendants(matching: .any)["ui.videoDetail.rotationDiagnostics"].firstMatch
+        let completedRotation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                (diagnostics.value as? String ?? "").contains("landscape")
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [completedRotation], timeout: 10), .completed)
+        let landscapeAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        landscapeAttachment.name = "Geometry landscape after fullscreen"
+        landscapeAttachment.lifetime = .keepAlways
+        add(landscapeAttachment)
         let landscapeBack = app.buttons["ui.player.back"]
         if landscapeBack.waitForExistence(timeout: 5) {
             landscapeBack.tap()
@@ -211,6 +244,9 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 15))
+        if !app.buttons["ui.player.fullscreen.toggle"].exists {
+            app.buttons["ui.player.surface"].tap()
+        }
         XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
     }
 
@@ -245,7 +281,15 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 10))
-        app.swipeRight()
+        let portraitWindow = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let frame = app.windows.firstMatch.frame
+                return frame.height > frame.width
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [portraitWindow], timeout: 10), .completed)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
         let homeTab = app.buttons["首页"].firstMatch
         XCTAssertTrue(homeTab.waitForExistence(timeout: 10))
         XCTAssertTrue(homeTab.isHittable)

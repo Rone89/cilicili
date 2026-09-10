@@ -10,6 +10,7 @@ struct VideoDetailContentPage: View {
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onReply: (Comment) -> Void
+    var showsSummary = true
 
     var body: some View {
         PlaybackDetailContentPage(
@@ -27,7 +28,8 @@ struct VideoDetailContentPage: View {
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
                 onShowCoinPicker: onShowCoinPicker,
-                onReply: onReply
+                onReply: onReply,
+                showsSummary: showsSummary
             )
         }
         .commentLikeTarget(

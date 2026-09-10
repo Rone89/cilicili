@@ -10,6 +10,7 @@ struct VideoDetailContentPageBody: View {
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onReply: (Comment) -> Void
+    var showsSummary = true
 
     var body: some View {
         switch tab {
@@ -21,7 +22,8 @@ struct VideoDetailContentPageBody: View {
                 runtimeSettings: runtimeSettings,
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
-                onShowCoinPicker: onShowCoinPicker
+                onShowCoinPicker: onShowCoinPicker,
+                showsSummary: showsSummary
             )
 
         case .comments:

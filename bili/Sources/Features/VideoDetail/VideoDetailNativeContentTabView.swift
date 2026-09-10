@@ -11,35 +11,25 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var scrollAdjustment: VideoDetailScrollAdjustment?
     let mountsSecondaryContent: Bool
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
+    var summary: AnyView? = nil
     let content: (VideoDetailContentTab, Bool) -> Content
 
     var body: some View {
-        tabContent
-            .ignoresSafeArea(.container, edges: .bottom)
-            .overlay(alignment: .top) {
-                VideoDetailTransparentSegmentedPicker(selection: $selection)
-                    .frame(width: 144, height: segmentedPickerHeight)
-                    .videoDetailSegmentedPickerGlassEffect(
-                        libraryStore.videoDetailSegmentedPickerGlassStyle
-                    )
-                    .padding(.top, topInset)
-                    .padding(.horizontal, 16)
-                    .accessibilityIdentifier("video.detail.glass-panel-picker")
-            }
-            .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: topInset).accessibilityHidden(true)
+            tabContent
+        }
+        .toolbarVisibility(.hidden, for: .tabBar, .bottomBar)
         .tint(appTintColor)
     }
 
     private var tabContent: some View {
         ZStack {
-            if selection == .detail {
-                page(for: .detail)
-                    .transition(.move(edge: .leading))
-            }
-
-            if selection == .comments {
-                page(for: .comments)
-                    .transition(.move(edge: .trailing))
+            ForEach(VideoDetailContentTab.allCases) { tab in
+                page(for: tab)
+                    .opacity(selection == tab ? 1 : 0)
+                    .allowsHitTesting(selection == tab)
+                    .accessibilityHidden(selection != tab)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,12 +39,18 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     }
 
     private func page(for tab: VideoDetailContentTab) -> some View {
-        VideoDetailNativeContentTabPage(
+        VideoDetailPinnedTabPage(
             tab: tab,
-            layoutWidth: layoutWidth,
-            topInset: topInset + segmentedPickerHeight,
             scrollAdjustment: scrollAdjustment,
             onScrollOffsetChange: onScrollOffsetChange,
+            summary: summary,
+            header: {
+                VideoDetailTransparentSegmentedPicker(selection: $selection)
+                    .frame(width: 144, height: segmentedPickerHeight)
+                    .videoDetailSegmentedPickerGlassEffect(libraryStore.videoDetailSegmentedPickerGlassStyle)
+                    .frame(maxWidth: .infinity)
+                    .background(VideoDetailTheme.background)
+            },
             content: { tab in
                 content(
                     tab,
@@ -65,9 +61,44 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     }
 }
 
-private extension View {
+private struct VideoDetailPinnedTabPage<Header: View, Content: View>: View {
+    let tab: VideoDetailContentTab
+    let scrollAdjustment: VideoDetailScrollAdjustment?
+    let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
+    let summary: AnyView?
+    @ViewBuilder let header: () -> Header
+    @ViewBuilder let content: (VideoDetailContentTab) -> Content
+    @State private var position = ScrollPosition()
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                summary
+                Section {
+                    content(tab)
+                } header: {
+                    header()
+                }
+            }
+        }
+        .scrollPosition($position)
+        .scrollIndicators(.hidden)
+        .nativeTopScrollEdgeEffect()
+        .onScrollGeometryChange(for: CGFloat.self) {
+            max(0, $0.contentOffset.y + $0.contentInsets.top)
+        } action: { _, offset in
+            onScrollOffsetChange?(tab, offset)
+        }
+        .onChange(of: scrollAdjustment) { _, adjustment in
+            guard let adjustment, adjustment.tab == tab else { return }
+            position.scrollTo(y: adjustment.offset)
+        }
+    }
+}
+
+extension View {
     @ViewBuilder
-    func videoDetailSegmentedPickerGlassEffect(
+    fileprivate func videoDetailSegmentedPickerGlassEffect(
         _ glassStyle: VideoDetailSegmentedPickerGlassStyle
     ) -> some View {
         switch glassStyle {
@@ -130,6 +161,18 @@ private struct VideoDetailTransparentSegmentedPicker: UIViewRepresentable {
 }
 
 private final class VideoDetailSegmentedControl: UISegmentedControl {
+    #if DEBUG
+        private var lastWindowFrame = CGRect.null
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let windowFrame = convert(bounds, to: window)
+            if windowFrame != lastWindowFrame {
+                lastWindowFrame = windowFrame
+                print("[VideoDetailGeometry] headerFrame(window)=\(windowFrame)")
+            }
+        }
+    #endif
     override var intrinsicContentSize: CGSize {
         var size = super.intrinsicContentSize
         size.height = 40

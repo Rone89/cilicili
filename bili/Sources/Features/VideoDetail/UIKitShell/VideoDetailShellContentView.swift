@@ -86,6 +86,19 @@ private struct VideoDetailShellContentBody: View {
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
                 || state.mountsSecondaryContent,
             onScrollOffsetChange: onScrollOffsetChange,
+            summary: AnyView(
+                VideoDetailLoadedDetailContentPage(
+                    viewModel: viewModel,
+                    layoutWidth: layoutWidth,
+                    mountsSecondaryContent: false,
+                    runtimeSettings: runtimeSettings.snapshot,
+                    onShowNetworkDiagnostics: onShowNetworkDiagnostics,
+                    onShowFavoriteFolders: onShowFavoriteFolders,
+                    onShowCoinPicker: onShowCoinPicker,
+                    showsRecommendations: false
+                )
+                .accessibilityIdentifier("video.detail.summary")
+            ),
             content: { tab, mountsSecondaryContent in
                 VideoDetailContentPage(
                     viewModel: viewModel,
@@ -99,7 +112,8 @@ private struct VideoDetailShellContentBody: View {
                     onReply: { comment in
                         guard !contentActionsSuppressed else { return }
                         onReply(comment)
-                    }
+                    },
+                    showsSummary: false
                 )
             }
         )

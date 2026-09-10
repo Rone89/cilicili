@@ -20,6 +20,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     @Published private(set) var isBareSurfaceTransitionActive = false
     @Published private(set) var retainsChromeDuringBareSurfaceTransition = false
     @Published private(set) var playerFrame = CGRect.zero
+    @Published var rootSafeAreaInsets = UIEdgeInsets.zero
 
     private var cancellables = Set<AnyCancellable>()
     private var scrollOffsets: [VideoDetailContentTab: CGFloat] = [:]
@@ -98,7 +99,12 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     }
 
     func synchronize(layout: VideoDetailShellLayout) {
-        playerFrame = layout.playerFrame
+#if DEBUG
+        if playerFrame != layout.playerFrame {
+            print("[VideoDetailGeometry] coordinates=SwiftUI-root playerFrame=\(layout.playerFrame) contentFrame=\(layout.contentFrame) safeArea=\(rootSafeAreaInsets)")
+        }
+#endif
+        if playerFrame != layout.playerFrame { playerFrame = layout.playerFrame }
         guard let contentTopInset = layout.contentTopInset else { return }
         guard abs(contentState.topInset - contentTopInset) > 0.5 else { return }
         contentState.topInset = contentTopInset
@@ -274,7 +280,7 @@ struct VideoDetailSwiftUIContainer: View {
         GeometryReader { proxy in
             let layout = model.layout(
                 in: proxy.size,
-                safeAreaTop: proxy.safeAreaInsets.top,
+                safeAreaTop: model.rootSafeAreaInsets.top,
                 rotationCoordinator: rotationCoordinator
             )
 
@@ -314,9 +320,9 @@ struct VideoDetailSwiftUIContainer: View {
                 )
                 .frame(
                     width: layout.contentFrame.width,
-                    height: layout.contentFrame.height
+                    height: max(0, layout.contentFrame.height - model.rootSafeAreaInsets.bottom)
                 )
-                .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY)
+                .position(x: layout.contentFrame.midX, y: layout.contentFrame.midY - model.rootSafeAreaInsets.bottom / 2)
                 .opacity(layout.usesFullscreenLayout ? 0 : 1)
                 .allowsHitTesting(
                     !layout.usesFullscreenLayout
@@ -358,13 +364,9 @@ struct VideoDetailSwiftUIContainer: View {
                     }
                 }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .onAppear {
                 DispatchQueue.main.async {
-#if DEBUG
-                    print(
-                        "[VideoDetailGeometry] window=unknown root=\(proxy.size) safeArea=\(proxy.safeAreaInsets) playerFrame=\(layout.playerFrame) contentFrame=\(layout.contentFrame) drawableFrame=\(layout.playerFrame)"
-                    )
-#endif
                     model.synchronize(layout: layout)
                     model.updateCollapsedChrome(bounds: proxy.size)
                 }
@@ -501,6 +503,17 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             title: viewModel.detail.title
         )
         Task { await viewModel.load() }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let insets = view.safeAreaInsets
+        if contentModel.rootSafeAreaInsets != insets {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.view.safeAreaInsets == insets else { return }
+                self.contentModel.rootSafeAreaInsets = insets
+            }
+        }
     }
 
     var activePlayerViewModel: PlayerStateViewModel? {

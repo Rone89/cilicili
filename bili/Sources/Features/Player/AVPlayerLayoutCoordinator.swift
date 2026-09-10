@@ -8,6 +8,11 @@ final class AVPlayerLayoutCoordinator {
 
     private init() {}
 
+#if DEBUG
+    private weak var diagnosticItem: AVPlayerItem?
+    private var lastGeometry = ""
+#endif
+
     func apply(
         playerLayer: AVPlayerLayer?,
         in containerView: UIView?,
@@ -21,7 +26,30 @@ final class AVPlayerLayoutCoordinator {
         playerLayer.position = CGPoint(x: containerView.bounds.midX, y: containerView.bounds.midY)
         playerLayer.setNeedsLayout()
         playerLayer.setNeedsDisplay()
+        playerLayer.layoutIfNeeded()
         CATransaction.commit()
+#if DEBUG
+        let geometry = "[VideoDetailGeometry] stage=avPlayerLayerLayout coordinates=drawable-local layerFrame=\(playerLayer.frame) layerBounds=\(playerLayer.bounds) videoRect=\(playerLayer.videoRect) gravity=\(gravity.rawValue) presentationSize=\(playerLayer.player?.currentItem?.presentationSize as Any)"
+        if geometry != lastGeometry {
+            lastGeometry = geometry
+            print(geometry)
+        }
+        if let item = playerLayer.player?.currentItem, diagnosticItem !== item {
+            diagnosticItem = item
+            Task { @MainActor [weak item] in
+                guard let item else { return }
+                do {
+                    let tracks = try await item.asset.loadTracks(withMediaType: .video)
+                    if let track = tracks.first {
+                        let size = try await track.load(.naturalSize)
+                        print("[VideoDetailGeometry] item=\(ObjectIdentifier(item)) naturalSize=\(size)")
+                    }
+                } catch {
+                    print("[VideoDetailGeometry] naturalSizeUnavailable=\(error.localizedDescription)")
+                }
+            }
+        }
+#endif
     }
 
     func apply(

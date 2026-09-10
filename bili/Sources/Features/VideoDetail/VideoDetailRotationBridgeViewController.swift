@@ -93,6 +93,15 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         contentController.didMove(toParent: self)
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+#if DEBUG
+        print(
+            "[VideoDetailGeometry] stage=rotationBridgeLayout window=\(view.window?.bounds as Any) root=\(view.bounds) safeArea=\(view.safeAreaInsets) playerFrame=\(contentController.playerFrame)"
+        )
+#endif
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewActive = true
