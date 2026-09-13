@@ -19,6 +19,34 @@ struct VideoDetailShellLayout: Equatable {
         (max(width, 0) * 9 / 16).rounded()
     }
 
+    static func supportsInteractiveCollapse(
+        videoAspectRatio: CGFloat,
+        isPlaybackActive: Bool = false
+    ) -> Bool {
+        videoAspectRatio > 0 && (!isPlaybackActive || videoAspectRatio < 0.9)
+    }
+
+    static func scrollContentMinimumHeight(
+        viewportHeight: CGFloat,
+        expandedPlayerHeight: CGFloat,
+        minimumPlayerHeight: CGFloat
+    ) -> CGFloat {
+        max(viewportHeight, 0)
+            + max(expandedPlayerHeight - minimumPlayerHeight, 0)
+    }
+
+    static func interactiveScrollMetrics(
+        scrollOffset: CGFloat,
+        expandedPlayerHeight: CGFloat,
+        minimumPlayerHeight: CGFloat
+    ) -> VideoDetailInteractiveScrollMetrics {
+        VideoDetailInteractiveScrollMetrics(
+            scrollOffset: scrollOffset,
+            expandedPlayerHeight: expandedPlayerHeight,
+            minimumPlayerHeight: minimumPlayerHeight
+        )
+    }
+
     static func expandedPlayerHeight(
         bounds: CGSize,
         videoAspectRatio: CGFloat
@@ -34,7 +62,9 @@ struct VideoDetailShellLayout: Equatable {
         forWidth width: CGFloat,
         isPlaybackActive: Bool
     ) -> CGFloat {
-        isPlaybackActive ? standardPlayerHeight(forWidth: width) : collapsedToolbarHeight
+        isPlaybackActive
+            ? standardPlayerHeight(forWidth: width)
+            : collapsedToolbarHeight
     }
 
     static func resolvedPlayerHeight(
@@ -64,6 +94,10 @@ struct VideoDetailShellLayout: Equatable {
         isPortraitFullscreen: Bool
     ) -> Self {
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
+        let canInteractivelyCollapse = supportsInteractiveCollapse(
+            videoAspectRatio: videoAspectRatio,
+            isPlaybackActive: isPlaybackActive
+        )
         let playerHeight =
             usesFullscreenLayout
             ? bounds.height
@@ -100,8 +134,40 @@ struct VideoDetailShellLayout: Equatable {
                 width: bounds.width,
                 height: max(bounds.height - max(0, safeAreaTop), 0)
             ),
-            contentTopInset: max(playerHeight, 0),
+            contentTopInset: canInteractivelyCollapse
+                ? expandedPlayerHeight(
+                    bounds: bounds.size,
+                    videoAspectRatio: videoAspectRatio
+                )
+                : max(playerHeight, 0),
             usesFullscreenLayout: false
         )
+    }
+}
+
+@MainActor
+struct VideoDetailInteractiveScrollMetrics: Equatable {
+    let scrollOffset: CGFloat
+    let collapseOffset: CGFloat
+    let contentOffset: CGFloat
+    let collapseDistance: CGFloat
+
+    init(
+        scrollOffset: CGFloat,
+        expandedPlayerHeight: CGFloat,
+        minimumPlayerHeight: CGFloat
+    ) {
+        let normalizedScrollOffset = max(scrollOffset, 0)
+        let expandedHeight = max(expandedPlayerHeight, 0)
+        let minimumHeight = min(max(minimumPlayerHeight, 0), expandedHeight)
+        let distance = max(expandedHeight - minimumHeight, 0)
+        self.scrollOffset = normalizedScrollOffset
+        collapseOffset = min(normalizedScrollOffset, distance)
+        contentOffset = max(normalizedScrollOffset - distance, 0)
+        collapseDistance = distance
+    }
+
+    var isPlayerCollapsed: Bool {
+        collapseOffset >= collapseDistance - 0.5
     }
 }

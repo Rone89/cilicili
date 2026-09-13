@@ -193,33 +193,6 @@ struct MineDisplaySettingsSection: View {
                 }
             }
 
-            Toggle(isOn: Binding(
-                get: { libraryStore.videoDetailToolbarCommentComposerExperimentEnabled },
-                set: { libraryStore.setVideoDetailToolbarCommentComposerExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("视频详情底部评论按钮实验", systemImage: "bubble")
-
-                    Text("切到评论页时，在底部简介/评论切换器右侧显示圆形评论按钮。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled },
-                set: { libraryStore.setCommentSheetPrimaryAuthorNameExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("评论弹窗用户名强调", systemImage: "person.text.rectangle")
-
-                    Text("评论查看与对话查看弹窗中的用户名使用主要文字颜色。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
         }
     }
 

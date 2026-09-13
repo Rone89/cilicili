@@ -10,25 +10,38 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     let rotationCoordinator: PlaybackRotationCoordinator
     let contentUpdateGate: VideoDetailContentUpdateGate
     let contentState = VideoDetailShellContentView.State()
-
     @Published private(set) var activePlayerViewModel: PlayerStateViewModel?
     @Published private(set) var surfacePlayerViewModel: PlayerStateViewModel?
     @Published private(set) var videoAspectRatio: CGFloat
     @Published private(set) var currentPlayerHeight: CGFloat?
-    @Published private(set) var lastScrollOffset: CGFloat = 0
+    private(set) var lastScrollOffset: CGFloat = 0
     @Published private(set) var isCollapsedChromeActive = false
+    @Published private(set) var isPlaybackActiveSnapshot = false
     @Published private(set) var isBareSurfaceTransitionActive = false
     @Published private(set) var retainsChromeDuringBareSurfaceTransition = false
-    @Published private(set) var playerFrame = CGRect.zero
+    private(set) var playerFrame = CGRect.zero
+#if DEBUG
+    let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
+#endif
     @Published var rootSafeAreaInsets = UIEdgeInsets.zero
+    private(set) var interactiveScrollOffset: CGFloat = 0
 
     private var cancellables = Set<AnyCancellable>()
+    private var playbackStateCancellables = Set<AnyCancellable>()
+    private var aspectRatioCancellables = Set<AnyCancellable>()
     private var scrollOffsets: [VideoDetailContentTab: CGFloat] = [:]
+    private var interactiveScrollOffsets: [VideoDetailContentTab: CGFloat] = [:]
     private var visitedContentTabs: Set<VideoDetailContentTab>
+    private var activeContentTab: VideoDetailContentTab
+    private var pendingInteractiveTab: VideoDetailContentTab?
+    private var pendingInteractiveTabOffset: CGFloat = 0
     private var isBackgroundRenderFreezeActive = false
+    private var layoutSynchronizationScheduled = false
+    private var pendingLayout: VideoDetailShellLayout?
 
     init(
         viewModel: VideoDetailViewModel,
+        initialVideo: VideoItem,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
         rotationCoordinator: PlaybackRotationCoordinator,
         initialContentTab: VideoDetailContentTab
@@ -37,12 +50,25 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         self.runtimeSettings = runtimeSettings
         self.rotationCoordinator = rotationCoordinator
         contentUpdateGate = VideoDetailContentUpdateGate()
-        videoAspectRatio = CGFloat(viewModel.detail.dimension?.aspectRatio ?? (16.0 / 9.0))
         let initialPlayerViewModel = viewModel.playbackSession.activePlayer
+        videoAspectRatio = VideoDetailInitialVideoGeometry.metadataAspectRatio(for: initialVideo)
+            ?? VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail)
+            ?? initialPlayerViewModel?.videoAspectRatio
+            ?? VideoDetailInitialVideoGeometry.defaultAspectRatio
         activePlayerViewModel = initialPlayerViewModel
         surfacePlayerViewModel = initialPlayerViewModel
         visitedContentTabs = [initialContentTab]
+        activeContentTab = initialContentTab
         bind()
+        bindVideoAspectRatio(to: initialPlayerViewModel)
+        bindPlaybackState(to: initialPlayerViewModel)
+    }
+
+    var isInteractiveScrollCollapseActive: Bool {
+        VideoDetailShellLayout.supportsInteractiveCollapse(
+            videoAspectRatio: videoAspectRatio,
+            isPlaybackActive: isPlaybackActiveSnapshot
+        )
     }
 
     func setSecondaryContentMounted(_ mounted: Bool) {
@@ -87,24 +113,69 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         safeAreaTop: CGFloat,
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
-        VideoDetailShellLayout.resolve(
+        let effectiveInteractiveOffset = isInteractiveScrollCollapseActive
+            ? interactiveScrollOffset
+            : nil
+        let effectivePlayerHeight = effectiveInteractiveOffset.map {
+            interactivePlayerHeight(forOffset: $0, bounds: size)
+        } ?? currentPlayerHeight
+        return VideoDetailShellLayout.resolve(
             bounds: CGRect(origin: .zero, size: size),
             safeAreaTop: safeAreaTop,
             videoAspectRatio: videoAspectRatio,
-            currentPlayerHeight: currentPlayerHeight,
-            isPlaybackActive: isPlaybackActive,
+            currentPlayerHeight: effectivePlayerHeight,
+            isPlaybackActive: isPlaybackActiveForLayout,
             isLandscape: rotationCoordinator.layoutLandscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
     }
 
+    func storedInteractiveScrollOffset(for tab: VideoDetailContentTab) -> CGFloat {
+        interactiveScrollOffsets[tab] ?? 0
+    }
+
+    func shouldShowCollapsedChrome(
+        for layout: VideoDetailShellLayout,
+        bounds: CGSize
+    ) -> Bool {
+        guard !isPlaybackActiveSnapshot else { return false }
+        guard isInteractiveScrollCollapseActive else { return isCollapsedChromeActive }
+        let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
+        return !rotationCoordinator.layoutLandscape
+            && layout.playerFrame.height <= standard - 4
+            && layout.playerFrame.height > 0
+    }
+
+    func collapsedChromeOpacity(
+        for layout: VideoDetailShellLayout,
+        bounds: CGSize
+    ) -> Double {
+        guard !isPlaybackActiveSnapshot,
+              !rotationCoordinator.layoutLandscape,
+              shouldShowCollapsedChrome(for: layout, bounds: bounds)
+        else { return 0 }
+
+        let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
+        let minimum = minimumPlayerHeight(forWidth: bounds.width)
+        let distance = max(standard - minimum, 1)
+        return max(0, min(1, Double((standard - layout.playerFrame.height) / distance)))
+    }
+
     func synchronize(layout: VideoDetailShellLayout) {
 #if DEBUG
         if playerFrame != layout.playerFrame {
-            print("[VideoDetailGeometry] coordinates=SwiftUI-root playerFrame=\(layout.playerFrame) contentFrame=\(layout.contentFrame) safeArea=\(rootSafeAreaInsets)")
+            print(
+                "[VideoDetailGeometry] coordinates=SwiftUI-root playerFrame=\(layout.playerFrame) "
+                    + "contentFrame=\(layout.contentFrame) safeArea=\(rootSafeAreaInsets)"
+            )
         }
 #endif
-        if playerFrame != layout.playerFrame { playerFrame = layout.playerFrame }
+        if playerFrame != layout.playerFrame {
+            playerFrame = layout.playerFrame
+#if DEBUG
+            playerFrameUpdates.send(playerFrame)
+#endif
+        }
         if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
             contentState.hidesBottomToolbar = layout.usesFullscreenLayout
         }
@@ -113,15 +184,40 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         contentState.topInset = contentTopInset
     }
 
+    func scheduleLayoutSynchronization(_ layout: VideoDetailShellLayout) {
+        pendingLayout = layout
+        guard !layoutSynchronizationScheduled else { return }
+        layoutSynchronizationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutSynchronizationScheduled = false
+            guard let layout = self.pendingLayout else { return }
+            self.pendingLayout = nil
+            self.synchronize(layout: layout)
+        }
+    }
+
     func handleSelectedTabChange(
         _ tab: VideoDetailContentTab,
         bounds: CGSize,
         rotationCoordinator: PlaybackRotationCoordinator
     ) {
+        activeContentTab = tab
         guard !rotationCoordinator.isTransitioning,
               !rotationCoordinator.layoutLandscape,
               !rotationCoordinator.isPortraitFullscreen
         else { return }
+
+        if isInteractiveScrollCollapseActive {
+            let targetOffset: CGFloat
+            if pendingInteractiveTab == tab {
+                targetOffset = pendingInteractiveTabOffset
+            } else {
+                targetOffset = prepareInteractiveTabChange(to: tab, bounds: bounds)
+            }
+            contentState.requestScrollAdjustment(tab: tab, offset: targetOffset)
+            return
+        }
 
         if visitedContentTabs.contains(tab) {
             if let preservedOffset = scrollOffsets[tab] {
@@ -148,6 +244,37 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             else { return }
             self.contentState.requestScrollAdjustment(tab: tab, offset: targetOffset)
         }
+    }
+
+    @discardableResult
+    func prepareInteractiveTabChange(
+        to tab: VideoDetailContentTab,
+        bounds: CGSize
+    ) -> CGFloat {
+        guard isInteractiveScrollCollapseActive else { return 0 }
+
+        let expanded = expandedPlayerHeight(bounds: bounds)
+        let minimum = minimumPlayerHeight(forWidth: bounds.width)
+        let currentMetrics = VideoDetailShellLayout.interactiveScrollMetrics(
+            scrollOffset: interactiveScrollOffset,
+            expandedPlayerHeight: expanded,
+            minimumPlayerHeight: minimum
+        )
+        let storedOffset = storedInteractiveScrollOffset(for: tab)
+        let targetOffset: CGFloat
+        if storedOffset > currentMetrics.collapseDistance + 0.5 {
+            targetOffset = storedOffset
+        } else {
+            targetOffset = currentMetrics.collapseOffset
+        }
+        guard pendingInteractiveTab != tab
+            || abs(pendingInteractiveTabOffset - targetOffset) > 0.5
+        else { return targetOffset }
+        pendingInteractiveTab = tab
+        pendingInteractiveTabOffset = targetOffset
+        setInteractiveScrollOffset(targetOffset, for: tab)
+        updateCollapsedChrome(bounds: bounds)
+        return targetOffset
     }
 
     func handleScrollOffset(
@@ -177,21 +304,87 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         updateCollapsedChrome(bounds: bounds)
     }
 
+    func recordInteractiveScrollOffset(
+        tab: VideoDetailContentTab,
+        offset: CGFloat,
+        selectedTab: VideoDetailContentTab,
+        bounds: CGSize
+    ) {
+        applyInteractiveScrollOffset(
+            tab: tab,
+            offset: offset,
+            selectedTab: selectedTab,
+            bounds: bounds
+        )
+    }
+
+    private func applyInteractiveScrollOffset(
+        tab: VideoDetailContentTab,
+        offset: CGFloat,
+        selectedTab: VideoDetailContentTab,
+        bounds: CGSize
+    ) {
+        let normalizedOffset = max(0, offset)
+        activeContentTab = selectedTab
+        guard tab == selectedTab else {
+            interactiveScrollOffsets[tab] = normalizedOffset
+            return
+        }
+
+        if pendingInteractiveTab == tab {
+            guard normalizedOffset + 0.5 >= pendingInteractiveTabOffset else { return }
+            pendingInteractiveTab = nil
+            pendingInteractiveTabOffset = 0
+        }
+
+        let previousHeight = interactivePlayerHeight(forOffset: interactiveScrollOffset, bounds: bounds)
+        let nextHeight = interactivePlayerHeight(forOffset: normalizedOffset, bounds: bounds)
+        setInteractiveScrollOffset(
+            normalizedOffset,
+            for: tab,
+            updatesLayout: isInteractiveScrollCollapseActive && abs(previousHeight - nextHeight) > 0.5
+        )
+        updateCollapsedChrome(bounds: bounds)
+    }
+
+    func handleInteractiveScrollPhase(
+        tab: VideoDetailContentTab,
+        phase: ScrollPhase,
+        selectedTab: VideoDetailContentTab
+    ) {
+        guard tab == selectedTab else { return }
+        if phase == .tracking || phase == .interacting {
+            pendingInteractiveTab = nil
+            pendingInteractiveTabOffset = 0
+        }
+    }
+
     func updateCollapsedChrome(bounds: CGSize) {
-        let playerHeight = resolvedPlayerHeight(bounds: bounds)
-        let minimum = minimumPlayerHeight(forWidth: bounds.width)
+        let playerHeight: CGFloat
+        if isInteractiveScrollCollapseActive {
+            playerHeight = interactivePlayerHeight(
+                forOffset: interactiveScrollOffset,
+                bounds: bounds
+            )
+        } else {
+            playerHeight = resolvedPlayerHeight(bounds: bounds)
+        }
         let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
-        isCollapsedChromeActive = !rotationCoordinator.layoutLandscape
-            && !isPlaybackActive
+        let showsCollapsedChrome = !rotationCoordinator.layoutLandscape
+            && !isPlaybackActiveSnapshot
             && playerHeight <= standard - 4
             && playerHeight > 0
-        let collapseDistance = max(standard - minimum, 1)
-        _ = max(0, min(1, (standard - playerHeight) / collapseDistance))
+        if isCollapsedChromeActive != showsCollapsedChrome {
+            isCollapsedChromeActive = showsCollapsedChrome
+        }
     }
 
     private var isPlaybackActive: Bool {
-        guard let player = activePlayerViewModel ?? surfacePlayerViewModel else { return false }
-        return player.isPlaying || player.isUserSeeking
+        isPlaybackActiveSnapshot
+    }
+
+    private var isPlaybackActiveForLayout: Bool {
+        isPlaybackActive
     }
 
     private func bind() {
@@ -204,11 +397,13 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         viewModel.$detail
             .receive(on: RunLoop.main)
             .sink { [weak self] detail in
-                guard let self,
-                      let ratio = detail.dimension?.aspectRatio,
-                      ratio > 0.1
+                guard let self else { return }
+                let ratio = VideoDetailInitialVideoGeometry.metadataAspectRatio(for: detail)
+                    ?? self.surfacePlayerViewModel?.videoAspectRatio
+                guard let ratio, ratio.isFinite, ratio > 0.1,
+                      abs(self.videoAspectRatio - ratio) > 0.001
                 else { return }
-                self.videoAspectRatio = CGFloat(ratio)
+                self.videoAspectRatio = ratio
                 self.currentPlayerHeight = nil
             }
             .store(in: &cancellables)
@@ -221,8 +416,55 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
                 if let player {
                     self.surfacePlayerViewModel = player
                 }
+                self.bindVideoAspectRatio(to: player)
+                self.bindPlaybackState(to: player ?? self.surfacePlayerViewModel)
             }
             .store(in: &cancellables)
+    }
+
+    private func bindVideoAspectRatio(to player: PlayerStateViewModel?) {
+        aspectRatioCancellables.removeAll()
+        guard let player else { return }
+
+        applyPlayerAspectRatioIfNeeded(player.videoAspectRatio)
+        player.$videoPresentationSize
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak player] _ in
+                guard let self, let player else { return }
+                self.applyPlayerAspectRatioIfNeeded(player.videoAspectRatio)
+            }
+            .store(in: &aspectRatioCancellables)
+    }
+
+    private func applyPlayerAspectRatioIfNeeded(_ ratio: CGFloat?) {
+        guard VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail) == nil,
+              let ratio,
+              ratio.isFinite,
+              ratio > 0.1,
+              abs(videoAspectRatio - ratio) > 0.001
+        else { return }
+        videoAspectRatio = ratio
+        currentPlayerHeight = nil
+    }
+
+    private func bindPlaybackState(to player: PlayerStateViewModel?) {
+        playbackStateCancellables.removeAll()
+        guard let player else {
+            updatePlaybackActivity(false)
+            return
+        }
+
+        let updatePlaybackState: (Bool, Bool) -> Void = { [weak self] isPlaying, isUserSeeking in
+            self?.updatePlaybackActivity(isPlaying || isUserSeeking)
+        }
+        updatePlaybackState(player.isPlaying, player.isUserSeeking)
+        player.$isPlaying
+            .combineLatest(player.$isUserSeeking)
+            .removeDuplicates { lhs, rhs in lhs == rhs }
+            .sink { isPlaying, isUserSeeking in
+                updatePlaybackState(isPlaying, isUserSeeking)
+            }
+            .store(in: &playbackStateCancellables)
     }
 
     private func expandedPlayerHeight(bounds: CGSize) -> CGFloat {
@@ -235,7 +477,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private func minimumPlayerHeight(forWidth width: CGFloat) -> CGFloat {
         VideoDetailShellLayout.minimumPlayerHeight(
             forWidth: width,
-            isPlaybackActive: isPlaybackActive
+            isPlaybackActive: isPlaybackActiveForLayout
         )
     }
 
@@ -244,18 +486,126 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             bounds: bounds,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: currentPlayerHeight,
-            isPlaybackActive: isPlaybackActive
+            isPlaybackActive: isPlaybackActiveForLayout
         )
     }
 
     private func applyPlayerHeight(forOffset offset: CGFloat, bounds: CGSize) {
-        let expanded = expandedPlayerHeight(bounds: bounds)
-        let minimum = minimumPlayerHeight(forWidth: bounds.width)
-        let target = max(minimum, min(expanded, expanded - offset))
+        let target = interactivePlayerHeight(forOffset: offset, bounds: bounds)
         guard currentPlayerHeight.map({ abs($0 - target) > 0.5 }) ?? true else { return }
         currentPlayerHeight = target
     }
 
+    private func interactivePlayerHeight(forOffset offset: CGFloat, bounds: CGSize) -> CGFloat {
+        let expanded = expandedPlayerHeight(bounds: bounds)
+        let minimum = minimumPlayerHeight(forWidth: bounds.width)
+        let target = max(minimum, min(expanded, expanded - offset))
+        return target
+    }
+
+    private func setInteractiveScrollOffset(
+        _ offset: CGFloat,
+        for tab: VideoDetailContentTab,
+        updatesLayout: Bool = true
+    ) {
+        let normalizedOffset = max(0, offset)
+        interactiveScrollOffsets[tab] = normalizedOffset
+        guard abs(interactiveScrollOffset - normalizedOffset) > 0.5 else { return }
+        if updatesLayout { objectWillChange.send() }
+        interactiveScrollOffset = normalizedOffset
+    }
+
+    private func updatePlaybackActivity(_ isActive: Bool) {
+        let wasInteractive = isInteractiveScrollCollapseActive
+        guard isPlaybackActiveSnapshot != isActive else { return }
+
+        if wasInteractive {
+            lastScrollOffset = interactiveScrollOffset
+        }
+        isPlaybackActiveSnapshot = isActive
+
+        guard !wasInteractive, isInteractiveScrollCollapseActive else { return }
+        setInteractiveScrollOffset(lastScrollOffset, for: activeContentTab)
+    }
+
+}
+
+@MainActor
+private struct VideoDetailInteractivePlayerLayer: View {
+    @ObservedObject var model: VideoDetailSwiftUIContainerModel
+    @ObservedObject var rotationCoordinator: PlaybackRotationCoordinator
+    let viewModel: VideoDetailViewModel
+    let size: CGSize
+    let safeAreaTop: CGFloat
+    let selectedContentTab: VideoDetailContentTab
+    let dependencies: AppDependencies
+    let runtimeSettings: VideoDetailRuntimeSettingsStore
+    let onShowMoreControls: (@escaping () -> Void) -> Void
+    let onDismissMoreControls: () -> Void
+    let onRequestFullscreen: () -> Void
+    let onExitFullscreen: () -> Void
+    let onToggleDanmaku: () -> Void
+    let onShowDanmakuSettings: () -> Void
+    let onNavigateBack: () -> Void
+
+    var body: some View {
+        let layout = model.layout(
+            in: size,
+            safeAreaTop: safeAreaTop,
+            rotationCoordinator: rotationCoordinator
+        )
+        let showsCollapsedChrome = model.shouldShowCollapsedChrome(
+            for: layout,
+            bounds: size
+        )
+        let collapsedChromeOpacity = model.collapsedChromeOpacity(
+            for: layout,
+            bounds: size
+        )
+
+        ZStack(alignment: .topLeading) {
+            if let playerViewModel = model.surfacePlayerViewModel {
+                VideoDetailShellSurfaceRepresentable(
+                    playerViewModel: playerViewModel,
+                    detailViewModel: viewModel,
+                    dependencies: dependencies,
+                    runtimeSettings: runtimeSettings,
+                    rotationCoordinator: rotationCoordinator,
+                    videoAspectRatio: model.videoAspectRatio,
+                    isBareSurfaceTransitionActive: model.isBareSurfaceTransitionActive,
+                    retainsChromeDuringBareSurfaceTransition: model.retainsChromeDuringBareSurfaceTransition,
+                    isCollapsedChromeActive: showsCollapsedChrome,
+                    onShowMoreControls: onShowMoreControls,
+                    onDismissMoreControls: onDismissMoreControls,
+                    onRequestFullscreen: onRequestFullscreen,
+                    onExitFullscreen: onExitFullscreen,
+                    onToggleDanmaku: onToggleDanmaku,
+                    onShowDanmakuSettings: onShowDanmakuSettings,
+                    onNavigateBack: onNavigateBack
+                )
+                .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
+                .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .zIndex(2)
+
+                if showsCollapsedChrome && !layout.usesFullscreenLayout {
+                    VideoDetailShellCollapsedBar(
+                        playerViewModel: playerViewModel,
+                        opacity: collapsedChromeOpacity,
+                        onNavigateBack: onNavigateBack,
+                        onRequestFullscreen: onRequestFullscreen
+                    )
+                    .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
+                    .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                    .zIndex(3)
+                }
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .onChange(of: layout) { _, newLayout in
+                guard newLayout.playerFrame != model.playerFrame else { return }
+                model.scheduleLayoutSynchronization(newLayout)
+            }
+    }
 }
 
 @MainActor
@@ -282,6 +632,7 @@ struct VideoDetailSwiftUIContainer: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let isInteractiveScrollCollapseEnabled = model.isInteractiveScrollCollapseActive
             let layout = model.layout(
                 in: proxy.size,
                 safeAreaTop: model.rootSafeAreaInsets.top,
@@ -291,11 +642,14 @@ struct VideoDetailSwiftUIContainer: View {
             ZStack(alignment: .topLeading) {
                 VideoDetailShellContentView(
                     viewModel: viewModel,
-                    libraryStore: dependencies.libraryStore,
                     updateGate: model.contentUpdateGate,
                     runtimeSettings: runtimeSettings,
                     state: model.contentState,
                     layoutWidth: proxy.size.width,
+                    placesTopInsetInScrollContent: true,
+                    // Keep the scroll host's content extent stable when playback pauses.
+                    // The layout model still determines the player's actual minimum height.
+                    interactiveMinimumPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight,
                     selectedContentTab: $selectedContentTab,
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,
@@ -304,6 +658,9 @@ struct VideoDetailSwiftUIContainer: View {
                     onReply: onReply,
                     openVideoOwnerRoute: openVideoOwnerRoute,
                     onSelectedTabChange: { tab in
+                        if isInteractiveScrollCollapseEnabled {
+                            model.prepareInteractiveTabChange(to: tab, bounds: proxy.size)
+                        }
                         DispatchQueue.main.async {
                             model.handleSelectedTabChange(
                                 tab,
@@ -312,16 +669,37 @@ struct VideoDetailSwiftUIContainer: View {
                             )
                         }
                     },
+                    onSelectionWillChange: { tab in
+                        guard isInteractiveScrollCollapseEnabled else { return }
+                        model.prepareInteractiveTabChange(to: tab, bounds: proxy.size)
+                    },
                     onScrollOffsetChange: { tab, offset in
-                        DispatchQueue.main.async {
-                            model.handleScrollOffset(
+                        if isInteractiveScrollCollapseEnabled {
+                            model.recordInteractiveScrollOffset(
                                 tab: tab,
                                 offset: offset,
                                 selectedTab: selectedContentTab,
-                                bounds: proxy.size,
-                                rotationCoordinator: rotationCoordinator
+                                bounds: proxy.size
                             )
+                        } else {
+                            DispatchQueue.main.async {
+                                model.handleScrollOffset(
+                                    tab: tab,
+                                    offset: offset,
+                                    selectedTab: selectedContentTab,
+                                    bounds: proxy.size,
+                                    rotationCoordinator: rotationCoordinator
+                                )
+                            }
                         }
+                    },
+                    onScrollPhaseChange: { tab, phase in
+                        guard isInteractiveScrollCollapseEnabled else { return }
+                        model.handleInteractiveScrollPhase(
+                            tab: tab,
+                            phase: phase,
+                            selectedTab: selectedContentTab
+                        )
                     }
                 )
                 .frame(
@@ -335,51 +713,29 @@ struct VideoDetailSwiftUIContainer: View {
                         && !model.contentState.suppressesInteractiveContentActions
                 )
 
-                if let playerViewModel = model.surfacePlayerViewModel {
-                    VideoDetailShellSurfaceRepresentable(
-                        playerViewModel: playerViewModel,
-                        detailViewModel: viewModel,
-                        dependencies: dependencies,
-                        runtimeSettings: runtimeSettings,
-                        rotationCoordinator: rotationCoordinator,
-                        videoAspectRatio: model.videoAspectRatio,
-                        isBareSurfaceTransitionActive: model.isBareSurfaceTransitionActive,
-                        retainsChromeDuringBareSurfaceTransition: model.retainsChromeDuringBareSurfaceTransition,
-                        isCollapsedChromeActive: model.isCollapsedChromeActive,
-                        onShowMoreControls: onShowMoreControls,
-                        onDismissMoreControls: onDismissMoreControls,
-                        onRequestFullscreen: onRequestFullscreen,
-                        onExitFullscreen: onExitFullscreen,
-                        onToggleDanmaku: onToggleDanmaku,
-                        onShowDanmakuSettings: onShowDanmakuSettings,
-                        onNavigateBack: onNavigateBack
-                    )
-                    .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
-                    .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
-                    .zIndex(2)
-
-                    if model.isCollapsedChromeActive && !layout.usesFullscreenLayout {
-                        VideoDetailShellCollapsedBar(
-                            playerViewModel: playerViewModel,
-                            onNavigateBack: onNavigateBack,
-                            onRequestFullscreen: onRequestFullscreen
-                        )
-                        .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
-                        .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
-                        .zIndex(3)
-                    }
-                }
+                VideoDetailInteractivePlayerLayer(
+                    model: model,
+                    rotationCoordinator: rotationCoordinator,
+                    viewModel: viewModel,
+                    size: proxy.size,
+                    safeAreaTop: model.rootSafeAreaInsets.top,
+                    selectedContentTab: selectedContentTab,
+                    dependencies: dependencies,
+                    runtimeSettings: runtimeSettings,
+                    onShowMoreControls: onShowMoreControls,
+                    onDismissMoreControls: onDismissMoreControls,
+                    onRequestFullscreen: onRequestFullscreen,
+                    onExitFullscreen: onExitFullscreen,
+                    onToggleDanmaku: onToggleDanmaku,
+                    onShowDanmakuSettings: onShowDanmakuSettings,
+                    onNavigateBack: onNavigateBack
+                )
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .onAppear {
                 DispatchQueue.main.async {
                     model.synchronize(layout: layout)
                     model.updateCollapsedChrome(bounds: proxy.size)
-                }
-            }
-            .onChange(of: layout) { _, newLayout in
-                DispatchQueue.main.async {
-                    model.synchronize(layout: newLayout)
                 }
             }
         }
@@ -425,6 +781,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
 #if DEBUG
     private let rotationDiagnosticsAccessibilityView = UILabel()
+    private let playerFrameDiagnosticsAccessibilityView = UIView()
 #endif
 
     private lazy var hostingController: UIHostingController<VideoDetailSwiftUIContainer> = {
@@ -432,6 +789,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     }()
 
     init(
+        initialVideo: VideoItem,
         viewModel: VideoDetailViewModel,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
         dependencies: AppDependencies,
@@ -467,6 +825,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         self.rotationCoordinator = rotationCoordinator
         contentModel = VideoDetailSwiftUIContainerModel(
             viewModel: viewModel,
+            initialVideo: initialVideo,
             runtimeSettings: runtimeSettings,
             rotationCoordinator: rotationCoordinator,
             initialContentTab: selectedContentTab.wrappedValue
@@ -500,6 +859,19 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         rotationDiagnosticsAccessibilityView.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         rotationDiagnosticsAccessibilityView.alpha = 0.01
         view.addSubview(rotationDiagnosticsAccessibilityView)
+        playerFrameDiagnosticsAccessibilityView.isAccessibilityElement = true
+        playerFrameDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.playerFrame"
+        playerFrameDiagnosticsAccessibilityView.isUserInteractionEnabled = false
+        playerFrameDiagnosticsAccessibilityView.alpha = 0.01
+        view.addSubview(playerFrameDiagnosticsAccessibilityView)
+        contentModel.playerFrameUpdates
+            .receive(on: RunLoop.main)
+            .sink { [weak self] frame in
+                guard let self else { return }
+                self.playerFrameDiagnosticsAccessibilityView.frame = frame
+                self.playerFrameDiagnosticsAccessibilityView.accessibilityValue = "height=\(frame.height)"
+            }
+            .store(in: &cancellables)
 #endif
         contentModel.$activePlayerViewModel
             .receive(on: RunLoop.main)
@@ -535,7 +907,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     }
 
     var isPortraitVideo: Bool {
-        (viewModel.detail.dimension?.aspectRatio ?? (16.0 / 9.0)) < 0.9
+        contentModel.videoAspectRatio < 0.9
     }
 
     func setSecondaryContentMounted(_ mounted: Bool) {
