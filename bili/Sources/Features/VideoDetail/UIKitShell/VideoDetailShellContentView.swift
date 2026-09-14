@@ -31,7 +31,6 @@ struct VideoDetailShellContentView: View {
     }
 
     let viewModel: VideoDetailViewModel
-    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var updateGate: VideoDetailContentUpdateGate
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: State
@@ -50,7 +49,6 @@ struct VideoDetailShellContentView: View {
         let _ = updateGate.revision
         VideoDetailShellContentBody(
             viewModel: viewModel,
-            libraryStore: libraryStore,
             runtimeSettings: runtimeSettings,
             state: state,
             layoutWidth: layoutWidth,
@@ -69,7 +67,6 @@ struct VideoDetailShellContentView: View {
 
 private struct VideoDetailShellContentBody: View {
     let viewModel: VideoDetailViewModel
-    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: VideoDetailShellContentView.State
     let layoutWidth: CGFloat
@@ -93,7 +90,6 @@ private struct VideoDetailShellContentBody: View {
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
                 || state.mountsSecondaryContent,
             hidesBottomToolbar: state.hidesBottomToolbar,
-            showsCommentComposerButton: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled,
             onOpenCommentComposer: { onOpenCommentComposer(nil) },
             onScrollOffsetChange: onScrollOffsetChange,
             content: { tab, mountsSecondaryContent in
@@ -110,9 +106,7 @@ private struct VideoDetailShellContentBody: View {
                         guard !contentActionsSuppressed else { return }
                         onReply(comment)
                     },
-                    onComposeReply: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled
-                        ? { onOpenCommentComposer($0) }
-                        : nil
+                    onComposeReply: { onOpenCommentComposer($0) }
                 )
             }
         )

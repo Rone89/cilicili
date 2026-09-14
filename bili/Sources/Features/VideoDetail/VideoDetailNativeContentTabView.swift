@@ -8,7 +8,6 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var scrollAdjustment: VideoDetailScrollAdjustment?
     let mountsSecondaryContent: Bool
     var hidesBottomToolbar = false
-    var showsCommentComposerButton = false
     var onOpenCommentComposer: (() -> Void)?
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
     let content: (VideoDetailContentTab, Bool) -> Content
@@ -17,7 +16,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         tabContent
             .ignoresSafeArea(.container, edges: .bottom)
             .toolbar {
-                if showsCommentComposerButton {
+                if onOpenCommentComposer != nil {
                     ToolbarSpacer(.flexible, placement: .bottomBar)
                     ToolbarItem(placement: .bottomBar) {
                         VideoDetailToolbarCommentComposerButton(action: {})

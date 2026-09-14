@@ -882,7 +882,7 @@ struct RichCommentComposerView: View {
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let onDismiss: (() -> Void)?
 
-    @State private var activeReplyTarget: DynamicCommentComposerTarget?
+    private let activeReplyTarget: DynamicCommentComposerTarget?
     @State private var inputMode: RichCommentInputMode = .keyboard
     @State private var isEditorFocused = false
     @State private var editorHeight: CGFloat = 44
@@ -916,7 +916,7 @@ struct RichCommentComposerView: View {
         self.api = api
         self.submit = submit
         self.onDismiss = onDismiss
-        _activeReplyTarget = State(initialValue: target.authorName == nil ? nil : target)
+        activeReplyTarget = target.authorName == nil ? nil : target
     }
 
     private var sendableMessage: String {
@@ -943,14 +943,7 @@ struct RichCommentComposerView: View {
 
                     Spacer(minLength: 0)
 
-                    Button {
-                        self.activeReplyTarget = nil
-                        draft.replyTarget = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("取消回复")
+
                 }
             }
 

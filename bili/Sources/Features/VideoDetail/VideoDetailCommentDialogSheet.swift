@@ -2,13 +2,12 @@ import SwiftUI
 
 struct CommentDialogSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
     let rootComment: Comment
     let focusReply: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let reloadDialog: (Comment, Comment) async -> Void
     let actions: CommentDialogSheetActions
-    let submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)?
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var richCommentDrafts = [String: RichCommentDraft]()
 
@@ -18,11 +17,11 @@ struct CommentDialogSheet: View {
         store: VideoDetailCommentThreadRenderStore,
         loadDialog: @escaping (Comment, Comment) async -> Void,
         reloadDialog: @escaping (Comment, Comment) async -> Void,
-        submitReply: ((
+        submitReply: @escaping (
             DynamicCommentComposerTarget,
             String,
             [DynamicCommentImage]?
-        ) async throws -> Void)?
+        ) async throws -> Void
     ) {
         self.rootComment = rootComment
         self.focusReply = focusReply
@@ -69,24 +68,18 @@ struct CommentDialogSheet: View {
             }
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .environment(
-            \.commentAuthorNameUsesPrimaryStyle,
-            libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled
-        )
         .commentSheetPresentation()
         .background {
-            if let submitReply {
-                RichCommentComposerPresenter(
-                    target: $composerTarget,
-                    draft: richCommentDraftBinding,
-                    api: dependencies.api,
-                    submit: { target, message, pictures in
-                        try await submitReply(target, message, pictures)
-                        await reloadDialog(rootComment, focusReply)
-                    }
-                )
-                .allowsHitTesting(false)
-            }
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: richCommentDraftBinding,
+                api: dependencies.api,
+                submit: { target, message, pictures in
+                    try await submitReply(target, message, pictures)
+                    await reloadDialog(rootComment, focusReply)
+                }
+            )
+            .allowsHitTesting(false)
         }
     }
 
@@ -98,8 +91,7 @@ struct CommentDialogSheet: View {
         composerTarget = .reply(root: rootComment, parent: parent)
     }
 
-    private var replyComposerAction: ((Comment) -> Void)? {
-        guard submitReply != nil else { return nil }
+    private var replyComposerAction: (Comment) -> Void {
         return { parent in openReplyComposer(for: parent) }
     }
 

@@ -147,8 +147,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
-    @Published private(set) var videoDetailToolbarCommentComposerExperimentEnabled: Bool
-    @Published private(set) var commentSheetPrimaryAuthorNameExperimentEnabled: Bool
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
@@ -234,10 +232,6 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
-    private static let videoDetailToolbarCommentComposerExperimentEnabledKey =
-        "cc.bili.experimental.videoDetailToolbarCommentComposer.v1"
-    private static let commentSheetPrimaryAuthorNameExperimentEnabledKey =
-        "cc.bili.experimental.commentSheetPrimaryAuthorName.v1"
     private static let nativePullRefreshEnabledKey =
         "cc.bili.home.nativePullRefreshEnabled.v1"
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
@@ -251,6 +245,8 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
+        "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
         "cc.bili.experimental.scrollableTabHeaders.v1",
         "cc.bili.display.rootNavigationContainerExperimentEnabled.v1",
         "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
@@ -628,14 +624,6 @@ final class LibraryStore: ObservableObject {
         self.dynamicCommentHitAreaVisualizationExperimentEnabled =
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
-            ) as? Bool ?? false
-        self.videoDetailToolbarCommentComposerExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.videoDetailToolbarCommentComposerExperimentEnabledKey
-            ) as? Bool ?? false
-        self.commentSheetPrimaryAuthorNameExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.commentSheetPrimaryAuthorNameExperimentEnabledKey
             ) as? Bool ?? false
         let storedNativePullRefreshEnabled =
             userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
@@ -1293,22 +1281,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(
             isEnabled,
             forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
-        )
-    }
-
-    func setVideoDetailToolbarCommentComposerExperimentEnabled(_ isEnabled: Bool) {
-        videoDetailToolbarCommentComposerExperimentEnabled = isEnabled
-        userDefaults.set(
-            isEnabled,
-            forKey: Self.videoDetailToolbarCommentComposerExperimentEnabledKey
-        )
-    }
-
-    func setCommentSheetPrimaryAuthorNameExperimentEnabled(_ isEnabled: Bool) {
-        commentSheetPrimaryAuthorNameExperimentEnabled = isEnabled
-        userDefaults.set(
-            isEnabled,
-            forKey: Self.commentSheetPrimaryAuthorNameExperimentEnabledKey
         )
     }
 

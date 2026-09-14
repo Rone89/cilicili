@@ -5,7 +5,7 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
     @ObservedObject var libraryStore: LibraryStore
     let sheetState: VideoDetailSheetState
     let sheetActions: VideoDetailSheetActions
-    let submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)?
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
 
     func body(content: Content) -> some View {
         content
@@ -112,11 +112,11 @@ extension View {
         viewModel: VideoDetailViewModel,
         libraryStore: LibraryStore,
         sheetState: VideoDetailSheetState,
-        submitReply: ((
+        submitReply: @escaping (
             DynamicCommentComposerTarget,
             String,
             [DynamicCommentImage]?
-        ) async throws -> Void)? = nil
+        ) async throws -> Void
     ) -> some View {
         modifier(
             VideoDetailSheetHostModifier(

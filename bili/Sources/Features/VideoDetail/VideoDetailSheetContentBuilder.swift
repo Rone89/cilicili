@@ -12,11 +12,11 @@ struct VideoDetailReplySheetHost: View {
         viewModel: VideoDetailViewModel,
         initialReplyID: Int? = nil,
         actions: VideoDetailReplySheetActions,
-        submitReply: ((
+        submitReply: @escaping (
             DynamicCommentComposerTarget,
             String,
             [DynamicCommentImage]?
-        ) async throws -> Void)?
+        ) async throws -> Void
     ) {
         self.rootComment = rootComment
         self.viewModel = viewModel
@@ -28,7 +28,7 @@ struct VideoDetailReplySheetHost: View {
         self.submitReply = submitReply
     }
 
-    let submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)?
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
 
     var body: some View {
         CommentRepliesSheet(

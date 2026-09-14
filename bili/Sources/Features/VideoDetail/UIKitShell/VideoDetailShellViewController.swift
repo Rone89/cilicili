@@ -151,7 +151,6 @@ final class VideoDetailShellViewController: UIViewController {
         self.contentHost = UIHostingController(
             rootView: VideoDetailShellContentView(
                 viewModel: viewModel,
-                libraryStore: dependencies.libraryStore,
                 updateGate: contentUpdateGate,
                 runtimeSettings: runtimeSettings,
                 state: contentState,
@@ -177,7 +176,6 @@ final class VideoDetailShellViewController: UIViewController {
         // self 已可用，注入滚动联动缩放回调（值类型 rootView 需整体重设）。
         contentHost.rootView = VideoDetailShellContentView(
             viewModel: viewModel,
-            libraryStore: dependencies.libraryStore,
             updateGate: contentUpdateGate,
             runtimeSettings: runtimeSettings,
             state: contentState,

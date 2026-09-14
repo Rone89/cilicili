@@ -24,40 +24,14 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
-    func testVideoDetailToolbarCommentComposerExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.video-detail-toolbar-composer.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let initialStore = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(initialStore.videoDetailToolbarCommentComposerExperimentEnabled)
-
-        initialStore.setVideoDetailToolbarCommentComposerExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).videoDetailToolbarCommentComposerExperimentEnabled
-        )
-    }
-
-    func testCommentSheetPrimaryAuthorNameExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.comment-sheet-primary-author.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let initialStore = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(initialStore.commentSheetPrimaryAuthorNameExperimentEnabled)
-
-        initialStore.setCommentSheetPrimaryAuthorNameExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).commentSheetPrimaryAuthorNameExperimentEnabled
-        )
-    }
-
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let retiredKeys = [
+            "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
+            "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
             "cc.bili.dynamic.realLikeExperimentEnabled.v1",
             "cc.bili.comment.likeExperimentEnabled.v1",
             "cc.bili.dynamic.imageTextDetailExperimentEnabled.v1",

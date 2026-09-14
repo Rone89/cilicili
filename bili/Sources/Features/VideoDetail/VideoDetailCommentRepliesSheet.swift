@@ -2,7 +2,6 @@ import SwiftUI
 
 struct CommentRepliesSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
     let rootComment: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let initialReplyID: Int?
@@ -11,7 +10,7 @@ struct CommentRepliesSheet: View {
     let loadMoreReplies: (Comment) async -> Void
     let loadDialog: (Comment, Comment) async -> Void
     let reloadDialog: (Comment, Comment) async -> Void
-    let submitReply: ((DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void)?
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var richCommentDrafts = [String: RichCommentDraft]()
@@ -26,11 +25,11 @@ struct CommentRepliesSheet: View {
         loadMoreReplies: @escaping (Comment) async -> Void,
         loadDialog: @escaping (Comment, Comment) async -> Void,
         reloadDialog: @escaping (Comment, Comment) async -> Void,
-        submitReply: ((
+        submitReply: @escaping (
             DynamicCommentComposerTarget,
             String,
             [DynamicCommentImage]?
-        ) async throws -> Void)?
+        ) async throws -> Void
     ) {
         self.rootComment = rootComment
         self.store = store
@@ -55,10 +54,6 @@ struct CommentRepliesSheet: View {
             )
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .environment(
-            \.commentAuthorNameUsesPrimaryStyle,
-            libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled
-        )
         .commentSheetPresentation()
         .sheet(item: $dialogReply) { reply in
             CommentDialogSheet(
@@ -71,18 +66,16 @@ struct CommentRepliesSheet: View {
             )
         }
         .background {
-            if let submitReply {
-                RichCommentComposerPresenter(
-                    target: $composerTarget,
-                    draft: richCommentDraftBinding,
-                    api: dependencies.api,
-                    submit: { target, message, pictures in
-                        try await submitReply(target, message, pictures)
-                        await reloadReplies(rootComment)
-                    }
-                )
-                .allowsHitTesting(false)
-            }
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: richCommentDraftBinding,
+                api: dependencies.api,
+                submit: { target, message, pictures in
+                    try await submitReply(target, message, pictures)
+                    await reloadReplies(rootComment)
+                }
+            )
+            .allowsHitTesting(false)
         }
         .onChange(of: replyIDs) { _, _ in
             presentInitialReplyIfAvailable()
@@ -100,8 +93,7 @@ struct CommentRepliesSheet: View {
         composerTarget = .reply(root: rootComment, parent: parent)
     }
 
-    private var replyComposerAction: ((Comment) -> Void)? {
-        guard submitReply != nil else { return nil }
+    private var replyComposerAction: (Comment) -> Void {
         return { parent in openReplyComposer(for: parent) }
     }
 
