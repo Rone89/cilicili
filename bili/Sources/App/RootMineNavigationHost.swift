@@ -9,33 +9,11 @@ struct RootMineNavigationDestination: View {
 
     var body: some View {
         Group {
-            switch route {
-            case .accountMessages:
-                if let viewModel = holder.accountMessageViewModel {
-                    AccountMessageCenterView(viewModel: viewModel)
-                } else {
-                    ProgressView()
-                }
-            case .multiAccountSettings:
-                MultiAccountExperimentSettingsView(
-                    sessionStore: sessionStore,
-                    libraryStore: libraryStore,
-                    api: api
-                )
-            case .history:
-                accountLibraryPage(kind: .history)
-            case .favorites:
-                accountLibraryPage(kind: .favorites)
-            case .interfaceSettings:
-                MineInterfaceSettingsView(libraryStore: libraryStore)
-            case .homeAndSearchSettings:
-                MineHomeAndSearchSettingsView(libraryStore: libraryStore)
-            case .playbackSettings:
-                MinePlaybackSettingsView(libraryStore: libraryStore)
-            case .contentFilterSettings:
-                MineContentFilterSettingsView(libraryStore: libraryStore)
-            case .privacySettings:
-                MinePrivacySettingsView(libraryStore: libraryStore)
+            if route.isSettingsRoute {
+                destinationContent
+                    .labelStyle(.titleOnly)
+            } else {
+                destinationContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -46,6 +24,38 @@ struct RootMineNavigationDestination: View {
                 allowsSingleControllerNavigation: true
             )
         )
+    }
+
+    @ViewBuilder
+    private var destinationContent: some View {
+        switch route {
+        case .accountMessages:
+            if let viewModel = holder.accountMessageViewModel {
+                AccountMessageCenterView(viewModel: viewModel)
+            } else {
+                ProgressView()
+            }
+        case .multiAccountSettings:
+            MultiAccountExperimentSettingsView(
+                sessionStore: sessionStore,
+                libraryStore: libraryStore,
+                api: api
+            )
+        case .history:
+            accountLibraryPage(kind: .history)
+        case .favorites:
+            accountLibraryPage(kind: .favorites)
+        case .interfaceSettings:
+            MineInterfaceSettingsView(libraryStore: libraryStore)
+        case .homeAndSearchSettings:
+            MineHomeAndSearchSettingsView(libraryStore: libraryStore)
+        case .playbackSettings:
+            MinePlaybackSettingsView(libraryStore: libraryStore)
+        case .contentFilterSettings:
+            MineContentFilterSettingsView(libraryStore: libraryStore)
+        case .privacySettings:
+            MinePrivacySettingsView(libraryStore: libraryStore)
+        }
     }
 
     @ViewBuilder

@@ -451,7 +451,7 @@ final class VideoSurfaceContainerView: UIView {
     }
 
     private func scheduleDeferredBoundSurfaceLayoutRefresh(for viewModel: PlayerStateViewModel? = nil) {
-        cancelDeferredBoundSurfaceLayoutRefresh()
+        guard deferredBoundSurfaceLayoutRefreshTask == nil else { return }
         let refreshGeneration = surfaceBindingGeneration
         deferredBoundSurfaceLayoutRefreshTask = Task { @MainActor [weak self, weak viewModel] in
             await Task.yield()

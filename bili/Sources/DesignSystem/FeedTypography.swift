@@ -73,11 +73,11 @@ enum AppTypography {
             switch self {
             case .pageTitle:
                 return 34
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .messageBody:
+            case .navigationTitle, .sectionTitle, .videoDetailTitle, .dynamicBody, .messageBody:
                 return 17
             case .liveRoomTitle, .messageName, .settingsRow:
                 return 16
-            case .feedVideoTitle, .dynamicBody, .author, .commentBody:
+            case .feedVideoTitle, .author, .commentBody:
                 return 15
             case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return 14
@@ -102,9 +102,9 @@ enum AppTypography {
                 return .title3
             case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
                 return .headline
-            case .dynamicBody, .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return .subheadline
-            case .commentBody, .messageBody, .settingsRow:
+            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
                 return .body
             case .author:
                 return .subheadline
@@ -131,9 +131,9 @@ enum AppTypography {
                 return .title3
             case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
                 return .headline
-            case .dynamicBody, .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return .subheadline
-            case .commentBody, .messageBody, .settingsRow:
+            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
                 return .body
             case .author:
                 return .subheadline

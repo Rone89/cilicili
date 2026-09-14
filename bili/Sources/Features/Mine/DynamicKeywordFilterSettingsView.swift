@@ -19,7 +19,7 @@ struct DynamicKeywordFilterSettingsView: View {
                 Button {
                     addKeyword()
                 } label: {
-                    Label("添加关键词", systemImage: "plus.circle")
+                    MineSettingsLabel("添加关键词", systemImage: "plus.circle")
                 }
                 .disabled(normalizedDraftKeyword == nil)
             } header: {
@@ -54,7 +54,7 @@ struct DynamicKeywordFilterSettingsView: View {
                         Button(role: .destructive) {
                             libraryStore.clearBlockedDynamicKeywords()
                         } label: {
-                            Label("清空全部", systemImage: "trash")
+                            MineSettingsLabel("清空全部", systemImage: "trash")
                         }
                     }
                 }

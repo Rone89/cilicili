@@ -42,21 +42,15 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
     ) {
         let coordinator = context.coordinator
         coordinator.configure(host: uiView, playerViewModel: playerViewModel)
-        DispatchQueue.main.async { [weak uiView] in
-            guard let uiView, !uiView.isTornDown else { return }
-            uiView.setPlayerViewModel(playerViewModel)
-            uiView.setVideoAspectRatio(videoAspectRatio)
-            uiView.setCollapsedChromeActive(isCollapsedChromeActive)
-            uiView.setBareSurfaceTransitionActive(
-                isBareSurfaceTransitionActive,
-                retainsChromeTree: retainsChromeDuringBareSurfaceTransition
-            )
-            if isBareSurfaceTransitionActive {
-                uiView.cancelRotationChromePrewarm()
-            }
-            coordinator.attachIfPossible(to: uiView)
-            uiView.refreshLayoutImmediately()
-        }
+        guard !uiView.isTornDown else { return }
+        coordinator.scheduleConfigurationIfNeeded(
+            playerViewModel: playerViewModel,
+            videoAspectRatio: videoAspectRatio,
+            isCollapsedChromeActive: isCollapsedChromeActive,
+            isBareSurfaceTransitionActive: isBareSurfaceTransitionActive,
+            retainsChromeDuringBareSurfaceTransition: retainsChromeDuringBareSurfaceTransition
+        )
+        coordinator.attachIfPossible(to: uiView)
     }
 
     static func dismantleUIView(
@@ -88,10 +82,16 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
     final class Coordinator {
         private weak var host: VideoDetailShellSurfaceHost?
         private weak var observedPlayer: PlayerStateViewModel?
+        private weak var configuredPlayer: PlayerStateViewModel?
+        private var configuredAspectRatio: CGFloat?
+        private var configuredCollapsedChrome: Bool?
+        private var configuredBareSurface: Bool?
+        private var configuredRetainsChrome: Bool?
         private var playerCancellable: AnyCancellable?
         private var attachmentRetry: Task<Void, Never>?
         private var isAttached = false
         private var isPrewarmScheduled = false
+        private var isConfigurationUpdateScheduled = false
 
         func configure(
             host: VideoDetailShellSurfaceHost,
@@ -115,8 +115,60 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                         guard let self, let host = self.host else { return }
                         host.prewarmRotationChrome()
+                }
+            }
+        }
+
+        func scheduleConfigurationIfNeeded(
+            playerViewModel: PlayerStateViewModel,
+            videoAspectRatio: CGFloat,
+            isCollapsedChromeActive: Bool,
+            isBareSurfaceTransitionActive: Bool,
+            retainsChromeDuringBareSurfaceTransition: Bool
+        ) {
+            let changed = configuredPlayer !== playerViewModel
+                || configuredAspectRatio != videoAspectRatio
+                || configuredCollapsedChrome != isCollapsedChromeActive
+                || configuredBareSurface != isBareSurfaceTransitionActive
+                || configuredRetainsChrome != retainsChromeDuringBareSurfaceTransition
+            guard changed else { return }
+
+            configuredPlayer = playerViewModel
+            configuredAspectRatio = videoAspectRatio
+            configuredCollapsedChrome = isCollapsedChromeActive
+            configuredBareSurface = isBareSurfaceTransitionActive
+            configuredRetainsChrome = retainsChromeDuringBareSurfaceTransition
+            guard !isConfigurationUpdateScheduled else { return }
+
+            isConfigurationUpdateScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      let host = self.host,
+                      let playerViewModel = self.configuredPlayer,
+                      !host.isTornDown
+                else {
+                    self?.isConfigurationUpdateScheduled = false
+                    return
+                }
+
+                host.setPlayerViewModel(playerViewModel)
+                if let videoAspectRatio = self.configuredAspectRatio {
+                    host.setVideoAspectRatio(videoAspectRatio)
+                }
+                if let isCollapsedChromeActive = self.configuredCollapsedChrome {
+                    host.setCollapsedChromeActive(isCollapsedChromeActive)
+                }
+                if let isBareSurfaceTransitionActive = self.configuredBareSurface {
+                    host.setBareSurfaceTransitionActive(
+                        isBareSurfaceTransitionActive,
+                        retainsChromeTree: self.configuredRetainsChrome ?? false
+                    )
+                    if isBareSurfaceTransitionActive {
+                        host.cancelRotationChromePrewarm()
                     }
                 }
+                self.isConfigurationUpdateScheduled = false
+            }
         }
 
         func attachIfPossible(to host: VideoDetailShellSurfaceHost) {
@@ -139,6 +191,12 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             cancelAttachmentRetry()
             playerCancellable = nil
             observedPlayer = nil
+            configuredPlayer = nil
+            configuredAspectRatio = nil
+            configuredCollapsedChrome = nil
+            configuredBareSurface = nil
+            configuredRetainsChrome = nil
+            isConfigurationUpdateScheduled = false
             host = nil
             isAttached = false
         }

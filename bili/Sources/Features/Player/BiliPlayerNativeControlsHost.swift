@@ -5,8 +5,10 @@ struct BiliPlayerNativeControlsHost: View {
     let renderState: BiliPlayerViewRenderState
     var actions: PlayerNativePlaybackControlsActions?
     var progressStyle: PlayerNativeProgressStyle = .standard
+    var isFullscreenActiveOverride: Bool? = nil
 
     var body: some View {
+        let isFullscreenActive = isFullscreenActiveOverride ?? context.configuration.isFullscreenActive
         PlayerNativePlaybackControls(
             clock: context.viewModel.playbackClock,
             metrics: renderState.controlMetrics,
@@ -17,7 +19,7 @@ struct BiliPlayerNativeControlsHost: View {
             showsDanmakuButton: context.configuration.controlLayout.isLive
                 && context.configuration.onShowDanmakuSettings != nil,
             canToggleFullscreen: context.configuration.canToggleFullscreen,
-            isFullscreenActive: context.configuration.isFullscreenActive,
+            isFullscreenActive: isFullscreenActive,
             controlsAccessory: context.configuration.controlsAccessory,
             controlsCenterAccessory: context.configuration.controlsCenterAccessory,
             progressStyle: progressStyle,
@@ -35,7 +37,8 @@ struct BiliPlayerNativeControlsHost: View {
             seekPreviewContext: context.seekPreviewContext,
             holdCurrentFrameForSeek: context.holdCurrentFrameForSeek,
             prepareUserSeekWarmup: context.prepareUserSeekWarmup,
-            resetPreparedScrubProgress: context.resetPreparedScrubProgress
+            resetPreparedScrubProgress: context.resetPreparedScrubProgress,
+            isFullscreenActiveOverride: isFullscreenActiveOverride
         ).actions
     }
 }

@@ -7,19 +7,22 @@ struct CommentsSectionView: View {
     let autoLoads: Bool
     let actions: VideoDetailCommentsSectionActions
     let lifecycleActions: CommentsSectionLifecycleActions
+    let verticalPadding: CGFloat
 
     init(
         store: VideoDetailCommentsRenderStore,
         style: CommentSectionStyle,
         maxVisibleComments: Int?,
         autoLoads: Bool = true,
-        actions: VideoDetailCommentsSectionActions
+        actions: VideoDetailCommentsSectionActions,
+        verticalPadding: CGFloat = 9
     ) {
         self.store = store
         self.style = style
         self.maxVisibleComments = maxVisibleComments
         self.autoLoads = autoLoads
         self.actions = actions
+        self.verticalPadding = verticalPadding
         lifecycleActions = CommentsSectionLifecycleActionsBuilder(
             autoLoads: autoLoads,
             beginInitialCommentsLoad: actions.beginInitialCommentsLoad
@@ -52,7 +55,7 @@ struct CommentsSectionView: View {
                 actions: actions
             )
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, verticalPadding)
         .background(style == .grouped ? VideoDetailTheme.surface : Color.clear)
         .commentsSectionLifecycle(taskID: commentsLoadTaskID, actions: lifecycleActions)
     }

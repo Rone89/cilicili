@@ -5,17 +5,22 @@ struct BiliPlayerControlsOverlayLayer: View {
     @AppStorage(LibraryStore.playerControlEdgeScrimEnabledKey) private var isEdgeScrimEnabled = true
     let state: BiliPlayerSurfaceChromeState
     let playbackControls: AnyView
+    let usesFullscreenSafeArea: Bool
 
     init(
         state: BiliPlayerSurfaceChromeState,
-        playbackControls: AnyView
+        playbackControls: AnyView,
+        usesFullscreenSafeArea: Bool = false
     ) {
         self.state = state
         self.playbackControls = playbackControls
+        self.usesFullscreenSafeArea = usesFullscreenSafeArea
     }
 
     var body: some View {
-        let safeAreaInsets = PlayerControlsSafeAreaInsets.current(isFullscreenActive: state.isFullscreenActive)
+        let safeAreaInsets = PlayerControlsSafeAreaInsets.current(
+            isFullscreenActive: state.isFullscreenActive || usesFullscreenSafeArea
+        )
         let topInset = max(safeAreaInsets.top, state.contentInsets.top)
         let leadingInset = max(safeAreaInsets.leading, state.contentInsets.leading)
         let bottomInset = max(safeAreaInsets.bottom, state.contentInsets.bottom)
@@ -69,7 +74,7 @@ struct BiliPlayerControlsOverlayLayer: View {
     }
 
     private var usesFullscreenChromeSpacing: Bool {
-        state.presentation == .fullScreen || state.isFullscreenActive
+        state.presentation == .fullScreen || state.isFullscreenActive || usesFullscreenSafeArea
     }
 
     private var topControlsPadding: CGFloat {

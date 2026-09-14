@@ -7,6 +7,7 @@ import SwiftUI
 struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.openVideoOwnerRouteAction) private var openVideoOwnerRoute
+    let seedVideo: VideoItem
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @Binding var selectedContentTab: VideoDetailContentTab
@@ -23,6 +24,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         // 否则内容区设置（诊断按钮/进度条等）取默认值。
         runtimeSettings.bind(dependencies.libraryStore)
         return VideoDetailRotationBridgeViewController(
+            initialVideo: seedVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             dependencies: dependencies,

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CommentRepliesSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let initialReplyID: Int?
@@ -55,11 +55,10 @@ struct CommentRepliesSheet: View {
             )
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .environment(
-            \.commentAuthorNameUsesPrimaryStyle,
-            libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled
+        .commentSheetPresentation(
+            onDismiss: { dismiss() },
+            onRefresh: { Task { await reloadReplies(rootComment) } }
         )
-        .commentSheetPresentation()
         .sheet(item: $dialogReply) { reply in
             CommentDialogSheet(
                 rootComment: rootComment,

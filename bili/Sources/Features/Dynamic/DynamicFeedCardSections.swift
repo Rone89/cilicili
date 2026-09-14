@@ -13,7 +13,6 @@ struct DynamicFeedCardTextSection: View {
                 expandedInput: display.expandedTextInput,
                 copyText: text,
                 preferredWidth: preferredWidth,
-                showsExpandButton: display.showsExpandButton,
                 onOpenDetail: onOpenDetail,
                 isExpanded: $isTextExpanded
             )

@@ -13,7 +13,7 @@ struct VideoCodecSelectionSettingsView: View {
         List {
             Section {
                 ForEach(codecOrder) { codec in
-                    Label(codec.title, systemImage: codec.systemImage)
+                    MineSettingsLabel(codec.title, systemImage: codec.systemImage)
                 }
                 .onMove(perform: moveCodecs)
             } header: {
@@ -26,7 +26,7 @@ struct VideoCodecSelectionSettingsView: View {
                 ForEach(VideoCodecFamily.configurableCases) { codec in
                     Toggle(isOn: binding(for: codec)) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Label(codec.title, systemImage: codec.systemImage)
+                            MineSettingsLabel(codec.title, systemImage: codec.systemImage)
                             Text(codec.detail)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

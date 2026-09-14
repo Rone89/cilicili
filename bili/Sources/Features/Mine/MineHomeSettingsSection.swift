@@ -15,8 +15,9 @@ struct MineHomeSettingsSection: View {
                     Text(layout.title).tag(layout)
                 }
             } label: {
-                Label("首页布局", systemImage: "rectangle.grid.1x2")
+                MineSettingsLabel("首页布局", systemImage: "rectangle.grid.1x2")
             }
+            .pickerStyle(.menu)
 
             Picker(selection: Binding(
                 get: { libraryStore.homeRecommendFeedSourcePreference },
@@ -26,9 +27,9 @@ struct MineHomeSettingsSection: View {
                     Text(source.title).tag(source)
                 }
             } label: {
-                Label("首页推荐内容来源", systemImage: "sparkles.tv")
+                MineSettingsLabel("首页推荐内容来源", systemImage: "sparkles.tv")
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
 
             Text(recommendSourceHint)
                 .font(.footnote)
@@ -37,12 +38,11 @@ struct MineHomeSettingsSection: View {
             NavigationLink {
                 MineHomeRecommendDiagnosticsView()
             } label: {
-                SettingsNavigationRow(
+                PlainSettingsNavigationRow(
                     title: "推荐诊断",
                     subtitle: MineHomeRecommendDiagnosticsSummary(
                         snapshot: homeRecommendDiagnosticsStore.snapshot
                     ).text,
-                    systemImage: "waveform.path.ecg"
                 )
             }
 
@@ -51,7 +51,7 @@ struct MineHomeSettingsSection: View {
                 set: { libraryStore.setNativePullRefreshEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("原生下拉刷新", systemImage: "arrow.clockwise.circle")
+                    MineSettingsLabel("原生下拉刷新", systemImage: "arrow.clockwise.circle")
 
                     Text("默认使用系统原生刷新；关闭后可调整自定义触发距离。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
@@ -118,7 +118,7 @@ private struct MineHomeRefreshDistanceControl: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("下拉刷新距离", systemImage: "arrow.down.circle")
+                MineSettingsLabel("下拉刷新距离", systemImage: "arrow.down.circle")
                 Spacer()
                 Text(
                     libraryStore.nativePullRefreshEnabled

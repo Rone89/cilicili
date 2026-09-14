@@ -3,7 +3,6 @@ import SwiftUI
 struct CommentReplyDetailRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.videoCommentReplyComposerAction) private var replyToComment
-    @Environment(\.commentAuthorNameUsesPrimaryStyle) private var usesPrimaryAuthorName
     let item: VideoDetailCommentReplyDisplayItem
     let showDialog: (() -> Void)?
 
@@ -31,7 +30,7 @@ struct CommentReplyDetailRow: View {
                 HStack(alignment: .top, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
                         CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                            .foregroundStyle(usesPrimaryAuthorName ? .primary : .secondary)
+                            .foregroundStyle(.primary)
 
                         Spacer(minLength: 0)
 

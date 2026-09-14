@@ -18,6 +18,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private var didPrepareForDismantle = false
 
     init(
+        initialVideo: VideoItem,
         viewModel: VideoDetailViewModel,
         runtimeSettings: VideoDetailRuntimeSettingsStore,
         dependencies: AppDependencies,
@@ -36,6 +37,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         let rotationCoordinator = PlaybackRotationCoordinator()
         self.rotationCoordinator = rotationCoordinator
         contentController = VideoDetailSwiftUIContainerViewController(
+            initialVideo: initialVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             dependencies: dependencies,
@@ -198,6 +200,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private func requestFullscreen() {
         if contentController.isPortraitVideo {
             rotationCoordinator.setPortraitFullscreen(true)
+            updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
             setNeedsUpdateOfHomeIndicatorAutoHidden()
             return
@@ -215,6 +218,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         if rotationCoordinator.isPortraitFullscreen {
             rotationCoordinator.setPortraitFullscreen(false)
             contentController.recoverStableLayout()
+            updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
             setNeedsUpdateOfHomeIndicatorAutoHidden()
             return

@@ -6,7 +6,22 @@ struct DynamicAttributedTextLabel: UIViewRepresentable {
     let preferredWidth: CGFloat?
     let onURLTap: (URL) -> Void
     let onNonLinkTap: (() -> Void)?
+    let onContentLayoutChange: (() -> Void)?
     private static let sharedRenderCache = DynamicAttributedTextRenderCache()
+
+    init(
+        input: DynamicAttributedTextInput,
+        preferredWidth: CGFloat?,
+        onURLTap: @escaping (URL) -> Void,
+        onNonLinkTap: (() -> Void)?,
+        onContentLayoutChange: (() -> Void)? = nil
+    ) {
+        self.input = input
+        self.preferredWidth = preferredWidth
+        self.onURLTap = onURLTap
+        self.onNonLinkTap = onNonLinkTap
+        self.onContentLayoutChange = onContentLayoutChange
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -22,6 +37,7 @@ struct DynamicAttributedTextLabel: UIViewRepresentable {
     func updateUIView(_ label: DynamicTextKitAttributedLabel, context: Context) {
         label.onLinkTap = onURLTap
         label.onNonLinkTap = onNonLinkTap
+        label.onContentLayoutChange = onContentLayoutChange
         label.numberOfLines = input.maxLines ?? 0
         label.lineBreakMode = input.lineBreakMode
         let renderResult = context.coordinator.render(input)
@@ -128,6 +144,7 @@ struct DynamicAttributedTextLabel: UIViewRepresentable {
                         self.appliedRenderKey = renderResult.key
                         label.attributedText = renderResult.attributedString
                         label.invalidateIntrinsicContentSize()
+                        label.onContentLayoutChange?()
                     }
                 }
             }
@@ -167,6 +184,7 @@ final class DynamicTextKitAttributedLabel: UIView {
 
     var onLinkTap: ((URL) -> Void)?
     var onNonLinkTap: (() -> Void)?
+    var onContentLayoutChange: (() -> Void)?
 
     private let textStorage = NSTextStorage()
     private let layoutManager = NSLayoutManager()
@@ -216,6 +234,7 @@ final class DynamicTextKitAttributedLabel: UIView {
         backgroundColor = .clear
         isOpaque = false
         isAccessibilityElement = true
+        accessibilityTraits = .staticText
         textContainer.lineFragmentPadding = 0
         layoutManager.addTextContainer(textContainer)
         textStorage.addLayoutManager(layoutManager)

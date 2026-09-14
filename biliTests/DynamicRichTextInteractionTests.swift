@@ -63,6 +63,58 @@ final class DynamicRichTextInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testTextInputUsesActualLayoutInsteadOfCharacterCount() {
+        let input = DynamicAttributedTextInput(
+            segments: [.text(String(repeating: "字", count: 121))],
+            baseFont: UIFont.systemFont(ofSize: 17),
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+
+        XCTAssertFalse(input.exceedsMaximumLineCount(fittingWidth: 2_000))
+        XCTAssertTrue(input.exceedsMaximumLineCount(fittingWidth: 120))
+    }
+
+    @MainActor
+    func testTextInputDoesNotTreatFourNewlinesAsSixLineOverflow() {
+        let input = DynamicAttributedTextInput(
+            segments: [.text("一\n二\n三\n四\n五")],
+            baseFont: UIFont.systemFont(ofSize: 17),
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+
+        XCTAssertFalse(input.exceedsMaximumLineCount(fittingWidth: 320))
+    }
+
+    @MainActor
+    func testDynamicFeedLineSpacingUsesFontLineHeightMultiplier() throws {
+        let font = UIFont.systemFont(ofSize: 15)
+        let input = DynamicAttributedTextInput(
+            segments: [.text("第一行\n第二行")],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: nil,
+            typographyRole: nil,
+            lineHeightMultiplier: 1.65
+        )
+
+        let rendered = input.render().attributedString
+        let paragraphStyle = try XCTUnwrap(
+            rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        )
+        let expectedLineHeight = font.lineHeight * 1.65
+
+        XCTAssertEqual(paragraphStyle.minimumLineHeight, expectedLineHeight, accuracy: 0.001)
+        XCTAssertEqual(paragraphStyle.maximumLineHeight, expectedLineHeight, accuracy: 0.001)
+    }
+
+    @MainActor
     private func makeInput(segments: [DynamicTextSegment]) -> DynamicAttributedTextInput {
         DynamicAttributedTextInput(
             segments: segments,

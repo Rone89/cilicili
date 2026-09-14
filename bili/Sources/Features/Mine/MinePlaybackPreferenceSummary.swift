@@ -4,7 +4,7 @@ extension MinePlaybackSettingsView {
     var playbackPreferenceSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label("当前策略", systemImage: "wand.and.stars")
+                MineSettingsLabel("当前策略", systemImage: "wand.and.stars")
                     .font(.subheadline.weight(.semibold))
                 Spacer(minLength: 8)
                 Text(libraryStore.playbackAutoOptimizationMode.title)

@@ -32,57 +32,71 @@ struct VideoDetailShellContentView: View {
     }
 
     let viewModel: VideoDetailViewModel
-    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var updateGate: VideoDetailContentUpdateGate
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: State
     let layoutWidth: CGFloat
+    let placesTopInsetInScrollContent: Bool
+    let interactiveMinimumPlayerHeight: CGFloat
     @Binding var selectedContentTab: VideoDetailContentTab
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onOpenCommentComposer: (Comment?) -> Void
+    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
+    let onSelectionWillChange: (VideoDetailContentTab) -> Void
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
+    let onScrollPhaseChange: (VideoDetailContentTab, ScrollPhase) -> Void
 
     var body: some View {
         let _ = updateGate.revision
         VideoDetailShellContentBody(
             viewModel: viewModel,
-            libraryStore: libraryStore,
             runtimeSettings: runtimeSettings,
             state: state,
             layoutWidth: layoutWidth,
+            placesTopInsetInScrollContent: placesTopInsetInScrollContent,
+            interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
+            contentRevision: updateGate.revision,
             selectedContentTab: $selectedContentTab,
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
             onOpenCommentComposer: onOpenCommentComposer,
+            onRefreshComments: onRefreshComments,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onSelectedTabChange: onSelectedTabChange,
-            onScrollOffsetChange: onScrollOffsetChange
+            onSelectionWillChange: onSelectionWillChange,
+            onScrollOffsetChange: onScrollOffsetChange,
+            onScrollPhaseChange: onScrollPhaseChange
         )
     }
 }
 
 private struct VideoDetailShellContentBody: View {
     let viewModel: VideoDetailViewModel
-    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: VideoDetailShellContentView.State
     let layoutWidth: CGFloat
+    let placesTopInsetInScrollContent: Bool
+    let interactiveMinimumPlayerHeight: CGFloat
+    let contentRevision: Int
     @Binding var selectedContentTab: VideoDetailContentTab
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onOpenCommentComposer: (Comment?) -> Void
+    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
+    let onSelectionWillChange: (VideoDetailContentTab) -> Void
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
+    let onScrollPhaseChange: (VideoDetailContentTab, ScrollPhase) -> Void
 
     var body: some View {
         let contentActionsSuppressed = state.suppressesInteractiveContentActions
@@ -95,9 +109,15 @@ private struct VideoDetailShellContentBody: View {
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
                 || state.mountsSecondaryContent,
             hidesBottomToolbar: state.hidesBottomToolbar,
-            showsCommentComposerButton: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled,
+            showsCommentComposerButton: true,
+            placesTopInsetInScrollContent: placesTopInsetInScrollContent,
+            interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
+            contentRevision: contentRevision,
             onOpenCommentComposer: { onOpenCommentComposer(nil) },
+            onRefreshComments: onRefreshComments,
+            onSelectionWillChange: onSelectionWillChange,
             onScrollOffsetChange: onScrollOffsetChange,
+            onScrollPhaseChange: onScrollPhaseChange,
             summary: AnyView(
                 VideoDetailLoadedDetailContentPage(
                     viewModel: viewModel,
@@ -126,9 +146,7 @@ private struct VideoDetailShellContentBody: View {
                         onReply(comment)
                     },
                     showsSummary: false,
-                    onComposeReply: libraryStore.videoDetailToolbarCommentComposerExperimentEnabled
-                        ? { onOpenCommentComposer($0) }
-                        : nil
+                    onComposeReply: { onOpenCommentComposer($0) }
                 )
             }
         )

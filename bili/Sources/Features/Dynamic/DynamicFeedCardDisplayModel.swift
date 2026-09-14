@@ -22,7 +22,6 @@ struct DynamicFeedCardDisplayModel {
     let usesHomeVideoCardStyle: Bool
     let usesSeparatedDynamicLayout: Bool
     let supportsDetailNavigation: Bool
-    let showsExpandButton: Bool
     let initialLikeCount: Int
     let commentTitle: String
     let repostTitle: String
@@ -82,7 +81,6 @@ struct DynamicFeedCardDisplayModel {
             hasLive: live != nil,
             hasPaidContent: paidContent != nil
         )
-        self.showsExpandButton = Self.shouldShowExpandButton(for: topLevelDisplayText ?? "")
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
         self.repostTitle = Self.statTitle(count: item.repostCount, fallback: "转发")
@@ -130,21 +128,6 @@ struct DynamicFeedCardDisplayModel {
             return BiliFormatters.relativeTime(timestamp)
         }
         return author?.pubTime ?? ""
-    }
-
-    private static func shouldShowExpandButton(for text: String) -> Bool {
-        if text.count > 120 {
-            return true
-        }
-
-        var newlineCount = 0
-        for character in text where character.isNewline {
-            newlineCount += 1
-            if newlineCount >= 4 {
-                return true
-            }
-        }
-        return false
     }
 
     private static func shareURL(item: DynamicFeedItem, video: VideoItem?, live: DynamicLive?, paidContent: DynamicPaidContent?) -> URL? {

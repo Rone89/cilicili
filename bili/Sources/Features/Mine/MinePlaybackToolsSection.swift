@@ -11,16 +11,15 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setSponsorBlockEnabled($0) }
                 )
             ) {
-                Label("空降助手", systemImage: "forward.end")
+                MineSettingsLabel("空降助手", systemImage: "forward.end")
             }
 
             NavigationLink {
                 ResourceLoadingExperimentSettingsView(libraryStore: libraryStore)
             } label: {
-                SettingsNavigationRow(
+                PlainSettingsNavigationRow(
                     title: "资源加载调度",
                     subtitle: "4 项正式启用，1 项仍可独立调整",
-                    systemImage: "arrow.triangle.2.circlepath"
                 )
             }
 
@@ -30,16 +29,15 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
                 )
             ) {
-                Label("播放性能诊断", systemImage: "waveform.path.ecg.rectangle")
+                MineSettingsLabel("播放性能诊断", systemImage: "waveform.path.ecg.rectangle")
             }
 
             NavigationLink {
                 PlayerPerformanceLogView()
             } label: {
-                SettingsNavigationRow(
+                PlainSettingsNavigationRow(
                     title: "启动链路性能日志",
                     subtitle: "首帧、准备和缓冲",
-                    systemImage: "speedometer"
                 )
             }
 
@@ -50,7 +48,7 @@ struct MinePlaybackToolsSection: View {
                 )
             ) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Label("可播放降级限时实验", systemImage: "timer")
+                    MineSettingsLabel("可播放降级限时实验", systemImage: "timer")
                     Text("已有可播放低档位后，完整取流最多再等待 650ms；超时直接开始播放")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -62,7 +60,7 @@ struct MinePlaybackToolsSection: View {
                     PlaybackPerformanceTestVideoView(testVideo: video)
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
-                        Label("测试视频 \(index + 1)", systemImage: "play.rectangle")
+                        MineSettingsLabel("测试视频 \(index + 1)", systemImage: "play.rectangle")
                         Text(video.title)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -77,7 +75,7 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setVideoRotationFrameReportOverlayEnabled($0) }
                 )
             ) {
-                Label("旋转帧报告", systemImage: "rotate.right")
+                MineSettingsLabel("旋转帧报告", systemImage: "rotate.right")
             }
 
             Toggle(
@@ -91,7 +89,7 @@ struct MinePlaybackToolsSection: View {
                     }
                 )
             ) {
-                Label("视频详情导航时延诊断", systemImage: "stopwatch")
+                MineSettingsLabel("视频详情导航时延诊断", systemImage: "stopwatch")
             }
 
             Toggle(
@@ -100,7 +98,7 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setPlayerControlEdgeScrimEnabled($0) }
                 )
             ) {
-                Label("播放控件边缘遮罩", systemImage: "rectangle.dashed")
+                MineSettingsLabel("播放控件边缘遮罩", systemImage: "rectangle.dashed")
             }
 
             Toggle(
@@ -109,7 +107,7 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setShowsVideoDetailNetworkDiagnosticsButton($0) }
                 )
             ) {
-                Label("视频详情网络诊断", systemImage: "stethoscope")
+                MineSettingsLabel("视频详情网络诊断", systemImage: "stethoscope")
             }
 
             Toggle(
@@ -118,7 +116,7 @@ struct MinePlaybackToolsSection: View {
                     set: { libraryStore.setShowsVideoDetailPinnedProgressBar($0) }
                 )
             ) {
-                Label("视频窗口底部进度条", systemImage: "line.3.horizontal.decrease")
+                MineSettingsLabel("视频窗口底部进度条", systemImage: "line.3.horizontal.decrease")
             }
 
             Picker(
@@ -128,21 +126,20 @@ struct MinePlaybackToolsSection: View {
                 )
             ) {
                 ForEach(VideoListenPlaylistSortOrder.allCases) { order in
-                    Label(order.title, systemImage: order.systemImage)
+                    MineSettingsLabel(order.title, systemImage: order.systemImage)
                         .tag(order)
                 }
             } label: {
-                Label("听视频列表排序", systemImage: libraryStore.videoListenPlaylistSortOrder.systemImage)
+                MineSettingsLabel("听视频列表排序", systemImage: libraryStore.videoListenPlaylistSortOrder.systemImage)
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
 
             NavigationLink {
                 ResourceCacheManagementView()
             } label: {
-                SettingsNavigationRow(
+                PlainSettingsNavigationRow(
                     title: "资源缓存",
                     subtitle: "图片、接口、视频分片缓存",
-                    systemImage: "internaldrive"
                 )
             }
         }

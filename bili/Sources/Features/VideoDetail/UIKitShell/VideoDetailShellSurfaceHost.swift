@@ -180,6 +180,9 @@ final class VideoDetailShellSurfaceHost: UIView {
     /// 系统旋转期间退化成 bare surface，但始终保留弹幕层以避免重建和闪烁。
     /// 实验路径可保留不可见的控件树，避免旋转结束时集中重建 SwiftUI 叠层。
     func setBareSurfaceTransitionActive(_ active: Bool, retainsChromeTree: Bool = false) {
+        guard state.isBareSurfaceTransitionActive != active
+            || state.retainsChromeDuringBareSurfaceTransition != retainsChromeTree
+        else { return }
         cancelRotationChromePrewarm()
         overlayState.setBareSurfaceTransitionActive(active)
         experimentState.setBareSurfaceTransitionActive(active)
@@ -617,7 +620,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             seekPreviewContext: renderContext.seekPreviewContext,
             holdCurrentFrameForSeek: holdCurrentFrameForSeek,
             prepareUserSeekWarmup: prepareUserSeekWarmupIfNeeded,
-            resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 }
+            resetPreparedScrubProgress: { lastPreparedScrubProgress = -1 },
+            isFullscreenActiveOverride: isPortraitFullscreen ? true : nil
         ).actions
         let shouldKeepChromeMounted = keepsChromeMounted && !isCollapsedChromeActive
 
@@ -670,9 +674,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                                     context: renderContext,
                                     renderState: renderState,
                                     actions: nativeActions,
-                                    progressStyle: .telegram
+                                    progressStyle: .telegram,
+                                    isFullscreenActiveOverride: isPortraitFullscreen ? true : nil
                                 )
-                            )
+                            ),
+                            usesFullscreenSafeArea: isPortraitFullscreen
                         )
                         .zIndex(3)
 
@@ -828,7 +834,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private func handleBackButton() {
-        if fullscreenMode != nil {
+        if fullscreenMode != nil || isPortraitFullscreen {
             onExitFullscreen()
         } else {
             onNavigateBack()

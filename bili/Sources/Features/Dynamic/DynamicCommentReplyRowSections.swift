@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct DynamicCommentReplyAuthorLine: View {
-    @Environment(\.commentAuthorNameUsesPrimaryStyle) private var usesPrimaryAuthorName
     let comment: Comment
     let display: DynamicCommentRowDisplayModel
     let showsLike: Bool
@@ -11,7 +10,7 @@ struct DynamicCommentReplyAuthorLine: View {
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                    .foregroundStyle(usesPrimaryAuthorName ? .primary : .secondary)
+                    .foregroundStyle(.primary)
 
                 Spacer(minLength: 0)
 

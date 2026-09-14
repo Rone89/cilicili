@@ -10,7 +10,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearPlayURL()
                 }
             } label: {
-                Label("清理播放源缓存", systemImage: "link.badge.minus")
+                MineSettingsLabel("清理播放源缓存", systemImage: "link.badge.minus")
             }
 
             Button {
@@ -18,7 +18,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearImages(includeDisk: true)
                 }
             } label: {
-                Label("清理图片缓存", systemImage: "photo.badge.arrow.down")
+                MineSettingsLabel("清理图片缓存", systemImage: "photo.badge.arrow.down")
             }
 
             Button {
@@ -26,7 +26,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearAPI()
                 }
             } label: {
-                Label("清理 API 缓存", systemImage: "network")
+                MineSettingsLabel("清理 API 缓存", systemImage: "network")
             }
 
             Button {
@@ -34,7 +34,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearProgressiveMedia()
                 }
             } label: {
-                Label("清理播放片段缓存", systemImage: "externaldrive.badge.minus")
+                MineSettingsLabel("清理播放片段缓存", systemImage: "externaldrive.badge.minus")
             }
 
             Button {
@@ -42,7 +42,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearSubtitlesAndDanmaku()
                 }
             } label: {
-                Label("清理字幕/弹幕缓存", systemImage: "text.bubble")
+                MineSettingsLabel("清理字幕/弹幕缓存", systemImage: "text.bubble")
             }
 
             Button(role: .destructive) {
@@ -50,7 +50,7 @@ struct ResourceCacheCleanupSection: View {
                     await ResourceCacheCenter.clearAll()
                 }
             } label: {
-                Label("清理全部资源缓存", systemImage: "trash")
+                MineSettingsLabel("清理全部资源缓存", systemImage: "trash")
             }
         }
     }

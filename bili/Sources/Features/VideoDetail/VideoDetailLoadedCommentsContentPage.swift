@@ -11,6 +11,6 @@ struct VideoDetailLoadedCommentsContentPage: View {
             onReply: onReply,
             onComposeReply: onComposeReply
         )
-        .padding(.top, VideoDetailContentPageMetrics.commentsTopPadding)
+        .padding(.top, 0)
     }
 }

@@ -18,6 +18,7 @@ struct VideoDetailViewContentResolver: View {
 
     var body: some View {
         VideoDetailShellRepresentable(
+            seedVideo: seedVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             selectedContentTab: $selectedContentTab,
@@ -40,7 +41,7 @@ struct VideoDetailViewContentResolver: View {
                 isShowingDanmakuSettings: $isShowingDanmakuSettings,
                 isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics
             ),
-            submitReply: videoCommentSheetSubmitAction
+            submitReply: videoCommentSubmitAction
         )
         .background {
             RichCommentComposerPresenter(
@@ -71,17 +72,6 @@ struct VideoDetailViewContentResolver: View {
         { target, message, pictures in
             try await submitComment(target: target, message: message, pictures: pictures)
         }
-    }
-
-    private var videoCommentSheetSubmitAction: ((
-        DynamicCommentComposerTarget,
-        String,
-        [DynamicCommentImage]?
-    ) async throws -> Void)? {
-        guard dependencies.libraryStore.videoDetailToolbarCommentComposerExperimentEnabled else {
-            return nil
-        }
-        return videoCommentSubmitAction
     }
 
     private func commentComposerDraftBinding(

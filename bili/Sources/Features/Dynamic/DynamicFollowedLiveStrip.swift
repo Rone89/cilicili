@@ -28,7 +28,10 @@ struct FollowedLiveStrip: View {
         if !items.isEmpty || isLoading {
             VStack(alignment: .leading, spacing: 8) {
                 Text("最常访问")
-                    .font(.subheadline.weight(.semibold))
+                    .appTypography(
+                        .commentAuthor,
+                        fallback: .subheadline.weight(.semibold)
+                    )
                     .padding(.horizontal, 2)
 
                 ScrollView(.horizontal) {
@@ -125,7 +128,10 @@ private struct FollowedLiveAvatar: View {
             }
 
             Text(anchorName)
-                .font(.caption2.weight(.semibold))
+                .appTypography(
+                    .compactAuthor,
+                    fallback: .caption2.weight(.semibold)
+                )
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(width: 58)

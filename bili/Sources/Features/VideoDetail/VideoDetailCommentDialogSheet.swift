@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CommentDialogSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     let focusReply: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
@@ -69,11 +69,10 @@ struct CommentDialogSheet: View {
             }
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .environment(
-            \.commentAuthorNameUsesPrimaryStyle,
-            libraryStore.commentSheetPrimaryAuthorNameExperimentEnabled
+        .commentSheetPresentation(
+            onDismiss: { dismiss() },
+            onRefresh: { Task { await reloadDialog(rootComment, focusReply) } }
         )
-        .commentSheetPresentation()
         .background {
             if let submitReply {
                 RichCommentComposerPresenter(

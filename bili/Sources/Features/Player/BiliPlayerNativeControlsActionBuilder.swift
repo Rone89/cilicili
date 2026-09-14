@@ -10,6 +10,7 @@ struct BiliPlayerNativeControlsActionBuilder {
     let holdCurrentFrameForSeek: () -> Void
     let prepareUserSeekWarmup: (Double, Bool) -> Void
     let resetPreparedScrubProgress: () -> Void
+    var isFullscreenActiveOverride: Bool? = nil
 
     var actions: PlayerNativePlaybackControlsActions {
         PlayerNativePlaybackControlsActions(
@@ -64,7 +65,7 @@ struct BiliPlayerNativeControlsActionBuilder {
             onToggleFullscreen: {
                 guard !viewModel.isTerminated else { return }
                 visibilityActions.markInteraction()
-                if configuration.isFullscreenActive {
+                if isFullscreenActiveOverride ?? configuration.isFullscreenActive {
                     configuration.onExitFullscreen?()
                 } else {
                     configuration.onRequestFullscreen?()

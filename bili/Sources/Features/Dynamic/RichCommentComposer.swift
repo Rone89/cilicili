@@ -319,6 +319,7 @@ struct RichCommentTextView: UIViewRepresentable {
         let textView = RichCommentUIKitTextView()
         textView.delegate = context.coordinator
         textView.onTap = onEditorTap
+        textView.updateTypingAttributes()
         context.coordinator.applyIfNeeded(draft: draft, to: textView, emotes: emotes)
         textView.configureInputView(
             mode: inputMode,
@@ -334,6 +335,7 @@ struct RichCommentTextView: UIViewRepresentable {
         context.coordinator.onHeightChange = onHeightChange
         textView.onTap = onEditorTap
         textView.font = .preferredFont(forTextStyle: .body)
+        textView.updateTypingAttributes()
         textView.configureInputView(
             mode: inputMode,
             height: inputViewHeight,
@@ -372,6 +374,7 @@ struct RichCommentTextView: UIViewRepresentable {
             to textView: RichCommentUIKitTextView,
             emotes: [BiliInlineEmote]
         ) {
+            guard textView.markedTextRange == nil else { return }
             let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
             var effectiveDraft = draft
             let renderedText = renderedElements.map { $0.displayString }.joined()
@@ -419,17 +422,37 @@ struct RichCommentTextView: UIViewRepresentable {
                   let richTextView = textView as? RichCommentUIKitTextView
             else { return false }
 
-            applyReplacement(
-                range,
-                with: text.isEmpty ? [] : [.text(text)],
-                selectionLocation: range.location + text.utf16.count,
-                to: richTextView
-            )
-            return false
+            // Let UITextView own marked text. Returning false here interrupts the
+            // IME composition buffer, so pinyin is committed as Latin characters.
+            if text.isEmpty,
+               range.length == 0,
+               range.location > 0,
+               isEmoteAttachment(at: range.location - 1, in: richTextView) {
+                deleteBackward(in: richTextView)
+                return false
+            }
+            return true
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            guard !isApplyingDraft,
+                  textView.markedTextRange == nil,
+                  let richTextView = textView as? RichCommentUIKitTextView
+            else { return }
+
+            let elements = Self.elements(from: richTextView.attributedText)
+            var updatedDraft = draft
+            updatedDraft.elements = elements
+            updatedDraft.selection = RichCommentSelection(richTextView.selectedRange)
+            renderedElements = elements
+            renderedFontPointSize = richTextView.font?.pointSize
+            if updatedDraft != draft {
+                draft = updatedDraft
+            }
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            guard !isApplyingDraft else { return }
+            guard !isApplyingDraft, textView.markedTextRange == nil else { return }
             let selection = RichCommentSelection(textView.selectedRange)
             if draft.selection != selection {
                 draft.selection = selection
@@ -490,6 +513,39 @@ struct RichCommentTextView: UIViewRepresentable {
             }
             draft = updatedDraft
             applyIfNeeded(draft: updatedDraft, to: textView, emotes: textView.availableEmotes)
+        }
+
+        private func isEmoteAttachment(at location: Int, in textView: RichCommentUIKitTextView) -> Bool {
+            guard location >= 0, location < textView.attributedText.length else { return false }
+            guard textView.attributedText.attribute(
+                .attachment,
+                at: location,
+                effectiveRange: nil
+            ) is NSTextAttachment else { return false }
+            return textView.attributedText.attribute(
+                .richCommentEmoteToken,
+                at: location,
+                effectiveRange: nil
+            ) as? String != nil
+        }
+
+        private static func elements(from attributedText: NSAttributedString) -> [RichCommentDraftElement] {
+            guard attributedText.length > 0 else { return [] }
+
+            var elements = [RichCommentDraftElement]()
+            attributedText.enumerateAttributes(
+                in: NSRange(location: 0, length: attributedText.length)
+            ) { attributes, range, _ in
+                if let token = attributes[.richCommentEmoteToken] as? String {
+                    elements.append(.emote(token))
+                } else {
+                    let text = attributedText.attributedSubstring(from: range).string
+                    if !text.isEmpty {
+                        elements.append(.text(text))
+                    }
+                }
+            }
+            return RichCommentDraft(elements: elements).elements
         }
 
         private func loadMissingImages(
@@ -631,6 +687,13 @@ final class RichCommentUIKitTextView: UITextView {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    func updateTypingAttributes() {
+        typingAttributes = [
+            .font: font ?? UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: textColor ?? UIColor.label
+        ]
     }
 
     override func layoutSubviews() {
@@ -882,7 +945,6 @@ struct RichCommentComposerView: View {
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let onDismiss: (() -> Void)?
 
-    @State private var activeReplyTarget: DynamicCommentComposerTarget?
     @State private var inputMode: RichCommentInputMode = .keyboard
     @State private var isEditorFocused = false
     @State private var editorHeight: CGFloat = 44
@@ -916,7 +978,6 @@ struct RichCommentComposerView: View {
         self.api = api
         self.submit = submit
         self.onDismiss = onDismiss
-        _activeReplyTarget = State(initialValue: target.authorName == nil ? nil : target)
     }
 
     private var sendableMessage: String {
@@ -933,25 +994,11 @@ struct RichCommentComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let activeReplyTarget,
-               let authorName = activeReplyTarget.authorName,
+            if let authorName = target.authorName,
                !authorName.isEmpty {
-                HStack(spacing: 8) {
-                    Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        self.activeReplyTarget = nil
-                        draft.replyTarget = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("取消回复")
-                }
+                Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
             RichCommentTextView(
@@ -1041,7 +1088,7 @@ struct RichCommentComposerView: View {
         .interactiveDismissDisabled(isSubmitting)
         .task {
             if draft.replyTarget == nil {
-                draft.replyTarget = activeReplyTarget
+                draft.replyTarget = target.authorName == nil ? nil : target
             }
             await Task.yield()
             guard !Task.isCancelled else { return }
@@ -1171,7 +1218,7 @@ struct RichCommentComposerView: View {
 
     private func submitDraft() {
         guard canSend else { return }
-        let submissionTarget = activeReplyTarget ?? .dynamic
+        let submissionTarget = draft.replyTarget ?? target
         let message = sendableMessage
         isSubmitting = true
         errorMessage = nil

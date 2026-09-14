@@ -21,10 +21,9 @@ struct ResourceLoadingExperimentSettingsView: View {
                 NavigationLink {
                     ResourceLoadingDiagnosticsView(libraryStore: libraryStore)
                 } label: {
-                    SettingsNavigationRow(
+                    PlainSettingsNavigationRow(
                         title: "资源加载诊断",
                         subtitle: "查看命中次数、耗时和最近加载事件",
-                        systemImage: "chart.bar.xaxis"
                     )
                 }
             } footer: {
@@ -45,7 +44,7 @@ struct ResourceLoadingExperimentSettingsView: View {
     ) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 4) {
-                Label(title, systemImage: systemImage)
+                MineSettingsLabel(title, systemImage: systemImage)
                 Text(detail)
                     .appTypography(.settingsSubtitle, fallback: .caption)
                     .foregroundStyle(.secondary)

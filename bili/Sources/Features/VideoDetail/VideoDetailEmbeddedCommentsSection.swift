@@ -23,7 +23,8 @@ struct VideoDetailEmbeddedCommentsSection: View {
             style: .plain,
             maxVisibleComments: nil,
             autoLoads: true,
-            actions: renderPack.actions
+            actions: renderPack.actions,
+            verticalPadding: 0
         )
         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
     }

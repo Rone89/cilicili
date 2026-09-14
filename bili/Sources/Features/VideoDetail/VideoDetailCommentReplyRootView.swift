@@ -2,7 +2,6 @@ import SwiftUI
 
 struct CommentReplyRootView: View {
     @Environment(\.videoCommentReplyComposerAction) private var replyToComment
-    @Environment(\.commentAuthorNameUsesPrimaryStyle) private var usesPrimaryAuthorName
     let comment: Comment
     private let display: CommentRowDisplayModel
 
@@ -26,7 +25,7 @@ struct CommentReplyRootView: View {
                 VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                        .foregroundStyle(usesPrimaryAuthorName ? .primary : .secondary)
+                        .foregroundStyle(.primary)
 
                     if !display.timeText.isEmpty {
                         Text(display.timeText)

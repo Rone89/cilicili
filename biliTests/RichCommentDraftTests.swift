@@ -1,9 +1,45 @@
+import SwiftUI
 import XCTest
 
 @testable import bili
 
 @MainActor
 final class RichCommentDraftTests: XCTestCase {
+    func testTextViewDelegateAllowsNativeIMEReplacementAndSyncsCommittedChineseText() {
+        var draft = RichCommentDraft()
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: Binding(
+                get: { draft },
+                set: { draft = $0 }
+            ),
+            onFocusChange: { _ in },
+            onHeightChange: { _ in }
+        )
+        let textView = RichCommentUIKitTextView()
+        textView.delegate = coordinator
+
+        XCTAssertTrue(
+            coordinator.textView(
+                textView,
+                shouldChangeTextIn: NSRange(location: 0, length: 0),
+                replacementText: "你"
+            )
+        )
+
+        textView.attributedText = NSAttributedString(
+            string: "你好",
+            attributes: [
+                .font: textView.font ?? UIFont.preferredFont(forTextStyle: .body),
+                .foregroundColor: UIColor.label
+            ]
+        )
+        textView.selectedRange = NSRange(location: 2, length: 0)
+        coordinator.textViewDidChange(textView)
+
+        XCTAssertEqual(draft.serializedMessage, "你好")
+        XCTAssertEqual(draft.selection, RichCommentSelection(NSRange(location: 2, length: 0)))
+    }
+
     func testRichDraftSerializesTextAndEmotesSeparatelyFromDisplayText() {
         let draft = RichCommentDraft(elements: [
             .text("你好"),

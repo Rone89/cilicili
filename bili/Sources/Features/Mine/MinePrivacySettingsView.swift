@@ -10,14 +10,14 @@ struct MinePrivacySettingsView: View {
                     get: { libraryStore.incognitoModeEnabled },
                     set: { libraryStore.setIncognitoModeEnabled($0) }
                 )) {
-                    Label("无痕模式", systemImage: "eye.slash")
+                    MineSettingsLabel("无痕模式", systemImage: "eye.slash")
                 }
 
                 Toggle(isOn: Binding(
                     get: { libraryStore.guestModeEnabled },
                     set: { libraryStore.setGuestModeEnabled($0) }
                 )) {
-                    Label("游客推荐模式", systemImage: "person.crop.circle.badge.questionmark")
+                    MineSettingsLabel("游客推荐模式", systemImage: "person.crop.circle.badge.questionmark")
                 }
 
                 Toggle(isOn: Binding(
@@ -25,7 +25,7 @@ struct MinePrivacySettingsView: View {
                     set: { libraryStore.setMultiAccountExperimentEnabled($0) }
                 )) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("多账号用途分配实验", systemImage: "person.2.badge.gearshape")
+                        MineSettingsLabel("多账号用途分配实验", systemImage: "person.2.badge.gearshape")
 
                         Text("开着后可以保存多个账号，并单独指定主账号、视频取流账号、动态页取流账号、点赞投币收藏账号和观看记录账号。关掉后所有功能继续使用主账号，不会删除已经保存的账号。")
                             .appTypography(.settingsSubtitle, fallback: .caption)
