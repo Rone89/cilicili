@@ -257,6 +257,11 @@ final class LibraryStore: ObservableObject {
         "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
         "cc.bili.display.scrollEdgeEffectPreference.v1",
         "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1",
+        "cc.bili.experimental.dynamicBodySystemStyle.v1",
+        "cc.bili.experimental.dynamicFeedLargeTypography.v1",
+        "cc.bili.experimental.systemTextStyle.v1",
+        "cc.bili.experimental.dynamicFeedAccurateExpansion.v1",
+        "cc.bili.experimental.dynamicFeedPiliPlusLineSpacing.v1",
         "cc.bili.experimental.dynamicDetailCommentSpacing.v1",
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
         "cc.bili.experimental.dynamicDetailComposer.v1",
@@ -265,9 +270,13 @@ final class LibraryStore: ObservableObject {
         "cc.bili.experimental.keyboardAnchoredCommentPhotoPickerExperimentEnabled.v1",
         "cc.bili.experimental.keyboardAnchoredCommentEmotePickerExperimentEnabled.v1",
         "cc.bili.experimental.scrollMinimizingTabBar.v1",
+        "cc.bili.experimental.videoDetailInteractiveScrollCollapse.v1",
+        "cc.bili.experimental.videoDetailInitialAspectRatio.v1",
         "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
         "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
         "cc.bili.experimental.videoDetailToolbarSegmentedPicker.v1",
+        "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
+        "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
         "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
         "cc.bili.home.navigationToolbarScrollVisibilityExperimentEnabled.v1",
         "cc.bili.home.navigationChromeDelayedReturnExperimentEnabled.v1",
@@ -602,7 +611,7 @@ final class LibraryStore: ObservableObject {
         self.showsVideoDetailPinnedProgressBar =
             userDefaults.object(forKey: Self.showsVideoDetailPinnedProgressBarKey) as? Bool ?? false
         self.videoDetailAutoplayEnabled =
-            userDefaults.object(forKey: Self.videoDetailAutoplayEnabledKey) as? Bool ?? true
+            Self.boolValue(forKey: Self.videoDetailAutoplayEnabledKey, in: userDefaults) ?? true
         self.videoListenPlaybackOrder =
             userDefaults.string(
                 forKey: Self.videoListenPlaybackOrderKey
@@ -1282,6 +1291,21 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
         )
+    }
+
+    private static func boolValue(forKey key: String, in userDefaults: UserDefaults) -> Bool? {
+        if let value = userDefaults.object(forKey: key) as? Bool {
+            return value
+        }
+        guard let value = userDefaults.object(forKey: key) as? String else { return nil }
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "y":
+            return true
+        case "0", "false", "no", "n":
+            return false
+        default:
+            return nil
+        }
     }
 
     func setNativePullRefreshEnabled(_ isEnabled: Bool) {

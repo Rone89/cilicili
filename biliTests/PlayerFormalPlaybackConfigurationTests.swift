@@ -454,7 +454,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testRetiredTypographyKeyDoesNotChangeNativeTypography() {
+    func testRetiredTypographyKeyDoesNotChangeFormalDynamicBodyTypography() {
         let defaults = makeUserDefaults()
         defaults.set(true, forKey: "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1")
 

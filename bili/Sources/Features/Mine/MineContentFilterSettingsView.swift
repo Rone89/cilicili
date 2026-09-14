@@ -10,30 +10,29 @@ struct MineContentFilterSettingsView: View {
                     get: { libraryStore.blocksAdDynamics },
                     set: { libraryStore.setBlocksAdDynamics($0) }
                 )) {
-                    Label("屏蔽广告动态", systemImage: "megaphone.badge.minus")
+                    MineSettingsLabel("屏蔽广告动态", systemImage: "megaphone.badge.minus")
                 }
 
                 Toggle(isOn: Binding(
                     get: { libraryStore.blocksGoodsDynamics },
                     set: { libraryStore.setBlocksGoodsDynamics($0) }
                 )) {
-                    Label("屏蔽带货动态", systemImage: "bag.badge.minus")
+                    MineSettingsLabel("屏蔽带货动态", systemImage: "bag.badge.minus")
                 }
 
                 Toggle(isOn: Binding(
                     get: { libraryStore.blocksGoodsComments },
                     set: { libraryStore.setBlocksGoodsComments($0) }
                 )) {
-                    Label("屏蔽带货评论", systemImage: "text.bubble.badge.minus")
+                    MineSettingsLabel("屏蔽带货评论", systemImage: "text.bubble.badge.minus")
                 }
 
                 NavigationLink {
                     DynamicKeywordFilterSettingsView(libraryStore: libraryStore)
                 } label: {
-                    SettingsNavigationRow(
+                    PlainSettingsNavigationRow(
                         title: "自定义动态关键词",
                         subtitle: "\(libraryStore.blockedDynamicKeywords.count) 个关键词",
-                        systemImage: "line.3.horizontal.decrease.circle"
                     )
                 }
 
@@ -51,8 +50,9 @@ struct MineContentFilterSettingsView: View {
                         Text(recommendDurationTitle(seconds)).tag(seconds)
                     }
                 } label: {
-                    Label("最短时长", systemImage: "timer")
+                    MineSettingsLabel("最短时长", systemImage: "timer")
                 }
+                .pickerStyle(.menu)
 
                 Picker(selection: Binding(
                     get: { libraryStore.recommendMinimumViewCount },
@@ -62,8 +62,9 @@ struct MineContentFilterSettingsView: View {
                         Text(recommendViewTitle(count)).tag(count)
                     }
                 } label: {
-                    Label("最低播放量", systemImage: "play.circle")
+                    MineSettingsLabel("最低播放量", systemImage: "play.circle")
                 }
+                .pickerStyle(.menu)
 
                 Picker(selection: Binding(
                     get: { libraryStore.recommendMinimumLikeRatioPercent },
@@ -73,16 +74,16 @@ struct MineContentFilterSettingsView: View {
                         Text(recommendLikeRatioTitle(percent)).tag(percent)
                     }
                 } label: {
-                    Label("最低点赞率", systemImage: "hand.thumbsup")
+                    MineSettingsLabel("最低点赞率", systemImage: "hand.thumbsup")
                 }
+                .pickerStyle(.menu)
 
                 NavigationLink {
                     RecommendKeywordFilterSettingsView(libraryStore: libraryStore)
                 } label: {
-                    SettingsNavigationRow(
+                    PlainSettingsNavigationRow(
                         title: "标题关键词",
                         subtitle: "\(libraryStore.blockedRecommendKeywords.count) 个关键词",
-                        systemImage: "text.badge.minus"
                     )
                 }
 
@@ -90,7 +91,7 @@ struct MineContentFilterSettingsView: View {
                     get: { libraryStore.appliesRecommendFiltersToRelatedVideos },
                     set: { libraryStore.setAppliesRecommendFiltersToRelatedVideos($0) }
                 )) {
-                    Label("应用到相关推荐", systemImage: "rectangle.stack.badge.minus")
+                    MineSettingsLabel("应用到相关推荐", systemImage: "rectangle.stack.badge.minus")
                 }
 
                 Text("默认只过滤首页推荐；打开后也会过滤视频详情页相关推荐。")

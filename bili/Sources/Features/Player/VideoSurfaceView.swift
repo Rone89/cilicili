@@ -425,6 +425,12 @@ final class VideoSurfaceContainerView: UIView {
         guard bounds.width > 1, bounds.height > 1 else { return }
         guard previousBounds != bounds else { return }
         lastReportedBounds = bounds
+#if DEBUG
+        let layer = drawableView.layer.sublayers?.compactMap { $0 as? AVPlayerLayer }.first
+        print(
+            "[VideoDetailGeometry] stage=surfaceLayout surfaceFrame(parent)=\(frame) surfaceBounds(local)=\(bounds) surfaceWindow=\(convert(bounds, to: window)) drawableFrame(surface)=\(drawableView.frame) drawableBounds(local)=\(drawableView.bounds) nativeFrame(drawable)=\(isNativePlaybackControllerEnabled ? String(describing: nativePlayerViewController.view.frame) : "unused") layerFrame(drawable)=\(layer?.frame as Any) videoRect(layer)=\(layer?.videoRect as Any) gravity=\(layer?.videoGravity.rawValue as Any) presentationSize=\(layer?.player?.currentItem?.presentationSize as Any)"
+        )
+#endif
         onBoundsChange?()
     }
 
@@ -445,7 +451,7 @@ final class VideoSurfaceContainerView: UIView {
     }
 
     private func scheduleDeferredBoundSurfaceLayoutRefresh(for viewModel: PlayerStateViewModel? = nil) {
-        cancelDeferredBoundSurfaceLayoutRefresh()
+        guard deferredBoundSurfaceLayoutRefreshTask == nil else { return }
         let refreshGeneration = surfaceBindingGeneration
         deferredBoundSurfaceLayoutRefreshTask = Task { @MainActor [weak self, weak viewModel] in
             await Task.yield()

@@ -10,7 +10,8 @@ struct VideoDetailContentPage: View {
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onReply: (Comment) -> Void
-    let onComposeReply: ((Comment) -> Void)?
+    var showsSummary = true
+    var onComposeReply: ((Comment) -> Void)? = nil
 
     var body: some View {
         PlaybackDetailContentPage(
@@ -29,6 +30,7 @@ struct VideoDetailContentPage: View {
                 onShowFavoriteFolders: onShowFavoriteFolders,
                 onShowCoinPicker: onShowCoinPicker,
                 onReply: onReply,
+                showsSummary: showsSummary,
                 onComposeReply: onComposeReply
             )
         }

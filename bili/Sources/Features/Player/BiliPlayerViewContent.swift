@@ -132,6 +132,7 @@ private struct BiliPlayerMoreControlsButton: View {
         }
         .biliPlayerCompactGlassCircle(metrics: metrics)
         .accessibilityLabel("更多播放设置")
+        .accessibilityIdentifier("ui.player.more")
     }
 
     private var iconSize: CGFloat {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentRepliesSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let initialReplyID: Int?
@@ -54,7 +55,10 @@ struct CommentRepliesSheet: View {
             )
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .commentSheetPresentation()
+        .commentSheetPresentation(
+            onDismiss: { dismiss() },
+            onRefresh: { Task { await reloadReplies(rootComment) } }
+        )
         .sheet(item: $dialogReply) { reply in
             CommentDialogSheet(
                 rootComment: rootComment,

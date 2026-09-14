@@ -15,13 +15,13 @@ struct ResourceCacheLimitSection: View {
                         .tag(megabytes)
                 }
             } label: {
-                Label("缓存上限", systemImage: "internaldrive")
+                MineSettingsLabel("缓存上限", systemImage: "internaldrive")
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
             .disabled(!isCacheLimitEnabled)
 
             Button(action: applyLimit) {
-                Label("立即应用上限", systemImage: "gauge.with.dots.needle.50percent")
+                MineSettingsLabel("立即应用上限", systemImage: "gauge.with.dots.needle.50percent")
             }
             .disabled(!isCacheLimitEnabled)
         } header: {

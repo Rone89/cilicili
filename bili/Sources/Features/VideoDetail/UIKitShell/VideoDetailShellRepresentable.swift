@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// 把正式的 UIKit 详情页外壳 `VideoDetailShellViewController` 包回 SwiftUI。
+/// 把 SwiftUI 详情页和最小 UIKit 旋转桥接包回父级 SwiftUI 页面。
 ///
 /// binding 与内容区回调从 SwiftUI 侧透传；播放器竖屏“更多”菜单由详情页
 /// 最外层 SwiftUI sheet 宿主呈现，与评论回复共用同一条路由。
 struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.openVideoOwnerRouteAction) private var openVideoOwnerRoute
+    let seedVideo: VideoItem
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @Binding var selectedContentTab: VideoDetailContentTab
@@ -18,11 +19,12 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     let onOpenCommentComposer: (Comment?) -> Void
     let onNavigateBack: () -> Void
 
-    func makeUIViewController(context: Context) -> VideoDetailShellViewController {
+    func makeUIViewController(context: Context) -> VideoDetailRotationBridgeViewController {
         // 新路径绕过 PlaybackScene，需自己 bind runtimeSettings，
         // 否则内容区设置（诊断按钮/进度条等）取默认值。
         runtimeSettings.bind(dependencies.libraryStore)
-        return VideoDetailShellViewController(
+        return VideoDetailRotationBridgeViewController(
+            initialVideo: seedVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             dependencies: dependencies,
@@ -63,10 +65,13 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         )
     }
 
-    func updateUIViewController(_: VideoDetailShellViewController, context _: Context) {}
+    func updateUIViewController(
+        _: VideoDetailRotationBridgeViewController,
+        context _: Context
+    ) {}
 
     static func dismantleUIViewController(
-        _ uiViewController: VideoDetailShellViewController,
+        _ uiViewController: VideoDetailRotationBridgeViewController,
         coordinator _: Void
     ) {
         uiViewController.prepareForDismantle()

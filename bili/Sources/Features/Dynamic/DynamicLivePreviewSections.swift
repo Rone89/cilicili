@@ -57,7 +57,10 @@ struct DynamicLiveTitle: View {
 
     var body: some View {
         Text(live.displayTitle)
-            .font(style == .large ? .system(size: 16, weight: .semibold) : .subheadline.weight(.semibold))
+            .appTypography(
+                style == .large ? .feedVideoTitle : .compactVideoTitle,
+                fallback: style == .large ? .system(size: 16, weight: .semibold) : .subheadline.weight(.semibold)
+            )
             .foregroundStyle(.primary)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -83,7 +86,7 @@ struct DynamicLiveMetadata: View {
                     .lineLimit(1)
             }
         }
-        .font(.system(size: 13))
+        .appTypography(.metadata, fallback: .system(size: 13))
         .foregroundStyle(.secondary)
         .lineLimit(1)
     }

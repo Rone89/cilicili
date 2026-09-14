@@ -15,6 +15,7 @@ struct MineSettingsSection: View {
                     systemImage: "paintpalette"
                 )
             }
+            .accessibilityIdentifier("mine.settings.interface")
 
             MineOverlayNavigationButton {
                 onOpenRoute(.homeAndSearchSettings)

@@ -86,7 +86,6 @@ struct DynamicSeparatedFeedCardContent: View {
     private var imageSquareGrid: some View {
         DynamicImageThumbnailStrip(
             images: display.imageItems,
-            horizontalBleed: horizontalContentInset,
             availableWidth: textWidth
         )
     }

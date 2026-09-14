@@ -18,6 +18,7 @@ struct VideoDetailViewContentResolver: View {
 
     var body: some View {
         VideoDetailShellRepresentable(
+            seedVideo: seedVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             selectedContentTab: $selectedContentTab,

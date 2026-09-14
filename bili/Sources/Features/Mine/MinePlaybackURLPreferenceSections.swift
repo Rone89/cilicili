@@ -6,7 +6,7 @@ extension MinePlaybackSettingsView {
         if let bestSnapshot = playbackURLPreferenceSnapshots.first {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Label("真实播放优先", systemImage: "dot.radiowaves.left.and.right")
+                    MineSettingsLabel("真实播放优先", systemImage: "dot.radiowaves.left.and.right")
                         .font(.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     Text(bestSnapshot.host)
@@ -27,7 +27,7 @@ extension MinePlaybackSettingsView {
                     }
                     .padding(.top, 4)
                 } label: {
-                    Label("真实播放排行", systemImage: "list.bullet.rectangle")
+                    MineSettingsLabel("真实播放排行", systemImage: "list.bullet.rectangle")
                         .font(.caption)
                 }
             }

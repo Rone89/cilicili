@@ -656,11 +656,20 @@ final class DynamicDetailFlowUITests: XCTestCase {
     @MainActor
     private func scrollToElement(_ element: XCUIElement, in app: XCUIApplication) {
         let scrollView = app.scrollViews.firstMatch
+        let collectionView = app.collectionViews.firstMatch
+        let window = app.windows.firstMatch
         for _ in 0..<8 {
-            if element.exists, element.isHittable {
+            let isFullyVisible = window.frame.contains(element.frame)
+            if element.exists, element.isHittable, isFullyVisible {
                 return
             }
-            scrollView.swipeUp()
+            if scrollView.exists {
+                scrollView.swipeUp()
+            } else if collectionView.exists {
+                collectionView.swipeUp()
+            } else {
+                app.swipeUp()
+            }
         }
         XCTAssertTrue(element.exists && element.isHittable)
     }

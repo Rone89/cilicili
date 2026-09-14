@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentDialogSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     let focusReply: Comment
     @ObservedObject var store: VideoDetailCommentThreadRenderStore
@@ -68,7 +69,10 @@ struct CommentDialogSheet: View {
             }
         }
         .environment(\.videoCommentReplyComposerAction, replyComposerAction)
-        .commentSheetPresentation()
+        .commentSheetPresentation(
+            onDismiss: { dismiss() },
+            onRefresh: { Task { await reloadDialog(rootComment, focusReply) } }
+        )
         .background {
             RichCommentComposerPresenter(
                 target: $composerTarget,

@@ -8,18 +8,19 @@ struct DynamicFeedTextContent: View {
     let expandedInput: DynamicAttributedTextInput
     let copyText: String?
     let preferredWidth: CGFloat?
-    let showsExpandButton: Bool
     let onOpenDetail: (() -> Void)?
     @Binding var isExpanded: Bool
-    @State private var measuredShowsExpandButton = false
+    @State private var measuredShowsExpandButton: Bool?
     @State private var measuredTextWidth: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             DynamicRichTextView(
-                input: isExpanded ? expandedInput : collapsedInput,
+                input: displayedInput,
                 preferredWidth: preferredWidth,
-                onNonLinkTap: onOpenDetail
+                onNonLinkTap: onOpenDetail,
+                usesTextKitLayout: true,
+                onContentLayoutChange: { updateExpansionVisibility(fittingWidth: measuredTextWidth) }
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -28,7 +29,7 @@ struct DynamicFeedTextContent: View {
             }
             .dynamicCopyableText(copyText)
 
-            if showsExpandButton || measuredShowsExpandButton {
+            if shouldShowExpandButton {
                 Button(action: toggleExpanded) {
                     HStack(spacing: 4) {
                         Text(isExpanded ? "收起" : "展开")
@@ -53,7 +54,20 @@ struct DynamicFeedTextContent: View {
         .onChange(of: dynamicTypeSize) { _, _ in
             updateExpansionVisibility(fittingWidth: measuredTextWidth)
         }
+        .onChange(of: preferredWidth) { _, _ in
+            updateExpansionVisibility(fittingWidth: measuredTextWidth)
+        }
+        .onChange(of: collapsedInput) { _, _ in
+            updateExpansionVisibility(fittingWidth: measuredTextWidth)
+        }
     }
+
+    private var displayedInput: DynamicAttributedTextInput {
+        let input = isExpanded ? expandedInput : collapsedInput
+        return input.replacingLineHeightMultiplier(1.65)
+    }
+
+    private var shouldShowExpandButton: Bool { measuredShowsExpandButton == true }
 
     private func toggleExpanded() {
         var transaction = Transaction(animation: nil)
@@ -64,9 +78,16 @@ struct DynamicFeedTextContent: View {
     }
 
     private func updateExpansionVisibility(fittingWidth width: CGFloat) {
-        let input = collapsedInput.resolvingTypography(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
-        )
+        guard width.isFinite, width > 1 else {
+            measuredShowsExpandButton = nil
+            return
+        }
+
+        let input = collapsedInput
+            .replacingLineHeightMultiplier(1.65)
+            .resolvingTypography(
+                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+            )
         measuredShowsExpandButton = input.exceedsMaximumLineCount(fittingWidth: width)
     }
 }

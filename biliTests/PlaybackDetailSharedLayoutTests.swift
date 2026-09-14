@@ -152,6 +152,337 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertNil(layout.contentTopInset)
     }
 
+    @MainActor
+    func testVideoDetailShellLayoutReservesExpandedContentInsetDuringCollapse() {
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 393, height: 852),
+            safeAreaTop: 59,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: 54,
+            isPlaybackActive: false,
+            isLandscape: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(layout.playerFrame.height, 54)
+        XCTAssertEqual(
+            layout.contentTopInset,
+            VideoDetailShellLayout.expandedPlayerHeight(
+                bounds: CGSize(width: 393, height: 852),
+                videoAspectRatio: 16.0 / 9.0
+            )
+        )
+        XCTAssertEqual(layout.contentFrame, CGRect(x: 0, y: 59, width: 393, height: 793))
+    }
+
+    @MainActor
+    func testVideoLayoutReservesPortraitTopAndFillsLandscapeRoot() {
+        for size in [CGSize(width: 420, height: 912), CGSize(width: 1368, height: 630)] {
+            let bounds = CGRect(origin: .zero, size: size)
+            let landscape = size.width > size.height
+            let layout = VideoDetailShellLayout.resolve(
+                bounds: bounds, safeAreaTop: 62, videoAspectRatio: 4.0 / 3.0,
+                currentPlayerHeight: nil, isPlaybackActive: true,
+                isLandscape: landscape, isPortraitFullscreen: false
+            )
+            if landscape {
+                XCTAssertEqual(layout.playerFrame, bounds)
+                XCTAssertNil(layout.contentTopInset)
+            } else {
+                XCTAssertEqual(layout.playerFrame.minY, 62)
+                XCTAssertEqual(layout.contentFrame.minY, 62)
+                XCTAssertEqual(layout.contentTopInset, layout.playerFrame.height)
+            }
+        }
+    }
+
+    @MainActor
+    func testVideoDetailInitialVideoGeometryUsesPageDimensionWhenTopLevelDimensionIsMissing() {
+        let pageDimension = VideoDimension(width: 1080, height: 1920, rotate: nil)
+        let video = VideoItem(
+            bvid: "BV1initial",
+            aid: nil,
+            title: "竖屏视频",
+            pic: nil,
+            desc: nil,
+            duration: nil,
+            pubdate: nil,
+            owner: nil,
+            stat: nil,
+            cid: 1,
+            pages: [
+                VideoPage(
+                    cid: 1,
+                    page: 1,
+                    part: "P1",
+                    duration: 1,
+                    dimension: pageDimension
+                )
+            ],
+            dimension: nil,
+            historyResumeTime: nil,
+            historyCID: nil
+        )
+
+        XCTAssertEqual(
+            VideoDetailInitialVideoGeometry.metadataAspectRatio(for: video),
+            9.0 / 16.0
+        )
+    }
+
+    @MainActor
+    func testVideoDetailInteractiveCollapseKeepsPlayingVerticalVideoAtStandardHeight() {
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 420, height: 912),
+            safeAreaTop: 62,
+            videoAspectRatio: 9.0 / 16.0,
+            currentPlayerHeight: 0,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(
+            layout.playerFrame.height,
+            VideoDetailShellLayout.standardPlayerHeight(forWidth: 420)
+        )
+        XCTAssertEqual(
+            layout.contentTopInset,
+            VideoDetailShellLayout.expandedPlayerHeight(
+                bounds: CGSize(width: 420, height: 912),
+                videoAspectRatio: 9.0 / 16.0
+            )
+        )
+    }
+
+    @MainActor
+    func testVideoDetailInteractiveCollapseAllowsVerticalVideosToReachToolbarHeight() {
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 420, height: 912),
+            safeAreaTop: 62,
+            videoAspectRatio: 9.0 / 16.0,
+            currentPlayerHeight: 0,
+            isPlaybackActive: false,
+            isLandscape: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(layout.playerFrame.height, VideoDetailShellLayout.collapsedToolbarHeight)
+    }
+
+    @MainActor
+    func testInteractiveScrollContentUsesPlayerCollapseDistance() {
+        XCTAssertEqual(
+            VideoDetailShellLayout.scrollContentMinimumHeight(
+                viewportHeight: 812,
+                expandedPlayerHeight: 420,
+                minimumPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight
+            ),
+            1178
+        )
+        XCTAssertEqual(
+            VideoDetailShellLayout.scrollContentMinimumHeight(
+                viewportHeight: 812,
+                expandedPlayerHeight: 40,
+                minimumPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight
+            ),
+            812
+        )
+        XCTAssertEqual(
+            VideoDetailShellLayout.scrollContentMinimumHeight(
+                viewportHeight: 812,
+                expandedPlayerHeight: 420,
+                minimumPlayerHeight: 236
+            ),
+            996
+        )
+    }
+
+    @MainActor
+    func testInteractiveScrollMetricsSeparatePlayerCollapseFromContentScroll() {
+        let metrics = VideoDetailShellLayout.interactiveScrollMetrics(
+            scrollOffset: 120,
+            expandedPlayerHeight: 420,
+            minimumPlayerHeight: 236
+        )
+
+        XCTAssertEqual(metrics.collapseOffset, 120)
+        XCTAssertEqual(metrics.contentOffset, 0)
+        XCTAssertFalse(metrics.isPlayerCollapsed)
+
+        let collapsed = VideoDetailShellLayout.interactiveScrollMetrics(
+            scrollOffset: 240,
+            expandedPlayerHeight: 420,
+            minimumPlayerHeight: 236
+        )
+
+        XCTAssertEqual(collapsed.collapseOffset, 184)
+        XCTAssertEqual(collapsed.contentOffset, 56)
+        XCTAssertTrue(collapsed.isPlayerCollapsed)
+    }
+
+    @MainActor
+    func testInteractiveScrollMetricsKeepTheTotalOffsetContinuousAcrossTheMinimum() {
+        let beforeMinimum = VideoDetailShellLayout.interactiveScrollMetrics(
+            scrollOffset: 183,
+            expandedPlayerHeight: 420,
+            minimumPlayerHeight: 236
+        )
+        let afterMinimum = VideoDetailShellLayout.interactiveScrollMetrics(
+            scrollOffset: 185,
+            expandedPlayerHeight: 420,
+            minimumPlayerHeight: 236
+        )
+
+        XCTAssertEqual(beforeMinimum.collapseOffset, 183)
+        XCTAssertEqual(beforeMinimum.contentOffset, 0)
+        XCTAssertEqual(afterMinimum.collapseOffset, 184)
+        XCTAssertEqual(afterMinimum.contentOffset, 1)
+    }
+
+    @MainActor
+    func testVideoDetailInteractiveCollapseDoesNotShrinkPlayingLandscapeVideo() {
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 420, height: 912),
+            safeAreaTop: 62,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(
+            layout.playerFrame.height,
+            VideoDetailShellLayout.standardPlayerHeight(forWidth: 420)
+        )
+        XCTAssertEqual(layout.contentTopInset, layout.playerFrame.height)
+    }
+
+    @MainActor
+    func testVideoDetailInteractiveCollapseAllowsPausedLandscapeVideoToReachToolbarHeight() {
+        let layout = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 420, height: 912),
+            safeAreaTop: 62,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: 0,
+            isPlaybackActive: false,
+            isLandscape: false,
+            isPortraitFullscreen: false
+        )
+
+        XCTAssertEqual(layout.playerFrame.height, VideoDetailShellLayout.collapsedToolbarHeight)
+        XCTAssertTrue(
+            VideoDetailShellLayout.supportsInteractiveCollapse(
+                videoAspectRatio: 16.0 / 9.0,
+                isPlaybackActive: false
+            )
+        )
+        XCTAssertFalse(
+            VideoDetailShellLayout.supportsInteractiveCollapse(
+                videoAspectRatio: 16.0 / 9.0,
+                isPlaybackActive: true
+            )
+        )
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorCoalescesRequestsAndPublishesStablePhase() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.beginSystemTransition(toLandscape: true)
+        XCTAssertEqual(coordinator.phase, .preparingLandscape)
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .landscapeLeft, in: nil)
+        )
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .landscapeRight, in: nil)
+        )
+        XCTAssertFalse(
+            coordinator.requestGeometryUpdate(to: .portrait, in: nil)
+        )
+        XCTAssertEqual(coordinator.pendingTarget, .portrait)
+
+        XCTAssertEqual(
+            coordinator.finishSystemTransition(
+                toLandscape: true,
+                currentOrientation: .landscapeRight
+            ),
+            .portrait
+        )
+        XCTAssertEqual(coordinator.phase, .landscape)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+        XCTAssertTrue(coordinator.isLandscape)
+        XCTAssertTrue(coordinator.layoutLandscape)
+        XCTAssertTrue(coordinator.chromeLandscape)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorUsesTargetDirectionForLayoutDuringTransition() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: true)
+
+        coordinator.beginSystemTransition(toLandscape: false)
+
+        XCTAssertTrue(coordinator.isLandscape)
+        XCTAssertFalse(coordinator.layoutLandscape)
+        XCTAssertTrue(coordinator.chromeLandscape)
+
+        coordinator.finishSystemTransition(
+            toLandscape: false,
+            currentOrientation: .portrait
+        )
+
+        XCTAssertFalse(coordinator.isLandscape)
+        XCTAssertFalse(coordinator.layoutLandscape)
+        XCTAssertFalse(coordinator.chromeLandscape)
+    }
+
+    @MainActor
+    func testPortraitFullscreenDoesNotRequestSystemRotation() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+
+        coordinator.setPortraitFullscreen(true)
+
+        XCTAssertEqual(coordinator.phase, .portraitFullscreen)
+        XCTAssertTrue(coordinator.isPortraitFullscreen)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+
+        coordinator.setPortraitFullscreen(false)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isPortraitFullscreen)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorRecoversToStableStateAfterInterruptedTransition() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.beginSystemTransition(toLandscape: true)
+
+        coordinator.recover(isLandscape: false)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isSystemRotationTransitioning)
+        XCTAssertFalse(coordinator.isTransitioning)
+        XCTAssertNil(coordinator.pendingTarget)
+    }
+
+    @MainActor
+    func testPlaybackRotationCoordinatorDeactivationClearsFullscreenAndRestoresInactiveState() {
+        let coordinator = PlaybackRotationCoordinator()
+        coordinator.activate(isLandscape: false)
+        coordinator.setPortraitFullscreen(true)
+
+        coordinator.deactivate(in: nil)
+
+        XCTAssertEqual(coordinator.phase, .embedded)
+        XCTAssertFalse(coordinator.isPortraitFullscreen)
+        XCTAssertFalse(coordinator.isViewActive)
+        XCTAssertFalse(coordinator.isTransitioning)
+    }
+
     func testRotationPolicyPreservesContentAndFreezesLayoutDuringTransition() {
         let policy = VideoDetailRotationPolicy()
 

@@ -40,6 +40,7 @@ struct DynamicFeedAuthorHeader: View {
 
             Text(authorName)
                 .appTypography(.author, fallback: .subheadline.weight(.semibold))
+                .fontWeight(.semibold)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }

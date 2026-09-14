@@ -445,6 +445,10 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     var onPlaybackIntentChange: (@MainActor (Bool) -> Void)? { get set }
     var onLoadingProgressChange: (@MainActor (Double) -> Void)? { get set }
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)? { get set }
+#if DEBUG
+    var debugPlayerIdentity: ObjectIdentifier? { get }
+    var debugPlayerItemIdentity: ObjectIdentifier? { get }
+#endif
 
     func attachSurface(_ surface: UIView)
     func detachSurface(_ surface: UIView)
@@ -493,6 +497,12 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
 }
 
 extension PlayerRenderingEngine {
+#if DEBUG
+    var debugPlayerIdentity: ObjectIdentifier? { nil }
+
+    var debugPlayerItemIdentity: ObjectIdentifier? { nil }
+#endif
+
     func pauseForUserScrub() {
         pause()
     }

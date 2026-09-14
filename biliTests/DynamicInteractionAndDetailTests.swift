@@ -5,6 +5,36 @@ import XCTest
 
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
+    func testDynamicBodyUsesSeventeenPointRegularBodyRole() {
+        let role = AppTypography.Role.dynamicBody
+
+        XCTAssertEqual(role.pointSize, 17)
+        XCTAssertEqual(role.nativeUITextStyle, .body)
+        XCTAssertNil(role.nativeWeight)
+    }
+
+    func testRetiredTypographyExperimentKeysAreCleared() {
+        let suiteName = "cc.bili.tests.retired-typography-experiments.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let retiredKeys = [
+            "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicFeedLargeTypography.v1",
+            "cc.bili.experimental.systemTextStyle.v1",
+            "cc.bili.experimental.dynamicFeedAccurateExpansion.v1",
+            "cc.bili.experimental.dynamicFeedPiliPlusLineSpacing.v1",
+            "cc.bili.experimental.dynamicBodySystemStyle.v1",
+        ]
+        retiredKeys.forEach { defaults.set(true, forKey: $0) }
+
+        _ = LibraryStore(userDefaults: defaults)
+
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+    }
+
     func testDynamicCommentHitAreaVisualizationExperimentDefaultsOffAndPersists() {
         let suiteName = "cc.bili.tests.dynamic-comment-hit-area.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -24,6 +54,24 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
+    func testRetiredVideoDetailExperimentPreferencesAreCleared() {
+        let suiteName = "cc.bili.tests.retired-video-detail-experiments.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let retiredKeys = [
+            "cc.bili.experimental.videoDetailInteractiveScrollCollapse.v1",
+            "cc.bili.experimental.videoDetailInitialAspectRatio.v1",
+        ]
+        retiredKeys.forEach { defaults.set(true, forKey: $0) }
+
+        _ = LibraryStore(userDefaults: defaults)
+
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+    }
+
     func testRetiredSocialExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-social-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -38,7 +86,9 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
             "cc.bili.dynamic.commentPublishExperimentEnabled.v1",
             "cc.bili.dynamic.commentReplyPublishExperimentEnabled.v1",
             "cc.bili.experimental.dynamicDetailCommentSpacing.v1",
-            "cc.bili.experimental.scrollMinimizingTabBar.v1"
+            "cc.bili.experimental.scrollMinimizingTabBar.v1",
+            "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
+            "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
         ]
         retiredKeys.forEach { defaults.set(false, forKey: $0) }
 
@@ -69,7 +119,6 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertEqual(nestedReply.title, "回复评论")
         XCTAssertEqual(nestedReply.prompt, "回复 @楼中楼作者")
     }
-
 
     func testOptimisticStateUpdatesLikeCountAndReturnsToOriginalState() {
         let original = DynamicLikeDisplayState(isLiked: false, likeCount: 7)

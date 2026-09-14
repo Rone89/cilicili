@@ -9,6 +9,8 @@ struct DynamicRichTextView: View {
     let maxLines: Int?
     let preferredWidth: CGFloat?
     let onNonLinkTap: (() -> Void)?
+    let usesTextKitLayout: Bool
+    let onContentLayoutChange: (() -> Void)?
     private let textInput: DynamicAttributedTextInput
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,7 +22,9 @@ struct DynamicRichTextView: View {
         emoteSize: CGFloat,
         maxLines: Int?,
         preferredWidth: CGFloat? = nil,
-        onNonLinkTap: (() -> Void)? = nil
+        onNonLinkTap: (() -> Void)? = nil,
+        usesTextKitLayout: Bool = false,
+        onContentLayoutChange: (() -> Void)? = nil
     ) {
         self.segments = segments
         self.font = font
@@ -29,6 +33,8 @@ struct DynamicRichTextView: View {
         self.maxLines = maxLines
         self.preferredWidth = preferredWidth
         self.onNonLinkTap = onNonLinkTap
+        self.usesTextKitLayout = usesTextKitLayout
+        self.onContentLayoutChange = onContentLayoutChange
 
         self.textInput = DynamicAttributedTextInput(
             segments: segments.isEmpty ? [.text(" ")] : segments,
@@ -43,7 +49,9 @@ struct DynamicRichTextView: View {
     init(
         input: DynamicAttributedTextInput,
         preferredWidth: CGFloat? = nil,
-        onNonLinkTap: (() -> Void)? = nil
+        onNonLinkTap: (() -> Void)? = nil,
+        usesTextKitLayout: Bool = false,
+        onContentLayoutChange: (() -> Void)? = nil
     ) {
         self.segments = input.segments
         self.font = input.baseFont
@@ -52,13 +60,15 @@ struct DynamicRichTextView: View {
         self.maxLines = input.maxLines
         self.preferredWidth = preferredWidth
         self.onNonLinkTap = onNonLinkTap
+        self.usesTextKitLayout = usesTextKitLayout
+        self.onContentLayoutChange = onContentLayoutChange
         self.textInput = input
     }
 
     var body: some View {
         let input = resolvedTextInput
 
-        if let plainText = input.nativePlainText {
+        if let plainText = input.nativePlainText, !usesTextKitLayout {
             plainTextView(input: input, plainText: plainText)
         } else {
             DynamicAttributedTextLabel(
@@ -67,7 +77,8 @@ struct DynamicRichTextView: View {
                 onURLTap: { url in
                     openAppURL?(url)
                 },
-                onNonLinkTap: onNonLinkTap
+                onNonLinkTap: onNonLinkTap,
+                onContentLayoutChange: onContentLayoutChange
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         }

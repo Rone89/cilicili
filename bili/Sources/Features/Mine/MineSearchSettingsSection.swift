@@ -9,7 +9,7 @@ struct MineSearchSettingsSection: View {
                 get: { libraryStore.showsHotSearches },
                 set: { libraryStore.setShowsHotSearches($0) }
             )) {
-                Label("显示热门搜索", systemImage: "flame")
+                MineSettingsLabel("显示热门搜索", systemImage: "flame")
             }
         }
     }
