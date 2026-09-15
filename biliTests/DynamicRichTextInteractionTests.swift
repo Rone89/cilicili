@@ -92,26 +92,82 @@ final class DynamicRichTextInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testDynamicFeedLineSpacingUsesFontLineHeightMultiplier() throws {
+    func testDynamicFeedLineSpacingUsesEqualFixedLineBoxes() throws {
         let font = UIFont.systemFont(ofSize: 15)
         let input = DynamicAttributedTextInput(
-            segments: [.text("第一行\n第二行")],
+            segments: [.text("这是会自动换行的第一段文字这是会自动换行的第一段文字\n第二段含原生表情🥰")],
             baseFont: font,
             textColor: .label,
             emoteSize: 20,
             maxLines: nil,
             typographyRole: nil,
-            lineHeightMultiplier: 1.65
+            lineSpacing: 2
         )
 
         let rendered = input.render().attributedString
         let paragraphStyle = try XCTUnwrap(
             rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
         )
-        let expectedLineHeight = font.lineHeight * 1.65
+        let expectedLineHeight = font.lineHeight + 2
 
         XCTAssertEqual(paragraphStyle.minimumLineHeight, expectedLineHeight, accuracy: 0.001)
         XCTAssertEqual(paragraphStyle.maximumLineHeight, expectedLineHeight, accuracy: 0.001)
+
+        let baselines = baselineOffsets(for: rendered, fittingWidth: 120)
+        XCTAssertGreaterThanOrEqual(baselines.count, 3)
+        for (current, previous) in zip(baselines.dropFirst(), baselines) {
+            XCTAssertEqual(current - previous, expectedLineHeight, accuracy: 0.001)
+        }
+    }
+
+    @MainActor
+    func testDynamicFeedEmoteAttachmentFitsBodyLineHeight() throws {
+        let font = UIFont.systemFont(ofSize: 17)
+        let input = DynamicAttributedTextInput(
+            segments: [.emoji(text: "[大表情]", url: "https://example.com/emote")],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 40,
+            maxLines: nil,
+            typographyRole: nil
+        )
+
+        let rendered = input.render().attributedString
+        let attachment = try XCTUnwrap(
+            rendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+
+        let expectedSize = min(font.lineHeight, font.ascender - font.descender)
+        XCTAssertEqual(attachment.bounds.height, expectedSize, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(attachment.bounds.minY, font.descender - 0.001)
+        XCTAssertLessThanOrEqual(attachment.bounds.maxY, font.ascender + 0.001)
+    }
+
+    @MainActor
+    func testDynamicFeedEmoteAttachmentKeepsEqualLineBaselines() throws {
+        let font = UIFont.systemFont(ofSize: 17)
+        let lineSpacing: CGFloat = 2
+        let input = DynamicAttributedTextInput(
+            segments: [
+                .text("第一行\n第二行"),
+                .emoji(text: "[大表情]", url: "https://example.com/emote"),
+                .text("\n第三行")
+            ],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 40,
+            maxLines: nil,
+            typographyRole: nil,
+            lineSpacing: lineSpacing
+        )
+
+        let baselines = baselineOffsets(for: input.render().attributedString, fittingWidth: 320)
+        let expectedLineHeight = font.lineHeight + lineSpacing
+
+        XCTAssertEqual(baselines.count, 3)
+        for (current, previous) in zip(baselines.dropFirst(), baselines) {
+            XCTAssertEqual(current - previous, expectedLineHeight, accuracy: 0.001)
+        }
     }
 
     @MainActor
@@ -181,5 +237,33 @@ final class DynamicRichTextInteractionTests: XCTestCase {
         let firstGlyph = NSRange(location: glyphRange.location, length: 1)
         let rect = layoutManager.boundingRect(forGlyphRange: firstGlyph, in: textContainer)
         return CGPoint(x: rect.midX, y: rect.midY)
+    }
+
+    private func baselineOffsets(
+        for attributedString: NSAttributedString,
+        fittingWidth width: CGFloat
+    ) -> [CGFloat] {
+        let textStorage = NSTextStorage(attributedString: attributedString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        var baselines = [CGFloat]()
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
+            rect,
+            _,
+            _,
+            lineGlyphRange,
+            _ in
+            let glyphLocation = layoutManager.location(forGlyphAt: lineGlyphRange.location)
+            baselines.append(rect.minY + glyphLocation.y)
+        }
+        return baselines
     }
 }

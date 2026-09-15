@@ -64,7 +64,7 @@ struct DynamicFeedTextContent: View {
 
     private var displayedInput: DynamicAttributedTextInput {
         let input = isExpanded ? expandedInput : collapsedInput
-        return input.replacingLineHeightMultiplier(1.1)
+        return input.replacingLineSpacing(FeedTypography.bodyLineSpacing)
     }
 
     private var shouldShowExpandButton: Bool { measuredShowsExpandButton == true }
@@ -84,7 +84,7 @@ struct DynamicFeedTextContent: View {
         }
 
         let input = collapsedInput
-            .replacingLineHeightMultiplier(1.1)
+            .replacingLineSpacing(FeedTypography.bodyLineSpacing)
             .resolvingTypography(
                 contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
             )

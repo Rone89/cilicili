@@ -8,7 +8,7 @@ struct DynamicAttributedTextInput: Equatable {
     let emoteSize: CGFloat
     let maxLines: Int?
     let typographyRole: AppTypography.Role?
-    let lineHeightMultiplier: CGFloat
+    let lineSpacing: CGFloat
     static let feedBodyFont = FeedTypography.bodyUIFont
 
     init(
@@ -18,7 +18,7 @@ struct DynamicAttributedTextInput: Equatable {
         emoteSize: CGFloat,
         maxLines: Int?,
         typographyRole: AppTypography.Role?,
-        lineHeightMultiplier: CGFloat = 1
+        lineSpacing: CGFloat = 0
     ) {
         self.segments = segments
         self.baseFont = baseFont
@@ -26,7 +26,7 @@ struct DynamicAttributedTextInput: Equatable {
         self.emoteSize = emoteSize
         self.maxLines = maxLines
         self.typographyRole = typographyRole
-        self.lineHeightMultiplier = lineHeightMultiplier
+        self.lineSpacing = lineSpacing
     }
 
     static func dynamicFeedBody(
@@ -41,7 +41,7 @@ struct DynamicAttributedTextInput: Equatable {
             emoteSize: emoteSize,
             maxLines: maxLines,
             typographyRole: .dynamicBody,
-            lineHeightMultiplier: 1
+            lineSpacing: 0
         )
     }
 
@@ -53,7 +53,7 @@ struct DynamicAttributedTextInput: Equatable {
             && lhs.emoteSize == rhs.emoteSize
             && lhs.maxLines == rhs.maxLines
             && lhs.typographyRole == rhs.typographyRole
-            && lhs.lineHeightMultiplier == rhs.lineHeightMultiplier
+            && lhs.lineSpacing == rhs.lineSpacing
     }
 
     var cacheKey: String {
@@ -79,7 +79,7 @@ struct DynamicAttributedTextInput: Equatable {
             "\(emoteSize)",
             "\(maxLines ?? -1)",
             typographyRole?.rawValue ?? "",
-            "\(lineHeightMultiplier)"
+            "\(lineSpacing)"
         ].joined(separator: "\u{1e}")
     }
 
@@ -94,11 +94,11 @@ struct DynamicAttributedTextInput: Equatable {
             emoteSize: emoteSize * resolvedFont.pointSize / typographyRole.pointSize,
             maxLines: maxLines,
             typographyRole: typographyRole,
-            lineHeightMultiplier: lineHeightMultiplier
+            lineSpacing: lineSpacing
         )
     }
 
-    func replacingLineHeightMultiplier(_ multiplier: CGFloat) -> DynamicAttributedTextInput {
+    func replacingLineSpacing(_ lineSpacing: CGFloat) -> DynamicAttributedTextInput {
         DynamicAttributedTextInput(
             segments: segments,
             baseFont: baseFont,
@@ -106,7 +106,7 @@ struct DynamicAttributedTextInput: Equatable {
             emoteSize: emoteSize,
             maxLines: maxLines,
             typographyRole: typographyRole,
-            lineHeightMultiplier: multiplier
+            lineSpacing: lineSpacing
         )
     }
 
@@ -132,7 +132,7 @@ struct DynamicAttributedTextInput: Equatable {
         DynamicTextLineBreakStyle.attributedString(
             for: text,
             lineLimit: maxLines,
-            lineSpacing: additionalLineSpacing
+            lineSpacing: lineSpacing
         )
     }
 
@@ -211,17 +211,16 @@ struct DynamicAttributedTextInput: Equatable {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        if lineHeightMultiplier > 0, lineHeightMultiplier != 1 {
-            style.lineHeightMultiple = lineHeightMultiplier
-        }
+        // Use one line box for every run so fallback glyphs and attachments do
+        // not make individual lines taller than their neighbors.
+        let lineHeight = baseFont.lineHeight + max(lineSpacing, 0)
+        style.minimumLineHeight = lineHeight
+        style.maximumLineHeight = lineHeight
+        style.paragraphSpacing = 0
+        style.paragraphSpacingBefore = 0
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style
-    }
-
-    private var additionalLineSpacing: CGFloat {
-        guard lineHeightMultiplier > 1 else { return 0 }
-        return baseFont.lineHeight * (lineHeightMultiplier - 1)
     }
 
     var lineBreakMode: NSLineBreakMode {
@@ -263,18 +262,21 @@ struct DynamicAttributedTextInput: Equatable {
             return attributedText(token)
         }
 
+        let fontEnvelopeHeight = baseFont.ascender - baseFont.descender
+        let resolvedEmoteSize = min(emoteSize, baseFont.lineHeight, fontEnvelopeHeight)
+        let verticalInset = max((fontEnvelopeHeight - resolvedEmoteSize) / 2, 0)
         let attachment = NSTextAttachment()
         if let image = BiliEmoteImageStore.shared.cachedImage(for: url) {
             attachment.image = image
         } else {
-            attachment.image = BiliEmoteImageStore.shared.placeholderImage(size: emoteSize)
+            attachment.image = BiliEmoteImageStore.shared.placeholderImage(size: resolvedEmoteSize)
             missingImageURLs.append(url)
         }
         attachment.bounds = CGRect(
             x: 0,
-            y: (baseFont.capHeight - emoteSize) / 2,
-            width: emoteSize,
-            height: emoteSize
+            y: baseFont.descender + verticalInset,
+            width: resolvedEmoteSize,
+            height: resolvedEmoteSize
         )
         return NSAttributedString(attachment: attachment)
     }
