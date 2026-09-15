@@ -14,8 +14,7 @@ extension VideoDetailViewModel {
         playbackTransitionState: inout VideoDetailPlaybackTransitionState,
         navigationState: inout VideoDetailPlaybackNavigationState
     ) {
-        navigationState.playbackStopTask?.cancel()
-        navigationState.playbackStopTask = nil
+        navigationState.isPlaybackStopPending = false
         navigationState.isPlaybackTerminatedForNavigation = true
         navigationState.isPlaybackInvalidatedForNavigation = true
         let transitionPlayer = playbackTransitionState.playerViewModel

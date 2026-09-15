@@ -3,7 +3,7 @@ import Foundation
 struct VideoDetailPlaybackNavigationState {
     var isPlaybackInvalidatedForNavigation = false
     var isPlaybackTerminatedForNavigation = false
-    var playbackStopTask: Task<Void, Never>?
+    var isPlaybackStopPending = false
     var shouldResumePlaybackAfterCancelledNavigation = false
     var pendingNavigationResumeTime: TimeInterval?
     var hasPendingNavigationInterruption = false

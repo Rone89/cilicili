@@ -17,7 +17,8 @@ extension VideoDetailViewModel {
             return
         }
 
-        schedulePlaybackStopForNavigation()
+        stablePlayerViewModel?.pauseForNavigation()
+        navigationState.isPlaybackStopPending = true
     }
 
     private func capturePlaybackStateForNavigation(resumeTime: TimeInterval) {
@@ -58,17 +59,9 @@ extension VideoDetailViewModel {
         }
     }
 
-    private func schedulePlaybackStopForNavigation() {
-        guard navigationState.playbackStopTask == nil else { return }
-        navigationState.playbackStopTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard let self, !Task.isCancelled else { return }
-            self.navigationState.playbackStopTask = nil
-            self.finishStoppingPlaybackForNavigation()
-        }
-    }
-
-    private func finishStoppingPlaybackForNavigation() {
+    func finishPlaybackStopAfterNavigationTransition() {
+        guard navigationState.isPlaybackStopPending else { return }
+        navigationState.isPlaybackStopPending = false
         cancelPlaybackWorkForNavigation()
         resetPlaybackLoadingStateForNavigation()
         stopStablePlaybackForNavigation()

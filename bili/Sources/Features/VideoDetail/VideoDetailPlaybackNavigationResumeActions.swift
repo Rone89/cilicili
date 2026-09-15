@@ -7,8 +7,7 @@ extension VideoDetailViewModel {
 
     func resumePlaybackAfterCoveredNavigationIfNeeded() async {
         guard isPlaybackInvalidatedForNavigation || isPlaybackTerminatedForNavigation else { return }
-        navigationState.playbackStopTask?.cancel()
-        navigationState.playbackStopTask = nil
+        navigationState.isPlaybackStopPending = false
         isPlaybackInvalidatedForNavigation = false
         isPlaybackTerminatedForNavigation = false
 

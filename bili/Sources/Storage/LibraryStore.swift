@@ -1047,7 +1047,6 @@ final class LibraryStore: ObservableObject {
             return
         }
         userDefaults.set(data, forKey: Self.playbackProgressByBVIDKey)
-        userDefaults.synchronize()
     }
 
     private static func playbackCDNProbeContextKey(

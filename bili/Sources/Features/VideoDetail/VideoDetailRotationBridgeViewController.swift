@@ -16,6 +16,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private var rotationWatchdogTask: Task<Void, Never>?
     private var rotationGeneration = 0
     private var didPrepareForDismantle = false
+    private var didRegisterNavigationStopCompletion = false
 
     init(
         initialVideo: VideoItem,
@@ -109,6 +110,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewActive = true
+        didRegisterNavigationStopCompletion = false
         rotationCoordinator.activate(
             isLandscape: resolvedLandscapeForRecovery,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
@@ -127,6 +129,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         isViewActive = false
+        finishPlaybackStopAfterNavigationTransition()
         contentController.dismissPlayerMoreControls()
         recoverInterruptedRotationIfNeeded(reason: "viewWillDisappear")
         cancelRotationTasks()
@@ -137,6 +140,27 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                 && navigationController?.isBeingDismissed != true
         )
         releaseSystemBackGestureOwnership()
+    }
+
+    private func finishPlaybackStopAfterNavigationTransition() {
+        guard !didRegisterNavigationStopCompletion else { return }
+        didRegisterNavigationStopCompletion = true
+
+        let finish = { [weak self] in
+            _ = Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.contentController.viewModel.finishPlaybackStopAfterNavigationTransition()
+            }
+        }
+
+        guard let transitionCoordinator else {
+            finish()
+            return
+        }
+        transitionCoordinator.animate(alongsideTransition: nil) { context in
+            guard !context.isCancelled else { return }
+            finish()
+        }
     }
 
     override func viewDidDisappear(_ animated: Bool) {
