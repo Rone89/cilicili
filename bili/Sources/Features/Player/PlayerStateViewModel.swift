@@ -490,7 +490,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var appBackgroundResumeRecoveryTask: Task<Void, Never>?
     private var appBackgroundResumeRecoveryGeneration = 0
     private var seekRecoveryWatchdogTask: Task<Void, Never>?
-    private var speedBoostRecoveryTask: Task<Void, Never>?
     private var surfaceReadinessResetTask: Task<Void, Never>?
     private var shouldResumeAfterTransientSystemOverlay = false
     private var shouldResumePlaybackAfterAppBackground = false
@@ -674,8 +673,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         appBackgroundResumeRecoveryTask = nil
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
-        speedBoostRecoveryTask?.cancel()
-        speedBoostRecoveryTask = nil
         surfaceReadinessResetTask?.cancel()
         surfaceReadinessResetTask = nil
         surfaceReadinessConfirmationTask?.cancel()
@@ -2895,7 +2892,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         startupMediaWarmupTask = nil
         deferredStartupResumeTask?.cancel()
         deferredStartupResumeTask = nil
-        cancelTransientInteractionTasks()
         pauseForNavigation()
     }
 
@@ -2923,7 +2919,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         startupMediaWarmupTask = nil
         deferredStartupResumeTask?.cancel()
         deferredStartupResumeTask = nil
-        cancelTransientInteractionTasks()
         cancelStartupResumeRecoveryTracking()
         cancelSeekRecoveryTracking()
         cancelStartupResumeRetryTask()
@@ -2975,11 +2970,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         pendingEngineFirstFrameTime = nil
         invalidatePictureInPicturePlaybackState()
         isStopping = false
-    }
-
-    private func cancelTransientInteractionTasks() {
-        speedBoostRecoveryTask?.cancel()
-        speedBoostRecoveryTask = nil
     }
 
     private func cancelScrubSeekTasks(resetUserSeeking: Bool) {
@@ -3502,13 +3492,19 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     func setPlaybackRate(_ rate: BiliPlaybackRate) {
         guard !isTerminated else { return }
         guard playbackRate != rate else { return }
-        speedBoostRecoveryTask?.cancel()
-        speedBoostRecoveryTask = nil
         playbackRate = rate
         engine.setPlaybackRate(rate.rawValue)
         syncRemotePlaybackControls()
         rescheduleTimeObserverIfNeeded()
         invalidatePictureInPicturePlaybackState()
+    }
+
+    func setTemporaryPlaybackRate(_ rate: BiliPlaybackRate) {
+        guard !isTerminated else { return }
+        guard playbackRate != rate else { return }
+        playbackRate = rate
+        engine.setTemporaryPlaybackRate(rate.rawValue)
+        rescheduleTimeObserverIfNeeded()
     }
 
     func recordSpeedBoostMetric(_ message: String) {
@@ -3519,46 +3515,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             title: title,
             message: message
         )
-    }
-
-    func stabilizePlaybackAfterSpeedBoost(restoredRate: BiliPlaybackRate, reason: String) {
-        speedBoostRecoveryTask?.cancel()
-        let initialSnapshot = engine.snapshot(durationHint: durationHint)
-        let shouldKeepPlaying = wantsAutoplay
-            || isPlaying
-            || initialSnapshot.isPlaying
-        recordSpeedBoostMetric("stabilize reason=\(reason) restore=\(restoredRate.title) keepPlaying=\(shouldKeepPlaying)")
-        if shouldKeepPlaying,
-           !initialSnapshot.isPlaying,
-           canActivatePlayback() {
-            engine.play()
-        }
-        engine.setPlaybackRate(restoredRate.rawValue)
-        rescheduleTimeObserverIfNeeded(force: true)
-
-        speedBoostRecoveryTask = Task { @MainActor [weak self] in
-            let delays: [UInt64] = [180_000_000, 460_000_000]
-            for delay in delays {
-                try? await Task.sleep(nanoseconds: delay)
-                guard let self,
-                      !Task.isCancelled,
-                      !self.isTerminated,
-                      self.playbackRate == restoredRate,
-                      self.canActivatePlayback()
-                else { return }
-
-                let snapshot = self.engine.snapshot(durationHint: self.durationHint)
-                let shouldResume = self.wantsAutoplay || self.isPlaying || snapshot.isPlaying
-                if shouldResume, !snapshot.isPlaying {
-                    self.engine.play()
-                }
-                self.engine.setPlaybackRate(restoredRate.rawValue)
-                if let snapshotTime = snapshot.currentTime {
-                    _ = self.updatePlaybackTime(snapshotTime)
-                }
-            }
-            self?.speedBoostRecoveryTask = nil
-        }
     }
 
     func setVolume(_ value: Float) {

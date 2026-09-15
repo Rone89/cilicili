@@ -476,6 +476,7 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     func suspendForNavigation()
     func stop()
     func setPlaybackRate(_ rate: Double)
+    func setTemporaryPlaybackRate(_ rate: Double)
     func setPreferredPeakBitRate(_ bitRate: Double?)
     func setVolume(_ volume: Float)
     func setMuted(_ isMuted: Bool)
@@ -565,6 +566,10 @@ extension PlayerRenderingEngine {
     func setDanmakuControls(isEnabled _: Bool, onToggle _: (() -> Void)?, onShowSettings _: (() -> Void)?) {}
 
     func setQualityControls(_: PlayerQualityControls?) {}
+
+    func setTemporaryPlaybackRate(_ rate: Double) {
+        setPlaybackRate(rate)
+    }
 }
 
 extension UIImage {

@@ -738,6 +738,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    func setTemporaryPlaybackRate(_ rate: Double) {
+        let normalizedRate = max(Float(rate), 0.1)
+        guard abs(currentRate - normalizedRate) > 0.001 else { return }
+        currentRate = normalizedRate
+        player.defaultRate = normalizedRate
+        if player.rate > 0 {
+            player.rate = normalizedRate
+            nativeDolbyVideoOverlay.play(rate: normalizedRate)
+        }
+    }
+
     func setPreferredPeakBitRate(_ bitRate: Double?) {
         guard !isDirectLiveHLS else { return }
         manualPreferredPeakBitRate = bitRate

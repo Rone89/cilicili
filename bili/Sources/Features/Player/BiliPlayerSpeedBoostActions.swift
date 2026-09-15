@@ -13,7 +13,7 @@ struct BiliPlayerSpeedBoostActions {
             isSurfacePlaying: surfaceState.isPlaying
         ) {
             visibilityActions.cancelAutoHide()
-            visibilityActions.playbackControlsVisibility.hide(animated: true)
+            visibilityActions.playbackControlsVisibility.hide(animated: false)
         }
     }
 
@@ -22,7 +22,7 @@ struct BiliPlayerSpeedBoostActions {
             reason: reason,
             playerViewModel: viewModel
         ) {
-            visibilityActions.showAndSchedule()
+            visibilityActions.show(scheduleAutoHide: true, animated: false)
         }
     }
 }

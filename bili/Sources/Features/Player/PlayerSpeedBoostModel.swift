@@ -21,10 +21,6 @@ enum PlayerSpeedBoostEndReason: String {
         self != .gestureEnded
     }
 
-    var shouldStabilizePlayback: Bool {
-        self == .gestureEnded
-    }
-
     var shouldShowPlaybackControls: Bool {
         self == .gestureEnded
     }
@@ -99,7 +95,7 @@ final class PlayerSpeedBoostModel: ObservableObject {
         setPhase(.boosting)
         Haptics.medium()
         hidePlaybackControls()
-        playerViewModel.setPlaybackRate(.x20)
+        playerViewModel.setTemporaryPlaybackRate(.x20)
         let rateElapsed = PlayerMetricsLog.elapsedMilliseconds(since: beganAt)
         playerViewModel.recordSpeedBoostMetric(
             "event=begin phase=boosting restore=\(previousRate.title) beginToRate=\(String(format: "%.0fms", rateElapsed))"
@@ -128,17 +124,11 @@ final class PlayerSpeedBoostModel: ObservableObject {
             scheduleIdleTransition()
             return
         }
-        boostedPlayerViewModel.setPlaybackRate(state.restoredRate)
+        boostedPlayerViewModel.setTemporaryPlaybackRate(state.restoredRate)
         let restoreElapsed = PlayerMetricsLog.elapsedMilliseconds(since: releasedAt)
         boostedPlayerViewModel.recordSpeedBoostMetric(
             "event=end phase=restoring reason=\(reason.rawValue) interrupted=\(reason.isInterruption) hold=\(String(format: "%.0fms", holdElapsed)) releaseToRestore=\(String(format: "%.0fms", restoreElapsed)) restore=\(state.restoredRate.title)"
         )
-        if reason.shouldStabilizePlayback {
-            boostedPlayerViewModel.stabilizePlaybackAfterSpeedBoost(
-                restoredRate: state.restoredRate,
-                reason: reason.rawValue
-            )
-        }
         if reason.shouldShowPlaybackControls {
             showPlaybackControls()
         }
