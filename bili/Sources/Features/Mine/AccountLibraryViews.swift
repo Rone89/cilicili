@@ -3,6 +3,7 @@ import SwiftUI
 enum AccountLibraryKind: Hashable, Identifiable {
     case history
     case favorites
+    case watchLater
 
     var id: Self { self }
 
@@ -12,6 +13,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "观看记录"
         case .favorites:
             return "账号收藏"
+        case .watchLater:
+            return "稍后再看"
         }
     }
 
@@ -21,6 +24,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "clock.arrow.circlepath"
         case .favorites:
             return "star"
+        case .watchLater:
+            return "clock.badge.checkmark"
         }
     }
 
@@ -30,6 +35,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "最近观看"
         case .favorites:
             return "收藏时间"
+        case .watchLater:
+            return "添加时间"
         }
     }
 
@@ -39,6 +46,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "账号里还没有观看记录"
         case .favorites:
             return "账号收藏夹还没有内容"
+        case .watchLater:
+            return "稍后再看里还没有视频"
         }
     }
 
@@ -48,6 +57,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "登录后同步账号观看记录"
         case .favorites:
             return "登录后同步账号收藏"
+        case .watchLater:
+            return "登录后同步稍后再看"
         }
     }
 
@@ -57,6 +68,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "正在同步观看记录"
         case .favorites:
             return "正在同步账号收藏"
+        case .watchLater:
+            return "正在同步稍后再看"
         }
     }
 
@@ -66,6 +79,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "观看记录同步失败"
         case .favorites:
             return "账号收藏同步失败"
+        case .watchLater:
+            return "稍后再看同步失败"
         }
     }
 
@@ -75,6 +90,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "正在加载更多观看记录"
         case .favorites:
             return "正在加载更多收藏"
+        case .watchLater:
+            return "正在加载更多稍后再看"
         }
     }
 
@@ -84,6 +101,8 @@ enum AccountLibraryKind: Hashable, Identifiable {
             return "更多观看记录加载失败"
         case .favorites:
             return "更多收藏加载失败"
+        case .watchLater:
+            return "更多稍后再看加载失败"
         }
     }
 }

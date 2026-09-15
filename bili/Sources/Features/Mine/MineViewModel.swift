@@ -8,6 +8,7 @@ final class MineViewModel: ObservableObject {
     @Published var qrLoginState: QRCodeLoginState = .idle
     @Published var historyState: LoadingState = .idle
     @Published var favoriteState: LoadingState = .idle
+    @Published var watchLaterState: LoadingState = .idle
     @Published private(set) var historyLoadMoreState: LoadingState = .idle {
         didSet { accountLibraryRevision &+= 1 }
     }
@@ -18,6 +19,9 @@ final class MineViewModel: ObservableObject {
         didSet { accountLibraryRevision &+= 1 }
     }
     @Published var accountFavorites: [AccountVideoEntry] = [] {
+        didSet { accountLibraryRevision &+= 1 }
+    }
+    @Published var accountWatchLater: [AccountVideoEntry] = [] {
         didSet { accountLibraryRevision &+= 1 }
     }
     @Published var favoriteFolders: [FavoriteFolder] = [] {
@@ -74,7 +78,8 @@ final class MineViewModel: ObservableObject {
 
         async let history: Void = refreshHistory()
         async let favorites: Void = refreshFavorites()
-        _ = await (history, favorites)
+        async let watchLater: Void = refreshWatchLater()
+        _ = await (history, favorites, watchLater)
     }
 
     func refreshHistory() async {
@@ -103,6 +108,17 @@ final class MineViewModel: ObservableObject {
             favoriteState = .loaded
         } catch {
             favoriteState = .failed(error.localizedDescription)
+        }
+    }
+
+    func refreshWatchLater() async {
+        guard sessionStore.isLoggedIn else { return }
+        watchLaterState = .loading
+        do {
+            accountWatchLater = Self.uniqued(try await api.fetchAccountWatchLater())
+            watchLaterState = .loaded
+        } catch {
+            watchLaterState = .failed(error.localizedDescription)
         }
     }
 
@@ -203,6 +219,7 @@ final class MineViewModel: ObservableObject {
         BiliWebCookieStore.clearLoginCookies()
         accountHistory = []
         accountFavorites = []
+        accountWatchLater = []
         favoriteFolders = []
         favoriteFolderEntries = [:]
         favoriteFolderEntryStates = [:]
@@ -214,6 +231,7 @@ final class MineViewModel: ObservableObject {
         favoriteFolderPages = [:]
         historyState = .idle
         favoriteState = .idle
+        watchLaterState = .idle
         loginMessage = ""
         qrLoginState = .idle
     }
@@ -376,6 +394,7 @@ final class MineViewModel: ObservableObject {
     private func resetAccountLibraryState() {
         accountHistory = []
         accountFavorites = []
+        accountWatchLater = []
         favoriteFolders = []
         favoriteFolderEntries = [:]
         favoriteFolderEntryStates = [:]
@@ -387,6 +406,7 @@ final class MineViewModel: ObservableObject {
         favoriteFolderPages = [:]
         historyState = .idle
         favoriteState = .idle
+        watchLaterState = .idle
     }
 
     private nonisolated static func uniqued(_ entries: [AccountVideoEntry]) -> [AccountVideoEntry] {

@@ -102,10 +102,13 @@ struct MineView: View {
             switch (historyNeedsRefresh, favoritesNeedRefresh) {
             case (true, true):
                 async let historyRefresh: Void = viewModel.refreshHistory()
+                async let watchLaterRefresh: Void = viewModel.refreshWatchLater()
                 async let favoritesRefresh: Void = viewModel.refreshFavorites()
-                _ = await (historyRefresh, favoritesRefresh)
+                _ = await (historyRefresh, watchLaterRefresh, favoritesRefresh)
             case (true, false):
-                await viewModel.refreshHistory()
+                async let historyRefresh: Void = viewModel.refreshHistory()
+                async let watchLaterRefresh: Void = viewModel.refreshWatchLater()
+                _ = await (historyRefresh, watchLaterRefresh)
             case (false, true):
                 await viewModel.refreshFavorites()
             case (false, false):
@@ -171,6 +174,7 @@ private struct MineRenderSnapshot: Equatable {
     let qrLoginState: QRCodeLoginState
     let historyState: LoadingState
     let favoriteState: LoadingState
+    let watchLaterState: LoadingState
     let accountLibraryRevision: Int
 
     init(_ viewModel: MineViewModel) {
@@ -179,6 +183,7 @@ private struct MineRenderSnapshot: Equatable {
         qrLoginState = viewModel.qrLoginState
         historyState = viewModel.historyState
         favoriteState = viewModel.favoriteState
+        watchLaterState = viewModel.watchLaterState
         accountLibraryRevision = viewModel.accountLibraryRevision
     }
 }
