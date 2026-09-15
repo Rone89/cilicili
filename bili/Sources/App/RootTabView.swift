@@ -119,12 +119,6 @@ struct RootTabView: View {
             SearchTabBottomAccessory(store: searchBottomAccessoryStore)
         }
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
-        .background(
-            RootTabBarAppearanceInstaller(
-                tintColorHex: libraryStore.appTintColorHex,
-                glassStyle: libraryStore.videoDetailSegmentedPickerGlassStyle
-            )
-        )
     }
 
     @ViewBuilder
