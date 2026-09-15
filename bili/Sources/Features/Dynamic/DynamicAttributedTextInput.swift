@@ -212,9 +212,7 @@ struct DynamicAttributedTextInput: Equatable {
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         if lineHeightMultiplier > 0, lineHeightMultiplier != 1 {
-            let lineHeight = baseFont.lineHeight * lineHeightMultiplier
-            style.minimumLineHeight = lineHeight
-            style.maximumLineHeight = lineHeight
+            style.lineHeightMultiple = lineHeightMultiplier
         }
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
