@@ -12,7 +12,8 @@ struct VideoDetailInitialPlayerPlaceholder: View {
                 progress: 0.08,
                 message: "加载视频信息",
                 isFinishing: false,
-                showsChromeSkeleton: true
+                showsChromeSkeleton: true,
+                showsProgress: false
             )
             .overlay(alignment: .topLeading) {
                 VideoDetailInitialPlayerPlaceholderBackButtonLayer(action: onNavigateBack)

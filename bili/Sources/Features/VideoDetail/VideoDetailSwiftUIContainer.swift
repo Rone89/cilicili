@@ -564,6 +564,15 @@ private struct VideoDetailInteractivePlayerLayer: View {
         )
 
         ZStack(alignment: .topLeading) {
+            // Keep the player stage opaque while the stable player/surface is
+            // still being created. The content layer uses the light grouped
+            // background, which otherwise flashes through in light mode.
+            Color.black
+                .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
+                .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .allowsHitTesting(false)
+                .zIndex(1)
+
             if let playerViewModel = model.surfacePlayerViewModel {
                 VideoDetailShellSurfaceRepresentable(
                     playerViewModel: playerViewModel,
@@ -598,13 +607,33 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
                     .zIndex(3)
                 }
+            } else {
+                PlayerLoadingPlaceholder(
+                    progress: 0.08,
+                    message: "加载视频信息",
+                    isFinishing: false,
+                    showsProgress: false
+                )
+                .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
+                .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                .allowsHitTesting(false)
+                .zIndex(2)
+
+                VideoDetailInitialPlayerPlaceholderBackButtonLayer(action: onNavigateBack)
+                    .frame(
+                        width: layout.playerFrame.width,
+                        height: layout.playerFrame.height,
+                        alignment: .topLeading
+                    )
+                    .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
+                    .zIndex(3)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .onChange(of: layout) { _, newLayout in
-                guard newLayout.playerFrame != model.playerFrame else { return }
-                model.scheduleLayoutSynchronization(newLayout)
-            }
+        .onChange(of: layout) { _, newLayout in
+            guard newLayout.playerFrame != model.playerFrame else { return }
+            model.scheduleLayoutSynchronization(newLayout)
+        }
     }
 }
 

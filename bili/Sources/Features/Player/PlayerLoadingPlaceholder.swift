@@ -6,6 +6,7 @@ struct PlayerLoadingPlaceholder: View {
     let isFinishing: Bool
     var secondaryMessage: String? = nil
     var showsChromeSkeleton = false
+    var showsProgress = true
 
     private var accessibilityMessage: String {
         if isFinishing {
@@ -21,11 +22,13 @@ struct PlayerLoadingPlaceholder: View {
         ZStack {
             Color.black
 
-            ProgressView()
-                .progressViewStyle(.circular)
-                .controlSize(.regular)
-                .tint(.white)
-                .accessibilityLabel(accessibilityMessage)
+            if showsProgress {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.regular)
+                    .tint(.white)
+                    .accessibilityLabel(accessibilityMessage)
+            }
 
             if showsChromeSkeleton {
                 PlayerLoadingChromeSkeleton()

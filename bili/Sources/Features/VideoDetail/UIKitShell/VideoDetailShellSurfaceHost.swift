@@ -890,7 +890,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             presentation: isLandscape ? .fullScreen : .embedded,
             showsNavigationChrome: false,
             showsPlaybackControls: keepsChromeMounted,
-            showsStartupLoadingIndicator: keepsChromeMounted && viewModel.wantsAutoplay,
+            showsStartupLoadingIndicator: false,
             pausesOnDisappear: false,
             controlsAccessory: isAudioOnlyPlayback
                 ? AnyView(videoListenQuickControls)
