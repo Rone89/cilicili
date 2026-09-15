@@ -31,7 +31,7 @@ struct CommentRepliesFooter: View {
             } label: {
                 Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 9)
             }
             .buttonStyle(.plain)

@@ -4,12 +4,14 @@ struct DynamicHomeVideoFeedCard: View {
     let video: VideoItem
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
+    let contentWidth: CGFloat?
+    let usesExternalHorizontalInsets: Bool
     let onShowComments: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             authorHeader
-                .padding(.horizontal, 12)
+                .padding(.horizontal, horizontalContentInset)
 
             VideoRouteLink(video) {
                 VStack(alignment: .leading, spacing: 9) {
@@ -20,7 +22,7 @@ struct DynamicHomeVideoFeedCard: View {
                             lineLimit: 1
                         )
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, horizontalContentInset)
 
                     if let videoDisplay = display.videoDisplay {
                         DynamicFeedVideoCover(video: video, display: videoDisplay)
@@ -45,5 +47,9 @@ struct DynamicHomeVideoFeedCard: View {
 
     private var authorHeader: some View {
         DynamicFeedAuthorHeader(display: display)
+    }
+
+    private var horizontalContentInset: CGFloat {
+        usesExternalHorizontalInsets ? 0 : 12
     }
 }

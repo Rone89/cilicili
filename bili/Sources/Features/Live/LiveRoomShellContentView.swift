@@ -570,12 +570,15 @@ private struct LiveRoomSimpleLiveLayoutView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(viewModel.anchorName)
-                    .font(.subheadline.weight(.semibold))
+                    .appTypography(
+                        .commentAuthor,
+                        fallback: .subheadline.weight(.semibold)
+                    )
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(liveStatusText)
-                    .font(.caption)
+                    .appTypography(.metadata, fallback: .caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -886,13 +889,16 @@ private struct LiveRoomPortraitHeader: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(viewModel.anchorName)
-                    .font(.subheadline.weight(.semibold))
+                    .appTypography(
+                        .commentAuthor,
+                        fallback: .subheadline.weight(.semibold)
+                    )
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 Text(liveStatusText)
-                    .font(.caption)
+                    .appTypography(.metadata, fallback: .caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

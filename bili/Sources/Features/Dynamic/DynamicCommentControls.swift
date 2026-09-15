@@ -7,33 +7,15 @@ struct DynamicCommentImageGrid: View {
     let images: [DynamicImageItem]
 
     var body: some View {
-        CompactDynamicImageMosaicGrid(
-            images: images,
-            accessibilityName: "评论图片",
-            placeholderFill: Color(.secondarySystemGroupedBackground)
-        )
-        .padding(.top, 2)
-    }
-}
-
-struct DynamicCommentInlineActionPill: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
-
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .padding(.horizontal, 9)
-                .frame(height: 26)
+        if images.isEmpty {
+            EmptyView()
+        } else {
+            CompactDynamicImageMosaicGrid(
+                images: images,
+                accessibilityName: "评论图片",
+                placeholderFill: Color(.secondarySystemGroupedBackground)
+            )
+            .dynamicCommentHitArea(.control)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(appTintColor)
     }
 }

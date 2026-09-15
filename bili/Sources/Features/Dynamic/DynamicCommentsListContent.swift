@@ -2,7 +2,24 @@ import SwiftUI
 
 struct DynamicCommentsListContent: View {
     @ObservedObject var viewModel: DynamicCommentsViewModel
+    let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    let dividerHorizontalPadding: CGFloat
+    var replyToComment: ((Comment) -> Void)? = nil
+
+    init(
+        viewModel: DynamicCommentsViewModel,
+        highlightedCommentID: Int?,
+        showReplies: @escaping (Comment) -> Void,
+        dividerHorizontalPadding: CGFloat = 14,
+        replyToComment: ((Comment) -> Void)? = nil
+    ) {
+        self.viewModel = viewModel
+        self.highlightedCommentID = highlightedCommentID
+        self.showReplies = showReplies
+        self.dividerHorizontalPadding = dividerHorizontalPadding
+        self.replyToComment = replyToComment
+    }
 
     @ViewBuilder
     var body: some View {
@@ -26,25 +43,44 @@ struct DynamicCommentsListContent: View {
             )
             .padding(14)
         } else {
-            DynamicCommentsLoadedList(viewModel: viewModel, showReplies: showReplies)
+            DynamicCommentsLoadedList(
+                viewModel: viewModel,
+                highlightedCommentID: highlightedCommentID,
+                showReplies: showReplies,
+                dividerHorizontalPadding: dividerHorizontalPadding,
+                replyToComment: replyToComment
+            )
         }
     }
 }
 
 private struct DynamicCommentsLoadedList: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     @ObservedObject var viewModel: DynamicCommentsViewModel
+    let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
+    let dividerHorizontalPadding: CGFloat
+    let replyToComment: ((Comment) -> Void)?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(viewModel.commentItems) { item in
-                DynamicCommentRow(item: item) {
-                    showReplies(item.comment)
-                }
+                DynamicCommentRow(
+                    item: item,
+                    showReplies: { showReplies(item.comment) },
+                    replyToComment: replyToComment.map { action in
+                        { action(item.comment) }
+                    }
+                )
                 .padding(.horizontal, 14)
+                .background(
+                    item.id == highlightedCommentID ? appTintColor.opacity(0.10) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .id(item.id)
 
                 Divider()
-                    .padding(.leading, 62)
+                    .padding(.horizontal, dividerHorizontalPadding)
             }
 
             DynamicCommentsFooter(viewModel: viewModel)

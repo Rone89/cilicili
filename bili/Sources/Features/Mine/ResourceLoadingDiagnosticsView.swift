@@ -56,9 +56,9 @@ struct ResourceLoadingDiagnosticsView: View {
                 value: enabledFeatureCount.formatted() + " / 5"
             )
         } header: {
-            Text("实验状态")
+            Text("功能状态")
         } footer: {
-            Text("资源加载调度已作为正式功能启用。下面的 5 个小功能仍可独立调整。")
+            Text("前四项为正式功能；断点续播预热仍可独立调整。")
         }
     }
 
@@ -137,7 +137,6 @@ struct ResourceLoadingDiagnosticsView: View {
             Button {
                 UIPasteboard.general.string = ResourceLoadingDiagnosticsTextFormatter.makeText(
                     snapshot: snapshot,
-                    isExperimentEnabled: true,
                     featureStates: featureStates
                 )
                 didCopy = true
@@ -155,11 +154,11 @@ struct ResourceLoadingDiagnosticsView: View {
 
     private var featureStates: [(String, Bool)] {
         [
-            ("首屏资源优先", libraryStore.resourceLoadingFirstScreenPriorityEnabled),
-            ("屏幕图片提权", libraryStore.resourceLoadingVisibleImagePriorityEnabled),
-            ("重复接口合并", libraryStore.resourceLoadingReadRequestCoalescingEnabled),
-            ("动态页快速恢复", libraryStore.resourceLoadingDynamicDiskSnapshotEnabled),
-            ("断点续播预热", libraryStore.resourceLoadingResumePacketWarmupEnabled)
+            ("首屏资源优先", true),
+            ("屏幕图片提权", true),
+            ("重复接口合并", true),
+            ("动态页快速恢复", true),
+            ("断点续播预热", libraryStore.resourceLoadingResumePacketWarmupEnabled),
         ]
     }
 

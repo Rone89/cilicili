@@ -116,6 +116,50 @@ extension BiliAPIClient {
         return try await Self.decode(data, priority: URLSessionTask.highPriority)
     }
 
+    func postMultipart<T: Decodable & Sendable>(
+        base: URL,
+        path: String,
+        fields: [String: String],
+        fileField: String,
+        fileName: String,
+        mimeType: String,
+        fileData: Data,
+        referer: String = "https://www.bilibili.com"
+    ) async throws -> T {
+        let boundary = "CiliCiliBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        var body = Data()
+        for (name, value) in fields.sorted(by: { $0.key < $1.key }) {
+            body.append(contentsOf: "--\(boundary)\r\n".utf8)
+            body.append(contentsOf: "Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8)
+            body.append(contentsOf: "\(value)\r\n".utf8)
+        }
+        body.append(contentsOf: "--\(boundary)\r\n".utf8)
+        body.append(contentsOf: "Content-Disposition: form-data; name=\"\(fileField)\"; filename=\"\(fileName)\"\r\n".utf8)
+        body.append(contentsOf: "Content-Type: \(mimeType)\r\n\r\n".utf8)
+        body.append(fileData)
+        body.append(contentsOf: "\r\n--\(boundary)--\r\n".utf8)
+
+        var request = try await makeRequest(
+            base: base,
+            path: path,
+            query: [:],
+            referer: referer,
+            cookieHeader: await interactionRequestContext().cookieHeader
+        )
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
+        request.httpBody = body
+        let (data, _) = try await data(
+            for: request,
+            priority: URLSessionTask.highPriority,
+            retryPolicy: .api
+        )
+        guard !data.isEmpty else { throw BiliAPIError.emptyData }
+        return try await Self.decode(data, priority: URLSessionTask.highPriority)
+    }
+
     func postSignedAPIForm<T: Decodable & Sendable>(
         path: String,
         fields: [String: String],
@@ -284,9 +328,7 @@ extension BiliAPIClient {
         for request: URLRequest,
         priority: Float
     ) async throws -> Data {
-        guard ResourceLoadingExperiment.isFeatureEnabled(.readRequestCoalescing),
-            let key = Self.readRequestCoalescingKey(for: request, priority: priority)
-        else {
+        guard let key = Self.readRequestCoalescingKey(for: request, priority: priority) else {
             return try await data(for: request, priority: priority).0
         }
 

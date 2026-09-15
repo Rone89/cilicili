@@ -8,10 +8,10 @@ extension VideoDetailViewModel {
         page: Int?
     ) async {
         guard !isPlaybackInvalidatedForNavigation,
-              let cid,
-              let variant,
-              variant.isPlayable,
-              !variant.isProgressiveFastStart
+            let cid,
+            let variant,
+            variant.isPlayable,
+            !variant.isProgressiveFastStart
         else { return }
 
         let bvid = detail.bvid
@@ -28,11 +28,25 @@ extension VideoDetailViewModel {
             cdnPreference: cdnPreference,
             timeout: 0
         )
+        if let trace = await VideoPreloadCenter.shared.takeRelatedStartupPackageWarmupTrace(for: bvid) {
+            PlayerMetricsLog.record(
+                .manifestStage,
+                metricsID: bvid,
+                title: detail.title,
+                message: RelatedPlaybackStartupPackageWarmupPolicy.diagnosticMessage(
+                    event: "consumed",
+                    targetBVID: bvid,
+                    result: trace.disposition.rawValue,
+                    packageState: result.rawValue,
+                    leadMilliseconds: trace.leadMilliseconds()
+                )
+            )
+        }
         guard !Task.isCancelled,
-              !isPlaybackInvalidatedForNavigation,
-              detail.bvid == bvid,
-              selectedCID == cid,
-              selectedPlayVariant?.id == variantID
+            !isPlaybackInvalidatedForNavigation,
+            detail.bvid == bvid,
+            selectedCID == cid,
+            selectedPlayVariant?.id == variantID
         else { return }
         PlayerMetricsLog.record(
             .manifestStage,
@@ -44,10 +58,10 @@ extension VideoDetailViewModel {
 
     func scheduleSelectedStartupPackageWarmupAfterFirstFrame(_ variant: PlayVariant?, cid: Int?, page: Int?) {
         guard !isPlaybackInvalidatedForNavigation,
-              let cid,
-              let variant,
-              variant.isPlayable,
-              !variant.isProgressiveFastStart
+            let cid,
+            let variant,
+            variant.isPlayable,
+            !variant.isProgressiveFastStart
         else { return }
         let bvid = detail.bvid
         let variantID = variant.id
@@ -56,11 +70,11 @@ extension VideoDetailViewModel {
                 guard let self else { return }
                 let didPresentPlayback = await self.waitForFirstFrameOrFailure()
                 guard didPresentPlayback,
-                      !Task.isCancelled,
-                      !self.isPlaybackInvalidatedForNavigation,
-                      self.detail.bvid == bvid,
-                      self.selectedCID == cid,
-                      self.selectedPlayVariant?.id == variantID
+                    !Task.isCancelled,
+                    !self.isPlaybackInvalidatedForNavigation,
+                    self.detail.bvid == bvid,
+                    self.selectedCID == cid,
+                    self.selectedPlayVariant?.id == variantID
                 else { return }
                 await VideoPreloadCenter.shared.warmVariant(
                     variant,

@@ -21,7 +21,6 @@ struct UploaderSeasonSeriesDetailView: View {
         }
         .navigationTitle(viewModel.item.title)
         .navigationBarTitleDisplayMode(.inline)
-        .hidesRootTabBarOnPush()
         .refreshable {
             await viewModel.refresh(api: dependencies.api)
         }

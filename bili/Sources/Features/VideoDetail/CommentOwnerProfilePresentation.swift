@@ -7,6 +7,7 @@ private struct CommentOwnerProfileRoute: Identifiable, Hashable {
 }
 
 struct CommentOwnerProfileNavigationContainer<Content: View>: View {
+    @Environment(\.commentSheetToolbarConfiguration) private var toolbarConfiguration
     @State private var profileRoute: CommentOwnerProfileRoute?
     @ViewBuilder let content: () -> Content
 
@@ -18,16 +19,33 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
         NavigationStack {
             content()
                 .environment(\.openVideoOwnerRouteAction, openProfile)
+                .environment(\.openVideoAction, nil)
+                .environment(\.openLiveRoomAction, nil)
+                .environment(\.openPgcSeasonRouteAction, nil)
                 .navigationDestination(item: $profileRoute) { route in
                     UploaderView(
-                        owner: route.owner,
-                        hidesRootTabBar: false,
-                        allowsPullToRefresh: false
+                        owner: route.owner
                     )
-                        .videoDestinations(hidesRootTabBar: false)
+                        .environment(\.openVideoAction, nil)
+                        .environment(\.openLiveRoomAction, nil)
+                        .environment(\.openPgcSeasonRouteAction, nil)
+                        .videoDestinations()
                 }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("返回", systemImage: "chevron.left", action: toolbarConfiguration.onDismiss)
+                            .tint(.primary)
+                            .accessibilityLabel("返回")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("刷新", systemImage: "arrow.clockwise", action: toolbarConfiguration.onRefresh)
+                            .tint(.primary)
+                            .accessibilityLabel("刷新评论")
+                    }
+                }
+            }
+            .toolbar(.visible, for: .navigationBar)
         }
-    }
 
     private func openProfile(_ owner: VideoOwner) {
         guard owner.mid > 0 else { return }

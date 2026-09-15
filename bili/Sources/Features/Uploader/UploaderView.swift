@@ -3,7 +3,6 @@ import SwiftUI
 struct UploaderView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     let owner: VideoOwner
-    let hidesRootTabBar: Bool
     let allowsPullToRefresh: Bool
     let showsToolbarRefreshButton: Bool
 
@@ -11,23 +10,16 @@ struct UploaderView: View {
 
     init(
         owner: VideoOwner,
-        hidesRootTabBar: Bool = true,
         allowsPullToRefresh: Bool = true,
         showsToolbarRefreshButton: Bool = false
     ) {
         self.owner = owner
-        self.hidesRootTabBar = hidesRootTabBar
         self.allowsPullToRefresh = allowsPullToRefresh
         self.showsToolbarRefreshButton = showsToolbarRefreshButton
     }
 
-    @ViewBuilder
     var body: some View {
-        if hidesRootTabBar {
-            content.hidesRootTabBarOnPush()
-        } else {
-            content
-        }
+        content
     }
 
     private var content: some View {

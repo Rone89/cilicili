@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicFeedCardTextSection: View {
     let display: DynamicFeedCardDisplayModel
     let preferredWidth: CGFloat?
+    let onOpenDetail: (() -> Void)?
     @Binding var isTextExpanded: Bool
 
     var body: some View {
@@ -12,9 +13,10 @@ struct DynamicFeedCardTextSection: View {
                 expandedInput: display.expandedTextInput,
                 copyText: text,
                 preferredWidth: preferredWidth,
-                showsExpandButton: display.showsExpandButton,
+                onOpenDetail: onOpenDetail,
                 isExpanded: $isTextExpanded
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -32,8 +34,4 @@ struct DynamicFeedCardActionSection: View {
             onShowComments: onShowComments
         )
     }
-}
-
-func dynamicInsetWidth(_ contentWidth: CGFloat?, inset: CGFloat) -> CGFloat? {
-    contentWidth.map { max(floor($0 - inset * 2), 0) }
 }

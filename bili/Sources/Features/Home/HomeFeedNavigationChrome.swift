@@ -1,41 +1,75 @@
 import SwiftUI
 
 struct HomeFeedNavigationChrome: ViewModifier {
+    @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
     @ObservedObject var viewModel: HomeViewModel
     let modeActions: HomeFeedModeActions
+    let scrollActions: HomeFeedScrollActions
+    let nativeRefreshActionStore: HomeNativeRefreshActionStore
     let accountMessageViewModel: AccountMessageCenterViewModel?
-    let isModeSwitcherExperimentEnabled: Bool
+    let isDetailPresented: Bool
     let onOpenAccountMessages: () -> Void
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if isModeSwitcherExperimentEnabled {
-            content
-                .rootNavigationTitle(
-                    "首页",
-                    accessoryUsesFullWidth: true
-                ) {
-                    GlassEffectContainer(spacing: 8) {
-                        ZStack {
-                            HomeNavigationModeControl(
-                                viewModel: viewModel,
-                                onSelectMode: switchMode
-                            )
-                            .frame(width: 112)
-
-                            accountMessageButton
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    }
+        content
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    navigationTitle
+                        .font(.headline)
+                        .opacity(navigationChromeOpacity)
+                        .accessibilityHidden(hidesNavigationChrome)
+                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .nativeTopNavigationChrome()
-        } else {
-            content
-                .rootNavigationTitle("首页") {
+                ToolbarItem(placement: .topBarLeading) {
                     HomeFeedModeMenu(currentMode: viewModel.mode, onSelectMode: switchMode)
+                        .opacity(navigationChromeOpacity)
+                        .disabled(hidesNavigationChrome)
+                        .accessibilityHidden(hidesNavigationChrome)
+                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .nativeTopNavigationChrome()
+                .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+                ToolbarItem(placement: .topBarTrailing) {
+                    accountMessageButton
+                        .opacity(navigationChromeOpacity)
+                        .disabled(hidesNavigationChrome)
+                        .accessibilityHidden(hidesNavigationChrome)
+                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                }
+                .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+            }
+            .nativeTopNavigationChrome()
+    }
+
+    @ViewBuilder
+    private var navigationTitle: some View {
+        ZStack {
+            if viewModel.mode == .recommend {
+                modeTitle(.recommend, transitionEdge: .leading)
+            } else {
+                modeTitle(.popular, transitionEdge: .trailing)
+            }
         }
+        .frame(width: 64, height: 24)
+        .clipped()
+        .animation(.smooth(duration: 0.28), value: viewModel.mode)
+    }
+
+    private func modeTitle(_ mode: HomeFeedMode, transitionEdge: Edge) -> some View {
+        Text(mode.title)
+            .frame(width: 64, height: 24)
+            .transition(.move(edge: transitionEdge))
+    }
+
+    private var hidesNavigationChrome: Bool {
+        isDetailPresented || rootNavigationTitleHidden.wrappedValue
+    }
+
+    private var navigationChromeOpacity: Double {
+        hidesNavigationChrome ? 0 : 1
+    }
+
+    private var toolbarItemBackgroundVisibility: Visibility {
+        hidesNavigationChrome ? .hidden : .automatic
     }
 
     @ViewBuilder
@@ -54,7 +88,12 @@ struct HomeFeedNavigationChrome: ViewModifier {
     }
 
     private func switchMode(_ mode: HomeFeedMode) {
-        modeActions.switchMode(mode, viewModel: viewModel)
+        modeActions.switchMode(
+            mode,
+            viewModel: viewModel,
+            scrollActions: scrollActions,
+            nativeRefreshActionStore: nativeRefreshActionStore
+        )
     }
 }
 
@@ -62,94 +101,23 @@ extension View {
     func homeFeedNavigationChrome(
         viewModel: HomeViewModel,
         modeActions: HomeFeedModeActions,
+        scrollActions: HomeFeedScrollActions,
+        nativeRefreshActionStore: HomeNativeRefreshActionStore,
         accountMessageViewModel: AccountMessageCenterViewModel?,
-        isModeSwitcherExperimentEnabled: Bool,
+        isDetailPresented: Bool = false,
         onOpenAccountMessages: @escaping () -> Void
     ) -> some View {
         modifier(
             HomeFeedNavigationChrome(
                 viewModel: viewModel,
                 modeActions: modeActions,
+                scrollActions: scrollActions,
+                nativeRefreshActionStore: nativeRefreshActionStore,
                 accountMessageViewModel: accountMessageViewModel,
-                isModeSwitcherExperimentEnabled: isModeSwitcherExperimentEnabled,
+                isDetailPresented: isDetailPresented,
                 onOpenAccountMessages: onOpenAccountMessages
             )
         )
-    }
-}
-
-private enum HomeNavigationModeOption: String, CaseIterable, Identifiable, Hashable {
-    case recommend
-    case popular
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .recommend:
-            return "推荐"
-        case .popular:
-            return "热门"
-        }
-    }
-}
-
-private struct HomeNavigationModeControl: View {
-    @ObservedObject var viewModel: HomeViewModel
-    let onSelectMode: (HomeFeedMode) -> Void
-    @State private var selectedOption: HomeNavigationModeOption
-
-    init(
-        viewModel: HomeViewModel,
-        onSelectMode: @escaping (HomeFeedMode) -> Void
-    ) {
-        self.viewModel = viewModel
-        self.onSelectMode = onSelectMode
-        _selectedOption = State(initialValue: Self.option(for: viewModel.mode))
-    }
-
-    var body: some View {
-        Picker(
-            "首页模式",
-            selection: Binding(
-                get: { selectedOption },
-                set: select
-            )
-        ) {
-            ForEach(HomeNavigationModeOption.allCases) { option in
-                Text(option.title).tag(option)
-            }
-        }
-        .pickerStyle(.segmented)
-        .controlSize(.small)
-        .labelsHidden()
-        .accessibilityLabel("首页模式")
-        .onAppear {
-            selectedOption = Self.option(for: viewModel.mode)
-        }
-        .onChange(of: viewModel.mode) { _, mode in
-            selectedOption = Self.option(for: mode)
-        }
-    }
-
-    private func select(_ option: HomeNavigationModeOption) {
-        switch option {
-        case .recommend:
-            selectedOption = option
-            onSelectMode(.recommend)
-        case .popular:
-            selectedOption = option
-            onSelectMode(.popular)
-        }
-    }
-
-    private static func option(for mode: HomeFeedMode) -> HomeNavigationModeOption {
-        switch mode {
-        case .recommend:
-            return .recommend
-        case .popular:
-            return .popular
-        }
     }
 }
 
@@ -176,17 +144,7 @@ private struct HomeAccountMessageButtonContent: View {
                 .symbolRenderingMode(.monochrome)
                 .font(.system(size: VideoDetailActionStrip.Metrics.iconSize, weight: .semibold))
                 .foregroundStyle(hasUnread ? appTintColor : Color.primary)
-                .frame(
-                    width: VideoDetailActionStrip.Metrics.actionLabelSide,
-                    height: VideoDetailActionStrip.Metrics.actionLabelSide
-                )
-                .contentShape(Circle())
         }
-        .buttonBorderShape(.circle)
-        .controlSize(.mini)
-        .biliGlassButtonStyle()
-        .frame(width: 34, height: 34)
-        .contentShape(Circle())
         .accessibilityLabel("账号消息")
         .accessibilityValue(hasUnread ? "有未读消息" : "全部已读")
     }

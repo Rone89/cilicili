@@ -12,6 +12,7 @@ struct DynamicCommentText: View {
     let leadingNameColor: Color
     let lineSpacing: CGFloat
     let typographyRole: AppTypography.Role?
+    let onNonLinkTap: (() -> Void)?
 
     @Environment(\.lineLimit) private var lineLimit
 
@@ -23,7 +24,8 @@ struct DynamicCommentText: View {
         leadingName: String? = nil,
         leadingNameColor: Color = .pink,
         lineSpacing: CGFloat = 2,
-        typographyRole: AppTypography.Role? = nil
+        typographyRole: AppTypography.Role? = nil,
+        onNonLinkTap: (() -> Void)? = nil
     ) {
         self.content = content
         self.font = font
@@ -33,6 +35,7 @@ struct DynamicCommentText: View {
         self.leadingNameColor = leadingNameColor
         self.lineSpacing = lineSpacing
         self.typographyRole = typographyRole
+        self.onNonLinkTap = onNonLinkTap
     }
 
     var body: some View {
@@ -40,10 +43,11 @@ struct DynamicCommentText: View {
             if let nativeText {
                 Text(nativeText)
                     .lineLimit(lineLimit)
-                    .lineSpacing(lineSpacing)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onNonLinkTap?() }
             } else {
                 BiliEmoteText(
                     content: content,
@@ -52,9 +56,9 @@ struct DynamicCommentText: View {
                     emoteSize: emoteSize,
                     leadingName: leadingName,
                     leadingNameColor: leadingNameColor,
-                    typographyRole: typographyRole
+                    typographyRole: typographyRole,
+                    onNonLinkTap: onNonLinkTap
                 )
-                .lineSpacing(lineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -102,11 +106,7 @@ struct DynamicCommentText: View {
         guard let typographyRole else {
             return font
         }
-        return Font(
-            typographyRole.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
-            )
-        )
+        return Font(typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory))
     }
 }
 

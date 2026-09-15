@@ -24,31 +24,21 @@ final class RootHomeViewModelHolder: ObservableObject {
     }
 }
 
-enum BottomTabMode {
-    case root
-    case video
-}
-
 extension View {
-    func videoDestinations(hidesRootTabBar: Bool = true) -> some View {
+    func videoDestinations() -> some View {
         navigationDestination(for: VideoItem.self) { video in
             VideoDetailView(
-                seedVideo: video,
-                hidesRootTabBar: hidesRootTabBar
+                seedVideo: video
             )
         }
         .navigationDestination(for: VideoCommentRoute.self) { route in
             VideoDetailView(
                 seedVideo: route.video,
-                hidesRootTabBar: hidesRootTabBar,
                 initialCommentAnchor: route.anchor
             )
         }
         .navigationDestination(for: PgcSeasonRoute.self) { route in
-            PgcSeasonPlaybackRouteView(
-                route: route,
-                hidesRootTabBar: hidesRootTabBar
-            )
+            PgcSeasonPlaybackRouteView(route: route)
         }
         .navigationDestination(for: VideoOwner.self) { owner in
             UploaderView(owner: owner)
@@ -59,68 +49,9 @@ extension View {
     }
 }
 
-struct NavigationChromeInstaller: UIViewControllerRepresentable {
-    let isStandardChromeEnabled: Bool
-
-    func makeUIViewController(context _: Context) -> Controller {
-        Controller()
-    }
-
-    func updateUIViewController(_ uiViewController: Controller, context _: Context) {
-        uiViewController.isStandardChromeEnabled = isStandardChromeEnabled
-        uiViewController.apply()
-    }
-
-    final class Controller: UIViewController {
-        var isStandardChromeEnabled = false
-
-        override func loadView() {
-            view = ClearPassthroughView()
-        }
-
-        override func didMove(toParent parent: UIViewController?) {
-            super.didMove(toParent: parent)
-            applySoon()
-        }
-
-        override func viewWillAppear(_ animated: Bool) {
-            super.viewWillAppear(animated)
-            apply()
-        }
-
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            apply()
-        }
-
-        func apply() {
-            guard isStandardChromeEnabled else { return }
-            guard let navigationController = enclosingNavigationController() else { return }
-            AppNavigationChrome.applyStandard(to: navigationController.navigationBar)
-        }
-
-        private func applySoon() {
-            DispatchQueue.main.async { [weak self] in
-                self?.apply()
-            }
-        }
-
-        private func enclosingNavigationController() -> UINavigationController? {
-            var responder: UIResponder? = self
-            while let current = responder {
-                if let viewController = current as? UIViewController,
-                   let navigationController = viewController.navigationController {
-                    return navigationController
-                }
-                responder = current.next
-            }
-            return nil
-        }
-    }
-}
-
 struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
     let tintColorHex: String
+    let glassStyle: VideoDetailSegmentedPickerGlassStyle
 
     func makeUIViewController(context _: Context) -> Controller {
         Controller()
@@ -129,14 +60,17 @@ struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: Controller, context _: Context) {
         controller.tintColorHex = tintColorHex
         controller.selectedColor = AppThemeTintColor.uiColor(for: tintColorHex)
+        controller.glassStyle = glassStyle
         controller.applySoon()
     }
 
     final class Controller: UIViewController {
         var selectedColor = AppThemeTintColor.uiColor(for: AppThemeTintColor.defaultHex)
         var tintColorHex = AppThemeTintColor.defaultHex
+        var glassStyle: VideoDetailSegmentedPickerGlassStyle = .clear
         private weak var appliedTabBar: UITabBar?
         private var appliedTintColorHex: String?
+        private var appliedGlassStyle: VideoDetailSegmentedPickerGlassStyle?
         private var appliedInterfaceStyle: UIUserInterfaceStyle?
 
         override func viewDidAppear(_ animated: Bool) {
@@ -161,18 +95,20 @@ struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
             guard force
                 || appliedTabBar !== tabBar
                 || appliedTintColorHex != tintColorHex
+                || appliedGlassStyle != glassStyle
                 || appliedInterfaceStyle != interfaceStyle else {
                 return
             }
 
             let appearance = UITabBarAppearance()
             appearance.configureWithTransparentBackground()
-            appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-            appearance.backgroundColor = UIColor { traitCollection in
-                traitCollection.userInterfaceStyle == .dark
-                    ? UIColor.black.withAlphaComponent(0.18)
-                    : UIColor.systemBackground.withAlphaComponent(0.16)
+            switch glassStyle {
+            case .clear:
+                appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+            case .regular:
+                appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
             }
+            appearance.backgroundColor = .clear
             appearance.shadowColor = UIColor.label.withAlphaComponent(0.04)
 
             let normalColor = UIColor.secondaryLabel.withAlphaComponent(0.82)
@@ -193,6 +129,7 @@ struct RootTabBarAppearanceInstaller: UIViewControllerRepresentable {
 
             appliedTabBar = tabBar
             appliedTintColorHex = tintColorHex
+            appliedGlassStyle = glassStyle
             appliedInterfaceStyle = interfaceStyle
         }
 

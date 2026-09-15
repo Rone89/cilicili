@@ -6,6 +6,7 @@ struct DynamicOriginalPreview: View {
     let item: DynamicOriginalItem
     let parentID: String
     let contentWidth: CGFloat?
+    let onOpenDetail: (() -> Void)?
     private let video: VideoItem?
     private let live: DynamicLive?
     private let liveRoom: LiveRoom?
@@ -22,11 +23,13 @@ struct DynamicOriginalPreview: View {
     init(
         item: DynamicOriginalItem,
         parentID: String,
-        contentWidth: CGFloat? = nil
+        contentWidth: CGFloat? = nil,
+        onOpenDetail: (() -> Void)? = nil
     ) {
         self.item = item
         self.parentID = parentID
         self.contentWidth = contentWidth
+        self.onOpenDetail = onOpenDetail
         self.video = item.archive?.asVideoItem(author: item.author)
         self.live = item.live
         self.liveRoom = item.live?.asLiveRoom(author: item.author)
@@ -47,8 +50,7 @@ struct DynamicOriginalPreview: View {
 
     var body: some View {
         originalContent
-        .padding(.leading, 14)
-        .padding(.trailing, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground).opacity(0.78))
@@ -64,6 +66,11 @@ struct DynamicOriginalPreview: View {
                 .stroke(Color(.separator).opacity(0.10), lineWidth: 0.5)
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .dynamicDetailTapAction(
+            onOpenDetail,
+            identifier: "dynamic.feed.originalDetailTapArea.\(parentID).\(item.idStr)",
+            accessibilityLabel: "查看原动态详情"
+        )
     }
 
     @ViewBuilder
@@ -85,7 +92,8 @@ struct DynamicOriginalPreview: View {
                 if topLevelDisplayText?.isEmpty == false {
                     DynamicRichTextView(
                         input: textInput,
-                        preferredWidth: originalTextWidth
+                        preferredWidth: originalContentWidth,
+                        onNonLinkTap: onOpenDetail
                     )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .dynamicCopyableText(topLevelDisplayText)
@@ -118,14 +126,14 @@ struct DynamicOriginalPreview: View {
                 if !imageItems.isEmpty {
                     DynamicImageThumbnailStrip(
                         images: imageItems,
-                        availableWidth: contentWidth
+                        availableWidth: originalContentWidth
                     )
                 }
             }
         }
     }
 
-    private var originalTextWidth: CGFloat? {
+    private var originalContentWidth: CGFloat? {
         contentWidth.map { max(floor($0 - 24), 0) }
     }
 }

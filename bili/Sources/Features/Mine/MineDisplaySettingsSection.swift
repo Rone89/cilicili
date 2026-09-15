@@ -14,9 +14,10 @@ struct MineDisplaySettingsSection: View {
                     Text(mode.title).tag(mode)
                 }
             } label: {
-                Label("外观", systemImage: "sun.max")
+                MineSettingsLabel("外观", systemImage: "sun.max")
             }
             .tint(libraryStore.appTintColor)
+            .pickerStyle(.menu)
 
             Picker(selection: Binding(
                 get: { libraryStore.appIconPreference },
@@ -26,9 +27,9 @@ struct MineDisplaySettingsSection: View {
                     Text(preference.title).tag(preference)
                 }
             } label: {
-                Label("应用图标", systemImage: "app")
+                MineSettingsLabel("应用图标", systemImage: "app")
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
 
             MineThemeColorControl(libraryStore: libraryStore)
 
@@ -37,7 +38,7 @@ struct MineDisplaySettingsSection: View {
                 set: { libraryStore.setFollowsSystemFontSize($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("字体跟随系统字号", systemImage: "textformat.size")
+                    MineSettingsLabel("字体跟随系统字号", systemImage: "textformat.size")
 
                     Text("关闭后可以固定 App 字号，不再随系统文字大小变化。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
@@ -49,7 +50,7 @@ struct MineDisplaySettingsSection: View {
             if !libraryStore.followsSystemFontSize {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Label("手动字体大小", systemImage: "textformat")
+                        MineSettingsLabel("手动字体大小", systemImage: "textformat")
                         Spacer(minLength: 8)
                         Text(libraryStore.manualFontSize.title)
                             .font(.caption.monospacedDigit())
@@ -81,7 +82,7 @@ struct MineDisplaySettingsSection: View {
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("图片质量", systemImage: "photo")
+                    MineSettingsLabel("图片质量", systemImage: "photo")
 
                     Text(libraryStore.remoteImageQualityPreference.detail)
                         .appTypography(.settingsSubtitle, fallback: .caption)
@@ -89,7 +90,7 @@ struct MineDisplaySettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
 
             MineImageCacheControl()
 
@@ -97,7 +98,7 @@ struct MineDisplaySettingsSection: View {
                 get: { libraryStore.showsVideoCoverDurationBadges },
                 set: { libraryStore.setShowsVideoCoverDurationBadges($0) }
             )) {
-                Label("显示视频封面时长", systemImage: "timer")
+                MineSettingsLabel("显示视频封面时长", systemImage: "timer")
             }
 
             Toggle(isOn: Binding(
@@ -105,7 +106,7 @@ struct MineDisplaySettingsSection: View {
                 set: { libraryStore.setRemoteImageDiagnosticsEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("记录图片加载诊断", systemImage: "chart.bar.xaxis")
+                    MineSettingsLabel("记录图片加载诊断", systemImage: "chart.bar.xaxis")
 
                     Text("开着会记缓存、滚动和 CDN 的汇总数字，方便复制给我分析；不记图片、链接、账号或 Cookie。关掉后不再记数，图片照常加载。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
@@ -117,12 +118,12 @@ struct MineDisplaySettingsSection: View {
             NavigationLink {
                 RemoteImageDiagnosticsView(libraryStore: libraryStore)
             } label: {
-                Label("图片加载诊断", systemImage: "chart.bar.xaxis")
+                MineSettingsLabel("图片加载诊断", systemImage: "chart.bar.xaxis")
             }
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("封面角标暗色底", systemImage: "circle.lefthalf.filled")
+                    MineSettingsLabel("封面角标暗色底", systemImage: "circle.lefthalf.filled")
                     Spacer(minLength: 8)
                     Text(videoCoverBadgeContrastBackingOpacityTitle)
                         .font(.caption.monospacedDigit())
@@ -148,48 +149,51 @@ struct MineDisplaySettingsSection: View {
                 get: { libraryStore.minimizesTabBarOnScroll },
                 set: { libraryStore.setMinimizesTabBarOnScroll($0) }
             )) {
-                Label("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
-            }
-
-            Toggle(isOn: Binding(
-                get: { libraryStore.homeNavigationModeSwitcherExperimentEnabled },
-                set: { libraryStore.setHomeNavigationModeSwitcherExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("首页推荐/热门胶囊实验", systemImage: "rectangle.split.2x1")
-
-                    Text("开着后推荐和热门系统切换控件会显示在首页顶部正中间，消息按钮保持在右侧；下滑时会一起收起，来回切换不会自动刷新推荐。关掉后恢复原来的更多按钮。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                MineSettingsLabel("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
             }
 
             Picker(selection: Binding(
-                get: { libraryStore.scrollEdgeEffectPreference },
-                set: { libraryStore.setScrollEdgeEffectPreference($0) }
+                get: { libraryStore.videoDetailSegmentedPickerGlassStyle },
+                set: { libraryStore.setVideoDetailSegmentedPickerGlassStyle($0) }
             )) {
-                ForEach(AppScrollEdgeEffectPreference.allCases) { preference in
-                    Text(preference.title).tag(preference)
+                ForEach(VideoDetailSegmentedPickerGlassStyle.allCases) { glassStyle in
+                    Text(glassStyle.title).tag(glassStyle)
                 }
             } label: {
-                Label("滚动边缘效果", systemImage: "rectangle.dashed")
+                MineSettingsLabel("底部栏液态玻璃效果", systemImage: "circle.lefthalf.filled")
             }
-            .pickerStyle(.navigationLink)
+            .pickerStyle(.menu)
 
             Toggle(isOn: Binding(
                 get: { libraryStore.force120HzScrollingEnabled },
                 set: { libraryStore.setForce120HzScrollingEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("强制滑动 120Hz 刷新率", systemImage: "speedometer")
+                    MineSettingsLabel("强制滑动 120Hz 刷新率", systemImage: "speedometer")
 
                     Text("开启后滑动会强制使用 120Hz，可能会引起耗电增加，请谨慎开启。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+
+        Section("实验功能") {
+            Toggle(isOn: Binding(
+                get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
+                set: { libraryStore.setDynamicCommentHitAreaVisualizationExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态评论点击区域可视化", systemImage: "hand.tap")
+
+                    Text("用半透明色块标示动态详情和评论弹窗中的回复与独立操作区域。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
         }
     }
 
@@ -218,7 +222,7 @@ private struct MineThemeColorControl: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("主色调", systemImage: "paintpalette")
+            MineSettingsLabel("主色调", systemImage: "paintpalette")
 
             Picker("选择方式", selection: $selectionMode) {
                 ForEach(ThemeColorSelectionMode.allCases) { mode in
@@ -274,7 +278,7 @@ private struct MineThemeColorControl: View {
                     ),
                     supportsOpacity: false
                 ) {
-                    Label("直接从色板选", systemImage: "eyedropper")
+                        MineSettingsLabel("直接从色板选", systemImage: "eyedropper")
                 }
 
                 HStack(spacing: 10) {
@@ -289,7 +293,7 @@ private struct MineThemeColorControl: View {
                     Button {
                         commitDraftHex()
                     } label: {
-                        Label("应用", systemImage: "checkmark.circle")
+                        MineSettingsLabel("应用", systemImage: "checkmark.circle")
                     }
                     .disabled(normalizedDraftHex == nil)
                     .buttonStyle(.borderless)
@@ -364,7 +368,7 @@ private struct MineImageCacheControl: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Label("图片缓存", systemImage: "photo.on.rectangle")
+                MineSettingsLabel("图片缓存", systemImage: "photo.on.rectangle")
 
                 Spacer(minLength: 8)
 
@@ -388,7 +392,7 @@ private struct MineImageCacheControl: View {
                     await clearImageCache()
                 }
             } label: {
-                Label("清理图片缓存", systemImage: "trash")
+                MineSettingsLabel("清理图片缓存", systemImage: "trash")
             }
             .buttonStyle(.borderless)
             .disabled(isWorking)

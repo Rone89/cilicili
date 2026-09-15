@@ -8,6 +8,7 @@ import UIKit
 @MainActor
 protocol PlayerSurfaceHosting: AnyObject {
     var surfaceView: UIView { get }
+    var isRotationChromePrewarmed: Bool { get }
 
     func attach(to parent: UIViewController)
     func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel)
@@ -19,6 +20,10 @@ protocol PlayerSurfaceHosting: AnyObject {
     func prewarmRotationChrome()
     func cancelRotationChromePrewarm()
     func refreshLayoutImmediately()
+}
+
+extension PlayerSurfaceHosting {
+    var isRotationChromePrewarmed: Bool { false }
 }
 
 /// UIKit 容器提交给视频层的展示状态。后续直播宿主接入时复用同一份几何描述。

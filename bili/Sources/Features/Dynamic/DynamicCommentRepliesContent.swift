@@ -3,7 +3,9 @@ import SwiftUI
 struct DynamicCommentRepliesContent: View {
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         let snapshot = replyStore.repliesSnapshot(for: rootComment)
@@ -12,7 +14,9 @@ struct DynamicCommentRepliesContent: View {
             snapshot: snapshot,
             rootComment: rootComment,
             replyStore: replyStore,
-            showDialog: showDialog
+            highlightedReplyID: highlightedReplyID,
+            showDialog: showDialog,
+            replyToComment: replyToComment
         )
     }
 }
@@ -21,7 +25,9 @@ private struct DynamicCommentRepliesStateContent: View {
     let snapshot: DynamicCommentRepliesSnapshot
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         if snapshot.replies.isEmpty && snapshot.state.isLoading {
@@ -39,33 +45,49 @@ private struct DynamicCommentRepliesStateContent: View {
         } else {
             DynamicCommentRepliesLoadedList(
                 snapshot: snapshot,
+                replyItems: snapshot.replyItems,
                 rootComment: rootComment,
                 replyStore: replyStore,
-                showDialog: showDialog
+                highlightedReplyID: highlightedReplyID,
+                showDialog: showDialog,
+                replyToComment: replyToComment
             )
         }
+    }
+
+    private func loadMoreReplies() {
+        Task { await replyStore.loadMoreReplies(for: rootComment) }
     }
 }
 
 private struct DynamicCommentRepliesLoadedList: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let snapshot: DynamicCommentRepliesSnapshot
+    let replyItems: [DynamicCommentReplyItem]
     let rootComment: Comment
     @ObservedObject var replyStore: DynamicCommentReplyStore
+    let highlightedReplyID: Int?
     let showDialog: (Comment) -> Void
+    let replyToComment: (Comment) -> Void
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(snapshot.replyItems) { replyItem in
+            ForEach(replyItems) { replyItem in
                 DynamicCommentReplyDetailRow(
                     item: replyItem,
                     showDialog: replyItem.canShowDialog ? {
                         showDialog(replyItem.reply)
-                    } : nil
+                    } : nil,
+                    reply: { replyToComment(replyItem.reply) }
                 )
                 .padding(.horizontal, 16)
+                .background(
+                    replyItem.id == highlightedReplyID ? appTintColor.opacity(0.10) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .id(replyItem.id)
 
                 Divider()
-                    .padding(.leading, 66)
             }
 
             DynamicCommentRepliesFooter(
@@ -97,7 +119,7 @@ private struct DynamicCommentRepliesFooter: View {
             Button(action: loadMore) {
                 Label("查看更多回复", systemImage: "chevron.down")
                     .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
             }
             .buttonStyle(.plain)

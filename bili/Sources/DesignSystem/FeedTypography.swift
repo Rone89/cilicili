@@ -73,11 +73,11 @@ enum AppTypography {
             switch self {
             case .pageTitle:
                 return 34
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .messageBody:
+            case .navigationTitle, .sectionTitle, .videoDetailTitle, .dynamicBody, .messageBody:
                 return 17
             case .liveRoomTitle, .messageName, .settingsRow:
                 return 16
-            case .feedVideoTitle, .dynamicBody, .author, .commentBody:
+            case .feedVideoTitle, .author, .commentBody:
                 return 15
             case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
                 return 14
@@ -90,78 +90,112 @@ enum AppTypography {
             }
         }
 
-        var weight: Weight {
-            switch self {
-            case .pageTitle:
-                return .bold
-            case .navigationTitle, .sectionTitle, .badge:
-                return .semibold
-            case .author, .compactAuthor, .commentAuthor, .action, .liveRoomTitle, .liveChatName, .messageName:
-                return .medium
-            case .videoDetailTitle, .feedVideoTitle, .compactVideoTitle, .dynamicBody,
-                 .commentBody, .metadata, .tertiaryMetadata, .liveChatBody,
-                 .messagePreview, .messageBody, .settingsRow, .settingsSubtitle, .diagnostic:
-                return .regular
-            }
-        }
-
-        var relativeTextStyle: Font.TextStyle {
-            switch self {
-            case .pageTitle:
-                return .largeTitle
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .feedVideoTitle, .liveRoomTitle:
-                return .headline
-            case .compactVideoTitle, .author, .commentAuthor, .liveChatBody, .messagePreview:
-                return .subheadline
-            case .dynamicBody, .commentBody, .messageName, .messageBody, .settingsRow:
-                return .body
-            case .compactAuthor, .liveChatName, .metadata, .action, .diagnostic:
-                return .caption
-            case .tertiaryMetadata, .badge:
-                return .caption2
-            case .settingsSubtitle:
-                return .footnote
-            }
-        }
-
-        var uiTextStyle: UIFont.TextStyle {
-            switch self {
-            case .pageTitle:
-                return .largeTitle
-            case .navigationTitle, .sectionTitle, .videoDetailTitle, .feedVideoTitle, .liveRoomTitle:
-                return .headline
-            case .compactVideoTitle, .author, .commentAuthor, .liveChatBody, .messagePreview:
-                return .subheadline
-            case .dynamicBody, .commentBody, .messageName, .messageBody, .settingsRow:
-                return .body
-            case .compactAuthor, .liveChatName, .metadata, .action, .diagnostic:
-                return .caption1
-            case .tertiaryMetadata, .badge:
-                return .caption2
-            case .settingsSubtitle:
-                return .footnote
-            }
-        }
-
         var design: Design {
             self == .diagnostic ? .monospaced : .default
         }
 
-        func font(pointSize: CGFloat) -> Font {
-            .system(size: pointSize, weight: weight.swiftUIWeight, design: design.swiftUIDesign)
+        var nativeTextStyle: Font.TextStyle {
+            switch self {
+            case .pageTitle:
+                return .largeTitle
+            case .videoDetailTitle:
+                return .title3
+            case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
+                return .headline
+            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+                return .subheadline
+            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
+                return .body
+            case .author:
+                return .subheadline
+            case .compactAuthor, .liveChatName:
+                return .footnote
+            case .metadata, .settingsSubtitle:
+                return .footnote
+            case .action:
+                return .subheadline
+            case .tertiaryMetadata:
+                return .caption
+            case .badge:
+                return .caption2
+            case .diagnostic:
+                return .caption
+            }
+        }
+
+        var nativeUITextStyle: UIFont.TextStyle {
+            switch self {
+            case .pageTitle:
+                return .largeTitle
+            case .videoDetailTitle:
+                return .title3
+            case .navigationTitle, .sectionTitle, .feedVideoTitle, .liveRoomTitle, .messageName:
+                return .headline
+            case .compactVideoTitle, .commentAuthor, .liveChatBody, .messagePreview:
+                return .subheadline
+            case .dynamicBody, .commentBody, .messageBody, .settingsRow:
+                return .body
+            case .author:
+                return .subheadline
+            case .compactAuthor, .liveChatName:
+                return .footnote
+            case .metadata, .settingsSubtitle:
+                return .footnote
+            case .action:
+                return .subheadline
+            case .tertiaryMetadata:
+                return .caption1
+            case .badge:
+                return .caption2
+            case .diagnostic:
+                return .caption1
+            }
+        }
+
+        var nativeWeight: Weight? {
+            switch self {
+            case .pageTitle:
+                return .bold
+            case .videoDetailTitle, .compactVideoTitle, .commentAuthor, .badge:
+                return .semibold
+            case .liveChatName:
+                return .medium
+            default:
+                return nil
+            }
+        }
+
+        func nativeFont() -> Font {
+            if let nativeWeight {
+                return .system(
+                    nativeTextStyle,
+                    design: design.swiftUIDesign,
+                    weight: nativeWeight.swiftUIWeight
+                )
+            }
+            return .system(nativeTextStyle, design: design.swiftUIDesign)
         }
 
         func uiFont(contentSizeCategory: UIContentSizeCategory) -> UIFont {
-            let baseFont = AppTypography.baseUIFont(for: self)
             let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
-            return UIFontMetrics(forTextStyle: uiTextStyle).scaledFont(
-                for: baseFont,
+            let preferredFont = UIFont.preferredFont(
+                forTextStyle: nativeUITextStyle,
                 compatibleWith: traits
             )
+            let weightedFont = nativeWeight.map {
+                UIFont.systemFont(ofSize: preferredFont.pointSize, weight: $0.uiKitWeight)
+            } ?? preferredFont
+            guard let design = design.uiKitDesign,
+                  let descriptor = weightedFont.fontDescriptor.withDesign(design)
+            else {
+                return weightedFont
+            }
+            return UIFont(descriptor: descriptor, size: preferredFont.pointSize)
         }
+
     }
 
-    enum Weight {
+    enum Weight: Equatable {
         case regular
         case medium
         case semibold
@@ -205,32 +239,13 @@ enum AppTypography {
         }
     }
 
-    private static func baseUIFont(for role: Role) -> UIFont {
-        let font = UIFont.systemFont(ofSize: role.pointSize, weight: role.weight.uiKitWeight)
-        guard let design = role.design.uiKitDesign,
-              let descriptor = font.fontDescriptor.withDesign(design)
-        else {
-            return font
-        }
-        return UIFont(descriptor: descriptor, size: role.pointSize)
-    }
 }
 
 private struct AppTypographyModifier: ViewModifier {
-    @ScaledMetric private var scaledPointSize: CGFloat
-
     let role: AppTypography.Role
 
-    init(role: AppTypography.Role) {
-        self.role = role
-        _scaledPointSize = ScaledMetric(
-            wrappedValue: role.pointSize,
-            relativeTo: role.relativeTextStyle
-        )
-    }
-
     func body(content: Content) -> some View {
-        content.font(role.font(pointSize: scaledPointSize))
+        content.font(role.nativeFont())
     }
 }
 
@@ -238,6 +253,11 @@ extension View {
     func appTypography(_ role: AppTypography.Role, fallback _: Font) -> some View {
         modifier(AppTypographyModifier(role: role))
     }
+
+    func appTypography(_ role: AppTypography.Role) -> some View {
+        modifier(AppTypographyModifier(role: role))
+    }
+
 }
 
 extension DynamicTypeSize {

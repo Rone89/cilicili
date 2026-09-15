@@ -17,6 +17,7 @@ extension BiliAPIClient {
         let playbackCredentialVersion: Int
         let isAccountPurposeEnabled: Bool
         let effectivePreferredVideoQuality: Int?
+        let playbackPlayableFallbackDeadlineExperimentEnabled: Bool
     }
 
     @MainActor
@@ -50,7 +51,9 @@ extension BiliAPIClient {
                 preferred: preferredVideoQuality,
                 cellular: cellularPreferredVideoQuality,
                 networkClass: PlaybackEnvironment.current.networkClass
-            )
+            ),
+            playbackPlayableFallbackDeadlineExperimentEnabled: libraryStore
+                .playbackPlayableFallbackDeadlineExperimentEnabled
         )
     }
 }

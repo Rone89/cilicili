@@ -3091,6 +3091,7 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case rpid, member, content, like, ctime, replies
+        case action
         case rootID = "root"
         case parentID = "parent"
         case dialogID = "dialog"
@@ -3110,7 +3111,8 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
         ctime = container.decodeLossyIntIfPresent(forKey: .ctime)
         replies = try container.decodeIfPresent([Comment].self, forKey: .replies)
         replyCount = container.decodeLossyIntIfPresent(forKey: .replyCount)
-        likeState = container.decodeLossyIntIfPresent(forKey: .likeState)
+        likeState = container.decodeLossyIntIfPresent(forKey: .action)
+            ?? container.decodeLossyIntIfPresent(forKey: .likeState)
     }
 }
 
@@ -4980,6 +4982,10 @@ nonisolated struct DynamicFeedData: Decodable, Hashable {
         hasMore = container.decodeLossyBoolIfPresent(forKey: .hasMore)
         offset = container.decodeLossyStringIfPresent(forKey: .offset)
     }
+}
+
+nonisolated struct DynamicDetailData: Decodable, Hashable {
+    let item: DynamicFeedItem?
 }
 
 nonisolated struct DynamicPortalData: Decodable, Hashable {

@@ -64,8 +64,9 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(account.displayName).tag(account.mid)
                     }
                 } label: {
-                    Label("主账号", systemImage: "person.crop.circle.fill")
+                    MineSettingsLabel("主账号", systemImage: "person.crop.circle.fill")
                 }
+                .pickerStyle(.menu)
 
                 Picker(
                     selection: Binding(
@@ -81,8 +82,9 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(account.displayName).tag(account.mid)
                     }
                 } label: {
-                    Label("视频取流账号", systemImage: "play.rectangle.on.rectangle")
+                    MineSettingsLabel("视频取流账号", systemImage: "play.rectangle.on.rectangle")
                 }
+                .pickerStyle(.menu)
 
                 Picker(
                     selection: Binding(
@@ -98,8 +100,9 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(account.displayName).tag(account.mid)
                     }
                 } label: {
-                    Label("动态页取流账号", systemImage: "sparkles.rectangle.stack")
+                    MineSettingsLabel("动态页取流账号", systemImage: "sparkles.rectangle.stack")
                 }
+                .pickerStyle(.menu)
 
                 Picker(
                     selection: Binding(
@@ -115,8 +118,9 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(account.displayName).tag(account.mid)
                     }
                 } label: {
-                    Label("点赞、投币与收藏", systemImage: "hand.thumbsup.fill")
+                    MineSettingsLabel("点赞、投币与收藏", systemImage: "hand.thumbsup.fill")
                 }
+                .pickerStyle(.menu)
 
                 Picker(
                     selection: Binding(
@@ -128,8 +132,9 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(policy.title).tag(policy)
                     }
                 } label: {
-                    Label("观看记录", systemImage: "clock.arrow.circlepath")
+                    MineSettingsLabel("观看记录", systemImage: "clock.arrow.circlepath")
                 }
+                .pickerStyle(.menu)
             }
         } header: {
             Text("账号用途")
@@ -155,7 +160,7 @@ struct MultiAccountExperimentSettingsView: View {
             Button {
                 isShowingWebLogin = true
             } label: {
-                Label("添加账号（网页登录）", systemImage: "person.crop.circle.badge.plus")
+                MineSettingsLabel("添加账号（网页登录）", systemImage: "person.crop.circle.badge.plus")
             }
             .disabled(isAddingAccount)
 

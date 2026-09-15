@@ -4,6 +4,7 @@ struct InitialVideoDetailContentPage: View {
     let seedVideo: VideoItem
     let layoutWidth: CGFloat
     let tab: VideoDetailContentTab
+    let mountsSecondaryContent: Bool
 
     var body: some View {
         PlaybackDetailContentPage(
@@ -15,7 +16,8 @@ struct InitialVideoDetailContentPage: View {
             InitialVideoDetailContentPageBody(
                 seedVideo: seedVideo,
                 layoutWidth: layoutWidth,
-                tab: tab
+                tab: tab,
+                mountsSecondaryContent: mountsSecondaryContent
             )
         }
     }

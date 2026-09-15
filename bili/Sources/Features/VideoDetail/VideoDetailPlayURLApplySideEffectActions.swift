@@ -66,13 +66,13 @@ extension VideoDetailViewModel {
         resumeTime: TimeInterval?
     ) -> Task<Bool, Never>? {
         guard stablePlayerViewModel == nil,
-              !isPlaybackInvalidatedForNavigation,
-              let cid,
-              let selectedVariant,
-              selectedVariant.isPlayable,
-              !selectedVariant.isProgressiveFastStart,
-              let resumeTime,
-              resumeTime > 0.25
+            !isPlaybackInvalidatedForNavigation,
+            let cid,
+            let selectedVariant,
+            selectedVariant.isPlayable,
+            !selectedVariant.isProgressiveFastStart,
+            let resumeTime,
+            resumeTime > 0.25
         else { return nil }
 
         let bvid = detail.bvid
@@ -95,9 +95,9 @@ extension VideoDetailViewModel {
         resumeTime: TimeInterval?
     ) async {
         guard let task,
-              let selectedVariant,
-              let cid,
-              let resumeTime
+            let selectedVariant,
+            let cid,
+            let resumeTime
         else { return }
 
         let bvid = detail.bvid
@@ -106,10 +106,10 @@ extension VideoDetailViewModel {
         let didWarm = await task.value
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: startedAt)
         guard !Task.isCancelled,
-              !isPlaybackInvalidatedForNavigation,
-              detail.bvid == bvid,
-              selectedCID == cid,
-              selectedPlayVariant?.id == selectedVariantID
+            !isPlaybackInvalidatedForNavigation,
+            detail.bvid == bvid,
+            selectedCID == cid,
+            selectedPlayVariant?.id == selectedVariantID
         else { return }
 
         PlayerMetricsLog.record(
@@ -121,7 +121,7 @@ extension VideoDetailViewModel {
                 "target=\(String(format: "%.2fs", resumeTime))",
                 "\(Int(elapsedMilliseconds.rounded()))ms",
                 "budget=\(Int((Self.historyResumeWarmupPlayerCreationWait * 1000).rounded()))ms",
-                "q\(selectedVariant.quality)"
+                "q\(selectedVariant.quality)",
             ].joined(separator: " ")
         )
         guard ResourceLoadingExperiment.isFeatureEnabled(.resumePacketWarmup) else { return }
@@ -130,7 +130,7 @@ extension VideoDetailViewModel {
             durationMilliseconds: Int(elapsedMilliseconds.rounded()),
             details: [
                 "budget": "\(Int((Self.historyResumeWarmupPlayerCreationWait * 1_000).rounded()))ms",
-                "quality": "q\(selectedVariant.quality)"
+                "quality": "q\(selectedVariant.quality)",
             ]
         )
     }
@@ -142,10 +142,10 @@ extension VideoDetailViewModel {
         page: Int?
     ) async {
         guard stablePlayerViewModel == nil,
-              !isPlaybackInvalidatedForNavigation,
-              let cid,
-              let selectedVariant,
-              selectedVariant.isPlayable
+            !isPlaybackInvalidatedForNavigation,
+            let cid,
+            let selectedVariant,
+            selectedVariant.isPlayable
         else { return }
 
         let bvid = detail.bvid
@@ -164,19 +164,19 @@ extension VideoDetailViewModel {
         )
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: startedAt)
         guard !isPlaybackInvalidatedForNavigation,
-              detail.bvid == bvid,
-              selectedCID == cid,
-              selectedPlayVariant?.id == selectedVariantID
+            detail.bvid == bvid,
+            selectedCID == cid,
+            selectedPlayVariant?.id == selectedVariantID
         else { return }
         PlayerMetricsLog.record(
             .manifestStage,
             metricsID: bvid,
             message: [
                 "startupWarmWait=\(result.rawValue)",
-                "mode=\(AVPlayerStartupPathOptimizationExperiment.stored() ? "packetGate" : "legacyWait")",
+                "mode=immediateCreate",
                 "\(Int(elapsedMilliseconds.rounded()))ms",
                 "budget=\(Int((timeout * 1000).rounded()))ms",
-                "codec=\(selectedVariant.codec?.replacingOccurrences(of: " ", with: "_") ?? "-")"
+                "codec=\(selectedVariant.codec?.replacingOccurrences(of: " ", with: "_") ?? "-")",
             ].joined(separator: " ")
         )
     }

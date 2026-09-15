@@ -8,5 +8,6 @@ struct HomeFeedScreenActionStore {
     let lifecycle = HomeFeedLifecycleActions()
     let mode = HomeFeedModeActions()
     let scroll = HomeFeedScrollActions()
+    let nativeRefresh = HomeNativeRefreshActionStore()
     let card = HomeFeedCardActions()
 }

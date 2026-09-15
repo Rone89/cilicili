@@ -1,35 +1,303 @@
 import XCTest
+
 @testable import bili
 
 final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
     @MainActor
-    func testStartupPathIsAlwaysEnabledAndCapsPlayerCreationWaitAtFortyMilliseconds() {
-        let defaults = makeUserDefaults()
-        defaults.set(false, forKey: AVPlayerStartupPathOptimizationExperiment.storageKey)
-        XCTAssertTrue(AVPlayerStartupPathOptimizationExperiment.stored(in: defaults))
+    func testStartupPathAndImmediatePlayerCreationAreAlwaysEnabled() {
+        XCTAssertTrue(AVPlayerStartupPathOptimizationExperiment.stored())
         XCTAssertEqual(
             AVPlayerStartupPathOptimizationExperiment.playerCreationWarmupWait(
-                normalBudget: 0.16,
-                userDefaults: defaults
+                normalBudget: 0.16
             ),
-            0.04,
+            0,
             accuracy: 0.001
         )
         XCTAssertEqual(
             AVPlayerStartupPathOptimizationExperiment.playerCreationWarmupWait(
-                normalBudget: 0.02,
-                userDefaults: defaults
+                normalBudget: 0.02
             ),
-            0.02,
+            0,
             accuracy: 0.001
         )
     }
 
     @MainActor
-    func testPiliPlusStylePlayURLSelectionIsAlwaysEnabled() {
-        let defaults = makeUserDefaults()
-        defaults.set(false, forKey: PiliPlusStylePlayURLSelectionExperiment.storageKey)
-        XCTAssertTrue(PiliPlusStylePlayURLSelectionExperiment.stored(in: defaults))
+    func testImmediatePlayerCreationModeUsesStableSampleGroupKeys() {
+        XCTAssertEqual(
+            AVPlayerStartupPathOptimizationExperiment.playerCreationMode(
+                "immediateCreateExperiment"
+            ).key,
+            "immediateCreate"
+        )
+        XCTAssertEqual(
+            AVPlayerStartupPathOptimizationExperiment.playerCreationMode("packetGate").key,
+            "packetGate"
+        )
+        XCTAssertEqual(
+            AVPlayerStartupPathOptimizationExperiment.playerCreationMode(nil).key,
+            "unknown"
+        )
+    }
+
+    func testRelatedEarlyPlayURLPrefetchOnlyAllowsUnconstrainedWiFi() {
+        let wifi = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let cellular = PlaybackEnvironment(
+            networkClass: .cellular,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let lowPower = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: true,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let thermal = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: true,
+            thermalPressure: .elevated
+        )
+
+        XCTAssertTrue(RelatedPlaybackEarlyPlayURLPrefetchPolicy.isEligible(environment: wifi))
+        XCTAssertFalse(RelatedPlaybackEarlyPlayURLPrefetchPolicy.isEligible(environment: cellular))
+        XCTAssertFalse(RelatedPlaybackEarlyPlayURLPrefetchPolicy.isEligible(environment: lowPower))
+        XCTAssertFalse(RelatedPlaybackEarlyPlayURLPrefetchPolicy.isEligible(environment: thermal))
+    }
+
+    func testRelatedEarlyPlayURLPrefetchDiagnosticIncludesDispositionAndLead() {
+        let trace = RelatedPlaybackEarlyPlayURLPrefetchTrace(
+            disposition: .joined,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        XCTAssertEqual(
+            trace.leadMilliseconds(at: Date(timeIntervalSince1970: 100.375)),
+            375
+        )
+        XCTAssertEqual(
+            RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticMessage(
+                event: "consumed",
+                targetBVID: "BVRelatedPrefetch",
+                disposition: trace.disposition,
+                leadMilliseconds: 375
+            ),
+            "relatedEarlyPlayURLPrefetch event=consumed target=BVRelatedPrefetch result=joined mediaWarm=off lead=375ms"
+        )
+    }
+
+    func testRelatedStartupPackageWarmupOnlyAllowsUnconstrainedWiFi() {
+        let wifi = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let cellular = PlaybackEnvironment(
+            networkClass: .cellular,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let lowPower = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: true,
+            isThermallyConstrained: false,
+            thermalPressure: .nominal
+        )
+        let thermal = PlaybackEnvironment(
+            networkClass: .wifi,
+            isLowPowerModeEnabled: false,
+            isThermallyConstrained: true,
+            thermalPressure: .elevated
+        )
+
+        XCTAssertTrue(RelatedPlaybackStartupPackageWarmupPolicy.isEligible(environment: wifi))
+        XCTAssertFalse(RelatedPlaybackStartupPackageWarmupPolicy.isEligible(environment: cellular))
+        XCTAssertFalse(RelatedPlaybackStartupPackageWarmupPolicy.isEligible(environment: lowPower))
+        XCTAssertFalse(RelatedPlaybackStartupPackageWarmupPolicy.isEligible(environment: thermal))
+    }
+
+    func testRelatedStartupPackageWarmupDiagnosticIncludesPackageStateAndLead() {
+        let trace = RelatedPlaybackStartupPackageWarmupTrace(
+            disposition: .started,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        XCTAssertEqual(trace.leadMilliseconds(at: Date(timeIntervalSince1970: 100.425)), 425)
+        XCTAssertEqual(
+            RelatedPlaybackStartupPackageWarmupPolicy.diagnosticMessage(
+                event: "consumed",
+                targetBVID: "BVRelatedWarmup",
+                result: trace.disposition.rawValue,
+                packageState: VideoStartupPackageWarmupWaitResult.ready.rawValue,
+                leadMilliseconds: 425
+            ),
+            "relatedStartupPackageWarmup event=consumed target=BVRelatedWarmup result=started package=ready lead=425ms"
+        )
+    }
+
+    func testPlayableFallbackDeadlineOnlyAppliesToEnabledPlayableFallback() {
+        XCTAssertFalse(
+            PlayableFallbackDeadlineExperiment.allowsEarlyReturn(
+                isEnabled: false,
+                hasPlayableFallback: true
+            )
+        )
+        XCTAssertFalse(
+            PlayableFallbackDeadlineExperiment.allowsEarlyReturn(
+                isEnabled: true,
+                hasPlayableFallback: false
+            )
+        )
+        XCTAssertTrue(
+            PlayableFallbackDeadlineExperiment.allowsEarlyReturn(
+                isEnabled: true,
+                hasPlayableFallback: true
+            )
+        )
+    }
+
+    func testPendingTaskDeadlineReturnsFastValueAndTimesOutSlowValue() async throws {
+        let fastValue = try await PendingTaskDeadline.value(within: 100_000_000) {
+            42
+        }
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let slowValue = try await PendingTaskDeadline.value(within: 25_000_000) {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+                    continuation.resume()
+                }
+            }
+            return 42
+        }
+
+        XCTAssertEqual(fastValue, 42)
+        XCTAssertNil(slowValue)
+        XCTAssertLessThan(startedAt.duration(to: clock.now), .milliseconds(150))
+    }
+
+    @MainActor
+    func testZeroDeadlineDoesNotCancelBackgroundWarmupTask() async {
+        let backgroundWarmup = Task {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            return !Task.isCancelled
+        }
+
+        let didFinish = await PendingTaskDeadline.finishes(
+            backgroundWarmup,
+            within: 0
+        )
+
+        XCTAssertFalse(didFinish)
+        let completedWithoutCancellation = await backgroundWarmup.value
+        XCTAssertTrue(completedWithoutCancellation)
+    }
+
+    @MainActor
+    func testStartupPackagePrebuildReturnsImmediatelyWhenWarmupWaitIsZero() async {
+        let preloadCenter = VideoPreloadCenter.shared
+        await preloadCenter.cancelMediaWarmups(clearCache: true)
+        defer {
+            Task {
+                await preloadCenter.cancelMediaWarmups(clearCache: true)
+            }
+        }
+        let variant = PlayVariant(
+            quality: 80,
+            title: "1080P",
+            videoURL: URL(string: "https://example.test/video.m4s"),
+            audioURL: nil,
+            videoStream: nil,
+            audioStream: nil,
+            codec: "avc1.640028",
+            resolution: "1920x1080",
+            frameRate: "30",
+            bandwidth: 1_000_000,
+            isHDR: false,
+            badge: nil
+        )
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+
+        let result = await preloadCenter.prebuildStartupPackageAndWait(
+            variant: variant,
+            targetVariant: nil,
+            bvid: "BVImmediatePlayerCreationTest",
+            cid: 1,
+            page: nil,
+            durationHint: nil,
+            cdnPreference: .automatic,
+            timeout: 0
+        )
+
+        XCTAssertEqual(result, .deferred)
+        XCTAssertLessThan(startedAt.duration(to: clock.now), .milliseconds(250))
+    }
+
+    @MainActor
+    func testStartupSampleGroupsSeparateImmediateCreationFromPacketGate() {
+        let store = PlayerPerformanceStore.shared
+        store.clear()
+        defer { store.clear() }
+
+        store.record(
+            .manifestStage,
+            metricsID: "BVImmediateCreationGroup",
+            message: "startupWarmWait=deferred mode=immediateCreateExperiment 0ms budget=0ms codec=AV1"
+        )
+        store.record(
+            .startupBreakdown,
+            metricsID: "BVImmediateCreationGroup",
+            message: "total=1000ms q=80 cdn=automatic network=wifi source=network codec=AV1"
+        )
+        store.record(
+            .manifestStage,
+            metricsID: "BVPacketGateGroup",
+            message: "startupWarmWait=timeout mode=packetGate 40ms budget=40ms codec=AV1"
+        )
+        store.record(
+            .startupBreakdown,
+            metricsID: "BVPacketGateGroup",
+            message: "total=1000ms q=80 cdn=automatic network=wifi source=network codec=AV1"
+        )
+
+        let groups = store.startupSampleGroups(limit: 8)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(Set(groups.map(\.playerCreationModeKey)), ["immediateCreate", "packetGate"])
+        XCTAssertEqual(
+            Set(groups.map(\.playerCreationModeTitle)),
+            ["播放器：即时创建", "播放器：40ms 预热门槛"]
+        )
+    }
+
+    @MainActor
+    func testStartupSampleGroupsMarkPromotedRelatedPreloadsEnabled() {
+        let store = PlayerPerformanceStore.shared
+        store.clear()
+        defer { store.clear() }
+
+        store.record(
+            .startupBreakdown,
+            metricsID: "BVRelatedPreloadFormal",
+            message: "total=1000ms q=80 cdn=automatic network=wifi source=network codec=AV1"
+        )
+
+        let groups = store.startupSampleGroups(limit: 8)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.relatedEarlyPlayURLPrefetchExperimentEnabled, true)
+        XCTAssertEqual(groups.first?.relatedStartupPackageWarmupExperimentEnabled, true)
+    }
+
+    @MainActor
+    func testPiliPlusStylePlayURLSelectionExperimentIsAlwaysEnabled() {
+        XCTAssertTrue(PiliPlusStylePlayURLSelectionExperiment.stored())
     }
 
     @MainActor
@@ -82,7 +350,10 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
     func testPerformanceCopyReportsStartupExperimentState() {
         var session = PlayerPerformanceSession(id: "BVstartupExperiment")
         session.avPlayerStartupPathOptimizationExperimentEnabled = true
+        session.startupPlayerCreationMode = "immediateCreateExperiment"
         session.piliPlusStylePlayURLSelectionExperimentEnabled = true
+        session.relatedEarlyPlayURLPrefetchExperimentEnabled = true
+        session.relatedStartupPackageWarmupExperimentEnabled = true
         session.startupGapMessage = "open>detail 20ms | detail>url 45ms | url>player 8ms"
         session.playURLMilliseconds = 181
 
@@ -92,7 +363,10 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         )
 
         XCTAssertTrue(copy.contains("startupPathOptimization: on"))
+        XCTAssertTrue(copy.contains("playerCreationMode: immediateCreate"))
         XCTAssertTrue(copy.contains("piliPlusStyleAV1PlayURLSelection: on"))
+        XCTAssertTrue(copy.contains("relatedEarlyPlayURLPrefetch: 相关推荐早取：已启用"))
+        XCTAssertTrue(copy.contains("relatedStartupPackageWarmup: 相关推荐首包：已启用"))
         XCTAssertTrue(copy.contains("startupGaps:\n  open>detail 20ms | detail>url 45ms | url>player 8ms"))
         let fullLog = PlayerPerformanceCopyTextFormatter.performanceLogCopyText(
             sessions: [session],
@@ -160,13 +434,4 @@ final class AVPlayerStartupPathOptimizationExperimentTests: XCTestCase {
         XCTAssertFalse(VideoDetailPlaybackOptions.performanceTest.usesStartupCaches)
     }
 
-    private func makeUserDefaults() -> UserDefaults {
-        let suiteName = "cc.bili.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        addTeardownBlock {
-            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
-        }
-        return defaults
-    }
 }

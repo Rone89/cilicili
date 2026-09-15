@@ -2,12 +2,9 @@ import XCTest
 @testable import bili
 
 final class ResourceLoadingExperimentTests: XCTestCase {
-    func testResourceLoadingIsAlwaysEnabledAndChildrenCanBeDisabledIndividually() {
+    func testRemainingExperimentsCanBeDisabledIndividually() {
         let defaults = makeUserDefaults()
 
-        defaults.set(false, forKey: ResourceLoadingExperiment.storageKey)
-        XCTAssertTrue(ResourceLoadingExperiment.isEnabled(in: defaults))
-        XCTAssertTrue(ResourceLoadingExperiment.isFeatureEnabled(.readRequestCoalescing, in: defaults))
         XCTAssertEqual(
             ResourceLoadingExperiment.resumeWarmupWait(normalBudget: 0.12, userDefaults: defaults),
             0.22,

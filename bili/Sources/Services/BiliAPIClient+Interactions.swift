@@ -162,6 +162,38 @@ extension BiliAPIClient {
         }
     }
 
+    func setDynamicLike(dynamicID: String, liked: Bool) async throws {
+        let normalizedID = dynamicID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedID.isEmpty else { throw BiliAPIError.missingPayload }
+        let context = try await requireInteractionCSRFContext()
+        var request = try await makeRequest(
+            base: baseURL,
+            path: "/x/dynamic/feed/dyn/thumb",
+            query: ["csrf": context.csrf],
+            referer: "https://t.bilibili.com/\(normalizedID)",
+            cookieHeader: context.context.cookieHeader
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "dyn_id_str": normalizedID,
+            "up": liked ? 1 : 2,
+        ])
+        let (data, _) = try await data(
+            for: request,
+            priority: URLSessionTask.highPriority,
+            retryPolicy: .idempotentMutation
+        )
+        guard !data.isEmpty else { throw BiliAPIError.emptyData }
+        let response: BiliResponse<EmptyBiliPayload> = try await Self.decode(
+            data,
+            priority: URLSessionTask.highPriority
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+    }
+
     func addVideoCoin(aid: Int, multiply: Int = 1, selectLike: Bool = false) async throws {
         guard (1...2).contains(multiply) else {
             throw BiliAPIError.api(code: -1, message: "投币数量无效")

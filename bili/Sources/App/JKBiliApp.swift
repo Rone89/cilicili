@@ -12,7 +12,7 @@ struct JKBiliApp: App {
             diskCapacity: 768 * 1024 * 1024
         )
         if UITestFixtureScenario.current != nil {
-            UIView.setAnimationsEnabled(false)
+            UIView.setAnimationsEnabled(UITestFixtureScenario.animationsEnabled)
         }
         RefreshRateManager.shared.restorePersistedPreference()
     }
@@ -46,8 +46,12 @@ private struct LaunchWindowBackgroundInstaller: UIViewRepresentable {
 private struct MainInterfaceHost: View {
     var body: some View {
         if let fixture = UITestFixtureScenario.current {
-            UITestFixtureRootView(scenario: fixture)
-                .transaction { $0.disablesAnimations = true }
+            if UITestFixtureScenario.animationsEnabled {
+                UITestFixtureRootView(scenario: fixture)
+            } else {
+                UITestFixtureRootView(scenario: fixture)
+                    .transaction { $0.disablesAnimations = true }
+            }
         } else {
             ProductionMainInterfaceHost()
         }

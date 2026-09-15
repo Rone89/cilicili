@@ -202,6 +202,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     var onLoadingProgressChange: (@MainActor (Double) -> Void)?
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)?
 
+#if DEBUG
+    var debugPlayerIdentity: ObjectIdentifier? {
+        ObjectIdentifier(player)
+    }
+
+    var debugPlayerItemIdentity: ObjectIdentifier? {
+        player.currentItem.map { ObjectIdentifier($0) }
+    }
+#endif
+
     init() {
         nativeDolbyVideoOverlay.onReadyForDisplay = { [weak self] in
             self?.handleNativeDolbyVideoOverlayReady()
@@ -676,7 +686,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         nativeDolbyVideoOverlay.pause()
         player.currentItem?.cancelPendingSeeks()
         player.cancelPendingPrerolls()
-        deactivateAudioSessionIfPossible()
+        // Keep the session active across foreground player handoffs. Deactivation
+        // can synchronously block the main thread before the navigation starts.
         publishPlaybackState(.paused)
     }
 
@@ -688,7 +699,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         silencePlayerImmediately()
         nativeDolbyVideoOverlay.pause()
         player.currentItem?.cancelPendingSeeks()
-        deactivateAudioSessionIfPossible()
+        // The next detail player reuses the same playback session immediately.
         publishPlaybackState(.paused)
     }
 
@@ -1245,7 +1256,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func handleHLSRemoteFailure(_ reason: HLSBridgeFailureReason, generation: Int) {
         guard isCurrentPlaybackGeneration(generation),
               !isStopped,
-              !reason.allowsSameSourceRecovery
+              reason.shouldFailPlaybackImmediately
         else { return }
         lastPlaybackFailureReason = reason
         itemReadinessTimeoutTask?.cancel()

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import QuartzCore
 
 extension BiliAPIClient {
     nonisolated func logPlayURLStage(
@@ -86,12 +87,23 @@ extension BiliAPIClient {
         isStartup: Bool,
         operation: @escaping () async throws -> PlayURLData
     ) async throws -> PlayURLData {
+        let coordinatorStart = CACurrentMediaTime()
         let pendingKey = PendingPlayURLRequestKey(cacheKey: cacheKey, scope: scope)
         if let existingRequest = await state.pendingPlayURLRequest(for: pendingKey) {
             PlayerMetricsLog.logger.info(
                 "playURLRequestJoined source=\(source, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) qn=\(requestedQuality, privacy: .public)"
             )
-            return try await Self.awaitSharedTask(existingRequest.task)
+            return try await awaitPendingPlayURLRequest(
+                existingRequest.task,
+                role: "joined",
+                source: source,
+                bvid: bvid,
+                cid: cid,
+                requestID: existingRequest.id,
+                requestedQuality: requestedQuality,
+                isStartup: isStartup,
+                coordinatorStart: coordinatorStart
+            )
         }
 
         let requestID = UUID()
@@ -150,11 +162,106 @@ extension BiliAPIClient {
             PlayerMetricsLog.logger.info(
                 "playURLRequestJoinedAfterRace source=\(source, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) qn=\(requestedQuality, privacy: .public)"
             )
-            return try await Self.awaitSharedTask(existingRequest.task)
+            return try await awaitPendingPlayURLRequest(
+                existingRequest.task,
+                role: "raceJoined",
+                source: source,
+                bvid: bvid,
+                cid: cid,
+                requestID: existingRequest.id,
+                requestedQuality: requestedQuality,
+                isStartup: isStartup,
+                coordinatorStart: coordinatorStart
+            )
         }
 
         await startGate.open()
-        return try await Self.awaitSharedTask(task)
+        return try await awaitPendingPlayURLRequest(
+            task,
+            role: "owner",
+            source: source,
+            bvid: bvid,
+            cid: cid,
+            requestID: requestID,
+            requestedQuality: requestedQuality,
+            isStartup: isStartup,
+            coordinatorStart: coordinatorStart
+        )
+    }
+
+    private func awaitPendingPlayURLRequest(
+        _ task: Task<PlayURLData, Error>,
+        role: String,
+        source: String,
+        bvid: String,
+        cid: Int,
+        requestID: UUID,
+        requestedQuality: Int,
+        isStartup: Bool,
+        coordinatorStart: CFTimeInterval
+    ) async throws -> PlayURLData {
+        let lookupMilliseconds = Int(PlayerMetricsLog.elapsedMilliseconds(since: coordinatorStart).rounded())
+        let waitStart = CACurrentMediaTime()
+        do {
+            let data = try await Self.awaitSharedTask(task)
+            recordPendingPlayURLRequestDiagnostic(
+                role: role,
+                source: source,
+                bvid: bvid,
+                cid: cid,
+                requestID: requestID,
+                requestedQuality: requestedQuality,
+                isStartup: isStartup,
+                result: "success",
+                lookupMilliseconds: lookupMilliseconds,
+                waitStart: waitStart,
+                coordinatorStart: coordinatorStart
+            )
+            return data
+        } catch {
+            let result =
+                error is CancellationError
+                    || (error as? URLError)?.code == .cancelled
+                ? "cancelled"
+                : "failure"
+            recordPendingPlayURLRequestDiagnostic(
+                role: role,
+                source: source,
+                bvid: bvid,
+                cid: cid,
+                requestID: requestID,
+                requestedQuality: requestedQuality,
+                isStartup: isStartup,
+                result: result,
+                lookupMilliseconds: lookupMilliseconds,
+                waitStart: waitStart,
+                coordinatorStart: coordinatorStart
+            )
+            throw error
+        }
+    }
+
+    private func recordPendingPlayURLRequestDiagnostic(
+        role: String,
+        source: String,
+        bvid: String,
+        cid: Int,
+        requestID: UUID,
+        requestedQuality: Int,
+        isStartup: Bool,
+        result: String,
+        lookupMilliseconds: Int,
+        waitStart: CFTimeInterval,
+        coordinatorStart: CFTimeInterval
+    ) {
+        guard isStartup else { return }
+        let waitMilliseconds = Int(PlayerMetricsLog.elapsedMilliseconds(since: waitStart).rounded())
+        let totalMilliseconds = Int(PlayerMetricsLog.elapsedMilliseconds(since: coordinatorStart).rounded())
+        let message =
+            "playURLPending source=\(source) role=\(role) request=\(requestID.uuidString.prefix(8)) cid=\(cid) result=\(result) q=\(requestedQuality) lookup=\(lookupMilliseconds)ms wait=\(waitMilliseconds)ms total=\(totalMilliseconds)ms"
+        Task(priority: .utility) { [self] in
+            await recordStartupSchedulerMessage(message, bvid: bvid)
+        }
     }
 
     func hasCachedStartupPlayURL(

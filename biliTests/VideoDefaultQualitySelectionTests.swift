@@ -1,7 +1,7 @@
 import XCTest
 @testable import bili
 
-final class VideoDefaultQualitySelectionTests: XCTestCase {
+final class VideoDefaultQualitySelectionTests: H264PlaybackTestCase {
     func testSelectsConfiguredQualityWhenAvailable() {
         let selected = VideoDetailViewModel.preferredPlayableVariant(
             in: [variant(quality: 112), variant(quality: 80)],

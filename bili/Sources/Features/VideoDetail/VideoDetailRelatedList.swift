@@ -31,8 +31,8 @@ struct VideoDetailRelatedList: View {
                         .equatable()
                     }
                     .buttonStyle(.plain)
-                    .onAppear {
-                        actions.handleRowAppear(item)
+                    .task(id: item.id) {
+                        await actions.handleRowAppear(item)
                     }
 
                     if item.id != lastRelatedVideoID {

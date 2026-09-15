@@ -61,9 +61,7 @@ struct HomeFeedScreenContentActionsBuilder {
     }
 
     private func refreshFromLastSeenMarker() async {
-        actionStore.scroll.requestScrollToTop()
-        await viewModel.refreshFromUserPull()
-        actionStore.scroll.requestScrollToTop()
+        actionStore.scroll.requestProgrammaticRefresh()
     }
 
     private func appendDetailPath(_ video: VideoItem) {

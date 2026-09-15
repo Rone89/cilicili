@@ -1,8 +1,9 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-import XCTest
 import UIKit
+import XCTest
+
 @testable import bili
 
 final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
@@ -62,7 +63,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             (true, false, false, false, false),
             (false, true, true, false, false),
             (true, true, true, true, false),
-            (true, true, true, false, true)
+            (true, true, true, false, true),
         ]
         for state in playbackStates {
             XCTAssertFalse(
@@ -185,11 +186,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.playback.officialListenerPlaylistExperimentEnabled.v1",
             "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1",
         ]
-        retiredKeys.forEach { defaults.set(false, forKey: $0) }
+        for key in retiredKeys {
+            defaults.set(false, forKey: key)
+        }
 
         _ = LibraryStore(userDefaults: defaults)
 
-        retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
     }
 
     @MainActor
@@ -319,27 +324,12 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
 
         libraryStore.setPictureInPictureEnabled(true)
         libraryStore.setDefaultPlaybackRate(1.5)
-        libraryStore.setVideoRotationOptimizationExperimentEnabled(true)
         XCTAssertTrue(libraryStore.setAppTintColorHex("#123456"))
         try? await Task.sleep(nanoseconds: 30_000_000)
 
         XCTAssertTrue(runtimeSettings.pictureInPictureEnabled)
-        XCTAssertTrue(runtimeSettings.videoRotationOptimizationExperimentEnabled)
         XCTAssertEqual(runtimeSettings.defaultPlaybackRate, 1.5)
         XCTAssertEqual(runtimeSettings.snapshot.appTintColorHex, "#123456")
-    }
-
-    @MainActor
-    func testLibraryStoreDefaultsRotationOptimizationOffAndPersistsToggle() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.videoRotationOptimizationExperimentEnabled)
-        store.setVideoRotationOptimizationExperimentEnabled(true)
-
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).videoRotationOptimizationExperimentEnabled
-        )
     }
 
     @MainActor
@@ -354,6 +344,25 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             LibraryStore(userDefaults: defaults).appIconPreference,
             .dark
         )
+    }
+
+    @MainActor
+    func testLibraryStoreDefaultsThemeTintToBilibiliPink() {
+        let store = LibraryStore(userDefaults: makeUserDefaults())
+
+        XCTAssertEqual(store.appTintColorHex, "#FB7299")
+        XCTAssertEqual(LibraryStore.defaultAppTintColorHex, "#FB7299")
+    }
+
+    @MainActor
+    func testLibraryStoreMigratesPreviousDefaultThemeTint() {
+        let defaults = makeUserDefaults()
+        defaults.set("#EE719E", forKey: "cc.bili.appearance.tintColorHex.v1")
+
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertEqual(store.appTintColorHex, "#FB7299")
+        XCTAssertEqual(defaults.string(forKey: "cc.bili.appearance.tintColorHex.v1"), "#FB7299")
     }
 
     @MainActor
@@ -374,28 +383,99 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testAppTypographyScalesSemanticVideoTitleRoles() {
+    func testAppTypographyUsesSemanticVideoTitleRoles() {
         let regular = AppTypography.Role.feedVideoTitle.uiFont(contentSizeCategory: .large)
         let compact = AppTypography.Role.compactVideoTitle.uiFont(contentSizeCategory: .large)
         let accessibility = AppTypography.Role.feedVideoTitle.uiFont(
             contentSizeCategory: .accessibilityExtraLarge
         )
 
-        XCTAssertEqual(regular.pointSize, 15, accuracy: 0.001)
-        XCTAssertEqual(compact.pointSize, 14, accuracy: 0.001)
+        XCTAssertEqual(
+            regular.pointSize,
+            UIFont.preferredFont(forTextStyle: .headline).pointSize,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            compact.pointSize,
+            UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
+            accuracy: 0.001
+        )
         XCTAssertGreaterThan(accessibility.pointSize, regular.pointSize)
     }
 
     @MainActor
-    func testLibraryStorePersistsHomeNavigationModeSwitcherExperiment() {
+    func testNativeTypographyMapsRolesToSystemStylesAndConservativeWeights() {
+        XCTAssertEqual(
+            AppTypography.Role.videoDetailTitle.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.title3.rawValue
+        )
+        XCTAssertEqual(
+            AppTypography.Role.feedVideoTitle.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.headline.rawValue
+        )
+        XCTAssertEqual(
+            AppTypography.Role.dynamicBody.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.body.rawValue
+        )
+        XCTAssertEqual(AppTypography.Role.videoDetailTitle.nativeWeight, .semibold)
+        XCTAssertNil(AppTypography.Role.feedVideoTitle.nativeWeight)
+        XCTAssertNil(AppTypography.Role.author.nativeWeight)
+        XCTAssertEqual(AppTypography.Role.commentAuthor.nativeWeight, .semibold)
+        XCTAssertEqual(
+            AppTypography.Role.diagnostic.nativeUITextStyle.rawValue,
+            UIFont.TextStyle.caption1.rawValue
+        )
+        XCTAssertEqual(AppTypography.Role.diagnostic.design, .monospaced)
+    }
+
+    @MainActor
+    func testNativeTypographyUsesPreferredUIKitFontAndResetsRichTextLineSpacing() {
+        let preferred = UIFont.preferredFont(forTextStyle: .body)
+        let nativeBody = AppTypography.Role.dynamicBody.uiFont(contentSizeCategory: .large)
+        XCTAssertEqual(nativeBody.pointSize, preferred.pointSize, accuracy: 0.001)
+
+        let input = DynamicAttributedTextInput.dynamicFeedBody(
+            segments: [.text("正文 [doge]")],
+            emoteSize: 20,
+            maxLines: nil
+        )
+        let resolved = input.resolvingTypography(
+            contentSizeCategory: .accessibilityExtraExtraLarge
+        )
+        XCTAssertGreaterThan(resolved.emoteSize, input.emoteSize)
+
+        let rendered = resolved.render().attributedString
+        let paragraphStyle = rendered.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(paragraphStyle?.lineSpacing ?? -1, 0, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testRetiredTypographyKeyDoesNotChangeFormalDynamicBodyTypography() {
+        let defaults = makeUserDefaults()
+        defaults.set(true, forKey: "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1")
+
+        _ = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(
+            AppTypography.Role.dynamicBody.uiFont(contentSizeCategory: .large).pointSize,
+            UIFont.preferredFont(forTextStyle: .body).pointSize,
+            accuracy: 0.001
+        )
+    }
+
+    @MainActor
+    func testLibraryStoreDefaultsPlayableFallbackDeadlineExperimentOffAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertTrue(store.homeNavigationModeSwitcherExperimentEnabled)
-        store.setHomeNavigationModeSwitcherExperimentEnabled(false)
+        XCTAssertFalse(store.playbackPlayableFallbackDeadlineExperimentEnabled)
+        store.setPlaybackPlayableFallbackDeadlineExperimentEnabled(true)
 
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).homeNavigationModeSwitcherExperimentEnabled
+        XCTAssertTrue(
+            LibraryStore(userDefaults: defaults).playbackPlayableFallbackDeadlineExperimentEnabled
         )
     }
 
@@ -403,6 +483,21 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     func testLibraryStoreRemovesRetiredExperimentPreferences() {
         let defaults = makeUserDefaults()
         let retiredKeys = [
+            "cc.bili.display.rootNavigationContainerExperimentEnabled.v1",
+            "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
+            "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",
+            "cc.bili.display.singleOwnerTabBarExperimentEnabled.v1",
+            "cc.bili.videoDetail.systemBottomBarExperimentEnabled.v1",
+            "cc.bili.display.softPrimaryPageTopEdgeEffectExperimentEnabled.v1",
+            "cc.bili.display.scrollEdgeEffectPreference.v1",
+            "cc.bili.videoDetail.segmentedPickerExperimentEnabled.v1",
+            "cc.bili.videoDetail.segmentedPickerSelectionFill.v1",
+            "cc.bili.experimental.videoDetailToolbarSegmentedPicker.v1",
+            "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1",
+            "cc.bili.home.navigationToolbarScrollVisibilityExperimentEnabled.v1",
+            "cc.bili.home.navigationChromeDelayedReturnExperimentEnabled.v1",
+            "cc.bili.home.navigationChromeUnifiedScrollVisibilityExperimentEnabled.v1",
+            "cc.bili.home.navigationModeTitleTransitionExperimentEnabled.v1",
             "cc.bili.playback.startupRequestSchedulingExperimentEnabled.v1",
             "cc.bili.live.videoDetailLayoutExperimentEnabled.v1",
             "cc.bili.live.piliPodLayoutExperimentEnabled.v1",
@@ -415,6 +510,11 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.mineSingleStackNavigationExperimentEnabled.v1",
             "cc.bili.display.fixedVideoTitleTypographyExperimentEnabled.v1",
             "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1",
+            "cc.bili.display.nativeTypographyRefinementExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailComposer.v1",
+            "cc.bili.display.richCommentComposerExperimentEnabled.v1",
+            "cc.bili.experimental.dynamicDetailTelegramInputStyle.v1",
             "cc.bili.display.highQualityImageViewerExperimentEnabled.v1",
             "cc.bili.account.messageCenterExperimentEnabled.v1",
             "cc.bili.display.telegramTopEdgeBlurExperimentEnabled.v1",
@@ -428,12 +528,52 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             "cc.bili.display.fastScrollImageLoadSuppressionExperimentEnabled.v1",
             "cc.bili.display.remoteImageCDNFailoverExperimentEnabled.v1",
             "cc.bili.home.nativePullRefreshIndicatorExperimentEnabled.v1",
+            "cc.bili.videoDetail.rotationOptimizationExperimentEnabled.v1",
+            "cc.bili.playback.diagnosticsBackgroundProcessingExperimentEnabled.v1",
+            "cc.bili.playback.avPlayerStartupPathOptimizationExperimentEnabled.v1",
+            "cc.bili.playback.piliPlusStylePlayURLSelectionExperimentEnabled.v1",
+            "cc.bili.resourceLoading.experimentEnabled.v1",
+            "cc.bili.resourceLoading.firstScreenPriorityExperimentEnabled.v1",
+            "cc.bili.resourceLoading.visibleImagePriorityExperimentEnabled.v1",
+            "cc.bili.resourceLoading.readRequestCoalescingExperimentEnabled.v1",
+            "cc.bili.resourceLoading.dynamicDiskSnapshotExperimentEnabled.v1",
+            "cc.bili.playback.immediatePlayerCreationExperimentEnabled.v1",
+            "cc.bili.videoDetail.transitionStabilityExperimentEnabled.v1",
+            "cc.bili.videoDetail.backgroundRenderFreezeExperimentEnabled.v1",
+            "cc.bili.videoDetail.deferredSecondaryContentExperimentEnabled.v1",
+            "cc.bili.videoDetail.fastNavigationExperimentEnabled.v1",
+            "cc.bili.videoDetail.shortNavigationTransitionExperimentEnabled.v1",
+            "cc.bili.dynamic.commentReadingExperimentEnabled.v1",
+            "cc.bili.dynamic.commentSortPreference.v1",
+            "cc.bili.home.navigationBarScrollVisibilityExperimentEnabled.v2",
+            "cc.bili.home.navigationTitleHideDistanceExperimentEnabled.v1",
+            "cc.bili.home.navigationTitleHideDistance.v1",
+            "cc.bili.search.tabExpansionExperimentEnabled.v1",
+            "cc.bili.playback.relatedEarlyPlayURLPrefetchExperimentEnabled.v1",
+            "cc.bili.playback.relatedStartupPackageWarmupExperimentEnabled.v1",
+            "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1",
         ]
-        retiredKeys.forEach { defaults.set(true, forKey: $0) }
+        for key in retiredKeys {
+            defaults.set(true, forKey: key)
+        }
 
         _ = LibraryStore(userDefaults: defaults)
 
-        retiredKeys.forEach { XCTAssertNil(defaults.object(forKey: $0)) }
+        for key in retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+    }
+
+    @MainActor
+    func testLibraryStorePersistsVideoDetailSegmentedPickerGlassStyle() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertEqual(store.videoDetailSegmentedPickerGlassStyle, .clear)
+        store.setVideoDetailSegmentedPickerGlassStyle(.regular)
+
+        let restoredStore = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(restoredStore.videoDetailSegmentedPickerGlassStyle, .regular)
     }
 
     @MainActor
@@ -483,17 +623,17 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStoreAllowsHidingSearchRootTab() {
+    func testLibraryStoreKeepsAllRequiredRootTabsVisible() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertTrue(AppTab.search.canHideFromRootTabBar)
+        XCTAssertFalse(AppTab.search.canHideFromRootTabBar)
         XCTAssertTrue(AppTab.search.participatesInRootTabVisibilitySettings)
 
         store.setRootTab(.search, isVisible: false)
 
-        XCTAssertFalse(store.visibleRootTabs.contains(.search))
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).visibleRootTabs.contains(.search))
+        XCTAssertEqual(store.visibleRootTabs, AppTab.defaultVisibleTabs)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, AppTab.defaultVisibleTabs)
     }
 
     @MainActor
@@ -1182,11 +1322,13 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         surface.setShowsSystemPlaybackControls(true)
         surface.setNativePlaybackControllerEnabled(true)
 
-        let gestureRecognizers = surface.nativePlayerViewController.contentOverlayView?
+        let gestureRecognizers =
+            surface.nativePlayerViewController.contentOverlayView?
             .subviews
             .flatMap { $0.gestureRecognizers ?? [] }
             ?? []
-        let doubleTapGesture = gestureRecognizers
+        let doubleTapGesture =
+            gestureRecognizers
             .compactMap { $0 as? UITapGestureRecognizer }
             .first { $0.numberOfTapsRequired == 2 }
         let panGesture = gestureRecognizers.first { $0 is UIPanGestureRecognizer }

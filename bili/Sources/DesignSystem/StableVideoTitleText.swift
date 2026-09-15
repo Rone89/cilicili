@@ -58,16 +58,15 @@ struct StableVideoTitleText: View {
             font: resolvedFont,
             lineLimit: lineLimit,
             preferredWidth: preferredWidth,
-            adjustsFontForContentSizeCategory: false
+            adjustsFontForContentSizeCategory: true,
+            allowsNaturalHeight: true
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(title)
     }
 
     private var resolvedFont: UIFont {
-        style.typographyRole.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
-        )
+        style.typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
     }
 }
 
@@ -77,6 +76,7 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
     let lineLimit: Int
     let preferredWidth: CGFloat?
     let adjustsFontForContentSizeCategory: Bool
+    let allowsNaturalHeight: Bool
 
     final class Coordinator {
         var lastSignature: Signature?
@@ -118,6 +118,7 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
         let lineLimit: Int
         let preferredWidth: CGFloat?
         let adjustsFontForContentSizeCategory: Bool
+        let allowsNaturalHeight: Bool
     }
 
     func makeCoordinator() -> Coordinator {
@@ -146,7 +147,8 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
             pointSize: font.pointSize,
             lineLimit: lineLimit,
             preferredWidth: preferredWidth,
-            adjustsFontForContentSizeCategory: adjustsFontForContentSizeCategory
+            adjustsFontForContentSizeCategory: adjustsFontForContentSizeCategory,
+            allowsNaturalHeight: allowsNaturalHeight
         )
         guard context.coordinator.lastSignature != signature else { return }
         context.coordinator.lastSignature = signature
@@ -177,7 +179,8 @@ private struct StableVideoTitleLabel: UIViewRepresentable {
             CGSize(width: width, height: .greatestFiniteMagnitude)
         )
         let maxHeight = ceil(font.lineHeight * CGFloat(max(lineLimit, 1)) + 2)
-        return CGSize(width: width, height: min(ceil(measured.height), maxHeight))
+        let height = allowsNaturalHeight ? ceil(measured.height) : min(ceil(measured.height), maxHeight)
+        return CGSize(width: width, height: height)
     }
 
     private var attributedTitle: NSAttributedString {

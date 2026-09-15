@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CommentDialogRow: View {
     @Environment(\.appThemeTintColor) private var appTintColor
-
+    @Environment(\.videoCommentReplyComposerAction) private var replyToComment
     let item: VideoDetailCommentDialogDisplayItem
     let isFocused: Bool
 
@@ -15,53 +15,65 @@ struct CommentDialogRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            CommentAvatar(
-                urlString: display.avatarURLString,
-                owner: display.authorOwner,
-                size: 36
-            )
+        DynamicCommentFullRowReplyTarget(
+            action: replyAction,
+            accessibilityLabel: "回复 \(display.authorName) 的评论"
+        ) {
+            HStack(alignment: .top, spacing: 10) {
+                CommentAvatar(
+                    urlString: display.avatarURLString,
+                    owner: display.authorOwner,
+                    size: 36
+                )
 
-            VStack(alignment: .leading, spacing: 11) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
+                                .foregroundStyle(.primary)
 
-                    if !display.timeText.isEmpty {
-                        Text(display.timeText)
-                            .appTypography(.metadata, fallback: .caption)
-                            .foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+
+                            if !display.timeText.isEmpty {
+                                Text(display.timeText)
+                                    .appTypography(.metadata, fallback: .caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(minHeight: 36, alignment: .topLeading)
+
+                        Spacer(minLength: 8)
+                        CommentLikeButton(comment: reply)
                     }
 
-                    Spacer(minLength: 8)
-
-                    CommentMetricBadge(
-                        text: display.likeText,
-                        systemImage: display.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                        isHighlighted: display.isLiked
+                    BiliEmoteText(
+                        content: reply.content,
+                        font: .subheadline,
+                        textColor: .primary,
+                        emoteSize: 22,
+                        typographyRole: .commentBody,
+                        onNonLinkTap: replyAction
                     )
-                }
-
-                BiliEmoteText(
-                    content: reply.content,
-                    font: .subheadline,
-                    textColor: .primary,
-                    emoteSize: 22,
-                    typographyRole: .commentBody
-                )
+                    .padding(.top, 4)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CommentImageButton(
-                    images: display.pictures,
-                    transitionScope: reply.id.description
-                )
+                    if !display.pictures.isEmpty {
+                        DynamicCommentImageGrid(images: display.pictures)
+                            .padding(.top, 8)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, isFocused ? 10 : 0)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .commentCopyContextMenu(text: reply.content?.message, title: "复制回复")
+    }
+
+    private var replyAction: (() -> Void)? {
+        replyToComment.map { action in { action(reply) } }
     }
 }

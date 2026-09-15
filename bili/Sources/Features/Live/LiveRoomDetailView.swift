@@ -11,7 +11,6 @@ struct LiveRoomDetailView: View {
         PlaybackDetailPageHost(
             hidesSystemChrome: .constant(false),
             background: VideoDetailTheme.background,
-            hidesRootTabBar: false,
             navigationBarVisibility: .hidden,
             hidesBackButton: true,
             statusBarStyle: statusBarStyle,

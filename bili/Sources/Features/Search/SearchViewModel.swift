@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import SwiftUI
 
 enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
@@ -23,19 +23,6 @@ enum SearchSortOrder: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var shortTitle: String {
-        switch self {
-        case .comprehensive:
-            return "综合"
-        case .mostPlayed:
-            return "播放"
-        case .newest:
-            return "最新"
-        case .mostSaved:
-            return "收藏"
-        }
-    }
-
     var apiValue: String? {
         switch self {
         case .comprehensive:
@@ -55,6 +42,7 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable {
     case video
     case bangumi
     case movie
+    case article
     case user
 
     var id: String { rawValue }
@@ -62,13 +50,15 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .comprehensive:
-            return "综合"
+            return "综合内容"
         case .video:
             return "视频"
         case .bangumi:
             return "番剧"
         case .movie:
             return "影视"
+        case .article:
+            return "专栏"
         case .user:
             return "UP主"
         }
@@ -84,6 +74,8 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable {
             return "play.tv"
         case .movie:
             return "film"
+        case .article:
+            return "doc.text"
         case .user:
             return "person.crop.circle"
         }
@@ -115,6 +107,36 @@ enum SearchResultItem: Identifiable, Hashable {
             return "article-\(article.id)"
         }
     }
+
+    var sectionTitle: String {
+        switch self {
+        case .video:
+            return "视频"
+        case .user:
+            return "UP主"
+        case .bangumi:
+            return "番剧"
+        case .movie:
+            return "影视"
+        case .article:
+            return "专栏"
+        }
+    }
+
+    var sectionSystemImage: String {
+        switch self {
+        case .video:
+            return "play.rectangle"
+        case .user:
+            return "person.crop.circle"
+        case .bangumi:
+            return "play.tv"
+        case .movie:
+            return "film"
+        case .article:
+            return "doc.text"
+        }
+    }
 }
 
 @MainActor
@@ -136,6 +158,7 @@ final class SearchViewModel: ObservableObject {
     private var page = 1
     private var lastKeyword = ""
     private var hasMore = false
+    private var searchGeneration = 0
 
     init(api: BiliAPIClient) {
         self.api = api
@@ -143,6 +166,12 @@ final class SearchViewModel: ObservableObject {
 
     var showsDiscovery: Bool {
         results.isEmpty && lastKeyword.isEmpty
+    }
+
+    var showsSuggestions: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && lastKeyword.isEmpty
+            && !suggestions.isEmpty
     }
 
     var showsEmptyResults: Bool {
@@ -164,13 +193,23 @@ final class SearchViewModel: ObservableObject {
             updateHotSearches(try await api.fetchHotSearch())
             hotSearchState = .loaded
         } catch {
-            hotSearchState = .failed(error.localizedDescription)
+            hotSearchState = Task.isCancelled ? .idle : .failed(error.localizedDescription)
         }
+    }
+
+    func restoreDiscoveryState(loadHotSearches: Bool = true) async {
+        guard showsDiscovery else { return }
+
+        guard loadHotSearches else { return }
+        guard hotSearches.isEmpty, hotSearchState != .loaded else { return }
+        await loadHotSearch()
     }
 
     func queryChanged() {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else {
+            debouncer.cancel()
+            invalidateSearchRequests()
             updateSuggestions([])
             updateResults([])
             lastKeyword = ""
@@ -179,6 +218,7 @@ final class SearchViewModel: ObservableObject {
             return
         }
         if term != lastKeyword {
+            invalidateSearchRequests()
             updateResults([])
             lastKeyword = ""
             hasMore = false
@@ -190,6 +230,8 @@ final class SearchViewModel: ObservableObject {
     }
 
     func clearQuery() {
+        debouncer.cancel()
+        invalidateSearchRequests()
         query = ""
         updateSuggestions([])
         updateResults([])
@@ -201,6 +243,8 @@ final class SearchViewModel: ObservableObject {
     func search(_ keyword: String? = nil) async {
         let term = (keyword ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return }
+        debouncer.cancel()
+        let generation = beginSearchRequest()
         query = term
         page = 1
         lastKeyword = term
@@ -209,10 +253,12 @@ final class SearchViewModel: ObservableObject {
         state = .loading
         do {
             let fetched = try await fetchResults(keyword: term, page: page)
+            guard generation == searchGeneration else { return }
             updateResults(fetched)
             hasMore = !fetched.isEmpty
             state = .loaded
         } catch {
+            guard generation == searchGeneration else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -221,6 +267,10 @@ final class SearchViewModel: ObservableObject {
         selectedScope = .comprehensive
         selectedOrder = .comprehensive
         await search(item.keyword)
+    }
+
+    func searchSuggestion(_ item: SearchSuggestItem) async {
+        await search(item.value)
     }
 
     func selectScope(_ scope: SearchScope, animation: Animation? = nil) async {
@@ -245,21 +295,26 @@ final class SearchViewModel: ObservableObject {
 
     func loadMoreIfNeeded(current item: SearchResultItem?) async {
         guard let item,
-              results.last?.id == item.id,
-              !state.isLoading,
-              !lastKeyword.isEmpty,
-              hasMore
+            results.last?.id == item.id,
+            !state.isLoading,
+            !lastKeyword.isEmpty,
+            hasMore
         else { return }
-        page += 1
+        let generation = searchGeneration
+        let keyword = lastKeyword
+        let nextPage = page + 1
+        page = nextPage
         state = .loading
         do {
-            let more = try await fetchResults(keyword: lastKeyword, page: page)
+            let more = try await fetchResults(keyword: keyword, page: nextPage)
+            guard generation == searchGeneration else { return }
             if more.isEmpty {
                 hasMore = false
             }
             appendUnique(more)
             state = .loaded
         } catch {
+            guard generation == searchGeneration else { return }
             page = max(1, page - 1)
             state = .failed(error.localizedDescription)
         }
@@ -271,10 +326,23 @@ final class SearchViewModel: ObservableObject {
             let videos = try await api.searchVideos(keyword: keyword, page: page, order: selectedOrder.apiValue)
                 .map(SearchResultItem.video)
             guard page == 1 else { return videos }
-            let users = ((try? await api.searchUsers(keyword: keyword, page: 1)) ?? [])
+            async let userResults = api.searchUsers(keyword: keyword, page: 1)
+            async let bangumiResults = api.searchBangumi(keyword: keyword, page: 1)
+            async let movieResults = api.searchMovies(keyword: keyword, page: 1)
+            async let articleResults = api.searchArticles(keyword: keyword, page: 1)
+            let users = ((try? await userResults) ?? [])
                 .prefix(3)
                 .map(SearchResultItem.user)
-            return users + videos
+            let bangumi = ((try? await bangumiResults) ?? [])
+                .prefix(2)
+                .map(SearchResultItem.bangumi)
+            let movies = ((try? await movieResults) ?? [])
+                .prefix(2)
+                .map(SearchResultItem.movie)
+            let articles = ((try? await articleResults) ?? [])
+                .prefix(3)
+                .map(SearchResultItem.article)
+            return users + bangumi + movies + articles + videos
         case .video:
             return try await api.searchVideos(keyword: keyword, page: page, order: selectedOrder.apiValue)
                 .map(SearchResultItem.video)
@@ -284,6 +352,9 @@ final class SearchViewModel: ObservableObject {
         case .movie:
             return try await api.searchMovies(keyword: keyword, page: page)
                 .map(SearchResultItem.movie)
+        case .article:
+            return try await api.searchArticles(keyword: keyword, page: page)
+                .map(SearchResultItem.article)
         case .user:
             return try await api.searchUsers(keyword: keyword, page: page)
                 .map(SearchResultItem.user)
@@ -292,8 +363,11 @@ final class SearchViewModel: ObservableObject {
 
     private func loadSuggestions(term: String) async {
         do {
-            updateSuggestions(try await api.fetchSearchSuggest(term: term))
+            let fetched = try await api.fetchSearchSuggest(term: term)
+            guard query.trimmingCharacters(in: .whitespacesAndNewlines) == term else { return }
+            updateSuggestions(fetched)
         } catch {
+            guard query.trimmingCharacters(in: .whitespacesAndNewlines) == term else { return }
             updateSuggestions([])
         }
     }
@@ -322,5 +396,14 @@ final class SearchViewModel: ObservableObject {
         guard results != values else { return }
         results = values
         resultsRevision &+= 1
+    }
+
+    private func beginSearchRequest() -> Int {
+        invalidateSearchRequests()
+        return searchGeneration
+    }
+
+    private func invalidateSearchRequests() {
+        searchGeneration &+= 1
     }
 }

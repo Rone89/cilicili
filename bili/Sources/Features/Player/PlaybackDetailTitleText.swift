@@ -19,7 +19,6 @@ struct PlaybackDetailTitleText: View {
     var body: some View {
         Text(text)
             .appTypography(typographyRole, fallback: .callout.weight(.semibold))
-            .lineSpacing(1.5)
             .foregroundStyle(.primary)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)

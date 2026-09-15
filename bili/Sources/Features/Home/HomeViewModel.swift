@@ -16,6 +16,9 @@ final class HomeViewModel: ObservableObject {
     private let sessionStore: SessionStore
     var requestRevision = 0
     var lastUserRefreshDate: Date?
+    var modeSwitchRefreshPending = false
+    var retainedRecommendVideos = [VideoItem]()
+    var retainedRecommendLastSeenMarkerIndex: Int?
     private var recommendContextCancellable: AnyCancellable?
     let pageCoordinator: HomeFeedPageCoordinator
     let snapshotCoordinator: HomeFeedSnapshotCoordinator
@@ -69,6 +72,9 @@ final class HomeViewModel: ObservableObject {
     func updateFeed(_ newVideos: [VideoItem]) {
         videoCells = cellStore.update(with: newVideos)
         videos = newVideos
+        if !newVideos.isEmpty {
+            StageOneBaselineMetricsStore.shared.markHomeFirstData()
+        }
     }
 
     func updateLastSeenMarkerIndex(_ index: Int?) {

@@ -387,6 +387,26 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     var onNextTrackRequested: (@MainActor () -> Void)?
     var onPreviousTrackRequested: (@MainActor () -> Void)?
     var restoreUserInterfaceForPictureInPictureStop: (() async -> Bool)?
+#if DEBUG
+    var onVideoDetailPlaybackDiagnosticSurfaceEvent: (@MainActor (VideoDetailPlaybackDiagnosticSurfaceEvent) -> Void)?
+
+    var debugPlayerIdentity: ObjectIdentifier {
+        ObjectIdentifier(self)
+    }
+
+    var debugAVPlayerIdentity: ObjectIdentifier? {
+        engine.debugPlayerIdentity
+    }
+
+    var debugAVPlayerItemIdentity: ObjectIdentifier? {
+        engine.debugPlayerItemIdentity
+    }
+
+    var debugHasUsableVideoFrame: Bool? {
+        guard let image = engine.currentVideoFrameImage() else { return nil }
+        return !image.biliLooksLikeBlackFrame
+    }
+#endif
 
     private(set) var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval?
@@ -1056,6 +1076,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             PlayerMetricsLog.diagnostic(
                 "surface attach view=\(ObjectIdentifier(view).hashValue) isNew=\(isNewSurface) preserve=\(preservesReadinessDuringSurfaceHandoff) hasPresented=\(hasPresentedPlayback) ready=\(isPlaybackSurfaceReady) currentReady=\(isCurrentPlaybackSurfaceReadyForDisplay) engineHasMedia=\(engine.hasMedia)"
             )
+#if DEBUG
+            onVideoDetailPlaybackDiagnosticSurfaceEvent?(
+                .attached(
+                    surfaceID: ObjectIdentifier(view),
+                    playerID: debugAVPlayerIdentity,
+                    playerItemID: debugAVPlayerItemIdentity
+                )
+            )
+#endif
             surfaceAttachmentGeneration &+= 1
             if shouldPreservePlaybackReadinessDuringSurfaceHandoff(preservesReadinessDuringSurfaceHandoff) {
                 currentPlaybackSurfaceReadyGeneration = surfaceAttachmentGeneration
@@ -1207,6 +1236,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         PlayerMetricsLog.diagnostic(
             "surface detach view=\(ObjectIdentifier(view).hashValue) preserve=\(preservesReadinessDuringSurfaceHandoff) hasPresented=\(hasPresentedPlayback) ready=\(isPlaybackSurfaceReady) currentReady=\(isCurrentPlaybackSurfaceReadyForDisplay) engineHasMedia=\(engine.hasMedia)"
         )
+#if DEBUG
+        onVideoDetailPlaybackDiagnosticSurfaceEvent?(
+            .detached(
+                surfaceID: ObjectIdentifier(view),
+                playerID: debugAVPlayerIdentity,
+                playerItemID: debugAVPlayerItemIdentity
+            )
+        )
+#endif
         surfaceAttachmentGeneration &+= 1
         surfaceReadinessConfirmationTask?.cancel()
         surfaceReadinessConfirmationTask = nil

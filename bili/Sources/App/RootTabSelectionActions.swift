@@ -5,9 +5,13 @@ extension RootTabView {
         Binding(
             get: { selectedTab },
             set: { tab in
-                selectedTab = isAvailableRootTab(tab) ? tab : fallbackRootTab(for: tab)
+                selectAvailableRootTab(tab)
             }
         )
+    }
+
+    func selectAvailableRootTab(_ tab: AppTab) {
+        selectedTab = isAvailableRootTab(tab) ? tab : fallbackRootTab(for: tab)
     }
 
     var visibleRootTabs: [AppTab] {

@@ -14,8 +14,11 @@ struct VideoDetailShellContentView: View {
         /// 内容顶部留白 = 播放器最大（expanded）高度。仅在旋转/比例变化时更新，
         /// 滚动时不变（滚动只改播放器实际高度，不动内容区）。
         @Published var topInset: CGFloat = 0
+        @Published var bottomInset: CGFloat = 0
         @Published var scrollAdjustment: VideoDetailScrollAdjustment?
         @Published var suppressesInteractiveContentActions = false
+        @Published var mountsSecondaryContent = false
+        @Published var hidesBottomToolbar = false
         private var scrollAdjustmentToken = 0
 
         func requestScrollAdjustment(tab: VideoDetailContentTab, offset: CGFloat) {
@@ -28,33 +31,48 @@ struct VideoDetailShellContentView: View {
         }
     }
 
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
+    @ObservedObject var updateGate: VideoDetailContentUpdateGate
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: State
     let layoutWidth: CGFloat
+    let placesTopInsetInScrollContent: Bool
+    let interactiveMinimumPlayerHeight: CGFloat
     @Binding var selectedContentTab: VideoDetailContentTab
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
+    let onOpenCommentComposer: (Comment?) -> Void
+    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
+    let onSelectionWillChange: (VideoDetailContentTab) -> Void
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
+    let onScrollPhaseChange: (VideoDetailContentTab, ScrollPhase) -> Void
 
     var body: some View {
+        let _ = updateGate.revision
         VideoDetailShellContentBody(
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
             state: state,
             layoutWidth: layoutWidth,
+            placesTopInsetInScrollContent: placesTopInsetInScrollContent,
+            interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
+            contentRevision: updateGate.revision,
             selectedContentTab: $selectedContentTab,
             onShowNetworkDiagnostics: onShowNetworkDiagnostics,
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
+            onOpenCommentComposer: onOpenCommentComposer,
+            onRefreshComments: onRefreshComments,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onSelectedTabChange: onSelectedTabChange,
-            onScrollOffsetChange: onScrollOffsetChange
+            onSelectionWillChange: onSelectionWillChange,
+            onScrollOffsetChange: onScrollOffsetChange,
+            onScrollPhaseChange: onScrollPhaseChange
         )
     }
 }
@@ -64,14 +82,21 @@ private struct VideoDetailShellContentBody: View {
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var state: VideoDetailShellContentView.State
     let layoutWidth: CGFloat
+    let placesTopInsetInScrollContent: Bool
+    let interactiveMinimumPlayerHeight: CGFloat
+    let contentRevision: Int
     @Binding var selectedContentTab: VideoDetailContentTab
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
+    let onOpenCommentComposer: (Comment?) -> Void
+    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
+    let onSelectionWillChange: (VideoDetailContentTab) -> Void
     let onScrollOffsetChange: (VideoDetailContentTab, CGFloat) -> Void
+    let onScrollPhaseChange: (VideoDetailContentTab, ScrollPhase) -> Void
 
     var body: some View {
         let contentActionsSuppressed = state.suppressesInteractiveContentActions
@@ -79,14 +104,38 @@ private struct VideoDetailShellContentBody: View {
             selection: $selectedContentTab,
             layoutWidth: layoutWidth,
             topInset: state.topInset,
+            bottomInset: state.bottomInset,
             scrollAdjustment: state.scrollAdjustment,
-            minimizesTabBarOnScroll: runtimeSettings.minimizesTabBarOnScroll,
+            mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
+            || state.mountsSecondaryContent,
+            hidesBottomToolbar: state.hidesBottomToolbar,
+            placesTopInsetInScrollContent: placesTopInsetInScrollContent,
+            interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
+            contentRevision: contentRevision,
+            onOpenCommentComposer: { onOpenCommentComposer(nil) },
+            onRefreshComments: onRefreshComments,
+            onSelectionWillChange: onSelectionWillChange,
             onScrollOffsetChange: onScrollOffsetChange,
-            content: { tab in
+            onScrollPhaseChange: onScrollPhaseChange,
+            summary: AnyView(
+                VideoDetailLoadedDetailContentPage(
+                    viewModel: viewModel,
+                    layoutWidth: layoutWidth,
+                    mountsSecondaryContent: false,
+                    runtimeSettings: runtimeSettings.snapshot,
+                    onShowNetworkDiagnostics: onShowNetworkDiagnostics,
+                    onShowFavoriteFolders: onShowFavoriteFolders,
+                    onShowCoinPicker: onShowCoinPicker,
+                    showsRecommendations: false
+                )
+                .accessibilityIdentifier("video.detail.summary")
+            ),
+            content: { tab, mountsSecondaryContent in
                 VideoDetailContentPage(
                     viewModel: viewModel,
                     layoutWidth: layoutWidth,
                     tab: tab,
+                    mountsSecondaryContent: mountsSecondaryContent,
                     runtimeSettings: runtimeSettings.snapshot,
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,
@@ -94,7 +143,9 @@ private struct VideoDetailShellContentBody: View {
                     onReply: { comment in
                         guard !contentActionsSuppressed else { return }
                         onReply(comment)
-                    }
+                    },
+                    showsSummary: false,
+                    onComposeReply: { onOpenCommentComposer($0) }
                 )
             }
         )

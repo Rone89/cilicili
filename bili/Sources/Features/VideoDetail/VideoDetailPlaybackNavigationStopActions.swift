@@ -8,6 +8,15 @@ extension VideoDetailViewModel {
         flushPlaybackProgressForNavigation(resumeTime: resumeTime)
         isPlaybackTerminatedForNavigation = true
         isPlaybackInvalidatedForNavigation = true
+
+        // A related-video push keeps this detail page alive underneath the new
+        // route. Suspend the existing engine, but retain its media and model so
+        // popping back does not trigger a full detail/playback reload.
+        if isAwaitingRelatedVideoReturnPlayback {
+            stablePlayerViewModel?.pauseForNavigation()
+            return
+        }
+
         schedulePlaybackStopForNavigation()
     }
 
@@ -52,7 +61,7 @@ extension VideoDetailViewModel {
     private func schedulePlaybackStopForNavigation() {
         guard navigationState.playbackStopTask == nil else { return }
         navigationState.playbackStopTask = Task { @MainActor [weak self] in
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(350))
             guard let self, !Task.isCancelled else { return }
             self.navigationState.playbackStopTask = nil
             self.finishStoppingPlaybackForNavigation()

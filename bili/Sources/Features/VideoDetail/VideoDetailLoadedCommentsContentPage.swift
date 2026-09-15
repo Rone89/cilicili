@@ -1,14 +1,16 @@
 import SwiftUI
 
 struct VideoDetailLoadedCommentsContentPage: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let onReply: (Comment) -> Void
+    let onComposeReply: ((Comment) -> Void)?
 
     var body: some View {
         VideoDetailEmbeddedCommentsSection(
             viewModel: viewModel,
-            onReply: onReply
+            onReply: onReply,
+            onComposeReply: onComposeReply
         )
-        .padding(.top, VideoDetailContentPageMetrics.commentsTopPadding)
+        .padding(.top, 0)
     }
 }

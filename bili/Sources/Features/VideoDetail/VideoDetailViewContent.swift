@@ -4,7 +4,6 @@ struct VideoDetailViewContent: View {
     let seedVideo: VideoItem
     @ObservedObject var holder: VideoDetailViewModelHolder
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
-    @ObservedObject var fullscreenCoordinator: VideoDetailFullscreenCoordinator
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
     @Binding var pendingCommentAnchor: VideoCommentAnchor?
@@ -23,7 +22,6 @@ struct VideoDetailViewContent: View {
             VideoDetailViewContentResolver(
                 seedVideo: seedVideo,
                 runtimeSettings: runtimeSettings,
-                fullscreenCoordinator: fullscreenCoordinator,
                 viewModel: viewModel,
                 selectedContentTab: $selectedContentTab,
                 sheetRoute: $sheetRoute,

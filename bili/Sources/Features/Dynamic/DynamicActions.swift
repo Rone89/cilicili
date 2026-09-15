@@ -1,12 +1,15 @@
 import SwiftUI
 
 struct DynamicFeedActionBar: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var sessionStore: SessionStore
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
     let initialLikeCount: Int
     let onShowComments: () -> Void
-    @State private var isLiked: Bool
-    @State private var likeCount: Int
+    @State private var likeState: DynamicLikeDisplayState
+    @State private var isMutatingLike = false
     @State private var actionMessage: String?
     @State private var actionMessageTask: Task<Void, Never>?
 
@@ -20,8 +23,10 @@ struct DynamicFeedActionBar: View {
         self.initialIsLiked = initialIsLiked
         self.initialLikeCount = initialLikeCount
         self.onShowComments = onShowComments
-        _isLiked = State(initialValue: initialIsLiked)
-        _likeCount = State(initialValue: initialLikeCount)
+        _likeState = State(initialValue: DynamicLikeDisplayState(
+            isLiked: initialIsLiked,
+            likeCount: initialLikeCount
+        ))
     }
 
     var body: some View {
@@ -41,11 +46,12 @@ struct DynamicFeedActionBar: View {
                 .frame(maxWidth: .infinity)
 
                 DynamicActionPill(
-                    title: DynamicFeedCardDisplayModel.statTitle(count: likeCount, fallback: "点赞"),
-                    systemImage: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                    isSelected: isLiked
+                    title: DynamicFeedCardDisplayModel.statTitle(count: likeState.likeCount, fallback: "点赞"),
+                    systemImage: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
+                    isSelected: likeState.isLiked,
+                    isDisabled: isMutatingLike
                 ) {
-                    toggleLocalLike()
+                    toggleLike()
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -65,6 +71,10 @@ struct DynamicFeedActionBar: View {
         .onDisappear {
             actionMessageTask?.cancel()
             actionMessageTask = nil
+        }
+        .onChange(of: sourceLikeState) { _, state in
+            guard !isMutatingLike else { return }
+            likeState = state
         }
     }
 
@@ -99,14 +109,44 @@ struct DynamicFeedActionBar: View {
         }
     }
 
-    private func toggleLocalLike() {
+    private var sourceLikeState: DynamicLikeDisplayState {
+        DynamicLikeDisplayState(isLiked: initialIsLiked, likeCount: initialLikeCount)
+    }
+
+    private func toggleLike() {
         playActionFeedback()
-        let nextIsLiked = !isLiked
-        withAnimation(.snappy(duration: 0.2)) {
-            isLiked = nextIsLiked
-            likeCount = max(0, likeCount + (nextIsLiked ? 1 : -1))
+        let account = sessionStore.credentialSnapshot(
+            for: .interaction,
+            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+        )
+        guard account.isLoggedIn else {
+            showActionMessage("请先登录账号", playsFeedback: false)
+            return
         }
-        showActionMessage(nextIsLiked ? "已点赞" : "已取消点赞", playsFeedback: false)
+        guard !isMutatingLike else { return }
+
+        let previousState = likeState
+        let targetState = previousState.toggled()
+        isMutatingLike = true
+        withAnimation(.snappy(duration: 0.2)) {
+            likeState = targetState
+        }
+
+        Task { @MainActor in
+            do {
+                try await dependencies.api.setDynamicLike(
+                    dynamicID: display.dynamicID,
+                    liked: targetState.isLiked
+                )
+                showActionMessage(targetState.isLiked ? "已点赞" : "已取消点赞", playsFeedback: false)
+            } catch {
+                withAnimation(.snappy(duration: 0.2)) {
+                    likeState = previousState
+                }
+                showActionMessage("操作失败：\(error.localizedDescription)", playsFeedback: false)
+            }
+            isMutatingLike = false
+        }
     }
 
     private func playActionFeedback() {
@@ -128,5 +168,17 @@ struct DynamicFeedActionBar: View {
                 actionMessage = nil
             }
         }
+    }
+}
+
+nonisolated struct DynamicLikeDisplayState: Equatable, Sendable {
+    let isLiked: Bool
+    let likeCount: Int
+
+    func toggled() -> DynamicLikeDisplayState {
+        DynamicLikeDisplayState(
+            isLiked: !isLiked,
+            likeCount: max(0, likeCount + (isLiked ? -1 : 1))
+        )
     }
 }

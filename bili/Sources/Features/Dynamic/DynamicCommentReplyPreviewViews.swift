@@ -27,16 +27,16 @@ struct DynamicCommentReplyPreviewContainer<Content: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 11)
+        .background(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(appTintColor.opacity(0.42))
                 .frame(width: 3)
                 .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 5) {
-                content
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)

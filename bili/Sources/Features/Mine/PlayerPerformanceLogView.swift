@@ -8,8 +8,9 @@ struct PlayerPerformanceLogView: View {
 
     var body: some View {
         let reportableSessions = store.sessions.filter(PlayerPerformanceCopyTextFormatter.isReportableSession)
+        let detailNavigationSnapshots = navigationSnapshots
         List {
-            if store.events.isEmpty && store.sessions.isEmpty {
+            if store.events.isEmpty && store.sessions.isEmpty && detailNavigationSnapshots.isEmpty {
                 ContentUnavailableView(
                     "暂无播放记录",
                     systemImage: "speedometer",
@@ -60,6 +61,14 @@ struct PlayerPerformanceLogView: View {
                     }
                 }
 
+                if !detailNavigationSnapshots.isEmpty {
+                    Section("详情导航时延") {
+                        ForEach(Array(detailNavigationSnapshots.enumerated()), id: \.offset) { _, snapshot in
+                            VideoDetailNavigationLatencySnapshotRow(snapshot: snapshot)
+                        }
+                    }
+                }
+
                 Section {
                     ForEach(store.events.reversed()) { event in
                         PlayerPerformanceEventRow(event: event)
@@ -76,7 +85,14 @@ struct PlayerPerformanceLogView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
-                    UIPasteboard.general.string = store.performanceLogCopyText()
+                    UIPasteboard.general.string = [
+                        store.performanceLogCopyText(),
+                        VideoDetailNavigationLatencyReportFormatter.copyText(
+                            detailNavigationSnapshots
+                        ),
+                    ]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n\n")
                     didCopy = true
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 1_200_000_000)
@@ -90,6 +106,7 @@ struct PlayerPerformanceLogView: View {
 
                 Button {
                     store.clear()
+                    PlaybackDetailPerformanceMonitor.shared.clear()
                 } label: {
                     Image(systemName: "trash")
                 }
@@ -100,6 +117,13 @@ struct PlayerPerformanceLogView: View {
     }
 
     private var isEmpty: Bool {
-        store.events.isEmpty && store.sessions.isEmpty
+        store.events.isEmpty && store.sessions.isEmpty && navigationSnapshots.isEmpty
+    }
+
+    private var navigationSnapshots: [PlaybackDetailPerformanceSnapshot] {
+        guard libraryStore.videoDetailNavigationLatencyDiagnosticsEnabled else { return [] }
+        return PlaybackDetailPerformanceMonitor.shared.recentSnapshots().filter {
+            $0.context.kind == .video || $0.context.kind == .pgc
+        }
     }
 }

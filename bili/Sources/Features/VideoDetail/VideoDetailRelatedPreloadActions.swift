@@ -6,7 +6,7 @@ struct VideoDetailRelatedPreloadActions {
     let api: BiliAPIClient
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
 
-    func beginPreloadIfNeeded(_ video: VideoItem) {
+    func beginPreloadIfNeeded(_ video: VideoItem) async {
         guard !video.bvid.isEmpty,
               !preloadedVideoIDs.contains(video.bvid),
               preloadedVideoIDs.count < 1,
@@ -19,20 +19,26 @@ struct VideoDetailRelatedPreloadActions {
         guard playbackAdaptationProfile.backgroundPreloadLimit > 1 else { return }
 
         preloadedVideoIDs.insert(video.bvid)
-        Task(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard !Task.isCancelled else { return }
-            await VideoPreloadCenter.shared.preloadPlayInfo(
-                video,
-                api: api,
-                preferredQuality: runtimeSettings.preferredVideoQuality,
-                cdnPreference: runtimeSettings.effectivePlaybackCDNPreference,
-                priority: .utility,
-                warmsMedia: true,
-                mediaWarmupMode: .full,
-                mediaWarmupDelay: 0.05,
-                playbackAdaptationProfile: playbackAdaptationProfile
-            )
+        do {
+            try await Task.sleep(nanoseconds: 120_000_000)
+        } catch {
+            preloadedVideoIDs.remove(video.bvid)
+            return
         }
+        guard !Task.isCancelled else {
+            preloadedVideoIDs.remove(video.bvid)
+            return
+        }
+        await VideoPreloadCenter.shared.preloadPlayInfo(
+            video,
+            api: api,
+            preferredQuality: runtimeSettings.preferredVideoQuality,
+            cdnPreference: runtimeSettings.effectivePlaybackCDNPreference,
+            priority: .utility,
+            warmsMedia: false,
+            mediaWarmupMode: .routePlanOnly,
+            mediaWarmupDelay: 0,
+            playbackAdaptationProfile: playbackAdaptationProfile
+        )
     }
 }

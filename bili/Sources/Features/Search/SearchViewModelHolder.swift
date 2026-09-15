@@ -29,6 +29,11 @@ final class SearchViewModelHolder: ObservableObject {
 final class SearchBottomAccessoryStore: ObservableObject {
     @Published private(set) var viewModel: SearchViewModel?
     @Published var isSearchFocused = false
+    @Published var isKeyboardVisible = false
+
+    var usesKeyboardControls: Bool {
+        isSearchFocused && isKeyboardVisible
+    }
 
     func attach(_ viewModel: SearchViewModel) {
         guard self.viewModel !== viewModel else { return }
@@ -38,6 +43,7 @@ final class SearchBottomAccessoryStore: ObservableObject {
 
 private struct SearchRenderSnapshot: Equatable {
     let query: String
+    let showsDiscovery: Bool
     let selectedScope: SearchScope
     let selectedOrder: SearchSortOrder
     let state: LoadingState
@@ -53,6 +59,7 @@ private struct SearchRenderSnapshot: Equatable {
 
     init(_ viewModel: SearchViewModel) {
         query = viewModel.query
+        showsDiscovery = viewModel.showsDiscovery
         selectedScope = viewModel.selectedScope
         selectedOrder = viewModel.selectedOrder
         state = viewModel.state

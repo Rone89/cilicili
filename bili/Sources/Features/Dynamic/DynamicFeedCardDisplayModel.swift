@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicFeedCardDisplayModel {
+    let dynamicID: String
     let video: VideoItem?
     let videoDisplay: VideoCardDisplayModel?
     let live: DynamicLive?
@@ -20,7 +21,7 @@ struct DynamicFeedCardDisplayModel {
     let publishTimeText: String
     let usesHomeVideoCardStyle: Bool
     let usesSeparatedDynamicLayout: Bool
-    let showsExpandButton: Bool
+    let supportsDetailNavigation: Bool
     let initialLikeCount: Int
     let commentTitle: String
     let repostTitle: String
@@ -46,6 +47,7 @@ struct DynamicFeedCardDisplayModel {
             && !item.isForward
             && !(topLevelDisplayText?.isEmpty ?? true)
 
+        self.dynamicID = item.idStr
         self.video = video
         self.videoDisplay = video.map(VideoCardDisplayModel.init(video:))
         self.live = live
@@ -71,7 +73,14 @@ struct DynamicFeedCardDisplayModel {
             || item.isForward
             || (!imageItems.isEmpty && video == nil)
             || isPureTextDynamic
-        self.showsExpandButton = Self.shouldShowExpandButton(for: topLevelDisplayText ?? "")
+        self.supportsDetailNavigation = Self.supportsDetailNavigation(
+            hasTopLevelText: !(topLevelDisplayText?.isEmpty ?? true),
+            imageCount: imageItems.count,
+            isForward: item.isForward || item.original != nil,
+            hasVideo: video != nil,
+            hasLive: live != nil,
+            hasPaidContent: paidContent != nil
+        )
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
         self.repostTitle = Self.statTitle(count: item.repostCount, fallback: "转发")
@@ -85,26 +94,40 @@ struct DynamicFeedCardDisplayModel {
         return BiliFormatters.compactCount(count)
     }
 
+    static func supportsDetailNavigation(
+        hasTopLevelText: Bool,
+        imageCount: Int,
+        isForward: Bool,
+        hasVideo: Bool,
+        hasLive: Bool,
+        hasPaidContent: Bool
+    ) -> Bool {
+        if isForward {
+            return true
+        }
+
+        return !hasVideo
+            && !hasLive
+            && !hasPaidContent
+            && (hasTopLevelText || imageCount > 0)
+    }
+
+    static func supportsDetailNavigation(original: DynamicOriginalItem) -> Bool {
+        supportsDetailNavigation(
+            hasTopLevelText: DynamicTextSegment.displayText(from: original.textSegments)?.isEmpty == false,
+            imageCount: original.imageItems.count,
+            isForward: original.type == "DYNAMIC_TYPE_FORWARD",
+            hasVideo: original.archive != nil,
+            hasLive: original.live != nil,
+            hasPaidContent: original.paidContent != nil
+        )
+    }
+
     private static func publishTime(for author: DynamicAuthor?) -> String {
         if let timestamp = author?.pubTS, timestamp > 0 {
             return BiliFormatters.relativeTime(timestamp)
         }
         return author?.pubTime ?? ""
-    }
-
-    private static func shouldShowExpandButton(for text: String) -> Bool {
-        if text.count > 120 {
-            return true
-        }
-
-        var newlineCount = 0
-        for character in text where character.isNewline {
-            newlineCount += 1
-            if newlineCount >= 4 {
-                return true
-            }
-        }
-        return false
     }
 
     private static func shareURL(item: DynamicFeedItem, video: VideoItem?, live: DynamicLive?, paidContent: DynamicPaidContent?) -> URL? {

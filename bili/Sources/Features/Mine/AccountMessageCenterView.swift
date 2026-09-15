@@ -56,8 +56,10 @@ struct AccountMessageCenterView: View {
                 }
             }
         }
-        .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .navigationTitle("通知")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbarBackground(.automatic, for: .navigationBar)
+        .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -130,7 +132,7 @@ private struct AccountMessageInboxView: View {
             content
         }
         .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索已加载消息")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -290,7 +292,7 @@ struct AccountMessageFeedView: View {
             content
         }
         .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -685,6 +687,11 @@ private struct AccountMessageCommentThreadSheet: View {
     var body: some View {
         NavigationStack {
             content
+                .environment(\.openVideoOwnerRouteAction, nil)
+                .environment(\.openVideoAction, nil)
+                .environment(\.openLiveRoomAction, nil)
+                .environment(\.openPgcSeasonRouteAction, nil)
+                .videoDestinations()
                 .hiddenInlineNavigationTitle()
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -910,7 +917,7 @@ private struct AccountMessageLikeDetailView: View {
             }
         }
         .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .task {
             guard state == .idle else { return }
             await load(reset: true)
@@ -1094,7 +1101,7 @@ private struct AccountMessageFollowersView: View {
             }
         }
         .hiddenInlineNavigationTitle()
-        .nativeTopScrollEdgeEffect(hidesRootNavigationTitle: false)
+        .nativeTopScrollEdgeEffect()
         .task {
             guard state == .idle else { return }
             await load(reset: true)

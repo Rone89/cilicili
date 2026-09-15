@@ -2,15 +2,14 @@ import SwiftUI
 
 struct DynamicView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
 
     var body: some View {
         DynamicContentRoot(
             api: dependencies.api,
-            libraryStore: dependencies.libraryStore,
+            libraryStore: libraryStore,
             sessionStore: dependencies.sessionStore
         )
-        .rootNavigationTitle("动态")
-        .nativeTopNavigationChrome()
     }
 }
 

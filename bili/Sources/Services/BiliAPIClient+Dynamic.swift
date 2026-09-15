@@ -2,6 +2,8 @@ import Foundation
 
 private let dynamicUploaderWebUserAgent =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15"
+private let dynamicWebFeatures =
+    "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete"
 
 extension BiliAPIClient {
     nonisolated static func uploaderDynamicCookieHeader(
@@ -18,8 +20,7 @@ extension BiliAPIClient {
         var query = [
             "type": "all",
             "platform": "web",
-            "features":
-                "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
+            "features": dynamicWebFeatures,
             "web_location": "333.1365",
         ]
         if let offset, !offset.isEmpty {
@@ -29,7 +30,6 @@ extension BiliAPIClient {
         let isInitialRequest = offset?.isEmpty != false
         let diskSnapshotIdentity =
             isInitialRequest
-                && ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot)
             ? DynamicFeedDiskSnapshotStore.accountIdentity(for: context.currentUserMID)
             : nil
         if let diskSnapshotIdentity,
@@ -41,9 +41,7 @@ extension BiliAPIClient {
                 let cachedPage = cachedResponse.payload
             {
                 Task(priority: .utility) { [weak self] in
-                    guard let self,
-                        ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot)
-                    else { return }
+                    guard let self else { return }
                     _ = try? await self.fetchDynamicFeedFromNetwork(
                         query: query,
                         cookieHeader: context.cookieHeader,
@@ -70,9 +68,7 @@ extension BiliAPIClient {
         let responseDataObserver: (@Sendable (Data) -> Void)?
         if let diskSnapshotIdentity {
             responseDataObserver = { data in
-                guard ResourceLoadingExperiment.isFeatureEnabled(.dynamicDiskSnapshot),
-                    Self.isSuccessfulDynamicFeedResponse(data)
-                else { return }
+                guard Self.isSuccessfulDynamicFeedResponse(data) else { return }
                 Task(priority: TaskPriority.utility) {
                     await DynamicFeedDiskSnapshotStore.shared.store(data, for: diskSnapshotIdentity)
                 }
@@ -129,6 +125,41 @@ extension BiliAPIClient {
         return data
     }
 
+    func fetchDynamicDetail(id: String) async throws -> DynamicFeedItem {
+        let dynamicID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dynamicID.isEmpty else {
+            throw BiliAPIError.api(code: -1, message: "动态 ID 无效")
+        }
+
+        let context = await dynamicFeedRequestContext()
+        let cookieHeader = Self.uploaderDynamicCookieHeader(
+            isLoggedIn: context.isLoggedIn,
+            authenticatedCookieHeader: context.cookieHeader,
+            anonymousCookieHeader: context.anonymousCookieHeader
+        )
+        let response: BiliResponse<DynamicDetailData> = try await get(
+            base: baseURL,
+            path: "/x/polymer/web-dynamic/v1/detail",
+            query: [
+                "timezone_offset": "-480",
+                "id": dynamicID,
+                "features": dynamicWebFeatures,
+                "gaia_source": "Athena",
+                "web_location": "333.1330",
+                "x-bili-device-req-json": #"{"platform":"web","device":"pc","spmid":"333.1330"}"#,
+            ],
+            cookieHeader: cookieHeader,
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        guard let item = response.payload?.item else {
+            throw BiliAPIError.missingPayload
+        }
+        return item
+    }
+
     func fetchUploaderDynamicFeed(mid: Int, offset: String? = nil) async throws -> DynamicFeedData {
         guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
         let context = await dynamicFeedRequestContext()
@@ -162,8 +193,7 @@ extension BiliAPIClient {
                 "offset": offset ?? "",
                 "host_mid": String(mid),
                 "timezone_offset": "-480",
-                "features":
-                    "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
+                "features": dynamicWebFeatures,
                 "platform": "web",
                 "web_location": "333.1387",
                 "dm_img_list": "[]",

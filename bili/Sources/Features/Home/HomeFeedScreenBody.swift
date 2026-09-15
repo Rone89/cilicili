@@ -26,6 +26,7 @@ struct HomeFeedScreenBody: View {
             runtimeSettings: runtimeSettings,
             viewportState: $viewportState,
             scrollActions: actionStore.scroll,
+            nativeRefreshActionStore: actionStore.nativeRefresh,
             refreshActions: actionStore.refresh,
             layout: layout
         ) {

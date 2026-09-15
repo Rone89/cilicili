@@ -1,17 +1,19 @@
 import SwiftUI
 
 struct VideoDetailEmbeddedCommentsSection: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let renderPack: VideoDetailEmbeddedCommentsSectionRenderPack
 
     init(
         viewModel: VideoDetailViewModel,
-        onReply: @escaping (Comment) -> Void
+        onReply: @escaping (Comment) -> Void,
+        onComposeReply: ((Comment) -> Void)?
     ) {
         self.viewModel = viewModel
         renderPack = VideoDetailEmbeddedCommentsSectionRenderPack(
             viewModel: viewModel,
-            onReply: onReply
+            onReply: onReply,
+            onComposeReply: onComposeReply
         )
     }
 
@@ -21,7 +23,8 @@ struct VideoDetailEmbeddedCommentsSection: View {
             style: .plain,
             maxVisibleComments: nil,
             autoLoads: true,
-            actions: renderPack.actions
+            actions: renderPack.actions,
+            verticalPadding: 0
         )
         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
     }

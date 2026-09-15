@@ -5,27 +5,23 @@ struct VideoDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
-    private let hidesRootTabBar: Bool
     private let onRequestClose: (() -> Void)?
     private let onPopOne: (() -> Void)?
 
     @StateObject private var holder = VideoDetailViewModelHolder()
     @StateObject private var runtimeSettings = VideoDetailRuntimeSettingsStore()
-    @StateObject private var fullscreenCoordinator = VideoDetailFullscreenCoordinator()
     @State private var presentationState = VideoDetailViewPresentationState()
     @State private var pendingCommentAnchor: VideoCommentAnchor?
 
     init(
         seedVideo: VideoItem,
         playbackOptions: VideoDetailPlaybackOptions = VideoDetailPlaybackOptions(),
-        hidesRootTabBar: Bool = true,
         initialCommentAnchor: VideoCommentAnchor? = nil,
         onRequestClose: (() -> Void)? = nil,
         onPopOne: (() -> Void)? = nil
     ) {
         self.seedVideo = seedVideo
         self.playbackOptions = playbackOptions
-        self.hidesRootTabBar = hidesRootTabBar
         self.onRequestClose = onRequestClose
         self.onPopOne = onPopOne
         _pendingCommentAnchor = State(initialValue: initialCommentAnchor)
@@ -35,7 +31,6 @@ struct VideoDetailView: View {
         PlaybackDetailPageHost(
             hidesSystemChrome: .constant(false),
             background: .black,
-            hidesRootTabBar: hidesRootTabBar,
             navigationBarVisibility: .hidden,
             hidesBackButton: true,
             statusBarStyle: .lightContent,
@@ -46,7 +41,6 @@ struct VideoDetailView: View {
                 seedVideo: seedVideo,
                 holder: holder,
                 runtimeSettings: runtimeSettings,
-                fullscreenCoordinator: fullscreenCoordinator,
                 selectedContentTab: $presentationState.selectedContentTab,
                 sheetRoute: $presentationState.sheetRoute,
                 pendingCommentAnchor: $pendingCommentAnchor,
@@ -76,7 +70,6 @@ struct VideoDetailView: View {
                 Task { await viewModel.resumePlaybackAfterCoveredNavigationIfNeeded() }
             },
             onDisappear: {
-                fullscreenCoordinator.resetForDisappear()
                 let performanceTestMediaURLs = holder.viewModel?.performanceTestMediaURLs ?? []
                 holder.viewModel?.stopPlaybackForNavigation()
                 guard playbackOptions == .performanceTest else { return }
@@ -110,7 +103,6 @@ struct VideoDetailView: View {
             playbackOptions: playbackOptions,
             dependencies: dependencies,
             holder: holder,
-            fullscreenCoordinator: fullscreenCoordinator,
             dismiss: dismiss,
             onRequestClose: onRequestClose,
             onPopOne: onPopOne

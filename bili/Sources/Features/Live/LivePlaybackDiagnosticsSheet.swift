@@ -108,7 +108,7 @@ struct LivePlaybackDiagnosticsSheet: View {
                 }
             }
             .navigationTitle("直播播放诊断")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("完成") {

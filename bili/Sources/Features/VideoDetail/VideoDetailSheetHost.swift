@@ -5,6 +5,7 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
     @ObservedObject var libraryStore: LibraryStore
     let sheetState: VideoDetailSheetState
     let sheetActions: VideoDetailSheetActions
+    let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
 
     func body(content: Content) -> some View {
         content
@@ -19,17 +20,29 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             focusReply: reply,
                             store: viewModel.commentThreadRenderStore,
                             loadDialog: sheetActions.replies.loadDialog,
-                            reloadDialog: sheetActions.replies.reloadDialog
+                            reloadDialog: sheetActions.replies.reloadDialog,
+                            submitReply: submitReply
                         )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
+                        .commentLikeTarget(
+                            oid: viewModel.commentTarget?.oid,
+                            type: viewModel.commentTarget?.type,
+                            referer: videoReferer
+                        )
                     } else {
                         VideoDetailReplySheetHost(
                             rootComment: comment,
                             viewModel: viewModel,
                             initialReplyID: nil,
-                            actions: sheetActions.replies
+                            actions: sheetActions.replies,
+                            submitReply: submitReply
                         )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
+                        .commentLikeTarget(
+                            oid: viewModel.commentTarget?.oid,
+                            type: viewModel.commentTarget?.type,
+                            referer: videoReferer
+                        )
                     }
                 case .moreControls(let presentation):
                     SurfaceOnlyMoreControlsSheet(
@@ -79,6 +92,11 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
         )
     }
 
+    private var videoReferer: String {
+        let bvid = viewModel.detail.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bvid.isEmpty ? "https://www.bilibili.com" : "https://www.bilibili.com/video/\(bvid)"
+    }
+
     private func finish(_ route: VideoDetailSheetRoute) {
         switch route {
         case .commentThread:
@@ -93,14 +111,20 @@ extension View {
     func videoDetailSheets(
         viewModel: VideoDetailViewModel,
         libraryStore: LibraryStore,
-        sheetState: VideoDetailSheetState
+        sheetState: VideoDetailSheetState,
+        submitReply: @escaping (
+            DynamicCommentComposerTarget,
+            String,
+            [DynamicCommentImage]?
+        ) async throws -> Void
     ) -> some View {
         modifier(
             VideoDetailSheetHostModifier(
                 viewModel: viewModel,
                 libraryStore: libraryStore,
                 sheetState: sheetState,
-                sheetActions: VideoDetailSheetActions(viewModel: viewModel)
+                sheetActions: VideoDetailSheetActions(viewModel: viewModel),
+                submitReply: submitReply
             )
         )
     }

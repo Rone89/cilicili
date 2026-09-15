@@ -14,7 +14,9 @@ struct LiveView: View {
                 )
             } else {
                 ScrollView {
-                    LiveFeedSkeletonList(horizontalPadding: 12, topPadding: 18)
+                    VStack(spacing: 0) {
+                        LiveFeedSkeletonList(horizontalPadding: 12, topPadding: 18)
+                    }
                 }
                 .nativeTopScrollEdgeEffect()
                 .background(Color(.systemBackground))
@@ -23,8 +25,6 @@ struct LiveView: View {
                 }
             }
         }
-        .rootNavigationTitle("直播")
-        .nativeTopNavigationChrome()
         .task {
             pullRefreshSettings.bind(dependencies.libraryStore)
         }

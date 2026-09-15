@@ -4,7 +4,6 @@ import SwiftUI
 struct RootRuntimeSettingsSnapshot: Equatable {
     var appearanceMode: AppAppearanceMode = .system
     var minimizesTabBarOnScroll = true
-    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference = .soft
     var visibleRootTabs: [AppTab] = AppTab.defaultVisibleTabs
 }
 
@@ -16,7 +15,6 @@ final class RootRuntimeSettingsStore: ObservableObject {
 
     var appearanceMode: AppAppearanceMode { snapshot.appearanceMode }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
-    var scrollEdgeEffectPreference: AppScrollEdgeEffectPreference { snapshot.scrollEdgeEffectPreference }
     var visibleRootTabs: [AppTab] { snapshot.visibleRootTabs }
 
     func bind(_ libraryStore: LibraryStore) {
@@ -38,7 +36,6 @@ final class RootRuntimeSettingsStore: ObservableObject {
         let next = RootRuntimeSettingsSnapshot(
             appearanceMode: libraryStore.appearanceMode,
             minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
-            scrollEdgeEffectPreference: libraryStore.scrollEdgeEffectPreference,
             visibleRootTabs: libraryStore.visibleRootTabs
         )
         guard next != snapshot else { return }
@@ -124,7 +121,6 @@ final class PullRefreshRuntimeSettingsStore: ObservableObject {
 struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var playerPerformanceOverlayEnabled = false
     var videoRotationFrameReportOverlayEnabled = false
-    var videoRotationOptimizationExperimentEnabled = VideoDetailRotationOptimizationExperiment.defaultIsEnabled
     var pictureInPictureEnabled = false
     var appTintColorHex = LibraryStore.defaultAppTintColorHex
     var defaultPlaybackRate = 1.0
@@ -134,6 +130,7 @@ struct VideoDetailRuntimeSettingsSnapshot: Equatable {
     var effectivePlaybackCDNPreference: PlaybackCDNPreference = .automatic
     var playbackAutoOptimizationEnabled = true
     var minimizesTabBarOnScroll = true
+    var defersVideoDetailSecondaryContent = true
 }
 
 @MainActor
@@ -144,7 +141,6 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
 
     var playerPerformanceOverlayEnabled: Bool { snapshot.playerPerformanceOverlayEnabled }
     var videoRotationFrameReportOverlayEnabled: Bool { snapshot.videoRotationFrameReportOverlayEnabled }
-    var videoRotationOptimizationExperimentEnabled: Bool { snapshot.videoRotationOptimizationExperimentEnabled }
     var pictureInPictureEnabled: Bool { snapshot.pictureInPictureEnabled }
     var appTintColor: Color { AppThemeTintColor.color(for: snapshot.appTintColorHex) }
     var defaultPlaybackRate: Double { snapshot.defaultPlaybackRate }
@@ -154,6 +150,7 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
     var effectivePlaybackCDNPreference: PlaybackCDNPreference { snapshot.effectivePlaybackCDNPreference }
     var playbackAutoOptimizationEnabled: Bool { snapshot.playbackAutoOptimizationEnabled }
     var minimizesTabBarOnScroll: Bool { snapshot.minimizesTabBarOnScroll }
+    var defersVideoDetailSecondaryContent: Bool { snapshot.defersVideoDetailSecondaryContent }
 
     func bind(_ libraryStore: LibraryStore) {
         guard self.libraryStore !== libraryStore else {
@@ -174,7 +171,6 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
         let next = VideoDetailRuntimeSettingsSnapshot(
             playerPerformanceOverlayEnabled: libraryStore.playerPerformanceOverlayEnabled,
             videoRotationFrameReportOverlayEnabled: libraryStore.videoRotationFrameReportOverlayEnabled,
-            videoRotationOptimizationExperimentEnabled: libraryStore.videoRotationOptimizationExperimentEnabled,
             pictureInPictureEnabled: libraryStore.pictureInPictureEnabled,
             appTintColorHex: libraryStore.appTintColorHex,
             defaultPlaybackRate: libraryStore.defaultPlaybackRate,
@@ -183,7 +179,8 @@ final class VideoDetailRuntimeSettingsStore: ObservableObject {
             preferredVideoQuality: libraryStore.effectivePreferredVideoQuality,
             effectivePlaybackCDNPreference: libraryStore.effectivePlaybackCDNPreference,
             playbackAutoOptimizationEnabled: libraryStore.isPlaybackAutoOptimizationEnabled,
-            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll
+            minimizesTabBarOnScroll: libraryStore.minimizesTabBarOnScroll,
+            defersVideoDetailSecondaryContent: true
         )
         guard next != snapshot else { return }
         snapshot = next

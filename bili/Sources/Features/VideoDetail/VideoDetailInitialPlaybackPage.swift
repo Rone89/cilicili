@@ -26,11 +26,6 @@ struct VideoDetailInitialPlaybackPage: View {
     }
 
     private var isInitialPortraitVideo: Bool {
-        initialVideoAspectRatio.map { $0 < 0.9 } ?? false
-    }
-
-    private var initialVideoAspectRatio: Double? {
-        seedVideo.dimension?.aspectRatio
-            ?? seedVideo.pages?.first?.dimension?.aspectRatio
+        VideoDetailInitialVideoGeometry.metadataAspectRatio(for: seedVideo).map { $0 < 0.9 } ?? false
     }
 }

@@ -41,9 +41,6 @@ extension HomeViewModel {
                 state = videos.isEmpty ? .failed("暂无内容") : .loaded
                 return
             }
-            if previousVideos.isEmpty {
-                await mediaPreloadCoordinator.prewarmInitialImagesBeforePublishing(refreshedVideos)
-            }
             replaceVideos(
                 refreshedVideos,
                 previousVideos: previousVideos,

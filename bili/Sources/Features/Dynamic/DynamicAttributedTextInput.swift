@@ -8,7 +8,26 @@ struct DynamicAttributedTextInput: Equatable {
     let emoteSize: CGFloat
     let maxLines: Int?
     let typographyRole: AppTypography.Role?
+    let lineHeightMultiplier: CGFloat
     static let feedBodyFont = FeedTypography.bodyUIFont
+
+    init(
+        segments: [DynamicTextSegment],
+        baseFont: UIFont,
+        textColor: UIColor,
+        emoteSize: CGFloat,
+        maxLines: Int?,
+        typographyRole: AppTypography.Role?,
+        lineHeightMultiplier: CGFloat = 1
+    ) {
+        self.segments = segments
+        self.baseFont = baseFont
+        self.textColor = textColor
+        self.emoteSize = emoteSize
+        self.maxLines = maxLines
+        self.typographyRole = typographyRole
+        self.lineHeightMultiplier = lineHeightMultiplier
+    }
 
     static func dynamicFeedBody(
         segments: [DynamicTextSegment],
@@ -21,7 +40,8 @@ struct DynamicAttributedTextInput: Equatable {
             textColor: .label,
             emoteSize: emoteSize,
             maxLines: maxLines,
-            typographyRole: .dynamicBody
+            typographyRole: .dynamicBody,
+            lineHeightMultiplier: 1
         )
     }
 
@@ -33,6 +53,7 @@ struct DynamicAttributedTextInput: Equatable {
             && lhs.emoteSize == rhs.emoteSize
             && lhs.maxLines == rhs.maxLines
             && lhs.typographyRole == rhs.typographyRole
+            && lhs.lineHeightMultiplier == rhs.lineHeightMultiplier
     }
 
     var cacheKey: String {
@@ -57,13 +78,12 @@ struct DynamicAttributedTextInput: Equatable {
             "\(textColor.dynamicRGBAKey)",
             "\(emoteSize)",
             "\(maxLines ?? -1)",
-            typographyRole?.rawValue ?? ""
+            typographyRole?.rawValue ?? "",
+            "\(lineHeightMultiplier)"
         ].joined(separator: "\u{1e}")
     }
 
-    func resolvingTypography(
-        contentSizeCategory: UIContentSizeCategory
-    ) -> DynamicAttributedTextInput {
+    func resolvingTypography(contentSizeCategory: UIContentSizeCategory) -> DynamicAttributedTextInput {
         guard let typographyRole else { return self }
 
         let resolvedFont = typographyRole.uiFont(contentSizeCategory: contentSizeCategory)
@@ -73,7 +93,20 @@ struct DynamicAttributedTextInput: Equatable {
             textColor: textColor,
             emoteSize: emoteSize * resolvedFont.pointSize / typographyRole.pointSize,
             maxLines: maxLines,
-            typographyRole: typographyRole
+            typographyRole: typographyRole,
+            lineHeightMultiplier: lineHeightMultiplier
+        )
+    }
+
+    func replacingLineHeightMultiplier(_ multiplier: CGFloat) -> DynamicAttributedTextInput {
+        DynamicAttributedTextInput(
+            segments: segments,
+            baseFont: baseFont,
+            textColor: textColor,
+            emoteSize: emoteSize,
+            maxLines: maxLines,
+            typographyRole: typographyRole,
+            lineHeightMultiplier: multiplier
         )
     }
 
@@ -88,16 +121,54 @@ struct DynamicAttributedTextInput: Equatable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    var nativeSwiftUIFont: Font {
-        .system(size: baseFont.pointSize, weight: baseFont.feedFontWeight)
+    func nativeSwiftUIFont() -> Font {
+        if let typographyRole {
+            return typographyRole.nativeFont()
+        }
+        return .system(size: baseFont.pointSize, weight: baseFont.feedFontWeight)
     }
 
     func nativeAttributedPlainText(_ text: String) -> AttributedString {
         DynamicTextLineBreakStyle.attributedString(
             for: text,
             lineLimit: maxLines,
-            lineSpacing: FeedTypography.bodyLineSpacing
+            lineSpacing: additionalLineSpacing
         )
+    }
+
+    func exceedsMaximumLineCount(fittingWidth width: CGFloat) -> Bool {
+        guard let maxLines, maxLines > 0, width.isFinite, width > 1 else { return false }
+
+        let textStorage = NSTextStorage(attributedString: render().attributedString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = lineBreakMode
+        textContainer.maximumNumberOfLines = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        var lineCount = 0
+        var glyphIndex = glyphRange.location
+        let glyphRangeEnd = NSMaxRange(glyphRange)
+
+        while glyphIndex < glyphRangeEnd {
+            var lineRange = NSRange()
+            layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineRange)
+            guard lineRange.length > 0 else { break }
+
+            lineCount += 1
+            if lineCount > maxLines {
+                return true
+            }
+            glyphIndex = NSMaxRange(lineRange)
+        }
+
+        return false
     }
 
     func render() -> (attributedString: NSAttributedString, missingImageURLs: [URL]) {
@@ -140,10 +211,19 @@ struct DynamicAttributedTextInput: Equatable {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = FeedTypography.bodyLineSpacing
+        if lineHeightMultiplier > 0, lineHeightMultiplier != 1 {
+            let lineHeight = baseFont.lineHeight * lineHeightMultiplier
+            style.minimumLineHeight = lineHeight
+            style.maximumLineHeight = lineHeight
+        }
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style
+    }
+
+    private var additionalLineSpacing: CGFloat {
+        guard lineHeightMultiplier > 1 else { return 0 }
+        return baseFont.lineHeight * (lineHeightMultiplier - 1)
     }
 
     var lineBreakMode: NSLineBreakMode {

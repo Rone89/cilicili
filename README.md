@@ -19,7 +19,7 @@ cilicili 是一个使用 SwiftUI 开发的第三方 iOS 客户端实验项目，
 ## 环境要求
 
 - macOS + Xcode 26.5 或更新版本。
-- iOS 26.4+。
+- iOS 26.1+。
 - Swift 6 工具链、Swift 5 language mode / SwiftUI。工程已启用 Approachable Concurrency 和默认 MainActor 隔离，并会逐步迁移到完整 Swift 6 language mode。
 - 目标设备建议 iPhone 16 及以上机型。
 

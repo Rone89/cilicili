@@ -1,5 +1,7 @@
 # Xcode
 DerivedData/
+.xcodebuildmcp/
+.codegraph/
 build/
 Build/
 *.xcarchive/

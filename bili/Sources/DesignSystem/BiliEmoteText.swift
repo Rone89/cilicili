@@ -17,6 +17,7 @@ struct BiliEmoteText: View {
     let fillsAvailableWidth: Bool
     let typographyRole: AppTypography.Role?
     let leadingNameTypographyRole: AppTypography.Role?
+    let onNonLinkTap: (() -> Void)?
 
     @Environment(\.lineLimit) private var lineLimit
     @Environment(\.openAppURLAction) private var openAppURL
@@ -33,7 +34,8 @@ struct BiliEmoteText: View {
         showsLinkButtons: Bool = true,
         fillsAvailableWidth: Bool = true,
         typographyRole: AppTypography.Role? = nil,
-        leadingNameTypographyRole: AppTypography.Role? = nil
+        leadingNameTypographyRole: AppTypography.Role? = nil,
+        onNonLinkTap: (() -> Void)? = nil
     ) {
         self.content = content
         self.plainText = plainText
@@ -47,6 +49,7 @@ struct BiliEmoteText: View {
         self.fillsAvailableWidth = fillsAvailableWidth
         self.typographyRole = typographyRole
         self.leadingNameTypographyRole = leadingNameTypographyRole
+        self.onNonLinkTap = onNonLinkTap
     }
 
     var body: some View {
@@ -62,20 +65,20 @@ struct BiliEmoteText: View {
                 leadingNameColor: UIColor(leadingNameColor),
                 leadingNameFont: resolvedLeadingNameUIFont,
                 emoteSize: resolvedEmoteSize,
-                lineLimit: lineLimit
+                lineLimit: lineLimit,
+                lineSpacing: 0
             ),
             onURLTap: { url in
                 openAppURL?(url)
-            }
+            },
+            onNonLinkTap: onNonLinkTap
         )
         .frame(maxWidth: fillsAvailableWidth ? .infinity : nil, alignment: .leading)
     }
 
     private var resolvedUIFont: UIFont {
         if let typographyRole {
-            return typographyRole.uiFont(
-                contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
-            )
+            return typographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
         }
         let textStyle: UIFont.TextStyle = emoteSize <= 18 ? .caption1 : .subheadline
         return UIFont.preferredFont(forTextStyle: textStyle)
@@ -85,9 +88,7 @@ struct BiliEmoteText: View {
         guard let leadingNameTypographyRole else {
             return nil
         }
-        return leadingNameTypographyRole.uiFont(
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
-        )
+        return leadingNameTypographyRole.uiFont(contentSizeCategory: dynamicTypeSize.uiContentSizeCategory)
     }
 
     private var resolvedEmoteSize: CGFloat {
@@ -133,11 +134,13 @@ struct BiliLinkedText: View {
                 leadingNameColor: .secondaryLabel,
                 leadingNameFont: nil,
                 emoteSize: font.lineHeight,
-                lineLimit: lineLimit
+                lineLimit: lineLimit,
+                lineSpacing: 0
             ),
             onURLTap: { url in
                 openAppURL?(url)
-            }
+            },
+            onNonLinkTap: nil
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -146,7 +149,12 @@ struct BiliLinkedText: View {
 private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     let input: BiliEmoteRenderInput
     let onURLTap: (URL) -> Void
+    let onNonLinkTap: (() -> Void)?
     private static let sharedRenderCache = BiliEmoteRenderCache()
+
+    static func clearRenderCache() {
+        sharedRenderCache.clear()
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -166,6 +174,7 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
 
     func updateUIView(_ label: BiliInteractiveAttributedLabel, context: Context) {
         label.onLinkTap = onURLTap
+        label.onNonLinkTap = onNonLinkTap
         label.numberOfLines = input.lineLimit ?? 0
         label.lineBreakMode = input.lineBreakMode
         if #available(iOS 14.0, *) {
@@ -279,6 +288,7 @@ extension NSAttributedString.Key {
 
 final class BiliInteractiveAttributedLabel: UILabel {
     var onLinkTap: ((URL) -> Void)?
+    var onNonLinkTap: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -300,11 +310,13 @@ final class BiliInteractiveAttributedLabel: UILabel {
         guard recognizer.state == .ended,
               let attributedText,
               attributedText.length > 0,
-              let onLinkTap,
               let characterIndex = characterIndex(at: recognizer.location(in: self)),
               characterIndex >= 0,
               characterIndex < attributedText.length
-        else { return }
+        else {
+            onNonLinkTap?()
+            return
+        }
 
         let attribute = attributedText.attribute(.biliMentionURL, at: characterIndex, effectiveRange: nil)
         let url: URL?
@@ -317,7 +329,9 @@ final class BiliInteractiveAttributedLabel: UILabel {
         }
 
         if let url {
-            onLinkTap(url)
+            onLinkTap?(url)
+        } else {
+            onNonLinkTap?()
         }
     }
 
@@ -524,7 +538,8 @@ private final class BiliEmoteRenderCache {
     private let cache = NSCache<NSString, BiliEmoteRenderCacheEntry>()
 
     init() {
-        cache.countLimit = 700
+        cache.countLimit = BiliEmoteCacheBudget.renderCountLimit
+        cache.totalCostLimit = BiliEmoteCacheBudget.renderCostLimit
     }
 
     func result(for key: String) -> BiliEmoteRenderResult? {
@@ -532,15 +547,47 @@ private final class BiliEmoteRenderCache {
     }
 
     func set(_ result: BiliEmoteRenderResult, for key: String) {
-        cache.setObject(BiliEmoteRenderCacheEntry(result: result), forKey: key as NSString)
+        let entry = BiliEmoteRenderCacheEntry(result: result)
+        cache.setObject(entry, forKey: key as NSString, cost: entry.memoryCost)
+    }
+
+    func clear() {
+        cache.removeAllObjects()
     }
 }
 
 private final class BiliEmoteRenderCacheEntry {
     let result: BiliEmoteRenderResult
+    let memoryCost: Int
 
     init(result: BiliEmoteRenderResult) {
         self.result = result
+        var attachmentImageCost = 0
+        result.attributedString.enumerateAttribute(
+            .attachment,
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { value, _, _ in
+            guard let attachment = value as? NSTextAttachment,
+                  let image = attachment.image
+            else { return }
+            attachmentImageCost += image.memoryCost
+        }
+        memoryCost = BiliEmoteCacheBudget.renderCost(
+            textLength: result.attributedString.length,
+            attachmentImageCost: attachmentImageCost
+        )
+    }
+}
+
+nonisolated enum BiliEmoteCacheBudget {
+    static let renderCountLimit = 240
+    static let renderCostLimit = 24 * 1024 * 1024
+    static let imageCountLimit = 160
+    static let imageCostLimit = 16 * 1024 * 1024
+
+    static func renderCost(textLength: Int, attachmentImageCost: Int) -> Int {
+        let textCost = max(textLength, 1) * 32
+        return max(textCost + max(attachmentImageCost, 0), 1)
     }
 }
 
@@ -556,6 +603,7 @@ private struct BiliEmoteRenderInput {
     let leadingNameFont: UIFont?
     let emoteSize: CGFloat
     let lineLimit: Int?
+    let lineSpacing: CGFloat
 
     init(
         content: CommentContent?,
@@ -568,7 +616,8 @@ private struct BiliEmoteRenderInput {
         leadingNameColor: UIColor,
         leadingNameFont: UIFont?,
         emoteSize: CGFloat,
-        lineLimit: Int?
+        lineLimit: Int?,
+        lineSpacing: CGFloat
     ) {
         self.content = content
         self.inlineEmotes = inlineEmotes
@@ -581,6 +630,7 @@ private struct BiliEmoteRenderInput {
         self.leadingNameFont = leadingNameFont
         self.emoteSize = emoteSize
         self.lineLimit = lineLimit
+        self.lineSpacing = lineSpacing
     }
 
     private var message: String {
@@ -618,7 +668,8 @@ private struct BiliEmoteRenderInput {
             "\(textColor.rgbaCacheKey)",
             "\(leadingNameColor.rgbaCacheKey)",
             "\(emoteSize)",
-            "\(lineLimit ?? -1)"
+            "\(lineLimit ?? -1)",
+            "\(lineSpacing)"
         ].joined(separator: "\u{1f}")
     }
 
@@ -660,7 +711,7 @@ private struct BiliEmoteRenderInput {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 2
+        style.lineSpacing = lineSpacing
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style
@@ -877,7 +928,8 @@ final class BiliEmoteImageStore {
     private let placeholderCache = NSCache<NSNumber, UIImage>()
 
     private init() {
-        cache.countLimit = 240
+        cache.countLimit = BiliEmoteCacheBudget.imageCountLimit
+        cache.totalCostLimit = BiliEmoteCacheBudget.imageCostLimit
         placeholderCache.countLimit = 8
     }
 
@@ -895,11 +947,16 @@ final class BiliEmoteImageStore {
             scale: 2,
             targetPixelSize: 96
         ) {
-            cache.setObject(image, forKey: url as NSURL)
+            cache.setObject(image, forKey: url as NSURL, cost: image.memoryCost)
             return image
         }
 
         return nil
+    }
+
+    func clear() {
+        cache.removeAllObjects()
+        placeholderCache.removeAllObjects()
     }
 
     func placeholderImage(size: CGFloat) -> UIImage {
@@ -916,5 +973,13 @@ final class BiliEmoteImageStore {
         }
         placeholderCache.setObject(image, forKey: key)
         return image
+    }
+}
+
+enum BiliEmoteMemoryCache {
+    @MainActor
+    static func clear() {
+        BiliAttributedEmoteLabel.clearRenderCache()
+        BiliEmoteImageStore.shared.clear()
     }
 }

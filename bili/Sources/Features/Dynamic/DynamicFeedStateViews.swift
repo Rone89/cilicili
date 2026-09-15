@@ -7,6 +7,7 @@ struct DynamicFeedSkeletonScrollContent: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 28)
         }
+        .nativeTopScrollEdgeEffect()
     }
 }
 

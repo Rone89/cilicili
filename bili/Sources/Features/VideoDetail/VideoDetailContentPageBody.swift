@@ -1,14 +1,17 @@
 import SwiftUI
 
 struct VideoDetailContentPageBody: View {
-    @ObservedObject var viewModel: VideoDetailViewModel
+    let viewModel: VideoDetailViewModel
     let layoutWidth: CGFloat
     let tab: VideoDetailContentTab
+    let mountsSecondaryContent: Bool
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let onShowNetworkDiagnostics: () -> Void
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onReply: (Comment) -> Void
+    var showsSummary = true
+    var onComposeReply: ((Comment) -> Void)? = nil
 
     var body: some View {
         switch tab {
@@ -16,17 +19,26 @@ struct VideoDetailContentPageBody: View {
             VideoDetailLoadedDetailContentPage(
                 viewModel: viewModel,
                 layoutWidth: layoutWidth,
+                mountsSecondaryContent: mountsSecondaryContent,
                 runtimeSettings: runtimeSettings,
                 onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                 onShowFavoriteFolders: onShowFavoriteFolders,
-                onShowCoinPicker: onShowCoinPicker
+                onShowCoinPicker: onShowCoinPicker,
+                showsSummary: showsSummary
             )
 
         case .comments:
-            VideoDetailLoadedCommentsContentPage(
-                viewModel: viewModel,
-                onReply: onReply
-            )
+            if mountsSecondaryContent {
+                VideoDetailLoadedCommentsContentPage(
+                    viewModel: viewModel,
+                    onReply: onReply,
+                    onComposeReply: onComposeReply
+                )
+            } else {
+                Color.clear
+                    .frame(minHeight: 320)
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

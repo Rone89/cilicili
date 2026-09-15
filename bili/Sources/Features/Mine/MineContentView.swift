@@ -37,6 +37,7 @@ struct MineContentView: View {
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
+        .contentMargins(.top, 0, for: .scrollContent)
         .nativeTopScrollEdgeEffect()
     }
 }

@@ -11,6 +11,16 @@ enum MineOverlayRoute: Hashable {
     case playbackSettings
     case contentFilterSettings
     case privacySettings
+
+    var isSettingsRoute: Bool {
+        switch self {
+        case .interfaceSettings, .homeAndSearchSettings, .playbackSettings, .contentFilterSettings,
+             .privacySettings, .multiAccountSettings:
+            true
+        case .accountMessages, .history, .favorites:
+            false
+        }
+    }
 }
 
 struct MineOverlayNavigationButton<Label: View>: View {

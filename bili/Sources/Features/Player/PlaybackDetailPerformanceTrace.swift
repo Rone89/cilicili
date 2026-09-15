@@ -50,12 +50,18 @@ struct PlaybackDetailPerformanceContext: Equatable, Sendable {
 }
 
 enum PlaybackDetailPerformanceMilestone: String, Hashable, Sendable {
+    case navigationRequested
+    case viewControllerLoaded
     case pageAppeared
+    case viewControllerAppeared
     case initialContentAppeared
     case loadedContentAppeared
     case initialContentRemoved
     case playerAttached
     case firstFramePresented
+    case navigationBackRequested
+    case returnedPageVisible
+    case backgroundRenderFreezeReleased
     case fullscreenTransitionStarted
     case fullscreenLayoutUpdated
     case pageDisappeared
@@ -98,6 +104,7 @@ final class PlaybackDetailPerformanceMonitor {
     private static let logger = Logger(subsystem: "cc.bili", category: "PlaybackDetailPerformance")
     private var sessions = [String: Session]()
     private var completedSnapshots = [PlaybackDetailPerformanceSnapshot]()
+    private var pendingBackNavigationStartedAt: CFTimeInterval?
 
     private init() {}
 
@@ -111,6 +118,35 @@ final class PlaybackDetailPerformanceMonitor {
             context: context,
             startedAt: now,
             lastEventAt: now
+        )
+    }
+
+    func beginNavigation(
+        to context: PlaybackDetailPerformanceContext,
+        detail: String? = nil
+    ) {
+        pendingBackNavigationStartedAt = nil
+        mark(.navigationRequested, context: context, detail: detail)
+    }
+
+    func beginBackNavigation(
+        from context: PlaybackDetailPerformanceContext,
+        source: String
+    ) {
+        if pendingBackNavigationStartedAt == nil {
+            pendingBackNavigationStartedAt = CACurrentMediaTime()
+        }
+        mark(.navigationBackRequested, context: context, detail: "source=\(source)")
+    }
+
+    func markReturnedPageVisible(_ context: PlaybackDetailPerformanceContext) {
+        guard let startedAt = pendingBackNavigationStartedAt else { return }
+        pendingBackNavigationStartedAt = nil
+        let elapsed = Self.milliseconds(from: startedAt, to: CACurrentMediaTime())
+        mark(
+            .returnedPageVisible,
+            context: context,
+            detail: "backToVisible=\(elapsed)ms"
         )
     }
 
@@ -172,8 +208,13 @@ final class PlaybackDetailPerformanceMonitor {
     }
 
     func resetForTesting() {
+        clear()
+    }
+
+    func clear() {
         sessions.removeAll()
         completedSnapshots.removeAll()
+        pendingBackNavigationStartedAt = nil
     }
 
     private static func snapshot(from session: Session) -> PlaybackDetailPerformanceSnapshot {
@@ -200,7 +241,7 @@ final class PlaybackDetailPerformanceMonitor {
             "elapsed=\(record.elapsedMilliseconds)ms",
             "delta=\(record.deltaMilliseconds)ms",
             detailText(record.detail),
-            context.title.map { "title=\(PlayerMetricsLog.shortTitle($0))" }
+            context.title.map { "title=\(PlayerMetricsLog.shortTitle($0))" },
         ]
         .compactMap { $0 }
         .joined(separator: " ")

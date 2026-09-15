@@ -23,9 +23,11 @@ enum HomeFeedMode: String, CaseIterable, Hashable, Identifiable {
             return "chart.line.uptrend.xyaxis"
         }
     }
-}
 
-nonisolated enum HomeNavigationModeSwitcherExperiment {
-    static let storageKey = "cc.bili.home.navigationModeSwitcherExperimentEnabled.v1"
-    static let defaultIsEnabled = true
+    func requiresRefreshAfterSwitch(
+        from previousMode: HomeFeedMode,
+        restoredContent: Bool
+    ) -> Bool {
+        !(previousMode == .popular && self == .recommend && restoredContent)
+    }
 }

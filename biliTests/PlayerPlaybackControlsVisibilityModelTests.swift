@@ -3,6 +3,17 @@ import XCTest
 
 final class PlayerPlaybackControlsVisibilityModelTests: XCTestCase {
     @MainActor
+    func testImmediateHideRemovesControlsWithoutTransitionDelay() {
+        let model = PlayerPlaybackControlsVisibilityModel()
+
+        model.hide(animated: false)
+
+        XCTAssertFalse(model.isVisible)
+        XCTAssertEqual(model.opacity, 0)
+        XCTAssertFalse(model.acceptsHitTesting)
+    }
+
+    @MainActor
     func testAnimatedHideKeepsControlsTouchableDuringFade() async throws {
         let model = PlayerPlaybackControlsVisibilityModel()
 

@@ -34,6 +34,7 @@ struct HomeFeedSingleColumnContent: View {
                 HomeFeedSingleColumnCard(
                     metrics: metrics,
                     cell: cell,
+                    isFirstCell: cell.id == cells.first?.id,
                     loadMoreTriggerCellID: loadMoreTriggerCellID,
                     actions: actions
                 )

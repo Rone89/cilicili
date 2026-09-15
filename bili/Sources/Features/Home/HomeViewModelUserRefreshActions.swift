@@ -2,17 +2,26 @@ import Foundation
 
 extension HomeViewModel {
     func refreshFromUserPull() async {
-        guard !isRefreshing else { return }
-        let now = Date()
-        if let lastUserRefreshDate,
-           now.timeIntervalSince(lastUserRefreshDate) < 1.0 {
-            return
+        let isModeSwitchRefresh = modeSwitchRefreshPending
+        modeSwitchRefreshPending = false
+
+        guard isModeSwitchRefresh || !isRefreshing else { return }
+        if !isModeSwitchRefresh {
+            let now = Date()
+            if let lastUserRefreshDate,
+               now.timeIntervalSince(lastUserRefreshDate) < 1.0 {
+                return
+            }
+            lastUserRefreshDate = now
         }
-        lastUserRefreshDate = now
         isUserRefreshing = true
         defer {
             isUserRefreshing = false
         }
-        await refresh(preservingExistingRecommendations: true)
+        if isModeSwitchRefresh {
+            await refresh(resetCursor: true)
+        } else {
+            await refresh(preservingExistingRecommendations: true)
+        }
     }
 }

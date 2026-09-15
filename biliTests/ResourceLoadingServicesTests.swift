@@ -2,6 +2,31 @@ import XCTest
 @testable import bili
 
 final class ResourceLoadingServicesTests: XCTestCase {
+    private var previousCodecPreference: Any?
+
+    override func setUp() {
+        super.setUp()
+        previousCodecPreference = UserDefaults.standard.object(
+            forKey: VideoCodecPreference.storageKey
+        )
+        UserDefaults.standard.set(
+            VideoCodecPreference.auto.rawValue,
+            forKey: VideoCodecPreference.storageKey
+        )
+    }
+
+    override func tearDown() {
+        if let previousCodecPreference {
+            UserDefaults.standard.set(
+                previousCodecPreference,
+                forKey: VideoCodecPreference.storageKey
+            )
+        } else {
+            UserDefaults.standard.removeObject(forKey: VideoCodecPreference.storageKey)
+        }
+        super.tearDown()
+    }
+
     func testWebPagePlayInfoStreamParserExtractsAcrossChunkBoundaries() throws {
         var parser = BiliWebPagePlayInfoStreamParser()
         let first = Data("<html><script>window.__playin".utf8)
@@ -269,6 +294,20 @@ final class ResourceLoadingServicesTests: XCTestCase {
     }
 
     func testAdvertisedMissingQualityRequestsAnotherPlaybackResponse() throws {
+        let defaults = UserDefaults.standard
+        let previousCodecPreference = defaults.object(forKey: VideoCodecPreference.storageKey)
+        defaults.set(
+            VideoCodecPreference.forceH264.rawValue,
+            forKey: VideoCodecPreference.storageKey
+        )
+        defer {
+            if let previousCodecPreference {
+                defaults.set(previousCodecPreference, forKey: VideoCodecPreference.storageKey)
+            } else {
+                defaults.removeObject(forKey: VideoCodecPreference.storageKey)
+            }
+        }
+
         let json = """
         {
             "quality": 32,

@@ -18,7 +18,6 @@ struct CommentRepliesLoadedList: View {
                 .padding(.horizontal, 16)
 
                 Divider()
-                    .padding(.leading, 62)
             }
 
             CommentRepliesFooter(
