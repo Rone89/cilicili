@@ -12,6 +12,10 @@ struct VideoCompactListTextColumn: View {
             StableVideoTitleText(display.title, style: .related, lineLimit: 2)
                 .frame(minHeight: titleMinHeight, alignment: .topLeading)
 
+            if metadataStyle == .related {
+                Spacer(minLength: 0)
+            }
+
             VideoCompactAuthorLabel(display: display, authorStyle: authorStyle)
 
             VideoCompactMetadataRow(display: display, metadataStyle: metadataStyle)
@@ -48,9 +52,8 @@ private struct VideoCompactMetadataRow: View {
         switch metadataStyle {
         case .related:
             HStack(spacing: 4) {
-                if !display.viewText.isEmpty {
-                    Label(display.viewText, systemImage: "play.fill")
-                        .labelStyle(.titleAndIcon)
+                if !display.viewText.isEmpty, display.viewText != "-" {
+                    Text("\(display.viewText)次观看")
                 }
 
                 if !display.publishTimeText.isEmpty {
