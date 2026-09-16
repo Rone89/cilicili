@@ -23,6 +23,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             reloadDialog: sheetActions.replies.reloadDialog,
                             submitReply: submitReply
                         )
+                        .environment(
+                            \.videoDetailStandardHorizontalInset,
+                            libraryStore.standardPageHorizontalInset
+                        )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
                         .commentLikeTarget(
                             oid: viewModel.commentTarget?.oid,
@@ -36,6 +40,10 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                             initialReplyID: nil,
                             actions: sheetActions.replies,
                             submitReply: submitReply
+                        )
+                        .environment(
+                            \.videoDetailStandardHorizontalInset,
+                            libraryStore.standardPageHorizontalInset
                         )
                         .environment(\.commentContentOwnerMID, viewModel.detail.owner?.mid)
                         .commentLikeTarget(

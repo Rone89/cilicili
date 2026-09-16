@@ -41,6 +41,7 @@ struct MinePrivacySettingsView: View {
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
     }

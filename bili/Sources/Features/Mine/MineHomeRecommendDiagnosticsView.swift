@@ -181,6 +181,7 @@ struct MineHomeRecommendDiagnosticsView: View {
                 }
             }
         }
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
         .nativeTopScrollEdgeEffect()

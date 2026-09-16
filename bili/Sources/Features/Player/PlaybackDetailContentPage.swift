@@ -1,12 +1,17 @@
 import SwiftUI
 
 enum PlaybackDetailContentMetrics {
-    static let horizontalPadding: CGFloat = 12
+    static let horizontalPadding: CGFloat = 20
     static let spacing: CGFloat = 10
     static let topPadding: CGFloat = 8
 
-    static func contentWidth(for layoutWidth: CGFloat) -> CGFloat {
-        max(layoutWidth - horizontalPadding * 2, 0)
+    static func horizontalPadding(for standardInset: CGFloat) -> CGFloat {
+        standardInset
+    }
+
+    static func contentWidth(for layoutWidth: CGFloat, horizontalInset: CGFloat? = nil) -> CGFloat {
+        let inset = horizontalInset ?? horizontalPadding
+        return max(layoutWidth - inset * 2, 0)
     }
 }
 

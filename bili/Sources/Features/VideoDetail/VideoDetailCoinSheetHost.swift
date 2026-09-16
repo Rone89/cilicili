@@ -38,7 +38,7 @@ struct VideoDetailCoinSheetHost: View {
                         if isSubmitting {
                             ProgressView()
                         } else {
-                            Label("投 \(selectedCoinCount) 枚", systemImage: "bitcoinsign.circle.fill")
+                            Label("投 \(selectedCoinCount) 枚", systemImage: "bitcoinsign.circle")
                         }
                     }
                     .frame(maxWidth: .infinity)

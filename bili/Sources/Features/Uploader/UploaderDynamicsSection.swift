@@ -4,21 +4,33 @@ struct UploaderDynamicsSection: View {
     let api: BiliAPIClient
     @ObservedObject var viewModel: UploaderViewModel
     let contentWidth: CGFloat
+    let horizontalInset: CGFloat
 
     private var lastItemID: String? {
         viewModel.dynamicItems.last?.id
     }
 
+    init(
+        api: BiliAPIClient,
+        viewModel: UploaderViewModel,
+        contentWidth: CGFloat,
+        horizontalInset: CGFloat = 16
+    ) {
+        self.api = api
+        self.viewModel = viewModel
+        self.contentWidth = contentWidth
+        self.horizontalInset = horizontalInset
+    }
+
     private var cardWidth: CGFloat? {
-        guard contentWidth > 32 else { return nil }
-        return contentWidth - 32
+        guard contentWidth > horizontalInset * 2 else { return nil }
+        return contentWidth - horizontalInset * 2
     }
 
     var body: some View {
         LazyVStack(spacing: 0) {
             if viewModel.dynamicItems.isEmpty && viewModel.dynamicState.isLoading {
                 DynamicFeedSkeletonList()
-                    .padding(.horizontal, 16)
             } else if viewModel.dynamicItems.isEmpty {
                 emptyOrErrorState
                     .frame(maxWidth: .infinity)
@@ -48,7 +60,7 @@ struct UploaderDynamicsSection: View {
                     .padding(.top, 6)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalInset)
     }
 
     @ViewBuilder

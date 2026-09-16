@@ -15,17 +15,17 @@ struct InitialVideoDetailControls: View {
 }
 
 private struct InitialVideoDetailActionStrip: View {
+    @Environment(\.videoDetailActionButtonStyle) private var actionButtonStyle
     let contentWidth: CGFloat
 
     var body: some View {
-        let layout = VideoDetailActionStripLayout(contentWidth: contentWidth)
-
+        let usesPlainStyle = actionButtonStyle.usesPlainStyle
         HStack(spacing: layout.columnSpacing) {
             avatarPlaceholder
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
+                .frame(width: layout.avatarColumnWidth, height: layout.rowHeight)
 
             followPlaceholder
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
+                .frame(width: layout.followColumnWidth, height: layout.rowHeight)
 
             ForEach(0..<4, id: \.self) { _ in
                 iconPlaceholder
@@ -44,27 +44,30 @@ private struct InitialVideoDetailActionStrip: View {
         Circle()
             .fill(VideoDetailTheme.secondarySurface.opacity(VideoDetailSkeletonStyle.actionStripFillOpacity))
             .frame(
-                width: VideoDetailActionStrip.Metrics.avatarImageSide,
-                height: VideoDetailActionStrip.Metrics.avatarImageSide
-            )
-            .frame(
-                width: VideoDetailActionStrip.Metrics.avatarSide,
-                height: VideoDetailActionStrip.Metrics.avatarSide
+                width: layout.avatarImageSide,
+                height: layout.avatarImageSide
             )
     }
 
     private var followPlaceholder: some View {
         Capsule(style: .continuous)
             .fill(VideoDetailTheme.secondarySurface.opacity(VideoDetailSkeletonStyle.actionStripFillOpacity))
-            .frame(height: VideoDetailActionStrip.Metrics.followHeight)
+            .frame(height: layout.followHeight)
     }
 
     private var iconPlaceholder: some View {
         Circle()
             .fill(VideoDetailTheme.secondarySurface.opacity(VideoDetailSkeletonStyle.actionStripFillOpacity))
             .frame(
-                width: VideoDetailActionStrip.Metrics.actionLabelSide,
-                height: VideoDetailActionStrip.Metrics.actionLabelSide
+                width: layout.actionLabelSide,
+                height: layout.actionLabelSide
             )
+    }
+
+    private var layout: VideoDetailActionStripLayout {
+        VideoDetailActionStripLayout(
+            contentWidth: contentWidth,
+            usesPlainStyle: actionButtonStyle.usesPlainStyle
+        )
     }
 }

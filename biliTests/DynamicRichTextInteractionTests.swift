@@ -92,6 +92,119 @@ final class DynamicRichTextInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testTextKitLabelClipsCollapsedContentToMaximumLines() {
+        let font = UIFont.systemFont(ofSize: 17)
+        let text = "一\n二\n三\n四\n五\n六\n七"
+        let collapsedInput = DynamicAttributedTextInput(
+            segments: [.text(text)],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+        let expandedInput = DynamicAttributedTextInput(
+            segments: [.text(text)],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: nil,
+            typographyRole: nil
+        )
+
+        let collapsedLabel = makeLabel(
+            input: collapsedInput,
+            attributedString: collapsedInput.render().attributedString
+        )
+        let expandedLabel = makeLabel(
+            input: expandedInput,
+            attributedString: expandedInput.render().attributedString
+        )
+
+        XCTAssertLessThan(
+            collapsedLabel.bounds.height,
+            expandedLabel.bounds.height
+        )
+    }
+
+    @MainActor
+    func testTextKitLabelClipsWrappedCollapsedContentToMaximumLines() {
+        let font = UIFont.systemFont(ofSize: 17)
+        let text = String(repeating: "这是一段用于验证动态文本换行的内容。", count: 8)
+        let collapsedInput = DynamicAttributedTextInput(
+            segments: [.text(text)],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+        let expandedInput = DynamicAttributedTextInput(
+            segments: [.text(text)],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: nil,
+            typographyRole: nil
+        )
+
+        let collapsedLabel = makeLabel(
+            input: collapsedInput,
+            attributedString: collapsedInput.render().attributedString
+        )
+        let expandedLabel = makeLabel(
+            input: expandedInput,
+            attributedString: expandedInput.render().attributedString
+        )
+
+        XCTAssertLessThan(
+            collapsedLabel.bounds.height,
+            expandedLabel.bounds.height,
+            "collapsed=\(collapsedLabel.bounds.height), expanded=\(expandedLabel.bounds.height)"
+        )
+    }
+
+    @MainActor
+    func testTextInputIgnoresTrailingWhitespaceLine() {
+        let input = DynamicAttributedTextInput(
+            segments: [.text("一\n二\n三\n四\n五\n六\n")],
+            baseFont: UIFont.systemFont(ofSize: 17),
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+
+        XCTAssertFalse(input.exceedsMaximumLineCount(fittingWidth: 320))
+    }
+
+    @MainActor
+    func testDynamicTextNormalizesCarriageReturnLineEndings() throws {
+        let data = Data(#"{"text":"第一行\r\n第二行\r第三行"}"#.utf8)
+        let dynamicText = try JSONDecoder().decode(DynamicText.self, from: data)
+
+        XCTAssertEqual(dynamicText.segments, [.text("第一行\n第二行\n第三行")])
+    }
+
+    @MainActor
+    func testDynamicTextIgnoresTrailingWhitespaceWhenCountingCollapsedLines() throws {
+        let data = Data(#"{"text":" \n一\n二\n三\n四\n五\n六\n \t"}"#.utf8)
+        let dynamicText = try JSONDecoder().decode(DynamicText.self, from: data)
+
+        XCTAssertEqual(dynamicText.segments, [.text("一\n二\n三\n四\n五\n六")])
+
+        let input = DynamicAttributedTextInput(
+            segments: dynamicText.segments,
+            baseFont: UIFont.systemFont(ofSize: 17),
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: 6,
+            typographyRole: nil
+        )
+        XCTAssertFalse(input.exceedsMaximumLineCount(fittingWidth: 320))
+    }
+
+    @MainActor
     func testDynamicFeedLineSpacingUsesEqualFixedLineBoxes() throws {
         let font = UIFont.systemFont(ofSize: 15)
         let input = DynamicAttributedTextInput(
@@ -141,6 +254,27 @@ final class DynamicRichTextInteractionTests: XCTestCase {
         XCTAssertEqual(attachment.bounds.height, expectedSize, accuracy: 0.001)
         XCTAssertGreaterThanOrEqual(attachment.bounds.minY, font.descender - 0.001)
         XCTAssertLessThanOrEqual(attachment.bounds.maxY, font.ascender + 0.001)
+    }
+
+    @MainActor
+    func testDynamicFeedEmoteAttachmentUsesBodyFontMetrics() throws {
+        let font = UIFont.systemFont(ofSize: 17)
+        let input = DynamicAttributedTextInput(
+            segments: [.emoji(text: "[表情]", url: "https://example.com/emote")],
+            baseFont: font,
+            textColor: .label,
+            emoteSize: 20,
+            maxLines: nil,
+            typographyRole: nil
+        )
+
+        let rendered = input.render().attributedString
+        let appliedFont = try XCTUnwrap(
+            rendered.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        )
+
+        XCTAssertEqual(appliedFont.fontName, font.fontName)
+        XCTAssertEqual(appliedFont.pointSize, font.pointSize, accuracy: 0.001)
     }
 
     @MainActor

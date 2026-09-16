@@ -44,6 +44,7 @@ struct DynamicCommentText: View {
                 Text(nativeText)
                     .lineLimit(lineLimit)
                     .multilineTextAlignment(.leading)
+                    .lineSpacing(lineSpacing)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .contentShape(Rectangle())
@@ -56,6 +57,7 @@ struct DynamicCommentText: View {
                     emoteSize: emoteSize,
                     leadingName: leadingName,
                     leadingNameColor: leadingNameColor,
+                    lineSpacing: lineSpacing,
                     typographyRole: typographyRole,
                     onNonLinkTap: onNonLinkTap
                 )

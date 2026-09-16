@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct InitialRelatedSection: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let layoutWidth: CGFloat
 
     var body: some View {
-        let layout = VideoDetailRelatedListLayout(layoutWidth: layoutWidth)
+        let layout = VideoDetailRelatedListLayout(
+            layoutWidth: layoutWidth,
+            horizontalPadding: standardHorizontalInset
+        )
 
         VStack(alignment: .leading, spacing: VideoDetailRelatedStyle.sectionSpacing) {
             VideoDetailRelatedHeader(isLoading: true)

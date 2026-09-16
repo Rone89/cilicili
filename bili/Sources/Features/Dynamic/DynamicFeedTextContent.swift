@@ -19,6 +19,8 @@ struct DynamicFeedTextContent: View {
                 input: displayedInput,
                 preferredWidth: preferredWidth,
                 onNonLinkTap: onOpenDetail,
+                // Keep all dynamic text on one layout engine so Unicode
+                // fallback glyphs and inline emotes share the same line boxes.
                 usesTextKitLayout: true,
                 onContentLayoutChange: { updateExpansionVisibility(fittingWidth: measuredTextWidth) }
             )
@@ -38,7 +40,7 @@ struct DynamicFeedTextContent: View {
                     }
                     .appTypography(.action, fallback: .footnote.weight(.semibold))
                     .foregroundStyle(appTintColor)
-                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

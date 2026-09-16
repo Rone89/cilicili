@@ -1,12 +1,20 @@
 import SwiftUI
 
 struct InitialVideoDetailDetailContentPage: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let seedVideo: VideoItem
     let layoutWidth: CGFloat
     let mountsSecondaryContent: Bool
 
     private var contentWidth: CGFloat {
-        PlaybackDetailContentMetrics.contentWidth(for: layoutWidth)
+        PlaybackDetailContentMetrics.contentWidth(
+            for: layoutWidth,
+            horizontalInset: horizontalInset
+        )
+    }
+
+    private var horizontalInset: CGFloat {
+        PlaybackDetailContentMetrics.horizontalPadding(for: standardHorizontalInset)
     }
 
     private var shouldShowInitialPageMenuPlaceholder: Bool {
@@ -18,11 +26,11 @@ struct InitialVideoDetailDetailContentPage: View {
             titleText: seedVideo.title,
             contentWidth: contentWidth
         )
-        .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
+        .padding(.horizontal, horizontalInset)
 
         if shouldShowInitialPageMenuPlaceholder {
             InitialPageMenuPlaceholder(pageCount: seedVideo.pages?.count)
-                .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
+                .padding(.horizontal, horizontalInset)
         }
 
         if mountsSecondaryContent && !seedVideo.isPGCEpisode {

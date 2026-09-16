@@ -13,6 +13,7 @@ struct BiliEmoteText: View {
     let emoteSize: CGFloat
     let leadingName: String?
     let leadingNameColor: Color
+    let lineSpacing: CGFloat
     let showsLinkButtons: Bool
     let fillsAvailableWidth: Bool
     let typographyRole: AppTypography.Role?
@@ -31,6 +32,7 @@ struct BiliEmoteText: View {
         emoteSize: CGFloat = 22,
         leadingName: String? = nil,
         leadingNameColor: Color = .pink,
+        lineSpacing: CGFloat = 0,
         showsLinkButtons: Bool = true,
         fillsAvailableWidth: Bool = true,
         typographyRole: AppTypography.Role? = nil,
@@ -45,6 +47,7 @@ struct BiliEmoteText: View {
         self.emoteSize = emoteSize
         self.leadingName = leadingName
         self.leadingNameColor = leadingNameColor
+        self.lineSpacing = lineSpacing
         self.showsLinkButtons = showsLinkButtons
         self.fillsAvailableWidth = fillsAvailableWidth
         self.typographyRole = typographyRole
@@ -66,7 +69,7 @@ struct BiliEmoteText: View {
                 leadingNameFont: resolvedLeadingNameUIFont,
                 emoteSize: resolvedEmoteSize,
                 lineLimit: lineLimit,
-                lineSpacing: 0
+                lineSpacing: lineSpacing
             ),
             onURLTap: { url in
                 openAppURL?(url)
@@ -711,7 +714,13 @@ private struct BiliEmoteRenderInput {
 
     private var paragraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = lineSpacing
+        // Keep one line box for every run. Without fixed bounds an image
+        // attachment can expand only the line that contains it.
+        let lineHeight = baseFont.lineHeight + max(lineSpacing, 0)
+        style.minimumLineHeight = lineHeight
+        style.maximumLineHeight = lineHeight
+        style.paragraphSpacing = 0
+        style.paragraphSpacingBefore = 0
         style.lineBreakMode = lineBreakMode
         style.lineBreakStrategy = lineBreakStrategy
         return style
@@ -823,24 +832,38 @@ private struct BiliEmoteRenderInput {
             return attributedText(token, color: textColor, font: baseFont)
         }
 
+        let fontEnvelopeHeight = baseFont.ascender - baseFont.descender
+        let resolvedEmoteSize = min(emoteSize, baseFont.lineHeight, fontEnvelopeHeight)
+        let verticalInset = max((fontEnvelopeHeight - resolvedEmoteSize) / 2, 0)
         let attachment = NSTextAttachment()
         if let image = BiliEmoteImageStore.shared.cachedImage(for: url) {
             attachment.image = image
         } else {
-            attachment.image = BiliEmoteImageStore.shared.placeholderImage(size: emoteSize)
+            attachment.image = BiliEmoteImageStore.shared.placeholderImage(size: resolvedEmoteSize)
             missingImageURLs.append(url)
         }
         let aspectRatio = CGFloat(
             max(emote.width ?? Double(emoteSize), 1) / max(emote.height ?? Double(emoteSize), 1)
         )
-        let attachmentWidth = min(max(emoteSize * aspectRatio, emoteSize * 0.75), emoteSize * 4)
+        let attachmentWidth = min(
+            max(resolvedEmoteSize * aspectRatio, resolvedEmoteSize * 0.75),
+            resolvedEmoteSize * 4
+        )
         attachment.bounds = CGRect(
             x: 0,
-            y: (baseFont.capHeight - emoteSize) / 2,
+            y: baseFont.descender + verticalInset,
             width: attachmentWidth,
-            height: emoteSize
+            height: resolvedEmoteSize
         )
-        return NSAttributedString(attachment: attachment)
+        let result = NSMutableAttributedString(attachment: attachment)
+        result.addAttributes(
+            [
+                .font: baseFont,
+                .foregroundColor: textColor
+            ],
+            range: NSRange(location: 0, length: result.length)
+        )
+        return result
     }
 
     private func emote(for token: String) -> BiliInlineEmote? {

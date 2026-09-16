@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailInitialPlaybackStage: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let seedVideo: VideoItem
     let layout: VideoDetailInitialPlaybackLayout
     let containerHeight: CGFloat
@@ -17,6 +18,7 @@ struct VideoDetailInitialPlaybackStage: View {
                 selection: $selectedContentTab,
                 layoutWidth: layout.width,
                 topInset: layout.playerHeight,
+                standardHorizontalInset: standardHorizontalInset,
                 mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent,
                 onScrollOffsetChange: nil
             ) { tab, mountsSecondaryContent in

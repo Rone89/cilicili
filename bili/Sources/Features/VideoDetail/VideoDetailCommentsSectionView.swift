@@ -1,6 +1,18 @@
 import SwiftUI
 
+private struct CommentSectionHorizontalPaddingKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    var commentSectionHorizontalPadding: CGFloat? {
+        get { self[CommentSectionHorizontalPaddingKey.self] }
+        set { self[CommentSectionHorizontalPaddingKey.self] = newValue }
+    }
+}
+
 struct CommentsSectionView: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     @ObservedObject var store: VideoDetailCommentsRenderStore
     let style: CommentSectionStyle
     let maxVisibleComments: Int?
@@ -39,6 +51,10 @@ struct CommentsSectionView: View {
         ].joined(separator: "|")
     }
 
+    private var horizontalPadding: CGFloat {
+        standardHorizontalInset
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CommentsSectionHeader(
@@ -57,6 +73,7 @@ struct CommentsSectionView: View {
         }
         .padding(.vertical, verticalPadding)
         .background(style == .grouped ? VideoDetailTheme.surface : Color.clear)
+        .environment(\.commentSectionHorizontalPadding, horizontalPadding)
         .commentsSectionLifecycle(taskID: commentsLoadTaskID, actions: lifecycleActions)
     }
 

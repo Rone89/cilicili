@@ -3,9 +3,20 @@ import SwiftUI
 struct UploaderHeaderView: View {
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
+    let horizontalInset: CGFloat
 
     private var card: UploaderCard? {
         viewModel.profile?.card
+    }
+
+    init(
+        owner: VideoOwner,
+        viewModel: UploaderViewModel,
+        horizontalInset: CGFloat = 12
+    ) {
+        self.owner = owner
+        self.viewModel = viewModel
+        self.horizontalInset = horizontalInset
     }
 
     var body: some View {
@@ -25,6 +36,6 @@ struct UploaderHeaderView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(.white.opacity(0.16), lineWidth: 0.8)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalInset)
     }
 }

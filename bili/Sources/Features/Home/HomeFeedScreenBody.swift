@@ -14,7 +14,10 @@ struct HomeFeedScreenBody: View {
 
     var body: some View {
         let layout = effectiveLayout
-        let layoutMetrics = viewportState.layoutMetrics(for: layout)
+        let layoutMetrics = viewportState.layoutMetrics(
+            for: layout,
+            standardHorizontalInset: libraryStore.standardPageHorizontalInset
+        )
         let imagePrefetchProfile = HomeFeedCoverPrefetchProfile.make(
             layout: layout,
             metrics: layoutMetrics,

@@ -6,17 +6,23 @@ struct PlaybackDetailOwnerAvatar: View {
     let fallbackURLString: String?
     let side: CGFloat
     let pixelSize: Int
+    let showsShadow: Bool
+    let showsBorder: Bool
 
     init(
         owner: VideoOwner?,
         fallbackURLString: String? = nil,
         side: CGFloat,
-        pixelSize: Int = 112
+        pixelSize: Int = 112,
+        showsShadow: Bool = true,
+        showsBorder: Bool = true
     ) {
         self.owner = owner
         self.fallbackURLString = fallbackURLString
         self.side = side
         self.pixelSize = pixelSize
+        self.showsShadow = showsShadow
+        self.showsBorder = showsBorder
     }
 
     var body: some View {
@@ -38,7 +44,9 @@ struct PlaybackDetailOwnerAvatar: View {
         PlaybackDetailOwnerAvatarImage(
             urlString: urlString,
             side: side,
-            pixelSize: pixelSize
+            pixelSize: pixelSize,
+            showsShadow: showsShadow,
+            showsBorder: showsBorder
         )
     }
 }
@@ -49,8 +57,24 @@ private struct PlaybackDetailOwnerAvatarImage: View {
     let urlString: String?
     let side: CGFloat
     let pixelSize: Int
+    let showsShadow: Bool
+    let showsBorder: Bool
 
     var body: some View {
+        Group {
+            if showsShadow {
+                avatarSurface
+                    .shadow(color: .black.opacity(0.24), radius: 5, x: 0, y: 2.2)
+                    .shadow(color: .black.opacity(0.10), radius: 1.2, x: 0, y: 0.6)
+            } else {
+                avatarSurface
+            }
+        }
+        .frame(width: side, height: side)
+        .contentShape(Circle())
+    }
+
+    private var avatarSurface: some View {
         AvatarRemoteImage(urlString: urlString, pixelSize: pixelSize) {
             Image(systemName: "person.crop.circle.fill")
                 .resizable()
@@ -59,18 +83,18 @@ private struct PlaybackDetailOwnerAvatarImage: View {
         .frame(width: side, height: side)
         .clipShape(Circle())
         .overlay {
-            Circle()
-                .strokeBorder(outerStrokeColor, lineWidth: 1)
+            if showsBorder {
+                Circle()
+                    .strokeBorder(outerStrokeColor, lineWidth: 1)
+            }
         }
         .overlay {
-            Circle()
-                .inset(by: 1)
-                .strokeBorder(innerStrokeColor, lineWidth: 0.6)
+            if showsBorder {
+                Circle()
+                    .inset(by: 1)
+                    .strokeBorder(innerStrokeColor, lineWidth: 0.6)
+            }
         }
-        .shadow(color: .black.opacity(0.24), radius: 5, x: 0, y: 2.2)
-        .shadow(color: .black.opacity(0.10), radius: 1.2, x: 0, y: 0.6)
-        .frame(width: side, height: side)
-        .contentShape(Circle())
     }
 
     private var outerStrokeColor: Color {

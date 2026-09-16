@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailLoadedDetailContentPage: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let viewModel: VideoDetailViewModel
     let layoutWidth: CGFloat
     let mountsSecondaryContent: Bool
@@ -10,6 +11,10 @@ struct VideoDetailLoadedDetailContentPage: View {
     let onShowCoinPicker: () -> Void
     var showsSummary = true
     var showsRecommendations = true
+
+    private var horizontalInset: CGFloat {
+        PlaybackDetailContentMetrics.horizontalPadding(for: standardHorizontalInset)
+    }
 
     var body: some View {
         let renderPack = renderPack
@@ -30,7 +35,7 @@ struct VideoDetailLoadedDetailContentPage: View {
                         onShowCoinPicker: onShowCoinPicker
                     )
                 }
-                .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
+                .padding(.horizontal, horizontalInset)
             } else {
                 VideoDetailSummaryCard(
                     viewModel: viewModel,
@@ -40,13 +45,13 @@ struct VideoDetailLoadedDetailContentPage: View {
                     onShowFavoriteFolders: onShowFavoriteFolders,
                     onShowCoinPicker: onShowCoinPicker
                 )
-                .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
+                .padding(.horizontal, horizontalInset)
 
                 VideoDetailPageMenu(
                     store: renderPack.pageSelectorStore,
                     selectPage: renderPack.actions.selectPage
                 )
-                .padding(.horizontal, PlaybackDetailContentMetrics.horizontalPadding)
+                .padding(.horizontal, horizontalInset)
             }
 
         }
@@ -65,7 +70,8 @@ struct VideoDetailLoadedDetailContentPage: View {
     private var renderPack: VideoDetailLoadedDetailContentPageRenderPack {
         VideoDetailLoadedDetailContentPageRenderPack(
             viewModel: viewModel,
-            layoutWidth: layoutWidth
+            layoutWidth: layoutWidth,
+            horizontalInset: horizontalInset
         )
     }
 }

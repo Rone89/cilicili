@@ -147,6 +147,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
+    @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
@@ -232,6 +233,8 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
+    private static let videoDetailActionButtonStyleKey =
+        "cc.bili.videoDetail.actionButtonStyle.v1"
     private static let nativePullRefreshEnabledKey =
         "cc.bili.home.nativePullRefreshEnabled.v1"
     private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
@@ -263,6 +266,8 @@ final class LibraryStore: ObservableObject {
         "cc.bili.experimental.dynamicFeedAccurateExpansion.v1",
         "cc.bili.experimental.dynamicFeedPiliPlusLineSpacing.v1",
         "cc.bili.experimental.dynamicDetailCommentSpacing.v1",
+        "cc.bili.experimental.dynamicDetailHorizontalInset.v1",
+        "cc.bili.experimental.videoDetailInlineActionsPlainStyle.v1",
         "cc.bili.experimental.dynamicDetailBottomInteractionBarExperimentEnabled.v1",
         "cc.bili.experimental.dynamicDetailComposer.v1",
         "cc.bili.display.richCommentComposerExperimentEnabled.v1",
@@ -423,6 +428,12 @@ final class LibraryStore: ObservableObject {
     var appTintColor: Color {
         AppThemeTintColor.color(for: appTintColorHex)
     }
+
+    /// The app-wide horizontal content inset for standard pages.
+    ///
+    /// Keeping this in one place makes regular content, details, comments and
+    /// related lists use the same 20pt rhythm on iPhone.
+    var standardPageHorizontalInset: CGFloat { 20 }
 
     var needsPlaybackCDNProbeRefresh: Bool {
         guard playbackCDNPreference == .automatic else { return false }
@@ -634,9 +645,13 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
+        self.videoDetailActionButtonStyle =
+            userDefaults.string(forKey: Self.videoDetailActionButtonStyleKey)
+            .flatMap(VideoDetailActionButtonStyle.init(rawValue:)) ?? .plain
         let storedNativePullRefreshEnabled =
             userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
-        let nativePullRefreshEnabled = storedNativePullRefreshEnabled
+        let nativePullRefreshEnabled =
+            storedNativePullRefreshEnabled
             ?? userDefaults.object(
                 forKey: Self.legacyUnifiedPullRefreshIndicatorExperimentEnabledKey
             ) as? Bool
@@ -1292,6 +1307,11 @@ final class LibraryStore: ObservableObject {
         )
     }
 
+    func setVideoDetailActionButtonStyle(_ style: VideoDetailActionButtonStyle) {
+        videoDetailActionButtonStyle = style
+        userDefaults.set(style.rawValue, forKey: Self.videoDetailActionButtonStyleKey)
+    }
+
     private static func boolValue(forKey key: String, in userDefaults: UserDefaults) -> Bool? {
         if let value = userDefaults.object(forKey: key) as? Bool {
             return value
@@ -1584,6 +1604,26 @@ enum VideoDetailSegmentedPickerGlassStyle: String, CaseIterable, Identifiable {
         case .regular:
             return "Regular"
         }
+    }
+}
+
+enum VideoDetailActionButtonStyle: String, CaseIterable, Identifiable {
+    case plain
+    case liquidGlass
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .plain:
+            return "普通按钮"
+        case .liquidGlass:
+            return "液态玻璃按钮"
+        }
+    }
+
+    var usesPlainStyle: Bool {
+        self == .plain
     }
 }
 

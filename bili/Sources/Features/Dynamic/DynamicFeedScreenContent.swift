@@ -17,6 +17,7 @@ struct DynamicInitialFeedContent: View {
 }
 
 struct DynamicFeedScreenContent: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
     let isLoggedIn: Bool
@@ -24,13 +25,15 @@ struct DynamicFeedScreenContent: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let contentWidth = max(floor(proxy.size.width - 32), 0)
+            let horizontalInset = libraryStore.standardPageHorizontalInset
+            let contentWidth = max(floor(proxy.size.width - horizontalInset * 2), 0)
 
             DynamicFeedScrollContent(
                 api: api,
                 viewModel: viewModel,
                 isLoggedIn: isLoggedIn,
                 contentWidth: contentWidth,
+                horizontalInset: horizontalInset,
                 pullRefreshTriggerDistance: pullRefreshTriggerDistance
             )
         }

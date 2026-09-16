@@ -29,14 +29,16 @@ private struct DynamicCommentDialogStateContent: View {
     var body: some View {
         if snapshot.items.isEmpty && snapshot.state.isLoading {
             CommentLoadingSkeletonList(count: 3)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 6)
         } else if snapshot.items.isEmpty, case .failed(let message) = snapshot.state {
             DynamicCommentErrorView(message: message, retry: reloadDialog)
-                .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         } else if snapshot.items.isEmpty {
             EmptyStateView(title: "暂无对话", systemImage: "text.bubble", message: "暂时没有找到这条回复的上下文。")
-                .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         } else {
             DynamicCommentDialogLoadedList(
                 snapshot: snapshot,
@@ -68,7 +70,7 @@ private struct DynamicCommentDialogLoadedList: View {
                     isFocused: item.id == focusReply.id,
                     reply: { replyToComment(item.reply) }
                 )
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 20)
 
                 Divider()
                     .padding(.leading, 66)
@@ -76,7 +78,8 @@ private struct DynamicCommentDialogLoadedList: View {
 
             if case .failed(let message) = snapshot.state {
                 DynamicCommentErrorView(message: message, retry: reloadDialog)
-                    .padding(16)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
             }
         }
     }

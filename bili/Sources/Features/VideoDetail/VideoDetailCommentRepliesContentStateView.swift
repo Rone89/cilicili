@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CommentRepliesContentStateView: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let state: CommentRepliesContentState
     let snapshot: VideoDetailCommentThreadRepliesSnapshot
     let rootComment: Comment
@@ -28,27 +29,32 @@ struct CommentRepliesContentStateView: View {
     }
 
     var body: some View {
+        let horizontalPadding = standardHorizontalInset
+
         switch state {
         case .loading:
             CommentLoadingSkeletonList(count: 3)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 6)
         case .failed(let message):
             CommentErrorView(message: message, retry: actions.reloadRepliesAction)
-            .padding(16)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, 16)
         case .empty:
             EmptyStateView(
                 title: "暂无回复",
                 systemImage: "bubble.left.and.bubble.right",
                 message: "这条评论还没有可展示的回复。"
             )
-            .padding(16)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, 16)
         case .loaded:
             CommentRepliesLoadedList(
                 snapshot: snapshot,
                 rootComment: rootComment,
                 loadMoreReplies: loadMoreReplies,
-                showDialog: showDialog
+                showDialog: showDialog,
+                horizontalPadding: horizontalPadding
             )
         }
     }

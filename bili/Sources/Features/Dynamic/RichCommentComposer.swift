@@ -179,7 +179,22 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     @Binding var target: DynamicCommentComposerTarget?
     let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>
     let api: BiliAPIClient
+    let horizontalPadding: CGFloat?
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+
+    init(
+        target: Binding<DynamicCommentComposerTarget?>,
+        draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
+        api: BiliAPIClient,
+        horizontalPadding: CGFloat? = nil,
+        submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
+    ) {
+        self._target = target
+        self.draft = draft
+        self.api = api
+        self.horizontalPadding = horizontalPadding
+        self.submit = submit
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -200,6 +215,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             target: target,
             draft: draft,
             api: api,
+            horizontalPadding: horizontalPadding,
             submit: submit,
             presenter: controller,
             targetBinding: $target
@@ -216,6 +232,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             target: DynamicCommentComposerTarget?,
             draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
             api: BiliAPIClient,
+            horizontalPadding: CGFloat?,
             submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
             presenter: UIViewController,
             targetBinding: Binding<DynamicCommentComposerTarget?>
@@ -239,6 +256,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
                         target: target,
                         api: api,
                         submit: submit,
+                        horizontalPadding: horizontalPadding ?? 20,
                         onDismiss: {
                             targetBinding.wrappedValue = nil
                         }
@@ -942,6 +960,7 @@ struct RichCommentComposerView: View {
     @Binding var draft: RichCommentDraft
     let target: DynamicCommentComposerTarget
     let api: BiliAPIClient
+    let horizontalPadding: CGFloat
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     let onDismiss: (() -> Void)?
 
@@ -971,12 +990,14 @@ struct RichCommentComposerView: View {
         target: DynamicCommentComposerTarget,
         api: BiliAPIClient,
         submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
+        horizontalPadding: CGFloat = 20,
         onDismiss: (() -> Void)? = nil
     ) {
         self._draft = draft
         self.target = target
         self.api = api
         self.submit = submit
+        self.horizontalPadding = horizontalPadding
         self.onDismiss = onDismiss
     }
 
@@ -1081,7 +1102,8 @@ struct RichCommentComposerView: View {
         .padding(14)
         .frame(maxWidth: .infinity)
         .biliGlassEffect(interactive: true, in: .rect(cornerRadius: 24, style: .continuous))
-        .padding(12)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 12)
         .presentationBackground(Color.clear)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

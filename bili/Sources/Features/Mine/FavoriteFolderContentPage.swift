@@ -4,6 +4,7 @@ struct FavoriteFolderContentPage: View {
     let folder: FavoriteFolder
     @ObservedObject var viewModel: MineViewModel
     @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var libraryStore: LibraryStore
 
     var body: some View {
         List {
@@ -16,6 +17,7 @@ struct FavoriteFolderContentPage: View {
             }
         }
         .nativeTopScrollEdgeEffect()
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

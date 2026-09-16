@@ -2,10 +2,15 @@ import SwiftUI
 
 struct CommentsSectionHeader: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.commentSectionHorizontalPadding) private var configuredHorizontalPadding
 
     @ObservedObject var store: VideoDetailCommentsRenderStore
     let style: CommentSectionStyle
     let selectCommentSort: (CommentSort) -> Void
+
+    private var horizontalPadding: CGFloat {
+        configuredHorizontalPadding ?? style.horizontalPadding
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -37,6 +42,6 @@ struct CommentsSectionHeader: View {
                 }
             }
         }
-        .padding(.horizontal, style.horizontalPadding)
+        .padding(.horizontal, horizontalPadding)
     }
 }

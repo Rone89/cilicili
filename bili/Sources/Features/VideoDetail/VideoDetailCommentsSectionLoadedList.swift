@@ -3,6 +3,7 @@ import SwiftUI
 struct CommentsSectionLoadedList: View {
     @ObservedObject var store: VideoDetailCommentsRenderStore
     let style: CommentSectionStyle
+    let horizontalPadding: CGFloat
     let maxVisibleComments: Int?
     let actions: VideoDetailCommentsSectionActions
 
@@ -25,7 +26,7 @@ struct CommentsSectionLoadedList: View {
                     }
                 )
                 .equatable()
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, horizontalPadding)
 
                 Divider()
                     .padding(.horizontal, 14)
@@ -34,6 +35,7 @@ struct CommentsSectionLoadedList: View {
             CommentsSectionLoadedListFooter(
                 store: store,
                 style: style,
+                horizontalPadding: horizontalPadding,
                 maxVisibleComments: maxVisibleComments,
                 showAllComments: actions.showAllComments,
                 loadMoreComments: actions.loadMoreComments

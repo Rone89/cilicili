@@ -37,6 +37,7 @@ struct VideoDetailShellContentView: View {
     @ObservedObject var state: State
     let layoutWidth: CGFloat
     let placesTopInsetInScrollContent: Bool
+    let standardHorizontalInset: CGFloat
     let interactiveMinimumPlayerHeight: CGFloat
     @Binding var selectedContentTab: VideoDetailContentTab
     let onShowNetworkDiagnostics: () -> Void
@@ -59,6 +60,7 @@ struct VideoDetailShellContentView: View {
             state: state,
             layoutWidth: layoutWidth,
             placesTopInsetInScrollContent: placesTopInsetInScrollContent,
+            standardHorizontalInset: standardHorizontalInset,
             interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
             contentRevision: updateGate.revision,
             selectedContentTab: $selectedContentTab,
@@ -83,6 +85,7 @@ private struct VideoDetailShellContentBody: View {
     @ObservedObject var state: VideoDetailShellContentView.State
     let layoutWidth: CGFloat
     let placesTopInsetInScrollContent: Bool
+    let standardHorizontalInset: CGFloat
     let interactiveMinimumPlayerHeight: CGFloat
     let contentRevision: Int
     @Binding var selectedContentTab: VideoDetailContentTab
@@ -104,6 +107,7 @@ private struct VideoDetailShellContentBody: View {
             selection: $selectedContentTab,
             layoutWidth: layoutWidth,
             topInset: state.topInset,
+            standardHorizontalInset: standardHorizontalInset,
             bottomInset: state.bottomInset,
             scrollAdjustment: state.scrollAdjustment,
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent

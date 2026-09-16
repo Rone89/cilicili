@@ -15,7 +15,7 @@ struct DynamicActionButton: View {
                 .foregroundStyle(isSelected ? appTintColor : .secondary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
-                .contentShape(Rectangle())
+                .dynamicActionHitTarget()
         }
         .buttonStyle(.plain)
     }
@@ -23,6 +23,7 @@ struct DynamicActionButton: View {
 
 struct DynamicActionPill: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.videoDetailActionButtonStyle) private var actionButtonStyle
     let title: String
     let systemImage: String
     let isSelected: Bool
@@ -30,6 +31,7 @@ struct DynamicActionPill: View {
     let action: () -> Void
 
     var body: some View {
+        let usesPlainStyle = actionButtonStyle.usesPlainStyle
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.semibold))
@@ -39,9 +41,12 @@ struct DynamicActionPill: View {
                 .allowsTightening(true)
                 .frame(maxWidth: .infinity, minHeight: 28)
                 .padding(.horizontal, 3)
+                .dynamicActionHitTarget()
         }
-        .biliGlassButtonStyle(prominent: isSelected)
-        .controlSize(.small)
+        .dynamicActionButtonAppearance(
+            usesPlainStyle: usesPlainStyle,
+            prominent: isSelected
+        )
         .tint(isSelected ? appTintColor : .secondary)
         .disabled(isDisabled)
     }
@@ -60,6 +65,34 @@ struct DynamicActionPillLabel: View {
             .allowsTightening(true)
             .frame(maxWidth: .infinity, minHeight: 28)
             .padding(.horizontal, 3)
+            .dynamicActionHitTarget()
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func dynamicActionButtonAppearance(
+        usesPlainStyle: Bool,
+        prominent: Bool
+    ) -> some View {
+        if usesPlainStyle {
+            self
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.regular)
+        } else {
+            self
+                .biliGlassButtonStyle(prominent: prominent)
+                .controlSize(.small)
+        }
+    }
+
+    /// Preserve the compact visual pill while giving the underlying control
+    /// the 44pt minimum touch target used by the system.
+    func dynamicActionHitTarget() -> some View {
+        padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .padding(.vertical, -8)
     }
 }
 

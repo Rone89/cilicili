@@ -68,12 +68,17 @@ struct CommentRepliesSheet: View {
                 reloadDialog: reloadDialog,
                 submitReply: submitReply
             )
+            .environment(
+                \.videoDetailStandardHorizontalInset,
+                dependencies.libraryStore.standardPageHorizontalInset
+            )
         }
         .background {
             RichCommentComposerPresenter(
                 target: $composerTarget,
                 draft: richCommentDraftBinding,
                 api: dependencies.api,
+                horizontalPadding: dependencies.libraryStore.standardPageHorizontalInset,
                 submit: { target, message, pictures in
                     try await submitReply(target, message, pictures)
                     await reloadReplies(rootComment)

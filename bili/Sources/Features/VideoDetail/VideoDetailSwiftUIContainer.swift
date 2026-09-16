@@ -20,9 +20,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     @Published private(set) var isBareSurfaceTransitionActive = false
     @Published private(set) var retainsChromeDuringBareSurfaceTransition = false
     private(set) var playerFrame = CGRect.zero
-#if DEBUG
-    let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
-#endif
+    #if DEBUG
+        let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
+    #endif
     @Published var rootSafeAreaInsets = UIEdgeInsets.zero
     private(set) var interactiveScrollOffset: CGFloat = 0
 
@@ -51,7 +51,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         self.rotationCoordinator = rotationCoordinator
         contentUpdateGate = VideoDetailContentUpdateGate()
         let initialPlayerViewModel = viewModel.playbackSession.activePlayer
-        videoAspectRatio = VideoDetailInitialVideoGeometry.metadataAspectRatio(for: initialVideo)
+        videoAspectRatio =
+            VideoDetailInitialVideoGeometry.metadataAspectRatio(for: initialVideo)
             ?? VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail)
             ?? initialPlayerViewModel?.videoAspectRatio
             ?? VideoDetailInitialVideoGeometry.defaultAspectRatio
@@ -113,12 +114,14 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         safeAreaTop: CGFloat,
         rotationCoordinator: PlaybackRotationCoordinator
     ) -> VideoDetailShellLayout {
-        let effectiveInteractiveOffset = isInteractiveScrollCollapseActive
+        let effectiveInteractiveOffset =
+            isInteractiveScrollCollapseActive
             ? interactiveScrollOffset
             : nil
-        let effectivePlayerHeight = effectiveInteractiveOffset.map {
-            interactivePlayerHeight(forOffset: $0, bounds: size)
-        } ?? currentPlayerHeight
+        let effectivePlayerHeight =
+            effectiveInteractiveOffset.map {
+                interactivePlayerHeight(forOffset: $0, bounds: size)
+            } ?? currentPlayerHeight
         return VideoDetailShellLayout.resolve(
             bounds: CGRect(origin: .zero, size: size),
             safeAreaTop: safeAreaTop,
@@ -151,8 +154,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         bounds: CGSize
     ) -> Double {
         guard !isPlaybackActiveSnapshot,
-              !rotationCoordinator.layoutLandscape,
-              shouldShowCollapsedChrome(for: layout, bounds: bounds)
+            !rotationCoordinator.layoutLandscape,
+            shouldShowCollapsedChrome(for: layout, bounds: bounds)
         else { return 0 }
 
         let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
@@ -162,19 +165,19 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     }
 
     func synchronize(layout: VideoDetailShellLayout) {
-#if DEBUG
-        if playerFrame != layout.playerFrame {
-            print(
-                "[VideoDetailGeometry] coordinates=SwiftUI-root playerFrame=\(layout.playerFrame) "
-                    + "contentFrame=\(layout.contentFrame) safeArea=\(rootSafeAreaInsets)"
-            )
-        }
-#endif
+        #if DEBUG
+            if playerFrame != layout.playerFrame {
+                print(
+                    "[VideoDetailGeometry] coordinates=SwiftUI-root playerFrame=\(layout.playerFrame) "
+                        + "contentFrame=\(layout.contentFrame) safeArea=\(rootSafeAreaInsets)"
+                )
+            }
+        #endif
         if playerFrame != layout.playerFrame {
             playerFrame = layout.playerFrame
-#if DEBUG
-            playerFrameUpdates.send(playerFrame)
-#endif
+            #if DEBUG
+                playerFrameUpdates.send(playerFrame)
+            #endif
         }
         if contentState.hidesBottomToolbar != layout.usesFullscreenLayout {
             contentState.hidesBottomToolbar = layout.usesFullscreenLayout
@@ -204,8 +207,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     ) {
         activeContentTab = tab
         guard !rotationCoordinator.isTransitioning,
-              !rotationCoordinator.layoutLandscape,
-              !rotationCoordinator.isPortraitFullscreen
+            !rotationCoordinator.layoutLandscape,
+            !rotationCoordinator.isPortraitFullscreen
         else { return }
 
         if isInteractiveScrollCollapseActive {
@@ -240,7 +243,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         lastScrollOffset = targetOffset
         Task { @MainActor [weak self, weak rotationCoordinator] in
             guard let self,
-                  rotationCoordinator?.isTransitioning == false
+                rotationCoordinator?.isTransitioning == false
             else { return }
             self.contentState.requestScrollAdjustment(tab: tab, offset: targetOffset)
         }
@@ -267,8 +270,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         } else {
             targetOffset = currentMetrics.collapseOffset
         }
-        guard pendingInteractiveTab != tab
-            || abs(pendingInteractiveTabOffset - targetOffset) > 0.5
+        guard
+            pendingInteractiveTab != tab
+                || abs(pendingInteractiveTabOffset - targetOffset) > 0.5
         else { return targetOffset }
         pendingInteractiveTab = tab
         pendingInteractiveTabOffset = targetOffset
@@ -286,9 +290,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     ) {
         scrollOffsets[tab] = offset
         guard tab == selectedTab,
-              !rotationCoordinator.isTransitioning,
-              !rotationCoordinator.layoutLandscape,
-              !rotationCoordinator.isPortraitFullscreen
+            !rotationCoordinator.isTransitioning,
+            !rotationCoordinator.layoutLandscape,
+            !rotationCoordinator.isPortraitFullscreen
         else { return }
 
         let previousOffset = lastScrollOffset
@@ -370,7 +374,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             playerHeight = resolvedPlayerHeight(bounds: bounds)
         }
         let standard = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
-        let showsCollapsedChrome = !rotationCoordinator.layoutLandscape
+        let showsCollapsedChrome =
+            !rotationCoordinator.layoutLandscape
             && !isPlaybackActiveSnapshot
             && playerHeight <= standard - 4
             && playerHeight > 0
@@ -398,10 +403,11 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] detail in
                 guard let self else { return }
-                let ratio = VideoDetailInitialVideoGeometry.metadataAspectRatio(for: detail)
+                let ratio =
+                    VideoDetailInitialVideoGeometry.metadataAspectRatio(for: detail)
                     ?? self.surfacePlayerViewModel?.videoAspectRatio
                 guard let ratio, ratio.isFinite, ratio > 0.1,
-                      abs(self.videoAspectRatio - ratio) > 0.001
+                    abs(self.videoAspectRatio - ratio) > 0.001
                 else { return }
                 self.videoAspectRatio = ratio
                 self.currentPlayerHeight = nil
@@ -438,10 +444,10 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
 
     private func applyPlayerAspectRatioIfNeeded(_ ratio: CGFloat?) {
         guard VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail) == nil,
-              let ratio,
-              ratio.isFinite,
-              ratio > 0.1,
-              abs(videoAspectRatio - ratio) > 0.001
+            let ratio,
+            ratio.isFinite,
+            ratio > 0.1,
+            abs(videoAspectRatio - ratio) > 0.001
         else { return }
         videoAspectRatio = ratio
         currentPlayerHeight = nil
@@ -676,6 +682,7 @@ struct VideoDetailSwiftUIContainer: View {
                     state: model.contentState,
                     layoutWidth: proxy.size.width,
                     placesTopInsetInScrollContent: true,
+                    standardHorizontalInset: dependencies.libraryStore.standardPageHorizontalInset,
                     // Keep the scroll host's content extent stable when playback pauses.
                     // The layout model still determines the player's actual minimum height.
                     interactiveMinimumPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight,
@@ -774,6 +781,10 @@ struct VideoDetailSwiftUIContainer: View {
             }
         }
         .background(.black)
+        .environment(
+            \.videoDetailActionButtonStyle,
+            dependencies.libraryStore.videoDetailActionButtonStyle
+        )
     }
 }
 
@@ -813,10 +824,10 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     private let playbackDiagnostics = VideoDetailPlaybackDiagnostics()
     private var cancellables = Set<AnyCancellable>()
 
-#if DEBUG
-    private let rotationDiagnosticsAccessibilityView = UILabel()
-    private let playerFrameDiagnosticsAccessibilityView = UIView()
-#endif
+    #if DEBUG
+        private let rotationDiagnosticsAccessibilityView = UILabel()
+        private let playerFrameDiagnosticsAccessibilityView = UIView()
+    #endif
 
     private lazy var hostingController: UIHostingController<VideoDetailSwiftUIContainer> = {
         UIHostingController(rootView: makeRootView())
@@ -887,26 +898,26 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
             hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         hostingController.didMove(toParent: self)
-#if DEBUG
-        rotationDiagnosticsAccessibilityView.isAccessibilityElement = true
-        rotationDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.rotationDiagnostics"
-        rotationDiagnosticsAccessibilityView.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-        rotationDiagnosticsAccessibilityView.alpha = 0.01
-        view.addSubview(rotationDiagnosticsAccessibilityView)
-        playerFrameDiagnosticsAccessibilityView.isAccessibilityElement = true
-        playerFrameDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.playerFrame"
-        playerFrameDiagnosticsAccessibilityView.isUserInteractionEnabled = false
-        playerFrameDiagnosticsAccessibilityView.alpha = 0.01
-        view.addSubview(playerFrameDiagnosticsAccessibilityView)
-        contentModel.playerFrameUpdates
-            .receive(on: RunLoop.main)
-            .sink { [weak self] frame in
-                guard let self else { return }
-                self.playerFrameDiagnosticsAccessibilityView.frame = frame
-                self.playerFrameDiagnosticsAccessibilityView.accessibilityValue = "height=\(frame.height)"
-            }
-            .store(in: &cancellables)
-#endif
+        #if DEBUG
+            rotationDiagnosticsAccessibilityView.isAccessibilityElement = true
+            rotationDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.rotationDiagnostics"
+            rotationDiagnosticsAccessibilityView.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            rotationDiagnosticsAccessibilityView.alpha = 0.01
+            view.addSubview(rotationDiagnosticsAccessibilityView)
+            playerFrameDiagnosticsAccessibilityView.isAccessibilityElement = true
+            playerFrameDiagnosticsAccessibilityView.accessibilityIdentifier = "ui.videoDetail.playerFrame"
+            playerFrameDiagnosticsAccessibilityView.isUserInteractionEnabled = false
+            playerFrameDiagnosticsAccessibilityView.alpha = 0.01
+            view.addSubview(playerFrameDiagnosticsAccessibilityView)
+            contentModel.playerFrameUpdates
+                .receive(on: RunLoop.main)
+                .sink { [weak self] frame in
+                    guard let self else { return }
+                    self.playerFrameDiagnosticsAccessibilityView.frame = frame
+                    self.playerFrameDiagnosticsAccessibilityView.accessibilityValue = "height=\(frame.height)"
+                }
+                .store(in: &cancellables)
+        #endif
         contentModel.$activePlayerViewModel
             .receive(on: RunLoop.main)
             .sink { [weak self] player in
@@ -1047,12 +1058,12 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
     }
 
     private func publishLatestRotationDiagnostic() {
-#if DEBUG
-        guard let record = playbackDiagnostics.completedRotationRecords.last,
-              let data = try? JSONEncoder().encode(record),
-              let value = String(data: data, encoding: .utf8)
-        else { return }
-        rotationDiagnosticsAccessibilityView.accessibilityValue = value
-#endif
+        #if DEBUG
+            guard let record = playbackDiagnostics.completedRotationRecords.last,
+                let data = try? JSONEncoder().encode(record),
+                let value = String(data: data, encoding: .utf8)
+            else { return }
+            rotationDiagnosticsAccessibilityView.accessibilityValue = value
+        #endif
     }
 }

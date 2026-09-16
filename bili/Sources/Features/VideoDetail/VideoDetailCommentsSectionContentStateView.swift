@@ -18,25 +18,30 @@ struct CommentsSectionContentStateView: View {
     let maxVisibleComments: Int?
     let actions: VideoDetailCommentsSectionActions
     @Environment(\.videoDetailCommentsEmptyStateMinimumHeight) private var emptyStateMinimumHeight
+    @Environment(\.commentSectionHorizontalPadding) private var configuredHorizontalPadding
+
+    private var horizontalPadding: CGFloat {
+        configuredHorizontalPadding ?? style.horizontalPadding
+    }
 
     var body: some View {
         switch state {
         case .loading:
-            CommentsSkeletonContent(rowCount: 4, horizontalPadding: style.horizontalPadding)
+            CommentsSkeletonContent(rowCount: 4, horizontalPadding: horizontalPadding)
         case .failed(let message):
             CommentsSectionErrorContent(
                 message: message,
-                horizontalPadding: style.horizontalPadding,
+                horizontalPadding: horizontalPadding,
                 retryComments: actions.retryCommentsAction
             )
         case .empty:
             EmptyStateView(title: "暂无评论", systemImage: "bubble.left", message: "评论加载后会显示在这里。")
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, horizontalPadding)
                 .frame(minHeight: emptyStateMinimumHeight, alignment: .center)
         case .reloadPrompt:
             CommentsSectionErrorContent(
                 message: "评论暂时没有返回内容",
-                horizontalPadding: style.horizontalPadding,
+                horizontalPadding: horizontalPadding,
                 retryComments: actions.retryCommentsAction
             )
         case .spacer:
@@ -46,6 +51,7 @@ struct CommentsSectionContentStateView: View {
             CommentsSectionLoadedList(
                 store: store,
                 style: style,
+                horizontalPadding: horizontalPadding,
                 maxVisibleComments: maxVisibleComments,
                 actions: actions
             )

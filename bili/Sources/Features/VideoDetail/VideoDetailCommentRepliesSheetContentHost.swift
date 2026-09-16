@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CommentRepliesSheetContentHost: View {
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let rootComment: Comment
     let store: VideoDetailCommentThreadRenderStore
     let reloadReplies: (Comment) async -> Void
@@ -29,10 +30,12 @@ struct CommentRepliesSheetContentHost: View {
     }
 
     var body: some View {
+        let horizontalPadding = standardHorizontalInset
+
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 CommentReplyRootView(comment: rootComment)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, 14)
 
                 Divider()

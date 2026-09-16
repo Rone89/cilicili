@@ -282,11 +282,21 @@ extension DynamicTypeSize {
 
 enum FeedTypography {
     static let primaryTextSize: CGFloat = 15
-    static let bodyLineSpacing: CGFloat = 2
+    // System text styles already include the platform's optical leading. An
+    // extra fixed value makes the feed look different at each Dynamic Type
+    // size, so keep the additional spacing neutral.
+    static let bodyLineSpacing: CGFloat = 0
 
     static let bodyFont: Font = .system(size: primaryTextSize, weight: .regular)
     static let titleFont: Font = .system(size: primaryTextSize, weight: .semibold)
 
     static let bodyUIFont = UIFont.systemFont(ofSize: primaryTextSize, weight: .regular)
     static let titleUIFont = UIFont.systemFont(ofSize: primaryTextSize, weight: .semibold)
+}
+
+extension View {
+    /// Applies the app-wide 20pt horizontal content inset to scroll content.
+    func standardPageHorizontalContentMargins(_ inset: CGFloat) -> some View {
+        contentMargins(.horizontal, inset, for: .scrollContent)
+    }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct AccountMessageCenterView: View {
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var libraryStore: LibraryStore
     @State private var showsDiagnostics = false
 
     var body: some View {
@@ -58,6 +59,7 @@ struct AccountMessageCenterView: View {
         }
         .navigationTitle("通知")
         .toolbarTitleDisplayMode(.inline)
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .toolbarBackground(.automatic, for: .navigationBar)
         .nativeTopScrollEdgeEffect()
         .toolbar {

@@ -38,6 +38,7 @@ struct SearchContentView: View {
 }
 
 struct SearchTabBottomAccessory: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var store: SearchBottomAccessoryStore
 
     @ViewBuilder
@@ -45,7 +46,7 @@ struct SearchTabBottomAccessory: View {
         if let viewModel = store.viewModel {
             SearchFilterCapsule(viewModel: viewModel)
                 .frame(maxWidth: .infinity, minHeight: 40)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
         }
     }
 }

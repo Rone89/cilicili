@@ -54,7 +54,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
 
     private var likeButton: some View {
         Button(action: toggleLike) {
-            Image(systemName: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
+            Image(systemName: "hand.thumbsup")
                 .font(.body)
         }
         .controlSize(.small)

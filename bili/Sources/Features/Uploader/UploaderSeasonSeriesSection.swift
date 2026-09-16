@@ -2,6 +2,12 @@ import SwiftUI
 
 struct UploaderSeasonSeriesSection: View {
     @ObservedObject var viewModel: UploaderViewModel
+    let horizontalInset: CGFloat
+
+    init(viewModel: UploaderViewModel, horizontalInset: CGFloat = 16) {
+        self.viewModel = viewModel
+        self.horizontalInset = horizontalInset
+    }
 
     private var lastItemID: String? {
         viewModel.seasonSeriesItems.last?.id
@@ -26,7 +32,7 @@ struct UploaderSeasonSeriesSection: View {
                 footer
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalInset)
     }
 
     @ViewBuilder

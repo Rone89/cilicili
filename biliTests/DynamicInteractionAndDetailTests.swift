@@ -54,6 +54,53 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
+    func testStandardPageInsetIsAlwaysTwentyPoints() {
+        let suiteName = "cc.bili.tests.unified-page-inset-metrics.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(store.standardPageHorizontalInset, 20)
+
+        let metrics = HomeFeedLayoutMetrics(
+            mode: .doubleColumn,
+            containerWidth: 390,
+            standardHorizontalInset: store.standardPageHorizontalInset
+        )
+        XCTAssertEqual(metrics.feedHorizontalPadding, 20)
+        XCTAssertEqual(metrics.singleColumnHorizontalPadding, 20)
+    }
+
+    func testVideoDetailActionButtonStyleDefaultsPlainAndPersists() {
+        let suiteName = "cc.bili.tests.video-detail-inline-actions-style.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let initialStore = LibraryStore(userDefaults: defaults)
+        XCTAssertEqual(initialStore.videoDetailActionButtonStyle, .plain)
+
+        initialStore.setVideoDetailActionButtonStyle(.liquidGlass)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).videoDetailActionButtonStyle, .liquidGlass)
+
+        initialStore.setVideoDetailActionButtonStyle(.plain)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).videoDetailActionButtonStyle, .plain)
+    }
+
+    func testVideoDetailInlineActionsPlainLayoutUsesExpandedTouchTarget() {
+        let plainLayout = VideoDetailActionStripLayout(
+            contentWidth: 390,
+            usesPlainStyle: true
+        )
+
+        XCTAssertEqual(plainLayout.rowHeight, 44)
+        XCTAssertEqual(plainLayout.actionLabelSide, 32)
+        XCTAssertEqual(plainLayout.avatarImageSide, 44)
+        XCTAssertEqual(plainLayout.columnWidth, 44)
+        XCTAssertEqual(plainLayout.followColumnWidth, 64)
+        XCTAssertEqual(plainLayout.columnSpacing, (390 - 44 * 5 - 64) / 5)
+        XCTAssertGreaterThan(plainLayout.rowHeight, VideoDetailActionStrip.Metrics.rowHeight)
+    }
+
     func testRetiredVideoDetailExperimentPreferencesAreCleared() {
         let suiteName = "cc.bili.tests.retired-video-detail-experiments.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -62,6 +109,8 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         let retiredKeys = [
             "cc.bili.experimental.videoDetailInteractiveScrollCollapse.v1",
             "cc.bili.experimental.videoDetailInitialAspectRatio.v1",
+            "cc.bili.experimental.dynamicDetailHorizontalInset.v1",
+            "cc.bili.experimental.videoDetailInlineActionsPlainStyle.v1",
         ]
         retiredKeys.forEach { defaults.set(true, forKey: $0) }
 

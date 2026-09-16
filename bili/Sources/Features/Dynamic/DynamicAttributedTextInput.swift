@@ -278,7 +278,15 @@ struct DynamicAttributedTextInput: Equatable {
             width: resolvedEmoteSize,
             height: resolvedEmoteSize
         )
-        return NSAttributedString(attachment: attachment)
+        let result = NSMutableAttributedString(attachment: attachment)
+        result.addAttributes(
+            [
+                .font: baseFont,
+                .foregroundColor: textColor
+            ],
+            range: NSRange(location: 0, length: result.length)
+        )
+        return result
     }
 }
 

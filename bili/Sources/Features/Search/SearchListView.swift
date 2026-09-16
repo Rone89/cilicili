@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SearchListView: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
 
@@ -10,6 +11,8 @@ struct SearchListView: View {
     ]
 
     var body: some View {
+        let horizontalInset = libraryStore.standardPageHorizontalInset
+
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if viewModel.showsDiscovery {
@@ -22,7 +25,7 @@ struct SearchListView: View {
                     resultsContent
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, horizontalInset)
             .padding(.bottom, 18)
         }
         .contentMargins(.top, 0, for: .scrollContent)

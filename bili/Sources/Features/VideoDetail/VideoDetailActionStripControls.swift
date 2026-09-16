@@ -5,6 +5,21 @@ struct VideoDetailActionStripShareButton: View {
     let shareSubject: String
     let shareMessage: String
     let onShareTap: () -> Void
+    let usesPlainStyle: Bool
+
+    init(
+        shareURL: URL?,
+        shareSubject: String,
+        shareMessage: String,
+        onShareTap: @escaping () -> Void,
+        usesPlainStyle: Bool = false
+    ) {
+        self.shareURL = shareURL
+        self.shareSubject = shareSubject
+        self.shareMessage = shareMessage
+        self.onShareTap = onShareTap
+        self.usesPlainStyle = usesPlainStyle
+    }
 
     var body: some View {
         if let shareURL {
@@ -15,13 +30,21 @@ struct VideoDetailActionStripShareButton: View {
             ) {
                 VideoDetailActionStripIconLabel(
                     systemImage: "square.and.arrow.up",
-                    foregroundStyle: .primary
+                    foregroundStyle: usesPlainStyle ? .secondary : .primary,
+                    side: usesPlainStyle
+                        ? VideoDetailActionStrip.Metrics.plainActionLabelSide
+                        : VideoDetailActionStrip.Metrics.actionLabelSide,
+                    iconSize: usesPlainStyle
+                        ? VideoDetailActionStrip.Metrics.plainIconSize
+                        : VideoDetailActionStrip.Metrics.iconSize
                 )
             }
-            .buttonBorderShape(.circle)
-            .controlSize(.mini)
-            .biliGlassButtonStyle()
-            .contentShape(Circle())
+            .videoDetailActionStripButtonAppearance(
+                shape: .circle,
+                usesPlainStyle: usesPlainStyle,
+                tint: usesPlainStyle ? .secondary : nil
+            )
+            .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded { _ in onShareTap() })
             .accessibilityLabel("分享视频")
         } else {
@@ -30,7 +53,8 @@ struct VideoDetailActionStripShareButton: View {
                 systemImage: "square.and.arrow.up",
                 foregroundStyle: .secondary,
                 isDisabled: true,
-                action: {}
+                action: {},
+                usesPlainStyle: usesPlainStyle
             )
         }
     }

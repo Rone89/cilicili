@@ -8,10 +8,12 @@ struct LiveFeedView: View {
     @State private var pullRefreshActions = HomeFeedRefreshActions()
 
     var body: some View {
+        let horizontalInset = libraryStore.standardPageHorizontalInset
+
         ScrollView {
             VStack(spacing: 0) {
                 LiveFeedContent(viewModel: viewModel)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, horizontalInset)
                     .padding(.bottom, 22)
             }
         }

@@ -2,6 +2,11 @@ import SwiftUI
 
 struct InitialCommentsSection: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
+
+    private var horizontalPadding: CGFloat {
+        standardHorizontalInset
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,9 +31,9 @@ struct InitialCommentsSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, CommentSectionStyle.plain.horizontalPadding)
+            .padding(.horizontal, horizontalPadding)
 
-            CommentsSkeletonContent(rowCount: 4, horizontalPadding: CommentSectionStyle.plain.horizontalPadding)
+            CommentsSkeletonContent(rowCount: 4, horizontalPadding: horizontalPadding)
         }
         .padding(.vertical, 10)
         .allowsHitTesting(false)

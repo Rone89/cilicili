@@ -79,11 +79,17 @@ struct UploaderContentView: View {
     }
 
     private var baseScrollContent: some View {
-        ScrollView {
+        let horizontalInset = libraryStore.standardPageHorizontalInset
+
+        return ScrollView {
             UploaderContentWidthReader()
 
             VStack(alignment: .leading, spacing: 18) {
-                UploaderHeaderView(owner: owner, viewModel: viewModel)
+                UploaderHeaderView(
+                    owner: owner,
+                    viewModel: viewModel,
+                    horizontalInset: horizontalInset
+                )
 
                 Picker("内容", selection: $selectedSection) {
                     ForEach(UploaderProfileSection.allCases) { section in
@@ -92,9 +98,9 @@ struct UploaderContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .padding(.horizontal, 12)
+                .padding(.horizontal, horizontalInset)
 
-                selectedContent
+                selectedContent(horizontalInset: horizontalInset)
             }
             .padding(.vertical, 12)
         }
@@ -106,21 +112,29 @@ struct UploaderContentView: View {
     }
 
     @ViewBuilder
-    private var selectedContent: some View {
+    private func selectedContent(horizontalInset: CGFloat) -> some View {
         switch selectedSection {
         case .videos:
             UploaderVideosSection(
                 viewModel: viewModel,
-                metrics: HomeFeedLayoutMetrics(mode: .doubleColumn, containerWidth: contentWidth)
+                metrics: HomeFeedLayoutMetrics(
+                    mode: .doubleColumn,
+                    containerWidth: contentWidth,
+                    standardHorizontalInset: libraryStore.standardPageHorizontalInset
+                )
             )
         case .dynamics:
             UploaderDynamicsSection(
                 api: dependencies.api,
                 viewModel: viewModel,
-                contentWidth: contentWidth
+                contentWidth: contentWidth,
+                horizontalInset: horizontalInset
             )
         case .collections:
-            UploaderSeasonSeriesSection(viewModel: viewModel)
+            UploaderSeasonSeriesSection(
+                viewModel: viewModel,
+                horizontalInset: horizontalInset
+            )
         }
     }
 

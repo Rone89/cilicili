@@ -33,6 +33,7 @@ struct MinePlaybackSettingsView: View {
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
         .task {

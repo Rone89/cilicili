@@ -10,44 +10,53 @@ struct VideoDetailActionStripButtonRow: View {
     let onCoin: () -> Void
     let onFavorite: () -> Void
     let onShareTap: () -> Void
+    let usesPlainStyle: Bool
 
     var body: some View {
         HStack(spacing: layout.columnSpacing) {
-            VideoDetailActionStripOwnerAvatar(owner: model.owner)
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
+            VideoDetailActionStripOwnerAvatar(
+                owner: model.owner,
+                side: layout.avatarImageSide
+            )
+            .frame(width: layout.avatarColumnWidth, height: layout.rowHeight)
 
             VideoDetailActionStripFollowControl(
                 isFollowing: model.isFollowing,
                 canFollow: (model.owner?.mid ?? 0) > 0,
                 isMutating: model.isMutatingFollow,
-                action: onFollow
+                action: onFollow,
+                usesPlainStyle: usesPlainStyle,
+                height: layout.followHeight
             )
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .frame(width: layout.followColumnWidth, height: layout.rowHeight)
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "点赞",
-                systemImage: "hand.thumbsup.fill",
-                foregroundStyle: model.isLiked ? appTintColor : .primary,
+                systemImage: "hand.thumbsup",
+                foregroundStyle: iconForegroundStyle(isSelected: model.isLiked),
                 isDisabled: model.isMutatingLike,
-                action: onLike
+                action: onLike,
+                usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "投币",
-                systemImage: "bitcoinsign.circle.fill",
-                foregroundStyle: model.isCoined ? appTintColor : .primary,
+                systemImage: "bitcoinsign.circle",
+                foregroundStyle: iconForegroundStyle(isSelected: model.isCoined),
                 isDisabled: model.isMutatingCoin || model.coinCount >= 2,
-                action: onCoin
+                action: onCoin,
+                usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: model.isFavorited ? "已收藏" : "收藏",
-                systemImage: "star.fill",
-                foregroundStyle: model.isFavorited ? appTintColor : .primary,
+                systemImage: "star",
+                foregroundStyle: iconForegroundStyle(isSelected: model.isFavorited),
                 isDisabled: model.isMutatingFavorite || !model.canFavorite,
-                action: onFavorite
+                action: onFavorite,
+                usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
 
@@ -55,9 +64,15 @@ struct VideoDetailActionStripButtonRow: View {
                 shareURL: model.shareURL,
                 shareSubject: model.shareSubject,
                 shareMessage: model.shareMessage,
-                onShareTap: onShareTap
+                onShareTap: onShareTap,
+                usesPlainStyle: usesPlainStyle
             )
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .frame(width: layout.columnWidth, height: layout.rowHeight)
         }
+    }
+
+    private func iconForegroundStyle(isSelected: Bool) -> Color {
+        guard usesPlainStyle else { return isSelected ? appTintColor : .primary }
+        return isSelected ? appTintColor : .secondary
     }
 }

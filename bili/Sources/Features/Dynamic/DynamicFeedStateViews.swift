@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct DynamicFeedSkeletonScrollContent: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+
     var body: some View {
+        let horizontalInset = libraryStore.standardPageHorizontalInset
+
         ScrollView {
             DynamicFeedSkeletonList()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalInset)
                 .padding(.top, 28)
         }
         .nativeTopScrollEdgeEffect()

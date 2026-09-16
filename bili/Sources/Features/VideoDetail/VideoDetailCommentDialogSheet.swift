@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentDialogSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     let focusReply: Comment
@@ -38,12 +39,14 @@ struct CommentDialogSheet: View {
     }
 
     var body: some View {
+        let horizontalPadding = standardHorizontalInset
+
         CommentOwnerProfileNavigationContainer {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         CommentReplyRootView(comment: rootComment)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, horizontalPadding)
                             .padding(.vertical, 14)
 
                         Divider()
@@ -78,6 +81,7 @@ struct CommentDialogSheet: View {
                 target: $composerTarget,
                 draft: richCommentDraftBinding,
                 api: dependencies.api,
+                horizontalPadding: dependencies.libraryStore.standardPageHorizontalInset,
                 submit: { target, message, pictures in
                     try await submitReply(target, message, pictures)
                     await reloadDialog(rootComment, focusReply)

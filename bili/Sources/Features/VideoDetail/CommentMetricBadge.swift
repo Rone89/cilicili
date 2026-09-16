@@ -114,7 +114,7 @@ struct CommentLikeButton: View {
     private var badge: some View {
         CommentMetricBadge(
             text: BiliFormatters.compactCount(displayState.likeCount),
-            systemImage: displayState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
+            systemImage: "hand.thumbsup",
             isHighlighted: displayState.isLiked
         )
         .contentShape(Rectangle())

@@ -4081,9 +4081,12 @@ nonisolated enum DynamicTextSegment: Hashable {
 }
 
 nonisolated private func firstNonEmptyDynamicSegments(_ values: [[DynamicTextSegment]]) -> [DynamicTextSegment] {
-    values.first { segments in
+    guard let segments = values.first(where: { segments in
         DynamicTextSegment.displayText(from: segments)?.isEmpty == false
-    } ?? []
+    }) else {
+        return []
+    }
+    return normalizedDynamicSegments(segments)
 }
 
 nonisolated private func normalizedDynamicSegments(_ segments: [DynamicTextSegment]) -> [DynamicTextSegment] {
@@ -4109,23 +4112,53 @@ nonisolated private func normalizedDynamicSegments(_ segments: [DynamicTextSegme
             result.append(.mention(text: text, mid: mid, url: url))
         }
     }
+
+    // APIs occasionally append a formatting newline or spaces to the body.
+    // Keep whitespace inside the body intact, but do not let an empty boundary
+    // become an extra TextKit line (and a misleading "展开" affordance).
+    while !result.isEmpty {
+        guard case .text(let value) = result[0] else { break }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            result.removeFirst()
+        } else {
+            result[0] = .text(trimmed)
+            break
+        }
+    }
+
+    while !result.isEmpty {
+        let lastIndex = result.count - 1
+        guard case .text(let value) = result[lastIndex] else { break }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            result.removeLast()
+        } else {
+            result[lastIndex] = .text(trimmed)
+            break
+        }
+    }
+
     return result
 }
 
 nonisolated private func dynamicPlainTextSegments(_ text: String?) -> [DynamicTextSegment] {
     guard let text, !text.isEmpty else { return [] }
+    let normalizedText = text
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
 
     let pattern = #"(?i)(?:https?:)?//[^\s<>"']+"#
     var result = [DynamicTextSegment]()
-    var cursor = text.startIndex
+    var cursor = normalizedText.startIndex
 
-    while cursor < text.endIndex,
-          let range = text.range(of: pattern, options: .regularExpression, range: cursor..<text.endIndex) {
+    while cursor < normalizedText.endIndex,
+          let range = normalizedText.range(of: pattern, options: .regularExpression, range: cursor..<normalizedText.endIndex) {
         if range.lowerBound > cursor {
-            result.append(.text(String(text[cursor..<range.lowerBound])))
+            result.append(.text(String(normalizedText[cursor..<range.lowerBound])))
         }
 
-        let rawURL = String(text[range])
+        let rawURL = String(normalizedText[range])
         let trimmed = dynamicURLByTrimmingTrailingPunctuation(rawURL)
         if let url = normalizedOpenDynamicURL(trimmed.url) {
             result.append(.link(title: "查看链接", url: url))
@@ -4140,8 +4173,8 @@ nonisolated private func dynamicPlainTextSegments(_ text: String?) -> [DynamicTe
         cursor = range.upperBound
     }
 
-    if cursor < text.endIndex {
-        result.append(.text(String(text[cursor...])))
+    if cursor < normalizedText.endIndex {
+        result.append(.text(String(normalizedText[cursor...])))
     }
 
     return normalizedDynamicSegments(result)

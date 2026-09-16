@@ -6,6 +6,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
+    var standardHorizontalInset: CGFloat = 20
     var bottomInset: CGFloat = 0
     var scrollAdjustment: VideoDetailScrollAdjustment?
     let mountsSecondaryContent: Bool
@@ -92,6 +93,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         .toolbarVisibility(hidesBottomToolbar ? .hidden : .visible, for: .bottomBar)
         .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
+        .environment(\.videoDetailStandardHorizontalInset, standardHorizontalInset)
     }
 
     private var tabContent: some View {
@@ -141,6 +143,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 contentMountsSecondaryContent: mountsSecondaryContent
                     || (tab == .comments && selection == .comments),
                 bottomInset: bottomInset + segmentedPickerHeight + 16,
+                standardHorizontalInset: standardHorizontalInset,
                 content: pageContent
             )
         } else {
@@ -153,6 +156,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 topInset: 0,
                 minimumPlayerHeight: 0,
                 bottomInset: bottomInset + segmentedPickerHeight + 16,
+                standardHorizontalInset: standardHorizontalInset,
                 content: { _ in pageContent() }
             )
         }
@@ -171,6 +175,7 @@ private struct VideoDetailInteractiveScrollingTabPage<Content: View>: View {
     let contentRevision: Int
     let contentMountsSecondaryContent: Bool
     let bottomInset: CGFloat
+    let standardHorizontalInset: CGFloat
     let content: () -> Content
 
     var body: some View {
@@ -187,6 +192,7 @@ private struct VideoDetailInteractiveScrollingTabPage<Content: View>: View {
                 contentRevision: contentRevision,
                 contentMountsSecondaryContent: contentMountsSecondaryContent,
                 bottomInset: bottomInset,
+                standardHorizontalInset: standardHorizontalInset,
                 content: content
             )
         }
@@ -206,6 +212,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     let contentRevision: Int
     let contentMountsSecondaryContent: Bool
     let bottomInset: CGFloat
+    let standardHorizontalInset: CGFloat
     let content: () -> Content
 
     func makeCoordinator() -> Coordinator {
@@ -293,6 +300,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
                 \.videoDetailCommentsEmptyStateMinimumHeight,
                 max(viewportHeight - bottomInset, 0)
             )
+            .environment(\.videoDetailStandardHorizontalInset, standardHorizontalInset)
         )
     }
 
@@ -465,6 +473,7 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
     let topInset: CGFloat
     let minimumPlayerHeight: CGFloat
     let bottomInset: CGFloat
+    let standardHorizontalInset: CGFloat
     @ViewBuilder let content: (VideoDetailContentTab) -> Content
     @State private var position = ScrollPosition()
 
@@ -482,6 +491,7 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
                 \.videoDetailCommentsEmptyStateMinimumHeight,
                 topInset > 0 ? max(proxy.size.height - bottomInset, 0) : 0
             )
+            .environment(\.videoDetailStandardHorizontalInset, standardHorizontalInset)
             .scrollPosition($position)
             .contentMargins(.bottom, bottomInset, for: .scrollContent)
             .scrollIndicators(.hidden)

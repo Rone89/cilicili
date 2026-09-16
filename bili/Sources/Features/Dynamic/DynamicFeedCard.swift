@@ -271,17 +271,20 @@ private struct DynamicDetailView: View {
     }
 
     var body: some View {
+        let detailInset = standardDetailInset
+
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 DynamicFeedCard(
                     item: item,
                     api: api,
                     contentWidth: detailContentWidth,
-                    usesExternalHorizontalInsets: false,
+                    usesExternalHorizontalInsets: true,
                     allowsDetailNavigation: false,
                     showsActionBar: false
                 )
                 .environment(\.dynamicDetailNavigationPath, navigationPath)
+                .padding(.horizontal, detailInset)
                 .padding(.top, 12)
                 .padding(.bottom, 16)
 
@@ -296,6 +299,7 @@ private struct DynamicDetailView: View {
                     },
                     replyToComment: replyToCommentAction
                 )
+                .padding(.horizontal, detailCommentHorizontalAdjustment)
                 .padding(.top, 10)
                 .accessibilityIdentifier("dynamic.detail.inlineComments")
             }
@@ -305,7 +309,7 @@ private struct DynamicDetailView: View {
         .scrollIndicators(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .onGeometryChange(for: CGFloat.self) { geometry in
-            max(floor(geometry.size.width - 24), 0)
+            max(floor(geometry.size.width - detailInset * 2), 0)
         } action: { _, width in
             guard width > 1 else { return }
             detailContentWidth = width
@@ -466,5 +470,13 @@ private struct DynamicDetailView: View {
             get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
             set: { richCommentDrafts[target.id] = $0 }
         )
+    }
+
+    private var detailCommentHorizontalAdjustment: CGFloat {
+        standardDetailInset - 14
+    }
+
+    private var standardDetailInset: CGFloat {
+        libraryStore.standardPageHorizontalInset
     }
 }

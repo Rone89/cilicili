@@ -7,8 +7,15 @@ struct VideoDetailLoadedDetailContentPageRenderPack {
     let relatedStore: VideoDetailRelatedRenderStore
     let actions: VideoDetailLoadedDetailContentPageActions
 
-    init(viewModel: VideoDetailViewModel, layoutWidth: CGFloat) {
-        contentWidth = PlaybackDetailContentMetrics.contentWidth(for: layoutWidth)
+    init(
+        viewModel: VideoDetailViewModel,
+        layoutWidth: CGFloat,
+        horizontalInset: CGFloat
+    ) {
+        contentWidth = PlaybackDetailContentMetrics.contentWidth(
+            for: layoutWidth,
+            horizontalInset: horizontalInset
+        )
         pageSelectorStore = viewModel.playbackRenderStore.pageSelectorStore
         relatedStore = viewModel.relatedRenderStore
         actions = VideoDetailLoadedDetailContentPageActions(viewModel: viewModel)

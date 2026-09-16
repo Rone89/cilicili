@@ -3,6 +3,7 @@ import SwiftUI
 
 struct UploaderSeasonSeriesDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var viewModel: UploaderSeasonSeriesDetailViewModel
 
     init(owner: VideoOwner, item: UploaderSeasonSeriesItem) {
@@ -13,7 +14,7 @@ struct UploaderSeasonSeriesDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 controls
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, horizontalInset)
                     .padding(.vertical, 10)
 
                 content
@@ -61,13 +62,13 @@ struct UploaderSeasonSeriesDetailView: View {
     private var content: some View {
         if viewModel.videos.isEmpty && viewModel.state.isLoading {
             UploaderSeasonSeriesDetailLoadingRows()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalInset)
                 .padding(.top, 4)
         } else if viewModel.videos.isEmpty {
             emptyOrErrorState
                 .frame(maxWidth: .infinity)
                 .padding(.top, 80)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalInset)
         } else {
             videoRows
         }
@@ -85,7 +86,7 @@ struct UploaderSeasonSeriesDetailView: View {
                         authorStyle: .plain,
                         metadataStyle: .search
                     )
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, horizontalInset)
                     .padding(.vertical, 10)
                 }
                 .task {
@@ -99,8 +100,12 @@ struct UploaderSeasonSeriesDetailView: View {
             }
 
             footer
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalInset)
         }
+    }
+
+    private var horizontalInset: CGFloat {
+        libraryStore.standardPageHorizontalInset
     }
 
     @ViewBuilder

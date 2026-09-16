@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UploaderView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
     let allowsPullToRefresh: Bool
     let showsToolbarRefreshButton: Bool
@@ -32,7 +33,9 @@ struct UploaderView: View {
                     showsToolbarRefreshButton: showsToolbarRefreshButton
                 )
             } else {
-                UploaderInitialLoadingView()
+                UploaderInitialLoadingView(
+                    horizontalInset: libraryStore.standardPageHorizontalInset
+                )
             }
         }
         .task(id: owner.mid) {
@@ -44,16 +47,22 @@ struct UploaderView: View {
 }
 
 private struct UploaderInitialLoadingView: View {
+    let horizontalInset: CGFloat
+
     var body: some View {
         GeometryReader { proxy in
-            let metrics = HomeFeedLayoutMetrics(mode: .doubleColumn, containerWidth: proxy.size.width)
+            let metrics = HomeFeedLayoutMetrics(
+                mode: .doubleColumn,
+                containerWidth: proxy.size.width,
+                standardHorizontalInset: horizontalInset
+            )
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    UploaderHeaderSkeletonCard()
+                    UploaderHeaderSkeletonCard(horizontalInset: horizontalInset)
 
                     SkeletonBlock(height: 32, shape: .rounded(8))
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, horizontalInset)
 
                     HomeFeedSkeletonSection(metrics: metrics)
                 }
@@ -68,6 +77,12 @@ private struct UploaderInitialLoadingView: View {
 }
 
 private struct UploaderHeaderSkeletonCard: View {
+    let horizontalInset: CGFloat
+
+    init(horizontalInset: CGFloat = 12) {
+        self.horizontalInset = horizontalInset
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
@@ -100,6 +115,6 @@ private struct UploaderHeaderSkeletonCard: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(.white.opacity(0.16), lineWidth: 0.8)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, horizontalInset)
     }
 }

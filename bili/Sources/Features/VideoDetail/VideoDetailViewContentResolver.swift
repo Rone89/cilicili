@@ -48,6 +48,7 @@ struct VideoDetailViewContentResolver: View {
                 target: $commentComposerTarget,
                 draft: commentComposerDraftBinding,
                 api: dependencies.api,
+                horizontalPadding: dependencies.libraryStore.standardPageHorizontalInset,
                 submit: { target, message, pictures in
                     try await submitComment(target: target, message: message, pictures: pictures)
                 }
@@ -64,11 +65,13 @@ struct VideoDetailViewContentResolver: View {
         commentComposerTarget = comment.map { .reply(root: $0, parent: $0) } ?? .dynamic
     }
 
-    private var videoCommentSubmitAction: (
-        DynamicCommentComposerTarget,
-        String,
-        [DynamicCommentImage]?
-    ) async throws -> Void {
+    private var videoCommentSubmitAction:
+        (
+            DynamicCommentComposerTarget,
+            String,
+            [DynamicCommentImage]?
+        ) async throws -> Void
+    {
         { target, message, pictures in
             try await submitComment(target: target, message: message, pictures: pictures)
         }
@@ -105,14 +108,14 @@ struct VideoDetailViewContentResolver: View {
         return [
             String(pendingCommentAnchor.rootID),
             pendingCommentAnchor.secondaryID.map(String.init) ?? "-",
-            viewModel.commentTarget?.contextKey ?? "pending-detail"
+            viewModel.commentTarget?.contextKey ?? "pending-detail",
         ].joined(separator: "|")
     }
 
     @MainActor
     private func presentPendingCommentIfPossible() async {
         guard let pendingCommentAnchor,
-              viewModel.commentTarget != nil
+            viewModel.commentTarget != nil
         else {
             return
         }
@@ -120,7 +123,7 @@ struct VideoDetailViewContentResolver: View {
         let anchor = pendingCommentAnchor
         let loadedThread = await viewModel.loadCommentRoot(for: anchor)
         guard !Task.isCancelled,
-              self.pendingCommentAnchor == anchor
+            self.pendingCommentAnchor == anchor
         else {
             return
         }
@@ -138,6 +141,7 @@ struct VideoDetailViewContentResolver: View {
 }
 
 struct VideoDetailInitialContentResolver: View {
+    @EnvironmentObject private var dependencies: AppDependencies
     let seedVideo: VideoItem
     @Binding var selectedContentTab: VideoDetailContentTab
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
@@ -150,6 +154,14 @@ struct VideoDetailInitialContentResolver: View {
             selectedContentTab: $selectedContentTab,
             runtimeSettings: runtimeSettings,
             onNavigateBack: onNavigateBack
+        )
+        .environment(
+            \.videoDetailStandardHorizontalInset,
+            dependencies.libraryStore.standardPageHorizontalInset
+        )
+        .environment(
+            \.videoDetailActionButtonStyle,
+            dependencies.libraryStore.videoDetailActionButtonStyle
         )
         .task {
             lifecycleActions.configureInitialViewModelIfNeeded()

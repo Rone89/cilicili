@@ -25,6 +25,7 @@ struct MultiAccountExperimentSettingsView: View {
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
         .sheet(isPresented: $isShowingWebLogin) {
@@ -118,7 +119,7 @@ struct MultiAccountExperimentSettingsView: View {
                         Text(account.displayName).tag(account.mid)
                     }
                 } label: {
-                    MineSettingsLabel("点赞、投币与收藏", systemImage: "hand.thumbsup.fill")
+                    MineSettingsLabel("点赞、投币与收藏", systemImage: "hand.thumbsup")
                 }
                 .pickerStyle(.menu)
 

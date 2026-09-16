@@ -11,7 +11,11 @@ struct HomeFeedLayoutMetrics {
     let doubleColumnFixedCoverSize: CGSize?
     let borderedSingleColumnCoverSize: CGSize?
 
-    init(mode: HomeFeedLayout, containerWidth: CGFloat) {
+    init(
+        mode: HomeFeedLayout,
+        containerWidth: CGFloat,
+        standardHorizontalInset: CGFloat = 20
+    ) {
         self.mode = mode
         let doubleColumnSpacing: CGFloat = mode == .borderedDoubleColumn ? 12 : 14
         let doubleColumnCoverHeightRatio: CGFloat = mode == .borderedDoubleColumn ? 10 / 16 : 9 / 16
@@ -19,7 +23,7 @@ struct HomeFeedLayoutMetrics {
             GridItem(.flexible(), spacing: doubleColumnSpacing),
             GridItem(.flexible(), spacing: doubleColumnSpacing)
         ]
-        singleColumnHorizontalPadding = mode == .borderedSingleColumn ? 16 : 12
+        singleColumnHorizontalPadding = standardHorizontalInset
 
         switch mode {
         case .singleColumn, .borderedSingleColumn:
@@ -31,11 +35,11 @@ struct HomeFeedLayoutMetrics {
         case .doubleColumn:
             feedColumns = doubleColumns
             feedSpacing = 22
-            feedHorizontalPadding = 16
+            feedHorizontalPadding = standardHorizontalInset
         case .borderedDoubleColumn:
             feedColumns = doubleColumns
             feedSpacing = 18
-            feedHorizontalPadding = 12
+            feedHorizontalPadding = standardHorizontalInset
         }
 
         let singleWidth = containerWidth - singleColumnHorizontalPadding * 2

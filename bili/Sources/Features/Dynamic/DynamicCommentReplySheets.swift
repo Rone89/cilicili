@@ -20,7 +20,7 @@ struct DynamicCommentRepliesSheet: View {
                             composerTarget = .reply(root: rootComment, parent: rootComment)
                         }
                     )
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 20)
                         .padding(.vertical, 14)
 
                     Divider()
@@ -100,7 +100,7 @@ private struct DynamicCommentDialogSheet: View {
                             composerTarget = .reply(root: rootComment, parent: rootComment)
                         }
                     )
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 20)
                         .padding(.vertical, 14)
 
                     Divider()

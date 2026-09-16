@@ -6,6 +6,7 @@ struct DynamicFeedScrollContent: View {
     @ObservedObject var viewModel: DynamicViewModel
     let isLoggedIn: Bool
     let contentWidth: CGFloat
+    let horizontalInset: CGFloat
     let pullRefreshTriggerDistance: CGFloat
     @State private var pullRefreshDistance: CGFloat = 0
     @State private var pullRefreshActions = HomeFeedRefreshActions()
@@ -20,7 +21,7 @@ struct DynamicFeedScrollContent: View {
                     contentWidth: contentWidth
                 )
                 .frame(width: contentWidth, alignment: .leading)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, horizontalInset)
                 .padding(.bottom, 18)
             }
         }

@@ -2,7 +2,15 @@ import SwiftUI
 
 struct VideoDetailRelatedListLayout {
     let layoutWidth: CGFloat
-    let horizontalPadding: CGFloat = VideoDetailRelatedStyle.horizontalPadding
+    let horizontalPadding: CGFloat
+
+    init(
+        layoutWidth: CGFloat,
+        horizontalPadding: CGFloat = VideoDetailRelatedStyle.horizontalPadding
+    ) {
+        self.layoutWidth = layoutWidth
+        self.horizontalPadding = horizontalPadding
+    }
 
     var contentWidth: CGFloat {
         max(layoutWidth - horizontalPadding * 2, 1)

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct VideoDetailRelatedSection: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     @ObservedObject var store: VideoDetailRelatedRenderStore
     let layoutWidth: CGFloat
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
@@ -9,7 +10,10 @@ struct VideoDetailRelatedSection: View {
     @State private var preloadedRelatedVideos = Set<String>()
 
     var body: some View {
-        let layout = VideoDetailRelatedListLayout(layoutWidth: layoutWidth)
+        let layout = VideoDetailRelatedListLayout(
+            layoutWidth: layoutWidth,
+            horizontalPadding: standardHorizontalInset
+        )
 
         VideoDetailRelatedSectionContent(
             relatedItems: store.relatedItems,

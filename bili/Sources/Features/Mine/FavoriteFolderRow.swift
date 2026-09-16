@@ -68,7 +68,7 @@ private struct FavoriteFolderInfo: View {
             HStack(spacing: 8) {
                 Label("\(folder.mediaCount ?? 0) 个内容", systemImage: "play.rectangle.stack")
                 if folder.isFavorited {
-                    Label("已收藏当前视频", systemImage: "star.fill")
+                    Label("已收藏当前视频", systemImage: "star")
                         .foregroundStyle(appTintColor)
                 }
             }

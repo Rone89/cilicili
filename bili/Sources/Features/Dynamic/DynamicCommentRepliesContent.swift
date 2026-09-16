@@ -32,16 +32,18 @@ private struct DynamicCommentRepliesStateContent: View {
     var body: some View {
         if snapshot.replies.isEmpty && snapshot.state.isLoading {
             CommentLoadingSkeletonList(count: 3)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 6)
         } else if snapshot.replies.isEmpty, case .failed(let message) = snapshot.state {
             DynamicCommentErrorView(message: message) {
                 Task { await replyStore.reloadReplies(for: rootComment) }
             }
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         } else if snapshot.replies.isEmpty {
             EmptyStateView(title: "暂无回复", systemImage: "bubble.left.and.bubble.right", message: "这条评论还没有可展示的回复。")
-                .padding(16)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
         } else {
             DynamicCommentRepliesLoadedList(
                 snapshot: snapshot,
@@ -80,7 +82,7 @@ private struct DynamicCommentRepliesLoadedList: View {
                     } : nil,
                     reply: { replyToComment(replyItem.reply) }
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .background(
                     replyItem.id == highlightedReplyID ? appTintColor.opacity(0.10) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -94,7 +96,7 @@ private struct DynamicCommentRepliesLoadedList: View {
                 snapshot: snapshot,
                 loadMore: loadMoreReplies
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
     }

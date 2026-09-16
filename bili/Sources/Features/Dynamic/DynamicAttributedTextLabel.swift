@@ -227,12 +227,14 @@ final class DynamicTextKitAttributedLabel: UIView {
         configureTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        return CGSize(width: ceil(width), height: ceil(usedRect.height))
+        let height = measuredHeight(usedRect: usedRect)
+        return CGSize(width: ceil(width), height: ceil(height))
     }
 
     private func configureTextSystem() {
         backgroundColor = .clear
         isOpaque = false
+        clipsToBounds = true
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         textContainer.lineFragmentPadding = 0
@@ -253,6 +255,25 @@ final class DynamicTextKitAttributedLabel: UIView {
         )
         textContainer.maximumNumberOfLines = numberOfLines
         textContainer.lineBreakMode = lineBreakMode
+    }
+
+    private func measuredHeight(usedRect: CGRect) -> CGFloat {
+        guard numberOfLines > 0 else { return usedRect.height }
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        var lineCount = 0
+        var visibleBottom = usedRect.minY
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { rect, _, _, _, stop in
+            lineCount += 1
+            if lineCount <= self.numberOfLines {
+                visibleBottom = max(visibleBottom, rect.maxY)
+            } else {
+                stop.pointee = true
+            }
+        }
+
+        guard lineCount > numberOfLines else { return usedRect.height }
+        return max(visibleBottom - usedRect.minY, 0)
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {

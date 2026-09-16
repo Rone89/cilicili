@@ -4,6 +4,7 @@ struct DynamicFeedActionBar: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var sessionStore: SessionStore
+    @Environment(\.videoDetailActionButtonStyle) private var actionButtonStyle
     let display: DynamicFeedCardDisplayModel
     let initialIsLiked: Bool
     let initialLikeCount: Int
@@ -30,32 +31,15 @@ struct DynamicFeedActionBar: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
-                shareActionPill
-                    .frame(maxWidth: .infinity)
-
-                DynamicActionPill(
-                    title: display.commentTitle,
-                    systemImage: "bubble.left",
-                    isSelected: false
-                ) {
-                    playActionFeedback()
-                    onShowComments()
+        let usesPlainStyle = actionButtonStyle.usesPlainStyle
+        Group {
+            if usesPlainStyle {
+                actionRow
+            } else {
+                GlassEffectContainer(spacing: 8) {
+                    actionRow
                 }
-                .frame(maxWidth: .infinity)
-
-                DynamicActionPill(
-                    title: DynamicFeedCardDisplayModel.statTitle(count: likeState.likeCount, fallback: "点赞"),
-                    systemImage: likeState.isLiked ? "hand.thumbsup.fill" : "hand.thumbsup",
-                    isSelected: likeState.isLiked,
-                    isDisabled: isMutatingLike
-                ) {
-                    toggleLike()
-                }
-                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 3)
@@ -88,11 +72,13 @@ struct DynamicFeedActionBar: View {
             ) {
                 DynamicActionPillLabel(
                     title: display.repostTitle,
-                    systemImage: "arrowshape.turn.up.right"
+                    systemImage: "square.and.arrow.up"
                 )
             }
-            .biliGlassButtonStyle()
-            .controlSize(.small)
+            .dynamicActionButtonAppearance(
+                usesPlainStyle: actionButtonStyle.usesPlainStyle,
+                prominent: false
+            )
             .tint(.secondary)
             .frame(maxWidth: .infinity)
             .simultaneousGesture(TapGesture().onEnded { playActionFeedback() })
@@ -100,13 +86,42 @@ struct DynamicFeedActionBar: View {
         } else {
             DynamicActionPill(
                 title: display.repostTitle,
-                systemImage: "arrowshape.turn.up.right",
+                systemImage: "square.and.arrow.up",
                 isSelected: false
             ) {
                 showActionMessage("暂无可分享链接")
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    @ViewBuilder
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            shareActionPill
+                .frame(maxWidth: .infinity)
+
+            DynamicActionPill(
+                title: display.commentTitle,
+                systemImage: "bubble.left",
+                isSelected: false
+            ) {
+                playActionFeedback()
+                onShowComments()
+            }
+            .frame(maxWidth: .infinity)
+
+            DynamicActionPill(
+                title: DynamicFeedCardDisplayModel.statTitle(count: likeState.likeCount, fallback: "点赞"),
+                systemImage: "hand.thumbsup",
+                isSelected: likeState.isLiked,
+                isDisabled: isMutatingLike
+            ) {
+                toggleLike()
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var sourceLikeState: DynamicLikeDisplayState {

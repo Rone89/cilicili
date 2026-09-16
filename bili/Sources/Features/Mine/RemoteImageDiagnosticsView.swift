@@ -29,6 +29,7 @@ struct RemoteImageDiagnosticsView: View {
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
+        .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
         .navigationTitle("图片加载诊断")
         .toolbarTitleDisplayMode(.inline)

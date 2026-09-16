@@ -20,10 +20,14 @@ struct HomeFeedViewportState {
         return roundedHeight
     }
 
-    func layoutMetrics(for mode: HomeFeedLayout) -> HomeFeedLayoutMetrics {
+    func layoutMetrics(
+        for mode: HomeFeedLayout,
+        standardHorizontalInset: CGFloat = 20
+    ) -> HomeFeedLayoutMetrics {
         HomeFeedLayoutMetrics(
             mode: mode,
-            containerWidth: feedContainerWidth
+            containerWidth: feedContainerWidth,
+            standardHorizontalInset: standardHorizontalInset
         )
     }
 }
