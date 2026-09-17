@@ -139,7 +139,7 @@ struct CommentLikeButton: View {
         guard !isMutating, let target else { return }
         let account = dependencies.sessionStore.credentialSnapshot(
             for: .interaction,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         guard account.isLoggedIn else {
             errorMessage = "请先登录互动账号"

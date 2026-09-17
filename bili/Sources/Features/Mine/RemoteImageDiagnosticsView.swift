@@ -22,7 +22,7 @@ struct RemoteImageDiagnosticsView: View {
                 actionsSection
             } else {
                 Section {
-                    Text("图片加载诊断已关闭。图片会照常加载；回到显示设置打开“记录图片加载诊断”后，新的统计会从零开始。")
+                    Text("图片加载诊断已关闭。图片会照常加载；回到“开发者与诊断”打开“记录图片加载诊断”后，新的统计会从零开始。")
                         .foregroundStyle(.secondary)
                 }
             }

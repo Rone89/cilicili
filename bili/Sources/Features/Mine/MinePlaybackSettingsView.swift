@@ -1,7 +1,13 @@
 import SwiftUI
 
 struct MinePlaybackSettingsView: View {
+    enum Mode: Equatable {
+        case user
+        case developer
+    }
+
     @ObservedObject var libraryStore: LibraryStore
+    let mode: Mode
     @AppStorage("cc.bili.playback.showsAdvancedSettings.v1") var showsAdvancedPlaybackSettings = false
     @State var isProbingPlaybackCDN = false
     @State var playbackCDNProbeResults: [PlaybackCDNProbeResult] = []
@@ -12,10 +18,17 @@ struct MinePlaybackSettingsView: View {
     @State var isShowingPlaybackURLPreferenceDetails = false
     @State var playbackCustomCDNHostDraft = ""
 
+    init(libraryStore: LibraryStore, mode: Mode = .user) {
+        self.libraryStore = libraryStore
+        self.mode = mode
+    }
+
     var body: some View {
         Form {
             MinePlaybackPreferenceSection(
                 libraryStore: libraryStore,
+                showsBasicPreferences: mode == .user,
+                showsAdvancedPreferences: mode == .developer,
                 playbackPreferenceSummary: AnyView(playbackPreferenceSummary),
                 playbackCDNProbeRefreshIntervalTitle: playbackCDNProbeRefreshIntervalTitle,
                 isProbingPlaybackCDN: isProbingPlaybackCDN,
@@ -29,7 +42,7 @@ struct MinePlaybackSettingsView: View {
                 playbackURLPreferenceSummary
             }
 
-            MinePlaybackToolsSection(libraryStore: libraryStore)
+            MinePlaybackToolsSection(mode: mode, libraryStore: libraryStore)
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
@@ -37,6 +50,7 @@ struct MinePlaybackSettingsView: View {
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
         .task {
+            guard mode == .developer else { return }
             playbackCustomCDNHostDraft = libraryStore.playbackCustomCDNHost ?? ""
             refreshPlaybackURLPreferenceSnapshots()
             refreshPlaybackCDNProbeIfNeeded()

@@ -35,6 +35,19 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         }
     }
 
+    func testRetiredMineSettingsSearchExperimentPreferenceIsCleared() {
+        let suiteName = "cc.bili.tests.retired-mine-search-experiment.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let key = "cc.bili.experimental.mineSettingsSearch.v1"
+        defaults.set(false, forKey: key)
+
+        _ = LibraryStore(userDefaults: defaults)
+
+        XCTAssertNil(defaults.object(forKey: key))
+    }
+
     func testDynamicCommentHitAreaVisualizationExperimentDefaultsOffAndPersists() {
         let suiteName = "cc.bili.tests.dynamic-comment-hit-area.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

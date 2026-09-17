@@ -35,8 +35,8 @@ struct RootMineNavigationDestination: View {
             } else {
                 ProgressView()
             }
-        case .multiAccountSettings:
-            MultiAccountExperimentSettingsView(
+        case .accountManagement:
+            MineAccountManagementView(
                 sessionStore: sessionStore,
                 libraryStore: libraryStore,
                 api: api
@@ -53,6 +53,10 @@ struct RootMineNavigationDestination: View {
             MineHomeAndSearchSettingsView(libraryStore: libraryStore)
         case .playbackSettings:
             MinePlaybackSettingsView(libraryStore: libraryStore)
+        case .cacheSettings:
+            ResourceCacheManagementView(mode: .user)
+        case .developerDiagnostics:
+            MineDeveloperDiagnosticsView(libraryStore: libraryStore)
         case .contentFilterSettings:
             MineContentFilterSettingsView(libraryStore: libraryStore)
         case .privacySettings:

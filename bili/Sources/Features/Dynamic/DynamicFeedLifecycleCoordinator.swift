@@ -102,7 +102,7 @@ final class DynamicFeedLifecycleCoordinator {
     private var cacheIdentityKey: String {
         sessionStore.accountCacheIdentityKey(
             for: .dynamicFeed,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
     }
 

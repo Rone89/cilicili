@@ -2,20 +2,22 @@ import SwiftUI
 
 enum MineOverlayRoute: Hashable {
     case accountMessages
-    case multiAccountSettings
+    case accountManagement
     case history
     case favorites
     case watchLater
     case interfaceSettings
     case homeAndSearchSettings
     case playbackSettings
+    case cacheSettings
+    case developerDiagnostics
     case contentFilterSettings
     case privacySettings
 
     var isSettingsRoute: Bool {
         switch self {
         case .interfaceSettings, .homeAndSearchSettings, .playbackSettings, .contentFilterSettings,
-             .privacySettings, .multiAccountSettings:
+             .privacySettings, .cacheSettings, .developerDiagnostics, .accountManagement:
             true
         case .accountMessages, .history, .favorites, .watchLater:
             false

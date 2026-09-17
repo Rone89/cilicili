@@ -785,6 +785,10 @@ struct VideoDetailSwiftUIContainer: View {
             \.videoDetailActionButtonStyle,
             dependencies.libraryStore.videoDetailActionButtonStyle
         )
+        .environment(
+            \.videoDetailSegmentedPickerGlassStyle,
+            dependencies.libraryStore.videoDetailSegmentedPickerGlassStyle
+        )
     }
 }
 

@@ -1,7 +1,13 @@
 import SwiftUI
 
 struct ResourceCacheManagementView: View {
+    enum Mode: Equatable {
+        case user
+        case developer
+    }
+
     @EnvironmentObject private var libraryStore: LibraryStore
+    let mode: Mode
     @AppStorage(ResourceCacheLimitSettings.isEnabledKey) private var isCacheLimitEnabled = ResourceCacheLimitSettings.defaultIsEnabled
     @AppStorage(ResourceCacheLimitSettings.megabytesKey) private var cacheLimitMegabytes = ResourceCacheLimitSettings.defaultLimitMegabytes
     @State private var summary: ResourceCacheSummary?
@@ -11,16 +17,22 @@ struct ResourceCacheManagementView: View {
         List {
             ResourceCacheSummarySection(
                 summary: summary,
-                cacheLimitSubtitle: cacheLimitSubtitle
+                cacheLimitSubtitle: cacheLimitSubtitle,
+                showsDetailedStatistics: mode == .developer
             )
 
-            ResourceCacheLimitSection(
-                isCacheLimitEnabled: $isCacheLimitEnabled,
-                cacheLimitMegabytes: cacheLimitBinding,
-                applyLimit: applyCacheLimitNow
-            )
+            if mode == .developer {
+                ResourceCacheLimitSection(
+                    isCacheLimitEnabled: $isCacheLimitEnabled,
+                    cacheLimitMegabytes: cacheLimitBinding,
+                    applyLimit: applyCacheLimitNow
+                )
+            }
 
-            ResourceCacheCleanupSection(performClear: performClear)
+            ResourceCacheCleanupSection(
+                showsDetailedActions: mode == .developer,
+                performClear: performClear
+            )
         }
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
@@ -53,7 +65,8 @@ struct ResourceCacheManagementView: View {
     }
 
     private var cacheLimitSubtitle: String {
-        isCacheLimitEnabled
+        guard mode == .developer else { return "由系统自动管理" }
+        return isCacheLimitEnabled
             ? "上限 \(ResourceCacheByteFormatter.megabytes(ResourceCacheLimitSettings.clampedMegabytes(cacheLimitMegabytes)))"
             : "未启用自动上限"
     }

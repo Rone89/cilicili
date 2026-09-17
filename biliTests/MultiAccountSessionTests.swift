@@ -25,7 +25,7 @@ final class MultiAccountSessionTests: XCTestCase {
         XCTAssertEqual(cookie, "buvid3=anonymous-device")
     }
 
-    func testExperimentDefaultsOffAndPersists() {
+    func testMultiAccountRoutingIsEnabledByDefaultAndPersistsLegacyFlag() {
         let suiteName = "cc.bili.tests.multi-account.defaults.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
@@ -33,7 +33,7 @@ final class MultiAccountSessionTests: XCTestCase {
         }
 
         let initialStore = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(initialStore.multiAccountExperimentEnabled)
+        XCTAssertTrue(initialStore.multiAccountEnabled)
 
         initialStore.setMultiAccountExperimentEnabled(true)
 

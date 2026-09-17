@@ -28,7 +28,7 @@ extension BiliAPIClient {
         let cellularPreferredVideoQuality = libraryStore.cellularPreferredVideoQuality
         let account = sessionStore.credentialSnapshot(
             for: purpose,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         return RequestSnapshot(
             cookieHeader: account.cookieHeader,

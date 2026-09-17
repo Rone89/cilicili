@@ -3,13 +3,15 @@ import SwiftUI
 struct ResourceCacheSummarySection: View {
     let summary: ResourceCacheSummary?
     let cacheLimitSubtitle: String
+    let showsDetailedStatistics: Bool
 
     var body: some View {
         Section("统计") {
             if let summary {
                 ResourceCacheSummaryRows(
                     summary: summary,
-                    cacheLimitSubtitle: cacheLimitSubtitle
+                    cacheLimitSubtitle: cacheLimitSubtitle,
+                    showsDetailedStatistics: showsDetailedStatistics
                 )
             } else {
                 ProgressView()
@@ -21,6 +23,7 @@ struct ResourceCacheSummarySection: View {
 private struct ResourceCacheSummaryRows: View {
     let summary: ResourceCacheSummary
     let cacheLimitSubtitle: String
+    let showsDetailedStatistics: Bool
 
     var body: some View {
         ResourceCacheRow(
@@ -32,7 +35,9 @@ private struct ResourceCacheSummaryRows: View {
         ResourceCacheRow(
             title: "PlayURL",
             value: "\(summary.playURL.count)/\(summary.playURL.capacity)",
-            subtitle: "命中 \(summary.playURL.hits) · 未命中 \(summary.playURL.misses)"
+            subtitle: showsDetailedStatistics
+                ? "命中 \(summary.playURL.hits) · 未命中 \(summary.playURL.misses)"
+                : "播放地址缓存"
         )
 
         ResourceCacheRow(

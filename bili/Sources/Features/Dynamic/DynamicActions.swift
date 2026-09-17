@@ -132,7 +132,7 @@ struct DynamicFeedActionBar: View {
         playActionFeedback()
         let account = sessionStore.credentialSnapshot(
             for: .interaction,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         guard account.isLoggedIn else {
             showActionMessage("请先登录账号", playsFeedback: false)

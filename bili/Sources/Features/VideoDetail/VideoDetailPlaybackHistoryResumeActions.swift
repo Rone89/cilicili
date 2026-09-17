@@ -86,7 +86,7 @@ extension VideoDetailViewModel {
     private var usesMainAccountHistoryMetadata: Bool {
         let snapshot = sessionStore.credentialSnapshot(
             for: .historyRead,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         return snapshot.accountMID == sessionStore.mainAccountMID
     }

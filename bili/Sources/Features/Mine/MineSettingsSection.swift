@@ -38,6 +38,26 @@ struct MineSettingsSection: View {
             }
 
             MineOverlayNavigationButton {
+                onOpenRoute(.cacheSettings)
+            } label: {
+                SettingsNavigationRow(
+                    title: "缓存空间与清理",
+                    subtitle: "查看占用空间并清理可重新获取的内容",
+                    systemImage: "internaldrive"
+                )
+            }
+
+            MineOverlayNavigationButton {
+                onOpenRoute(.developerDiagnostics)
+            } label: {
+                SettingsNavigationRow(
+                    title: "开发者与诊断",
+                    subtitle: "诊断、实验和高级播放工具",
+                    systemImage: "wrench.and.screwdriver"
+                )
+            }
+
+            MineOverlayNavigationButton {
                 onOpenRoute(.contentFilterSettings)
             } label: {
                 SettingsNavigationRow(
@@ -65,7 +85,18 @@ struct MineSettingsSection: View {
             .filter(\.participatesInRootTabVisibilitySettings)
             .map(\.title)
             .joined(separator: "、")
-        return "\(libraryStore.appearanceMode.title) · \(tabs)"
+        var parts = [libraryStore.appearanceMode.title, tabs]
+        if libraryStore.force120HzScrollingEnabled {
+            parts.append("120Hz")
+        }
+        if libraryStore.minimizesTabBarOnScroll {
+            parts.append("滚动最小化 TabBar")
+        }
+        if !libraryStore.followsSystemFontSize {
+            parts.append("固定字号：\(libraryStore.manualFontSize.title)")
+        }
+        parts.append("底部栏：\(libraryStore.videoDetailSegmentedPickerGlassStyle.title)")
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private var homeAndSearchSummary: String {

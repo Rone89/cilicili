@@ -2,8 +2,8 @@ import SwiftUI
 
 struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
     @ObservedObject var libraryStore: LibraryStore
-    @State private var av1HardwareDecodeProbe = PlaybackCodecPolicy.av1HardwareDecodeProbe
-    @State private var isShowingAV1HardwareDecodeResult = false
+    let showsBasicPreferences: Bool
+    let showsAdvancedPreferences: Bool
     let playbackPreferenceSummary: AnyView
     let playbackCDNProbeRefreshIntervalTitle: String
     let isProbingPlaybackCDN: Bool
@@ -15,47 +15,49 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
     @ViewBuilder let probeSummary: () -> ProbeSummary
 
     var body: some View {
-        Section {
-            playbackPreferenceSummary
-            playbackAutoOptimizationPicker
-            videoDetailAutoplayToggle
-            pictureInPictureToggle
-            playbackHistorySyncThresholdPicker
-            preferredVideoQualityPicker
-            cellularPreferredVideoQualityPicker
-            av1HardwareDecodeProbeButton
-            videoCodecPreferenceLink
-            forceHardwareDecodeToggle
-            dolbyVisionRenderingPolicyPicker
-            defaultPlaybackRatePicker
-        } header: {
-            Text("播放体验")
-        } footer: {
-            Text("关闭详情自动播放后，进入视频详情页会先停在首帧，需手动点播放。播放满 \(libraryStore.playbackHistorySyncThresholdSeconds) 秒后同步观看记录并用于下次续播；未满不会上报。")
+        if showsBasicPreferences {
+            Section {
+                playbackPreferenceSummary
+                playbackAutoOptimizationPicker
+                videoDetailAutoplayToggle
+                pictureInPictureToggle
+                playbackHistorySyncThresholdPicker
+                preferredVideoQualityPicker
+                cellularPreferredVideoQualityPicker
+                videoCodecPreferenceLink
+                forceHardwareDecodeToggle
+                dolbyVisionRenderingPolicyPicker
+                defaultPlaybackRatePicker
+            } header: {
+                Text("播放体验")
+            } footer: {
+                Text("关闭详情自动播放后，进入视频详情页会先停在首帧，需手动点播放。播放满 \(libraryStore.playbackHistorySyncThresholdSeconds) 秒后同步观看记录并用于下次续播；未满不会上报。")
+            }
         }
 
-        Section {
-            advancedPlaybackSettingsToggle
-            if showsAdvancedPlaybackSettings {
-                playbackStreamSourcePicker
-                playbackCDNPicker
-                cellularBiliTrafficCompatibilityExperimentToggle
-                prefersBackupAudioURLToggle
-                playbackCustomCDNHostEditor
-                playbackCDNProbeRefreshPolicyPicker
-                playbackCDNProbeRefreshPolicyDetail
-                playbackNetworkAddressFamilyPicker
-                playbackNetworkAddressFamilyNotice
-                playbackCDNProbeButton
-                playbackCDNProbeMessageText
-                probeSummary()
-            } else {
-                advancedPlaybackSummary
+        if showsAdvancedPreferences {
+            Section {
+                advancedPlaybackSettingsToggle
+                if showsAdvancedPlaybackSettings {
+                    playbackStreamSourcePicker
+                    playbackCDNPicker
+                    prefersBackupAudioURLToggle
+                    playbackCustomCDNHostEditor
+                    playbackCDNProbeRefreshPolicyPicker
+                    playbackCDNProbeRefreshPolicyDetail
+                    playbackNetworkAddressFamilyPicker
+                    playbackNetworkAddressFamilyNotice
+                    playbackCDNProbeButton
+                    playbackCDNProbeMessageText
+                    probeSummary()
+                } else {
+                    advancedPlaybackSummary
+                }
+            } header: {
+                Text("高级播放设置")
+            } footer: {
+                Text(showsAdvancedPlaybackSettings ? "高级选项会影响播放线路、取流来源和诊断信息；不确定时保持自动即可。" : "遇到地区网络异常或需要诊断时再打开。")
             }
-        } header: {
-            Text("高级播放设置")
-        } footer: {
-            Text(showsAdvancedPlaybackSettings ? "高级选项会影响播放线路、取流来源和诊断信息；不确定时保持自动即可。" : "遇到地区网络异常或需要诊断时再打开。")
         }
     }
 
@@ -181,25 +183,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
         }
     }
 
-    private var av1HardwareDecodeProbeButton: some View {
-        Button {
-            av1HardwareDecodeProbe = PlaybackCodecPolicy.av1HardwareDecodeProbe
-            isShowingAV1HardwareDecodeResult = true
-        } label: {
-            HStack(spacing: 8) {
-                MineSettingsLabel("检测 AV1 硬解", systemImage: "cpu")
-                Spacer(minLength: 8)
-                Text(av1HardwareDecodeProbe.settingsStatusTitle)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .alert("AV1 硬解检测", isPresented: $isShowingAV1HardwareDecodeResult) {
-            Button("好", role: .cancel) {}
-        } message: {
-            Text(av1HardwareDecodeProbe.detail)
-        }
-    }
-
     private var forceHardwareDecodeToggle: some View {
         Toggle(isOn: Binding(
             get: { libraryStore.forceHardwareDecodeEnabled },
@@ -235,20 +218,6 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             MineSettingsLabel("播放取流来源", systemImage: "antenna.radiowaves.left.and.right")
         }
         .pickerStyle(.menu)
-    }
-
-    private var cellularBiliTrafficCompatibilityExperimentToggle: some View {
-        Toggle(isOn: Binding(
-            get: { libraryStore.cellularBiliTrafficCompatibilityExperimentEnabled },
-            set: { libraryStore.setCellularBiliTrafficCompatibilityExperimentEnabled($0) }
-        )) {
-            VStack(alignment: .leading, spacing: 3) {
-                MineSettingsLabel("蜂窝网络 B站定向流量兼容实验", systemImage: "antenna.radiowaves.left.and.right")
-                Text("使用手机流量时优先 B站域名，外部线路仍会在播放失败时兜底；无法确认套餐是否实际免流。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private var playbackCDNPicker: some View {

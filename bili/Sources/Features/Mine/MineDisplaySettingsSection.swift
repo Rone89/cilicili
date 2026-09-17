@@ -2,8 +2,6 @@ import SwiftUI
 
 struct MineDisplaySettingsSection: View {
     @ObservedObject var libraryStore: LibraryStore
-    @AppStorage(VideoCoverBadgeContrastBacking.storageKey) private var videoCoverBadgeContrastBackingOpacity =
-        VideoCoverBadgeContrastBacking.defaultOpacity
 
     var body: some View {
         Section("显示") {
@@ -45,9 +43,9 @@ struct MineDisplaySettingsSection: View {
                 )
             ) {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("字体跟随系统字号", systemImage: "textformat.size")
+                    MineSettingsLabel("使用系统字号", systemImage: "textformat.size")
 
-                    Text("关闭后可以固定 App 字号，不再随系统文字大小变化。")
+                    Text("关闭后可固定整个 App 的字号，不再随系统文字大小变化。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -57,7 +55,7 @@ struct MineDisplaySettingsSection: View {
             if !libraryStore.followsSystemFontSize {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        MineSettingsLabel("手动字体大小", systemImage: "textformat")
+                        MineSettingsLabel("固定 App 字号", systemImage: "textformat")
                         Spacer(minLength: 8)
                         Text(libraryStore.manualFontSize.title)
                             .font(.caption.monospacedDigit())
@@ -69,7 +67,7 @@ struct MineDisplaySettingsSection: View {
                         in: 0...Double(AppManualFontSize.allCases.count - 1),
                         step: 1
                     ) {
-                        Text("手动字体大小")
+                        Text("固定 App 字号")
                     } minimumValueLabel: {
                         Text("A").font(.caption2)
                     } maximumValueLabel: {
@@ -101,8 +99,6 @@ struct MineDisplaySettingsSection: View {
             }
             .pickerStyle(.menu)
 
-            MineImageCacheControl()
-
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.showsVideoCoverDurationBadges },
@@ -114,57 +110,18 @@ struct MineDisplaySettingsSection: View {
 
             Toggle(
                 isOn: Binding(
-                    get: { libraryStore.remoteImageDiagnosticsEnabled },
-                    set: { libraryStore.setRemoteImageDiagnosticsEnabled($0) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("记录图片加载诊断", systemImage: "chart.bar.xaxis")
-
-                    Text("开着会记缓存、滚动和 CDN 的汇总数字，方便复制给我分析；不记图片、链接、账号或 Cookie。关掉后不再记数，图片照常加载。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            NavigationLink {
-                RemoteImageDiagnosticsView(libraryStore: libraryStore)
-            } label: {
-                MineSettingsLabel("图片加载诊断", systemImage: "chart.bar.xaxis")
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    MineSettingsLabel("封面角标暗色底", systemImage: "circle.lefthalf.filled")
-                    Spacer(minLength: 8)
-                    Text(videoCoverBadgeContrastBackingOpacityTitle)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-
-                Slider(
-                    value: Binding(
-                        get: {
-                            VideoCoverBadgeContrastBacking.normalized(videoCoverBadgeContrastBackingOpacity)
-                        },
-                        set: { value in
-                            videoCoverBadgeContrastBackingOpacity = VideoCoverBadgeContrastBacking.normalized(value)
-                        }
-                    ),
-                    in: VideoCoverBadgeContrastBacking.opacityRange,
-                    step: 0.05
-                )
-            }
-            .disabled(!libraryStore.showsVideoCoverDurationBadges)
-
-            Toggle(
-                isOn: Binding(
                     get: { libraryStore.minimizesTabBarOnScroll },
                     set: { libraryStore.setMinimizesTabBarOnScroll($0) }
                 )
             ) {
-                MineSettingsLabel("滑动时缩小底部 Tab", systemImage: "arrow.down.right.and.arrow.up.left")
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("滚动时最小化 TabBar", systemImage: "arrow.down.right.and.arrow.up.left")
+
+                    Text("关闭后底部 TabBar 会始终保持完整高度。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Picker(
@@ -177,7 +134,14 @@ struct MineDisplaySettingsSection: View {
                     Text(glassStyle.title).tag(glassStyle)
                 }
             } label: {
-                MineSettingsLabel("底部栏液态玻璃效果", systemImage: "circle.lefthalf.filled")
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("底部栏 Liquid Glass 材质", systemImage: "circle.lefthalf.filled")
+
+                    Text("选择视频详情页底部切换器的清透或常规材质。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .pickerStyle(.menu)
 
@@ -209,38 +173,15 @@ struct MineDisplaySettingsSection: View {
                 )
             ) {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("强制滑动 120Hz 刷新率", systemImage: "speedometer")
+                    MineSettingsLabel("强制 120Hz 滚动", systemImage: "speedometer")
 
-                    Text("开启后滑动会强制使用 120Hz，可能会引起耗电增加，请谨慎开启。")
+                    Text("在支持高刷新率的 iPhone 上锁定 120Hz 滚动，可能增加耗电。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-
-        Section("实验功能") {
-            Toggle(
-                isOn: Binding(
-                    get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
-                    set: { libraryStore.setDynamicCommentHitAreaVisualizationExperimentEnabled($0) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("动态评论点击区域可视化", systemImage: "hand.tap")
-
-                    Text("用半透明色块标示动态详情和评论弹窗中的回复与独立操作区域。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-        }
-    }
-
-    private var videoCoverBadgeContrastBackingOpacityTitle: String {
-        "\(Int((VideoCoverBadgeContrastBacking.normalized(videoCoverBadgeContrastBackingOpacity) * 100).rounded()))%"
     }
 
     private var manualFontSizeBinding: Binding<Double> {
@@ -400,74 +341,6 @@ private struct MineThemeColorControl: View {
                 Circle()
                     .stroke(Color(.separator).opacity(0.30), lineWidth: 0.8)
             }
-    }
-}
-
-private struct MineImageCacheControl: View {
-    @State private var statistics: RemoteImageCacheStatistics?
-    @State private var isWorking = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                MineSettingsLabel("图片缓存", systemImage: "photo.on.rectangle")
-
-                Spacer(minLength: 8)
-
-                if isWorking {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text(summaryTitle)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Text(summaryDetail)
-                .appTypography(.settingsSubtitle, fallback: .caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button(role: .destructive) {
-                Task {
-                    await clearImageCache()
-                }
-            } label: {
-                MineSettingsLabel("清理图片缓存", systemImage: "trash")
-            }
-            .buttonStyle(.borderless)
-            .disabled(isWorking)
-        }
-        .task {
-            await reload()
-        }
-    }
-
-    private var summaryTitle: String {
-        guard let statistics else { return "读取中" }
-        return ResourceCacheByteFormatter.bytes(statistics.diskUsage)
-    }
-
-    private var summaryDetail: String {
-        guard let statistics else {
-            return "正在读取内存和磁盘图片缓存。"
-        }
-        return
-            "\(statistics.memoryEntryCount) 张 · 磁盘 \(ResourceCacheByteFormatter.bytes(statistics.diskUsage)) / \(ResourceCacheByteFormatter.bytes(statistics.diskCapacity))"
-    }
-
-    @MainActor
-    private func reload() async {
-        statistics = await RemoteImageCache.shared.statistics()
-    }
-
-    @MainActor
-    private func clearImageCache() async {
-        isWorking = true
-        await ResourceCacheCenter.clearImages(includeDisk: true)
-        await reload()
-        isWorking = false
     }
 }
 

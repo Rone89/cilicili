@@ -39,6 +39,10 @@ struct RootTabView: View {
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.videoDetailActionButtonStyle, libraryStore.videoDetailActionButtonStyle)
+        .environment(
+            \.videoDetailSegmentedPickerGlassStyle,
+            libraryStore.videoDetailSegmentedPickerGlassStyle
+        )
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
@@ -237,9 +241,6 @@ struct RootTabView: View {
     }
 
     private var rootTabBarMinimizeBehavior: TabBarMinimizeBehavior {
-        if selectedTab == .search {
-            return .onScrollDown
-        }
         return runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never
     }
 

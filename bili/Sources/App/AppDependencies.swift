@@ -53,7 +53,7 @@ final class AppDependencies: ObservableObject {
             .store(in: &sessionCancellables)
         Publishers.CombineLatest(
             sessionStore.$playbackAccountCredentialVersion,
-            libraryStore.$multiAccountExperimentEnabled
+            libraryStore.$multiAccountEnabled
         )
             .removeDuplicates { lhs, rhs in
                 lhs.0 == rhs.0 && lhs.1 == rhs.1
@@ -114,7 +114,7 @@ final class AppDependencies: ObservableObject {
         let api = api
         let dynamicFeedIdentityKey = sessionStore.accountCacheIdentityKey(
             for: .dynamicFeed,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         let shouldPrewarmDynamicFeed = sessionStore.isLoggedIn
         startupWarmupTask = Task(priority: .utility) {

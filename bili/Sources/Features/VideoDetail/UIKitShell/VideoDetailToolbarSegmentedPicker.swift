@@ -5,6 +5,7 @@ struct VideoDetailToolbarSegmentedPickerView: View {
     private static let height: CGFloat = 38
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.videoDetailSegmentedPickerGlassStyle) private var glassStyle
     @Binding var selection: VideoDetailContentTab
     @Namespace private var selectionIndicatorNamespace
 
@@ -32,8 +33,7 @@ struct VideoDetailToolbarSegmentedPickerView: View {
                 .contentShape(Capsule())
                 .background {
                     if selection == tab {
-                        Capsule()
-                            .fill(selectionFill)
+                        selectionSurface
                             .overlay {
                                 Capsule()
                                     .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
@@ -50,6 +50,20 @@ struct VideoDetailToolbarSegmentedPickerView: View {
         .accessibilityLabel(title)
         .accessibilityValue(selection == tab ? "已选中" : "未选中")
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var selectionSurface: some View {
+        switch glassStyle {
+        case .clear:
+            Capsule()
+                .fill(.clear)
+                .biliPlayerClearGlass(interactive: false, in: Capsule())
+        case .regular:
+            Capsule()
+                .fill(selectionFill)
+                .biliRegularGlassEffect(interactive: false, in: Capsule())
+        }
     }
 
     private var selectionFill: Color {

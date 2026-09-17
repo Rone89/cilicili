@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct MultiAccountExperimentSettingsView: View {
+struct MineAccountManagementView: View {
     @ObservedObject var sessionStore: SessionStore
     @ObservedObject var libraryStore: LibraryStore
     let api: BiliAPIClient
@@ -11,17 +11,9 @@ struct MultiAccountExperimentSettingsView: View {
 
     var body: some View {
         Form {
-            if libraryStore.multiAccountExperimentEnabled {
-                accountsSection
-                purposeSection
-                addAccountSection
-            } else {
-                ContentUnavailableView(
-                    "实验尚未开启",
-                    systemImage: "person.2.badge.gearshape",
-                    description: Text("请先在隐私设置中打开“多账号用途分配实验”。")
-                )
-            }
+            accountsSection
+            purposeSection
+            addAccountSection
         }
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
@@ -147,7 +139,7 @@ struct MultiAccountExperimentSettingsView: View {
     private var accountsSection: some View {
         Section("已保存账号") {
             ForEach(sessionStore.accounts) { account in
-                MultiAccountExperimentAccountRow(
+                AccountManagementAccountRow(
                     account: account,
                     canDelete: sessionStore.mainAccountMID != account.mid,
                     onDelete: { removeAccount(account.mid) }
@@ -247,7 +239,7 @@ struct MultiAccountExperimentSettingsView: View {
     }
 }
 
-private struct MultiAccountExperimentAccountRow: View {
+private struct AccountManagementAccountRow: View {
     let account: BiliAccountSummary
     let canDelete: Bool
     let onDelete: () -> Void

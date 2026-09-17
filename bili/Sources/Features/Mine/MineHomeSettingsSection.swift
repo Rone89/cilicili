@@ -35,17 +35,6 @@ struct MineHomeSettingsSection: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            NavigationLink {
-                MineHomeRecommendDiagnosticsView()
-            } label: {
-                PlainSettingsNavigationRow(
-                    title: "推荐诊断",
-                    subtitle: MineHomeRecommendDiagnosticsSummary(
-                        snapshot: homeRecommendDiagnosticsStore.snapshot
-                    ).text,
-                )
-            }
-
             Toggle(isOn: Binding(
                 get: { libraryStore.nativePullRefreshEnabled },
                 set: { libraryStore.setNativePullRefreshEnabled($0) }

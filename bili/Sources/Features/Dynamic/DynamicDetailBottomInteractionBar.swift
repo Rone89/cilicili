@@ -125,7 +125,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     private func toggleLike() {
         let account = sessionStore.credentialSnapshot(
             for: .interaction,
-            multiAccountEnabled: libraryStore.multiAccountExperimentEnabled
+            multiAccountEnabled: libraryStore.multiAccountEnabled
         )
         guard account.isLoggedIn, !isMutatingLike else {
             errorMessage = account.isLoggedIn ? nil : "请先登录账号"

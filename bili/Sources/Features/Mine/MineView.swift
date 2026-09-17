@@ -11,7 +11,6 @@ struct MineView: View {
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
     @State private var loadedInteractionAccountCredentialVersion: Int?
-    @State private var loadedMultiAccountExperimentEnabled: Bool?
 
     var body: some View {
         Group {
@@ -68,14 +67,12 @@ struct MineView: View {
         .task(id: MineAccountRefreshTaskID(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,
             historyCredentialVersion: sessionStore.historyAccountCredentialVersion,
-            interactionCredentialVersion: sessionStore.interactionAccountCredentialVersion,
-            multiAccountExperimentEnabled: libraryStore.multiAccountExperimentEnabled
+            interactionCredentialVersion: sessionStore.interactionAccountCredentialVersion
         )) {
             guard sessionStore.isLoggedIn else {
                 loadedMainAccountCredentialVersion = nil
                 loadedHistoryAccountCredentialVersion = nil
                 loadedInteractionAccountCredentialVersion = nil
-                loadedMultiAccountExperimentEnabled = nil
                 return
             }
             let mainCredentialVersion = sessionStore.playbackCredentialVersion
@@ -84,11 +81,9 @@ struct MineView: View {
             let mainAccountChanged = loadedMainAccountCredentialVersion != mainCredentialVersion
             let historyAccountChanged = loadedHistoryAccountCredentialVersion != historyCredentialVersion
             let interactionAccountChanged = loadedInteractionAccountCredentialVersion != interactionCredentialVersion
-            let experimentModeChanged = loadedMultiAccountExperimentEnabled != libraryStore.multiAccountExperimentEnabled
             loadedMainAccountCredentialVersion = mainCredentialVersion
             loadedHistoryAccountCredentialVersion = historyCredentialVersion
             loadedInteractionAccountCredentialVersion = interactionCredentialVersion
-            loadedMultiAccountExperimentEnabled = libraryStore.multiAccountExperimentEnabled
 
             if mainAccountChanged {
                 async let userRefresh: Void = viewModel.refreshUser()
@@ -97,8 +92,8 @@ struct MineView: View {
                 return
             }
 
-            let historyNeedsRefresh = historyAccountChanged || experimentModeChanged
-            let favoritesNeedRefresh = interactionAccountChanged || experimentModeChanged
+            let historyNeedsRefresh = historyAccountChanged
+            let favoritesNeedRefresh = interactionAccountChanged
             switch (historyNeedsRefresh, favoritesNeedRefresh) {
             case (true, true):
                 async let historyRefresh: Void = viewModel.refreshHistory()
@@ -122,7 +117,6 @@ private struct MineAccountRefreshTaskID: Hashable {
     let mainCredentialVersion: Int
     let historyCredentialVersion: Int
     let interactionCredentialVersion: Int
-    let multiAccountExperimentEnabled: Bool
 }
 
 private enum LoginSheet: Identifiable, Hashable {

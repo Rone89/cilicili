@@ -27,47 +27,30 @@ struct VideoDetailActionStripFollowControl: View {
     }
 
     var body: some View {
-        Group {
-            if isFollowing {
-                Button(action: action) {
-                    VideoDetailActionStripFollowLabel(
-                        isFollowing: isFollowing,
-                        height: height,
-                        usesPlainStyle: usesPlainStyle
-                    )
-                }
-                .disabled(!canFollow || isMutating)
-                .opacity((canFollow && !isMutating) ? 1 : 0.58)
-                .accessibilityLabel(isFollowing ? "已关注" : "关注")
-                .videoDetailActionStripButtonAppearance(
-                    shape: .capsule,
-                    usesPlainStyle: usesPlainStyle,
-                    tint: usesPlainStyle ? .secondary : nil
-                )
-            } else {
-                Button(action: action) {
-                    VideoDetailActionStripFollowLabel(
-                        isFollowing: isFollowing,
-                        height: height,
-                        usesPlainStyle: usesPlainStyle
-                    )
-                }
-                .disabled(!canFollow || isMutating)
-                .opacity((canFollow && !isMutating) ? 1 : 0.58)
-                .accessibilityLabel(isFollowing ? "已关注" : "关注")
-                .videoDetailActionStripButtonAppearance(
-                    shape: .capsule,
-                    usesPlainStyle: usesPlainStyle,
-                    prominent: true,
-                    tint: usesPlainStyle ? appTintColor.opacity(0.82) : nil
-                )
-            }
+        let foregroundStyle = isFollowing ? appTintColor : Color.secondary
+
+        Button(action: action) {
+            VideoDetailActionStripFollowLabel(
+                isFollowing: isFollowing,
+                foregroundStyle: foregroundStyle,
+                height: height,
+                usesPlainStyle: usesPlainStyle
+            )
         }
+        .disabled(!canFollow || isMutating)
+        .opacity((canFollow && !isMutating) ? 1 : 0.58)
+        .accessibilityLabel(isFollowing ? "已关注" : "关注")
+        .videoDetailActionStripButtonAppearance(
+            shape: .capsule,
+            usesPlainStyle: usesPlainStyle,
+            tint: usesPlainStyle ? foregroundStyle : nil
+        )
     }
 }
 
 private struct VideoDetailActionStripFollowLabel: View {
     let isFollowing: Bool
+    let foregroundStyle: Color
     let height: CGFloat
     let usesPlainStyle: Bool
 
@@ -78,6 +61,7 @@ private struct VideoDetailActionStripFollowLabel: View {
                     ? .subheadline.weight(.semibold)
                     : .caption2.weight(.semibold)
             )
+            .foregroundStyle(foregroundStyle)
             .lineLimit(1)
             .minimumScaleFactor(0.82)
             .frame(maxWidth: .infinity)

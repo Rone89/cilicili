@@ -163,6 +163,10 @@ struct VideoDetailInitialContentResolver: View {
             \.videoDetailActionButtonStyle,
             dependencies.libraryStore.videoDetailActionButtonStyle
         )
+        .environment(
+            \.videoDetailSegmentedPickerGlassStyle,
+            dependencies.libraryStore.videoDetailSegmentedPickerGlassStyle
+        )
         .task {
             lifecycleActions.configureInitialViewModelIfNeeded()
         }

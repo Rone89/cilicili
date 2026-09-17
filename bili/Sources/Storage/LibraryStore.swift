@@ -145,7 +145,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var cellularBiliTrafficCompatibilityExperimentEnabled: Bool
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
-    @Published private(set) var multiAccountExperimentEnabled: Bool
+    @Published private(set) var multiAccountEnabled: Bool
+    @available(*, deprecated, message: "Use multiAccountEnabled")
+    var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var nativePullRefreshEnabled: Bool
@@ -302,6 +304,7 @@ final class LibraryStore: ObservableObject {
         "cc.bili.live.danmakuRenderBatchingExperimentEnabled.v1",
         "cc.bili.live.rotationSurfaceAlignmentExperimentEnabled.v1",
         "cc.bili.display.mineSingleStackNavigationExperimentEnabled.v1",
+        "cc.bili.experimental.mineSettingsSearch.v1",
         "cc.bili.display.fixedVideoTitleTypographyExperimentEnabled.v1",
         "cc.bili.display.unifiedAppTypographyExperimentEnabled.v1",
         "cc.bili.display.highQualityImageViewerExperimentEnabled.v1",
@@ -637,10 +640,13 @@ final class LibraryStore: ObservableObject {
             ) as? Bool ?? CellularBiliTrafficCompatibilityExperiment.defaultIsEnabled
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
-        self.multiAccountExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.multiAccountExperimentEnabledKey
-            ) as? Bool ?? false
+        // Multi-account routing is now a regular account feature. Preserve the
+        // old preference key for migration, but do not let a previous experiment
+        // opt-out disable the feature.
+        self.multiAccountEnabled = true
+        if userDefaults.object(forKey: Self.multiAccountExperimentEnabledKey) as? Bool != true {
+            userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
+        }
         self.dynamicCommentHitAreaVisualizationExperimentEnabled =
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
@@ -1294,9 +1300,10 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.guestModeEnabledKey)
     }
 
+    @available(*, deprecated, message: "Multi-account routing is always enabled")
     func setMultiAccountExperimentEnabled(_ isEnabled: Bool) {
-        multiAccountExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.multiAccountExperimentEnabledKey)
+        guard isEnabled else { return }
+        userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
     }
 
     func setDynamicCommentHitAreaVisualizationExperimentEnabled(_ isEnabled: Bool) {
@@ -1600,9 +1607,9 @@ enum VideoDetailSegmentedPickerGlassStyle: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .clear:
-            return "Clear"
+            return "清透"
         case .regular:
-            return "Regular"
+            return "常规"
         }
     }
 }

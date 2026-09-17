@@ -38,8 +38,8 @@ struct VideoDescriptionOwnerRow: View {
                     .frame(minWidth: 58)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(isFollowing ? Color(.tertiarySystemFill) : appTintColor.opacity(0.12))
-                    .foregroundStyle(isFollowing ? Color.secondary : appTintColor)
+                    .background(isFollowing ? appTintColor.opacity(0.12) : Color(.tertiarySystemFill))
+                    .foregroundStyle(isFollowing ? appTintColor : Color.secondary)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
