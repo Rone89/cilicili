@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct BiliPlayerControlsOverlayLayer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(LibraryStore.playerControlEdgeScrimEnabledKey) private var isEdgeScrimEnabled = true
     let state: BiliPlayerSurfaceChromeState
     let playbackControls: AnyView
@@ -71,6 +72,11 @@ struct BiliPlayerControlsOverlayLayer: View {
         .opacity(state.playbackControlsOpacity)
         .allowsHitTesting(state.playbackControlsAllowsHitTesting)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+            }
+        }
     }
 
     private var usesFullscreenChromeSpacing: Bool {

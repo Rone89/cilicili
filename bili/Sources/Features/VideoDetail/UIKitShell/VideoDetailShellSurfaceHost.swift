@@ -501,6 +501,7 @@ private struct PlayerOverlayHostRoot: View {
 
 private struct SurfaceOnlyPlayerOverlayRoot: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let viewModel: PlayerStateViewModel
     let detailViewModel: VideoDetailViewModel
     @ObservedObject var libraryStore: LibraryStore
@@ -798,7 +799,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
+                isMoreControlsButtonPressed = false
+                portraitMoreControlsRequestID = nil
             }
+            onDismissMoreControls()
             playbackControlsVisibility.cancelAutoHide()
         }
         .onChange(of: playbackControlsHideRequestGeneration) { _, _ in
@@ -973,7 +977,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         ) {
             playbackControlsVisibility.cancelAutoHide()
             if isLandscape {
-                withAnimation(.default) {
+                withAnimation(reduceMotion ? nil : .default) {
                     isMoreControlsPresented = true
                 }
             } else {

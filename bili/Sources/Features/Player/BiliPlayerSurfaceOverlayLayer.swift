@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct BiliPlayerSurfaceOverlayLayer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let state: BiliPlayerSurfaceChromeState
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
     @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
@@ -86,6 +87,11 @@ struct BiliPlayerSurfaceOverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+        .transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+            }
+        }
     }
 }
 

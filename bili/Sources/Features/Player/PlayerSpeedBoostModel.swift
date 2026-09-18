@@ -1,6 +1,7 @@
 import Combine
 import QuartzCore
 import SwiftUI
+import UIKit
 
 enum PlayerSpeedBoostPhase: Equatable {
     case idle
@@ -152,8 +153,13 @@ final class PlayerSpeedBoostModel: ObservableObject {
     }
 
     private func setPhase(_ phase: PlayerSpeedBoostPhase) {
-        withAnimation(.easeInOut(duration: 0.14)) {
+        let update = {
             self.phase = phase
+        }
+        if UIAccessibility.isReduceMotionEnabled {
+            update()
+        } else {
+            withAnimation(.easeInOut(duration: 0.14), update)
         }
     }
 }

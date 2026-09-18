@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 private enum PlayerRotationTransitionSnapshotTiming {
     static let releaseHoldDelayNanoseconds: UInt64 = 90_000_000
@@ -171,9 +172,7 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
                 PlayerMetricsLog.diagnostic("rotationSnapshot releaseReveal hasSnapshot=false")
             }
 
-            withAnimation(.linear(duration: fadeDuration)) {
-                self.opacity = 0
-            }
+            setOpacityToZero(duration: fadeDuration)
             try? await Task.sleep(
                 nanoseconds: removalDelayNanoseconds
             )
@@ -260,9 +259,9 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
                 return
             }
 
-            withAnimation(.linear(duration: PlayerRotationTransitionSnapshotTiming.stableSurfaceFadeDuration)) {
-                self.opacity = 0
-            }
+            setOpacityToZero(
+                duration: PlayerRotationTransitionSnapshotTiming.stableSurfaceFadeDuration
+            )
             try? await Task.sleep(
                 nanoseconds: PlayerRotationTransitionSnapshotTiming.stableSurfaceRemovalDelayNanoseconds
             )
@@ -296,6 +295,16 @@ final class PlayerRotationTransitionSnapshotModel: ObservableObject {
     private func clearReleaseTaskIfCurrent(generation: Int) {
         guard releaseGeneration == generation else { return }
         releaseTask = nil
+    }
+
+    private func setOpacityToZero(duration: TimeInterval) {
+        if UIAccessibility.isReduceMotionEnabled {
+            opacity = 0
+        } else {
+            withAnimation(.linear(duration: duration)) {
+                opacity = 0
+            }
+        }
     }
 
     deinit {

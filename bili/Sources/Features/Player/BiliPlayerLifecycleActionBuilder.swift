@@ -157,6 +157,7 @@ struct BiliPlayerLifecycleActionBuilder {
         guard !viewModel.isTerminated else { return }
         guard allowsPlaybackActivation else { return }
         if isTransitioning {
+            speedBoostActions.end(reason: .systemInterrupted)
             if configuration.showsRotationTransitionSnapshot {
                 // Even when the live surface is kept during handoff, real devices can
                 // briefly expose a blank drawable while the player surface relayouts.

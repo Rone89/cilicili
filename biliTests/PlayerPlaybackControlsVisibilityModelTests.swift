@@ -14,14 +14,14 @@ final class PlayerPlaybackControlsVisibilityModelTests: XCTestCase {
     }
 
     @MainActor
-    func testAnimatedHideKeepsControlsTouchableDuringFade() async throws {
+    func testAnimatedHideStopsHitTestingBeforeTheFadeCompletes() async throws {
         let model = PlayerPlaybackControlsVisibilityModel()
 
         model.hide(animated: true)
 
         XCTAssertTrue(model.isVisible)
         XCTAssertEqual(model.opacity, 0)
-        XCTAssertTrue(model.acceptsHitTesting)
+        XCTAssertFalse(model.acceptsHitTesting)
 
         for _ in 0..<12 where model.isVisible {
             try await Task.sleep(nanoseconds: 100_000_000)

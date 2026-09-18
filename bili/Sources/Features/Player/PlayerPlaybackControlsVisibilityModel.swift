@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 @MainActor
 final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
@@ -76,9 +77,12 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         cancelAutoHide()
         hideCompletionTask?.cancel()
         let update = { self.opacity = 0 }
-        if animated {
+        let shouldAnimate = animated && !UIAccessibility.isReduceMotionEnabled
+        if shouldAnimate {
             isVisible = true
-            acceptsHitTesting = true
+            // The controls may still fade visually, but an invisible full-surface
+            // overlay must never keep swallowing taps intended for the video.
+            acceptsHitTesting = false
             withAnimation(.default, update)
             hideCompletionTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: self?.hideAnimationDuration ?? 350_000_000)
