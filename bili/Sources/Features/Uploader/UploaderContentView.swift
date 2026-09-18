@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UploaderContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
@@ -11,9 +12,6 @@ struct UploaderContentView: View {
     @State private var contentWidth: CGFloat = 0
     @State private var selectedSection: UploaderProfileSection
     @State private var isRefreshingFromToolbar = false
-    @State private var pullRefreshDistance: CGFloat = 0
-    @State private var isConfiguredPullRefreshing = false
-    @State private var pullRefreshActions = HomeFeedRefreshActions()
 
     init(
         owner: VideoOwner,
@@ -47,6 +45,12 @@ struct UploaderContentView: View {
             .task {
                 await viewModel.loadInitial()
             }
+            .transaction { transaction in
+                if reduceMotion {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
             .task(id: selectedSection) {
                 switch selectedSection {
                 case .videos:
@@ -63,16 +67,7 @@ struct UploaderContentView: View {
     private var scrollContent: some View {
         if allowsPullToRefresh {
             baseScrollContent
-                .nativePullRefresh(
-                    isEnabled: libraryStore.usesNativePullRefresh,
-                    action: refreshSelectedSection
-                )
-                .homeFeedPullRefreshLayout(
-                    pullDistance: pullRefreshDistance,
-                    triggerDistance: CGFloat(libraryStore.homeRefreshTriggerDistance),
-                    isRefreshing: isConfiguredPullRefreshing,
-                    isEnabled: libraryStore.usesCustomPullRefresh
-                )
+                .refreshable(action: refreshSelectedSection)
         } else {
             baseScrollContent
         }
@@ -105,10 +100,6 @@ struct UploaderContentView: View {
             .padding(.vertical, 12)
         }
         .onPreferenceChange(UploaderContentWidthPreferenceKey.self, perform: updateContentWidth)
-        .customPullRefreshTracking(
-            isEnabled: allowsPullToRefresh && libraryStore.usesCustomPullRefresh,
-            onChange: handlePullRefreshChange
-        )
     }
 
     @ViewBuilder
@@ -146,38 +137,6 @@ struct UploaderContentView: View {
             await viewModel.refreshDynamics()
         case .collections:
             await viewModel.refreshSeasonSeries()
-        }
-    }
-
-    private func handlePullRefreshChange(
-        pullDistance: CGFloat,
-        isUserInteracting: Bool
-    ) {
-        pullRefreshDistance = pullDistance
-        guard allowsPullToRefresh,
-              libraryStore.usesCustomPullRefresh
-        else { return }
-        pullRefreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: CGFloat(libraryStore.homeRefreshTriggerDistance),
-            isUserInteracting: isUserInteracting,
-            isRefreshing: isConfiguredPullRefreshing
-        ) {
-            isConfiguredPullRefreshing = true
-            defer { isConfiguredPullRefreshing = false }
-            await refreshSelectedSection()
-            return selectedSectionState == .loaded
-        }
-    }
-
-    private var selectedSectionState: LoadingState {
-        switch selectedSection {
-        case .videos:
-            return viewModel.state
-        case .dynamics:
-            return viewModel.dynamicState
-        case .collections:
-            return viewModel.seasonSeriesState
         }
     }
 

@@ -150,7 +150,6 @@ final class LibraryStore: ObservableObject {
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
-    @Published private(set) var nativePullRefreshEnabled: Bool
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -161,7 +160,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var remoteImageDiagnosticsEnabled: Bool
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
-    @Published private(set) var homeRefreshTriggerDistance: Double
     @Published private(set) var homeFeedLayout: HomeFeedLayout
     @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
@@ -237,10 +235,6 @@ final class LibraryStore: ObservableObject {
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let videoDetailActionButtonStyleKey =
         "cc.bili.videoDetail.actionButtonStyle.v1"
-    private static let nativePullRefreshEnabledKey =
-        "cc.bili.home.nativePullRefreshEnabled.v1"
-    private static let legacyUnifiedPullRefreshIndicatorExperimentEnabledKey =
-        "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
     private static let videoDetailSegmentedPickerGlassStyleKey =
         "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
@@ -354,14 +348,15 @@ final class LibraryStore: ObservableObject {
         "cc.bili.search.tabExpansionExperimentEnabled.v1",
         "cc.bili.playback.relatedEarlyPlayURLPrefetchExperimentEnabled.v1",
         "cc.bili.playback.relatedStartupPackageWarmupExperimentEnabled.v1",
-        legacyUnifiedPullRefreshIndicatorExperimentEnabledKey,
+        "cc.bili.home.nativePullRefreshEnabled.v1",
+        "cc.bili.home.refreshTriggerDistance.v1",
+        "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1",
         legacyPlayerIconOnlyControlsExperimentEnabledKey,
         legacyPlayerFullscreenStatusExperimentEnabledKey,
     ]
     private static let remoteImageDiagnosticsEnabledKey = RemoteImageDiagnosticsSettings.storageKey
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
-    private static let homeRefreshTriggerDistanceKey = "cc.bili.home.refreshTriggerDistance.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
@@ -377,8 +372,6 @@ final class LibraryStore: ObservableObject {
     nonisolated static let supportedVideoQualities = BiliVideoQuality.supportedQualities
     nonisolated static let playbackCDNProbeRefreshIntervalRange: ClosedRange<Int> = 15...1440
     nonisolated static let defaultPlaybackCDNProbeRefreshIntervalMinutes = 1440
-    nonisolated static let homeRefreshDistanceRange: ClosedRange<Double> = 70...180
-    nonisolated static let defaultHomeRefreshTriggerDistance = 110.0
     nonisolated static let supportedRecommendMinimumDurations = [0, 30, 60, 90, 120]
     nonisolated static let supportedRecommendMinimumViews = [0, 50, 100, 500, 1000]
     nonisolated static let supportedRecommendMinimumLikeRatios = [0, 1, 2, 3, 4]
@@ -654,18 +647,6 @@ final class LibraryStore: ObservableObject {
         self.videoDetailActionButtonStyle =
             userDefaults.string(forKey: Self.videoDetailActionButtonStyleKey)
             .flatMap(VideoDetailActionButtonStyle.init(rawValue:)) ?? .plain
-        let storedNativePullRefreshEnabled =
-            userDefaults.object(forKey: Self.nativePullRefreshEnabledKey) as? Bool
-        let nativePullRefreshEnabled =
-            storedNativePullRefreshEnabled
-            ?? userDefaults.object(
-                forKey: Self.legacyUnifiedPullRefreshIndicatorExperimentEnabledKey
-            ) as? Bool
-            ?? true
-        self.nativePullRefreshEnabled = nativePullRefreshEnabled
-        if storedNativePullRefreshEnabled == nil {
-            userDefaults.set(nativePullRefreshEnabled, forKey: Self.nativePullRefreshEnabledKey)
-        }
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
         self.videoDetailSegmentedPickerGlassStyle =
             VideoDetailSegmentedPickerGlassStyle(
@@ -696,10 +677,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
-        )
-        self.homeRefreshTriggerDistance = Self.normalizedHomeRefreshDistance(
-            userDefaults.object(forKey: Self.homeRefreshTriggerDistanceKey) as? Double
-                ?? Self.defaultHomeRefreshTriggerDistance
         )
         self.homeFeedLayout =
             HomeFeedLayout(
@@ -1334,11 +1311,6 @@ final class LibraryStore: ObservableObject {
         }
     }
 
-    func setNativePullRefreshEnabled(_ isEnabled: Bool) {
-        nativePullRefreshEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.nativePullRefreshEnabledKey)
-    }
-
     func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
         minimizesTabBarOnScroll = isEnabled
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
@@ -1424,20 +1396,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(normalized.map(\.rawValue), forKey: Self.visibleRootTabsKey)
     }
 
-    func setHomeRefreshTriggerDistance(_ distance: Double) {
-        let normalizedDistance = Self.normalizedHomeRefreshDistance(distance)
-        homeRefreshTriggerDistance = normalizedDistance
-        userDefaults.set(normalizedDistance, forKey: Self.homeRefreshTriggerDistanceKey)
-    }
-
-    var usesNativePullRefresh: Bool {
-        nativePullRefreshEnabled
-    }
-
-    var usesCustomPullRefresh: Bool {
-        !usesNativePullRefresh
-    }
-
     func setHomeFeedLayout(_ layout: HomeFeedLayout) {
         homeFeedLayout = layout
         userDefaults.set(layout.rawValue, forKey: Self.homeFeedLayoutKey)
@@ -1479,10 +1437,6 @@ final class LibraryStore: ObservableObject {
 
     static func videoQualityTitle(_ quality: Int?) -> String {
         BiliVideoQuality.title(for: quality)
-    }
-
-    private static func normalizedHomeRefreshDistance(_ distance: Double) -> Double {
-        min(max(distance, homeRefreshDistanceRange.lowerBound), homeRefreshDistanceRange.upperBound)
     }
 
     private func persistBlockedDynamicKeywords() {

@@ -42,6 +42,7 @@ final class LiveViewModel: ObservableObject {
     private var refreshIndex = 0
     private let pageSize = 20
     private var imagePrefetchTask: Task<Void, Never>?
+    private var cachedInitialRefreshTask: Task<Void, Never>?
 
     init(api: BiliAPIClient) {
         self.api = api
@@ -49,6 +50,7 @@ final class LiveViewModel: ObservableObject {
 
     deinit {
         imagePrefetchTask?.cancel()
+        cachedInitialRefreshTask?.cancel()
     }
 
     var emptyTitle: String {
@@ -64,11 +66,20 @@ final class LiveViewModel: ObservableObject {
 
     func loadInitial() async {
         guard rooms.isEmpty, !state.isLoading else { return }
+        if let cachedRooms = await LiveFeedWarmCache.shared.rooms() {
+            rooms = cachedRooms
+            state = .loaded
+            scheduleImagePrefetch(for: cachedRooms)
+            refreshCachedInitialPage()
+            return
+        }
         await loadFirstPage(isUserInitiated: false)
     }
 
     func refresh() async {
         guard !isRefreshing else { return }
+        cachedInitialRefreshTask?.cancel()
+        cachedInitialRefreshTask = nil
         await loadFirstPage(isUserInitiated: true)
     }
 
@@ -142,6 +153,7 @@ final class LiveViewModel: ObservableObject {
 
             if reset {
                 rooms = Self.uniqued(fetchedRooms)
+                await LiveFeedWarmCache.shared.store(rooms)
             } else {
                 rooms = Self.appendingUnique(fetchedRooms, to: rooms)
             }
@@ -170,6 +182,16 @@ final class LiveViewModel: ObservableObject {
 
     private static func uniqued(_ rooms: [LiveRoom]) -> [LiveRoom] {
         appendingUnique(rooms, to: [])
+    }
+
+    private func refreshCachedInitialPage() {
+        cachedInitialRefreshTask?.cancel()
+        cachedInitialRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await loadFirstPage(isUserInitiated: false)
+            guard !Task.isCancelled else { return }
+            cachedInitialRefreshTask = nil
+        }
     }
 
     private static func appendingUnique(_ newRooms: [LiveRoom], to existingRooms: [LiveRoom]) -> [LiveRoom] {

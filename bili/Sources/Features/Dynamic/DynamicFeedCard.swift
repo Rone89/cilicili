@@ -200,8 +200,10 @@ private struct DynamicDetailDestination: View {
                             }
                             .padding(24)
                         } else {
-                            ProgressView("正在加载动态详情")
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            DelayedLoadingContent {
+                                ProgressView("正在加载动态详情")
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
                         }
                     }
                     .task(id: retryID) {
@@ -245,14 +247,12 @@ private struct DynamicDetailView: View {
     let api: BiliAPIClient
     let navigationPath: Binding<NavigationPath>
     @Binding private var isNavigationTitleHidden: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var libraryStore: LibraryStore
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
     @State private var richCommentComposerTarget: DynamicCommentComposerTarget?
     @State private var richCommentDrafts = [String: RichCommentDraft]()
-    @State private var pullRefreshDistance: CGFloat = 0
-    @State private var isPullRefreshing = false
-    @State private var pullRefreshActions = HomeFeedRefreshActions()
     @State private var detailContentWidth: CGFloat?
     private let display: DynamicFeedCardDisplayModel
 
@@ -318,24 +318,15 @@ private struct DynamicDetailView: View {
             geometry.contentOffset.y + geometry.contentInsets.top > 18
         } action: { _, isHidden in
             guard isNavigationTitleHidden != isHidden else { return }
-            withAnimation(.smooth(duration: 0.18)) {
+            if reduceMotion {
                 isNavigationTitleHidden = isHidden
+            } else {
+                withAnimation(.smooth(duration: 0.18)) {
+                    isNavigationTitleHidden = isHidden
+                }
             }
         }
-        .customPullRefreshTracking(
-            isEnabled: libraryStore.usesCustomPullRefresh,
-            onChange: handlePullRefreshChange
-        )
-        .nativePullRefresh(
-            isEnabled: libraryStore.usesNativePullRefresh,
-            action: refreshDetail
-        )
-        .homeFeedPullRefreshLayout(
-            pullDistance: pullRefreshDistance,
-            triggerDistance: CGFloat(libraryStore.homeRefreshTriggerDistance),
-            isRefreshing: isPullRefreshing,
-            isEnabled: libraryStore.usesCustomPullRefresh
-        )
+        .refreshable(action: refreshDetail)
         .background(Color(.systemBackground))
         .toolbar {
             if richCommentComposerTarget == nil {
@@ -407,25 +398,6 @@ private struct DynamicDetailView: View {
 
     private func selectCommentSort(_ sort: CommentSort) {
         Task { await commentsViewModel.selectSort(sort) }
-    }
-
-    private func handlePullRefreshChange(
-        pullDistance: CGFloat,
-        isUserInteracting: Bool
-    ) {
-        pullRefreshDistance = pullDistance
-        guard libraryStore.usesCustomPullRefresh else { return }
-        pullRefreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: CGFloat(libraryStore.homeRefreshTriggerDistance),
-            isUserInteracting: isUserInteracting,
-            isRefreshing: isPullRefreshing
-        ) {
-            isPullRefreshing = true
-            defer { isPullRefreshing = false }
-            await commentsViewModel.reload()
-            return commentsViewModel.state == .loaded
-        }
     }
 
     private func refreshDetail() async {

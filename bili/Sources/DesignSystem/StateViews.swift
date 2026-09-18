@@ -1,5 +1,35 @@
 import SwiftUI
 
+struct DelayedLoadingContent<Content: View>: View {
+    @State private var isVisible = false
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ZStack {
+            // Keep a real view in the hierarchy while the delayed content is
+            // hidden. An empty Group can prevent lifecycle tasks from running
+            // when it is the only child of a lazily mounted tab.
+            Color.clear
+                .frame(height: 1)
+                .accessibilityHidden(true)
+
+            if isVisible {
+                content()
+            }
+        }
+        .task {
+            isVisible = false
+            do {
+                try await Task.sleep(for: LoadingPresentationPolicy.minimumIndicatorDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            isVisible = true
+        }
+    }
+}
+
 struct ErrorStateView: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     let title: String
@@ -46,17 +76,19 @@ struct InlineLoadingStateView: View {
     var systemImage: String = "arrow.triangle.2.circlepath"
 
     var body: some View {
-        HStack(spacing: 9) {
-            ProgressView()
-                .controlSize(.small)
+        DelayedLoadingContent {
+            HStack(spacing: 9) {
+                ProgressView()
+                    .controlSize(.small)
 
-            Label(title, systemImage: systemImage)
-                .labelStyle(.titleOnly)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                Label(title, systemImage: systemImage)
+                    .labelStyle(.titleOnly)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .accessibilityLabel(title)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .accessibilityLabel(title)
     }
 }

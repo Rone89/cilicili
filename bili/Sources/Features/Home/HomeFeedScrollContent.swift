@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HomeFeedScrollContent<FeedContent: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isShowingInitialPlaceholder: Bool
     let isEmpty: Bool
     let mode: HomeFeedMode
@@ -10,14 +11,14 @@ struct HomeFeedScrollContent<FeedContent: View>: View {
         ZStack(alignment: .top) {
             if mode == .recommend {
                 feedStateContent
-                    .transition(.move(edge: .leading))
+                    .transition(reduceMotion ? .identity : .move(edge: .leading))
             } else {
                 feedStateContent
-                    .transition(.move(edge: .trailing))
+                    .transition(reduceMotion ? .identity : .move(edge: .trailing))
             }
         }
         .clipped()
-        .animation(.smooth(duration: 0.28), value: mode)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: mode)
         .padding(.bottom, 18)
     }
 
@@ -25,7 +26,9 @@ struct HomeFeedScrollContent<FeedContent: View>: View {
     private var feedStateContent: some View {
         VStack(spacing: 6) {
             if isShowingInitialPlaceholder {
-                feedContent()
+                DelayedLoadingContent {
+                    feedContent()
+                }
             } else if isEmpty {
                 EmptyStateView(
                     title: "暂无内容",

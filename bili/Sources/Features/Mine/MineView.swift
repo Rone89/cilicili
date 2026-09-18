@@ -6,6 +6,8 @@ struct MineView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var holder: MineViewModelHolder
+    @Binding var searchText: String
+    var isSearchFocused: FocusState<Bool>.Binding
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
     @State private var loadedMainAccountCredentialVersion: Int?
@@ -62,7 +64,9 @@ struct MineView: View {
             onQRCodeLogin: { loginSheet = .qrCode },
             onSMSLogin: { loginSheet = .sms },
             onWebLogin: { loginSheet = .web },
-            onOpenRoute: onOpenRoute
+            onOpenRoute: onOpenRoute,
+            searchText: $searchText,
+            isSearchFocused: isSearchFocused
         )
         .task(id: MineAccountRefreshTaskID(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,

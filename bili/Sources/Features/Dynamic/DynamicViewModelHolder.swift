@@ -7,6 +7,15 @@ final class DynamicViewModelHolder: ObservableObject {
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshot: DynamicRenderSnapshot?
 
+    init(
+        api: BiliAPIClient? = nil,
+        libraryStore: LibraryStore? = nil,
+        sessionStore: SessionStore? = nil
+    ) {
+        guard let api, let libraryStore, let sessionStore else { return }
+        installViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
+    }
+
     func configure(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
         guard viewModel == nil else { return }
         installViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)

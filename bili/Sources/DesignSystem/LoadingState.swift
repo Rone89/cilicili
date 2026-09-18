@@ -13,3 +13,11 @@ nonisolated enum LoadingState: Equatable {
         return false
     }
 }
+
+nonisolated enum LoadingPresentationPolicy {
+    static let minimumIndicatorDelay: Duration = .milliseconds(300)
+
+    static func shouldPresentIndicator(after elapsed: Duration) -> Bool {
+        elapsed >= minimumIndicatorDelay
+    }
+}

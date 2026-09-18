@@ -281,37 +281,4 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertEqual(state.toggled(), DynamicLikeDisplayState(isLiked: false, likeCount: 0))
     }
 
-    func testNativePullRefreshDefaultsOnAndPersists() {
-        let suiteName = "cc.bili.tests.unified-pull-refresh.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertTrue(store.nativePullRefreshEnabled)
-
-        store.setNativePullRefreshEnabled(false)
-
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).nativePullRefreshEnabled
-        )
-    }
-
-    func testNativePullRefreshMigratesLegacyExperimentPreference() {
-        let suiteName = "cc.bili.tests.native-pull-refresh-migration.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(false, forKey: "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1")
-
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.nativePullRefreshEnabled)
-        XCTAssertNil(
-            defaults.object(forKey: "cc.bili.pullRefresh.unifiedDetailStyleExperimentEnabled.v1")
-        )
-        XCTAssertEqual(
-            defaults.object(forKey: "cc.bili.home.nativePullRefreshEnabled.v1") as? Bool,
-            false
-        )
-    }
-
 }

@@ -53,11 +53,13 @@ struct BiliMediaPlaceholder: View {
             }
 
             if showsSpinner, phase != .failed {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(10)
+                DelayedLoadingContent {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(10)
+                }
             }
         }
         .accessibilityLabel(accessibilityLabel)

@@ -17,8 +17,20 @@ private struct DynamicContentRoot: View {
     let api: BiliAPIClient
     @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var sessionStore: SessionStore
-    @StateObject private var holder = DynamicViewModelHolder()
-    @StateObject private var pullRefreshSettings = PullRefreshRuntimeSettingsStore()
+    @StateObject private var holder: DynamicViewModelHolder
+
+    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
+        self.api = api
+        self.libraryStore = libraryStore
+        self.sessionStore = sessionStore
+        _holder = StateObject(
+            wrappedValue: DynamicViewModelHolder(
+                api: api,
+                libraryStore: libraryStore,
+                sessionStore: sessionStore
+            )
+        )
+    }
 
     var body: some View {
         Group {
@@ -26,22 +38,11 @@ private struct DynamicContentRoot: View {
                 DynamicFeedScreenContent(
                     api: api,
                     viewModel: viewModel,
-                    isLoggedIn: sessionStore.isLoggedIn,
-                    pullRefreshTriggerDistance: CGFloat(pullRefreshSettings.triggerDistance)
+                    isLoggedIn: sessionStore.isLoggedIn
                 )
             } else {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
-                    .task {
-                        holder.configure(
-                            api: api,
-                            libraryStore: libraryStore,
-                            sessionStore: sessionStore
-                        )
-                    }
             }
-        }
-        .task {
-            pullRefreshSettings.bind(libraryStore)
         }
         .onChange(of: DynamicFeedAccountContext(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,

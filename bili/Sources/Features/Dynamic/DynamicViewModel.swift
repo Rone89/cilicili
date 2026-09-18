@@ -21,6 +21,8 @@ final class DynamicViewModel: ObservableObject {
 
     private let lifecycleCoordinator: DynamicFeedLifecycleCoordinator
     private var filterCancellable: AnyCancellable?
+    private var loadRequestRevision = 0
+    private var cachedInitialRefreshTask: Task<Void, Never>?
 
     var hasMoreItems: Bool {
         lifecycleCoordinator.hasMoreItems
@@ -53,10 +55,24 @@ final class DynamicViewModel: ObservableObject {
             }
     }
 
+    deinit {
+        cachedInitialRefreshTask?.cancel()
+    }
+
     func loadInitial() async {
         guard items.isEmpty else { return }
         guard lifecycleCoordinator.isLoggedIn else {
             prepareLoggedOutState()
+            return
+        }
+        loadRequestRevision &+= 1
+        let requestRevision = loadRequestRevision
+        if let cachedItems = await lifecycleCoordinator.cachedInitialPage() {
+            guard requestRevision == loadRequestRevision else { return }
+            items = cachedItems
+            state = .loaded
+            refreshTopUploaderStrip()
+            refreshCachedInitialPage(requestRevision: requestRevision)
             return
         }
         state = .loading
@@ -64,6 +80,9 @@ final class DynamicViewModel: ObservableObject {
         do {
             items = try await lifecycleCoordinator.loadInitialPage()
             state = .loaded
+        } catch is CancellationError {
+            guard requestRevision == loadRequestRevision else { return }
+            state = .idle
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -76,6 +95,9 @@ final class DynamicViewModel: ObservableObject {
             }
             return
         }
+        loadRequestRevision &+= 1
+        cachedInitialRefreshTask?.cancel()
+        cachedInitialRefreshTask = nil
         isRefreshing = true
         defer {
             isRefreshing = false
@@ -100,7 +122,10 @@ final class DynamicViewModel: ObservableObject {
             prepareLoggedOutState()
             return
         }
-        guard lifecycleCoordinator.hasMoreItems, !state.isLoading else { return }
+        guard lifecycleCoordinator.hasMoreItems,
+              !state.isLoading,
+              cachedInitialRefreshTask == nil
+        else { return }
         state = .loading
         do {
             items = try await lifecycleCoordinator.loadMorePage()
@@ -111,11 +136,33 @@ final class DynamicViewModel: ObservableObject {
     }
 
     private func prepareLoggedOutState() {
+        loadRequestRevision &+= 1
+        cachedInitialRefreshTask?.cancel()
+        cachedInitialRefreshTask = nil
         lifecycleCoordinator.prepareLoggedOutState()
         items = []
         topUploaderStripItems = []
         isTopUploaderStripLoading = false
         state = .idle
+    }
+
+    private func refreshCachedInitialPage(requestRevision: Int) {
+        cachedInitialRefreshTask?.cancel()
+        cachedInitialRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let refreshedItems = try await lifecycleCoordinator.refreshPage()
+                guard !Task.isCancelled, requestRevision == loadRequestRevision else { return }
+                items = refreshedItems
+                state = .loaded
+            } catch is CancellationError {
+                return
+            } catch {
+                // Keep the cached feed visible when the background refresh fails.
+            }
+            guard requestRevision == loadRequestRevision else { return }
+            cachedInitialRefreshTask = nil
+        }
     }
 
     private func applyCurrentFilter() {

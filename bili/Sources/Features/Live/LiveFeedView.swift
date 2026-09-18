@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct LiveFeedView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveViewModel
-    let pullRefreshTriggerDistance: CGFloat
-    @State private var pullRefreshDistance: CGFloat = 0
-    @State private var pullRefreshActions = HomeFeedRefreshActions()
 
     var body: some View {
         let horizontalInset = libraryStore.standardPageHorizontalInset
@@ -21,10 +19,6 @@ struct LiveFeedView: View {
         .nativeTopScrollEdgeEffect()
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))
-        .customPullRefreshTracking(
-            isEnabled: libraryStore.usesCustomPullRefresh,
-            onChange: handlePullRefreshChange
-        )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 LiveFeedRefreshButton(viewModel: viewModel)
@@ -33,37 +27,18 @@ struct LiveFeedView: View {
         .task {
             await viewModel.loadInitial()
         }
-        .nativePullRefresh(
-            isEnabled: libraryStore.usesNativePullRefresh,
-            action: viewModel.refresh
-        )
-        .homeFeedPullRefreshLayout(
-            pullDistance: pullRefreshDistance,
-            triggerDistance: pullRefreshTriggerDistance,
-            isRefreshing: viewModel.isRefreshing,
-            isEnabled: libraryStore.usesCustomPullRefresh
-        )
+        .refreshable(action: viewModel.refresh)
         .overlay {
             LiveFeedErrorOverlay(viewModel: viewModel)
         }
-    }
-
-    private func handlePullRefreshChange(
-        pullDistance: CGFloat,
-        isUserInteracting: Bool
-    ) {
-        pullRefreshDistance = pullDistance
-        guard libraryStore.usesCustomPullRefresh else { return }
-        pullRefreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: pullRefreshTriggerDistance,
-            isUserInteracting: isUserInteracting,
-            isRefreshing: viewModel.isRefreshing
-        ) {
-            await viewModel.refresh()
-            return viewModel.state == .loaded
+        .transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
     }
+
 }
 
 private struct LiveFeedContent: View {
@@ -72,7 +47,9 @@ private struct LiveFeedContent: View {
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.rooms.isEmpty && viewModel.state.isLoading {
-                LiveFeedLoadingState()
+                DelayedLoadingContent {
+                    LiveFeedLoadingState()
+                }
             } else if viewModel.rooms.isEmpty {
                 LiveFeedEmptyState(viewModel: viewModel)
             } else {

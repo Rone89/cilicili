@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct MineContentView: View {
     @ObservedObject var viewModel: MineViewModel
@@ -10,17 +9,11 @@ struct MineContentView: View {
     let onSMSLogin: () -> Void
     let onWebLogin: () -> Void
     let onOpenRoute: (MineOverlayRoute) -> Void
-    @State private var searchText = ""
+    @Binding var searchText: String
+    var isSearchFocused: FocusState<Bool>.Binding
 
     var body: some View {
         Form {
-            Section {
-                MineInlineSearchBar(text: $searchText)
-                    .frame(height: 44)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                    .listRowBackground(Color.clear)
-            }
-
             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 normalSections
             } else {
@@ -35,6 +28,10 @@ struct MineContentView: View {
         .contentMargins(.top, 0, for: .scrollContent)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
+        .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(TapGesture().onEnded {
+            isSearchFocused.wrappedValue = false
+        })
     }
 
     @ViewBuilder
@@ -63,83 +60,72 @@ struct MineContentView: View {
     }
 }
 
-private struct MineInlineSearchBar: UIViewRepresentable {
+struct MineTabBottomSearchAccessory: View {
     @Binding var text: String
+    let onActivate: () -> Void
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(owner: self)
+    var body: some View {
+        Button(action: onActivate) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Text(displayText)
+                    .foregroundStyle(text.isEmpty ? .secondary : .primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: placement == .inline ? 40 : 44)
+            .padding(.horizontal, placement == .inline ? 12 : 16)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mine.search.field")
     }
 
-    func makeUIView(context: Context) -> UISearchBar {
-        let searchBar = UISearchBar()
-        searchBar.searchBarStyle = .minimal
-        searchBar.placeholder = "搜索我的页功能"
-        searchBar.searchTextField.backgroundColor = .secondarySystemBackground
-        searchBar.searchTextField.autocorrectionType = .no
-        searchBar.searchTextField.autocapitalizationType = .none
-        searchBar.searchTextField.returnKeyType = .search
-        searchBar.searchTextField.accessibilityIdentifier = "mine.search.field"
-        searchBar.delegate = context.coordinator
-        return searchBar
+    private var displayText: String {
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
+        return placement == .inline ? "搜索" : "搜索我的页功能"
     }
+}
 
-    func updateUIView(_ searchBar: UISearchBar, context: Context) {
-        context.coordinator.owner = self
-        guard searchBar.text != text, searchBar.searchTextField.markedTextRange == nil else { return }
-        searchBar.text = text
-    }
+struct MineKeyboardSearchAccessory: View {
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
 
-    final class Coordinator: NSObject, UISearchBarDelegate, UIGestureRecognizerDelegate {
-        var owner: MineInlineSearchBar
-        private weak var searchBar: UISearchBar?
-        private lazy var dismissKeyboardTap: UITapGestureRecognizer = {
-            let recognizer = UITapGestureRecognizer(
-                target: self,
-                action: #selector(dismissKeyboard)
-            )
-            recognizer.cancelsTouchesInView = false
-            recognizer.delegate = self
-            return recognizer
-        }()
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
 
-        init(owner: MineInlineSearchBar) {
-            self.owner = owner
+            TextField("搜索我的页功能", text: $text)
+                .focused(isFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .accessibilityIdentifier("mine.search.field")
+
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清除搜索")
+            }
         }
-
-        func searchBar(_ searchBar: UISearchBar, textDidChange _: String) {
-            owner.text = searchBar.text ?? ""
-        }
-
-        func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
-            self.searchBar = searchBar
-            searchBar.window?.addGestureRecognizer(dismissKeyboardTap)
-        }
-
-        func searchBarTextDidEndEditing(_: UISearchBar) {
-            dismissKeyboardTap.view?.removeGestureRecognizer(dismissKeyboardTap)
-        }
-
-        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-            searchBar.resignFirstResponder()
-        }
-
-        func gestureRecognizer(
-            _: UIGestureRecognizer,
-            shouldReceive touch: UITouch
-        ) -> Bool {
-            guard let searchBar else { return false }
-            return touch.view?.isDescendant(of: searchBar) != true
-        }
-
-        func gestureRecognizer(
-            _: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer
-        ) -> Bool {
-            true
-        }
-
-        @objc private func dismissKeyboard() {
-            searchBar?.resignFirstResponder()
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, 16)
+        .biliRegularGlassEffect(interactive: true, in: Capsule())
+        .task {
+            await Task.yield()
+            isFocused.wrappedValue = true
         }
     }
 }

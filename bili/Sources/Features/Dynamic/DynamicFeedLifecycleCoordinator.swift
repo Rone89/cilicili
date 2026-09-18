@@ -55,6 +55,14 @@ final class DynamicFeedLifecycleCoordinator {
         return apply(page: page, prefetchDelay: 0.08)
     }
 
+    func cachedInitialPage() async -> [DynamicFeedItem]? {
+        resetPagination()
+        guard let page = await DynamicFeedWarmCache.shared.cachedPage(identityKey: cacheIdentityKey) else {
+            return nil
+        }
+        return apply(page: page, prefetchDelay: 0)
+    }
+
     func refreshPage() async throws -> [DynamicFeedItem] {
         resetPagination()
         let identityKey = cacheIdentityKey

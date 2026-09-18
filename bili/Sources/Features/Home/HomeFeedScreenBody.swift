@@ -26,11 +26,9 @@ struct HomeFeedScreenBody: View {
 
         HomeFeedScrollView(
             viewModel: viewModel,
-            runtimeSettings: runtimeSettings,
             viewportState: $viewportState,
             scrollActions: actionStore.scroll,
             nativeRefreshActionStore: actionStore.nativeRefresh,
-            refreshActions: actionStore.refresh,
             layout: layout
         ) {
             HomeFeedContentSection(

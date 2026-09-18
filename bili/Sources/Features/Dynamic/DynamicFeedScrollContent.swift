@@ -1,15 +1,12 @@
 import SwiftUI
 
 struct DynamicFeedScrollContent: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
     let isLoggedIn: Bool
     let contentWidth: CGFloat
     let horizontalInset: CGFloat
-    let pullRefreshTriggerDistance: CGFloat
-    @State private var pullRefreshDistance: CGFloat = 0
-    @State private var pullRefreshActions = HomeFeedRefreshActions()
 
     var body: some View {
         ScrollView {
@@ -31,42 +28,18 @@ struct DynamicFeedScrollContent: View {
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemBackground))
         .nativeTopScrollEdgeEffect()
-        .customPullRefreshTracking(
-            isEnabled: libraryStore.usesCustomPullRefresh,
-            onChange: handlePullRefreshChange
-        )
         .task(id: isLoggedIn) {
             await viewModel.loadInitial()
         }
-        .nativePullRefresh(
-            isEnabled: libraryStore.usesNativePullRefresh,
-            action: refreshFromNativePull
-        )
-        .homeFeedPullRefreshLayout(
-            pullDistance: pullRefreshDistance,
-            triggerDistance: pullRefreshTriggerDistance,
-            isRefreshing: viewModel.isRefreshing,
-            isEnabled: libraryStore.usesCustomPullRefresh
-        )
+        .refreshable(action: refreshFromNativePull)
         .overlay {
             DynamicFeedErrorOverlay(viewModel: viewModel, isLoggedIn: isLoggedIn)
         }
-    }
-
-    private func handlePullRefreshChange(
-        pullDistance: CGFloat,
-        isUserInteracting: Bool
-    ) {
-        pullRefreshDistance = pullDistance
-        guard isLoggedIn, libraryStore.usesCustomPullRefresh else { return }
-        pullRefreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: pullRefreshTriggerDistance,
-            isUserInteracting: isUserInteracting,
-            isRefreshing: viewModel.isRefreshing
-        ) {
-            await viewModel.refresh()
-            return viewModel.state == .loaded
+        .transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
     }
 
@@ -94,7 +67,7 @@ private struct DynamicFeedBodyContent: View {
                 DynamicLoginEmptyState()
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
-            } else if viewModel.items.isEmpty && viewModel.state.isLoading {
+            } else if viewModel.items.isEmpty && viewModel.state != .loaded {
                 DynamicFeedSkeletonList()
             } else if viewModel.items.isEmpty {
                 DynamicFeedEmptyState()

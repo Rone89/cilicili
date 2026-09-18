@@ -21,7 +21,6 @@ struct DynamicFeedScreenContent: View {
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
     let isLoggedIn: Bool
-    let pullRefreshTriggerDistance: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
@@ -33,8 +32,7 @@ struct DynamicFeedScreenContent: View {
                 viewModel: viewModel,
                 isLoggedIn: isLoggedIn,
                 contentWidth: contentWidth,
-                horizontalInset: horizontalInset,
-                pullRefreshTriggerDistance: pullRefreshTriggerDistance
+                horizontalInset: horizontalInset
             )
         }
         .background(Color(.systemBackground))

@@ -14,13 +14,11 @@ enum HomeNativeRefreshLayout {
 }
 
 struct HomeFeedScrollView<FeedContent: View>: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var viewModel: HomeViewModel
-    @ObservedObject var runtimeSettings: HomeRuntimeSettingsStore
     @Binding var viewportState: HomeFeedViewportState
     @ObservedObject var scrollActions: HomeFeedScrollActions
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
-    let refreshActions: HomeFeedRefreshActions
     let layout: HomeFeedLayout
     @ViewBuilder let feedContent: () -> FeedContent
 
@@ -42,15 +40,13 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 .background {
                     HomeNativeRefreshControlTrigger(
                         requestID: scrollActions.programmaticRefreshRequestID,
-                        isEnabled: libraryStore.usesNativePullRefresh,
                         action: viewModel.refreshFromUserPull
                     )
                     .frame(width: 0, height: 0)
                 }
                 .background {
                     HomeNativeRefreshActionReader(
-                        store: nativeRefreshActionStore,
-                        isEnabled: libraryStore.usesNativePullRefresh
+                        store: nativeRefreshActionStore
                     )
                 }
                 .background {
@@ -67,59 +63,34 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 viewportState: $viewportState,
                 scrollActions: scrollActions
             )
-            .customPullRefreshTracking(
-                isEnabled: libraryStore.usesCustomPullRefresh,
-                onChange: handleConfiguredPullRefresh
-            )
-            .nativePullRefresh(
-                isEnabled: libraryStore.usesNativePullRefresh,
-                action: viewModel.refreshFromUserPull
-            )
+            .refreshable(action: viewModel.refreshFromUserPull)
             .scrollBounceBehavior(.always, axes: .vertical)
             .defersRemoteImageLoadsDuringFastScroll()
             .background(layout.homeFeedBackground)
             .nativeTopScrollEdgeEffect()
-            .animation(.smooth(duration: 0.24), value: layout)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: layout)
             .homeFeedScrollOverlays(
-                viewModel: viewModel,
-                runtimeSettings: runtimeSettings,
-                viewportState: viewportState,
-                refreshActions: refreshActions
+                viewModel: viewModel
             )
             .onChange(of: scrollActions.topScrollRequestID) { _, _ in
                 scrollToTop(proxy)
             }
-            .onChange(of: scrollActions.programmaticRefreshRequestID) { _, _ in
-                refreshFromTapInCustomMode(proxy)
+            .transaction { transaction in
+                if reduceMotion {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
             }
         }
     }
 
     private func scrollToTop(_ proxy: ScrollViewProxy) {
-        withAnimation(.smooth(duration: 0.34)) {
+        if reduceMotion {
             proxy.scrollTo(HomeFeedScrollAnchor.top, anchor: .top)
-        }
-    }
-
-    private func refreshFromTapInCustomMode(_ proxy: ScrollViewProxy) {
-        guard libraryStore.usesCustomPullRefresh else { return }
-        scrollToTop(proxy)
-        Task { await viewModel.refreshFromUserPull() }
-    }
-
-    private func handleConfiguredPullRefresh(
-        pullDistance: CGFloat,
-        isUserInteracting: Bool
-    ) {
-        viewportState.currentPullRefreshDistance = pullDistance
-        refreshActions.handleConfiguredPullRefresh(
-            pullDistance: pullDistance,
-            triggerDistance: CGFloat(runtimeSettings.homeRefreshTriggerDistance),
-            isUserInteracting: isUserInteracting,
-            isRefreshing: viewModel.isRefreshing
-        ) {
-            await viewModel.refreshFromUserPull()
-            return viewModel.state == .loaded
+        } else {
+            withAnimation(.smooth(duration: 0.34)) {
+                proxy.scrollTo(HomeFeedScrollAnchor.top, anchor: .top)
+            }
         }
     }
 }
@@ -147,13 +118,12 @@ private struct HomeScrollsToTopBehavior: UIViewRepresentable {
 private struct HomeNativeRefreshActionReader: View {
     @Environment(\.refresh) private var refreshAction
     let store: HomeNativeRefreshActionStore
-    let isEnabled: Bool
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .task(id: isEnabled) {
-                store.action = isEnabled ? refreshAction : nil
+            .task {
+                store.action = refreshAction
             }
             .onDisappear {
                 store.action = nil
@@ -163,7 +133,6 @@ private struct HomeNativeRefreshActionReader: View {
 
 private struct HomeNativeRefreshControlTrigger: UIViewRepresentable {
     let requestID: Int
-    let isEnabled: Bool
     let action: @MainActor () async -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -179,7 +148,6 @@ private struct HomeNativeRefreshControlTrigger: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) {
         context.coordinator.update(
             requestID: requestID,
-            isEnabled: isEnabled,
             sourceView: view,
             action: action
         )
@@ -196,13 +164,12 @@ private struct HomeNativeRefreshControlTrigger: UIViewRepresentable {
 
         func update(
             requestID: Int,
-            isEnabled: Bool,
             sourceView: UIView,
             action: @escaping @MainActor () async -> Void
         ) {
             guard requestID != lastRequestID else { return }
             lastRequestID = requestID
-            guard isEnabled, requestID > 0, refreshTask == nil else { return }
+            guard requestID > 0, refreshTask == nil else { return }
 
             refreshTask = Task { @MainActor [weak self, weak sourceView] in
                 defer { self?.refreshTask = nil }

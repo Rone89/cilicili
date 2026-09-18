@@ -17,6 +17,9 @@ struct RootTabView: View {
     @State var liveNavigationPath = NavigationPath()
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
+    @State var mineSearchQuery = ""
+    @State var isMineSearchEditing = false
+    @FocusState var isMineSearchFocused: Bool
     @State var rootNavigationTitleHiddenByTab: [AppTab: Bool] = [:]
     @State var homeActionStore = HomeFeedScreenActionStore()
     @State var didConsumeStartupVideo = false
@@ -55,6 +58,13 @@ struct RootTabView: View {
                 .ignoresSafeArea()
         }
         .task {
+            // Let the initial tab hierarchy commit a frame before configuring
+            // nonessential feature holders and startup maintenance. Otherwise a
+            // cold launch can present only the window background while this
+            // work occupies the main actor.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
             AppIconController.apply(libraryStore.appIconPreference)
             PictureInPictureRestoreCoordinator.shared.restoreHandler = { video in
                 await restoreVideoPlaybackUIForPictureInPicture(video)
@@ -77,6 +87,17 @@ struct RootTabView: View {
         }
         .onChange(of: runtimeSettings.visibleRootTabs) { _, tabs in
             repairSelectedTabIfNeeded(visibleTabs: tabs)
+        }
+        .onChange(of: selectedTab) { _, tab in
+            if tab != .mine {
+                isMineSearchFocused = false
+                isMineSearchEditing = false
+            }
+        }
+        .onChange(of: isMineSearchFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused {
+                isMineSearchEditing = false
+            }
         }
         .onChange(of: libraryStore.appIconPreference) { _, preference in
             AppIconController.apply(preference)
@@ -120,10 +141,20 @@ struct RootTabView: View {
             }
         }
         .tint(libraryStore.appTintColor)
-        .tabViewBottomAccessory(isEnabled: showsSearchBottomAccessory) {
-            SearchTabBottomAccessory(store: searchBottomAccessoryStore)
+        .tabViewBottomAccessory(isEnabled: showsTabBottomAccessory) {
+            rootTabBottomAccessory
         }
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsMineKeyboardSearch {
+                MineKeyboardSearchAccessory(
+                    text: $mineSearchQuery,
+                    isFocused: $isMineSearchFocused
+                )
+                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+                .padding(.vertical, 8)
+            }
+        }
     }
 
     @ViewBuilder
@@ -212,6 +243,8 @@ struct RootTabView: View {
         case .mine:
             MineView(
                 holder: mineViewModelHolder,
+                searchText: $mineSearchQuery,
+                isSearchFocused: $isMineSearchFocused,
                 onOpenRoute: openMineOverlayRoute
             )
         case .search:
@@ -252,6 +285,33 @@ struct RootTabView: View {
             return false
         }
         return !searchBottomAccessoryStore.usesKeyboardControls
+    }
+
+    private var showsMineBottomAccessory: Bool {
+        selectedTab == .mine && mineNavigationPath.isEmpty && !isMineSearchEditing
+    }
+
+    private var showsMineKeyboardSearch: Bool {
+        selectedTab == .mine && mineNavigationPath.isEmpty && isMineSearchEditing
+    }
+
+    private var showsTabBottomAccessory: Bool {
+        showsSearchBottomAccessory || showsMineBottomAccessory
+    }
+
+    @ViewBuilder
+    private var rootTabBottomAccessory: some View {
+        if showsSearchBottomAccessory {
+            SearchTabBottomAccessory(store: searchBottomAccessoryStore)
+        } else {
+            MineTabBottomSearchAccessory(
+                text: $mineSearchQuery,
+                onActivate: {
+                    isMineSearchEditing = true
+                }
+            )
+            .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+        }
     }
 
     private func cancelMediaWarmupsIfEnvironmentConstrained() {

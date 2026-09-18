@@ -12,7 +12,7 @@ actor DynamicFeedWarmCache {
     private var warmTaskToken: UUID?
 
     func page(api: BiliAPIClient, identityKey: String) async throws -> DynamicFeedData {
-        if let cachedPage = freshCachedPage(identityKey: identityKey) {
+        if let cachedPage = cachedPage(identityKey: identityKey) {
             return cachedPage
         }
         if let warmTask, warmTaskIdentityKey == identityKey {
@@ -43,8 +43,12 @@ actor DynamicFeedWarmCache {
     }
 
     func prewarm(api: BiliAPIClient, identityKey: String) async {
-        guard freshCachedPage(identityKey: identityKey) == nil else { return }
+        guard cachedPage(identityKey: identityKey) == nil else { return }
         _ = try? await page(api: api, identityKey: identityKey)
+    }
+
+    func cachedPage(identityKey: String) -> DynamicFeedData? {
+        freshCachedPage(identityKey: identityKey)
     }
 
     func store(_ page: DynamicFeedData, identityKey: String) {

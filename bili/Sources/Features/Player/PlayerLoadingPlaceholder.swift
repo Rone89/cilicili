@@ -23,11 +23,13 @@ struct PlayerLoadingPlaceholder: View {
             Color.black
 
             if showsProgress {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.regular)
-                    .tint(.white)
-                    .accessibilityLabel(accessibilityMessage)
+                DelayedLoadingContent {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.regular)
+                        .tint(.white)
+                        .accessibilityLabel(accessibilityMessage)
+                }
             }
 
             if showsChromeSkeleton {
