@@ -27,7 +27,7 @@ struct DynamicCommentsListContent: View {
             EmptyStateView(title: "暂不支持评论", systemImage: "bubble.left", message: "这条动态没有返回评论入口。")
                 .padding(16)
         } else if viewModel.comments.isEmpty && viewModel.state.isLoading {
-            CommentLoadingSkeletonList(count: 4)
+            CommentLoadingSkeletonList()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
         } else if viewModel.comments.isEmpty, case .failed(let message) = viewModel.state {

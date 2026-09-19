@@ -33,7 +33,7 @@ struct InitialCommentsSection: View {
             }
             .padding(.horizontal, horizontalPadding)
 
-            CommentsSkeletonContent(rowCount: 4, horizontalPadding: horizontalPadding)
+            CommentsSkeletonContent(horizontalPadding: horizontalPadding)
         }
         .padding(.vertical, 10)
         .allowsHitTesting(false)

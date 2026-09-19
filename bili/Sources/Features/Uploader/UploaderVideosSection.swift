@@ -73,10 +73,9 @@ struct UploaderVideosSection: View {
             }
 
             if viewModel.state.isLoading {
-                ForEach(0..<(metrics.feedColumns.count * 2), id: \.self) { _ in
-                    VideoFeedSkeletonCard(style: metrics.mode.isDoubleColumn ? .grid : .singleColumn)
-                        .allowsHitTesting(false)
-                }
+                InlineLoadingStateView(title: "正在加载更多")
+                    .padding(.vertical, 8)
+                    .gridCellColumns(metrics.feedColumns.count)
             } else {
                 footer
                     .gridCellColumns(metrics.feedColumns.count)

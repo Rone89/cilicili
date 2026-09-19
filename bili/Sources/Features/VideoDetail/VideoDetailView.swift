@@ -12,6 +12,7 @@ struct VideoDetailView: View {
     @StateObject private var runtimeSettings = VideoDetailRuntimeSettingsStore()
     @State private var presentationState = VideoDetailViewPresentationState()
     @State private var pendingCommentAnchor: VideoCommentAnchor?
+    @State private var hidesSystemChrome = false
 
     init(
         seedVideo: VideoItem,
@@ -29,7 +30,7 @@ struct VideoDetailView: View {
 
     var body: some View {
         PlaybackDetailPageHost(
-            hidesSystemChrome: .constant(false),
+            hidesSystemChrome: $hidesSystemChrome,
             background: .black,
             navigationBarVisibility: .hidden,
             hidesBackButton: true,
@@ -44,6 +45,7 @@ struct VideoDetailView: View {
                 selectedContentTab: $presentationState.selectedContentTab,
                 sheetRoute: $presentationState.sheetRoute,
                 pendingCommentAnchor: $pendingCommentAnchor,
+                hidesSystemChrome: $hidesSystemChrome,
                 isShowingDanmakuSettings: $presentationState.isShowingDanmakuSettings,
                 isShowingFavoriteFolders: $presentationState.isShowingFavoriteFolders,
                 isShowingCoinPicker: $presentationState.isShowingCoinPicker,

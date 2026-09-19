@@ -2,13 +2,17 @@ import SwiftUI
 
 extension HomeFeedScrollPreferenceModifier {
     func updateFeedContainerWidth(_ width: CGFloat) {
-        viewportState = scrollActions.updateFeedContainerWidth(width, state: viewportState)
+        let updatedState = scrollActions.updateFeedContainerWidth(width, state: viewportState)
+        guard updatedState != viewportState else { return }
+        viewportState = updatedState
     }
 
     func updateViewportHeight(_ height: CGFloat) {
-        viewportState = scrollActions.updateViewportHeight(
+        let updatedState = scrollActions.updateViewportHeight(
             height,
             state: viewportState
         )
+        guard updatedState != viewportState else { return }
+        viewportState = updatedState
     }
 }

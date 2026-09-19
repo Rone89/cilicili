@@ -3841,6 +3841,7 @@ nonisolated enum RemoteImageLoadPriority: Sendable, Equatable {
             return 0.25
         }
     }
+
 }
 
 nonisolated enum RemoteImageDisplayCachePolicy: Hashable, Sendable {
@@ -4033,6 +4034,7 @@ final class RemoteImageDisplayMemoryCache {
 }
 
 struct CachedRemoteImage<Content: View, Placeholder: View>: View {
+    @Environment(\.remoteImageLoadPriority) private var loadPriority
     let url: URL?
     let fallbackURL: URL?
     let scale: CGFloat
@@ -4112,6 +4114,7 @@ struct CachedRemoteImage<Content: View, Placeholder: View>: View {
                 targetPixelSize: targetPixelSize,
                 cachePolicy: cachePolicy,
                 displayCachePolicy: displayCachePolicy,
+                priority: loadPriority,
                 clearsFailedMarkers: reloadToken > 0
             )
         }
@@ -4243,6 +4246,7 @@ final class CachedRemoteImageLoader: ObservableObject {
         targetPixelSize: Int?,
         cachePolicy: RemoteImageCachePolicy = .standard,
         displayCachePolicy: RemoteImageDisplayCachePolicy = .retained,
+        priority: RemoteImageLoadPriority = .visible,
         clearsFailedMarkers: Bool = false
     ) async {
         let urls = uniqueRemoteImageURLs([url, fallbackURL])
@@ -4319,7 +4323,8 @@ final class CachedRemoteImageLoader: ObservableObject {
                     url: candidateURL,
                     scale: scale,
                     targetPixelSize: targetPixelSize,
-                    cachePolicy: cachePolicy
+                    cachePolicy: cachePolicy,
+                    priority: priority
                 )
                 guard !Task.isCancelled else { return }
                 guard let loadedImage else { continue }

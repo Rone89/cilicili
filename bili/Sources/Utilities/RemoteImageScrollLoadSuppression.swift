@@ -127,6 +127,14 @@ private struct FastScrollImageLoadSuppressionModifier: ViewModifier {
             .onScrollPhaseChange { _, newPhase in
                 phase = newPhase
             }
+            // Lazy containers create a small look-ahead window of image views. Treat
+            // those views as prefetch work while momentum scrolling is active, so
+            // image networking, decoding, and appearance updates do not contend with
+            // the scrolling frame budget. Cached images still bypass the gate.
+            .environment(
+                \.remoteImageLoadPriority,
+                suppressesNetworkLoads ? .prefetch : .visible
+            )
             .task(id: gateTaskIdentity) {
                 await updateGate()
             }
@@ -160,6 +168,17 @@ private struct FastScrollImageLoadSuppressionModifier: ViewModifier {
         }
         guard !Task.isCancelled else { return }
         await RemoteImageLoadSuppressionGate.shared.setSuppressed(false, for: scopeID)
+    }
+}
+
+private struct RemoteImageLoadPriorityKey: EnvironmentKey {
+    static let defaultValue: RemoteImageLoadPriority = .visible
+}
+
+extension EnvironmentValues {
+    var remoteImageLoadPriority: RemoteImageLoadPriority {
+        get { self[RemoteImageLoadPriorityKey.self] }
+        set { self[RemoteImageLoadPriorityKey.self] = newValue }
     }
 }
 

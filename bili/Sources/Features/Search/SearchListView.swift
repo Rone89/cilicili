@@ -198,15 +198,17 @@ private struct SearchDiscoveryChip: View {
 private struct SearchDiscoveryLoadingCard: View {
     var body: some View {
         SearchContentSection(title: "大家都在搜", systemImage: "flame.fill") {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10),
-                ],
-                spacing: 10
-            ) {
-                ForEach(0..<10, id: \.self) { _ in
-                    SkeletonBlock(height: 44, shape: .rounded(14))
+            SkeletonLoadingContainer {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10),
+                    ],
+                    spacing: 10
+                ) {
+                    ForEach(0..<10, id: \.self) { _ in
+                        SkeletonBlock(height: 44, shape: .rounded(14))
+                    }
                 }
             }
         }
@@ -251,18 +253,21 @@ struct SearchLoadingContent: View {
     var showsTitle = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: showsTitle ? 16 : 12) {
-            if showsTitle {
-                Label("正在搜索", systemImage: "magnifyingglass")
-                    .font(.headline)
-                    .labelStyle(.titleAndIcon)
-            }
+        SkeletonLoadingContainer {
+            VStack(alignment: .leading, spacing: showsTitle ? 16 : 12) {
+                if showsTitle {
+                    Label("正在搜索", systemImage: "magnifyingglass")
+                        .font(.headline)
+                        .labelStyle(.titleAndIcon)
+                }
 
-            ForEach(0..<count, id: \.self) { _ in
-                SearchScopedResultSkeletonRow(scope: scope)
+                ForEach(0..<count, id: \.self) { _ in
+                    SearchScopedResultSkeletonRow(scope: scope)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
     }
 }
 
