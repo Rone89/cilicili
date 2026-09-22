@@ -132,7 +132,11 @@ struct LiveDanmakuOverlay: View {
                 playbackRate: 1,
                 isEnabled: snapshot.isEnabled && isVisibleInCurrentOrientation,
                 hasPresentedPlayback: playerViewModel.hasPresentedPlayback || shouldDriveLiveDanmaku,
-                isLoadShedding: false,
+                // Live chat has no media clock to preserve. Under system
+                // power/thermal or constrained-network pressure, reduce the
+                // number of newly composed entries while keeping the video
+                // player compositor at its configured refresh rate.
+                isLoadShedding: PlaybackEnvironment.current.shouldPreferConservativePlayback,
                 settings: snapshot.settings,
                 topInset: usesLandscapeChrome ? 28 : 8,
                 bottomInset: usesLandscapeChrome ? 84 : 54,

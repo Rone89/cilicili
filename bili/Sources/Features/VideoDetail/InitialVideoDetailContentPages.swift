@@ -4,6 +4,7 @@ struct InitialVideoDetailDetailContentPage: View {
     @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let seedVideo: VideoItem
     let layoutWidth: CGFloat
+    let mountsSecondaryContent: Bool
 
     private var contentWidth: CGFloat {
         PlaybackDetailContentMetrics.contentWidth(
@@ -32,7 +33,7 @@ struct InitialVideoDetailDetailContentPage: View {
                 .padding(.horizontal, horizontalInset)
         }
 
-        if !seedVideo.isPGCEpisode {
+        if mountsSecondaryContent && !seedVideo.isPGCEpisode {
             InitialRelatedSection(layoutWidth: layoutWidth)
         }
     }

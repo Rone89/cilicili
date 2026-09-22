@@ -95,8 +95,33 @@ private struct UploaderSeasonSeriesRouteCard: View {
 
 private struct UploaderSeasonSeriesLoadingState: View {
     var body: some View {
-        InitialContentLoadingView(title: "正在加载合集", topPadding: 18)
+        VStack(spacing: 10) {
+            ForEach(0..<8, id: \.self) { _ in
+                UploaderSeasonSeriesSkeletonCard()
+            }
+        }
         .accessibilityLabel("正在加载合集")
+    }
+}
+
+private struct UploaderSeasonSeriesSkeletonCard: View {
+    private let coverSize = CGSize(width: 132, height: 74)
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            SkeletonBlock(width: coverSize.width, height: coverSize.height, shape: .rounded(8))
+
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonBlock(height: 15, shape: .rounded(5))
+                SkeletonBlock(width: 132, height: 15, shape: .rounded(5))
+                SkeletonBlock(width: 108, height: 11, shape: .capsule)
+                SkeletonBlock(width: 180, height: 12, shape: .rounded(5))
+            }
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.82), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

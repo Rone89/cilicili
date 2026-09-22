@@ -18,6 +18,5 @@ extension VideoDetailDanmakuOverlayState {
     static func loadSheddingState(for playerViewModel: PlayerStateViewModel) -> Bool {
         playerViewModel.isUserSeeking
             || playerViewModel.isBuffering
-            || playerViewModel.playbackRate.rawValue > 1.15
     }
 }

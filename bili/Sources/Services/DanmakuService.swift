@@ -14,7 +14,7 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
         displayArea: DanmakuDisplayArea,
         fontWeight: DanmakuFontWeightOption,
         loadFactor: Double = 1.0,
-        hidesInPortrait: Bool = true
+        hidesInPortrait: Bool = false
     ) {
         self.fontScale = fontScale
         self.opacity = opacity
@@ -40,7 +40,7 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
         self.displayArea = try container.decode(DanmakuDisplayArea.self, forKey: .displayArea)
         self.fontWeight = try container.decode(DanmakuFontWeightOption.self, forKey: .fontWeight)
         self.loadFactor = try container.decodeIfPresent(Double.self, forKey: .loadFactor) ?? 1.0
-        self.hidesInPortrait = try container.decodeIfPresent(Bool.self, forKey: .hidesInPortrait) ?? true
+        self.hidesInPortrait = try container.decodeIfPresent(Bool.self, forKey: .hidesInPortrait) ?? false
     }
 
     static let `default` = DanmakuSettings(
@@ -49,7 +49,7 @@ struct DanmakuSettings: Codable, Equatable, Sendable {
         displayArea: .topHalf,
         fontWeight: .semibold,
         loadFactor: 1.0,
-        hidesInPortrait: true
+        hidesInPortrait: false
     )
 
     var normalized: DanmakuSettings {

@@ -9,26 +9,27 @@ struct DynamicFeedSkeletonScrollContent: View {
         ScrollView {
             DynamicFeedSkeletonList()
                 .padding(.horizontal, horizontalInset)
+                .padding(.top, 28)
         }
         .nativeTopScrollEdgeEffect()
     }
 }
 
 struct DynamicFeedSkeletonList: View {
-    var body: some View {
-        SkeletonLoadingContainer {
-            LazyVStack(spacing: 0) {
-                ForEach(0..<3, id: \.self) { index in
-                    DynamicFeedSkeletonCard()
+    private let placeholderCount = 6
 
-                    if index != 2 {
-                        Divider()
-                            .padding(.leading, 46)
-                    }
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(0..<placeholderCount, id: \.self) { index in
+                DynamicFeedSkeletonCard()
+                    .allowsHitTesting(false)
+
+                if index != placeholderCount - 1 {
+                    Divider()
+                        .padding(.leading, 66)
                 }
             }
         }
-        .allowsHitTesting(false)
     }
 }
 

@@ -12,7 +12,6 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
-    @Binding var hidesSystemChrome: Bool
     @Binding var isShowingDanmakuSettings: Bool
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
@@ -24,7 +23,6 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         // 新路径绕过 PlaybackScene，需自己 bind runtimeSettings，
         // 否则内容区设置（诊断按钮/进度条等）取默认值。
         runtimeSettings.bind(dependencies.libraryStore)
-        let systemChromeVisibility = $hidesSystemChrome
         return VideoDetailRotationBridgeViewController(
             initialVideo: seedVideo,
             viewModel: viewModel,
@@ -62,9 +60,6 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
                         secondaryID: nil
                     )
                 )
-            },
-            onSystemChromeVisibilityChange: { isHidden in
-                systemChromeVisibility.wrappedValue = isHidden
             },
             onNavigateBack: onNavigateBack
         )

@@ -179,7 +179,6 @@ final class ZoomyImagePreviewGroup: ObservableObject {
 /// Minimal in-app image viewer:
 /// tap thumbnail to view, tap the full-screen image to exit, pinch only after entering.
 struct ZoomyRemoteImage<Placeholder: View>: View {
-    @Environment(\.remoteImageLoadPriority) private var loadPriority
     let url: URL?
     let fallbackURL: URL?
     let viewerURL: URL?
@@ -276,8 +275,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 fallbackURL: fallbackURL,
                 scale: 1,
                 targetPixelSize: targetPixelSize,
-                displayCachePolicy: .transient,
-                priority: loadPriority
+                displayCachePolicy: .transient
             )
             reportLoadedImageIfNeeded()
         }

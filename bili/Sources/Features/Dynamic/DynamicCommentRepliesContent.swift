@@ -31,7 +31,7 @@ private struct DynamicCommentRepliesStateContent: View {
 
     var body: some View {
         if snapshot.replies.isEmpty && snapshot.state.isLoading {
-            CommentLoadingSkeletonList()
+            CommentLoadingSkeletonList(count: 3)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 6)
         } else if snapshot.replies.isEmpty, case .failed(let message) = snapshot.state {
@@ -114,7 +114,7 @@ private struct DynamicCommentRepliesFooter: View {
 
     var body: some View {
         if snapshot.hasLoadedReplies, snapshot.state.isLoading {
-            InlineLoadingStateView(title: "正在加载更多回复")
+            CommentLoadingSkeletonRow()
         } else if case .failed(let message) = snapshot.state {
             DynamicCommentErrorView(message: message, retry: loadMore)
         } else if snapshot.hasMoreReplies {

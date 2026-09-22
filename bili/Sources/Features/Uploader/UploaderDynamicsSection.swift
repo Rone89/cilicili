@@ -77,8 +77,17 @@ struct UploaderDynamicsSection: View {
     @ViewBuilder
     private var footer: some View {
         if viewModel.dynamicState.isLoading {
-            InlineLoadingStateView(title: "正在加载更多")
-                .padding(.vertical, 8)
+            VStack(spacing: 0) {
+                ForEach(0..<2, id: \.self) { index in
+                    DynamicFeedSkeletonCard()
+                        .allowsHitTesting(false)
+
+                    if index != 1 {
+                        Divider()
+                            .padding(.leading, 66)
+                    }
+                }
+            }
         } else if viewModel.hasMoreDynamicItems {
             Button {
                 Task { await viewModel.loadMoreDynamics() }

@@ -227,22 +227,77 @@ struct DanmakuOverlayView: UIViewRepresentable {
 }
 
 final class DanmakuAnimationOverlayView: UIView {
+    private static let scrollingAnimationKey = "danmaku.scroll"
+
+    private enum RenderImageFactory {
+        nonisolated static func make(_ request: RenderImageRequest) -> UIImage {
+            let font = UIFont.systemFont(
+                ofSize: request.fontSize,
+                weight: request.fontWeight.uiFontWeight
+            )
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            paragraphStyle.lineBreakMode = .byClipping
+            let attributedText = NSAttributedString(
+                string: request.text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: UIColor.danmakuRGB(request.color)
+                        .withAlphaComponent(request.opacity),
+                    .paragraphStyle: paragraphStyle
+                ]
+            )
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = request.scale
+            format.opaque = false
+            let renderer = UIGraphicsImageRenderer(size: request.size, format: format)
+            return renderer.image { rendererContext in
+                rendererContext.cgContext.setShadow(
+                    offset: CGSize(width: 0, height: 1),
+                    blur: 1.4,
+                    color: UIColor.black.withAlphaComponent(0.92).cgColor
+                )
+                attributedText.draw(
+                    with: CGRect(origin: .zero, size: request.size),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                )
+            }
+        }
+    }
+
     private struct ActiveEntry {
         let id: String
         let item: DanmakuItem
-        let label: UILabel
-        let completion: DanmakuAnimationCompletionDelegate?
-        let createdAt: CFTimeInterval
-        let animationGeneration: Int
-        let scrollingTrajectory: ScrollingTrajectory?
+        let duration: TimeInterval
+        let normalizedLane: CGFloat
+        let labelSize: CGSize
+        let fontSize: CGFloat
+        let spriteLayer: CALayer
+        var scrollingTrajectory: ScrollingTrajectory?
     }
 
+    private struct CachedRenderImage {
+        let image: CGImage
+        let scale: CGFloat
+
+        var pixelCost: Int {
+            image.width * image.height * 4
+        }
+    }
+
+    /// A trajectory is expressed in media time and captures its viewport
+    /// endpoints when the entry is spawned. Rotation can then resize the
+    /// parent viewport without rewriting an already visible entry's path.
     private struct ScrollingTrajectory {
-        let labelWidth: CGFloat
-        let surfaceWidth: CGFloat
+        let referenceTime: TimeInterval
+        let duration: TimeInterval
         let startX: CGFloat
         let endX: CGFloat
-        let displayDuration: TimeInterval
+
+        func progress(at playbackTime: TimeInterval) -> CGFloat {
+            CGFloat(min(max((playbackTime - referenceTime) / max(duration, 0.01), 0), 1))
+        }
     }
 
     private struct LaneState {
@@ -256,9 +311,54 @@ final class DanmakuAnimationOverlayView: UIView {
         let fontWeight: DanmakuFontWeightOption
     }
 
+    private struct RenderImageKey: Hashable, Sendable {
+        let text: String
+        let fontSizeTenths: Int
+        let fontWeight: DanmakuFontWeightOption
+        let color: UInt32
+        let opacityThousandths: Int
+        let widthPixels: Int
+        let heightPixels: Int
+        let scaleTenths: Int
+    }
+
+    private struct RenderImageRequest: Sendable {
+        let key: RenderImageKey
+        let text: String
+        let fontSize: CGFloat
+        let fontWeight: DanmakuFontWeightOption
+        let color: UInt32
+        let opacity: CGFloat
+        let size: CGSize
+        let scale: CGFloat
+    }
+
+    private final class PrewarmCancellationToken: @unchecked Sendable {
+        private nonisolated(unsafe) let lock = NSLock()
+        private nonisolated(unsafe) var cancelled = false
+
+        nonisolated var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+
+        nonisolated func cancel() {
+            lock.lock()
+            cancelled = true
+            lock.unlock()
+        }
+    }
+
     private struct TimeBucket {
         let index: Int
         var items: [DanmakuItem]
+    }
+
+    private enum SpawnResult {
+        case spawned
+        case waitingForImage
+        case skipped
     }
 
     private var items: [DanmakuItem] = []
@@ -276,20 +376,47 @@ final class DanmakuAnimationOverlayView: UIView {
     private var nextBucketItemIndex = 0
     private var anchorPlaybackTime: TimeInterval = 0
     private var anchorHostTime = CACurrentMediaTime()
-    private var displayLink: CADisplayLink?
+    private var correctionRate: Double = 0
+    private var correctionStartHostTime: CFTimeInterval?
+    private var correctionDuration: CFTimeInterval = 0
+    /// Core Animation owns the per-frame motion of scrolling entries. The
+    /// overlay only needs a low-frequency main-thread pass for spawning,
+    /// retirement, and anchored-entry opacity.
+    private var lifecycleTimer: DispatchSourceTimer?
+    private var lifecycleTimerCadenceMilliseconds: Int?
     private var activeEntries: [String: ActiveEntry] = [:]
-    private var reusableLabels: [UILabel] = []
+    private var pendingSpawnItems: [DanmakuItem] = []
+    private var pendingSpawnIDs: Set<String> = []
+    private var recycledSpriteLayers: [CALayer] = []
+    private var renderPlaybackTime: TimeInterval = 0
     private var scrollingLaneStates: [Int: LaneState] = [:]
     private var textSizeCache: [TextMeasurementKey: CGSize] = [:]
     private var textSizeCacheOrder: [TextMeasurementKey] = []
+    private var renderImageCache: [RenderImageKey: CachedRenderImage] = [:]
+    private var renderImageCacheOrder: [RenderImageKey] = []
+    private var renderImageCacheCost = 0
+    private var pendingRenderImageKeys: Set<RenderImageKey> = []
+    private var prewarmTokens: [RenderImageKey: PrewarmCancellationToken] = [:]
+    private var pendingSpawnRetryScheduled = false
+    private var lastPrewarmTimeBucket: Int?
+    private let renderImagePrewarmQueue = DispatchQueue(
+        label: "cc.bili.danmaku.render-prewarm",
+        qos: .utility,
+        autoreleaseFrequency: .workItem
+    )
     private var lastLayoutSize: CGSize = .zero
-    private var activeAnimationSpeed: Float = 1
     private var lastItemsRevision = -1
-    private var animationGeneration = 0
-    private var layoutSettlingGeneration = 0
-    private var isLayoutSettling = false
     private var isLayoutTransitioning = false
-    private var needsLayoutRebuildAfterTransition = false
+    private var needsContentReconciliationAfterTransition = false
+    private var rotationReconciliationPending = false
+    private var rotationReconciliationReady = false
+    private var rotationReconciliationScheduled = false
+    private var rotationReconciliationGeneration = 0
+    private var rotationPlaybackTime: TimeInterval?
+    private var environmentSnapshot = PlaybackEnvironment.current
+    private var environmentSnapshotHostTime = CACurrentMediaTime()
+    private static let environmentRefreshInterval: CFTimeInterval = 1.0
+    private static let renderImageCachePixelBudget = 16 * 1024 * 1024
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -306,26 +433,64 @@ final class DanmakuAnimationOverlayView: UIView {
         let size = bounds.size
         guard size.width > 1, size.height > 1 else { return }
         guard abs(size.width - lastLayoutSize.width) > 1 || abs(size.height - lastLayoutSize.height) > 1 else { return }
-        if isLayoutTransitioning {
-            needsLayoutRebuildAfterTransition = true
-            return
+
+        // Danmaku positions are derived from media time on every frame. A
+        // bounds change only needs a layer-position update after the final
+        // rotation size is committed. During the UIKit transition the
+        // scrolling CA animations stay attached; repeatedly resolving their
+        // x-coordinate against intermediate bounds causes visible jumps.
+        let layoutTime = rotationPlaybackTime ?? effectivePlaybackTime()
+        if shouldRenderDanmaku {
+            updateActiveEntryFrames(
+                at: layoutTime,
+                updatesScrollingPositions: !isLayoutTransitioning && !rotationReconciliationPending
+            )
         }
+        lastPrewarmTimeBucket = nil
         lastLayoutSize = size
-        beginLayoutSettling(animated: isPlaying)
-        guard shouldRenderDanmaku else {
-            clearActiveLabels()
-            return
-        }
-        rebuildVisibleItemsAfterLayoutChange(
-            at: effectivePlaybackTime(),
-            animated: false
-        )
         updateDisplayLinkState()
         updateAnimationPauseState()
     }
 
+    // Internal read-only hooks keep rotation regressions testable without
+    // exposing UIKit implementation details such as UILabel subviews.
+    var activeEntryIDs: Set<String> { Set(activeEntries.keys) }
+
+    func activeEntryFontSize(for id: String) -> CGFloat? {
+        activeEntries[id]?.fontSize
+    }
+
+    func activeEntryPosition(for id: String) -> CGPoint? {
+        activeEntryPosition(for: id, at: renderPlaybackTime)
+    }
+
+    func activeEntryPosition(for id: String, at playbackTime: TimeInterval) -> CGPoint? {
+        guard let entry = activeEntries[id] else { return nil }
+        return position(for: entry, at: playbackTime, band: displayBand())
+    }
+
+    #if DEBUG
+        func activeEntryLayerPosition(for id: String) -> CGPoint? {
+            guard let entry = activeEntries[id] else { return nil }
+            return entry.spriteLayer.presentation()?.position ?? entry.spriteLayer.position
+        }
+    #endif
+
+    func activeEntryProgress(for id: String, at playbackTime: TimeInterval) -> CGFloat? {
+        guard let entry = activeEntries[id], let trajectory = entry.scrollingTrajectory else {
+            return nil
+        }
+        return trajectory.progress(at: playbackTime)
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        guard window != nil else {
+            cancelPendingPrewarm()
+            stopDisplayLink()
+            updateAnimationPauseState()
+            return
+        }
         updateDisplayLinkState()
         updateAnimationPauseState()
     }
@@ -334,15 +499,42 @@ final class DanmakuAnimationOverlayView: UIView {
         guard isLayoutTransitioning != isTransitioning else { return }
         isLayoutTransitioning = isTransitioning
         if isTransitioning {
-            cancelLayoutSettling()
+            // The overlay keeps its current labels and playback timeline alive
+            // during the UIKit rotation.  Any size change is recorded by
+            // layoutSubviews and reconciled once the system transition ends.
+            needsContentReconciliationAfterTransition = false
+            rotationReconciliationPending = true
+            rotationReconciliationReady = false
+            rotationReconciliationGeneration &+= 1
+            rotationPlaybackTime = effectivePlaybackTime()
+            // Keep scrolling animations attached while UIKit resizes the
+            // surface. Sampling and detaching them here freezes the old
+            // geometry and makes the first frame in the new orientation jump.
             return
         }
-        guard needsLayoutRebuildAfterTransition else { return }
-        needsLayoutRebuildAfterTransition = false
+
+        if rotationReconciliationPending {
+            scheduleRotationReconciliation()
+            updateDisplayLinkState()
+            updateAnimationPauseState()
+            return
+        }
+
+        let didChangeSurfaceSize = abs(bounds.width - lastLayoutSize.width) > 1
+            || abs(bounds.height - lastLayoutSize.height) > 1
+        guard needsContentReconciliationAfterTransition || didChangeSurfaceSize else {
+            updateDisplayLinkState()
+            updateAnimationPauseState()
+            return
+        }
+
+        needsContentReconciliationAfterTransition = false
         lastLayoutSize = bounds.size
-        // Keep active Core Animation instances intact. Rebuilding here restarts fixed
-        // danmaku opacity and scrolling trajectories on the rotation completion frame.
-        setNextSpawnPosition(after: effectivePlaybackTime())
+        if shouldRenderDanmaku {
+            updateActiveEntryFrames(at: effectivePlaybackTime(), updatesScrollingPositions: true)
+        } else {
+            clearActiveLabels()
+        }
         updateDisplayLinkState()
         updateAnimationPauseState()
     }
@@ -361,10 +553,11 @@ final class DanmakuAnimationOverlayView: UIView {
         bottomInset newBottomInset: CGFloat
     ) {
         let normalizedRate = max(newPlaybackRate, 0.1)
-        let sanitizedTime = max(0, newCurrentTime)
+        let sanitizedTime = stabilizedPlaybackTime(max(0, newCurrentTime))
         let previousEffectiveTime = effectivePlaybackTime()
         let previousShouldRender = shouldRenderDanmaku
         let previousIsPlaying = isPlaying
+        let didChangePlaybackRate = abs(normalizedRate - playbackRate) > 0.001
         let didChangeItems = newItemsRevision != lastItemsRevision
         let normalizedSettings = newSettings.normalized
         let didChangeRenderedSettings = abs(normalizedSettings.fontScale - settings.fontScale) > 0.001
@@ -380,6 +573,9 @@ final class DanmakuAnimationOverlayView: UIView {
         }
         lastItemsRevision = newItemsRevision
         currentTime = sanitizedTime
+        if !newIsPlaying {
+            renderPlaybackTime = sanitizedTime
+        }
         isPlaying = newIsPlaying
         playbackRate = normalizedRate
         isEnabled = newIsEnabled
@@ -392,10 +588,27 @@ final class DanmakuAnimationOverlayView: UIView {
             textSizeCache.removeAll(keepingCapacity: true)
             textSizeCacheOrder.removeAll(keepingCapacity: true)
         }
+        if didChangeItems || didChangeRenderedSettings || didChangeInsets {
+            cancelPendingPrewarm()
+            lastPrewarmTimeBucket = nil
+        }
+        if previousIsPlaying && !newIsPlaying {
+            cancelPendingPrewarm()
+        }
 
         let currentShouldRender = shouldRenderDanmaku
         if !currentShouldRender {
-            cancelLayoutSettling()
+            // Orientation visibility can temporarily report false while the
+            // system is moving between portrait and landscape (for example
+            // when portrait-only danmaku is enabled). Keep the existing layer
+            // alive until the final orientation is committed; the completion
+            // pass will either reconcile it or clear it if the feature remains
+            // disabled.
+            if isLayoutTransitioning, previousShouldRender {
+                syncPlaybackAnchor(to: sanitizedTime, smoothly: true)
+                return
+            }
+            cancelPendingPrewarm()
             clearActiveLabels()
             setNextSpawnPosition(after: sanitizedTime)
             syncPlaybackAnchor(to: sanitizedTime)
@@ -405,16 +618,42 @@ final class DanmakuAnimationOverlayView: UIView {
         }
 
         let jumped = abs(sanitizedTime - previousEffectiveTime) > seekJumpThreshold || sanitizedTime + 0.2 < previousEffectiveTime
-        syncPlaybackAnchor(to: sanitizedTime)
+        syncPlaybackAnchor(
+            to: sanitizedTime,
+            smoothly: !jumped
+        )
 
-        if isLayoutTransitioning, didChangeInsets {
-            needsLayoutRebuildAfterTransition = true
+        if rotationReconciliationPending {
+            if jumped {
+                rotationPlaybackTime = sanitizedTime
+                needsContentReconciliationAfterTransition = true
+            }
+            // Insets are geometry-only changes. The active entries already
+            // carry their media-space font metrics and lane normalization, so
+            // rebuilding them here would recreate the cached glyphs and make
+            // rotation look like a font-size change.
+            if !previousShouldRender || didChangeItems || didChangeRenderedSettings || didChangePlaybackRate || jumped {
+                needsContentReconciliationAfterTransition = true
+            }
+            setNeedsLayout()
+            if !isLayoutTransitioning {
+                scheduleRotationReconciliation()
+            }
             updateDisplayLinkState()
             updateAnimationPauseState()
             return
         }
 
-        if !previousShouldRender || didChangeRenderedSettings || jumped {
+        if isLayoutTransitioning {
+            if !previousShouldRender || didChangeItems || didChangeRenderedSettings || didChangePlaybackRate || jumped {
+                needsContentReconciliationAfterTransition = true
+            }
+            updateDisplayLinkState()
+            updateAnimationPauseState()
+            return
+        }
+
+        if !previousShouldRender || didChangeRenderedSettings || didChangePlaybackRate || jumped {
             rebuildVisibleItems(at: sanitizedTime, animated: newIsPlaying)
             updateDisplayLinkState()
             updateAnimationPauseState()
@@ -422,10 +661,7 @@ final class DanmakuAnimationOverlayView: UIView {
         }
 
         if didChangeInsets {
-            rebuildVisibleItemsAfterLayoutChange(
-                at: sanitizedTime,
-                animated: newIsPlaying
-            )
+            updateActiveEntryFrames(at: sanitizedTime, updatesScrollingPositions: true)
             updateDisplayLinkState()
             updateAnimationPauseState()
             return
@@ -448,15 +684,24 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     func stop() {
-        cancelLayoutSettling()
+        rotationReconciliationPending = false
+        rotationReconciliationReady = false
+        rotationReconciliationScheduled = false
+        rotationReconciliationGeneration &+= 1
+        needsContentReconciliationAfterTransition = false
+        rotationPlaybackTime = nil
+        cancelPendingPrewarm()
         stopDisplayLink()
         clearActiveLabels()
     }
 
     func synchronizePlaybackTime(_ playbackTime: TimeInterval, force: Bool = false) {
-        let sanitizedTime = max(0, playbackTime)
+        let sanitizedTime = stabilizedPlaybackTime(max(0, playbackTime))
         let previousEffectiveTime = effectivePlaybackTime()
         currentTime = sanitizedTime
+        if !isPlaying {
+            renderPlaybackTime = sanitizedTime
+        }
 
         guard shouldRenderDanmaku else {
             setNextSpawnPosition(after: sanitizedTime)
@@ -468,9 +713,28 @@ final class DanmakuAnimationOverlayView: UIView {
 
         let drift = abs(sanitizedTime - previousEffectiveTime)
         let jumped = force || drift > seekJumpThreshold || sanitizedTime + 0.2 < previousEffectiveTime
-        syncPlaybackAnchor(to: sanitizedTime)
+        syncPlaybackAnchor(
+            to: sanitizedTime,
+            smoothly: !jumped
+        )
 
-        if jumped {
+        if rotationReconciliationPending {
+            if jumped {
+                rotationPlaybackTime = sanitizedTime
+                needsContentReconciliationAfterTransition = true
+            }
+            setNeedsLayout()
+            if !isLayoutTransitioning {
+                scheduleRotationReconciliation()
+            }
+            updateDisplayLinkState()
+            updateAnimationPauseState()
+            return
+        }
+
+        if jumped, isLayoutTransitioning {
+            needsContentReconciliationAfterTransition = true
+        } else if jumped {
             rebuildVisibleItems(at: sanitizedTime, animated: isPlaying)
         }
 
@@ -478,20 +742,30 @@ final class DanmakuAnimationOverlayView: UIView {
         updateAnimationPauseState()
     }
 
-    @objc private func tick(_ displayLink: CADisplayLink) {
-        guard shouldRenderDanmaku, isPlaying else { return }
-        let playbackTime = effectivePlaybackTime(hostTime: displayLink.timestamp)
-        retireExpiredActiveEntries(at: playbackTime)
-        guard !isLayoutSettling, !isLayoutTransitioning else { return }
+    private func tick() {
+        guard shouldRenderDanmaku,
+              isPlaying
+        else { return }
+        refreshEnvironmentSnapshotIfNeeded()
+        let playbackTime = stabilizedPlaybackTime(effectivePlaybackTime())
+
+        retryPendingSpawns(at: playbackTime)
         spawnDueItems(at: playbackTime)
+        updateActiveEntryFrames(at: playbackTime)
+        updateDisplayLinkState()
     }
 
     private func configureView() {
         backgroundColor = .clear
         isOpaque = false
+        // The backing surface must be redrawn at its new bounds rather than
+        // scaled by UIKit during rotation; scaling would visibly change the
+        // cached glyph size even though the media-space font is unchanged.
+        contentMode = .redraw
         clipsToBounds = true
         isUserInteractionEnabled = false
         layer.allowsGroupOpacity = false
+        layer.masksToBounds = true
     }
 
     private var shouldRenderDanmaku: Bool {
@@ -505,12 +779,79 @@ final class DanmakuAnimationOverlayView: UIView {
     private func effectivePlaybackTime(hostTime: CFTimeInterval = CACurrentMediaTime()) -> TimeInterval {
         guard isPlaying else { return currentTime }
         let elapsed = max(0, hostTime - anchorHostTime)
-        return max(0, anchorPlaybackTime + elapsed * playbackRate)
+        guard let correctionStartHostTime else {
+            return max(0, anchorPlaybackTime + elapsed * playbackRate)
+        }
+
+        let correctionElapsed = min(
+            max(0, hostTime - correctionStartHostTime),
+            correctionDuration
+        )
+        let correctedTime = max(
+            0,
+            anchorPlaybackTime
+                + elapsed * playbackRate
+                + correctionElapsed * correctionRate
+        )
+        if hostTime >= correctionStartHostTime + correctionDuration {
+            // `targetTimestamp` is usually slightly in the future. Commit
+            // the new anchor at real time so a synchronous state update cannot
+            // temporarily see a future anchor and pause for one frame.
+            let commitHostTime = min(hostTime, CACurrentMediaTime())
+            let commitElapsed = max(0, commitHostTime - anchorHostTime)
+            let commitCorrectionElapsed = min(
+                max(0, commitHostTime - correctionStartHostTime),
+                correctionDuration
+            )
+            anchorPlaybackTime = max(
+                0,
+                anchorPlaybackTime
+                    + commitElapsed * playbackRate
+                    + commitCorrectionElapsed * correctionRate
+            )
+            anchorHostTime = commitHostTime
+            correctionRate = 0
+            self.correctionStartHostTime = nil
+            correctionDuration = 0
+        }
+        return correctedTime
     }
 
-    private func syncPlaybackAnchor(to playbackTime: TimeInterval) {
-        anchorPlaybackTime = max(0, playbackTime)
-        anchorHostTime = CACurrentMediaTime()
+    private func stabilizedPlaybackTime(_ candidate: TimeInterval) -> TimeInterval {
+        candidate
+    }
+
+    private func syncPlaybackAnchor(to playbackTime: TimeInterval, smoothly: Bool = false) {
+        let now = CACurrentMediaTime()
+        guard smoothly, isPlaying else {
+            anchorPlaybackTime = max(0, playbackTime)
+            anchorHostTime = now
+            correctionRate = 0
+            correctionStartHostTime = nil
+            correctionDuration = 0
+            return
+        }
+
+        // Player samples are sparse and quantized. Keep the render clock
+        // continuous and correct phase with a short rate adjustment instead
+        // of resetting the anchor on every sample (which creates a visible
+        // one-frame hold or forward jump).
+        let projectedTime = effectivePlaybackTime(hostTime: now)
+        let correction = playbackTime - projectedTime
+        // Commit the current corrected phase before starting a new PLL window;
+        // otherwise a second sample would discard the portion already slewed.
+        anchorPlaybackTime = projectedTime
+        anchorHostTime = now
+        correctionRate = 0
+        correctionStartHostTime = nil
+        correctionDuration = 0
+        guard abs(correction) > 0.001 else { return }
+
+        let maximumCorrectionRate = 0.08
+        let duration = min(max(abs(correction) / maximumCorrectionRate, 0.5), 2.0)
+        correctionRate = min(max(correction / duration, -maximumCorrectionRate), maximumCorrectionRate)
+        correctionStartHostTime = now
+        correctionDuration = duration
     }
 
     private func updateDisplayLinkState() {
@@ -518,100 +859,247 @@ final class DanmakuAnimationOverlayView: UIView {
             stopDisplayLink()
             return
         }
-        if displayLink == nil {
-            let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-            link.add(to: .main, forMode: .common)
-            displayLink = link
+        refreshEnvironmentSnapshotIfNeeded()
+
+        // Keep the compositor independent from this timer. The timer only
+        // maintains the entry set; it should sleep when the next event is far
+        // away and never run at 60 Hz just because playback is accelerated.
+        let cadenceMilliseconds = lifecycleCadenceMilliseconds()
+        if lifecycleTimer != nil,
+           lifecycleTimerCadenceMilliseconds == cadenceMilliseconds {
+            return
         }
-        displayLink?.preferredFrameRateRange = preferredFrameRateRange
-        displayLink?.isPaused = false
+        stopDisplayLink()
+
+        // Scrolling entries are composited by Core Animation at the display's
+        // native refresh rate. This timer only maintains the entry set. A
+        // 30 Hz housekeeping pass is sufficient for normal playback, while a
+        // 60 Hz pass prevents high-rate playback from batching several due
+        // buckets into one main-thread callback.
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now(),
+            repeating: .milliseconds(cadenceMilliseconds),
+            leeway: .milliseconds(cadenceMilliseconds == 16 ? 2 : 8)
+        )
+        timer.setEventHandler { [weak self] in
+            self?.tick()
+        }
+        lifecycleTimer = timer
+        lifecycleTimerCadenceMilliseconds = cadenceMilliseconds
+        timer.resume()
+    }
+
+    private func lifecycleCadenceMilliseconds() -> Int {
+        if activeEntries.isEmpty {
+            guard let nextSpawnTime = nextScheduledSpawnTime else { return 250 }
+            let timeUntilNextSpawn = nextSpawnTime - effectivePlaybackTime()
+            return timeUntilNextSpawn <= 0.75 ? 33 : 250
+        }
+
+        if activeEntries.values.contains(where: { $0.item.isScrolling }) {
+            // Core Animation still composites scrolling entries at the normal
+            // 60 Hz cadence. This pass only retires entries and spawns new
+            // ones, so 30 Hz is sufficient unless accelerated playback is
+            // about to cross another time bucket.
+            if playbackRate > 1.15,
+               let nextSpawnTime = nextScheduledSpawnTime,
+               nextSpawnTime - effectivePlaybackTime() <= 0.5 {
+                return 16
+            }
+            return 33
+        }
+        return 66
+    }
+
+    private var nextScheduledSpawnTime: TimeInterval? {
+        var bucketIndex = nextBucketIndex
+        var itemIndex = nextBucketItemIndex
+        while bucketIndex < timeBuckets.count {
+            let bucketItems = timeBuckets[bucketIndex].items
+            if itemIndex < bucketItems.count {
+                return bucketItems[itemIndex].time
+            }
+            bucketIndex += 1
+            itemIndex = 0
+        }
+        return nil
     }
 
     private func stopDisplayLink() {
-        displayLink?.invalidate()
-        displayLink = nil
+        lifecycleTimer?.setEventHandler {}
+        lifecycleTimer?.cancel()
+        lifecycleTimer = nil
+        lifecycleTimerCadenceMilliseconds = nil
     }
 
     private func updateAnimationPauseState() {
-        let shouldPause = !isPlaying || !shouldRenderDanmaku || window == nil
-        let targetSpeed: Float = shouldPause ? 0 : Float(max(playbackRate, 0.1))
-        guard abs(activeAnimationSpeed - targetSpeed) > 0.001 else { return }
-        applyLayerAnimationSpeed(targetSpeed)
-        activeAnimationSpeed = targetSpeed
-    }
-
-    private func applyLayerAnimationSpeed(_ targetSpeed: Float) {
-        let now = CACurrentMediaTime()
-        let currentLayerTime = layer.convertTime(now, from: nil)
-        layer.speed = targetSpeed
-        layer.timeOffset = 0
-        layer.beginTime = 0
-        if targetSpeed == 0 {
-            layer.timeOffset = currentLayerTime
-        } else {
-            let convertedTime = layer.convertTime(now, from: nil)
-            layer.beginTime = convertedTime - currentLayerTime
-        }
-    }
-
-    private func beginLayoutSettling(animated: Bool) {
-        layoutSettlingGeneration &+= 1
-        let generation = layoutSettlingGeneration
-        isLayoutSettling = true
-
-        for (index, delay) in Self.layoutSettlingRebuildDelays.enumerated() {
-            let completesSettling = index == Self.layoutSettlingRebuildDelays.indices.last
-            if delay == 0 {
-                DispatchQueue.main.async { [weak self] in
-                    self?.performLayoutSettledRebuild(
-                        generation: generation,
-                        animated: animated,
-                        completesSettling: completesSettling
-                    )
-                }
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(delay))) { [weak self] in
-                    self?.performLayoutSettledRebuild(
-                        generation: generation,
-                        animated: animated,
-                        completesSettling: completesSettling
-                    )
-                }
+        guard shouldRenderDanmaku else { return }
+        // The rotation transition owns scrolling animations until its final
+        // reconciliation pass. An intermediate SwiftUI update must not sample
+        // a different playback time and move every active entry.
+        if isLayoutTransitioning || rotationReconciliationPending {
+            // A pause is still an explicit playback state change. Preserve the
+            // current presentation frame, but do not let an old CA animation
+            // continue while the video is paused during rotation.
+            if !isPlaying,
+               activeEntries.values.contains(where: {
+                   $0.item.isScrolling
+                       && $0.spriteLayer.animation(forKey: Self.scrollingAnimationKey) != nil
+               }) {
+                detachScrollingAnimations(at: effectivePlaybackTime())
             }
-        }
-    }
-
-    private func performLayoutSettledRebuild(
-        generation: Int,
-        animated: Bool,
-        completesSettling: Bool
-    ) {
-        guard layoutSettlingGeneration == generation else { return }
-        defer {
-            if completesSettling, layoutSettlingGeneration == generation {
-                isLayoutSettling = false
-                updateDisplayLinkState()
-                updateAnimationPauseState()
-            }
-        }
-        guard shouldRenderDanmaku else {
-            clearActiveLabels()
             return
         }
-        rebuildVisibleItemsAfterLayoutChange(
-            at: effectivePlaybackTime(),
-            animated: completesSettling && animated && isPlaying
-        )
+        guard window != nil else {
+            detachScrollingAnimations(at: effectivePlaybackTime())
+            return
+        }
+        let playbackTime = effectivePlaybackTime()
+        if isPlaying {
+            resumeScrollingAnimations(at: playbackTime)
+        } else {
+            detachScrollingAnimations(at: playbackTime)
+        }
     }
 
-    private func cancelLayoutSettling() {
-        layoutSettlingGeneration &+= 1
-        isLayoutSettling = false
+    private func installScrollingAnimation(
+        for entry: ActiveEntry,
+        at playbackTime: TimeInterval,
+        startingPosition: CGPoint? = nil
+    ) {
+        guard entry.item.isScrolling,
+              isPlaying,
+              !isLayoutTransitioning,
+              !rotationReconciliationPending
+        else { return }
+
+        let band = displayBand()
+        let currentPosition = startingPosition ?? position(for: entry, at: playbackTime, band: band)
+        let trajectory = entry.scrollingTrajectory ?? ScrollingTrajectory(
+            referenceTime: entry.item.time,
+            duration: entry.duration,
+            startX: scrollingStartX(
+                containerWidth: band.width,
+                labelWidth: entry.labelSize.width
+            ),
+            endX: scrollingEndX(
+                containerWidth: band.width,
+                labelWidth: entry.labelSize.width
+            )
+        )
+        let endX = trajectory.endX
+        let age = min(max(playbackTime - entry.item.time, 0), entry.duration)
+        let remainingMediaDuration = max(entry.duration - age, 0.05)
+        let animationDuration = remainingMediaDuration / max(playbackRate, 0.1)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entry.spriteLayer.removeAnimation(forKey: Self.scrollingAnimationKey)
+        entry.spriteLayer.position = CGPoint(x: endX, y: currentPosition.y)
+        let animation = CABasicAnimation(keyPath: "position.x")
+        animation.fromValue = currentPosition.x
+        animation.toValue = endX
+        animation.duration = animationDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        // Keep the compositor on the normal 60 Hz cadence. The lifecycle
+        // timer below is intentionally lower frequency, but it must never
+        // become the source of the scrolling animation's frame rate.
+        animation.preferredFrameRateRange = CAFrameRateRange(
+            minimum: 60,
+            maximum: 60,
+            preferred: 60
+        )
+        animation.isRemovedOnCompletion = false
+        animation.fillMode = .forwards
+        entry.spriteLayer.add(animation, forKey: Self.scrollingAnimationKey)
+        CATransaction.commit()
+    }
+
+    private func detachScrollingAnimations(at playbackTime: TimeInterval) {
+        guard !activeEntries.isEmpty else { return }
+        let band = displayBand()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for entry in activeEntries.values where entry.item.isScrolling {
+            let fallbackPosition = position(for: entry, at: playbackTime, band: band)
+            let presentationPosition = entry.spriteLayer.presentation()?.position ?? fallbackPosition
+            entry.spriteLayer.removeAnimation(forKey: Self.scrollingAnimationKey)
+            entry.spriteLayer.position = presentationPosition
+        }
+        CATransaction.commit()
+    }
+
+    private func resumeScrollingAnimations(at playbackTime: TimeInterval) {
+        guard isPlaying,
+              !isLayoutTransitioning,
+              !rotationReconciliationPending
+        else { return }
+
+        for entry in activeEntries.values where entry.item.isScrolling {
+            guard entry.spriteLayer.animation(forKey: Self.scrollingAnimationKey) == nil else { continue }
+            let age = playbackTime - entry.item.time
+            guard age >= 0, age < entry.duration else { continue }
+            installScrollingAnimation(for: entry, at: playbackTime)
+        }
+    }
+
+    private func scheduleRotationReconciliation() {
+        guard rotationReconciliationPending,
+              !rotationReconciliationScheduled
+        else { return }
+
+        rotationReconciliationScheduled = true
+        let generation = rotationReconciliationGeneration
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.rotationReconciliationScheduled = false
+            guard self.rotationReconciliationPending,
+                  !self.isLayoutTransitioning,
+                  self.rotationReconciliationGeneration == generation
+            else { return }
+            self.rotationReconciliationReady = true
+            self.reconcileRotationLayoutIfNeeded()
+            self.updateDisplayLinkState()
+            self.updateAnimationPauseState()
+        }
+    }
+
+    private func reconcileRotationLayoutIfNeeded() {
+        guard rotationReconciliationPending,
+              rotationReconciliationReady,
+              !isLayoutTransitioning
+        else { return }
+
+        let size = bounds.size
+        guard size.width > 1, size.height > 1 else { return }
+
+        rotationReconciliationPending = false
+        let needsContentReconciliation = needsContentReconciliationAfterTransition
+        needsContentReconciliationAfterTransition = false
+
+        // Normal playback continues while UIKit rotates the surface. Use the
+        // current media time for expiration, but leave each scrolling entry's
+        // captured CA trajectory intact. Reinstalling it against the final
+        // bounds is the discontinuity that the player-integrated canvas avoids.
+        let playbackTime = effectivePlaybackTime()
+        rotationPlaybackTime = nil
+        if shouldRenderDanmaku {
+            if needsContentReconciliation {
+                rebuildVisibleItems(at: playbackTime, animated: false)
+            } else {
+                // Anchored entries can adopt the final band immediately. The
+                // scrolling entries keep their existing presentation path.
+                updateActiveEntryFrames(at: playbackTime, updatesScrollingPositions: false)
+            }
+            resumeScrollingAnimations(at: playbackTime)
+        } else {
+            clearActiveLabels()
+        }
+        lastLayoutSize = size
     }
 
     private func rebuildVisibleItems(at playbackTime: TimeInterval, animated: Bool) {
-        isLayoutSettling = false
-        advanceAnimationGeneration()
         clearActiveLabels()
         guard shouldRenderDanmaku else { return }
         scrollingLaneStates.removeAll(keepingCapacity: true)
@@ -635,134 +1123,21 @@ final class DanmakuAnimationOverlayView: UIView {
             }
         }
 
+        let scale = window?.screen.scale ?? traitCollection.displayScale
+        visibleItems.forEach { enqueueImagePrewarm(for: $0, scale: scale) }
         for item in visibleItems {
-            spawn(item, at: playbackTime, animated: animated)
-        }
-        setNextSpawnPosition(after: playbackTime)
-    }
-
-    private func rebuildVisibleItemsAfterLayoutChange(
-        at playbackTime: TimeInterval,
-        animated: Bool
-    ) {
-        guard shouldRenderDanmaku else {
-            clearActiveLabels()
-            return
-        }
-        advanceAnimationGeneration()
-
-        let existingEntries = activeEntries.values
-        activeEntries.removeAll(keepingCapacity: true)
-        scrollingLaneStates.removeAll(keepingCapacity: true)
-
-        for entry in existingEntries {
-            entry.completion?.cancel()
-            guard entry.item.isSupported else {
-                recycle(entry.label)
-                continue
-            }
-
-            let duration = displayDuration(for: entry.item)
-            let age = playbackTime - entry.item.time
-            guard age >= 0 else {
-                recycle(entry.label)
-                continue
-            }
-            if !entry.item.isScrolling, age >= duration {
-                recycle(entry.label)
-                continue
-            }
-            if entry.item.isScrolling,
-               shouldRetire(entry: entry, label: entry.label, at: playbackTime) {
-                recycle(entry.label)
-                continue
-            }
-
-            let fontSize = fontSize(for: entry.item)
-            let font = UIFont.systemFont(ofSize: fontSize, weight: settings.fontWeight.uiFontWeight)
-            let textSize = measuredTextSize(for: entry.item, font: font)
-            let labelSize = CGSize(
-                width: min(max(textSize.width + 18, 44), bounds.width * 1.45),
-                height: max(textSize.height + 8, fontSize + 8)
-            )
-            configure(entry.label, for: entry.item, font: font, size: labelSize)
-
-            let band = displayBand()
-            let laneHeight = max(labelSize.height, fontSize + 10)
-            let laneCount = max(1, Int(max(1, band.height) / laneHeight))
-            let lane = entry.item.isScrolling
-                ? stableLane(for: entry.item.id, laneCount: laneCount)
-                : stableLane(for: entry.item.id, laneCount: laneCount)
-            let y = yPosition(for: entry.item, lane: lane, laneHeight: laneHeight, band: band, labelSize: labelSize)
-            entry.label.layer.removeAllAnimations()
-
-            if entry.item.isScrolling {
-                let travelDistance = scrollingTravelDistance(labelWidth: labelSize.width)
-                let progress = min(max(age / duration, 0), 1)
-                let timelineX = scrollingStartX(labelWidth: labelSize.width) - travelDistance * progress
-                let startX = min(max(timelineX, -labelSize.width / 2), bounds.width + labelSize.width / 2)
-                let endX = scrollingEndX(labelWidth: labelSize.width)
-                let trajectory = scrollingTrajectory(
-                    labelWidth: labelSize.width,
-                    startX: startX,
-                    endX: endX,
-                    duration: duration
-                )
-                entry.label.center = CGPoint(x: startX, y: y)
-                let animationDuration = animated
-                    ? remainingScrollAnimationDuration(
-                        fromX: startX,
-                        toX: endX
-                    )
-                    : 0
-                let entryAnimationGeneration = animationGeneration
-                let completion = animated ? DanmakuAnimationCompletionDelegate { [weak self, weak label = entry.label] finished in
-                    guard let self, let label else { return }
-                    self.completeActiveLabelAnimation(
-                        id: entry.id,
-                        label: label,
-                        animationGeneration: entryAnimationGeneration,
-                        didFinishNaturally: finished
-                    )
-                } : nil
-                activeEntries[entry.id] = ActiveEntry(
-                    id: entry.id,
-                    item: entry.item,
-                    label: entry.label,
-                    completion: completion,
-                    createdAt: entry.createdAt,
-                    animationGeneration: entryAnimationGeneration,
-                    scrollingTrajectory: trajectory
-                )
-                if animated {
-                    let animation = CABasicAnimation(keyPath: "position.x")
-                    animation.fromValue = startX
-                    animation.toValue = endX
-                    animation.duration = animationDuration
-                    animation.timingFunction = CAMediaTimingFunction(name: .linear)
-                    animation.isRemovedOnCompletion = false
-                    animation.fillMode = .forwards
-                    animation.delegate = completion
-                    entry.label.layer.add(animation, forKey: "danmaku.scroll")
-                }
-            } else {
-                entry.label.center = CGPoint(x: bounds.midX, y: y)
-                activeEntries[entry.id] = ActiveEntry(
-                    id: entry.id,
-                    item: entry.item,
-                    label: entry.label,
-                    completion: nil,
-                    createdAt: entry.createdAt,
-                    animationGeneration: animationGeneration,
-                    scrollingTrajectory: nil
-                )
+            switch spawn(item, at: playbackTime, animated: animated) {
+            case .waitingForImage:
+                enqueuePendingSpawn(item)
+            case .spawned, .skipped:
+                break
             }
         }
-
         setNextSpawnPosition(after: playbackTime)
     }
 
     private func spawnDueItems(at playbackTime: TimeInterval) {
+        prewarmUpcomingImages(at: playbackTime)
         skipExpiredItems(at: playbackTime)
         var spawnedCount = 0
         let spawnLimit = maxSpawnPerTick
@@ -779,11 +1154,24 @@ final class DanmakuAnimationOverlayView: UIView {
             let bucketItems = bucket.items
             while nextBucketItemIndex < bucketItems.count, spawnedCount < spawnLimit {
                 let item = bucketItems[nextBucketItemIndex]
-                nextBucketItemIndex += 1
                 let age = playbackTime - item.time
-                guard age >= -Self.timeBucketDuration, age < displayDuration(for: item) else { continue }
-                spawn(item, at: playbackTime, animated: true)
-                spawnedCount += 1
+                guard age >= -Self.timeBucketDuration, age < displayDuration(for: item) else {
+                    nextBucketItemIndex += 1
+                    continue
+                }
+                switch spawn(item, at: playbackTime, animated: true) {
+                case .spawned:
+                    nextBucketItemIndex += 1
+                    spawnedCount += 1
+                case .skipped:
+                    nextBucketItemIndex += 1
+                case .waitingForImage:
+                    // Keep the item at the head of the queue. The background
+                    // prewarm completion will make it eligible on the next
+                    // housekeeping pass without synchronously rasterizing on
+                    // the playback thread.
+                    return
+                }
             }
 
             if nextBucketItemIndex >= bucketItems.count {
@@ -813,27 +1201,35 @@ final class DanmakuAnimationOverlayView: UIView {
         }
     }
 
-    private func spawn(_ item: DanmakuItem, at playbackTime: TimeInterval, animated: Bool) {
-        guard item.isSupported, bounds.width > 20, bounds.height > 20 else { return }
-        guard canSpawnAdditionalItem else { return }
+    private func spawn(_ item: DanmakuItem, at playbackTime: TimeInterval, animated _: Bool) -> SpawnResult {
+        guard item.isSupported, bounds.width > 20, bounds.height > 20 else { return .skipped }
+        guard canSpawnAdditionalItem else { return .skipped }
 
         let fontSize = fontSize(for: item)
         let font = UIFont.systemFont(ofSize: fontSize, weight: settings.fontWeight.uiFontWeight)
-        let textSize = measuredTextSize(for: item, font: font)
-        let labelSize = CGSize(
-            width: min(max(textSize.width + 18, 44), bounds.width * 1.45),
-            height: max(textSize.height + 8, fontSize + 8)
-        )
-        let label = dequeueLabel()
-        configure(label, for: item, font: font, size: labelSize)
+        let labelSize = labelSize(for: item, font: font)
 
         let duration = displayDuration(for: item)
-        let age = min(max(0, playbackTime - item.time), duration)
-        let remainingPlaybackDuration = max(0.05, duration - age)
-        let animationDuration = animated ? remainingPlaybackDuration : 0
         let band = displayBand()
         let laneHeight = max(labelSize.height, fontSize + 10)
         let laneCount = max(1, Int(max(1, band.height) / laneHeight))
+        let id = item.id
+        guard activeEntries[id] == nil else { return .skipped }
+        guard let renderImage = renderImage(
+            for: item,
+            font: font,
+            size: labelSize,
+            // A mounted playing overlay must never rasterize on the main
+            // thread. Tests and initial, not-yet-mounted views still need an
+            // immediate image so their first layout is deterministic.
+            allowSynchronousRender: !isPlaying || window == nil
+        ) else {
+            return .waitingForImage
+        }
+
+        // Reserve a lane only after the image is ready. A pending image may
+        // be retried several times; reserving before that point would mutate
+        // lane state on every retry and make fast streams bunch or jump.
         let lane: Int
         if item.isScrolling {
             guard let selectedLane = laneIndex(
@@ -842,249 +1238,468 @@ final class DanmakuAnimationOverlayView: UIView {
                 labelWidth: labelSize.width,
                 at: item.time
             ) else {
-                recycle(label)
-                return
+                return .skipped
             }
             lane = selectedLane
         } else {
             lane = stableLane(for: item.id, laneCount: laneCount)
         }
         let y = yPosition(for: item, lane: lane, laneHeight: laneHeight, band: band, labelSize: labelSize)
-
-        addSubview(label)
-        let id = item.id
-        let entryAnimationGeneration = animationGeneration
-        let completion = animated ? DanmakuAnimationCompletionDelegate { [weak self, weak label] finished in
-            guard let self, let label else { return }
-            self.completeActiveLabelAnimation(
-                id: id,
-                label: label,
-                animationGeneration: entryAnimationGeneration,
-                didFinishNaturally: finished
+        let normalizedLane = normalizedLanePosition(for: y, band: band, labelSize: labelSize)
+        let spriteLayer = dequeueSpriteLayer()
+        spriteLayer.contents = renderImage.image
+        spriteLayer.contentsScale = renderImage.scale
+        spriteLayer.bounds = CGRect(origin: .zero, size: labelSize)
+        spriteLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        spriteLayer.opacity = 0
+        layer.addSublayer(spriteLayer)
+        let scrollingTrajectory = item.isScrolling
+            ? ScrollingTrajectory(
+                referenceTime: item.time,
+                duration: duration,
+                startX: scrollingStartX(
+                    containerWidth: band.width,
+                    labelWidth: labelSize.width
+                ),
+                endX: scrollingEndX(
+                    containerWidth: band.width,
+                    labelWidth: labelSize.width
+                )
             )
-        } : nil
+            : nil
         activeEntries[id] = ActiveEntry(
             id: id,
             item: item,
-            label: label,
-            completion: completion,
-            createdAt: CACurrentMediaTime(),
-            animationGeneration: entryAnimationGeneration,
-            scrollingTrajectory: item.isScrolling
-                ? scrollingTrajectory(
-                    labelWidth: labelSize.width,
-                    startX: scrollingStartX(labelWidth: labelSize.width)
-                        - scrollingTravelDistance(labelWidth: labelSize.width)
-                        * min(max(age / duration, 0), 1),
-                    endX: scrollingEndX(labelWidth: labelSize.width),
-                    duration: duration
-                )
-                : nil
+            duration: duration,
+            normalizedLane: normalizedLane,
+            labelSize: labelSize,
+            fontSize: fontSize,
+            spriteLayer: spriteLayer,
+            scrollingTrajectory: scrollingTrajectory
         )
+        renderPlaybackTime = playbackTime
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let entry = activeEntries[id] {
+            spriteLayer.position = position(for: entry, at: playbackTime, band: band)
+            spriteLayer.opacity = entryOpacity(
+                item: item,
+                age: playbackTime - item.time,
+                duration: duration
+            )
+        }
+        CATransaction.commit()
 
-        if item.isScrolling {
-            let travelDistance = scrollingTravelDistance(labelWidth: labelSize.width)
-            let progress = min(max(age / duration, 0), 1)
-            let startX = scrollingStartX(labelWidth: labelSize.width) - travelDistance * progress
-            let endX = scrollingEndX(labelWidth: labelSize.width)
-            label.center = CGPoint(x: startX, y: y)
-            if animated {
-                let animation = CABasicAnimation(keyPath: "position.x")
-                animation.fromValue = startX
-                animation.toValue = endX
-                animation.duration = remainingScrollAnimationDuration(
-                    fromX: startX,
-                    toX: endX
+        if let entry = activeEntries[id], entry.item.isScrolling {
+            installScrollingAnimation(for: entry, at: playbackTime)
+        }
+        return .spawned
+    }
+
+    /// Rasterize each entry once when it enters the active set. The display
+    /// link then only composites cached glyph images, which keeps text layout
+    /// and shadow generation off the 60 Hz path while preserving one shared
+    /// render surface and a media-time-driven position.
+    private func renderImage(
+        for item: DanmakuItem,
+        font: UIFont,
+        size: CGSize,
+        allowSynchronousRender: Bool
+    ) -> CachedRenderImage? {
+        let scale = window?.screen.scale ?? traitCollection.displayScale
+        let request = renderImageRequest(for: item, font: font, size: size, scale: scale)
+        let key = request.key
+        if let cached = renderImageCache[key] {
+            return cached
+        }
+
+        guard allowSynchronousRender else { return nil }
+
+        let image = RenderImageFactory.make(request)
+        guard let cgImage = image.cgImage else { return nil }
+        insertCachedRenderImage(
+            CachedRenderImage(image: cgImage, scale: image.scale),
+            for: key
+        )
+        trimRenderImageCacheIfNeeded()
+        return renderImageCache[key]
+    }
+
+    private func labelSize(for item: DanmakuItem, font: UIFont) -> CGSize {
+        let textSize = measuredTextSize(for: item, font: font)
+        return CGSize(
+            width: min(max(textSize.width + 18, 44), bounds.width * 1.45),
+            height: max(textSize.height + 8, font.pointSize + 8)
+        )
+    }
+
+    private func renderImageRequest(
+        for item: DanmakuItem,
+        font: UIFont,
+        size: CGSize,
+        scale: CGFloat
+    ) -> RenderImageRequest {
+        RenderImageRequest(
+            key: RenderImageKey(
+                text: item.text,
+                fontSizeTenths: Int((font.pointSize * 10).rounded()),
+                fontWeight: settings.fontWeight,
+                color: item.color,
+                opacityThousandths: Int((settings.opacity * 1_000).rounded()),
+                widthPixels: Int((size.width * scale).rounded()),
+                heightPixels: Int((size.height * scale).rounded()),
+                scaleTenths: Int((scale * 10).rounded())
+            ),
+            text: item.text,
+            fontSize: font.pointSize,
+            fontWeight: settings.fontWeight,
+            color: item.color,
+            opacity: settings.opacity,
+            size: size,
+            scale: scale
+        )
+    }
+
+    /// Rasterize a small look-ahead window off the main thread. The layer
+    /// itself is still created on the main thread, but the expensive glyph
+    /// drawing and shadow generation is completed before the item becomes
+    /// due. Playing items wait for this cache instead of rasterizing on the
+    /// playback thread.
+    private func prewarmUpcomingImages(at playbackTime: TimeInterval) {
+        guard shouldRenderDanmaku, isPlaying, window != nil, bounds.width > 20, bounds.height > 20 else { return }
+        let lookahead: TimeInterval = isLoadShedding ? 0.55 : 0.8
+        guard let nextSpawnTime = nextScheduledSpawnTime,
+              nextSpawnTime - playbackTime <= lookahead
+        else { return }
+
+        let prewarmBucket = Int((max(0, playbackTime) / 0.25).rounded(.down))
+        guard lastPrewarmTimeBucket != prewarmBucket else { return }
+        lastPrewarmTimeBucket = prewarmBucket
+        let startIndex = firstItemIndex(atOrAfter: max(0, playbackTime))
+        let lookaheadEndIndex = firstItemIndex(atOrAfter: playbackTime + lookahead)
+        let maxItems = min(8, max(1, maxSpawnPerTick * 2))
+        let endIndex = min(items.count, min(lookaheadEndIndex, startIndex + maxItems))
+        guard startIndex < endIndex else { return }
+
+        let scale = window?.screen.scale ?? traitCollection.displayScale
+        for item in items[startIndex..<endIndex] {
+            enqueueImagePrewarm(for: item, scale: scale)
+        }
+    }
+
+    private func enqueueImagePrewarm(for item: DanmakuItem, scale: CGFloat) {
+        guard item.isSupported, isPlaying, window != nil else { return }
+        let fontSize = fontSize(for: item)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: settings.fontWeight.uiFontWeight)
+        let size = labelSize(for: item, font: font)
+        let request = renderImageRequest(for: item, font: font, size: size, scale: scale)
+        let key = request.key
+        guard pendingRenderImageKeys.count < 12 else { return }
+        guard renderImageCache[key] == nil,
+              pendingRenderImageKeys.insert(key).inserted
+        else { return }
+
+        let token = PrewarmCancellationToken()
+        prewarmTokens[key] = token
+        renderImagePrewarmQueue.async { [weak self, token] in
+            guard !token.isCancelled else { return }
+            let image = RenderImageFactory.make(request)
+            guard !token.isCancelled else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard self.prewarmTokens[key] === token else { return }
+                self.prewarmTokens[key] = nil
+                self.pendingRenderImageKeys.remove(key)
+                guard !token.isCancelled,
+                      self.window != nil,
+                      self.shouldRenderDanmaku,
+                      self.renderImageCache[key] == nil
+                else { return }
+                guard let cgImage = image.cgImage else { return }
+                self.insertCachedRenderImage(
+                    CachedRenderImage(image: cgImage, scale: image.scale),
+                    for: key
                 )
-                animation.timingFunction = CAMediaTimingFunction(name: .linear)
-                animation.isRemovedOnCompletion = false
-                animation.fillMode = .forwards
-                animation.delegate = completion
-                label.layer.add(animation, forKey: "danmaku.scroll")
+                self.trimRenderImageCacheIfNeeded()
+                self.schedulePendingSpawnRetry()
             }
+        }
+    }
+
+    private func cancelPendingPrewarm() {
+        prewarmTokens.values.forEach { $0.cancel() }
+        prewarmTokens.removeAll(keepingCapacity: true)
+        pendingRenderImageKeys.removeAll(keepingCapacity: true)
+        lastPrewarmTimeBucket = nil
+    }
+
+    private func schedulePendingSpawnRetry() {
+        guard isPlaying, !pendingSpawnRetryScheduled else { return }
+        pendingSpawnRetryScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingSpawnRetryScheduled = false
+            guard self.isPlaying, self.window != nil, self.shouldRenderDanmaku else { return }
+            self.retryPendingSpawns(at: self.effectivePlaybackTime())
+            self.updateDisplayLinkState()
+        }
+    }
+
+    private func enqueuePendingSpawn(_ item: DanmakuItem) {
+        guard pendingSpawnIDs.insert(item.id).inserted else { return }
+        let pendingLimit = max(8, maxActiveCount * 2)
+        if pendingSpawnItems.count >= pendingLimit,
+           let droppedItem = pendingSpawnItems.first {
+            pendingSpawnItems.removeFirst()
+            pendingSpawnIDs.remove(droppedItem.id)
+        }
+        pendingSpawnItems.append(item)
+    }
+
+    private func retryPendingSpawns(at playbackTime: TimeInterval) {
+        guard !pendingSpawnItems.isEmpty, shouldRenderDanmaku else { return }
+
+        var remainingItems: [DanmakuItem] = []
+        remainingItems.reserveCapacity(pendingSpawnItems.count)
+        for item in pendingSpawnItems {
+            let age = playbackTime - item.time
+            guard age >= -Self.timeBucketDuration,
+                  age < displayDuration(for: item)
+            else {
+                pendingSpawnIDs.remove(item.id)
+                continue
+            }
+
+            switch spawn(item, at: playbackTime, animated: isPlaying) {
+            case .waitingForImage:
+                remainingItems.append(item)
+            case .spawned, .skipped:
+                pendingSpawnIDs.remove(item.id)
+            }
+        }
+        pendingSpawnItems = remainingItems
+    }
+
+    private func trimRenderImageCacheIfNeeded() {
+        while renderImageCacheCost > Self.renderImageCachePixelBudget,
+              let oldestKey = renderImageCacheOrder.first {
+            renderImageCacheOrder.removeFirst()
+            if let removed = renderImageCache.removeValue(forKey: oldestKey) {
+                renderImageCacheCost = max(0, renderImageCacheCost - removed.pixelCost)
+            }
+        }
+    }
+
+    private func insertCachedRenderImage(_ image: CachedRenderImage, for key: RenderImageKey) {
+        if let previous = renderImageCache.updateValue(image, forKey: key) {
+            renderImageCacheCost = max(0, renderImageCacheCost - previous.pixelCost)
         } else {
-            label.center = CGPoint(x: bounds.midX, y: y)
-            if animated {
-                let animation = CAKeyframeAnimation(keyPath: "opacity")
-                animation.values = [0, 1, 1, 0]
-                animation.keyTimes = [0, 0.06, 0.92, 1]
-                animation.duration = animationDuration
-                animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                animation.isRemovedOnCompletion = true
-                animation.delegate = completion
-                label.layer.opacity = 0
-                label.layer.add(animation, forKey: "danmaku.opacity")
+            renderImageCacheOrder.append(key)
+        }
+        renderImageCacheCost += image.pixelCost
+    }
+
+    private func updateActiveEntryFrames(
+        at playbackTime: TimeInterval,
+        updatesScrollingPositions: Bool = false
+    ) {
+        renderPlaybackTime = playbackTime
+        guard !activeEntries.isEmpty else {
+            return
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        var retiredIDs: [String] = []
+        retiredIDs.reserveCapacity(2)
+        let band = displayBand()
+        for entry in activeEntries.values {
+            if shouldRetire(entry: entry, at: playbackTime) {
+                retiredIDs.append(entry.id)
+                continue
+            }
+
+            let age = playbackTime - entry.item.time
+            guard age >= 0, age < entry.duration else {
+                entry.spriteLayer.opacity = 0
+                continue
+            }
+            // Scrolling entries are already moved by Core Animation. During a
+            // normal playback maintenance tick, only their lifetime/opacity
+            // is checked; resolving their geometry or querying animation state
+            // here would put needless work back on the main thread. A layout
+            // or seek explicitly opts into one geometry reconciliation pass.
+            // A scrolling entry is normally owned by its CA animation. Changing
+            // the model position while that animation is attached rebases the
+            // layer and produces a visible hop, especially during rotation.
+            // Only reconcile it when it is already paused/detached.
+            if !entry.item.isScrolling
+                || (updatesScrollingPositions
+                    && entry.spriteLayer.animation(forKey: Self.scrollingAnimationKey) == nil) {
+                let nextPosition = position(for: entry, at: playbackTime, band: band)
+                if entry.spriteLayer.position != nextPosition {
+                    entry.spriteLayer.position = nextPosition
+                }
+            }
+            if entry.item.isScrolling {
+                if entry.spriteLayer.opacity != 1 {
+                    entry.spriteLayer.opacity = 1
+                }
+            } else {
+                let nextOpacity = entryOpacity(
+                    item: entry.item,
+                    age: age,
+                    duration: entry.duration
+                )
+                if abs(entry.spriteLayer.opacity - nextOpacity) > 0.001 {
+                    entry.spriteLayer.opacity = nextOpacity
+                }
             }
         }
-    }
-
-    private func configure(_ label: UILabel, for item: DanmakuItem, font: UIFont, size: CGSize) {
-        label.text = item.text
-        label.font = font
-        label.textAlignment = .center
-        label.numberOfLines = 1
-        label.lineBreakMode = .byClipping
-        label.textColor = UIColor.danmakuRGB(item.color).withAlphaComponent(settings.opacity)
-        label.alpha = 1
-        label.layer.opacity = 1
-        label.frame = CGRect(origin: .zero, size: size)
-        label.layer.shadowColor = UIColor.black.cgColor
-        label.layer.shadowOpacity = 0.92
-        label.layer.shadowRadius = 1.4
-        label.layer.shadowOffset = CGSize(width: 0, height: 1)
-        label.layer.shouldRasterize = true
-        label.layer.rasterizationScale = window?.screen.scale ?? traitCollection.displayScale
-        label.layer.allowsEdgeAntialiasing = true
-    }
-
-    private func dequeueLabel() -> UILabel {
-        if let label = reusableLabels.popLast() {
-            label.layer.removeAllAnimations()
-            return label
+        for id in retiredIDs {
+            if let spriteLayer = activeEntries[id]?.spriteLayer {
+                recycleSpriteLayer(spriteLayer)
+            }
+            activeEntries[id] = nil
         }
-        let label = UILabel()
-        label.backgroundColor = .clear
-        label.isOpaque = false
-        return label
     }
 
-    private func recycle(_ label: UILabel) {
-        label.text = nil
-        label.layer.removeAllAnimations()
-        label.removeFromSuperview()
-        guard reusableLabels.count < 72 else { return }
-        reusableLabels.append(label)
+    private func position(
+        for entry: ActiveEntry,
+        at playbackTime: TimeInterval,
+        band: CGRect
+    ) -> CGPoint {
+        let y = yPosition(
+            for: entry.normalizedLane,
+            band: band,
+            labelSize: entry.labelSize
+        )
+        guard entry.item.isScrolling else {
+            return CGPoint(x: activeGeometryBounds.midX, y: y)
+        }
+        let trajectory = entry.scrollingTrajectory ?? ScrollingTrajectory(
+            referenceTime: entry.item.time,
+            duration: entry.duration,
+            startX: scrollingStartX(
+                containerWidth: band.width,
+                labelWidth: entry.labelSize.width
+            ),
+            endX: scrollingEndX(
+                containerWidth: band.width,
+                labelWidth: entry.labelSize.width
+            )
+        )
+        let progress = trajectory.progress(at: playbackTime)
+        let x = trajectory.startX + (trajectory.endX - trajectory.startX) * progress
+        return CGPoint(x: x, y: y)
+    }
+
+    private func entryOpacity(
+        item: DanmakuItem,
+        age: TimeInterval,
+        duration: TimeInterval
+    ) -> Float {
+        guard !item.isScrolling else {
+            return 1
+        }
+        let progress = min(max(age / max(duration, 0.01), 0), 1)
+        let opacity: Float
+        if progress < 0.06 {
+            opacity = Float(progress / 0.06)
+        } else if progress > 0.92 {
+            opacity = Float((1 - progress) / 0.08)
+        } else {
+            opacity = 1
+        }
+        return max(0, min(1, opacity))
     }
 
     private func clearActiveLabels() {
-        let entries = activeEntries.values
+        for entry in activeEntries.values {
+            recycleSpriteLayer(entry.spriteLayer)
+        }
         activeEntries.removeAll(keepingCapacity: true)
-        for entry in entries {
-            entry.completion?.cancel()
-            entry.label.layer.removeAllAnimations()
-            recycle(entry.label)
-        }
+        pendingSpawnItems.removeAll(keepingCapacity: true)
+        pendingSpawnIDs.removeAll(keepingCapacity: true)
     }
 
-    private func removeActiveLabel(id: String, label: UILabel, shouldRecycle: Bool) {
-        guard let entry = activeEntries[id], entry.label === label else { return }
-        entry.completion?.cancel()
-        activeEntries[id] = nil
-        label.layer.removeAllAnimations()
-        if shouldRecycle {
-            recycle(label)
-        } else {
-            label.removeFromSuperview()
-        }
+    private func dequeueSpriteLayer() -> CALayer {
+        let spriteLayer = recycledSpriteLayers.popLast() ?? CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        spriteLayer.removeAllAnimations()
+        spriteLayer.removeFromSuperlayer()
+        spriteLayer.contents = nil
+        spriteLayer.opacity = 0
+        CATransaction.commit()
+        return spriteLayer
     }
 
-    private func completeActiveLabelAnimation(
-        id: String,
-        label: UILabel,
-        animationGeneration: Int,
-        didFinishNaturally: Bool
-    ) {
-        guard let entry = activeEntries[id], entry.label === label else { return }
-        guard entry.animationGeneration == animationGeneration,
-              self.animationGeneration == animationGeneration
-        else { return }
-        if entry.item.isScrolling, isLayoutSettling {
-            return
-        }
-        if entry.item.isScrolling, !didFinishNaturally {
-            return
-        }
-        let playbackTime = effectivePlaybackTime()
-        if shouldRetire(
-            entry: entry,
-            label: label,
-            at: playbackTime,
-            allowsTimelineFallback: didFinishNaturally
-        ) {
-            removeActiveLabel(id: id, label: label, shouldRecycle: true)
-            return
-        }
-
-        guard entry.item.isScrolling, shouldRenderDanmaku else { return }
-        rebuildVisibleItemsAfterLayoutChange(at: playbackTime, animated: isPlaying)
-    }
-
-    private func advanceAnimationGeneration() {
-        animationGeneration &+= 1
-    }
-
-    private func retireExpiredActiveEntries(at playbackTime: TimeInterval) {
-        guard !activeEntries.isEmpty else { return }
-        for entry in Array(activeEntries.values)
-        where shouldRetire(entry: entry, label: entry.label, at: playbackTime) {
-            removeActiveLabel(id: entry.id, label: entry.label, shouldRecycle: true)
-        }
+    private func recycleSpriteLayer(_ spriteLayer: CALayer) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        spriteLayer.removeAllAnimations()
+        spriteLayer.removeFromSuperlayer()
+        spriteLayer.contents = nil
+        spriteLayer.opacity = 0
+        CATransaction.commit()
+        guard recycledSpriteLayers.count < 64 else { return }
+        recycledSpriteLayers.append(spriteLayer)
     }
 
     private func shouldRetire(
         entry: ActiveEntry,
-        label: UILabel,
-        at playbackTime: TimeInterval,
-        allowsTimelineFallback: Bool = false
+        at playbackTime: TimeInterval
     ) -> Bool {
-        let duration = entry.scrollingTrajectory?.displayDuration ?? displayDuration(for: entry.item)
+        let duration = entry.duration
         let age = playbackTime - entry.item.time
         guard age >= 0 else { return false }
-        guard entry.item.isScrolling else { return age >= duration - 0.04 }
-        guard !isLayoutSettling else {
-            return allowsTimelineFallback && age >= duration + 0.35
-        }
-
-        let currentX = label.layer.presentation()?.position.x ?? label.center.x
-        let endX = entry.scrollingTrajectory?.endX ?? scrollingEndX(labelWidth: label.bounds.width)
-        if currentX <= endX + 1 {
+        if age >= duration - (entry.item.isScrolling ? 0 : 0.04) {
             return true
         }
-
-        return allowsTimelineFallback && age >= duration + 0.18
+        return false
     }
 
-    private func scrollingStartX(labelWidth: CGFloat) -> CGFloat {
-        bounds.width + labelWidth / 2
+    private func scrollingStartX(
+        containerWidth: CGFloat,
+        labelWidth: CGFloat
+    ) -> CGFloat {
+        containerWidth + labelWidth / 2
     }
 
-    private func scrollingEndX(labelWidth: CGFloat) -> CGFloat {
-        -labelWidth / 2 - scrollingRetirementOverscan
+    private func scrollingEndX(
+        containerWidth: CGFloat,
+        labelWidth: CGFloat
+    ) -> CGFloat {
+        -labelWidth / 2 - scrollingRetirementOverscan(for: containerWidth)
     }
 
     private func scrollingTravelDistance(labelWidth: CGFloat) -> CGFloat {
-        max(scrollingStartX(labelWidth: labelWidth) - scrollingEndX(labelWidth: labelWidth), 1)
-    }
-
-    private func scrollingTrajectory(
-        labelWidth: CGFloat,
-        startX: CGFloat,
-        endX: CGFloat,
-        duration: TimeInterval
-    ) -> ScrollingTrajectory {
-        ScrollingTrajectory(
-            labelWidth: labelWidth,
-            surfaceWidth: bounds.width,
-            startX: startX,
-            endX: endX,
-            displayDuration: duration
+        max(
+            scrollingStartX(
+                containerWidth: activeGeometryBounds.width,
+                labelWidth: labelWidth
+            )
+                - scrollingEndX(
+                    containerWidth: activeGeometryBounds.width,
+                    labelWidth: labelWidth
+                ),
+            1
         )
     }
 
-    private func remainingScrollAnimationDuration(
-        fromX startX: CGFloat,
-        toX endX: CGFloat
-    ) -> TimeInterval {
-        let remainingDistance = max(startX - endX, 1)
-        return max(0.05, TimeInterval(remainingDistance / scrollingPixelsPerSecond))
-    }
-
-    private var scrollingRetirementOverscan: CGFloat {
-        min(max(bounds.width * 0.035, 8), 28)
+    private func scrollingRetirementOverscan(for containerWidth: CGFloat) -> CGFloat {
+        min(max(containerWidth * 0.035, 8), 28)
     }
 
     private var canSpawnAdditionalItem: Bool {
         activeEntries.count < maxActiveCount
+    }
+
+    private var activeGeometryBounds: CGRect {
+        bounds
     }
 
     private func measuredTextSize(for item: DanmakuItem, font: UIFont) -> CGSize {
@@ -1114,8 +1729,9 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private func displayBand() -> CGRect {
+        let geometry = activeGeometryBounds
         let usableMinY = max(0, topInset)
-        let usableMaxY = max(usableMinY + 1, bounds.height - max(0, bottomInset))
+        let usableMaxY = max(usableMinY + 1, geometry.height - max(0, bottomInset))
         let usableHeight = max(1, usableMaxY - usableMinY)
         let fraction: CGFloat
         switch settings.displayArea {
@@ -1130,27 +1746,52 @@ final class DanmakuAnimationOverlayView: UIView {
         case .full:
             fraction = 1
         }
-        let targetHeight = bounds.height * fraction
+        let targetHeight = geometry.height * fraction
         let minimumHeight = minimumDisplayBandHeight(for: fraction, usableHeight: usableHeight)
         let height = min(usableHeight, max(targetHeight, minimumHeight))
-        return CGRect(x: 0, y: usableMinY, width: bounds.width, height: height)
+        return CGRect(x: 0, y: usableMinY, width: geometry.width, height: height)
     }
 
     private func minimumDisplayBandHeight(for fraction: CGFloat, usableHeight: CGFloat) -> CGFloat {
         guard fraction < 1 else { return usableHeight }
-        let compactScale = bounds.width > 640 ? 0.86 : 0.70
+        let geometry = activeGeometryBounds
+        let compactScale: CGFloat = 0.70
         let representativeFontSize = min(
-            max(25 * compactScale * CGFloat(settings.fontScale), bounds.width > 640 ? 13.5 : 11.7),
-            (bounds.width > 640 ? 24 : 18) * 1.35
+            max(25 * compactScale * CGFloat(settings.fontScale), 11.7),
+            18 * 1.35
         )
         let laneHeight = representativeFontSize + 10
         let preferredLaneCount: CGFloat
-        if bounds.height < 220 {
+        if geometry.height < 220 {
             preferredLaneCount = fraction <= 0.25 ? 3 : 4
         } else {
             preferredLaneCount = fraction <= 0.25 ? 4 : 5
         }
         return min(usableHeight, laneHeight * preferredLaneCount)
+    }
+
+    private func normalizedLanePosition(
+        for y: CGFloat,
+        band: CGRect,
+        labelSize: CGSize
+    ) -> CGFloat {
+        let minimumY = band.minY + labelSize.height / 2
+        let maximumY = band.maxY - labelSize.height / 2
+        guard maximumY > minimumY else { return 0.5 }
+        return min(max((y - minimumY) / (maximumY - minimumY), 0), 1)
+    }
+
+    private func yPosition(
+        for normalizedLane: CGFloat,
+        band: CGRect,
+        labelSize: CGSize
+    ) -> CGFloat {
+        let minimumY = band.minY + labelSize.height / 2
+        let maximumY = band.maxY - labelSize.height / 2
+        guard maximumY > minimumY else { return band.midY }
+        let y = minimumY + min(max(normalizedLane, 0), 1) * (maximumY - minimumY)
+        let geometry = activeGeometryBounds
+        return min(max(y, labelSize.height / 2), geometry.height - labelSize.height / 2)
     }
 
     private func yPosition(
@@ -1164,16 +1805,19 @@ final class DanmakuAnimationOverlayView: UIView {
             let anchoredLaneCount = min(3, max(1, Int(max(1, band.height) / laneHeight)))
             let anchoredLane = stableLane(for: item.id, laneCount: anchoredLaneCount)
             let y = band.maxY - laneHeight * (CGFloat(anchoredLane) + 0.5)
-            return min(max(y, labelSize.height / 2), bounds.height - labelSize.height / 2)
+            let geometry = activeGeometryBounds
+            return min(max(y, labelSize.height / 2), geometry.height - labelSize.height / 2)
         }
         if item.isTopAnchored {
             let anchoredLaneCount = min(3, max(1, Int(max(1, band.height) / laneHeight)))
             let anchoredLane = stableLane(for: item.id, laneCount: anchoredLaneCount)
             let y = band.minY + laneHeight * (CGFloat(anchoredLane) + 0.5)
-            return min(max(y, labelSize.height / 2), bounds.height - labelSize.height / 2)
+            let geometry = activeGeometryBounds
+            return min(max(y, labelSize.height / 2), geometry.height - labelSize.height / 2)
         }
         let y = band.minY + laneHeight * (CGFloat(lane) + 0.5)
-        return min(max(y, labelSize.height / 2), bounds.height - labelSize.height / 2)
+        let geometry = activeGeometryBounds
+        return min(max(y, labelSize.height / 2), geometry.height - labelSize.height / 2)
     }
 
     private func laneIndex(
@@ -1211,14 +1855,15 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private func laneEntranceDelay(for labelWidth: CGFloat) -> TimeInterval {
-        let gap = bounds.width > 640 ? 40.0 : 30.0
-        let travelDistance = max(bounds.width + labelWidth, 1)
-        let protectedWidth = min(labelWidth + gap, bounds.width * 0.72)
+        let width = activeGeometryBounds.width
+        let gap = width > 640 ? 40.0 : 30.0
+        let travelDistance = max(width + labelWidth, 1)
+        let protectedWidth = min(labelWidth + gap, width * 0.72)
         return scrollDuration * TimeInterval(protectedWidth / travelDistance)
     }
 
     private var maxLaneOverlapTolerance: TimeInterval {
-        bounds.width > 640 ? 0.16 : 0.10
+        activeGeometryBounds.width > 640 ? 0.16 : 0.10
     }
 
     private func displayDuration(for item: DanmakuItem) -> TimeInterval {
@@ -1230,70 +1875,51 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private var scrollDuration: TimeInterval {
-        bounds.width > 640 ? 8.4 : 7.2
-    }
-
-    private var scrollingPixelsPerSecond: CGFloat {
-        let representativeLabelWidth = min(max(bounds.width * 0.36, 160), bounds.width * 0.85)
-        return scrollingTravelDistance(labelWidth: representativeLabelWidth) / max(scrollDuration, 0.1)
+        // Keep the timeline independent of the surface width. Changing this
+        // value at the 640pt portrait/landscape threshold would make every
+        // active scrolling entry jump when the video rotates.
+        7.2
     }
 
     private var maxActiveCount: Int {
-        let baseCount = bounds.width > 640 ? 44 : 24
+        let baseCount = activeGeometryBounds.width > 640 ? 44 : 24
         return max(isLoadShedding ? 5 : 8, Int(Double(baseCount) * adaptiveDanmakuLoadFactor))
     }
 
     private var maxSpawnPerTick: Int {
-        let baseCount = bounds.width > 640 ? 6 : 4
+        if isLayoutTransitioning || rotationReconciliationPending {
+            // Keep text rasterization incremental while UIKit is committing
+            // geometry. This prevents a completion-frame burst when several
+            // bucketed items became due during the transition.
+            return 1
+        }
+        let baseCount = activeGeometryBounds.width > 640 ? 6 : 4
         return max(1, Int(Double(baseCount) * adaptiveDanmakuLoadFactor))
     }
 
     private var adaptiveDanmakuLoadFactor: Double {
-        let environment = PlaybackEnvironment.current
+        let environment = currentPlaybackEnvironment
         let loadSheddingFactor = isLoadShedding ? 0.46 : 1.0
-        let rateFactor: Double
-        if playbackRate >= 1.75 {
-            rateFactor = 0.58
-        } else if playbackRate > 1.15 {
-            rateFactor = 0.72
-        } else {
-            rateFactor = 1.0
-        }
         if environment.isThermallyConstrained || environment.isLowPowerModeEnabled {
-            return min(settings.loadFactor, 0.50) * loadSheddingFactor * rateFactor
+            return min(settings.loadFactor, 0.50) * loadSheddingFactor
         }
         if environment.isThermallyElevated {
-            return min(settings.loadFactor, 0.66) * loadSheddingFactor * rateFactor
+            return min(settings.loadFactor, 0.66) * loadSheddingFactor
         }
         if environment.shouldPreferConservativePlayback {
-            return min(settings.loadFactor, 0.72) * loadSheddingFactor * rateFactor
+            return min(settings.loadFactor, 0.72) * loadSheddingFactor
         }
-        return settings.loadFactor * loadSheddingFactor * rateFactor
+        return settings.loadFactor * loadSheddingFactor
     }
-
-    private var preferredFrameRateRange: CAFrameRateRange {
-        let environment = PlaybackEnvironment.current
-        if isLoadShedding || playbackRate >= 1.75 || environment.isThermallyConstrained {
-            return CAFrameRateRange(minimum: 10, maximum: 18, preferred: 14)
-        }
-        if playbackRate > 1.15 || environment.isThermallyElevated || environment.isLowPowerModeEnabled {
-            return CAFrameRateRange(minimum: 10, maximum: 20, preferred: 16)
-        }
-        return CAFrameRateRange(minimum: 12, maximum: 24, preferred: 20)
-    }
-
-    private static let layoutSettlingRebuildDelays: [UInt64] = [
-        0,
-        120_000_000,
-        280_000_000
-    ]
 
     private static let timeBucketDuration: TimeInterval = 0.1
 
     private func fontSize(for item: DanmakuItem) -> CGFloat {
-        let compactScale = bounds.width > 640 ? 0.86 : 0.70
-        let maximumSize: CGFloat = bounds.width > 640 ? 24 : 18
-        let minimumSize: CGFloat = bounds.width > 640 ? 15 : 13
+        // Keep the text metrics in media space. Rotation changes the available
+        // track geometry, not the physical size of an already-rendered glyph.
+        let compactScale: CGFloat = 0.70
+        let maximumSize: CGFloat = 18
+        let minimumSize: CGFloat = 13
         let scaledSize = CGFloat(item.fontSize) * compactScale * CGFloat(settings.fontScale)
         return min(max(scaledSize, minimumSize * 0.9), maximumSize * 1.35)
     }
@@ -1348,17 +1974,36 @@ final class DanmakuAnimationOverlayView: UIView {
     }
 
     private func isBucketTooStale(_ bucketIndex: Int, at playbackTime: TimeInterval) -> Bool {
-        playbackTime - bucketEndTime(for: bucketIndex) > maximumBucketSpawnDelay
+        guard isLoadShedding || currentPlaybackEnvironment.isThermallyElevated else {
+            // Normal and high-rate playback keep the bucket debt. Individual
+            // expired items are removed by skipExpiredItems, but a late main
+            // thread callback must not discard a whole time bucket.
+            return false
+        }
+        return playbackTime - bucketEndTime(for: bucketIndex) > maximumBucketSpawnDelay
     }
 
     private var maximumBucketSpawnDelay: TimeInterval {
         if isLoadShedding {
             return 0.22
         }
-        if playbackRate > 1.15 || PlaybackEnvironment.current.isThermallyElevated {
+        if currentPlaybackEnvironment.isThermallyElevated {
             return 0.32
         }
         return 0.48
+    }
+
+    private var currentPlaybackEnvironment: PlaybackEnvironment {
+        let now = CACurrentMediaTime()
+        if now - environmentSnapshotHostTime >= Self.environmentRefreshInterval {
+            environmentSnapshot = PlaybackEnvironment.current
+            environmentSnapshotHostTime = now
+        }
+        return environmentSnapshot
+    }
+
+    private func refreshEnvironmentSnapshotIfNeeded() {
+        _ = currentPlaybackEnvironment
     }
 
     private func timeBucketIndex(for time: TimeInterval) -> Int {
@@ -1422,26 +2067,8 @@ final class DanmakuAnimationOverlayView: UIView {
 
 }
 
-private final class DanmakuAnimationCompletionDelegate: NSObject, CAAnimationDelegate {
-    private let completion: (Bool) -> Void
-    private var isCancelled = false
-
-    init(completion: @escaping (Bool) -> Void) {
-        self.completion = completion
-    }
-
-    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
-        guard !isCancelled else { return }
-        completion(flag)
-    }
-
-    func cancel() {
-        isCancelled = true
-    }
-}
-
 private extension UIColor {
-    static func danmakuRGB(_ rgb: UInt32) -> UIColor {
+    nonisolated static func danmakuRGB(_ rgb: UInt32) -> UIColor {
         let red = CGFloat((rgb >> 16) & 0xFF) / 255
         let green = CGFloat((rgb >> 8) & 0xFF) / 255
         let blue = CGFloat(rgb & 0xFF) / 255
@@ -1450,7 +2077,7 @@ private extension UIColor {
 }
 
 private extension DanmakuFontWeightOption {
-    var uiFontWeight: UIFont.Weight {
+    nonisolated var uiFontWeight: UIFont.Weight {
         switch self {
         case .light:
             return .light

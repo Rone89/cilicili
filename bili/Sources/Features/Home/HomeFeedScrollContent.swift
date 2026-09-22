@@ -26,7 +26,9 @@ struct HomeFeedScrollContent<FeedContent: View>: View {
     private var feedStateContent: some View {
         VStack(spacing: 6) {
             if isShowingInitialPlaceholder {
-                feedContent()
+                DelayedLoadingContent {
+                    feedContent()
+                }
             } else if isEmpty {
                 EmptyStateView(
                     title: "暂无内容",

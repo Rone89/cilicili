@@ -47,7 +47,9 @@ private struct LiveFeedContent: View {
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.rooms.isEmpty && viewModel.state.isLoading {
-                LiveFeedLoadingState()
+                DelayedLoadingContent {
+                    LiveFeedLoadingState()
+                }
             } else if viewModel.rooms.isEmpty {
                 LiveFeedEmptyState(viewModel: viewModel)
             } else {
@@ -59,7 +61,7 @@ private struct LiveFeedContent: View {
 
 private struct LiveFeedLoadingState: View {
     var body: some View {
-        LiveFeedSkeletonList()
+        LiveFeedSkeletonList(horizontalPadding: 0, topPadding: 0)
             .allowsHitTesting(false)
     }
 }
@@ -94,9 +96,10 @@ private struct LiveFeedRoomList: View {
                 }
 
                 if viewModel.isLoadingMore {
-                    InlineLoadingStateView(title: "正在加载更多")
-                        .padding(.vertical, 8)
-                        .gridCellColumns(columns.count)
+                    ForEach(0..<4, id: \.self) { _ in
+                        LiveRoomSkeletonCard()
+                            .allowsHitTesting(false)
+                    }
                 }
             }
 

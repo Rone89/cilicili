@@ -6,7 +6,7 @@ struct DynamicCommentsFooter: View {
     @ViewBuilder
     var body: some View {
         if viewModel.loadMoreState.isLoading {
-            InlineLoadingStateView(title: "正在加载更多评论")
+            CommentLoadingSkeletonRow()
                 .padding(.vertical, 10)
         } else if case .failed(let message) = viewModel.loadMoreState {
             Button(action: loadMore) {

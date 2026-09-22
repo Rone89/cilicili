@@ -48,4 +48,21 @@ final class PlayerPlaybackControlsVisibilityModelTests: XCTestCase {
         XCTAssertEqual(model.opacity, 1)
         XCTAssertTrue(model.acceptsHitTesting)
     }
+
+    @MainActor
+    func testShowIsSuppressedDuringLayoutTransition() {
+        let model = PlayerPlaybackControlsVisibilityModel()
+
+        model.hide(animated: false)
+        model.show(
+            scheduleAutoHide: false,
+            animated: false,
+            showsPlaybackControls: true,
+            isLayoutTransitioning: true
+        )
+
+        XCTAssertFalse(model.isVisible)
+        XCTAssertEqual(model.opacity, 0)
+        XCTAssertFalse(model.acceptsHitTesting)
+    }
 }

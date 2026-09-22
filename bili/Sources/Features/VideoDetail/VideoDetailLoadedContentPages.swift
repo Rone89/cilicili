@@ -56,18 +56,14 @@ struct VideoDetailLoadedDetailContentPage: View {
 
         }
 
-        if showsRecommendations {
-            if mountsSecondaryContent {
-                VideoDetailRecommendationsSection(
-                    detail: viewModel.detail,
-                    relatedStore: renderPack.relatedStore,
-                    layoutWidth: layoutWidth,
-                    runtimeSettings: runtimeSettings,
-                    retryRelated: renderPack.actions.retryRelated
-                )
-            } else if !viewModel.detail.isPGCEpisode {
-                InitialRelatedSection(layoutWidth: layoutWidth)
-            }
+        if mountsSecondaryContent && showsRecommendations {
+            VideoDetailRecommendationsSection(
+                detail: viewModel.detail,
+                relatedStore: renderPack.relatedStore,
+                layoutWidth: layoutWidth,
+                runtimeSettings: runtimeSettings,
+                retryRelated: renderPack.actions.retryRelated
+            )
         }
     }
 

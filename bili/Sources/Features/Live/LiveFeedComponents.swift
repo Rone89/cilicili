@@ -1,21 +1,23 @@
 import SwiftUI
 
 struct LiveFeedSkeletonList: View {
+    var horizontalPadding: CGFloat = 16
+    var topPadding: CGFloat = 10
+
     private let columns = [
         GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
     ]
 
     var body: some View {
-        SkeletonLoadingContainer {
-            LazyVGrid(columns: columns, spacing: 18) {
-                ForEach(0..<6, id: \.self) { _ in
-                    LiveRoomSkeletonCard()
-                }
+        LazyVGrid(columns: columns, spacing: 18) {
+            ForEach(0..<12, id: \.self) { _ in
+                LiveRoomSkeletonCard()
             }
         }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.top, topPadding)
         .padding(.bottom, 22)
-        .allowsHitTesting(false)
     }
 }
 

@@ -10,7 +10,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private let rotationCoordinator: PlaybackRotationCoordinator
     private let contentController: VideoDetailSwiftUIContainerViewController
     private let systemBackGestureDelegateLease = SystemBackGestureDelegateLease()
-    private let onSystemChromeVisibilityChange: (Bool) -> Void
     private var cancellables = Set<AnyCancellable>()
     private var isViewActive = false
     private var rotationCompletionTask: Task<Void, Never>?
@@ -18,7 +17,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     private var rotationGeneration = 0
     private var didPrepareForDismantle = false
     private var didRegisterNavigationStopCompletion = false
-    private var isImmersivePlayback = false
 
     init(
         initialVideo: VideoItem,
@@ -35,12 +33,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         onPresentPlayerMoreControls: @escaping (PlayerStateViewModel, @escaping () -> Void) -> Void,
         onDismissPlayerMoreControls: @escaping () -> Void,
         onReply: @escaping (Comment) -> Void,
-        onSystemChromeVisibilityChange: @escaping (Bool) -> Void,
         onNavigateBack: @escaping () -> Void
     ) {
         let rotationCoordinator = PlaybackRotationCoordinator()
         self.rotationCoordinator = rotationCoordinator
-        self.onSystemChromeVisibilityChange = onSystemChromeVisibilityChange
         contentController = VideoDetailSwiftUIContainerViewController(
             initialVideo: initialVideo,
             viewModel: viewModel,
@@ -75,7 +71,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     override var prefersStatusBarHidden: Bool {
-        isImmersivePlayback
+        rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -83,11 +79,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
-        isImmersivePlayback
-    }
-
-    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
-        isImmersivePlayback ? .all : []
+        rotationCoordinator.isLandscape || rotationCoordinator.isPortraitFullscreen
     }
 
     override func viewDidLoad() {
@@ -122,9 +114,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         rotationCoordinator.activate(
             isLandscape: resolvedLandscapeForRecovery,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
-        )
-        setImmersivePlayback(
-            resolvedLandscapeForRecovery || rotationCoordinator.isPortraitFullscreen
         )
         contentController.setSecondaryContentMounted(true)
         if rotationCoordinator.isTransitioning {
@@ -178,7 +167,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         super.viewDidDisappear(animated)
         contentController.markPageDisappeared()
         isViewActive = false
-        setImmersivePlayback(false)
         cancelRotationTasks()
         rotationCoordinator.deactivate(in: view.window?.windowScene)
         rotationCoordinator.restorePortrait(in: view.window?.windowScene)
@@ -193,7 +181,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     func prepareForDismantle() {
         guard !didPrepareForDismantle else { return }
         didPrepareForDismantle = true
-        setImmersivePlayback(false)
         recoverInterruptedRotationIfNeeded(reason: "dismantle")
         cancelRotationTasks()
         rotationCoordinator.deactivate(in: view.window?.windowScene)
@@ -224,7 +211,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             self?.contentController.view.layoutIfNeeded()
             self?.setNeedsStatusBarAppearanceUpdate()
             self?.setNeedsUpdateOfHomeIndicatorAutoHidden()
-            self?.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         }, completion: { [weak self] _ in
             guard let self, self.rotationGeneration == generation else { return }
             self.scheduleRotationCompletion(
@@ -236,7 +222,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     private func requestFullscreen() {
-        setImmersivePlayback(true)
         if contentController.isPortraitVideo {
             rotationCoordinator.setPortraitFullscreen(true)
             updateOrientationLock()
@@ -254,7 +239,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     private func requestExitFullscreen() {
-        setImmersivePlayback(false)
         if rotationCoordinator.isPortraitFullscreen {
             rotationCoordinator.setPortraitFullscreen(false)
             contentController.recoverStableLayout()
@@ -284,15 +268,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isCurrentlyLandscape: rotationCoordinator.isLandscape,
             in: view.window?.windowScene
         )
-    }
-
-    private func setImmersivePlayback(_ active: Bool) {
-        guard isImmersivePlayback != active else { return }
-        isImmersivePlayback = active
-        onSystemChromeVisibilityChange(active)
-        setNeedsStatusBarAppearanceUpdate()
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
     }
 
     private func bindApplicationLifecycleForRotationRecovery() {
@@ -345,13 +320,17 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             if settleDelay > 0 {
                 try? await Task.sleep(for: .seconds(settleDelay))
             }
-            try? await Task.sleep(for: .milliseconds(34))
             guard let self,
                   !Task.isCancelled,
                   self.rotationGeneration == generation
             else { return }
             let currentOrientation = self.view.window?.windowScene?.effectiveGeometry.interfaceOrientation
                 ?? (toLandscape ? .landscapeRight : .portrait)
+            // Commit the SwiftUI surface state while the danmaku layer is still
+            // marked as transitioning. The coordinator is released last so the
+            // overlay sees one final bounds/inset transaction instead of
+            // reconciling between two state publications.
+            self.contentController.finishSystemRotation()
             if let pending = self.rotationCoordinator.finishSystemTransition(
                 toLandscape: toLandscape,
                 currentOrientation: currentOrientation
@@ -361,7 +340,6 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                     in: self.view.window?.windowScene
                 )
             }
-            self.contentController.finishSystemRotation()
             self.contentController.markRotationFinished(toLandscape: toLandscape)
             self.rotationWatchdogTask?.cancel()
             self.rotationWatchdogTask = nil

@@ -4,8 +4,13 @@ struct HomeFeedDoubleColumnLoadingMorePlaceholder: View {
     let columnCount: Int
 
     var body: some View {
-        InlineLoadingStateView(title: "正在加载更多")
-            .padding(.vertical, 8)
+        ForEach(0..<4, id: \.self) { _ in
+            VideoFeedSkeletonCard(style: .grid)
+                .allowsHitTesting(false)
+        }
+
+        Color.clear
+            .frame(height: 1)
             .gridCellColumns(columnCount)
     }
 }

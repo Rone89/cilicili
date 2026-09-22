@@ -1,19 +1,17 @@
 import SwiftUI
 
 struct CommentLoadingSkeletonList: View {
-    var count = 4
+    var count: Int = 4
 
     var body: some View {
-        SkeletonLoadingContainer {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(0..<count, id: \.self) { index in
-                    CommentLoadingSkeletonRow()
-                        .padding(.vertical, 12)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<count, id: \.self) { index in
+                CommentLoadingSkeletonRow()
+                    .padding(.vertical, 12)
 
-                    if index != count - 1 {
-                        Divider()
-                            .padding(.leading, 50)
-                    }
+                if index != count - 1 {
+                    Divider()
+                        .padding(.leading, 50)
                 }
             }
         }

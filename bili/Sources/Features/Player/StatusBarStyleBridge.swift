@@ -79,7 +79,6 @@ struct StatusBarStyleBridge: UIViewControllerRepresentable {
                 guard updatedControllers.insert(ObjectIdentifier(controller)).inserted else { return }
                 controller.setNeedsStatusBarAppearanceUpdate()
                 controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
-                controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
             }
         }
     }

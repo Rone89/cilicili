@@ -15,7 +15,6 @@ final class VideoDetailShellSurfaceHost: UIView {
         @Published var isBareSurfaceTransitionActive = false
         @Published var retainsChromeDuringBareSurfaceTransition = false
         @Published var isCollapsedChromeActive = false
-        @Published var playbackControlsHideRequestGeneration = 0
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
 
@@ -33,10 +32,6 @@ final class VideoDetailShellSurfaceHost: UIView {
                 isBareSurfaceTransitionActive = false
                 retainsChromeDuringBareSurfaceTransition = false
             }
-        }
-
-        func requestPlaybackControlsHideForRotation() {
-            playbackControlsHideRequestGeneration &+= 1
         }
     }
 
@@ -167,10 +162,6 @@ final class VideoDetailShellSurfaceHost: UIView {
         overlayHostingController.willMove(toParent: nil)
         overlayHostingController.view.removeFromSuperview()
         overlayHostingController.removeFromParent()
-    }
-
-    func requestPlaybackControlsHideForRotation() {
-        state.requestPlaybackControlsHideForRotation()
     }
 
     func markRotationChromePrewarmed() {
@@ -477,7 +468,6 @@ private struct PlayerOverlayHostRoot: View {
             isBareSurfaceTransitionActive: state.isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
             isCollapsedChromeActive: state.isCollapsedChromeActive,
-            playbackControlsHideRequestGeneration: state.playbackControlsHideRequestGeneration,
             videoAspectRatio: state.videoAspectRatio,
             onShowMoreControls: onShowMoreControls,
             onDismissMoreControls: onDismissMoreControls,
@@ -515,7 +505,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
-    let playbackControlsHideRequestGeneration: Int
     let videoAspectRatio: CGFloat
     let onShowMoreControls: (@escaping () -> Void) -> Void
     let onDismissMoreControls: () -> Void
@@ -561,7 +550,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         isBareSurfaceTransitionActive: Bool,
         retainsChromeDuringBareSurfaceTransition: Bool,
         isCollapsedChromeActive: Bool,
-        playbackControlsHideRequestGeneration: Int,
         videoAspectRatio: CGFloat,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
@@ -583,7 +571,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
         self.isCollapsedChromeActive = isCollapsedChromeActive
-        self.playbackControlsHideRequestGeneration = playbackControlsHideRequestGeneration
         self.videoAspectRatio = videoAspectRatio
         self.onShowMoreControls = onShowMoreControls
         self.onDismissMoreControls = onDismissMoreControls
@@ -730,8 +717,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     VideoDetailPlayerSurfaceDanmakuLayer(
                         store: detailViewModel.danmakuRenderStore,
                         playerViewModel: viewModel,
-                        usesLandscapePlaybackChrome: configuration.isFullscreenActive,
-                        isLayoutTransitioning: isBareSurfaceTransitionActive,
+                        // Keep the danmaku canvas in the committed orientation
+                        // until UIKit finishes the rotation. PiliPlus keeps one
+                        // player-integrated canvas alive during the transition;
+                        // switching its insets/padding to the target orientation
+                        // half way through would move existing entries before
+                        // the viewport has settled.
+                        usesLandscapePlaybackChrome: rotationCoordinator.isLandscape,
+                        // Only a real UIKit rotation pauses geometry reconciliation.
+                        // The bare-surface flag is also used for control-tree
+                        // prewarming and must not disturb the danmaku timeline.
+                        isLayoutTransitioning: rotationCoordinator.isSystemRotationTransitioning,
                         onPlaybackTime: { detailViewModel.updateDanmakuPlaybackTime($0, underLoad: $1) }
                     )
                     .allowsHitTesting(false)
@@ -805,8 +801,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             onDismissMoreControls()
             playbackControlsVisibility.cancelAutoHide()
         }
-        .onChange(of: playbackControlsHideRequestGeneration) { _, _ in
-            playbackControlsVisibility.hide(animated: false)
+        .onChange(of: rotationCoordinator.isSystemRotationTransitioning) { _, isTransitioning in
+            guard isTransitioning else { return }
+            visibilityActions.hideForLayoutTransition()
         }
         .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
             updateSeekTransitionSnapshot(isUserSeeking: isUserSeeking)

@@ -241,6 +241,14 @@ private final class UploaderSeasonSeriesDetailViewModel: ObservableObject {
 
 private struct UploaderSeasonSeriesDetailLoadingRows: View {
     var body: some View {
-        InitialContentLoadingView(title: "正在加载视频", topPadding: 18)
+        VStack(spacing: 12) {
+            ForEach(0..<8, id: \.self) { _ in
+                VideoCompactListPlaceholderRow(
+                    coverSize: CGSize(width: 132, height: 74),
+                    cornerRadius: 8,
+                    metadataStyle: .search
+                )
+            }
+        }
     }
 }

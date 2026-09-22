@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct HomeFeedViewportState: Equatable {
+struct HomeFeedViewportState {
     private(set) var feedContainerWidth: CGFloat = 0
     private(set) var viewportHeight: CGFloat = 0
     var currentPullRefreshDistance: CGFloat = 0

@@ -27,9 +27,9 @@ struct VideoFeedSkeletonCard: View {
             HStack(alignment: .center, spacing: 9) {
                 SkeletonBlock(width: 34, height: 34, shape: .circle)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    SkeletonBlock(height: 16, shape: .rounded(5))
-                    SkeletonBlock(width: 206, height: 12, shape: .capsule)
+                VStack(alignment: .leading, spacing: 1) {
+                    SkeletonBlock(height: 18, shape: .rounded(5))
+                    SkeletonBlock(width: 206, height: 13, shape: .capsule)
                 }
                 .frame(height: 34, alignment: .center)
             }
@@ -65,11 +65,9 @@ struct VideoFeedSkeletonCard: View {
 
     private func borderedSingleColumnBody(coverSize: CGSize) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            SkeletonBlock(
-                width: coverSize.width,
-                height: coverSize.height,
-                shape: .rounded(12)
-            )
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.tertiarySystemFill))
+                .frame(width: coverSize.width, height: coverSize.height)
 
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -79,6 +77,7 @@ struct VideoFeedSkeletonCard: View {
                 .frame(minHeight: 38, alignment: .topLeading)
 
                 Spacer(minLength: 0)
+
                 SkeletonBlock(width: 118, height: 11, shape: .capsule)
 
                 HStack {
@@ -103,26 +102,35 @@ struct DynamicFeedSkeletonCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 SkeletonBlock(width: 36, height: 36, shape: .circle)
+
                 SkeletonBlock(width: 132, height: 14, shape: .capsule)
+
                 Spacer(minLength: 10)
+
                 SkeletonBlock(width: 52, height: 11, shape: .capsule)
             }
+            .padding(.horizontal, 12)
 
             VStack(alignment: .leading, spacing: 7) {
                 SkeletonBlock(height: 17, shape: .rounded(5))
                 SkeletonBlock(width: 260, height: 17, shape: .rounded(5))
             }
+            .padding(.horizontal, 12)
 
             SkeletonAspectBlock(cornerRadius: 20)
 
             HStack(spacing: 10) {
-                SkeletonBlock(height: 44, shape: .capsule)
-                SkeletonBlock(height: 44, shape: .capsule)
-                SkeletonBlock(height: 44, shape: .capsule)
+                Spacer(minLength: 0)
+                SkeletonBlock(width: 74, height: 28, shape: .capsule)
+                SkeletonBlock(width: 74, height: 28, shape: .capsule)
+                SkeletonBlock(width: 74, height: 28, shape: .capsule)
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 3)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(.vertical, 16)
+        .padding(.top, 21)
+        .padding(.bottom, 23)
         .accessibilityLabel("正在加载动态")
     }
 }

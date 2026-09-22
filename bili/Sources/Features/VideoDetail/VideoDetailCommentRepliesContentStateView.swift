@@ -33,7 +33,7 @@ struct CommentRepliesContentStateView: View {
 
         switch state {
         case .loading:
-            CommentLoadingSkeletonList()
+            CommentLoadingSkeletonList(count: 3)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 6)
         case .failed(let message):

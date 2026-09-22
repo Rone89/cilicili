@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CommentsSkeletonContent: View {
-    var rowCount = 4
+    let rowCount: Int
     let horizontalPadding: CGFloat
 
     var body: some View {
@@ -11,7 +11,7 @@ struct CommentsSkeletonContent: View {
                     .padding(.horizontal, horizontalPadding)
 
                 Divider()
-                    .padding(.leading, horizontalPadding + 48)
+                    .padding(.leading, 58)
             }
         }
         .accessibilityLabel("正在加载评论")
