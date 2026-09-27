@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeFeedLastSeenMarkerCard: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.videoDetailActionButtonStyle) private var actionButtonStyle
     let metrics: HomeFeedLayoutMetrics
     let action: () async -> Void
 
@@ -89,8 +90,8 @@ struct HomeFeedLastSeenMarkerCard: View {
 
     private var borderedDoubleColumnLabel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            cover(cornerRadius: 14, aspectRatio: 16 / 10)
-                .videoCardBorderedCover()
+            cover(in: borderedDoubleColumnCoverShape, aspectRatio: 16 / 10)
+                .videoCardBorderedCover(in: borderedDoubleColumnCoverShape)
 
             VStack(alignment: .leading, spacing: 4) {
                 StableVideoTitleText(
@@ -122,6 +123,14 @@ struct HomeFeedLastSeenMarkerCard: View {
         }
         .videoCardBorderedSurface(cornerRadius: 18)
         .contentShape(Rectangle())
+    }
+
+    private var borderedDoubleColumnCoverShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 14,
+            topTrailingRadius: 14,
+            style: .continuous
+        )
     }
 
     private var borderedSingleColumnLabel: some View {
@@ -159,30 +168,40 @@ struct HomeFeedLastSeenMarkerCard: View {
         .contentShape(Rectangle())
     }
 
+    @ViewBuilder
     private func borderedSingleColumnCover(size: CGSize) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let content = VStack(spacing: 6) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 20, weight: .semibold))
 
-        return Color(.tertiarySystemFill)
-            .frame(width: size.width, height: size.height)
-            .overlay {
-                VStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 20, weight: .semibold))
+            Text("刷新")
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(appTintColor)
+        .frame(width: size.width, height: size.height)
 
-                    Text("刷新")
-                        .font(.caption.weight(.semibold))
-                }
-                .foregroundStyle(appTintColor)
-            }
-            .clipShape(shape)
+        if actionButtonStyle.usesPlainStyle {
+            content
+                .background(Color(.tertiarySystemFill), in: shape)
+        } else {
+            content
+                .biliPlayerClearGlass(interactive: false, in: shape)
+        }
     }
 
     private func cover(cornerRadius: CGFloat, aspectRatio: CGFloat = 16.0 / 9.0) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        cover(
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+            aspectRatio: aspectRatio
+        )
+    }
+
+    private func cover<CoverShape: Shape>(in shape: CoverShape, aspectRatio: CGFloat) -> some View {
         return Color.clear
             .aspectRatio(aspectRatio, contentMode: .fit)
             .overlay {
-                ZStack {
+                let content = ZStack {
                     shape
                         .fill(Color(.secondarySystemGroupedBackground).opacity(0.92))
 
@@ -200,13 +219,20 @@ struct HomeFeedLastSeenMarkerCard: View {
                             .lineLimit(1)
                     }
                 }
-                .biliPlayerClearGlass(interactive: true, in: shape)
+
+                if actionButtonStyle.usesPlainStyle {
+                    content
+                } else {
+                    content
+                        .biliPlayerClearGlass(interactive: true, in: shape)
+                }
             }
             .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder
     private func markerAvatar(size: CGFloat, iconSize: CGFloat) -> some View {
-        Circle()
+        let content = Circle()
             .fill(Color(.tertiarySystemFill).opacity(0.70))
             .overlay {
                 Image(systemName: "arrow.clockwise")
@@ -214,7 +240,14 @@ struct HomeFeedLastSeenMarkerCard: View {
                     .foregroundStyle(.secondary)
             }
             .frame(width: size, height: size)
-            .biliPlayerClearGlass(interactive: false, in: Circle())
-            .mediaShadow(.subtle)
+
+        if actionButtonStyle.usesPlainStyle {
+            content
+                .mediaShadow(.subtle)
+        } else {
+            content
+                .biliPlayerClearGlass(interactive: false, in: Circle())
+                .mediaShadow(.subtle)
+        }
     }
 }

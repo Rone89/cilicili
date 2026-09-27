@@ -245,7 +245,17 @@ extension View {
     }
 
     func videoCardBorderedCover(cornerRadius: CGFloat = 14) -> some View {
-        videoCoverSurface(cornerRadius: cornerRadius, emphasizesBorder: true)
+        videoCardBorderedCover(
+            in: UnevenRoundedRectangle(
+                topLeadingRadius: cornerRadius,
+                topTrailingRadius: cornerRadius,
+                style: .continuous
+            )
+        )
+    }
+
+    func videoCardBorderedCover<CoverShape: InsettableShape>(in shape: CoverShape) -> some View {
+        videoCoverSurface(in: shape, emphasizesBorder: true)
     }
 }
 

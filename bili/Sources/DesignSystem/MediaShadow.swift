@@ -89,9 +89,27 @@ extension View {
         borderOpacityScale: Double = 1,
         appliesUnifiedBorder: Bool = true
     ) -> some View {
+        videoCoverSurface(
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+            shadowLevel: shadowLevel,
+            emphasizesBorder: emphasizesBorder,
+            shadowOpacityScale: shadowOpacityScale,
+            borderOpacityScale: borderOpacityScale,
+            appliesUnifiedBorder: appliesUnifiedBorder
+        )
+    }
+
+    func videoCoverSurface<CoverShape: InsettableShape>(
+        in shape: CoverShape,
+        shadowLevel: MediaShadowLevel? = nil,
+        emphasizesBorder: Bool = false,
+        shadowOpacityScale: Double = 1,
+        borderOpacityScale: Double = 1,
+        appliesUnifiedBorder: Bool = true
+    ) -> some View {
         modifier(
             VideoCoverSurfaceModifier(
-                cornerRadius: cornerRadius,
+                shape: shape,
                 shadowLevel: shadowLevel,
                 emphasizesBorder: emphasizesBorder,
                 shadowOpacityScale: shadowOpacityScale,
@@ -114,9 +132,9 @@ extension View {
     }
 }
 
-private struct VideoCoverSurfaceModifier: ViewModifier {
+private struct VideoCoverSurfaceModifier<CoverShape: InsettableShape>: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    let cornerRadius: CGFloat
+    let shape: CoverShape
     let shadowLevel: MediaShadowLevel?
     let emphasizesBorder: Bool
     let shadowOpacityScale: Double
@@ -125,7 +143,6 @@ private struct VideoCoverSurfaceModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let baseSurface = content
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(shape)

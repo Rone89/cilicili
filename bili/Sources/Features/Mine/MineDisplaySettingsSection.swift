@@ -156,9 +156,9 @@ struct MineDisplaySettingsSection: View {
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("详情页操作按钮样式", systemImage: "hand.tap")
+                    MineSettingsLabel("操作按钮样式", systemImage: "hand.tap")
 
-                    Text("可选择普通按钮或液态玻璃按钮，默认使用普通按钮。")
+                    Text("影响详情页与动态中的操作按钮，以及首页左侧“刷新”按钮的样式，可选择普通或液态玻璃。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
