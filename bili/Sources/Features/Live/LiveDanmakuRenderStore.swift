@@ -109,7 +109,6 @@ final class LiveDanmakuRenderStore: ObservableObject {
         guard !newItems.isEmpty else { return }
         pendingLiveItems.append(contentsOf: newItems)
         pendingLiveItemsRetainingLimit = limit
-        trim(&pendingLiveItems, retaining: limit)
         schedulePendingLiveItemsFlush(retainingLimit: limit)
     }
 
@@ -138,11 +137,15 @@ final class LiveDanmakuRenderStore: ObservableObject {
 
     private func appendLiveItems(_ newItems: [DanmakuItem], retainingLimit limit: Int) {
         items.append(contentsOf: newItems)
-        trim(&items, retaining: limit)
+        if items.count > limit {
+            items.removeFirst(items.count - limit)
+        }
         itemsRevision &+= 1
 
         chatItems.append(contentsOf: newItems)
-        trim(&chatItems, retaining: limit)
+        if chatItems.count > limit {
+            chatItems.removeFirst(chatItems.count - limit)
+        }
         chatItemsRevision &+= 1
     }
 
@@ -165,12 +168,6 @@ final class LiveDanmakuRenderStore: ObservableObject {
             chatItems.removeLast(chatItems.count - limit)
         }
         chatItemsRevision &+= 1
-    }
-
-    private func trim(_ values: inout [DanmakuItem], retaining limit: Int) {
-        let normalizedLimit = max(0, limit)
-        guard values.count > normalizedLimit else { return }
-        values = Array(values.suffix(normalizedLimit))
     }
 
     private func flushDeferredHistoryItems() {

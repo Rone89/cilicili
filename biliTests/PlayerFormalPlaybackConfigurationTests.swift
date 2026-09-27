@@ -179,12 +179,11 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStoreRetiresFormerListenAndMetalExperimentFlags() {
+    func testLibraryStoreRetiresFormerListenExperimentFlags() {
         let defaults = makeUserDefaults()
         let retiredKeys = [
             "cc.bili.playback.videoListenModeExperimentEnabled.v1",
             "cc.bili.playback.officialListenerPlaylistExperimentEnabled.v1",
-            "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1",
         ]
         for key in retiredKeys {
             defaults.set(false, forKey: key)

@@ -204,8 +204,6 @@ final class LibraryStore: ObservableObject {
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
-    private static let danmakuPortraitVisibilityDefaultMigrationKey =
-        "cc.bili.playback.danmakuPortraitVisibilityDefaultMigration.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
@@ -588,27 +586,12 @@ final class LibraryStore: ObservableObject {
         self.appliesRecommendFiltersToRelatedVideos =
             userDefaults.object(forKey: Self.appliesRecommendFiltersToRelatedVideosKey) as? Bool ?? false
         self.danmakuEnabled = userDefaults.object(forKey: Self.danmakuEnabledKey) as? Bool ?? true
-        let hasMigratedDanmakuPortraitVisibilityDefault = userDefaults.bool(
-            forKey: Self.danmakuPortraitVisibilityDefaultMigrationKey
-        )
         if let settingsData = userDefaults.data(forKey: Self.danmakuSettingsKey),
             let settings = try? JSONDecoder().decode(DanmakuSettings.self, from: settingsData)
         {
-            var normalizedSettings = settings.normalized
-            if !hasMigratedDanmakuPortraitVisibilityDefault {
-                // The former default hid danmaku in portrait. Treat that persisted
-                // value as the old default once; subsequent user changes persist normally.
-                normalizedSettings.hidesInPortrait = false
-                if let migratedData = try? JSONEncoder().encode(normalizedSettings) {
-                    userDefaults.set(migratedData, forKey: Self.danmakuSettingsKey)
-                }
-            }
-            self.danmakuSettings = normalizedSettings
+            self.danmakuSettings = settings.normalized
         } else {
             self.danmakuSettings = .default
-        }
-        if !hasMigratedDanmakuPortraitVisibilityDefault {
-            userDefaults.set(true, forKey: Self.danmakuPortraitVisibilityDefaultMigrationKey)
         }
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false

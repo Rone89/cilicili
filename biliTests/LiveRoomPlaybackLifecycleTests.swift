@@ -93,13 +93,13 @@ final class LiveRoomPlaybackLifecycleTests: XCTestCase {
         XCTAssertTrue(viewModel.isShowingLiveDanmakuSettings)
 
         var settings = viewModel.danmakuSettings
-        settings.fontScale = 1.2
+        settings.danmakuKit.fontScale = 1.2
         settings.hidesInPortrait = false
         viewModel.updateDanmakuSettings(settings)
 
-        XCTAssertEqual(viewModel.danmakuSettings.fontScale, 1.2, accuracy: 0.001)
+        XCTAssertEqual(viewModel.danmakuSettings.danmakuKit.fontScale, 1.2, accuracy: 0.001)
         XCTAssertFalse(viewModel.danmakuSettings.hidesInPortrait)
-        XCTAssertEqual(viewModel.liveDanmakuRenderStore.settings.fontScale, 1.2, accuracy: 0.001)
+        XCTAssertEqual(viewModel.liveDanmakuRenderStore.settings.danmakuKit.fontScale, 1.2, accuracy: 0.001)
         XCTAssertFalse(viewModel.liveDanmakuRenderStore.settings.hidesInPortrait)
 
         viewModel.stopPlaybackForNavigation()

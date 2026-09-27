@@ -15,6 +15,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         @Published var isBareSurfaceTransitionActive = false
         @Published var retainsChromeDuringBareSurfaceTransition = false
         @Published var isCollapsedChromeActive = false
+        @Published var playbackControlsHideRequestGeneration = 0
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
 
@@ -32,6 +33,10 @@ final class VideoDetailShellSurfaceHost: UIView {
                 isBareSurfaceTransitionActive = false
                 retainsChromeDuringBareSurfaceTransition = false
             }
+        }
+
+        func requestPlaybackControlsHideForRotation() {
+            playbackControlsHideRequestGeneration &+= 1
         }
     }
 
@@ -137,6 +142,16 @@ final class VideoDetailShellSurfaceHost: UIView {
             }
             .store(in: &cancellables)
 
+        rotationCoordinator.$isSystemRotationTransitioning
+            .removeDuplicates()
+            .sink { [weak self] isTransitioning in
+                guard isTransitioning else { return }
+                Task { @MainActor [weak self] in
+                    self?.state.requestPlaybackControlsHideForRotation()
+                }
+            }
+            .store(in: &cancellables)
+
     }
 
     @available(*, unavailable)
@@ -162,6 +177,10 @@ final class VideoDetailShellSurfaceHost: UIView {
         overlayHostingController.willMove(toParent: nil)
         overlayHostingController.view.removeFromSuperview()
         overlayHostingController.removeFromParent()
+    }
+
+    func requestPlaybackControlsHideForRotation() {
+        state.requestPlaybackControlsHideForRotation()
     }
 
     func markRotationChromePrewarmed() {
@@ -468,6 +487,7 @@ private struct PlayerOverlayHostRoot: View {
             isBareSurfaceTransitionActive: state.isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: state.retainsChromeDuringBareSurfaceTransition,
             isCollapsedChromeActive: state.isCollapsedChromeActive,
+            playbackControlsHideRequestGeneration: state.playbackControlsHideRequestGeneration,
             videoAspectRatio: state.videoAspectRatio,
             onShowMoreControls: onShowMoreControls,
             onDismissMoreControls: onDismissMoreControls,
@@ -505,6 +525,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
+    let playbackControlsHideRequestGeneration: Int
     let videoAspectRatio: CGFloat
     let onShowMoreControls: (@escaping () -> Void) -> Void
     let onDismissMoreControls: () -> Void
@@ -550,6 +571,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         isBareSurfaceTransitionActive: Bool,
         retainsChromeDuringBareSurfaceTransition: Bool,
         isCollapsedChromeActive: Bool,
+        playbackControlsHideRequestGeneration: Int,
         videoAspectRatio: CGFloat,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
@@ -571,6 +593,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.isBareSurfaceTransitionActive = isBareSurfaceTransitionActive
         self.retainsChromeDuringBareSurfaceTransition = retainsChromeDuringBareSurfaceTransition
         self.isCollapsedChromeActive = isCollapsedChromeActive
+        self.playbackControlsHideRequestGeneration = playbackControlsHideRequestGeneration
         self.videoAspectRatio = videoAspectRatio
         self.onShowMoreControls = onShowMoreControls
         self.onDismissMoreControls = onDismissMoreControls
@@ -717,16 +740,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     VideoDetailPlayerSurfaceDanmakuLayer(
                         store: detailViewModel.danmakuRenderStore,
                         playerViewModel: viewModel,
-                        // Keep the danmaku canvas in the committed orientation
-                        // until UIKit finishes the rotation. PiliPlus keeps one
-                        // player-integrated canvas alive during the transition;
-                        // switching its insets/padding to the target orientation
-                        // half way through would move existing entries before
-                        // the viewport has settled.
-                        usesLandscapePlaybackChrome: rotationCoordinator.isLandscape,
-                        // Only a real UIKit rotation pauses geometry reconciliation.
-                        // The bare-surface flag is also used for control-tree
-                        // prewarming and must not disturb the danmaku timeline.
+                        usesLandscapePlaybackChrome: danmakuUsesLandscapePlaybackChrome,
+                        // The bare-surface flag also covers control-tree
+                        // prewarming. Danmaku must only see the real UIKit
+                        // rotation transition; prewarm should not pause or
+                        // rebuild its timeline.
                         isLayoutTransitioning: rotationCoordinator.isSystemRotationTransitioning,
                         onPlaybackTime: { detailViewModel.updateDanmakuPlaybackTime($0, underLoad: $1) }
                     )
@@ -801,9 +819,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             onDismissMoreControls()
             playbackControlsVisibility.cancelAutoHide()
         }
-        .onChange(of: rotationCoordinator.isSystemRotationTransitioning) { _, isTransitioning in
-            guard isTransitioning else { return }
-            visibilityActions.hideForLayoutTransition()
+        .onChange(of: playbackControlsHideRequestGeneration) { _, _ in
+            playbackControlsVisibility.hide(animated: false)
         }
         .onChange(of: surfaceState.isUserSeeking) { _, isUserSeeking in
             updateSeekTransitionSnapshot(isUserSeeking: isUserSeeking)
@@ -845,6 +862,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     private var fullscreenMode: PlayerFullscreenMode? {
         guard !isAudioOnlyPlayback else { return nil }
         return isLandscape ? .landscape(.landscapeRight) : nil
+    }
+
+    private var danmakuUsesLandscapePlaybackChrome: Bool {
+        // Rotation chrome pre-warm temporarily flips `chromeLandscape` to
+        // materialize the controls tree. Danmaku visibility and insets must
+        // follow the stable physical orientation during that pre-warm, or a
+        // portrait setting can clear the overlay before the real rotation.
+        if rotationCoordinator.prewarmLandscape != nil {
+            return rotationCoordinator.isLandscape
+        }
+        return configuration.isFullscreenActive
     }
 
     private var isAudioOnlyPlayback: Bool {
@@ -2891,12 +2919,9 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
         DanmakuSettingsSheetContent(
             store: detailViewModel.danmakuSettingsRenderStore,
             summary: settingsSummary,
-            displayAreaBinding: displayAreaBinding,
             hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
-            fontScaleBinding: fontScaleBinding,
-            fontWeightBinding: fontWeightBinding,
-            opacityBinding: opacityBinding,
-            toggleDanmaku: toggleDanmaku
+            toggleDanmaku: toggleDanmaku,
+            updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
         )
         .scrollContentBackground(.hidden)
         .listRowBackground(Color.clear)
@@ -2910,31 +2935,10 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
     private var settingsSummary: String {
         let store = detailViewModel.danmakuSettingsRenderStore
         if store.isDanmakuEnabled {
-            return "当前使用 \(store.danmakuSettings.displayArea.title)，字号 \(Int((store.danmakuSettings.fontScale * 100).rounded()))%，不透明度 \(Int((store.danmakuSettings.opacity * 100).rounded()))%。"
+            let settings = store.danmakuSettings.danmakuKit
+            return "当前使用 \(settings.displayArea.title)，字号 \(Int((settings.fontScale * 100).rounded()))%，不透明度 \(Int((settings.opacity * 100).rounded()))%。"
         }
         return "弹幕已关闭，播放时不会显示滚动评论。"
-    }
-
-    private var displayAreaBinding: Binding<DanmakuDisplayArea> {
-        Binding(
-            get: { detailViewModel.danmakuSettingsRenderStore.danmakuSettings.displayArea },
-            set: { newValue in
-                var settings = detailViewModel.danmakuSettingsRenderStore.danmakuSettings
-                settings.displayArea = newValue
-                detailViewModel.updateDanmakuSettings(settings)
-            }
-        )
-    }
-
-    private var fontScaleBinding: Binding<Double> {
-        Binding(
-            get: { detailViewModel.danmakuSettingsRenderStore.danmakuSettings.fontScale },
-            set: { newValue in
-                var settings = detailViewModel.danmakuSettingsRenderStore.danmakuSettings
-                settings.fontScale = newValue
-                detailViewModel.updateDanmakuSettings(settings)
-            }
-        )
     }
 
     private var hidesDanmakuInPortraitBinding: Binding<Bool> {
@@ -2948,27 +2952,6 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
         )
     }
 
-    private var fontWeightBinding: Binding<DanmakuFontWeightOption> {
-        Binding(
-            get: { detailViewModel.danmakuSettingsRenderStore.danmakuSettings.fontWeight },
-            set: { newValue in
-                var settings = detailViewModel.danmakuSettingsRenderStore.danmakuSettings
-                settings.fontWeight = newValue
-                detailViewModel.updateDanmakuSettings(settings)
-            }
-        )
-    }
-
-    private var opacityBinding: Binding<Double> {
-        Binding(
-            get: { detailViewModel.danmakuSettingsRenderStore.danmakuSettings.opacity },
-            set: { newValue in
-                var settings = detailViewModel.danmakuSettingsRenderStore.danmakuSettings
-                settings.opacity = newValue
-                detailViewModel.updateDanmakuSettings(settings)
-            }
-        )
-    }
 }
 
 private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {

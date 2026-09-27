@@ -33,6 +33,20 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             } footer: {
                 Text("关闭详情自动播放后，进入视频详情页会先停在首帧，需手动点播放。播放满 \(libraryStore.playbackHistorySyncThresholdSeconds) 秒后同步观看记录并用于下次续播；未满不会上报。")
             }
+
+            Section {
+                NavigationLink {
+                    DanmakuRendererDiagnosticsView()
+                } label: {
+                    MineSettingsLabel("弹幕诊断", systemImage: "waveform.path.ecg")
+                }
+                .accessibilityIdentifier("mine.settings.playback.danmakuDiagnostics")
+            } header: {
+                Text("弹幕")
+            } footer: {
+                Text("查看 DanmakuKit 弹幕加载与渲染状态。")
+            }
+
         }
 
         if showsAdvancedPreferences {

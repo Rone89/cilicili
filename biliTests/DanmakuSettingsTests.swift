@@ -3,49 +3,50 @@ import XCTest
 
 final class DanmakuSettingsTests: XCTestCase {
     @MainActor
-    func testLegacySettingsDefaultToShowingDanmakuInPortrait() throws {
+    func testLegacySettingsDefaultToHidingDanmakuInPortrait() throws {
         let data = Data(
             """
             {
-              "fontScale": 1,
-              "opacity": 0.92,
-              "displayArea": "topHalf",
+              "fontScale": 1.25,
+              "opacity": 0.75,
+              "displayArea": "topThreeQuarters",
               "fontWeight": "semibold",
-              "loadFactor": 1
+              "loadFactor": 1,
+              "allowsDanmakuOverlap": true
             }
             """.utf8
         )
 
         let settings = try JSONDecoder().decode(DanmakuSettings.self, from: data)
 
-        XCTAssertFalse(settings.hidesInPortrait)
+        XCTAssertTrue(settings.hidesInPortrait)
+        XCTAssertTrue(settings.danmakuKit.allowsDanmakuOverlap)
+        XCTAssertEqual(settings.danmakuKit.displayArea.fraction, 0.75)
+        XCTAssertEqual(settings.danmakuKit.fontScale, 1.25)
+        XCTAssertEqual(settings.danmakuKit.opacity, 0.75)
     }
 
-    @MainActor
-    func testLibraryStoreMigratesFormerPortraitHiddenDefault() throws {
-        let suiteName = "cc.bili.tests.danmaku-portrait-default-migration.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+    func testDanmakuKitSettingsPersistNestedConfiguration() throws {
+        var settings = DanmakuSettings.default
+        settings.danmakuKit.allowsDanmakuOverlap = true
+        settings.danmakuKit.trackHeight = 36
+        settings.danmakuKit.enablesTop = false
 
-        let oldSettings = DanmakuSettings(
-            fontScale: 1,
-            opacity: 0.92,
-            displayArea: .topHalf,
-            fontWeight: .semibold,
-            hidesInPortrait: true
+        let encoded = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(DanmakuSettings.self, from: encoded)
+
+        XCTAssertEqual(decoded.danmakuKit, settings.danmakuKit)
+        XCTAssertTrue(decoded.danmakuKit.allowsDanmakuOverlap)
+    }
+
+    func testDisplayAreaReadsLegacyPresetAndWritesFraction() throws {
+        let legacy = try JSONDecoder().decode(
+            DanmakuDisplayArea.self,
+            from: Data("\"topThreeQuarters\"".utf8)
         )
-        defaults.set(
-            try JSONEncoder().encode(oldSettings),
-            forKey: "cc.bili.playback.danmakuSettings.v1"
-        )
+        XCTAssertEqual(legacy.fraction, 0.75)
 
-        let migrated = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(migrated.danmakuSettings.hidesInPortrait)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).danmakuSettings.hidesInPortrait)
-
-        var explicitSettings = migrated.danmakuSettings
-        explicitSettings.hidesInPortrait = true
-        migrated.setDanmakuSettings(explicitSettings)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).danmakuSettings.hidesInPortrait)
+        let encoded = try JSONEncoder().encode(legacy)
+        XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "0.75")
     }
 }

@@ -36,23 +36,21 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(element("ui.videoDetail.ready", in: app).waitForExistence(timeout: 5))
 
         app.buttons["ui.videoDetail.danmakuSettings"].tap()
-        let picker = element("ui.videoDetail.sheet.danmakuSettings.displayArea", in: app)
-        XCTAssertTrue(picker.waitForExistence(timeout: 2))
-        let full = picker.buttons["全屏"]
-        XCTAssertTrue(full.waitForExistence(timeout: 2))
-        full.tap()
+        let areaSlider = app.sliders["ui.videoDetail.sheet.danmakuSettings.displayArea"]
+        XCTAssertTrue(areaSlider.waitForExistence(timeout: 2))
+        areaSlider.adjust(toNormalizedSliderPosition: 1.0)
         app.buttons["ui.videoDetail.sheet.danmakuSettings.done"].tap()
 
         let persisted = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
         XCTAssertTrue(persisted.waitForExistence(timeout: 2))
-        XCTAssertEqual(persisted.label, "full")
+        XCTAssertEqual(persisted.label, "100%")
 
         app.terminate()
         app.launchArguments = ["--ui-test-fixture", "danmaku"]
         app.launch()
         let restored = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
         XCTAssertTrue(restored.waitForExistence(timeout: 5))
-        XCTAssertEqual(restored.label, "full")
+        XCTAssertEqual(restored.label, "100%")
     }
 
     @MainActor

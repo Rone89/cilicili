@@ -132,11 +132,7 @@ struct LiveDanmakuOverlay: View {
                 playbackRate: 1,
                 isEnabled: snapshot.isEnabled && isVisibleInCurrentOrientation,
                 hasPresentedPlayback: playerViewModel.hasPresentedPlayback || shouldDriveLiveDanmaku,
-                // Live chat has no media clock to preserve. Under system
-                // power/thermal or constrained-network pressure, reduce the
-                // number of newly composed entries while keeping the video
-                // player compositor at its configured refresh rate.
-                isLoadShedding: PlaybackEnvironment.current.shouldPreferConservativePlayback,
+                isLoadShedding: false,
                 settings: snapshot.settings,
                 topInset: usesLandscapeChrome ? 28 : 8,
                 bottomInset: usesLandscapeChrome ? 84 : 54,
@@ -185,18 +181,12 @@ struct LiveDanmakuSettingsSheet: View {
                     )
                 }
 
-                DanmakuSettingsDisplayAreaSection(displayArea: displayAreaBinding)
                 DanmakuSettingsPortraitVisibilitySection(
                     hidesDanmakuInPortrait: hidesInPortraitBinding
                 )
-                DanmakuSettingsTextSection(
+                DanmakuKitSettingsSection(
                     settings: viewModel.danmakuSettings,
-                    fontScale: fontScaleBinding,
-                    fontWeight: fontWeightBinding
-                )
-                DanmakuSettingsOpacitySection(
-                    settings: viewModel.danmakuSettings,
-                    opacity: opacityBinding
+                    updateSettings: viewModel.updateDanmakuSettings
                 )
             }
             .navigationTitle("弹幕设置")
@@ -209,16 +199,10 @@ struct LiveDanmakuSettingsSheet: View {
 
     private var settingsSummary: String {
         if viewModel.isDanmakuEnabled {
-            return "当前使用 \(viewModel.danmakuSettings.displayArea.title)，字号 \(Int((viewModel.danmakuSettings.fontScale * 100).rounded()))%，不透明度 \(Int((viewModel.danmakuSettings.opacity * 100).rounded()))%。"
+            let settings = viewModel.danmakuSettings.danmakuKit
+            return "当前使用 \(settings.displayArea.title)，字号 \(Int((settings.fontScale * 100).rounded()))%，不透明度 \(Int((settings.opacity * 100).rounded()))%。"
         }
         return "弹幕已关闭，直播画面不会显示滚动评论。"
-    }
-
-    private var displayAreaBinding: Binding<DanmakuDisplayArea> {
-        Binding(
-            get: { viewModel.danmakuSettings.displayArea },
-            set: { updateSettings(displayArea: $0) }
-        )
     }
 
     private var hidesInPortraitBinding: Binding<Bool> {
@@ -228,50 +212,9 @@ struct LiveDanmakuSettingsSheet: View {
         )
     }
 
-    private var fontScaleBinding: Binding<Double> {
-        Binding(
-            get: { viewModel.danmakuSettings.fontScale },
-            set: { updateSettings(fontScale: $0) }
-        )
-    }
-
-    private var fontWeightBinding: Binding<DanmakuFontWeightOption> {
-        Binding(
-            get: { viewModel.danmakuSettings.fontWeight },
-            set: { updateSettings(fontWeight: $0) }
-        )
-    }
-
-    private var opacityBinding: Binding<Double> {
-        Binding(
-            get: { viewModel.danmakuSettings.opacity },
-            set: { updateSettings(opacity: $0) }
-        )
-    }
-
-    private func updateSettings(
-        fontScale: Double? = nil,
-        opacity: Double? = nil,
-        displayArea: DanmakuDisplayArea? = nil,
-        fontWeight: DanmakuFontWeightOption? = nil,
-        hidesInPortrait: Bool? = nil
-    ) {
+    private func updateSettings(hidesInPortrait: Bool) {
         var settings = viewModel.danmakuSettings
-        if let fontScale {
-            settings.fontScale = fontScale
-        }
-        if let opacity {
-            settings.opacity = opacity
-        }
-        if let displayArea {
-            settings.displayArea = displayArea
-        }
-        if let fontWeight {
-            settings.fontWeight = fontWeight
-        }
-        if let hidesInPortrait {
-            settings.hidesInPortrait = hidesInPortrait
-        }
+        settings.hidesInPortrait = hidesInPortrait
         viewModel.updateDanmakuSettings(settings)
     }
 }

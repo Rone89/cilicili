@@ -175,7 +175,7 @@ struct BiliPlayerLifecycleActionBuilder {
                 rotationTransitionSnapshotModel.release(immediate: true)
             }
             viewModel.stabilizeSurfaceLayoutAfterGeometryChange()
-            visibilityActions.cancelAutoHide()
+            playbackControlsVisibility.hide(animated: false)
         } else {
             viewModel.stabilizeSurfaceLayoutAfterGeometryChange()
             visibilityActions.scheduleAutoHide()

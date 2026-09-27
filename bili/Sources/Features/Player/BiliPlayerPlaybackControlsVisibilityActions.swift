@@ -53,8 +53,4 @@ struct BiliPlayerPlaybackControlsVisibilityActions {
     func cancelAutoHide() {
         playbackControlsVisibility.cancelAutoHide()
     }
-
-    func hideForLayoutTransition() {
-        playbackControlsVisibility.hideForLayoutTransition()
-    }
 }

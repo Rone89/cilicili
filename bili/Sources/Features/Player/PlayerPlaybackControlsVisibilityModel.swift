@@ -99,14 +99,6 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         }
     }
 
-    /// Rotation/layout handoff owns the surface for a short period. Hide the
-    /// chrome immediately and clear any secondary-controls suspension so a
-    /// later tap can show the controls and resume the normal auto-hide policy.
-    func hideForLayoutTransition() {
-        isAutoHideSuspended = false
-        hide(animated: false)
-    }
-
     private func cancelPendingHide() {
         hideCompletionTask?.cancel()
         hideCompletionTask = nil
@@ -131,10 +123,6 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         isLayoutTransitioning: Bool = false
     ) {
         guard showsPlaybackControls else { return }
-        guard !isLayoutTransitioning else {
-            hideForLayoutTransition()
-            return
-        }
         showNow(animated: animated)
         if scheduleAutoHide {
             self.scheduleAutoHide(

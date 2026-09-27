@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D4A6F7C3B2E149B3A0010001 /* DanmakuKit in Frameworks */ = {isa = PBXBuildFile; productRef = D4A6F7C3B2E149B3A0010003 /* DanmakuKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7FB9400A2FA9000000F93779 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -66,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4A6F7C3B2E149B3A0010001 /* DanmakuKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +141,7 @@
 			);
 			name = bili;
 			packageProductDependencies = (
+				D4A6F7C3B2E149B3A0010003 /* DanmakuKit */,
 			);
 			productName = bili;
 			productReference = 7FB932AC2FA5009100F93779 /* bili.app */;
@@ -220,6 +226,7 @@
 			mainGroup = 7FB932A32FA5009100F93779;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				D4A6F7C3B2E149B3A0010002 /* XCRemoteSwiftPackageReference \"DanmakuKit\" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7FB932AD2FA5009100F93779 /* Products */;
@@ -613,6 +620,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D4A6F7C3B2E149B3A0010002 /* XCRemoteSwiftPackageReference "DanmakuKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/qyz777/DanmakuKit.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D4A6F7C3B2E149B3A0010003 /* DanmakuKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A6F7C3B2E149B3A0010002 /* XCRemoteSwiftPackageReference "DanmakuKit" */;
+			productName = DanmakuKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7FB932A42FA5009100F93779 /* Project object */;
 }

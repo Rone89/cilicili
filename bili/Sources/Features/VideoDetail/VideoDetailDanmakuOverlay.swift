@@ -29,6 +29,7 @@ struct VideoDetailDanmakuOverlay: View {
             playbackClock: clock,
             onPlaybackTime: onPlaybackTime
         )
+        .padding(.horizontal, usesLandscapePlaybackChrome ? 0 : 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .videoDetailDanmakuOverlayLifecycle(

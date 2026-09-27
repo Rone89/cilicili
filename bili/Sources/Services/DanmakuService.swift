@@ -1,65 +1,190 @@
 import Foundation
 
 struct DanmakuSettings: Codable, Equatable, Sendable {
-    var fontScale: Double
-    var opacity: Double
-    var displayArea: DanmakuDisplayArea
-    var fontWeight: DanmakuFontWeightOption
     var loadFactor: Double
     var hidesInPortrait: Bool
+    var danmakuKit: DanmakuKitRenderSettings
 
-    init(
+    nonisolated init(
+        loadFactor: Double = 1.0,
+        hidesInPortrait: Bool = true,
+        danmakuKit: DanmakuKitRenderSettings = .default
+    ) {
+        self.loadFactor = loadFactor
+        self.hidesInPortrait = hidesInPortrait
+        self.danmakuKit = danmakuKit
+    }
+
+    nonisolated init(
         fontScale: Double,
         opacity: Double,
         displayArea: DanmakuDisplayArea,
         fontWeight: DanmakuFontWeightOption,
         loadFactor: Double = 1.0,
-        hidesInPortrait: Bool = false
+        hidesInPortrait: Bool = true,
+        allowsDanmakuOverlap: Bool = false,
+        danmakuKit: DanmakuKitRenderSettings? = nil
     ) {
-        self.fontScale = fontScale
-        self.opacity = opacity
-        self.displayArea = displayArea
-        self.fontWeight = fontWeight
-        self.loadFactor = loadFactor
-        self.hidesInPortrait = hidesInPortrait
+        self.init(
+            loadFactor: loadFactor,
+            hidesInPortrait: hidesInPortrait,
+            danmakuKit: danmakuKit ?? DanmakuKitRenderSettings(
+                displayArea: displayArea,
+                allowsDanmakuOverlap: allowsDanmakuOverlap,
+                fontScale: fontScale,
+                fontWeight: fontWeight,
+                opacity: opacity
+            )
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
+        // Legacy flattened values remain decodable for existing installations.
         case fontScale
         case opacity
         case displayArea
         case fontWeight
         case loadFactor
         case hidesInPortrait
+        case allowsDanmakuOverlap
+        case danmakuKit
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.fontScale = try container.decode(Double.self, forKey: .fontScale)
-        self.opacity = try container.decode(Double.self, forKey: .opacity)
-        self.displayArea = try container.decode(DanmakuDisplayArea.self, forKey: .displayArea)
-        self.fontWeight = try container.decode(DanmakuFontWeightOption.self, forKey: .fontWeight)
         self.loadFactor = try container.decodeIfPresent(Double.self, forKey: .loadFactor) ?? 1.0
-        self.hidesInPortrait = try container.decodeIfPresent(Bool.self, forKey: .hidesInPortrait) ?? false
+        self.hidesInPortrait = try container.decodeIfPresent(Bool.self, forKey: .hidesInPortrait) ?? true
+        var kitSettings = try container.decodeIfPresent(DanmakuKitRenderSettings.self, forKey: .danmakuKit) ?? .default
+        let legacyDisplayArea = try container.decodeIfPresent(DanmakuDisplayArea.self, forKey: .displayArea)
+        let legacyAllowsOverlap = try container.decodeIfPresent(Bool.self, forKey: .allowsDanmakuOverlap)
+        let legacyFontScale = try container.decodeIfPresent(Double.self, forKey: .fontScale)
+        let legacyFontWeight = try container.decodeIfPresent(DanmakuFontWeightOption.self, forKey: .fontWeight)
+        let legacyOpacity = try container.decodeIfPresent(Double.self, forKey: .opacity)
+
+        if let kitDecoder = try? container.superDecoder(forKey: .danmakuKit),
+           let kitContainer = try? kitDecoder.container(keyedBy: DanmakuKitRenderSettings.CodingKeys.self) {
+            if !kitContainer.contains(.displayArea), let legacyDisplayArea { kitSettings.displayArea = legacyDisplayArea }
+            if !kitContainer.contains(.allowsDanmakuOverlap), let legacyAllowsOverlap { kitSettings.allowsDanmakuOverlap = legacyAllowsOverlap }
+            if !kitContainer.contains(.fontScale), let legacyFontScale { kitSettings.fontScale = legacyFontScale }
+            if !kitContainer.contains(.fontWeight), let legacyFontWeight { kitSettings.fontWeight = legacyFontWeight }
+            if !kitContainer.contains(.opacity), let legacyOpacity { kitSettings.opacity = legacyOpacity }
+        } else {
+            if let legacyDisplayArea { kitSettings.displayArea = legacyDisplayArea }
+            if let legacyAllowsOverlap { kitSettings.allowsDanmakuOverlap = legacyAllowsOverlap }
+            if let legacyFontScale { kitSettings.fontScale = legacyFontScale }
+            if let legacyFontWeight { kitSettings.fontWeight = legacyFontWeight }
+            if let legacyOpacity { kitSettings.opacity = legacyOpacity }
+        }
+        self.danmakuKit = kitSettings
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(loadFactor, forKey: .loadFactor)
+        try container.encode(hidesInPortrait, forKey: .hidesInPortrait)
+        try container.encode(danmakuKit, forKey: .danmakuKit)
     }
 
     static let `default` = DanmakuSettings(
-        fontScale: 1.0,
-        opacity: 0.92,
-        displayArea: .topHalf,
-        fontWeight: .semibold,
         loadFactor: 1.0,
-        hidesInPortrait: false
+        hidesInPortrait: true,
+        danmakuKit: .default
     )
 
-    var normalized: DanmakuSettings {
+    nonisolated var normalized: DanmakuSettings {
         DanmakuSettings(
-            fontScale: min(max(fontScale, 0.7), 1.45),
-            opacity: min(max(opacity, 0.25), 1.0),
-            displayArea: displayArea.normalized,
-            fontWeight: fontWeight,
             loadFactor: min(max(loadFactor, 0.35), 1.0),
-            hidesInPortrait: hidesInPortrait
+            hidesInPortrait: hidesInPortrait,
+            danmakuKit: danmakuKit.normalized
+        )
+    }
+}
+
+nonisolated struct DanmakuKitRenderSettings: Codable, Equatable, Sendable {
+    var displayArea: DanmakuDisplayArea
+    var allowsDanmakuOverlap: Bool
+    var fontScale: Double
+    var fontWeight: DanmakuFontWeightOption
+    var opacity: Double
+    var trackHeight: Double
+    var topPadding: Double
+    var bottomPadding: Double
+    var enablesFloating: Bool
+    var enablesTop: Bool
+    var enablesBottom: Bool
+
+    nonisolated init(
+        displayArea: DanmakuDisplayArea = .topHalf,
+        allowsDanmakuOverlap: Bool = false,
+        fontScale: Double = 1.0,
+        fontWeight: DanmakuFontWeightOption = .semibold,
+        opacity: Double = 0.92,
+        trackHeight: Double = 30,
+        topPadding: Double = 0,
+        bottomPadding: Double = 0,
+        enablesFloating: Bool = true,
+        enablesTop: Bool = true,
+        enablesBottom: Bool = true
+    ) {
+        self.displayArea = displayArea
+        self.allowsDanmakuOverlap = allowsDanmakuOverlap
+        self.fontScale = fontScale
+        self.fontWeight = fontWeight
+        self.opacity = opacity
+        self.trackHeight = trackHeight
+        self.topPadding = topPadding
+        self.bottomPadding = bottomPadding
+        self.enablesFloating = enablesFloating
+        self.enablesTop = enablesTop
+        self.enablesBottom = enablesBottom
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case displayArea
+        case allowsDanmakuOverlap
+        case fontScale
+        case fontWeight
+        case opacity
+        case trackHeight
+        case topPadding
+        case bottomPadding
+        case enablesFloating
+        case enablesTop
+        case enablesBottom
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            displayArea: try container.decodeIfPresent(DanmakuDisplayArea.self, forKey: .displayArea) ?? .topHalf,
+            allowsDanmakuOverlap: try container.decodeIfPresent(Bool.self, forKey: .allowsDanmakuOverlap) ?? false,
+            fontScale: try container.decodeIfPresent(Double.self, forKey: .fontScale) ?? 1.0,
+            fontWeight: try container.decodeIfPresent(DanmakuFontWeightOption.self, forKey: .fontWeight) ?? .semibold,
+            opacity: try container.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.92,
+            trackHeight: try container.decodeIfPresent(Double.self, forKey: .trackHeight) ?? 30,
+            topPadding: try container.decodeIfPresent(Double.self, forKey: .topPadding) ?? 0,
+            bottomPadding: try container.decodeIfPresent(Double.self, forKey: .bottomPadding) ?? 0,
+            enablesFloating: try container.decodeIfPresent(Bool.self, forKey: .enablesFloating) ?? true,
+            enablesTop: try container.decodeIfPresent(Bool.self, forKey: .enablesTop) ?? true,
+            enablesBottom: try container.decodeIfPresent(Bool.self, forKey: .enablesBottom) ?? true
+        )
+    }
+
+    nonisolated static let `default` = DanmakuKitRenderSettings()
+
+    nonisolated var normalized: DanmakuKitRenderSettings {
+        DanmakuKitRenderSettings(
+            displayArea: displayArea.normalized,
+            allowsDanmakuOverlap: allowsDanmakuOverlap,
+            fontScale: min(max(fontScale.isFinite ? fontScale : 1.0, 0.7), 1.45),
+            fontWeight: fontWeight,
+            opacity: min(max(opacity.isFinite ? opacity : 0.92, 0.25), 1.0),
+            trackHeight: min(max(trackHeight.isFinite ? trackHeight : 30, 22), 60),
+            topPadding: min(max(topPadding.isFinite ? topPadding : 0, 0), 100),
+            bottomPadding: min(max(bottomPadding.isFinite ? bottomPadding : 0, 0), 100),
+            enablesFloating: enablesFloating,
+            enablesTop: enablesTop,
+            enablesBottom: enablesBottom
         )
     }
 }
@@ -87,48 +212,56 @@ nonisolated struct BiliInlineEmote: Hashable, Sendable {
     }
 }
 
-enum DanmakuDisplayArea: String, Codable, CaseIterable, Identifiable, Sendable {
-    case topQuarter
-    case topHalf
-    case topThreeQuarters
-    case center
-    case full
+nonisolated struct DanmakuDisplayArea: Codable, Equatable, Hashable, Identifiable, Sendable {
+    let fraction: Double
 
-    static let allCases: [DanmakuDisplayArea] = [
-        .topQuarter,
-        .topHalf,
-        .topThreeQuarters,
-        .full
-    ]
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .topQuarter:
-            return "1/4屏"
-        case .topHalf:
-            return "1/2屏"
-        case .topThreeQuarters:
-            return "3/4屏"
-        case .center:
-            return "1/2屏"
-        case .full:
-            return "全屏"
-        }
+    init(fraction: Double) {
+        self.fraction = min(max(fraction.isFinite ? fraction : 0.5, 0.1), 1.0)
     }
 
-    var normalized: DanmakuDisplayArea {
-        switch self {
-        case .center:
-            return .topHalf
-        case .topQuarter, .topHalf, .topThreeQuarters, .full:
-            return self
+    static let topQuarter = DanmakuDisplayArea(fraction: 0.25)
+    static let topHalf = DanmakuDisplayArea(fraction: 0.5)
+    static let topThreeQuarters = DanmakuDisplayArea(fraction: 0.75)
+    static let center = DanmakuDisplayArea(fraction: 0.5)
+    static let full = DanmakuDisplayArea(fraction: 1.0)
+
+    var id: Int { Int((fraction * 100).rounded()) }
+    var title: String { "\(id)%" }
+    nonisolated var normalized: DanmakuDisplayArea { self }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let fraction = try? container.decode(Double.self) {
+            self.init(fraction: fraction)
+            return
         }
+
+        let legacyValue = try container.decode(String.self)
+        let fraction: Double
+        switch legacyValue {
+        case "topQuarter": fraction = 0.25
+        case "topHalf", "center": fraction = 0.5
+        case "topThreeQuarters": fraction = 0.75
+        case "full": fraction = 1.0
+        default:
+            guard let decodedFraction = Double(legacyValue) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unknown danmaku display area: \(legacyValue)"
+                )
+            }
+            fraction = decodedFraction
+        }
+        self.init(fraction: fraction)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(fraction)
     }
 }
 
-enum DanmakuFontWeightOption: String, Codable, CaseIterable, Identifiable, Sendable {
+nonisolated enum DanmakuFontWeightOption: String, Codable, CaseIterable, Identifiable, Sendable {
     case light
     case regular
     case medium

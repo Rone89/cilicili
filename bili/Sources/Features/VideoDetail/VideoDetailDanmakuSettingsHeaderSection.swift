@@ -36,17 +36,18 @@ struct DanmakuSettingsHeaderSectionContent: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
+            let kitSettings = settings.danmakuKit
             HStack(spacing: 8) {
                 DanmakuSettingsChip(
-                    title: settings.displayArea.title,
+                    title: kitSettings.displayArea.title,
                     systemImage: "rectangle.inset.filled"
                 )
                 DanmakuSettingsChip(
-                    title: "\(Int((settings.fontScale * 100).rounded()))%",
+                    title: "\(Int((kitSettings.fontScale * 100).rounded()))%",
                     systemImage: "textformat.size"
                 )
                 DanmakuSettingsChip(
-                    title: "\(Int((settings.opacity * 100).rounded()))%",
+                    title: "\(Int((kitSettings.opacity * 100).rounded()))%",
                     systemImage: "circle.lefthalf.filled"
                 )
             }
