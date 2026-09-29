@@ -6,7 +6,7 @@ struct DynamicCommentsSheetContent: View {
     let selectSort: @MainActor @Sendable (CommentSort) -> Void
     let showReplies: (Comment) -> Void
     var dividerHorizontalPadding: CGFloat = 14
-    var replyToComment: ((Comment) -> Void)? = nil
+    var replyToComment: ((Comment, Comment) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

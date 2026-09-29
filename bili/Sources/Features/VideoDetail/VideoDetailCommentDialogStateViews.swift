@@ -6,7 +6,7 @@ struct CommentDialogLoadingContent: View {
     var body: some View {
         let horizontalPadding = standardHorizontalInset
 
-        CommentLoadingSkeletonList(count: 3)
+        CommentLoadingSkeletonList()
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, 6)
     }

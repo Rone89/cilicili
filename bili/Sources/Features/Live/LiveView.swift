@@ -13,14 +13,8 @@ struct LiveView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(spacing: 0) {
-                        DelayedLoadingContent {
-                            LiveFeedSkeletonList(
-                                horizontalPadding: libraryStore.standardPageHorizontalInset,
-                                topPadding: 18
-                            )
-                        }
-                    }
+                    LiveFeedSkeletonList()
+                        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
                 }
                 .nativeTopScrollEdgeEffect()
                 .background(Color(.systemBackground))

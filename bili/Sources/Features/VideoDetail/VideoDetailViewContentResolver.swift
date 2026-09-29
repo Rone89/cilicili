@@ -8,6 +8,7 @@ struct VideoDetailViewContentResolver: View {
     @Binding var selectedContentTab: VideoDetailContentTab
     @Binding var sheetRoute: VideoDetailSheetRoute?
     @Binding var pendingCommentAnchor: VideoCommentAnchor?
+    @Binding var hidesSystemChrome: Bool
     @Binding var isShowingDanmakuSettings: Bool
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
@@ -23,6 +24,7 @@ struct VideoDetailViewContentResolver: View {
             runtimeSettings: runtimeSettings,
             selectedContentTab: $selectedContentTab,
             sheetRoute: $sheetRoute,
+            hidesSystemChrome: $hidesSystemChrome,
             isShowingDanmakuSettings: $isShowingDanmakuSettings,
             isShowingFavoriteFolders: $isShowingFavoriteFolders,
             isShowingCoinPicker: $isShowingCoinPicker,

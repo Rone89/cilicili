@@ -17,11 +17,41 @@ struct UITestFixtureRootView: View {
                 )
             case .fullscreen:
                 UITestPlayerFixtureView()
+            case .commentAction:
+                UITestCommentActionFixtureView(api: dependencies.api)
             }
         }
         .environmentObject(dependencies)
         .environmentObject(dependencies.libraryStore)
         .environmentObject(dependencies.sessionStore)
+    }
+}
+
+private struct UITestCommentActionFixtureView: View {
+    let api: BiliAPIClient
+    @State private var composerTarget: DynamicCommentComposerTarget?
+    @State private var draft = RichCommentDraft()
+
+    var body: some View {
+        Button("打开评论操作") {
+            // Fixture tap stays inert while the long-press action is enabled.
+        }
+        .accessibilityIdentifier("ui.commentAction.open")
+        .commentActionsMenu(
+            longPressEnabled: true,
+            text: "用于验证评论回复的内容",
+            copyTitle: "复制评论",
+            replyAction: { composerTarget = .dynamic }
+        )
+        .background {
+            RichCommentComposerPresenter(
+                target: $composerTarget,
+                draft: { _ in $draft },
+                api: api,
+                submit: { _, _, _ in }
+            )
+            .allowsHitTesting(false)
+        }
     }
 }
 
@@ -445,7 +475,64 @@ private enum UITestRootTab: Hashable {
 private struct UITestDanmakuFixtureView: View {
     @ObservedObject var libraryStore: LibraryStore
     @State private var isShowingSettings = false
+    @State private var fixturePlaybackTime: TimeInterval = 0
     @StateObject private var store = VideoDetailDanmakuSettingsRenderStore()
+
+    private let fixtureSettings = DanmakuSettings(
+        loadFactor: 1.0,
+        hidesInPortrait: false,
+        danmakuKit: DanmakuKitRenderSettings(
+            displayArea: .full,
+            fontScale: 1.0,
+            fontWeight: .semibold,
+            opacity: 0.95
+        )
+    )
+
+    private var fixtureItems: [DanmakuItem] {
+        [
+            DanmakuItem(
+                id: "fixture-scroll-1",
+                time: 0,
+                mode: 1,
+                fontSize: 25,
+                color: 0xFFFFFF,
+                text: "你好 DanmakuKit 🚀"
+            ),
+            DanmakuItem(
+                id: "fixture-top-1",
+                time: 0.45,
+                mode: 5,
+                fontSize: 23,
+                color: 0x55D6FF,
+                text: "顶部固定 · SDF 字体"
+            ),
+            DanmakuItem(
+                id: "fixture-bottom-1",
+                time: 0.9,
+                mode: 4,
+                fontSize: 23,
+                color: 0xFFE36E,
+                text: "底部固定 · GPU canvas"
+            ),
+            DanmakuItem(
+                id: "fixture-scroll-2",
+                time: 1.35,
+                mode: 1,
+                fontSize: 25,
+                color: 0xFF8BD1,
+                text: "横竖屏切换保持时间连续"
+            ),
+            DanmakuItem(
+                id: "fixture-scroll-3",
+                time: 2.2,
+                mode: 2,
+                fontSize: 24,
+                color: 0xB7FF8A,
+                text: "emoji 🐶 中文 English"
+            ),
+        ]
+    }
 
     var body: some View {
         PlaybackDetailPageHost(
@@ -453,17 +540,37 @@ private struct UITestDanmakuFixtureView: View {
             background: .black,
             statusBarStyle: .lightContent
         ) {
-            VStack(spacing: 20) {
-                Text("UI Test Video Detail")
-                    .accessibilityIdentifier("ui.videoDetail.ready")
-                Text(libraryStore.danmakuSettings.displayArea.rawValue)
-                    .accessibilityIdentifier("ui.videoDetail.danmakuSettings.persistedValue")
-                Button("Open Danmaku Settings") {
-                    isShowingSettings = true
+            ZStack {
+                VStack(spacing: 20) {
+                    Text("UI Test Video Detail")
+                        .accessibilityIdentifier("ui.videoDetail.ready")
+                    Text(libraryStore.danmakuSettings.danmakuKit.displayArea.title)
+                        .accessibilityIdentifier("ui.videoDetail.danmakuSettings.persistedValue")
+                    Button("Open Danmaku Settings") {
+                        isShowingSettings = true
+                    }
+                    .accessibilityIdentifier("ui.videoDetail.danmakuSettings")
                 }
-                .accessibilityIdentifier("ui.videoDetail.danmakuSettings")
+                .foregroundStyle(.white)
+
+                DanmakuOverlayView(
+                    items: fixtureItems,
+                    itemsRevision: fixtureItems.count,
+                    currentTime: fixturePlaybackTime,
+                    isPlaying: true,
+                    playbackRate: 1,
+                    isEnabled: true,
+                    hasPresentedPlayback: true,
+                    settings: fixtureSettings,
+                    topInset: 48,
+                    bottomInset: 72,
+                    isLayoutTransitioning: false,
+                    playbackClock: nil,
+                    onPlaybackTime: nil
+                )
+                .accessibilityIdentifier("ui.videoDetail.danmakuOverlay")
+                .allowsHitTesting(false)
             }
-            .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task {
@@ -472,6 +579,26 @@ private struct UITestDanmakuFixtureView: View {
                 libraryStore.setDanmakuSettings(.default)
             }
             synchronizeRenderStore()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled else { return }
+                fixturePlaybackTime += 0.05
+                if fixturePlaybackTime >= 12 {
+                    fixturePlaybackTime = 0
+                }
+            }
+        }
+        .onAppear {
+            // The network-free fixture is also the renderer's rotation
+            // regression surface. Production routes keep their own
+            // orientation policy; this opt-in fixture allows XCTest to drive
+            // both viewport sizes without opening a real player.
+            AppOrientationLock.update(to: .allButUpsideDown, in: nil)
+        }
+        .onDisappear {
+            AppOrientationLock.restorePortrait()
         }
         .sheet(isPresented: $isShowingSettings) {
             DanmakuSettingsSheet(

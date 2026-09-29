@@ -227,6 +227,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
         private weak var presentedController: UIHostingController<AnyView>?
         private var presentedTargetID: String?
+        private var pendingPresentationTask: Task<Void, Never>?
 
         func update(
             target: DynamicCommentComposerTarget?,
@@ -238,10 +239,15 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             targetBinding: Binding<DynamicCommentComposerTarget?>
         ) {
             guard let target else {
+                pendingPresentationTask?.cancel()
+                pendingPresentationTask = nil
                 guard let presentedController else { return }
                 self.presentedController = nil
                 presentedTargetID = nil
-                presentedController.dismiss(animated: true)
+                if presentedController.presentingViewController != nil
+                    || presentedController.isBeingPresented {
+                    presentedController.dismiss(animated: true)
+                }
                 return
             }
 
@@ -273,15 +279,62 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             let host = UIHostingController(rootView: rootView)
             host.view.backgroundColor = .clear
             host.view.isOpaque = false
+            host.view.alpha = 0
             host.modalPresentationStyle = .overFullScreen
-            host.modalTransitionStyle = .coverVertical
+            host.modalTransitionStyle = .crossDissolve
             host.presentationController?.delegate = self
             presentedController = host
             presentedTargetID = target.id
-            presenter.present(host, animated: true)
+            presentWhenAvailable(host, from: presenter)
+        }
+
+        private func presentWhenAvailable(
+            _ host: UIHostingController<AnyView>,
+            from presenter: UIViewController
+        ) {
+            pendingPresentationTask?.cancel()
+            pendingPresentationTask = Task { @MainActor [weak self, weak presenter] in
+                guard let self else { return }
+                while !Task.isCancelled {
+                    guard let presenter,
+                          self.presentedController === host
+                    else { return }
+
+                    let root = Self.rootViewController(for: presenter)
+                    if root.viewIfLoaded?.window != nil,
+                       root.presentedViewController == nil,
+                       root.transitionCoordinator == nil,
+                       !root.isBeingPresented,
+                       !root.isBeingDismissed {
+                        root.present(host, animated: false) {
+                            UIView.animate(
+                                withDuration: 0.16,
+                                delay: 0,
+                                options: [.curveEaseOut, .beginFromCurrentState]
+                            ) {
+                                host.view.alpha = 1
+                            }
+                        }
+                        self.pendingPresentationTask = nil
+                        return
+                    }
+
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+            }
+        }
+
+        private static func rootViewController(for presenter: UIViewController) -> UIViewController {
+            var root = presenter
+            while let parent = root.parent {
+                root = parent
+            }
+            return root
         }
 
         func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            pendingPresentationTask?.cancel()
+            pendingPresentationTask = nil
             presentedController = nil
             presentedTargetID = nil
         }
@@ -427,7 +480,9 @@ struct RichCommentTextView: UIViewRepresentable {
                 loadMissingImages(in: textView, elements: effectiveDraft.elements, emotes: emotes)
             } else if let selection = effectiveDraft.selection?.nsRange,
                       textView.selectedRange != selection {
+                isApplyingDraft = true
                 textView.selectedRange = Self.clamped(selection, to: textView.text.utf16.count)
+                isApplyingDraft = false
             }
         }
 
@@ -478,11 +533,15 @@ struct RichCommentTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
-            onFocusChange(true)
+            DispatchQueue.main.async { [weak self] in
+                self?.onFocusChange(true)
+            }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
-            onFocusChange(false)
+            DispatchQueue.main.async { [weak self] in
+                self?.onFocusChange(false)
+            }
         }
 
         func insertEmote(_ token: String, into textView: RichCommentUIKitTextView) {
@@ -1112,8 +1171,6 @@ struct RichCommentComposerView: View {
             if draft.replyTarget == nil {
                 draft.replyTarget = target.authorName == nil ? nil : target
             }
-            await Task.yield()
-            guard !Task.isCancelled else { return }
             isEditorFocused = true
             emotes = (try? await api.fetchCommentEmotes()) ?? []
         }

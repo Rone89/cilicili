@@ -118,6 +118,10 @@ struct RemoteImageDiagnosticsView: View {
                 LabeledContent("加载任务", value: cdnStatistics.requestCount.formatted())
                 LabeledContent("成功响应", value: cdnStatistics.successCount.formatted())
                 LabeledContent("瞬时失败", value: cdnStatistics.transientFailureCount.formatted())
+                LabeledContent("HTTP 非瞬时失败", value: cdnStatistics.httpFailureCount.formatted())
+                LabeledContent("图片解码失败", value: cdnStatistics.decodeFailureCount.formatted())
+                LabeledContent("其他网络失败", value: cdnStatistics.otherFailureCount.formatted())
+                LabeledContent("取消", value: cdnStatistics.cancellationCount.formatted())
                 LabeledContent("自动切换", value: cdnStatistics.automaticSwitchCount.formatted())
             } else {
                 loadingRow
@@ -145,7 +149,7 @@ struct RemoteImageDiagnosticsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(node.host)
                             .font(.body.monospaced())
-                        Text("请求 \(node.requestCount) · 成功 \(node.successCount) · 瞬时失败 \(node.transientFailureCount)")
+                        Text("请求 \(node.requestCount) · 成功 \(node.successCount) · 瞬时失败 \(node.transientFailureCount) · HTTP失败 \(node.httpFailureCount)")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
@@ -293,6 +297,10 @@ nonisolated enum RemoteImageDiagnosticsTextFormatter {
             "  加载任务: \(cdn.requestCount)",
             "  成功响应: \(cdn.successCount)",
             "  瞬时失败: \(cdn.transientFailureCount)",
+            "  HTTP 非瞬时失败: \(cdn.httpFailureCount)",
+            "  图片解码失败: \(cdn.decodeFailureCount)",
+            "  其他网络失败: \(cdn.otherFailureCount)",
+            "  取消: \(cdn.cancellationCount)",
             "  自动切换: \(cdn.automaticSwitchCount)",
             "",
             "CDN 节点"
@@ -300,7 +308,7 @@ nonisolated enum RemoteImageDiagnosticsTextFormatter {
 
         cdn.hosts.forEach { host in
             lines.append(
-                "  \(host.host): 请求 \(host.requestCount) · 成功 \(host.successCount) · 瞬时失败 \(host.transientFailureCount) · 失败率 \(percentage(numerator: host.transientFailureCount, denominator: host.requestCount))"
+                "  \(host.host): 请求 \(host.requestCount) · 成功 \(host.successCount) · 瞬时失败 \(host.transientFailureCount) · HTTP失败 \(host.httpFailureCount) · 解码失败 \(host.decodeFailureCount) · 其他失败 \(host.otherFailureCount) · 取消 \(host.cancellationCount)"
             )
         }
 

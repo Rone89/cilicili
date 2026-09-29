@@ -83,7 +83,7 @@ struct DynamicDetailBottomInteractionBar: ToolbarContent {
     private var commentButton: some View {
         Button(action: openComment) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Image(systemName: "bubble.left")
+                Image(systemName: "square.and.pencil")
                     .font(.body)
                 Text("点击发送电波")
                     .font(.body)

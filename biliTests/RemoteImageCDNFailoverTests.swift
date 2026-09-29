@@ -145,19 +145,31 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
             requestCount: 100,
             successCount: 98,
             transientFailureCount: 2,
+            httpFailureCount: 0,
+            decodeFailureCount: 0,
+            otherFailureCount: 0,
+            cancellationCount: 0,
             automaticSwitchCount: 1,
             hosts: [
                 RemoteImageCDNHostDiagnostics(
                     host: "i0.hdslb.com",
                     requestCount: 50,
                     successCount: 49,
-                    transientFailureCount: 1
+                    transientFailureCount: 1,
+                    httpFailureCount: 0,
+                    decodeFailureCount: 0,
+                    otherFailureCount: 0,
+                    cancellationCount: 0
                 ),
                 RemoteImageCDNHostDiagnostics(
                     host: "i1.hdslb.com",
                     requestCount: 50,
                     successCount: 49,
-                    transientFailureCount: 1
+                    transientFailureCount: 1,
+                    httpFailureCount: 0,
+                    decodeFailureCount: 0,
+                    otherFailureCount: 0,
+                    cancellationCount: 0
                 )
             ],
             degradedHosts: [

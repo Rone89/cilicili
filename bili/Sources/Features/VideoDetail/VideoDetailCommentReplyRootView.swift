@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CommentReplyRootView: View {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     @Environment(\.videoCommentReplyComposerAction) private var replyToComment
     let comment: Comment
     private let display: CommentRowDisplayModel
@@ -12,7 +14,7 @@ struct CommentReplyRootView: View {
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: replyAction,
+            action: commentTapAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -44,7 +46,7 @@ struct CommentReplyRootView: View {
                     textColor: .primary,
                     emoteSize: 22,
                     typographyRole: .commentBody,
-                    onNonLinkTap: replyAction
+                    onNonLinkTap: commentTapAction
                 )
                     .padding(.top, 4)
                     .lineSpacing(1)
@@ -61,9 +63,20 @@ struct CommentReplyRootView: View {
             }
         }
         .padding(.vertical, 10)
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: comment.content?.message,
+            copyTitle: "复制评论",
+            replyAction: replyAction
+        )
     }
 
     private var replyAction: (() -> Void)? {
         replyToComment.map { action in { action(comment) } }
+    }
+
+    private var commentTapAction: (() -> Void)? {
+        guard !longPressCommentActionsEnabled, let replyAction else { return nil }
+        return replyAction
     }
 }

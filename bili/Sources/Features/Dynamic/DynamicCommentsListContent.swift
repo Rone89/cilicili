@@ -5,14 +5,14 @@ struct DynamicCommentsListContent: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
-    var replyToComment: ((Comment) -> Void)? = nil
+    var replyToComment: ((Comment, Comment) -> Void)? = nil
 
     init(
         viewModel: DynamicCommentsViewModel,
         highlightedCommentID: Int?,
         showReplies: @escaping (Comment) -> Void,
         dividerHorizontalPadding: CGFloat = 14,
-        replyToComment: ((Comment) -> Void)? = nil
+        replyToComment: ((Comment, Comment) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.highlightedCommentID = highlightedCommentID
@@ -27,7 +27,7 @@ struct DynamicCommentsListContent: View {
             EmptyStateView(title: "暂不支持评论", systemImage: "bubble.left", message: "这条动态没有返回评论入口。")
                 .padding(16)
         } else if viewModel.comments.isEmpty && viewModel.state.isLoading {
-            CommentLoadingSkeletonList(count: 4)
+            CommentLoadingSkeletonList()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
         } else if viewModel.comments.isEmpty, case .failed(let message) = viewModel.state {
@@ -60,7 +60,7 @@ private struct DynamicCommentsLoadedList: View {
     let highlightedCommentID: Int?
     let showReplies: (Comment) -> Void
     let dividerHorizontalPadding: CGFloat
-    let replyToComment: ((Comment) -> Void)?
+    let replyToComment: ((Comment, Comment) -> Void)?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -68,9 +68,7 @@ private struct DynamicCommentsLoadedList: View {
                 DynamicCommentRow(
                     item: item,
                     showReplies: { showReplies(item.comment) },
-                    replyToComment: replyToComment.map { action in
-                        { action(item.comment) }
-                    }
+                    replyToComment: replyToComment
                 )
                 .padding(.horizontal, 14)
                 .background(

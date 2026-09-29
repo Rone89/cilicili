@@ -4,11 +4,18 @@ struct CommentReplyPreviewContainer<Content: View>: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     let replyCount: Int
     let showsPreview: Bool
+    let showReplies: (() -> Void)?
     let content: Content
 
-    init(replyCount: Int, showsPreview: Bool, @ViewBuilder content: () -> Content) {
+    init(
+        replyCount: Int,
+        showsPreview: Bool,
+        showReplies: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
         self.replyCount = replyCount
         self.showsPreview = showsPreview
+        self.showReplies = showReplies
         self.content = content()
     }
 
@@ -28,15 +35,27 @@ struct CommentReplyPreviewContainer<Content: View>: View {
                 }
             }
 
-            CommentInlineActionLabel(
-                title: "\(replyCount) 条回复",
-                systemImage: "bubble.left.and.bubble.right"
-            )
-            .foregroundStyle(appTintColor)
+            replyCountAction
         }
         .padding(.horizontal, 0)
         .padding(.vertical, showsPreview ? 5 : 0)
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var replyCountAction: some View {
+        let label = CommentInlineActionLabel(
+            title: "\(replyCount) 条回复",
+            systemImage: "bubble.left.and.bubble.right"
+        )
+        if let showReplies {
+            Button(action: showReplies) {
+                label.foregroundStyle(appTintColor)
+            }
+            .buttonStyle(.plain)
+        } else {
+            label.foregroundStyle(appTintColor)
+        }
     }
 }
 

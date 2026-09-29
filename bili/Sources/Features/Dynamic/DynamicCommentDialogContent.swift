@@ -28,7 +28,7 @@ private struct DynamicCommentDialogStateContent: View {
 
     var body: some View {
         if snapshot.items.isEmpty && snapshot.state.isLoading {
-            CommentLoadingSkeletonList(count: 3)
+            CommentLoadingSkeletonList()
                 .padding(.horizontal, 20)
                 .padding(.vertical, 6)
         } else if snapshot.items.isEmpty, case .failed(let message) = snapshot.state {

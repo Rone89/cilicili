@@ -393,16 +393,17 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     }
 
     private func bind() {
-        viewModel.objectWillChange
-            .sink { [weak contentUpdateGate] _ in
-                contentUpdateGate?.receiveUpdate()
-            }
-            .store(in: &cancellables)
-
         viewModel.$detail
+            .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] detail in
                 guard let self else { return }
+                // The content tree only needs rebuilding when the detail's
+                // structure changes. Interaction, comments, playback and
+                // recommendations update through their narrow render stores.
+                // Rebuilding for every view-model publication makes the
+                // intrinsic-sized hosting view repeatedly relayout on entry.
+                self.contentUpdateGate.receiveUpdate()
                 let ratio =
                     VideoDetailInitialVideoGeometry.metadataAspectRatio(for: detail)
                     ?? self.surfacePlayerViewModel?.videoAspectRatio
@@ -411,6 +412,14 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
                 else { return }
                 self.videoAspectRatio = ratio
                 self.currentPlayerHeight = nil
+            }
+            .store(in: &cancellables)
+
+        viewModel.$selectedCID
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak contentUpdateGate] _ in
+                contentUpdateGate?.receiveUpdate()
             }
             .store(in: &cancellables)
 

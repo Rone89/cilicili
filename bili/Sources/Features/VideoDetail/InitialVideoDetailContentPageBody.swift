@@ -11,8 +11,7 @@ struct InitialVideoDetailContentPageBody: View {
         case .detail:
             InitialVideoDetailDetailContentPage(
                 seedVideo: seedVideo,
-                layoutWidth: layoutWidth,
-                mountsSecondaryContent: mountsSecondaryContent
+                layoutWidth: layoutWidth
             )
 
         case .comments:

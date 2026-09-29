@@ -21,9 +21,7 @@ struct CommentsSectionLoadedList: View {
                     showReplies: {
                         actions.showReplies(item.comment)
                     },
-                    replyToComment: actions.replyToComment.map { action in
-                        { action(item.comment) }
-                    }
+                    replyToComment: actions.replyToComment
                 )
                 .equatable()
                 .padding(.horizontal, horizontalPadding)

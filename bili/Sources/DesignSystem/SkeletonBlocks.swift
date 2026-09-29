@@ -1,5 +1,51 @@
 import SwiftUI
 
+struct SkeletonLoadingContainer<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isAnimating = false
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .compositingGroup()
+            .overlay {
+                if !reduceMotion {
+                    GeometryReader { proxy in
+                        let bandWidth = max(proxy.size.width * 0.48, 88)
+
+                        LinearGradient(
+                            colors: [
+                                .clear,
+                                Color.white.opacity(colorScheme == .dark ? 0.12 : 0.52),
+                                .clear,
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: bandWidth)
+                        .offset(
+                            x: isAnimating
+                                ? proxy.size.width + bandWidth
+                                : -bandWidth
+                        )
+                        .blendMode(.sourceAtop)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+            .clipped()
+            .task(id: reduceMotion) {
+                isAnimating = false
+                guard !reduceMotion else { return }
+                await Task.yield()
+                withAnimation(.linear(duration: 1.05).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+    }
+}
+
 struct SkeletonSurface: View {
     var body: some View {
         Rectangle()

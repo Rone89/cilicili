@@ -41,26 +41,13 @@ struct HomeFeedSingleColumnContent: View {
             }
 
             if isLoadingMore {
-                ForEach(0..<2, id: \.self) { _ in
-                    VideoFeedSkeletonCard(style: loadingMoreSkeletonStyle)
-                        .allowsHitTesting(false)
-                }
+                InlineLoadingStateView(title: "正在加载更多")
+                    .padding(.vertical, 8)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, metrics.singleColumnHorizontalPadding)
         .padding(.top, 0)
         .padding(.bottom, 18)
-    }
-
-    private var loadingMoreSkeletonStyle: VideoFeedSkeletonCard.Style {
-        switch metrics.mode {
-        case .borderedSingleColumn:
-            return .borderedSingleColumn(
-                coverSize: metrics.borderedSingleColumnCoverSize ?? CGSize(width: 140, height: 88)
-            )
-        case .singleColumn, .doubleColumn, .borderedDoubleColumn:
-            return .singleColumn
-        }
     }
 }

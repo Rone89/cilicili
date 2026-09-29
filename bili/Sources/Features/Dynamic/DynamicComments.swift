@@ -27,8 +27,8 @@ struct DynamicCommentsSheet: View {
                         replySheetComment = comment
                     },
                     dividerHorizontalPadding: 0,
-                    replyToComment: { comment in
-                        composerTarget = .reply(root: comment, parent: comment)
+                    replyToComment: { root, parent in
+                        composerTarget = .reply(root: root, parent: parent)
                     }
                 )
             }

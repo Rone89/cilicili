@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicCommentReplyRootView: View {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     let comment: Comment
     let reply: (() -> Void)?
     private let display: DynamicCommentRowDisplayModel
@@ -16,7 +18,7 @@ struct DynamicCommentReplyRootView: View {
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: reply,
+            action: commentTapAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -40,7 +42,7 @@ struct DynamicCommentReplyRootView: View {
                         emoteSize: 22,
                         lineSpacing: 1,
                         typographyRole: .commentBody,
-                        onNonLinkTap: reply
+                        onNonLinkTap: commentTapAction
                     )
                     .padding(.top, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,10 +58,23 @@ struct DynamicCommentReplyRootView: View {
             }
             .padding(.vertical, 10)
         }
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: comment.content?.message,
+            copyTitle: "复制评论",
+            replyAction: reply
+        )
+    }
+
+    private var commentTapAction: (() -> Void)? {
+        guard !longPressCommentActionsEnabled, let reply else { return nil }
+        return reply
     }
 }
 
 struct DynamicCommentReplyDetailRow: View {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     @Environment(\.appThemeTintColor) private var appTintColor
     let item: DynamicCommentReplyItem
     let showDialog: (() -> Void)?
@@ -85,7 +100,7 @@ struct DynamicCommentReplyDetailRow: View {
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: replyAction,
+            action: commentTapAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -109,7 +124,7 @@ struct DynamicCommentReplyDetailRow: View {
                         emoteSize: 22,
                         lineSpacing: 1,
                         typographyRole: .commentBody,
-                        onNonLinkTap: replyAction
+                        onNonLinkTap: commentTapAction
                     )
                     .padding(.top, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,10 +156,23 @@ struct DynamicCommentReplyDetailRow: View {
             }
             .padding(.vertical, 10)
         }
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: reply.content?.message,
+            copyTitle: "复制评论",
+            replyAction: replyAction
+        )
+    }
+
+    private var commentTapAction: (() -> Void)? {
+        guard !longPressCommentActionsEnabled, let replyAction else { return nil }
+        return replyAction
     }
 }
 
 struct DynamicCommentDialogRow: View {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     @Environment(\.appThemeTintColor) private var appTintColor
     let item: DynamicCommentDialogItem
     let isFocused: Bool
@@ -170,7 +198,7 @@ struct DynamicCommentDialogRow: View {
 
     var body: some View {
         DynamicCommentFullRowReplyTarget(
-            action: replyAction,
+            action: commentTapAction,
             accessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             HStack(alignment: .top, spacing: 10) {
@@ -190,7 +218,7 @@ struct DynamicCommentDialogRow: View {
                         emoteSize: 22,
                         lineSpacing: 2,
                         typographyRole: .commentBody,
-                        onNonLinkTap: replyAction
+                        onNonLinkTap: commentTapAction
                     )
                     .padding(.top, 4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -207,5 +235,16 @@ struct DynamicCommentDialogRow: View {
         .padding(.vertical, 10)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: reply.content?.message,
+            copyTitle: "复制评论",
+            replyAction: replyAction
+        )
+    }
+
+    private var commentTapAction: (() -> Void)? {
+        guard !longPressCommentActionsEnabled, let replyAction else { return nil }
+        return replyAction
     }
 }

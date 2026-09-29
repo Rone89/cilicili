@@ -92,3 +92,15 @@ struct InlineLoadingStateView: View {
         }
     }
 }
+
+struct InitialContentLoadingView: View {
+    let title: String
+    var topPadding: CGFloat = 96
+
+    var body: some View {
+        InlineLoadingStateView(title: title)
+            .frame(maxWidth: .infinity)
+            .padding(.top, topPadding)
+            .allowsHitTesting(false)
+    }
+}

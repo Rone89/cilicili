@@ -93,6 +93,10 @@ nonisolated struct RemoteImageCDNHostDiagnostics: Sendable, Equatable, Identifia
     let requestCount: Int
     let successCount: Int
     let transientFailureCount: Int
+    let httpFailureCount: Int
+    let decodeFailureCount: Int
+    let otherFailureCount: Int
+    let cancellationCount: Int
 
     var id: String { host }
 }
@@ -108,6 +112,10 @@ nonisolated struct RemoteImageCDNDiagnosticsSnapshot: Sendable, Equatable {
     let requestCount: Int
     let successCount: Int
     let transientFailureCount: Int
+    let httpFailureCount: Int
+    let decodeFailureCount: Int
+    let otherFailureCount: Int
+    let cancellationCount: Int
     let automaticSwitchCount: Int
     let hosts: [RemoteImageCDNHostDiagnostics]
     let degradedHosts: [RemoteImageCDNDegradedHost]
@@ -120,6 +128,10 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
         var requestCount = 0
         var successCount = 0
         var transientFailureCount = 0
+        var httpFailureCount = 0
+        var decodeFailureCount = 0
+        var otherFailureCount = 0
+        var cancellationCount = 0
     }
 
     private let lock = NSLock()
@@ -128,6 +140,10 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
     private var requestCount = 0
     private var successCount = 0
     private var transientFailureCount = 0
+    private var httpFailureCount = 0
+    private var decodeFailureCount = 0
+    private var otherFailureCount = 0
+    private var cancellationCount = 0
     private var automaticSwitchCount = 0
     private var countersByHost: [String: HostCounters] = [:]
 
@@ -193,6 +209,50 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
         }
     }
 
+    func recordHTTPFailure(for url: URL) {
+        guard RemoteImageCDNFailoverPolicy.isEligible(url),
+              let host = url.host?.lowercased()
+        else { return }
+        guard RemoteImageDiagnosticsSettings.isRecordingEnabled else { return }
+        lock.withLock {
+            httpFailureCount += 1
+            countersByHost[host, default: HostCounters()].httpFailureCount += 1
+        }
+    }
+
+    func recordDecodeFailure(for url: URL) {
+        guard RemoteImageCDNFailoverPolicy.isEligible(url),
+              let host = url.host?.lowercased()
+        else { return }
+        guard RemoteImageDiagnosticsSettings.isRecordingEnabled else { return }
+        lock.withLock {
+            decodeFailureCount += 1
+            countersByHost[host, default: HostCounters()].decodeFailureCount += 1
+        }
+    }
+
+    func recordOtherFailure(for url: URL) {
+        guard RemoteImageCDNFailoverPolicy.isEligible(url),
+              let host = url.host?.lowercased()
+        else { return }
+        guard RemoteImageDiagnosticsSettings.isRecordingEnabled else { return }
+        lock.withLock {
+            otherFailureCount += 1
+            countersByHost[host, default: HostCounters()].otherFailureCount += 1
+        }
+    }
+
+    func recordCancellation(for url: URL) {
+        guard RemoteImageCDNFailoverPolicy.isEligible(url),
+              let host = url.host?.lowercased()
+        else { return }
+        guard RemoteImageDiagnosticsSettings.isRecordingEnabled else { return }
+        lock.withLock {
+            cancellationCount += 1
+            countersByHost[host, default: HostCounters()].cancellationCount += 1
+        }
+    }
+
     func recordSuccess(for url: URL) {
         guard RemoteImageCDNFailoverPolicy.isEligible(url),
               let host = url.host?.lowercased()
@@ -215,7 +275,11 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
                     host: host,
                     requestCount: counters.requestCount,
                     successCount: counters.successCount,
-                    transientFailureCount: counters.transientFailureCount
+                    transientFailureCount: counters.transientFailureCount,
+                    httpFailureCount: counters.httpFailureCount,
+                    decodeFailureCount: counters.decodeFailureCount,
+                    otherFailureCount: counters.otherFailureCount,
+                    cancellationCount: counters.cancellationCount
                 )
             }
             let degradedHosts: [RemoteImageCDNDegradedHost] = RemoteImageCDNFailoverPolicy.interchangeableHosts.compactMap { host in
@@ -229,6 +293,10 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
                 requestCount: requestCount,
                 successCount: successCount,
                 transientFailureCount: transientFailureCount,
+                httpFailureCount: httpFailureCount,
+                decodeFailureCount: decodeFailureCount,
+                otherFailureCount: otherFailureCount,
+                cancellationCount: cancellationCount,
                 automaticSwitchCount: automaticSwitchCount,
                 hosts: hosts,
                 degradedHosts: degradedHosts
@@ -241,6 +309,10 @@ nonisolated final class RemoteImageCDNHealthMemory: @unchecked Sendable {
             requestCount = 0
             successCount = 0
             transientFailureCount = 0
+            httpFailureCount = 0
+            decodeFailureCount = 0
+            otherFailureCount = 0
+            cancellationCount = 0
             automaticSwitchCount = 0
             countersByHost.removeAll()
         }

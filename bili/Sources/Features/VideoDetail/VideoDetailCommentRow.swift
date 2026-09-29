@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct CommentRow: View, Equatable {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     let item: VideoDetailCommentDisplayItem
     let style: CommentSectionStyle
     let showReplies: () -> Void
-    let replyToComment: (() -> Void)?
+    let replyToComment: ((Comment) -> Void)?
 
     private var comment: Comment { item.comment }
     private var display: VideoDetailCommentDisplayModel { item.display }
@@ -13,7 +15,7 @@ struct CommentRow: View, Equatable {
         item: VideoDetailCommentDisplayItem,
         style: CommentSectionStyle,
         showReplies: @escaping () -> Void,
-        replyToComment: (() -> Void)? = nil
+        replyToComment: ((Comment) -> Void)? = nil
     ) {
         self.item = item
         self.style = style
@@ -24,12 +26,13 @@ struct CommentRow: View, Equatable {
     static func == (lhs: CommentRow, rhs: CommentRow) -> Bool {
         lhs.item == rhs.item
             && lhs.style == rhs.style
+            && lhs.longPressCommentActionsEnabled == rhs.longPressCommentActionsEnabled
             && (lhs.replyToComment != nil) == (rhs.replyToComment != nil)
     }
 
     var body: some View {
         CommentRowLayout(
-            fullRowReplyAction: replyToComment,
+            fullRowReplyAction: commentTapAction,
             fullRowReplyAccessibilityLabel: "回复 \(display.authorName) 的评论"
         ) {
             CommentAvatar(
@@ -46,7 +49,7 @@ struct CommentRow: View, Equatable {
                 textColor: .primary,
                 emoteSize: 21,
                 typographyRole: .commentBody,
-                onNonLinkTap: replyToComment
+                onNonLinkTap: commentTapAction
             )
                 .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
@@ -59,9 +62,24 @@ struct CommentRow: View, Equatable {
             CommentRowReplyPreviewSection(
                 display: display,
                 isEnabled: style.showsReplyPreviewContainer,
-                showReplies: showReplies
+                showReplies: showReplies,
+                replyToComment: replyToComment
             )
         }
-        .commentCopyContextMenu(text: comment.content?.message, title: "复制评论")
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: comment.content?.message,
+            copyTitle: "复制评论",
+            replyAction: replyAction
+        )
+    }
+
+    private var commentTapAction: (() -> Void)? {
+        guard !longPressCommentActionsEnabled, let replyAction else { return nil }
+        return replyAction
+    }
+
+    private var replyAction: (() -> Void)? {
+        replyToComment.map { action in { action(comment) } }
     }
 }

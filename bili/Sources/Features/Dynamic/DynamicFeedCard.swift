@@ -424,9 +424,9 @@ private struct DynamicDetailView: View {
         await commentsViewModel.reload()
     }
 
-    private var replyToCommentAction: (Comment) -> Void {
-        { comment in
-            let target = DynamicCommentComposerTarget.reply(root: comment, parent: comment)
+    private var replyToCommentAction: (Comment, Comment) -> Void {
+        { root, parent in
+            let target = DynamicCommentComposerTarget.reply(root: root, parent: parent)
             richCommentComposerTarget = target
         }
     }

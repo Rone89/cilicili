@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct DynamicReplyPreviewRow: View {
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var longPressCommentActionsEnabled = false
     let reply: Comment
+    var replyAction: (() -> Void)? = nil
+    let showReplies: () -> Void
 
     var body: some View {
         DynamicCommentText(
@@ -11,9 +15,20 @@ struct DynamicReplyPreviewRow: View {
             emoteSize: 18,
             leadingName: reply.member?.uname ?? "Unknown",
             leadingNameColor: .secondary,
-            typographyRole: .metadata
+            typographyRole: .metadata,
+            onNonLinkTap: commentTapAction
         )
         .lineLimit(2)
+        .commentActionsMenu(
+            longPressEnabled: longPressCommentActionsEnabled,
+            text: reply.content?.message,
+            copyTitle: "复制评论",
+            replyAction: replyAction
+        )
+    }
+
+    private var commentTapAction: () -> Void {
+        showReplies
     }
 }
 

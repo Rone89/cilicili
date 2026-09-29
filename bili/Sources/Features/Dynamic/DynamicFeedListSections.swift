@@ -40,7 +40,8 @@ struct DynamicFeedFooter: View {
     var body: some View {
         Group {
             if viewModel.state.isLoading {
-                DynamicFeedSkeletonCard()
+                InlineLoadingStateView(title: "正在加载更多")
+                    .padding(.vertical, 10)
                     .allowsHitTesting(false)
             } else if viewModel.hasMoreItems {
                 Button {

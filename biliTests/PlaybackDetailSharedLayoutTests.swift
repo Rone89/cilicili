@@ -118,7 +118,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
     @MainActor
     func testSharedPlayerAndContentMetrics() {
         XCTAssertEqual(PlaybackDetailPlayerMetrics.standardHeight(for: 393), 221.0625)
-        XCTAssertEqual(PlaybackDetailContentMetrics.contentWidth(for: 393), 369)
+        XCTAssertEqual(PlaybackDetailContentMetrics.contentWidth(for: 393), 353)
         XCTAssertEqual(PlaybackDetailContentMetrics.contentWidth(for: 12), 0)
     }
 
