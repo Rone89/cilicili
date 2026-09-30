@@ -82,7 +82,7 @@ nonisolated final class BiliHLSManifestResourceLoader: NSObject,
         guard !isInvalidated else { return }
         isInvalidated = true
         PlayerMetricsLog.logger.info(
-            "[DASH-HLS] manifest loader cancelled requests=\(self.manifestRequestCount, privacy: .public)"
+            "[DASH-HLS] manifest loader invalidated servedRequests=\(self.manifestRequestCount, privacy: .public)"
         )
     }
 
