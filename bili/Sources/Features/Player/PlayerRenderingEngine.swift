@@ -46,6 +46,7 @@ struct PlayerStreamSource: Equatable, Sendable {
     let dynamicRange: BiliVideoDynamicRange
     let cdnPreference: PlaybackCDNPreference
     var playbackContentMode: PlayerPlaybackContentMode = .video
+    var resourceLoaderManifestExperimentEnabled = false
 
     func withResumeTime(_ resumeTime: TimeInterval) -> PlayerStreamSource {
         PlayerStreamSource(
@@ -65,7 +66,8 @@ struct PlayerStreamSource: Equatable, Sendable {
             resumeTime: max(resumeTime, 0),
             dynamicRange: dynamicRange,
             cdnPreference: cdnPreference,
-            playbackContentMode: playbackContentMode
+            playbackContentMode: playbackContentMode,
+            resourceLoaderManifestExperimentEnabled: resourceLoaderManifestExperimentEnabled
         )
     }
 }

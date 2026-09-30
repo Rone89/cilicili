@@ -197,7 +197,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testPlayerStreamSourceResumeTimePreservesAudioOnlyMode() {
+    func testPlayerStreamSourceResumeTimePreservesPlaybackConfiguration() {
         let source = PlayerStreamSource(
             metricsID: "audio-only-test",
             videoURL: nil,
@@ -215,12 +215,14 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             resumeTime: 0,
             dynamicRange: .sdr,
             cdnPreference: .automatic,
-            playbackContentMode: .audioOnly
+            playbackContentMode: .audioOnly,
+            resourceLoaderManifestExperimentEnabled: true
         )
 
         let resumed = source.withResumeTime(42)
         XCTAssertEqual(resumed.resumeTime, 42)
         XCTAssertEqual(resumed.playbackContentMode, .audioOnly)
+        XCTAssertTrue(resumed.resourceLoaderManifestExperimentEnabled)
     }
 
     @MainActor
@@ -476,6 +478,17 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertTrue(
             LibraryStore(userDefaults: defaults).playbackPlayableFallbackDeadlineExperimentEnabled
         )
+    }
+
+    @MainActor
+    func testResourceLoaderManifestExperimentDefaultsOffAndPersistsToggle() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+
+        XCTAssertFalse(store.bilibiliResourceLoaderManifestExperimentEnabled)
+        store.setBilibiliResourceLoaderManifestExperimentEnabled(true)
+
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).bilibiliResourceLoaderManifestExperimentEnabled)
     }
 
     @MainActor
