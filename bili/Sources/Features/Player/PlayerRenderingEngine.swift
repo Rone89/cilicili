@@ -645,6 +645,21 @@ enum PlayerMetricsLog {
     nonisolated static let logger = Logger(subsystem: "cc.bili", category: "PlayerMetrics")
     nonisolated static let signposter = OSSignposter(logger: logger)
     private static let diagnosticsFileName = "player-diagnostics.log"
+    #if DEBUG
+    @MainActor private static var startupTraceIDs: [String: String] = [:]
+    @MainActor private static var startupTraceOrder: [String] = []
+
+    @MainActor
+    static func beginStartupTrace(metricsID: String, traceID: String) {
+        startupTraceIDs[metricsID] = traceID
+        startupTraceOrder.removeAll { $0 == metricsID }
+        startupTraceOrder.append(metricsID)
+        while startupTraceOrder.count > 64 {
+            let expiredMetricsID = startupTraceOrder.removeFirst()
+            startupTraceIDs[expiredMetricsID] = nil
+        }
+    }
+    #endif
 
     nonisolated static func beginSignpostedInterval(
         _ name: StaticString,
@@ -697,15 +712,33 @@ enum PlayerMetricsLog {
     static func record(
         _ event: PlayerPerformanceEvent.Kind, metricsID: String, title: String? = nil, message: String? = nil
     ) {
-        PlayerPerformanceStore.shared.record(event, metricsID: metricsID, title: title, message: message)
-        diagnostic(
-            [
-                "event=\(event.title)",
-                "metricsID=\(metricsID)",
-                title.map { "title=\(shortTitle($0))" },
-                message.map { "message=\($0)" },
-            ].compactMap { $0 }.joined(separator: " ")
-        )
+        #if DEBUG
+        var enrichedMessage = message
+        if let traceID = startupTraceIDs[metricsID],
+           enrichedMessage?.contains("traceID=") != true {
+            enrichedMessage = [enrichedMessage, "traceID=\(traceID)"]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        }
+        let traceField = startupTraceIDs[metricsID].map { "traceID=\($0)" }
+        #else
+        let enrichedMessage = message
+        #endif
+        PlayerPerformanceStore.shared.record(event, metricsID: metricsID, title: title, message: enrichedMessage)
+        var diagnosticFields = [
+            "event=\(event.title)",
+            "metricsID=\(metricsID)",
+            title.map { "title=\(shortTitle($0))" },
+            enrichedMessage.map { "message=\($0)" },
+        ]
+        #if DEBUG
+        diagnosticFields.insert(traceField, at: 2)
+        if event == .firstFrame {
+            startupTraceIDs[metricsID] = nil
+            startupTraceOrder.removeAll { $0 == metricsID }
+        }
+        #endif
+        diagnostic(diagnosticFields.compactMap { $0 }.joined(separator: " "))
     }
 
     nonisolated static func diagnostic(_ message: String) {

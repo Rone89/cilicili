@@ -8,6 +8,9 @@ struct VideoDetailRelatedSection: View {
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
     let retryRelated: () async -> Void
     @State private var preloadedRelatedVideos = Set<String>()
+    #if DEBUG
+    @State private var observedRelatedVideos = Set<String>()
+    #endif
 
     var body: some View {
         let layout = VideoDetailRelatedListLayout(
@@ -42,6 +45,13 @@ struct VideoDetailRelatedSection: View {
     }
 
     private func beginRelatedPreloadIfNeeded(_ video: VideoItem) async {
+        #if DEBUG
+        if observedRelatedVideos.insert(video.bvid).inserted {
+            PlayerMetricsLog.diagnostic(
+                "event=relatedRowVisible metricsID=\(video.bvid) cid=\(video.cid ?? 0)"
+            )
+        }
+        #endif
         await preloadActions.beginPreloadIfNeeded(video)
     }
 }

@@ -3,12 +3,22 @@ import OSLog
 
 extension VideoDetailViewModel {
     func loadPlayURL(mode: VideoDetailPlayURLLoadMode = .normal) async {
+        #if DEBUG
+        let startupTraceID = String(UUID().uuidString.prefix(8)).lowercased()
+        #else
+        let startupTraceID = ""
+        #endif
+        await loadPlayURL(mode: mode, startupTraceID: startupTraceID)
+    }
+
+    private func loadPlayURL(mode: VideoDetailPlayURLLoadMode, startupTraceID: String) async {
         guard !isPlaybackInvalidatedForNavigation else { return }
+        let traceSuffix = startupTraceID.isEmpty ? "" : " traceID=\(startupTraceID)"
         let signpostState = PlayerMetricsLog.beginSignpostedInterval(
             "VideoDetailPlayURL",
-            message: "bvid=\(detail.bvid) cid=\(selectedCID ?? 0) mode=\(mode)"
+            message: "bvid=\(detail.bvid) cid=\(selectedCID ?? 0) mode=\(mode)\(traceSuffix)"
         )
-        var signpostMessage = "bvid=\(detail.bvid) loading"
+        var signpostMessage = "bvid=\(detail.bvid) loading\(traceSuffix)"
         defer {
             PlayerMetricsLog.endSignpostedInterval(
                 "VideoDetailPlayURL",
@@ -16,13 +26,27 @@ extension VideoDetailViewModel {
                 message: signpostMessage
             )
         }
-        preparePlayURLLoading(mode: mode)
+        preparePlayURLLoading(mode: mode, traceID: startupTraceID)
         guard let cid = selectedCID else {
             failPlayURLLoadingForMissingCID()
             signpostMessage = "bvid=\(detail.bvid) missing cid"
             return
         }
         let pageNumber = selectedPageNumber
+        #if DEBUG
+        let relatedPrefetchState = await VideoPreloadCenter.shared.relatedRowPlayURLPrefetchStateAtClick(
+            bvid: detail.bvid,
+            cid: cid,
+            page: pageNumber,
+            preferredQuality: adaptiveStartupPreferredQuality
+        )
+        PlayerMetricsLog.record(
+            .startupScheduler,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: "prefetchAtClick \(relatedPrefetchState)"
+        )
+        #endif
         var deferredPlayableFallback: VideoDetailPlayURLFallback?
 
         do {
@@ -37,7 +61,7 @@ extension VideoDetailViewModel {
             let data = try await loadedNetworkPlayURLData(cid: cid, page: pageNumber)
             if await prepareHistoryResumeBeforeApplyingPlayURL(data, cid: cid) {
                 signpostMessage = "bvid=\(detail.bvid) history cid"
-                await loadPlayURL(mode: mode)
+                await loadPlayURL(mode: mode, startupTraceID: startupTraceID)
                 return
             }
             switch await applyNetworkPlayURLData(data, cid: cid, page: pageNumber) {

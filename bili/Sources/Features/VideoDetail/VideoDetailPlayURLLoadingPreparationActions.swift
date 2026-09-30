@@ -2,15 +2,27 @@ import Foundation
 import QuartzCore
 
 extension VideoDetailViewModel {
-    func preparePlayURLLoading(mode: VideoDetailPlayURLLoadMode) {
+    func preparePlayURLLoading(mode: VideoDetailPlayURLLoadMode, traceID: String) {
         playURLState = .loading
         playURLLoadStartTime = CACurrentMediaTime()
         playURLElapsedMilliseconds = nil
         lastPlayURLSource = nil
+        #if DEBUG
+        PlayerMetricsLog.beginStartupTrace(metricsID: detail.bvid, traceID: traceID)
+        let startMessage = "\(mode.startMessage) traceID=\(traceID)"
+        #else
+        _ = traceID
+        let startMessage = mode.startMessage
+        #endif
         if mode == .playbackRecovery {
             cancelStartupPlayURLTask()
         }
-        PlayerMetricsLog.record(.playURLStart, metricsID: detail.bvid, title: detail.title, message: mode.startMessage)
+        PlayerMetricsLog.record(
+            .playURLStart,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: startMessage
+        )
     }
 
     func failPlayURLLoadingForMissingCID() {

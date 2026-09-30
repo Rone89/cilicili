@@ -23,6 +23,21 @@ extension VideoDetailViewModel {
         playVariants = variants
         selectedPlayVariant = selectedVariant
         logSelectedPlayVariant(selectedVariant, availableVariants: variants, source: source)
+        #if DEBUG
+        PlayerMetricsLog.record(
+            .startupScheduler,
+            metricsID: detail.bvid,
+            title: detail.title,
+            message: [
+                "qualitySelection",
+                "source=\(source)",
+                "requestedQ=\(adaptiveStartupPreferredQuality ?? 0)",
+                "targetQ=\(targetPlaybackPreferredQuality ?? 0)",
+                "finalQ=\(selectedVariant?.quality ?? 0)",
+                "codec=\(selectedVariant?.codec ?? "-")",
+            ].joined(separator: " ")
+        )
+        #endif
         return (selectedVariant, targetVariant)
     }
 

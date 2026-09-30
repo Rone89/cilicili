@@ -4378,28 +4378,43 @@ struct LocalHLSBridge: Sendable {
                 from: sourceURLs,
                 headers: headers
             )
+            let bootstrapMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)
             await recordManifestStage(
                 metricsID: metricsID,
                 "\(mediaType)Boot=\(bootstrapPayload.mode) \(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)))"
             )
+            #if DEBUG
+            await recordManifestStage(
+                metricsID: metricsID,
+                "sidxFetch media=\(mediaType) mode=\(bootstrapPayload.mode) indexBytes=\(bootstrapPayload.indexData.count) initBytes=\(initializationData?.count ?? 0) elapsedMs=\(formatMilliseconds(bootstrapMilliseconds))"
+            )
+            #endif
             PlayerMetricsLog.logger.info(
                 "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(bootstrapPayload.mode, privacy: .public) bytes=\(bootstrapPayload.indexData.count, privacy: .public) initBytes=\(initializationData?.count ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
             )
             let parseStart = CACurrentMediaTime()
             let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
+            let parseMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: parseStart)
+            #if DEBUG
+            await recordManifestStage(
+                metricsID: metricsID,
+                "sidxParse media=\(mediaType) refs=\(references.count) elapsedMs=\(formatMilliseconds(parseMilliseconds))"
+            )
+            #endif
             guard !references.isEmpty else {
                 throw PlayerEngineError.unsupportedMedia
             }
+            let timelineStart = CACurrentMediaTime()
             let resolvedTimelineOffset = await startupTimelineOffset(
                 for: track,
                 references: references,
                 headers: headers,
                 metricsID: metricsID
             )
-            PlayerMetricsLog.logger.info(
-                "hlsBridgeIndexParsed media=\(mediaType, privacy: .public) refs=\(references.count, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: parseStart), format: .fixed(precision: 1), privacy: .public)"
-            )
-            return try makeRendition(
+            let timelineMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: timelineStart)
+            let indexPreparationMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: parseStart)
+            let mapStart = CACurrentMediaTime()
+            let rendition = try makeRendition(
                 for: track,
                 initialization: initialization,
                 initializationData: initializationData,
@@ -4408,6 +4423,16 @@ struct LocalHLSBridge: Sendable {
                 timelineOffsetOverride: resolvedTimelineOffset,
                 renderingPolicy: renderingPolicy
             )
+            #if DEBUG
+            await recordManifestStage(
+                metricsID: metricsID,
+                "segmentMap media=\(mediaType) refs=\(references.count) elapsedMs=\(formatMilliseconds(PlayerMetricsLog.elapsedMilliseconds(since: mapStart))) timelineMs=\(formatMilliseconds(timelineMilliseconds))"
+            )
+            #endif
+            PlayerMetricsLog.logger.info(
+                "hlsBridgeIndexParsed media=\(mediaType, privacy: .public) refs=\(references.count, privacy: .public) elapsedMs=\(indexPreparationMilliseconds, format: .fixed(precision: 1), privacy: .public)"
+            )
+            return rendition
         }
         let rendition = renditionResult.rendition
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
