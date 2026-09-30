@@ -213,6 +213,34 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     var debugPlayerItemIdentity: ObjectIdentifier? {
         player.currentItem.map { ObjectIdentifier($0) }
     }
+
+    var debugCurrentPlayerItem: AVPlayerItem? {
+        player.currentItem
+    }
+
+    var debugCurrentAssetURL: URL? {
+        (player.currentItem?.asset as? AVURLAsset)?.url
+    }
+
+    var debugHasManifestResourceLoader: Bool {
+        manifestResourceLoader != nil
+    }
+
+    var debugHasLocalBridgeSession: Bool {
+        hlsBridge != nil
+    }
+
+    var debugLocalBridgeRequestCounts: (total: Int, manifests: Int)? {
+        hlsBridge?.requestCountSnapshot()
+    }
+
+    var debugPlaybackRate: Float {
+        currentRate
+    }
+
+    var debugActualPlayerRate: Float {
+        player.rate
+    }
 #endif
 
     init() {
