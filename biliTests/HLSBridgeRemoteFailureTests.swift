@@ -1092,6 +1092,11 @@ final class LocalHLSProxyServerIntegrationTests: XCTestCase {
         let segmentURL = bridge.masterPlaylistURL
             .deletingLastPathComponent()
             .appendingPathComponent("media/video/segment-0.m4s")
+        let environment = PlaybackEnvironment.current
+        try XCTSkipUnless(
+            !environment.shouldPreferConservativePlayback,
+            "Startup hedging is disabled for \(environment.diagnosticSummary)."
+        )
         let start = CACurrentMediaTime()
         let segment = try await fetch(segmentURL)
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
