@@ -6,6 +6,7 @@ struct DynamicImageCell: View {
     let previewItemID: String?
     let previewGroup: ZoomyImagePreviewGroup?
     let displayMode: DisplayMode
+    @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
     @State private var thumbnailShadowOpacityScale = 1.0
     private let normalizedURLString: String?
     private let imageAspectRatio: CGFloat
@@ -41,7 +42,7 @@ struct DynamicImageCell: View {
                 .clipped()
                 .videoCoverSurface(
                     cornerRadius: 8,
-                    shadowLevel: .regular,
+                    shadowLevel: imageShadowEnabled ? .regular : nil,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
                     appliesUnifiedBorder: false
@@ -53,7 +54,7 @@ struct DynamicImageCell: View {
                 .clipped()
                 .videoCoverSurface(
                     cornerRadius: cornerRadius,
-                    shadowLevel: .regular,
+                    shadowLevel: imageShadowEnabled ? .regular : nil,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
                     appliesUnifiedBorder: false
@@ -64,7 +65,7 @@ struct DynamicImageCell: View {
                 .clipped()
                 .videoCoverSurface(
                     cornerRadius: cornerRadius,
-                    shadowLevel: .subtle,
+                    shadowLevel: imageShadowEnabled ? .subtle : nil,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
                     appliesUnifiedBorder: false
@@ -76,11 +77,16 @@ struct DynamicImageCell: View {
                 .clipped()
                 .videoCoverSurface(
                     cornerRadius: cornerRadius,
-                    shadowLevel: .regular,
+                    shadowLevel: imageShadowEnabled ? .regular : nil,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
                     appliesUnifiedBorder: false
                 )
+        case .adaptiveGrid(let aspectRatio):
+            imageContent
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .clipped()
         case .fixedHeight(let height, let cornerRadius):
             imageContent
                 .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
@@ -88,7 +94,7 @@ struct DynamicImageCell: View {
                 .clipped()
                 .videoCoverSurface(
                     cornerRadius: cornerRadius,
-                    shadowLevel: .regular,
+                    shadowLevel: imageShadowEnabled ? .regular : nil,
                     shadowOpacityScale: thumbnailShadowOpacityScale,
                     borderOpacityScale: thumbnailShadowOpacityScale,
                     appliesUnifiedBorder: false

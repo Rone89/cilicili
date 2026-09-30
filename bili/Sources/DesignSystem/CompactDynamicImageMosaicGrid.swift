@@ -2,6 +2,9 @@ import SwiftUI
 
 struct CompactDynamicImageMosaicGrid: View {
     @StateObject private var previewGroup = ZoomyImagePreviewGroup()
+    @AppStorage(DynamicImageGridExperiments.adaptiveLayoutEnabledKey)
+    private var adaptiveLayoutEnabled = false
+    @State private var availableWidth: CGFloat = CompactDynamicImageMosaicMetrics.compactWidth
     private let imageCount: Int
     private let displayedImages: [CompactDynamicImageDisplayItem]
     private let layout: CompactDynamicImageMosaicLayout
@@ -28,15 +31,60 @@ struct CompactDynamicImageMosaicGrid: View {
 
     var body: some View {
         if imageCount > 0 {
-            CompactDynamicImageMosaicContent(
-                imageCount: imageCount,
-                displayedImages: displayedImages,
-                layout: layout,
-                previewItems: previewItems,
-                previewGroup: previewGroup,
-                accessibilityName: accessibilityName,
-                placeholderFill: placeholderFill
+            if adaptiveLayoutEnabled, imageCount > 1 {
+                mosaicContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(widthReader)
+                    .onPreferenceChange(CompactDynamicImageMosaicWidthPreferenceKey.self) { width in
+                        updateAvailableWidth(width)
+                    }
+            } else {
+                mosaicContent
+            }
+        }
+    }
+
+    private var mosaicContent: some View {
+        CompactDynamicImageMosaicContent(
+            imageCount: imageCount,
+            displayedImages: displayedImages,
+            layout: layout,
+            previewItems: previewItems,
+            previewGroup: previewGroup,
+            accessibilityName: accessibilityName,
+            placeholderFill: placeholderFill,
+            adaptiveLayoutEnabled: adaptiveLayoutEnabled,
+            adaptiveWidth: resolvedWidth
+        )
+    }
+
+    private var resolvedWidth: CGFloat {
+        availableWidth > 1 ? floor(availableWidth) : CompactDynamicImageMosaicMetrics.compactWidth
+    }
+
+    private var widthReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: CompactDynamicImageMosaicWidthPreferenceKey.self,
+                value: proxy.size.width
             )
+        }
+    }
+
+    private func updateAvailableWidth(_ width: CGFloat) {
+        let roundedWidth = floor(width)
+        guard roundedWidth > 1, abs(availableWidth - roundedWidth) > 0.5 else { return }
+        availableWidth = roundedWidth
+    }
+}
+
+private struct CompactDynamicImageMosaicWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let nextWidth = nextValue()
+        if nextWidth > 0 {
+            value = nextWidth
         }
     }
 }

@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct DynamicImageGridContent: View {
+    @AppStorage(DynamicImageGridExperiments.adaptiveLayoutEnabledKey)
+    private var adaptiveLayoutEnabled = false
+
     let images: [DynamicImageItem]
     let displayedImages: [DynamicImageDisplayItem]
     let layout: DynamicImageGridLayout
@@ -14,6 +17,23 @@ struct DynamicImageGridContent: View {
 
     @ViewBuilder
     private func content(width: CGFloat) -> some View {
+        if adaptiveLayoutEnabled, displayedImages.count > 1 {
+            DynamicAdaptiveImageGrid(
+                imagesCount: images.count,
+                displayedImages: displayedImages,
+                previewItems: previewItems,
+                previewGroup: previewGroup,
+                width: width,
+                outerCornerRadius: DynamicFeedMediaMetrics.coverCornerRadius,
+                accessibilityName: nil
+            )
+        } else {
+            existingLayout(width: width)
+        }
+    }
+
+    @ViewBuilder
+    private func existingLayout(width: CGFloat) -> some View {
         switch displayedImages.count {
         case 0:
             EmptyView()

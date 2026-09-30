@@ -8,9 +8,34 @@ struct CompactDynamicImageMosaicContent: View {
     let previewGroup: ZoomyImagePreviewGroup
     let accessibilityName: String
     let placeholderFill: Color
+    let adaptiveLayoutEnabled: Bool
+    let adaptiveWidth: CGFloat
 
     var body: some View {
-        content
+        if adaptiveLayoutEnabled, displayedImages.count > 1 {
+            DynamicAdaptiveImageGrid(
+                imagesCount: imageCount,
+                displayedImages: adaptiveDisplayedImages,
+                previewItems: previewItems,
+                previewGroup: previewGroup,
+                width: adaptiveWidth,
+                outerCornerRadius: CompactDynamicImageMosaicMetrics.groupCornerRadius,
+                accessibilityName: accessibilityName
+            )
+        } else {
+            content
+        }
+    }
+
+    private var adaptiveDisplayedImages: [DynamicImageDisplayItem] {
+        displayedImages.map {
+            DynamicImageDisplayItem(
+                id: $0.id,
+                index: $0.index,
+                image: $0.image,
+                aspectRatio: $0.aspectRatio
+            )
+        }
     }
 
     @ViewBuilder

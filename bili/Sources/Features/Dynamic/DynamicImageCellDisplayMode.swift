@@ -5,6 +5,7 @@ nonisolated enum DynamicImageCellDisplayMode {
     case longImage(cornerRadius: CGFloat)
     case square(cornerRadius: CGFloat)
     case hero(aspectRatio: CGFloat, cornerRadius: CGFloat)
+    case adaptiveGrid(aspectRatio: CGFloat)
     case fixedHeight(height: CGFloat, cornerRadius: CGFloat)
 }
 
@@ -38,7 +39,7 @@ nonisolated enum DynamicImageThumbnailSizing {
         switch displayMode {
         case .single, .longImage, .hero:
             usesExpandedImage = true
-        case .square, .fixedHeight:
+        case .square, .adaptiveGrid, .fixedHeight:
             usesExpandedImage = false
         }
         return targetPixelSize(
@@ -80,6 +81,8 @@ extension DynamicImageCellDisplayMode {
              .hero(_, let cornerRadius),
              .fixedHeight(_, let cornerRadius):
             return cornerRadius
+        case .adaptiveGrid:
+            return 0
         }
     }
 
@@ -94,7 +97,7 @@ extension DynamicImageCellDisplayMode {
         switch self {
         case .fixedHeight:
             return .fit
-        case .single, .longImage, .square, .hero:
+        case .single, .longImage, .square, .hero, .adaptiveGrid:
             return .fill
         }
     }
@@ -103,7 +106,7 @@ extension DynamicImageCellDisplayMode {
         switch self {
         case .longImage:
             return .top
-        case .single, .square, .hero, .fixedHeight:
+        case .single, .square, .hero, .adaptiveGrid, .fixedHeight:
             return .center
         }
     }
@@ -117,6 +120,8 @@ extension DynamicImageCellDisplayMode {
         case .square:
             return 1
         case .hero(let aspectRatio, _):
+            return aspectRatio
+        case .adaptiveGrid(let aspectRatio):
             return aspectRatio
         case .fixedHeight:
             return imageAspectRatio

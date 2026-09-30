@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum DynamicImageShadowSettings {
+    static let storageKey = "cc.bili.dynamicImageShadowEnabled.v1"
+}
+
 enum MediaShadowLevel {
     case control
     case subtle

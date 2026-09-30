@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MineDisplaySettingsSection: View {
     @ObservedObject var libraryStore: LibraryStore
+    @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
 
     var body: some View {
         Section("显示") {
@@ -98,6 +99,17 @@ struct MineDisplaySettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
+
+            Toggle(isOn: $imageShadowEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态与评论图片阴影", systemImage: "square.on.square")
+
+                    Text("控制动态和评论图片的投影；关闭后仍保留图片边缘描边。自适应多图本身没有投影。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             Toggle(
                 isOn: Binding(

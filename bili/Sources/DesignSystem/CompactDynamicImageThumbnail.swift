@@ -7,6 +7,7 @@ struct CompactDynamicImageThumbnail: View {
     let previewGroup: ZoomyImagePreviewGroup
     let imageCount: Int
     let placeholderFill: Color
+    @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
     @State private var thumbnailShadowOpacityScale = 1.0
     private let normalizedURLString: String?
     private let thumbnailSize: CGSize
@@ -55,7 +56,7 @@ struct CompactDynamicImageThumbnail: View {
         .frame(width: thumbnailSize.width, height: thumbnailSize.height)
         .videoCoverSurface(
             cornerRadius: 8,
-            shadowLevel: .subtle,
+            shadowLevel: imageShadowEnabled ? .subtle : nil,
             shadowOpacityScale: thumbnailShadowOpacityScale,
             borderOpacityScale: thumbnailShadowOpacityScale,
             appliesUnifiedBorder: false

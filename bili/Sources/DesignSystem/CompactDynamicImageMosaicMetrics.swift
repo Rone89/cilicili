@@ -3,6 +3,7 @@ import SwiftUI
 enum CompactDynamicImageMosaicMetrics {
     static let spacing: CGFloat = 6
     static let compactWidth: CGFloat = 270
+    static let groupCornerRadius: CGFloat = 8
     static let smallSide: CGFloat = 86
     static let mediumSide: CGFloat = 132
     static let largeSide: CGFloat = 178

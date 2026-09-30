@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MineDeveloperDiagnosticsView: View {
     @ObservedObject var libraryStore: LibraryStore
+    @AppStorage(DynamicImageGridExperiments.adaptiveLayoutEnabledKey)
+    private var dynamicAdaptiveImageGridEnabled = false
 
     var body: some View {
         Form {
@@ -80,6 +82,16 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
+            Toggle(isOn: $dynamicAdaptiveImageGridEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态与评论多图自适应布局", systemImage: "square.grid.3x3")
+                    Text("动态正文、评论列表和评论/回复弹窗中的多图按可用宽度自适应排布；圆角随媒体组尺寸和显示场景调整。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum DynamicFeedMediaMetrics {
+    static let coverCornerRadius: CGFloat = 20
+}
+
 struct DynamicFeedVideoCover: View {
     @Environment(\.showsVideoCoverDurationBadges) private var showsVideoCoverDurationBadges
     let video: VideoItem
@@ -34,6 +38,6 @@ struct DynamicFeedVideoCover: View {
                 }
             }
         }
-        .videoCoverSurface(cornerRadius: 20, shadowLevel: .control)
+        .videoCoverSurface(cornerRadius: DynamicFeedMediaMetrics.coverCornerRadius, shadowLevel: .control)
     }
 }
