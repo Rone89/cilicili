@@ -82,21 +82,6 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
-            Toggle(
-                isOn: Binding(
-                    get: { libraryStore.bilibiliResourceLoaderManifestExperimentEnabled },
-                    set: { libraryStore.setBilibiliResourceLoaderManifestExperimentEnabled($0) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("ResourceLoader 播放列表实验", systemImage: "play.rectangle.on.rectangle")
-                    Text("普通 DASH 视频的 HLS 播放列表由系统资源加载器提供；媒体片段仍经本机 HTTP 桥接。下次创建播放器时生效。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
             Toggle(isOn: $dynamicAdaptiveImageGridEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("动态与评论多图自适应布局", systemImage: "square.grid.3x3")

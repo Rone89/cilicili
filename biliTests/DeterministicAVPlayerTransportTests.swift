@@ -17,119 +17,104 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
     }
 
     @MainActor
-    func testSameGeneratedDASHSourcePlaysThroughBothManifestTransports() async {
+    func testGeneratedDASHSourcePlaysThroughLocalHLSBridge() async {
         do {
             let fixture = try await DeterministicDASHPlaybackFixture.make()
             defer { fixture.server.stop() }
-            var localhostMediaRequestCounts: [Bool: Int] = [:]
-
-            for experimentEnabled in [false, true] {
-                var source = fixture.primarySource
-                source.resourceLoaderManifestExperimentEnabled = experimentEnabled
-                let engine = AVPlayerHLSBridgeEngine()
-                let surfaceHost = PlaybackTestSurfaceHost()
-                engine.attachSurface(surfaceHost.surface)
-                var didBecomeReady = false
-                var didRenderFrame = false
-                engine.onPlaybackStateChange = { state in
-                    if case .ready = state {
-                        didBecomeReady = true
-                    }
-                }
-                engine.onFirstFrame = { _ in didRenderFrame = true }
-
-                await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
-                try await engine.prepare(source: source)
-                try await waitUntil("AVPlayer item becomes ready") { didBecomeReady }
-
-                let item = try XCTUnwrap(engine.debugCurrentPlayerItem)
-                let urlAsset = try XCTUnwrap(item.asset as? AVURLAsset)
-                let tracks = try await item.asset.load(.tracks)
-                let assetTrackTypes = tracks.map { $0.mediaType.rawValue }
-                let itemTrackTypes = item.tracks.compactMap { $0.assetTrack?.mediaType.rawValue }
-                XCTAssertTrue(
-                    assetTrackTypes.contains(AVMediaType.video.rawValue) || itemTrackTypes.contains(AVMediaType.video.rawValue),
-                    "No video track; asset=\(assetTrackTypes), item=\(itemTrackTypes)"
-                )
-                XCTAssertTrue(
-                    assetTrackTypes.contains(AVMediaType.audio.rawValue) || itemTrackTypes.contains(AVMediaType.audio.rawValue),
-                    "No audio track; asset=\(assetTrackTypes), item=\(itemTrackTypes)"
-                )
-                XCTAssertEqual(
-                    engine.debugCurrentAssetURL?.scheme,
-                    experimentEnabled ? "cilicili-hls" : "http"
-                )
-                XCTAssertEqual(engine.debugHasManifestResourceLoader, experimentEnabled)
-                XCTAssertTrue(engine.debugHasLocalBridgeSession)
-                XCTAssertEqual(urlAsset.resourceLoader.delegate != nil, experimentEnabled)
-
-                engine.play()
-                try await waitUntil("AVPlayer renders a video frame", timeout: 12) { didRenderFrame }
-                let initialTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                XCTAssertGreaterThanOrEqual(initialTime, 0)
-
-                try await verifyPauseResume(on: engine, duration: source.durationHint ?? 8)
-                try await verifySeeking(on: engine, duration: source.durationHint ?? 8)
-
-                let requestCounts = try XCTUnwrap(engine.debugLocalBridgeRequestCounts)
-                XCTAssertGreaterThan(requestCounts.total, 0)
-                XCTAssertEqual(requestCounts.manifests, experimentEnabled ? 0 : 3)
-                let mediaRequestCount = requestCounts.total - requestCounts.manifests
-                XCTAssertGreaterThan(mediaRequestCount, 0)
-                localhostMediaRequestCounts[experimentEnabled] = mediaRequestCount
-
-                let previousItemIdentity = engine.debugPlayerItemIdentity
-                let oldPlaylistURL = try XCTUnwrap(URL(string: try XCTUnwrap(engine.diagnostics.localPlaylistURL)))
+            let source = fixture.primarySource
+            let engine = AVPlayerHLSBridgeEngine()
+            let surfaceHost = PlaybackTestSurfaceHost()
+            defer {
                 engine.stop()
                 surfaceHost.close()
-                XCTAssertNil(urlAsset.resourceLoader.delegate)
-                XCTAssertNil(engine.debugPlayerItemIdentity)
-                XCTAssertFalse(engine.debugHasManifestResourceLoader)
-                XCTAssertFalse(engine.debugHasLocalBridgeSession)
-                XCTAssertNotNil(previousItemIdentity)
-                await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
-                try await assertBridgeWasStopped(at: oldPlaylistURL)
             }
+            engine.attachSurface(surfaceHost.surface)
+            var didBecomeReady = false
+            var didRenderFrame = false
+            engine.onPlaybackStateChange = { state in
+                if case .ready = state {
+                    didBecomeReady = true
+                }
+            }
+            engine.onFirstFrame = { _ in didRenderFrame = true }
+
+            await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
+            try await engine.prepare(source: source)
+            try await waitUntil("AVPlayer item becomes ready") { didBecomeReady }
+
+            let item = try XCTUnwrap(engine.debugCurrentPlayerItem)
+            let urlAsset = try XCTUnwrap(item.asset as? AVURLAsset)
+            let tracks = try await item.asset.load(.tracks)
+            let assetTrackTypes = tracks.map { $0.mediaType.rawValue }
+            let itemTrackTypes = item.tracks.compactMap { $0.assetTrack?.mediaType.rawValue }
+            XCTAssertTrue(
+                assetTrackTypes.contains(AVMediaType.video.rawValue) || itemTrackTypes.contains(AVMediaType.video.rawValue),
+                "No video track; asset=\(assetTrackTypes), item=\(itemTrackTypes)"
+            )
+            XCTAssertTrue(
+                assetTrackTypes.contains(AVMediaType.audio.rawValue) || itemTrackTypes.contains(AVMediaType.audio.rawValue),
+                "No audio track; asset=\(assetTrackTypes), item=\(itemTrackTypes)"
+            )
+            XCTAssertEqual(urlAsset.url.scheme, "http")
+            XCTAssertNil(urlAsset.resourceLoader.delegate)
+            XCTAssertTrue(engine.debugHasLocalBridgeSession)
+
+            engine.play()
+            try await waitUntil("AVPlayer renders a video frame", timeout: 12) { didRenderFrame }
+            let initialTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
+            XCTAssertGreaterThanOrEqual(initialTime, 0)
+
+            try await verifyPauseResume(on: engine, duration: source.durationHint ?? 8)
+            try await verifySeeking(on: engine, duration: source.durationHint ?? 8)
+
+            let requestCounts = try XCTUnwrap(engine.debugLocalBridgeRequestCounts)
+            XCTAssertGreaterThan(requestCounts.total, 3)
+            XCTAssertEqual(requestCounts.manifests, 3)
+            XCTAssertGreaterThan(requestCounts.total - requestCounts.manifests, 0)
 
             let recorded = await fixture.server.requestSnapshot()
             XCTAssertTrue(recorded.contains { $0.path == "/video.m4s" && $0.rangeHeader != nil })
             XCTAssertTrue(recorded.contains { $0.path == "/audio.m4s" && $0.rangeHeader != nil })
-            XCTAssertEqual(
-                localhostMediaRequestCounts[false],
-                localhostMediaRequestCounts[true],
-                "Changing manifest transport must not add local media requests."
-            )
             let videoRanges = recorded.filter { $0.path == "/video.m4s" && $0.rangeHeader != nil }.count
             let audioRanges = recorded.filter { $0.path == "/audio.m4s" && $0.rangeHeader != nil }.count
-            let transportReport = [
-                "Legacy localhost media requests: \(localhostMediaRequestCounts[false] ?? -1)",
-                "ResourceLoader localhost media requests: \(localhostMediaRequestCounts[true] ?? -1)",
-                "Fixture CDN Range requests: video=\(videoRanges) audio=\(audioRanges)",
-                "Manifest requests: Legacy=3 ResourceLoader=0"
+            let report = [
+                "Localhost manifest requests: \(requestCounts.manifests)",
+                "Localhost media requests: \(requestCounts.total - requestCounts.manifests)",
+                "Fixture upstream Range requests: video=\(videoRanges) audio=\(audioRanges)"
             ].joined(separator: "\n")
-            let attachment = XCTAttachment(string: transportReport)
-            attachment.name = "Deterministic playback bridge request counts"
+            let attachment = XCTAttachment(string: report)
+            attachment.name = "Deterministic localhost bridge request counts"
             attachment.lifetime = .keepAlways
             add(attachment)
+
+            let previousItemIdentity = engine.debugPlayerItemIdentity
+            let oldPlaylistURL = try XCTUnwrap(URL(string: try XCTUnwrap(engine.diagnostics.localPlaylistURL)))
+            engine.stop()
+            XCTAssertNil(urlAsset.resourceLoader.delegate)
+            XCTAssertNil(engine.debugPlayerItemIdentity)
+            XCTAssertFalse(engine.debugHasLocalBridgeSession)
+            XCTAssertNotNil(previousItemIdentity)
+            await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
+            try await assertBridgeWasStopped(at: oldPlaylistURL)
         } catch {
             XCTFail("Deterministic playback scenario failed: \(error)")
         }
     }
 
     @MainActor
-    func testRepeatedCreatePlayStopReleasesBothTransportOwners() async {
+    func testRepeatedCreatePlayStopReleasesBridgeSession() async {
         do {
             let fixture = try await DeterministicDASHPlaybackFixture.make()
             defer { fixture.server.stop() }
-            var readyMilliseconds: [Bool: [Double]] = [false: [], true: []]
-            var firstFrameMilliseconds: [Bool: [Double]] = [false: [], true: []]
 
-            for iteration in 0..<20 {
-                var source = fixture.primarySource
-                let experimentEnabled = iteration.isMultiple(of: 2)
-                source.resourceLoaderManifestExperimentEnabled = experimentEnabled
+            for iteration in 0..<10 {
+                let source = fixture.primarySource
                 let engine = AVPlayerHLSBridgeEngine()
                 let surfaceHost = PlaybackTestSurfaceHost()
+                defer {
+                    engine.stop()
+                    surfaceHost.close()
+                }
                 engine.attachSurface(surfaceHost.surface)
                 var didBecomeReady = false
                 var didRenderFrame = false
@@ -139,121 +124,93 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
                 engine.onFirstFrame = { _ in didRenderFrame = true }
 
                 await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
-                let prepareStart = ContinuousClock.now
                 try await engine.prepare(source: source)
                 try await waitUntil("iteration \(iteration) item ready") { didBecomeReady }
                 let asset = try XCTUnwrap(engine.debugCurrentPlayerItem?.asset as? AVURLAsset)
-                XCTAssertEqual(asset.resourceLoader.delegate != nil, experimentEnabled)
-                readyMilliseconds[experimentEnabled, default: []].append(
-                    milliseconds(since: prepareStart)
-                )
-                let playStart = ContinuousClock.now
+                XCTAssertEqual(asset.url.scheme, "http")
+                XCTAssertNil(asset.resourceLoader.delegate)
                 engine.play()
                 try await waitUntil("iteration \(iteration) renders a frame", timeout: 12) { didRenderFrame }
-                firstFrameMilliseconds[experimentEnabled, default: []].append(
-                    milliseconds(since: playStart)
-                )
                 let oldPlaylistURL = try XCTUnwrap(URL(string: try XCTUnwrap(engine.diagnostics.localPlaylistURL)))
 
                 engine.stop()
-                surfaceHost.close()
                 XCTAssertNil(asset.resourceLoader.delegate, "iteration \(iteration)")
                 XCTAssertNil(engine.debugPlayerItemIdentity, "iteration \(iteration)")
-                XCTAssertFalse(engine.debugHasManifestResourceLoader, "iteration \(iteration)")
                 XCTAssertFalse(engine.debugHasLocalBridgeSession, "iteration \(iteration)")
                 await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
                 try await assertBridgeWasStopped(at: oldPlaylistURL)
             }
-
-            XCTAssertEqual(readyMilliseconds[false]?.count, 10)
-            XCTAssertEqual(readyMilliseconds[true]?.count, 10)
-            XCTAssertEqual(firstFrameMilliseconds[false]?.count, 10)
-            XCTAssertEqual(firstFrameMilliseconds[true]?.count, 10)
-            let report = [
-                "Fixture startup timing (milliseconds)",
-                "Legacy ready: \(Self.summary(readyMilliseconds[false] ?? []))",
-                "ResourceLoader ready: \(Self.summary(readyMilliseconds[true] ?? []))",
-                "Legacy first frame after play: \(Self.summary(firstFrameMilliseconds[false] ?? []))",
-                "ResourceLoader first frame after play: \(Self.summary(firstFrameMilliseconds[true] ?? []))",
-                "Synthetic loopback fixture; process-local simulator results, not Bilibili CDN performance."
-            ].joined(separator: "\n")
-            let attachment = XCTAttachment(string: report)
-            attachment.name = "Deterministic playback startup samples"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            print(report)
         } catch {
             XCTFail("Repeated teardown scenario failed: \(error)")
         }
     }
 
     @MainActor
-    func testPlaybackRatesRemainEffectiveAfterSeekForBothManifestTransports() async {
+    func testPlaybackRatesRemainEffectiveAfterSeek() async {
         do {
             let fixture = try await DeterministicDASHPlaybackFixture.make()
             defer { fixture.server.stop() }
 
-            for experimentEnabled in [false, true] {
-                var source = fixture.primarySource
-                source.resourceLoaderManifestExperimentEnabled = experimentEnabled
-                let engine = AVPlayerHLSBridgeEngine()
-                let surfaceHost = PlaybackTestSurfaceHost()
-                engine.attachSurface(surfaceHost.surface)
-
-                var didRenderFrame = false
-                engine.onFirstFrame = { _ in didRenderFrame = true }
-                await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
-                try await engine.prepare(source: source)
-                engine.play()
-                try await waitUntil("rate test first frame", timeout: 12) { didRenderFrame }
-
-                for rate: Double in [1.0, 1.5, 2.0] {
-                    let seekTarget = 0.5
-                    XCTAssertEqual(engine.seek(toTime: seekTarget), seekTarget)
-                    try await waitUntil("seek before \(rate)x") {
-                        guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
-                        return abs(current - seekTarget) < 0.6
-                    }
-                    engine.pause()
-                    engine.setPlaybackRate(rate)
-                    XCTAssertEqual(engine.debugPlaybackRate, Float(rate), accuracy: 0.001)
-                    engine.play()
-                    try await waitUntil("AVPlayer applies \(rate)x") {
-                        abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
-                    }
-                    let startTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                    let startedAt = ContinuousClock.now
-                    try await Task.sleep(for: .milliseconds(500))
-                    let elapsed = seconds(since: startedAt)
-                    engine.pause()
-                    let endTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                    let mediaProgress = endTime - startTime
-                    XCTAssertEqual(
-                        mediaProgress / elapsed,
-                        rate,
-                        accuracy: 0.4,
-                        "Expected AVPlayer media time to advance at \(rate)x; measured \(mediaProgress)s in \(elapsed)s"
-                    )
-
-                    let restoreTarget = 1.25
-                    XCTAssertEqual(engine.seek(toTime: restoreTarget), restoreTarget)
-                    try await waitUntil("seek preserves \(rate)x") {
-                        guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
-                        return abs(current - restoreTarget) < 0.6
-                    }
-                    engine.play()
-                    try await waitUntil("AVPlayer retains \(rate)x after seek") {
-                        abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
-                    }
-                    let afterSeekStart = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                    try await Task.sleep(for: .milliseconds(250))
-                    engine.pause()
-                    let afterSeekEnd = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                    XCTAssertGreaterThan(afterSeekEnd - afterSeekStart, rate * 0.08)
-                    XCTAssertEqual(engine.debugPlaybackRate, Float(rate), accuracy: 0.001)
-                }
+            let source = fixture.primarySource
+            let engine = AVPlayerHLSBridgeEngine()
+            let surfaceHost = PlaybackTestSurfaceHost()
+            defer {
                 engine.stop()
                 surfaceHost.close()
+            }
+            engine.attachSurface(surfaceHost.surface)
+
+            var didRenderFrame = false
+            engine.onFirstFrame = { _ in didRenderFrame = true }
+            await LocalHLSBridge.clearWarmupCache(for: fixture.mediaURLStrings)
+            try await engine.prepare(source: source)
+            engine.play()
+            try await waitUntil("rate test first frame", timeout: 12) { didRenderFrame }
+
+            for rate: Double in [1.0, 1.5, 2.0] {
+                let seekTarget = 0.5
+                XCTAssertEqual(engine.seek(toTime: seekTarget), seekTarget)
+                try await waitUntil("seek before \(rate)x") {
+                    guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
+                    return abs(current - seekTarget) < 0.6
+                }
+                engine.pause()
+                engine.setPlaybackRate(rate)
+                XCTAssertEqual(engine.debugPlaybackRate, Float(rate), accuracy: 0.001)
+                engine.play()
+                try await waitUntil("AVPlayer applies \(rate)x") {
+                    abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
+                }
+                let startTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
+                let startedAt = ContinuousClock.now
+                try await Task.sleep(for: .milliseconds(800))
+                let elapsed = seconds(since: startedAt)
+                engine.pause()
+                let endTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
+                let mediaProgress = endTime - startTime
+                XCTAssertEqual(
+                    mediaProgress / elapsed,
+                    rate,
+                    accuracy: 0.55,
+                    "Expected AVPlayer media time to advance at \(rate)x; measured \(mediaProgress)s in \(elapsed)s"
+                )
+
+                let restoreTarget = 1.25
+                XCTAssertEqual(engine.seek(toTime: restoreTarget), restoreTarget)
+                try await waitUntil("seek preserves \(rate)x") {
+                    guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
+                    return abs(current - restoreTarget) < 0.6
+                }
+                engine.play()
+                try await waitUntil("AVPlayer retains \(rate)x after seek") {
+                    abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
+                }
+                let afterSeekStart = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
+                try await Task.sleep(for: .milliseconds(250))
+                engine.pause()
+                let afterSeekEnd = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
+                XCTAssertGreaterThan(afterSeekEnd - afterSeekStart, rate * 0.08)
+                XCTAssertEqual(engine.debugPlaybackRate, Float(rate), accuracy: 0.001)
             }
         } catch {
             XCTFail("Playback rate scenario failed: \(error)")
@@ -328,31 +285,9 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         }
     }
 
-    private func milliseconds(since instant: ContinuousClock.Instant) -> Double {
-        seconds(since: instant) * 1_000
-    }
-
     private func seconds(since instant: ContinuousClock.Instant) -> Double {
         let components = instant.duration(to: .now).components
         return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
-    }
-
-    private static func summary(_ values: [Double]) -> String {
-        let sorted = values.sorted()
-        guard let first = sorted.first, let last = sorted.last else { return "no samples" }
-        let middle = sorted.count / 2
-        let median = sorted.count.isMultiple(of: 2)
-            ? (sorted[middle - 1] + sorted[middle]) / 2
-            : sorted[middle]
-        let p90 = sorted[max(0, Int(ceil(Double(sorted.count) * 0.9)) - 1)]
-        return String(
-            format: "n=%d median=%.1f min=%.1f p90=%.1f max=%.1f",
-            sorted.count,
-            median,
-            first,
-            p90,
-            last
-        )
     }
 
     private func assertBridgeWasStopped(at playlistURL: URL) async throws {

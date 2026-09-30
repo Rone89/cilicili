@@ -51,7 +51,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var recoveryFrameCacheTask: Task<Void, Never>?
     private var source: PlayerStreamSource?
     private var hlsBridge: LocalHLSBridge?
-    private var manifestResourceLoader: BiliHLSManifestResourceLoader?
     private var currentItemCreatedAt: CFTimeInterval?
     private var didLogCurrentItemReady = false
     private var liveHLSProxy: LocalLiveHLSProxy?
@@ -216,14 +215,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     var debugCurrentPlayerItem: AVPlayerItem? {
         player.currentItem
-    }
-
-    var debugCurrentAssetURL: URL? {
-        (player.currentItem?.asset as? AVURLAsset)?.url
-    }
-
-    var debugHasManifestResourceLoader: Bool {
-        manifestResourceLoader != nil
     }
 
     var debugHasLocalBridgeSession: Bool {
@@ -407,20 +398,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         queryItems.append(URLQueryItem(name: "recovery", value: String(recoveryGeneration)))
         playlistComponents?.queryItems = queryItems
         let recoveryPlaylistURL = playlistComponents?.url ?? bridge.masterPlaylistURL
-        let replacement: (asset: AVURLAsset, loader: BiliHLSManifestResourceLoader?)
-        if manifestResourceLoader != nil {
-            do {
-                let experiment = try Self.makeResourceLoaderManifestAsset(bridge: bridge)
-                replacement = (experiment.asset, experiment.loader)
-            } catch {
-                PlayerMetricsLog.logger.error("[DASH-HLS] recovery manifest setup failed; using legacy HTTP manifest")
-                self.source?.resourceLoaderManifestExperimentEnabled = false
-                replacement = (AVURLAsset(url: recoveryPlaylistURL), nil)
-            }
-        } else {
-            replacement = (AVURLAsset(url: recoveryPlaylistURL), nil)
-        }
-        let asset = replacement.asset
+        let asset = AVURLAsset(url: recoveryPlaylistURL)
         let item = AVPlayerItem(asset: asset)
         Self.applyDolbyVisionMetadataPolicy(to: item, source: source)
 
@@ -454,9 +432,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         removeCurrentItemObservers()
         removePeriodicTimeObserver()
 
-        let oldManifestResourceLoader = manifestResourceLoader
         playerItem = item
-        manifestResourceLoader = replacement.loader
         currentItemCreatedAt = CACurrentMediaTime()
         didLogCurrentItemReady = false
         retainedAssets = [asset]
@@ -464,10 +440,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         attachVideoOutput(to: item)
         player.replaceCurrentItem(with: item)
         oldItem.asset.cancelLoading()
-        if let oldAsset = oldItem.asset as? AVURLAsset, oldManifestResourceLoader != nil {
-            oldAsset.resourceLoader.setDelegate(nil, queue: nil)
-        }
-        oldManifestResourceLoader?.invalidate()
         player.automaticallyWaitsToMinimizeStalling = false
         ensurePeriodicTimeObserver()
         observeCurrentItem(item)
@@ -609,11 +581,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             signpostMessage = "id=\(source.metricsID) cancelled"
             return
         }
-        if source.resourceLoaderManifestExperimentEnabled,
-           prepared.bridge != nil,
-           prepared.manifestResourceLoader == nil {
-            self.source?.resourceLoaderManifestExperimentEnabled = false
-        }
         onLoadingProgressChange?(0.58)
         recordPrepareStage(
             source: source,
@@ -624,7 +591,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         removeCurrentItemObservers()
         playerItem = prepared.item
         hlsBridge = prepared.bridge
-        manifestResourceLoader = prepared.manifestResourceLoader
         currentItemCreatedAt = prepared.createdAt
         didLogCurrentItemReady = false
         liveHLSProxy = prepared.liveProxy
@@ -1212,14 +1178,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let oldItem = player.currentItem
         let oldBridge = hlsBridge
         let oldLiveProxy = liveHLSProxy
-        let oldManifestResourceLoader = manifestResourceLoader
         silencePlayerImmediately()
         oldItem?.cancelPendingSeeks()
         oldItem?.asset.cancelLoading()
-        if let asset = oldItem?.asset as? AVURLAsset, oldManifestResourceLoader != nil {
-            asset.resourceLoader.setDelegate(nil, queue: nil)
-        }
-        oldManifestResourceLoader?.invalidate()
         if let videoOutput {
             oldItem?.remove(videoOutput)
         }
@@ -1242,7 +1203,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         oldLiveProxy?.stop()
         playerItem = nil
         hlsBridge = nil
-        manifestResourceLoader = nil
         currentItemCreatedAt = nil
         didLogCurrentItemReady = false
         liveHLSProxy = nil
@@ -1348,10 +1308,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard isCurrentPlayerItem(item) else { return }
         if !didLogCurrentItemReady, let currentItemCreatedAt, hlsBridge != nil {
             didLogCurrentItemReady = true
-            let transport = manifestResourceLoader == nil ? "http" : "resourceLoader"
             let requests = hlsBridge?.requestCountSnapshot() ?? (total: 0, manifests: 0)
             PlayerMetricsLog.logger.info(
-                "[DASH-HLS] itemReady transport=\(transport, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: currentItemCreatedAt), format: .fixed(precision: 1), privacy: .public) localhostTotal=\(requests.total, privacy: .public) localhostManifests=\(requests.manifests, privacy: .public)"
+                "[DASH-HLS] itemReady elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: currentItemCreatedAt), format: .fixed(precision: 1), privacy: .public) localhostTotal=\(requests.total, privacy: .public) localhostManifests=\(requests.manifests, privacy: .public)"
             )
         }
         itemReadinessTimeoutTask?.cancel()
@@ -1390,10 +1349,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         prepared.liveProxy?.stop()
         prepared.item.cancelPendingSeeks()
         prepared.item.asset.cancelLoading()
-        if let asset = prepared.item.asset as? AVURLAsset, prepared.manifestResourceLoader != nil {
-            asset.resourceLoader.setDelegate(nil, queue: nil)
-        }
-        prepared.manifestResourceLoader?.invalidate()
         prepared.assets.forEach { $0.cancelLoading() }
     }
 
@@ -1999,8 +1954,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         else { return false }
         let recoveryGeneration = playbackGeneration
         guard source.audioURL != nil || hlsBridge != nil else { return false }
-        let fallsBackFromManifestExperiment = manifestResourceLoader != nil
-        guard fallsBackFromManifestExperiment || shouldAttemptSameSourceRecovery(item: item, errorMessage: errorMessage) else {
+        guard shouldAttemptSameSourceRecovery(item: item, errorMessage: errorMessage) else {
             await recordPlaybackFailureAvoidance(
                 source: source,
                 reason: reason,
@@ -2027,11 +1981,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
         let restoreTime = snapshot(durationHint: source.durationHint).currentTime
             ?? displayTime(fromPlayerTime: player.currentTime().seconds)
-        var recoverySource = source.withResumeTime(max(restoreTime, 0))
-        if fallsBackFromManifestExperiment {
-            recoverySource.resourceLoaderManifestExperimentEnabled = false
-            PlayerMetricsLog.logger.info("[DASH-HLS] manifest loader failed; retrying legacy HTTP manifest")
-        }
+        let recoverySource = source.withResumeTime(max(restoreTime, 0))
         let shouldResume = wantsPlayback || player.rate > 0
         let restoreRate = currentRate
         publishPlaybackState(.buffering)
@@ -2696,10 +2646,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         cancelFirstFrameWatchdog()
         removePeriodicTimeObserver()
         if let currentItemCreatedAt, hlsBridge != nil {
-            let transport = manifestResourceLoader == nil ? "http" : "resourceLoader"
             let requests = hlsBridge?.requestCountSnapshot() ?? (total: 0, manifests: 0)
             PlayerMetricsLog.logger.info(
-                "[DASH-HLS] firstFrame transport=\(transport, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: currentItemCreatedAt), format: .fixed(precision: 1), privacy: .public) localhostTotal=\(requests.total, privacy: .public) localhostManifests=\(requests.manifests, privacy: .public)"
+                "[DASH-HLS] firstFrame elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: currentItemCreatedAt), format: .fixed(precision: 1), privacy: .public) localhostTotal=\(requests.total, privacy: .public) localhostManifests=\(requests.manifests, privacy: .public)"
             )
         }
         scheduleRecoveryFrameCacheSeed()
@@ -2959,25 +2908,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     guard let bridge = manifest.bridge else {
                         throw PlayerEngineError.unsupportedMedia
                     }
-                    if source.resourceLoaderManifestExperimentEnabled {
-                        do {
-                            let experiment = try makeResourceLoaderManifestAsset(bridge: bridge)
-                            let item = AVPlayerItem(asset: experiment.asset)
-                            applyDolbyVisionMetadataPolicy(to: item, source: source)
-                            item.preferredForwardBufferDuration = PlaybackEnvironment.current.startupForwardBufferDuration
-                            PlayerMetricsLog.logger.info("[DASH-HLS] created ResourceLoader manifest item")
-                            return PreparedPlayerItem(
-                                item: item,
-                                bridge: bridge,
-                                liveProxy: nil,
-                                assets: [experiment.asset],
-                                isDirectLiveHLS: false,
-                                manifestResourceLoader: experiment.loader
-                            )
-                        } catch {
-                            PlayerMetricsLog.logger.error("[DASH-HLS] manifest setup failed; using legacy HTTP manifest")
-                        }
-                    }
                     let asset = AVURLAsset(url: manifest.masterPlaylistURL)
                     let item = AVPlayerItem(asset: asset)
                     applyDolbyVisionMetadataPolicy(to: item, source: source)
@@ -3001,21 +2931,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         applyDolbyVisionMetadataPolicy(to: item, source: source)
         item.preferredForwardBufferDuration = isDirectLiveHLS ? 0.5 : PlaybackEnvironment.current.startupForwardBufferDuration
         return PreparedPlayerItem(item: item, bridge: nil, liveProxy: nil, assets: [asset], isDirectLiveHLS: isDirectLiveHLS)
-    }
-
-    private static func makeResourceLoaderManifestAsset(
-        bridge: LocalHLSBridge
-    ) throws -> (asset: AVURLAsset, loader: BiliHLSManifestResourceLoader) {
-        let sessionID = UUID()
-        let manifests = try BiliHLSManifestTransportPlan.virtualizedManifests(
-            manifestDataByPath: bridge.manifestDataByPath,
-            httpMasterURL: bridge.masterPlaylistURL,
-            virtualURLForPath: { BiliHLSManifestResourceLoader.virtualURL(forPath: $0, sessionID: sessionID) }
-        )
-        let loader = BiliHLSManifestResourceLoader(manifestsByPath: manifests, sessionID: sessionID)
-        let asset = AVURLAsset(url: loader.assetURL)
-        asset.resourceLoader.setDelegate(loader, queue: loader.delegateQueue)
-        return (asset, loader)
     }
 
     private nonisolated static func applyDolbyVisionMetadataPolicy(
@@ -3077,7 +2992,6 @@ private struct PreparedPlayerItem {
     let liveProxy: LocalLiveHLSProxy?
     let assets: [AVAsset]
     let isDirectLiveHLS: Bool
-    var manifestResourceLoader: BiliHLSManifestResourceLoader? = nil
     let createdAt: CFTimeInterval = CACurrentMediaTime()
 }
 
@@ -3576,7 +3490,6 @@ nonisolated struct LocalHLSVideoOnlyBridge: Sendable {
 
 struct LocalHLSBridge: Sendable {
     let masterPlaylistURL: URL
-    let manifestDataByPath: [String: Data]
     let mediaTimeOffset: TimeInterval
     let videoClockDelay: TimeInterval
     let videoVariantCount: Int
@@ -3610,7 +3523,6 @@ struct LocalHLSBridge: Sendable {
     nonisolated func withCacheDiagnostics(routePlanState: String, serverState: String) -> LocalHLSBridge {
         LocalHLSBridge(
             masterPlaylistURL: masterPlaylistURL,
-            manifestDataByPath: manifestDataByPath,
             mediaTimeOffset: mediaTimeOffset,
             videoClockDelay: videoClockDelay,
             videoVariantCount: videoVariantCount,
@@ -3834,7 +3746,6 @@ struct LocalHLSBridge: Sendable {
         )
         return LocalHLSBridge(
             masterPlaylistURL: renderedPlaylists.masterPlaylistURL,
-            manifestDataByPath: manifestData(from: renderedPlaylists),
             mediaTimeOffset: 0,
             videoClockDelay: 0,
             videoVariantCount: 0,
@@ -4100,7 +4011,6 @@ struct LocalHLSBridge: Sendable {
 
         return LocalHLSBridge(
             masterPlaylistURL: masterPlaylistURL,
-            manifestDataByPath: manifestData(from: renderedPlaylists),
             mediaTimeOffset: 0,
             videoClockDelay: 0,
             videoVariantCount: videoRenditions.count,
@@ -4169,15 +4079,6 @@ struct LocalHLSBridge: Sendable {
             masterPlaylistURL: masterPlaylistURL,
             routes: routes
         )
-    }
-
-    private nonisolated static func manifestData(from rendered: HLSBridgeRenderedPlaylists) -> [String: Data] {
-        rendered.routes.reduce(into: [:]) { result, entry in
-            guard entry.key.hasSuffix(".m3u8"),
-                  case let .data(data, _) = entry.value
-            else { return }
-            result[entry.key] = data
-        }
     }
 
     nonisolated static func renderVideoOnlyPlaylists(

@@ -36,8 +36,7 @@ extension VideoDetailViewModel {
                 cookieHeader: sessionStore.cookieHeader()
             ),
             artworkURL: playbackTransitionCoverURL(),
-            playbackContentMode: playbackContentMode,
-            resourceLoaderManifestExperimentEnabled: libraryStore.bilibiliResourceLoaderManifestExperimentEnabled
+            playbackContentMode: playbackContentMode
         )
     }
 

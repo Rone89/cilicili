@@ -215,14 +215,12 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             resumeTime: 0,
             dynamicRange: .sdr,
             cdnPreference: .automatic,
-            playbackContentMode: .audioOnly,
-            resourceLoaderManifestExperimentEnabled: true
+            playbackContentMode: .audioOnly
         )
 
         let resumed = source.withResumeTime(42)
         XCTAssertEqual(resumed.resumeTime, 42)
         XCTAssertEqual(resumed.playbackContentMode, .audioOnly)
-        XCTAssertTrue(resumed.resourceLoaderManifestExperimentEnabled)
     }
 
     @MainActor
@@ -481,20 +479,10 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testResourceLoaderManifestExperimentDefaultsOffAndPersistsToggle() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.bilibiliResourceLoaderManifestExperimentEnabled)
-        store.setBilibiliResourceLoaderManifestExperimentEnabled(true)
-
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).bilibiliResourceLoaderManifestExperimentEnabled)
-    }
-
-    @MainActor
     func testLibraryStoreRemovesRetiredExperimentPreferences() {
         let defaults = makeUserDefaults()
         let retiredKeys = [
+            "cc.bili.playback.bilibiliResourceLoaderManifestExperimentEnabled.v1",
             "cc.bili.display.rootNavigationContainerExperimentEnabled.v1",
             "cc.bili.display.rootTabBarTransitionCoordinationExperimentEnabled.v1",
             "cc.bili.display.officialDestinationTabBarVisibilityExperimentEnabled.v1",

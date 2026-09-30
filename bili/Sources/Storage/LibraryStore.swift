@@ -134,7 +134,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
     @Published private(set) var playbackPlayableFallbackDeadlineExperimentEnabled: Bool
-    @Published private(set) var bilibiliResourceLoaderManifestExperimentEnabled: Bool
     @Published private(set) var videoRotationFrameReportOverlayEnabled: Bool
     @Published private(set) var videoDetailNavigationLatencyDiagnosticsEnabled: Bool
     @Published private(set) var playerControlEdgeScrimEnabled: Bool
@@ -212,8 +211,6 @@ final class LibraryStore: ObservableObject {
         .resumePacketWarmup.storageKey
     private static let playbackPlayableFallbackDeadlineExperimentEnabledKey =
         PlayableFallbackDeadlineExperiment.storageKey
-    private static let bilibiliResourceLoaderManifestExperimentEnabledKey =
-        "cc.bili.playback.bilibiliResourceLoaderManifestExperimentEnabled.v1"
     private static let videoRotationFrameReportOverlayEnabledKey =
         "cc.bili.playback.rotationFrameReportOverlayEnabled.v1"
     private static let videoDetailNavigationLatencyDiagnosticsEnabledKey =
@@ -247,6 +244,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.playback.bilibiliResourceLoaderManifestExperimentEnabled.v1",
         "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
         "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
         "cc.bili.experimental.scrollableTabHeaders.v1",
@@ -608,10 +606,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.playbackPlayableFallbackDeadlineExperimentEnabledKey
             ) as? Bool ?? PlayableFallbackDeadlineExperiment.defaultIsEnabled
-        self.bilibiliResourceLoaderManifestExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.bilibiliResourceLoaderManifestExperimentEnabledKey
-            ) as? Bool ?? false
         self.videoRotationFrameReportOverlayEnabled =
             userDefaults.object(forKey: Self.videoRotationFrameReportOverlayEnabledKey) as? Bool ?? false
         self.videoDetailNavigationLatencyDiagnosticsEnabled =
@@ -1221,11 +1215,6 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.playbackPlayableFallbackDeadlineExperimentEnabledKey
         )
-    }
-
-    func setBilibiliResourceLoaderManifestExperimentEnabled(_ isEnabled: Bool) {
-        bilibiliResourceLoaderManifestExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.bilibiliResourceLoaderManifestExperimentEnabledKey)
     }
 
     func setVideoRotationFrameReportOverlayEnabled(_ isEnabled: Bool) {

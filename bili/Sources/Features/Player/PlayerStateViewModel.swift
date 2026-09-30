@@ -602,7 +602,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         httpHeaders: [String: String]? = nil,
         artworkURL: URL? = nil,
         playbackContentMode: PlayerPlaybackContentMode = .video,
-        resourceLoaderManifestExperimentEnabled: Bool = false,
         engine: PlayerRenderingEngine? = nil
     ) {
         let resolvedMetricsID = metricsID?.isEmpty == false ? metricsID! : UUID().uuidString
@@ -627,8 +626,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             resumeTime: resumeTime,
             dynamicRange: dynamicRange,
             cdnPreference: cdnPreference,
-            playbackContentMode: playbackContentMode,
-            resourceLoaderManifestExperimentEnabled: resourceLoaderManifestExperimentEnabled
+            playbackContentMode: playbackContentMode
         )
         self.durationHint = durationHint
         self.duration = durationHint
