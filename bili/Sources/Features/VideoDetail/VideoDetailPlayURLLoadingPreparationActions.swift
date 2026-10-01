@@ -9,6 +9,11 @@ extension VideoDetailViewModel {
         lastPlayURLSource = nil
         #if DEBUG
         PlayerMetricsLog.beginStartupTrace(metricsID: detail.bvid, traceID: traceID)
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: detail.bvid,
+            event: "playURLStart",
+            fields: ["cid": String(selectedCID ?? 0), "mode": mode.startMessage]
+        )
         let startMessage = "\(mode.startMessage) traceID=\(traceID)"
         #else
         _ = traceID

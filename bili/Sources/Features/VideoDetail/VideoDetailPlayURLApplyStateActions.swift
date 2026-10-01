@@ -37,6 +37,16 @@ extension VideoDetailViewModel {
                 "codec=\(selectedVariant?.codec ?? "-")",
             ].joined(separator: " ")
         )
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: detail.bvid,
+            event: "playbackQualitySelected",
+            fields: [
+                "requestedQuality": String(adaptiveStartupPreferredQuality ?? 0),
+                "targetQuality": String(targetPlaybackPreferredQuality ?? 0),
+                "playbackFinalQuality": String(selectedVariant?.quality ?? 0),
+                "playbackFinalCodec": selectedVariant?.codec ?? "unknown",
+            ]
+        )
         #endif
         return (selectedVariant, targetVariant)
     }

@@ -48,7 +48,8 @@ final class HomeFeedPreloadActions {
                 priority: .userInitiated,
                 warmsMedia: true,
                 mediaWarmupDelay: 0,
-                playbackAdaptationProfile: context.playbackAdaptationProfile
+                playbackAdaptationProfile: context.playbackAdaptationProfile,
+                preloadSource: "manual"
             )
             await VideoPreloadCenter.shared.prioritizePlayback(for: video)
         }
@@ -138,7 +139,8 @@ final class HomeFeedPreloadActions {
                 cdnPreference: context.cdnPreference,
                 priority: .utility,
                 warmsMedia: false,
-                playbackAdaptationProfile: context.playbackAdaptationProfile
+                playbackAdaptationProfile: context.playbackAdaptationProfile,
+                preloadSource: "home"
             )
             guard self.activeStableVisibleCandidateID == candidateBVID else { return }
             self.stableVisiblePreloadTask = nil

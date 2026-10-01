@@ -3965,6 +3965,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             "playRequested id=\(self.metricsID, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public)"
         )
         PlayerMetricsLog.record(.playRequested, metricsID: metricsID, title: title, message: elapsedMessage())
+        #if DEBUG
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: metricsID,
+            event: "playIssued",
+            fields: ["rate": String(playbackRate.rawValue)]
+        )
+        #endif
         engine.play()
         engine.setPlaybackRate(playbackRate.rawValue)
         if startupResumePolicy == .deferred {
@@ -4695,6 +4702,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         PlayerMetricsLog.logger.info(
             "firstFrame id=\(self.metricsID, privacy: .public) source=\(source, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: self.metricsStartTime), format: .fixed(precision: 1), privacy: .public) current=\(normalizedTime, format: .fixed(precision: 2), privacy: .public)"
         )
+        #if DEBUG
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: metricsID,
+            event: "firstFrame",
+            fields: ["source": source, "currentTime": String(format: "%.2f", normalizedTime)]
+        )
+        #endif
         PlayerMetricsLog.record(
             .firstFrame,
             metricsID: metricsID,

@@ -8,28 +8,51 @@ struct VideoDetailRelatedPreloadActions {
 
     func beginPreloadIfNeeded(_ video: VideoItem) async {
         #if DEBUG
-        let traceID = String(UUID().uuidString.prefix(8)).lowercased()
+        let codecPolicy = VideoCodecPreference.stored().rawValue
+        let traceID: String
+        if let cid = video.cid {
+            traceID = PlayerMetricsLog.ensureRelatedCandidateTrace(
+                bvid: video.bvid,
+                cid: cid,
+                source: "relatedRow",
+                requestedQuality: runtimeSettings.preferredVideoQuality,
+                requestedCodec: codecPolicy,
+                visible: true
+            )
+        } else {
+            traceID = String(UUID().uuidString.prefix(8)).lowercased()
+        }
         #else
         let traceID = ""
         #endif
         let preferredQuality = runtimeSettings.preferredVideoQuality
-        #if DEBUG
-        let codecPolicy = VideoCodecPreference.stored().rawValue
-        #endif
         func log(_ state: String, reason: String? = nil) {
             #if DEBUG
-            PlayerMetricsLog.diagnostic(
-                [
-                    "event=relatedPlayURLPrefetch",
-                    "traceID=\(traceID)",
-                    "metricsID=\(video.bvid)",
-                    "cid=\(video.cid ?? 0)",
-                    "state=\(state)",
-                    "q=\(preferredQuality ?? 0)",
-                    "codecPolicy=\(codecPolicy)",
-                    reason.map { "reason=\($0)" },
-                ].compactMap { $0 }.joined(separator: " ")
-            )
+            let event = switch state {
+            case "scheduled": "prefetchScheduled"
+            case "started", "startedWebpageOnly": "prefetchStarted"
+            case "completed": "prefetchCompleted"
+            case "failed": "prefetchFailed"
+            case "cancelled": "prefetchCancelled"
+            default: "prefetchNotScheduled"
+            }
+            if video.cid != nil {
+                PlayerMetricsLog.updateRelatedCandidateTrace(
+                    traceID: traceID,
+                    event: event,
+                    state: event == "prefetchNotScheduled" ? "notScheduled" : state,
+                    fields: [
+                        "q": String(preferredQuality ?? 0),
+                        "codec": codecPolicy,
+                        "preloadSource": "relatedRow",
+                        "reason": reason ?? "-",
+                    ]
+                )
+            } else {
+                PlayerMetricsLog.diagnostic(
+                    "[StartupTrace] traceID=\(traceID) candidate=\(video.bvid):0 source=relatedRow event=\(event) reason=\(reason ?? "-")"
+                )
+            }
             #endif
         }
 
@@ -58,6 +81,19 @@ struct VideoDetailRelatedPreloadActions {
             return
         }
 
+        #if DEBUG
+        if video.cid != nil {
+            PlayerMetricsLog.markRelatedCandidateSelected(
+                traceID: traceID,
+                fields: [
+                    "q": String(preferredQuality ?? 0),
+                    "codec": codecPolicy,
+                    "selection": "relatedPreloadBudget",
+                ]
+            )
+        }
+        #endif
+        log("scheduled", reason: "delayMs=120")
         preloadedVideoIDs.insert(video.bvid)
         do {
             try await Task.sleep(nanoseconds: 120_000_000)
@@ -71,7 +107,9 @@ struct VideoDetailRelatedPreloadActions {
             log("cancelled", reason: "taskCancelled")
             return
         }
-        log(video.cid == nil ? "startedWebpageOnly" : "started")
+        if video.cid == nil {
+            log("startedWebpageOnly")
+        }
         #if DEBUG
         let relatedPrefetchID: String? = traceID
         #else
@@ -87,7 +125,8 @@ struct VideoDetailRelatedPreloadActions {
             mediaWarmupMode: .routePlanOnly,
             mediaWarmupDelay: 0,
             playbackAdaptationProfile: playbackAdaptationProfile,
-            relatedPrefetchID: relatedPrefetchID
+            relatedPrefetchID: relatedPrefetchID,
+            preloadSource: "relatedRow"
         )
     }
 }

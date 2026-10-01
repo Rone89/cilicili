@@ -207,7 +207,8 @@ final class DynamicFeedResourcePrefetchCoordinator {
                     warmsMedia: true,
                     mediaWarmupMode: isPrimary ? .full : .routePlanOnly,
                     mediaWarmupDelay: isPrimary ? 0.45 : 0.65,
-                    playbackAdaptationProfile: playbackAdaptationProfile
+                    playbackAdaptationProfile: playbackAdaptationProfile,
+                    preloadSource: "dynamic"
                 )
                 if index < candidates.count - 1 {
                     try? await Task.sleep(nanoseconds: 650_000_000)

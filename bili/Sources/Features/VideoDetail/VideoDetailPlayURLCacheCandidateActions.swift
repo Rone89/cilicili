@@ -44,6 +44,31 @@ extension VideoDetailViewModel {
             page: page,
             source: loadedSource
         )
+        #if DEBUG
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: detail.bvid,
+            event: loadedSource == "pendingCache" ? "foregroundJoinedPending" : "foregroundCacheHit",
+            fields: [
+                "consumeResult": RelatedPrefetchDiagnostics.consumeResult(
+                    cacheSource: loadedSource,
+                    stateAtClick: .unknown,
+                    missReason: nil
+                ).rawValue,
+                "source": loadedSource,
+                "q": String(adaptiveStartupPreferredQuality ?? 0),
+                "variantCount": String(data.playVariants.filter(\.isPlayable).count),
+            ]
+        )
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: detail.bvid,
+            event: "playURLResolved",
+            fields: [
+                "source": loadedSource,
+                "variantCount": String(data.playVariants.filter(\.isPlayable).count),
+                "requestedQuality": String(adaptiveStartupPreferredQuality ?? 0),
+            ]
+        )
+        #endif
         if let trace = await VideoPreloadCenter.shared.takeRelatedEarlyPlayURLPrefetchTrace(
             for: detail.bvid
         ) {

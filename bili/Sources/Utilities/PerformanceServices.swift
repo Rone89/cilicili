@@ -140,7 +140,8 @@ actor VideoPreloadCenter {
         mediaWarmupMode: VideoPreloadMediaWarmupMode = .full,
         mediaWarmupDelay: TimeInterval = 0,
         playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal,
-        relatedPrefetchID: String? = nil
+        relatedPrefetchID: String? = nil,
+        preloadSource: String = "other"
     ) {
         let isStartupPackageWarmup = warmsMedia
         guard
@@ -158,6 +159,16 @@ actor VideoPreloadCenter {
                     state: "skipped",
                     reason: "adaptiveSlow"
                 )
+                let timestamp = CACurrentMediaTime()
+                Task { @MainActor in
+                    PlayerMetricsLog.updateRelatedCandidateTrace(
+                        traceID: relatedPrefetchID,
+                        event: "prefetchNotScheduled",
+                        state: "notScheduled",
+                        fields: ["preloadSource": preloadSource, "reason": "adaptiveSlow"],
+                        at: timestamp
+                    )
+                }
             }
             #endif
             PlayerMetricsLog.logger.info(
@@ -180,6 +191,16 @@ actor VideoPreloadCenter {
                     state: "skipped",
                     reason: "conservativeNetwork"
                 )
+                let timestamp = CACurrentMediaTime()
+                Task { @MainActor in
+                    PlayerMetricsLog.updateRelatedCandidateTrace(
+                        traceID: relatedPrefetchID,
+                        event: "prefetchNotScheduled",
+                        state: "notScheduled",
+                        fields: ["preloadSource": preloadSource, "reason": "conservativeNetwork"],
+                        at: timestamp
+                    )
+                }
             }
             #endif
             PlayerMetricsLog.logger.info(
@@ -233,7 +254,8 @@ actor VideoPreloadCenter {
                 mediaWarmupMode: effectiveMediaWarmupMode,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority,
-                playbackAdaptationProfile: playbackAdaptationProfile
+                playbackAdaptationProfile: playbackAdaptationProfile,
+                preloadSource: preloadSource
             )
             return
         }
@@ -250,7 +272,8 @@ actor VideoPreloadCenter {
             mediaWarmupDelay: mediaWarmupDelay,
             priority: priority,
             playbackAdaptationProfile: playbackAdaptationProfile,
-            relatedPrefetchID: relatedPrefetchID
+            relatedPrefetchID: relatedPrefetchID,
+            preloadSource: preloadSource
         )
     }
 
@@ -263,7 +286,8 @@ actor VideoPreloadCenter {
         targetPreferredQuality: Int? = nil,
         cdnPreference: PlaybackCDNPreference = .automatic,
         priority: TaskPriority = .utility,
-        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal,
+        preloadSource: String = "other"
     ) {
         preloadPlayURL(
             bvid: bvid,
@@ -277,7 +301,8 @@ actor VideoPreloadCenter {
             mediaWarmupMode: .routePlanOnly,
             mediaWarmupDelay: 0,
             priority: priority,
-            playbackAdaptationProfile: playbackAdaptationProfile
+            playbackAdaptationProfile: playbackAdaptationProfile,
+            preloadSource: preloadSource
         )
     }
 
@@ -287,7 +312,8 @@ actor VideoPreloadCenter {
         preferredQuality: Int?,
         targetPreferredQuality: Int? = nil,
         cdnPreference: PlaybackCDNPreference = .automatic,
-        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal,
+        relatedPrefetchID: String? = nil
     ) -> RelatedPlaybackEarlyPlayURLPrefetchDisposition? {
         guard !video.bvid.isEmpty, let cid = video.cid else { return nil }
         let effectivePreferredQuality = Self.effectiveStartupQuality(
@@ -342,7 +368,9 @@ actor VideoPreloadCenter {
             mediaWarmupMode: .routePlanOnly,
             mediaWarmupDelay: 0,
             priority: .userInitiated,
-            playbackAdaptationProfile: playbackAdaptationProfile
+            playbackAdaptationProfile: playbackAdaptationProfile,
+            relatedPrefetchID: relatedPrefetchID,
+            preloadSource: "relatedStartup"
         )
         return disposition
     }
@@ -578,7 +606,8 @@ actor VideoPreloadCenter {
         mediaWarmupDelay: TimeInterval,
         priority: TaskPriority,
         playbackAdaptationProfile: PlayerPlaybackAdaptationProfile,
-        relatedPrefetchID: String? = nil
+        relatedPrefetchID: String? = nil,
+        preloadSource: String = "other"
     ) {
         let effectivePreferredQuality = Self.effectiveStartupQuality(
             preferredQuality ?? defaultPreferredQuality,
@@ -590,24 +619,6 @@ actor VideoPreloadCenter {
             ?? preferredQuality
             ?? defaultPreferredQuality
         let effectiveCDNPreference = cdnPreference ?? defaultCDNPreference
-        guard shouldAllowPreload(bvid: bvid, priority: priority) else {
-            #if DEBUG
-            if let relatedPrefetchID {
-                recordRelatedRowPrefetchEvent(
-                    id: relatedPrefetchID,
-                    bvid: bvid,
-                    cid: cid,
-                    preferredQuality: effectivePreferredQuality,
-                    state: "skipped",
-                    reason: "focusedPlayback"
-                )
-            }
-            #endif
-            PlayerMetricsLog.logger.info(
-                "playInfoPreloadSkipped reason=focusedPlayback bvid=\(bvid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public)"
-            )
-            return
-        }
         let key = cacheKey(
             bvid: bvid,
             cid: cid,
@@ -616,15 +627,32 @@ actor VideoPreloadCenter {
         )
         #if DEBUG
         let relatedAttempt = relatedPrefetchID.map {
-            beginRelatedRowPlayURLPrefetchAttempt(
-                id: $0,
-                bvid: bvid,
-                cid: cid,
-                page: page,
-                preferredQuality: effectivePreferredQuality
+                beginRelatedRowPlayURLPrefetchAttempt(
+                    id: $0,
+                    bvid: bvid,
+                    cid: cid,
+                    page: page,
+                    preferredQuality: effectivePreferredQuality,
+                    preloadSource: preloadSource
             )
         }
         #endif
+        guard shouldAllowPreload(bvid: bvid, priority: priority) else {
+            #if DEBUG
+            if let relatedAttempt {
+                updateRelatedRowPlayURLPrefetchAttempt(
+                    id: relatedAttempt.id,
+                    state: "cancelled",
+                    cacheExpiresAt: nil,
+                    details: "focusedPlayback"
+                )
+            }
+            #endif
+            PlayerMetricsLog.logger.info(
+                "playInfoPreloadSkipped reason=focusedPlayback bvid=\(bvid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public)"
+            )
+            return
+        }
         let cachedDataMissesPreferredQuality = cachedPlayURLMissingPreferredQuality(
             for: bvid,
             cid: cid,
@@ -700,7 +728,7 @@ actor VideoPreloadCenter {
         }
         #endif
         PlayerMetricsLog.logger.info(
-            "playInfoPreloadStart bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) warmsMedia=\(warmsMedia, privacy: .public) priority=\(String(describing: priority), privacy: .public)"
+            "playInfoPreloadStart source=\(preloadSource, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) warmsMedia=\(warmsMedia, privacy: .public) priority=\(String(describing: priority), privacy: .public)"
         )
         tasks[key] = Task(priority: priority) {
             do {
@@ -746,17 +774,24 @@ actor VideoPreloadCenter {
                 )
                 #if DEBUG
                 if let relatedAttempt {
+                    let variants = data.playVariants.filter(\.isPlayable)
+                    let availableQualities = Array(Set(variants.map(\.quality))).sorted()
+                    let availableCodecs = Array(Set(variants.compactMap(\.codec))).sorted()
                     self.updateRelatedRowPlayURLPrefetchAttempt(
                         id: relatedAttempt.id,
                         state: self.playURLCache[key] == nil ? "completedUncached" : "completed",
                         cacheExpiresAt: self.playURLCache[key]?.expiresAt,
-                        details: "available=\(data.playVariants.filter(\.isPlayable).map { "q\($0.quality):\($0.codec ?? "-")" }.joined(separator: ","))"
+                        details: "available=\(variants.map { "q\($0.quality):\($0.codec ?? "-")" }.joined(separator: ","))",
+                        traceFields: [
+                            "prefetchResolvedQualities": availableQualities.map(String.init).joined(separator: ","),
+                            "prefetchResolvedCodecs": availableCodecs.joined(separator: ","),
+                        ]
                     )
                 }
                 #endif
                 let playableCount = data.playVariants.filter(\.isPlayable).count
                 PlayerMetricsLog.logger.info(
-                    "playInfoPreloadComplete bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) playable=\(playableCount, privacy: .public) qualities=\(Self.qualitySummary(data.playVariants), privacy: .public)"
+                    "playInfoPreloadComplete source=\(preloadSource, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) playable=\(playableCount, privacy: .public) qualities=\(Self.qualitySummary(data.playVariants), privacy: .public)"
                 )
                 self.finish(key)
                 return data
@@ -771,7 +806,7 @@ actor VideoPreloadCenter {
                 }
                 #endif
                 PlayerMetricsLog.logger.info(
-                    "playInfoPreloadFailed bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                    "playInfoPreloadFailed source=\(preloadSource, privacy: .public) bvid=\(bvid, privacy: .public) cid=\(cid, privacy: .public) preferred=\(effectivePreferredQuality ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: start), format: .fixed(precision: 1), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
                 self.finish(key)
                 return nil
@@ -789,7 +824,8 @@ actor VideoPreloadCenter {
         mediaWarmupMode: VideoPreloadMediaWarmupMode = .full,
         mediaWarmupDelay: TimeInterval = 1.25,
         priority: TaskPriority = .utility,
-        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile = .normal,
+        preloadSource: String = "other"
     ) {
         guard shouldAllowPreload(bvid: video.bvid, priority: priority) else { return }
         let effectivePreferredQuality = Self.effectiveStartupQuality(
@@ -816,7 +852,8 @@ actor VideoPreloadCenter {
                 mediaWarmupMode: effectiveMediaWarmupMode,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority,
-                playbackAdaptationProfile: playbackAdaptationProfile
+                playbackAdaptationProfile: playbackAdaptationProfile,
+                preloadSource: preloadSource
             )
             return
         }
@@ -835,7 +872,8 @@ actor VideoPreloadCenter {
                 mediaWarmupMode: effectiveMediaWarmupMode,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority,
-                playbackAdaptationProfile: playbackAdaptationProfile
+                playbackAdaptationProfile: playbackAdaptationProfile,
+                preloadSource: preloadSource
             )
             return
         }
@@ -863,7 +901,8 @@ actor VideoPreloadCenter {
                 mediaWarmupMode: effectiveMediaWarmupMode,
                 mediaWarmupDelay: mediaWarmupDelay,
                 priority: priority,
-                playbackAdaptationProfile: playbackAdaptationProfile
+                playbackAdaptationProfile: playbackAdaptationProfile,
+                preloadSource: preloadSource
             )
             return
         }
@@ -904,7 +943,8 @@ actor VideoPreloadCenter {
                         mediaWarmupMode: effectiveMediaWarmupMode,
                         mediaWarmupDelay: mediaWarmupDelay,
                         priority: priority,
-                        playbackAdaptationProfile: playbackAdaptationProfile
+                        playbackAdaptationProfile: playbackAdaptationProfile,
+                        preloadSource: preloadSource
                     )
                 }
                 self.finishDetail(bvid)
@@ -926,7 +966,8 @@ actor VideoPreloadCenter {
         mediaWarmupMode: VideoPreloadMediaWarmupMode,
         mediaWarmupDelay: TimeInterval,
         priority: TaskPriority,
-        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile
+        playbackAdaptationProfile: PlayerPlaybackAdaptationProfile,
+        preloadSource: String = "other"
     ) {
         Task(priority: priority) {
             do {
@@ -959,7 +1000,8 @@ actor VideoPreloadCenter {
                     mediaWarmupMode: mediaWarmupMode,
                     mediaWarmupDelay: mediaWarmupDelay,
                     priority: priority,
-                    playbackAdaptationProfile: playbackAdaptationProfile
+                    playbackAdaptationProfile: playbackAdaptationProfile,
+                    preloadSource: preloadSource
                 )
             } catch {
                 guard !Task.isCancelled else { return }
@@ -2906,9 +2948,14 @@ actor VideoPreloadCenter {
         bvid: String,
         cid: Int,
         page: Int?,
-        preferredQuality: Int?
-    ) -> String {
+        preferredQuality: Int?,
+        relatedTraceID: String? = nil,
+        clickAt: CFTimeInterval? = nil,
+        stateBeforePreload: String? = nil,
+        relatedPreloadSource: String? = nil
+    ) async -> String {
         trimRelatedRowPlayURLPrefetchAttempts()
+        let timestamp = clickAt ?? CACurrentMediaTime()
         let normalizedPage = normalizedPage(page)
         let codecPolicy = Self.playURLCodecCachePolicyToken(preferredQuality: preferredQuality)
         let candidateKeys = pendingCacheKeys(
@@ -2918,16 +2965,19 @@ actor VideoPreloadCenter {
             preferredQuality: preferredQuality
         )
         let exactAttempts = relatedRowPlayURLPrefetchAttempts.values
-            .filter {
-                $0.bvid == bvid
-                    && $0.cid == cid
-                    && $0.preferredQuality == preferredQuality
-                    && $0.codecPolicy == codecPolicy
-                    && candidateKeys.contains($0.cacheKey)
+            .filter { attempt in
+                if let relatedTraceID { return attempt.id == relatedTraceID }
+                guard attempt.bvid == bvid, attempt.cid == cid else { return false }
+                return attempt.preferredQuality == preferredQuality
+                    && attempt.codecPolicy == codecPolicy
+                    && candidateKeys.contains(attempt.cacheKey)
             }
-            .sorted { $0.startedAt > $1.startedAt }
+            .sorted { $0.scheduledAt > $1.scheduledAt }
 
         if let attempt = exactAttempts.first {
+            let identityMatches = attempt.bvid == bvid && attempt.cid == cid
+            let qualityMatches = attempt.preferredQuality == preferredQuality
+            let codecMatches = attempt.codecPolicy == codecPolicy
             let pendingKey = candidateKeys.first { tasks[$0] != nil }
             let cachedData = cachedPlayURL(
                 for: bvid,
@@ -2935,51 +2985,132 @@ actor VideoPreloadCenter {
                 page: normalizedPage,
                 preferredQuality: preferredQuality
             )
-            let state: String
             let reason: String
-            if pendingKey != nil {
-                state = "running"
+            if !identityMatches {
+                reason = "prefetchMissDifferentIdentity"
+            } else if !qualityMatches {
+                reason = "prefetchMissDifferentQuality"
+            } else if !codecMatches {
+                reason = "prefetchMissDifferentCodec"
+            } else if pendingKey != nil {
                 reason = "prefetchStillRunningAtClick"
             } else if cachedData != nil {
                 switch attempt.state {
                 case "cacheAlreadyPresent":
-                    state = "cachePreexisting"
                     reason = "cachePredatesRelatedPrefetch"
                 case "joinedPending":
-                    state = "joinedCompleted"
                     reason = "relatedPrefetchJoinedExistingRequest"
                 default:
-                    state = "completed"
                     reason = "none"
                 }
             } else if attempt.state == "failed" || attempt.state == "cancelled" {
-                state = attempt.state
                 reason = "prefetchDidNotProduceCache"
             } else if attempt.state == "completedUncached" {
-                state = "uncacheable"
                 reason = "playURLNotReusable"
-            } else if let cacheExpiresAt = attempt.cacheExpiresAt, cacheExpiresAt <= Date() {
-                state = "expired"
+            } else if let cacheExpiresAt = attempt.cacheExpiresAt, timestamp >= cacheExpiresAt {
                 reason = "prefetchExpired"
             } else if attempt.state == "completed" || attempt.state == "cacheAlreadyPresent" {
-                state = "evictedOrUncacheable"
                 reason = "cacheMissingBeforeExpiry"
             } else {
-                state = attempt.state
                 reason = "prefetchNotReady"
             }
+            let eventState = reason == "cacheMissingBeforeExpiry" ? "evicted" : attempt.state
+            let state = RelatedPrefetchDiagnostics.stateAtClick(
+                storedState: eventState,
+                scheduledAt: attempt.scheduledAt,
+                startedAt: attempt.startedAt,
+                completedAt: attempt.completedAt,
+                clickAt: timestamp,
+                cacheExpiresAt: attempt.cacheExpiresAt
+            ).rawValue
+            let lead = RelatedPrefetchDiagnostics.leadMilliseconds(
+                startedAt: attempt.startedAt,
+                clickAt: timestamp
+            )
+            let consume = RelatedPrefetchDiagnostics.consumeResult(
+                cacheSource: identityMatches && qualityMatches && codecMatches
+                    ? (pendingKey != nil ? "pendingCache" : (cachedData != nil ? "completedCache" : nil))
+                    : nil,
+                stateAtClick: RelatedPrefetchClickState(rawValue: state) ?? .unknown,
+                missReason: reason
+            ).rawValue
+            await PlayerMetricsLog.recordRelatedCandidateClickResolution(
+                traceID: attempt.id,
+                stateAtClick: state,
+                consumeResult: consume,
+                leadBucket: RelatedPrefetchDiagnostics.leadBucket(for: lead),
+                qualityMatch: qualityMatches,
+                codecPolicyMatch: codecMatches,
+                preloadSource: attempt.preloadSource,
+                at: timestamp
+            )
             return relatedRowPrefetchClickSummary(
                 attempt: attempt,
                 state: state,
                 reason: reason,
                 requestedQuality: preferredQuality,
-                requestedCodecPolicy: codecPolicy
+                requestedCodecPolicy: codecPolicy,
+                leadMilliseconds: lead,
+                consumeResult: consume
             )
+        }
+
+        if let relatedTraceID {
+            let clickState: RelatedPrefetchClickState
+            switch stateBeforePreload {
+            case "notScheduled", "visible", "selected": clickState = .notScheduled
+            case "scheduled": clickState = .scheduled
+            case "running": clickState = .running
+            case "completed": clickState = .completed
+            case "completedUncached": clickState = .completedUncached
+            case "failed": clickState = .failed
+            case "cancelled": clickState = .cancelled
+            case "expired": clickState = .expired
+            case "evicted": clickState = .evicted
+            default: clickState = .unknown
+            }
+            let missReason: String
+            switch clickState {
+            case .notScheduled: missReason = "prefetchNotScheduled"
+            case .failed, .cancelled: missReason = "prefetchDidNotProduceCache"
+            case .completedUncached: missReason = "playURLNotReusable"
+            case .expired: missReason = "prefetchExpired"
+            case .evicted: missReason = "cacheMissingBeforeExpiry"
+            default: missReason = "prefetchNotReady"
+            }
+            let consumeResult = RelatedPrefetchDiagnostics.consumeResult(
+                cacheSource: nil,
+                stateAtClick: clickState,
+                missReason: missReason
+            ).rawValue
+            await PlayerMetricsLog.recordRelatedCandidateClickResolution(
+                traceID: relatedTraceID,
+                stateAtClick: clickState.rawValue,
+                consumeResult: consumeResult,
+                leadBucket: "unknown",
+                qualityMatch: nil,
+                codecPolicyMatch: nil,
+                preloadSource: relatedPreloadSource ?? "relatedRow",
+                at: timestamp
+            )
+            return [
+                "prefetchID=\(relatedTraceID)",
+                "stateAtClick=\(clickState.rawValue)",
+                "missReason=\(missReason)",
+                "prefetchSource=\(relatedPreloadSource ?? "relatedRow")",
+                "prefetchQ=0",
+                "clickQ=\(preferredQuality ?? 0)",
+                "prefetchCodec=unknown",
+                "clickCodec=\(codecPolicy)",
+                "prefetchLeadTimeAtClickMs=-",
+                "prefetchLeadTimeBucket=unknown",
+                "consumeResult=\(consumeResult)",
+            ].joined(separator: " ")
         }
 
         let candidates = relatedRowPlayURLPrefetchAttempts.values
             .filter { $0.bvid == bvid }
-            .sorted { $0.startedAt > $1.startedAt }
+            .sorted { $0.scheduledAt > $1.scheduledAt }
         let sameCIDAndQuality = candidates.first {
             $0.cid == cid && $0.preferredQuality == preferredQuality
         }
@@ -3001,14 +3132,20 @@ actor VideoPreloadCenter {
             reason = "prefetchNotStarted"
         }
         guard let mismatch else {
-            return "state=notStarted missReason=\(reason) clickQ=\(preferredQuality ?? 0) clickCodec=\(codecPolicy)"
+            return "stateAtClick=notScheduled missReason=\(reason) clickQ=\(preferredQuality ?? 0) clickCodec=\(codecPolicy) consumeResult=missNoPrefetch"
         }
         return relatedRowPrefetchClickSummary(
             attempt: mismatch,
             state: "mismatch",
             reason: reason,
             requestedQuality: preferredQuality,
-            requestedCodecPolicy: codecPolicy
+            requestedCodecPolicy: codecPolicy,
+            leadMilliseconds: nil,
+            consumeResult: RelatedPrefetchDiagnostics.consumeResult(
+                cacheSource: nil,
+                stateAtClick: .notScheduled,
+                missReason: reason
+            ).rawValue
         )
     }
 
@@ -3017,19 +3154,24 @@ actor VideoPreloadCenter {
         state: String,
         reason: String,
         requestedQuality: Int?,
-        requestedCodecPolicy: String
+        requestedCodecPolicy: String,
+        leadMilliseconds: Double?,
+        consumeResult: String
     ) -> String {
-        let ageMilliseconds = max((CACurrentMediaTime() - attempt.startedAt) * 1000, 0)
         return [
             "prefetchID=\(attempt.id)",
-            "state=\(state)",
+            "stateAtClick=\(state)",
             "missReason=\(reason)",
+            "prefetchSource=\(attempt.preloadSource)",
             "prefetchQ=\(attempt.preferredQuality ?? 0)",
             "clickQ=\(requestedQuality ?? 0)",
             "prefetchCodec=\(attempt.codecPolicy)",
             "clickCodec=\(requestedCodecPolicy)",
-            "prefetchAgeAtClickMs=\(Int(ageMilliseconds.rounded()))",
-            "prefetchAgeAtClickBucket=\(ageMilliseconds < 300 ? "lt300" : "ge300")",
+            "prefetchLeadTimeAtClickMs=\(leadMilliseconds.map { String(Int($0.rounded())) } ?? "-")",
+            "prefetchLeadTimeBucket=\(RelatedPrefetchDiagnostics.leadBucket(for: leadMilliseconds))",
+            "qualityMatch=\(attempt.preferredQuality.map { $0 == requestedQuality ? "true" : "false" } ?? "unknown")",
+            "codecMatch=\(attempt.codecPolicy == requestedCodecPolicy ? "true" : "false")",
+            "consumeResult=\(consumeResult)",
         ].joined(separator: " ")
     }
 
@@ -3038,22 +3180,55 @@ actor VideoPreloadCenter {
         bvid: String,
         cid: Int,
         page: Int?,
-        preferredQuality: Int?
+        preferredQuality: Int?,
+        preloadSource: String = "relatedRow"
     ) -> RelatedRowPlayURLPrefetchAttempt {
         trimRelatedRowPlayURLPrefetchAttempts()
+        let codecPolicy = Self.playURLCodecCachePolicyToken(preferredQuality: preferredQuality)
+        let expectedCacheKey = cacheKey(
+            bvid: bvid,
+            cid: cid,
+            page: page,
+            preferredQuality: preferredQuality
+        )
+        if let existing = relatedRowPlayURLPrefetchAttempts[id],
+           existing.cacheKey == expectedCacheKey,
+           existing.codecPolicy == codecPolicy {
+            let cacheIsReusable = cachedPlayURL(
+                for: bvid,
+                cid: cid,
+                page: page,
+                preferredQuality: preferredQuality
+            ) != nil && !cachedPlayURLMissingPreferredQuality(
+                for: bvid,
+                cid: cid,
+                page: page,
+                preferredQuality: preferredQuality
+            )
+            if tasks[expectedCacheKey] != nil || cacheIsReusable {
+                recordRelatedRowPrefetchEvent(
+                    id: id,
+                    bvid: bvid,
+                    cid: cid,
+                    preferredQuality: preferredQuality,
+                    state: "observedExisting",
+                    reason: "state=\(existing.state) originalSource=\(existing.preloadSource)",
+                    preloadSource: preloadSource
+                )
+                return existing
+            }
+        }
         let attempt = RelatedRowPlayURLPrefetchAttempt(
             id: id,
             bvid: bvid,
             cid: cid,
             preferredQuality: preferredQuality,
-            codecPolicy: Self.playURLCodecCachePolicyToken(preferredQuality: preferredQuality),
-            cacheKey: cacheKey(
-                bvid: bvid,
-                cid: cid,
-                page: page,
-                preferredQuality: preferredQuality
-            ),
-            startedAt: CACurrentMediaTime(),
+            codecPolicy: codecPolicy,
+            cacheKey: expectedCacheKey,
+            startedAt: nil,
+            scheduledAt: CACurrentMediaTime(),
+            completedAt: nil,
+            preloadSource: preloadSource,
             state: "scheduled",
             cacheExpiresAt: nil
         )
@@ -3066,7 +3241,8 @@ actor VideoPreloadCenter {
             cid: cid,
             preferredQuality: preferredQuality,
             state: "scheduled",
-            reason: "codecPolicy=\(attempt.codecPolicy)"
+            reason: "codecPolicy=\(attempt.codecPolicy)",
+            preloadSource: attempt.preloadSource
         )
         return attempt
     }
@@ -3075,13 +3251,23 @@ actor VideoPreloadCenter {
         id: String,
         state: String,
         cacheExpiresAt: Date?,
-        details: String? = nil
+        details: String? = nil,
+        traceFields: [String: String] = [:]
     ) {
         guard var attempt = relatedRowPlayURLPrefetchAttempts[id] else { return }
+        let stateTimestamp = CACurrentMediaTime()
         attempt.state = state
-        attempt.cacheExpiresAt = cacheExpiresAt
+        if state == "running" || state == "joinedPending" {
+            attempt.startedAt = attempt.startedAt ?? stateTimestamp
+        }
+        if ["cacheAlreadyPresent", "completed", "completedUncached", "failed", "cancelled"].contains(state) {
+            attempt.completedAt = stateTimestamp
+        }
+        attempt.cacheExpiresAt = cacheExpiresAt.map {
+            stateTimestamp + max($0.timeIntervalSinceNow, 0)
+        }
         relatedRowPlayURLPrefetchAttempts[id] = attempt
-        let elapsedMilliseconds = Int(max((CACurrentMediaTime() - attempt.startedAt) * 1000, 0).rounded())
+        let elapsedMilliseconds = Int(max((CACurrentMediaTime() - attempt.scheduledAt) * 1000, 0).rounded())
         let eventDetails = [
             "elapsedMs=\(elapsedMilliseconds)",
             cacheExpiresAt.map { "cacheExpiresInMs=\(Int($0.timeIntervalSinceNow * 1000))" },
@@ -3093,8 +3279,43 @@ actor VideoPreloadCenter {
             cid: attempt.cid,
             preferredQuality: attempt.preferredQuality,
             state: state,
-            reason: eventDetails
+            reason: eventDetails,
+            preloadSource: attempt.preloadSource
         )
+        let traceEvent: String?
+        let traceState: String
+        switch state {
+        case "running", "joinedPending":
+            traceEvent = "prefetchStarted"
+            traceState = "running"
+        case "cacheAlreadyPresent", "completed", "completedUncached":
+            traceEvent = "prefetchCompleted"
+            traceState = state == "completedUncached" ? "completedUncached" : "completed"
+        case "failed":
+            traceEvent = "prefetchFailed"
+            traceState = "failed"
+        case "cancelled":
+            traceEvent = "prefetchCancelled"
+            traceState = "cancelled"
+        default:
+            traceEvent = nil
+            traceState = state
+        }
+        if let traceEvent {
+            let fields = traceFields.merging([
+                "preloadSource": attempt.preloadSource,
+                "result": state,
+            ]) { _, new in new }
+            Task { @MainActor in
+                PlayerMetricsLog.updateRelatedCandidateTrace(
+                    traceID: id,
+                    event: traceEvent,
+                    state: traceState,
+                    fields: fields,
+                    at: stateTimestamp
+                )
+            }
+        }
     }
 
     private func recordRelatedRowPrefetchEvent(
@@ -3103,16 +3324,19 @@ actor VideoPreloadCenter {
         cid: Int?,
         preferredQuality: Int?,
         state: String,
-        reason: String? = nil
+        reason: String? = nil,
+        preloadSource: String = "relatedRow"
     ) {
         PlayerMetricsLog.diagnostic(
             [
-                "event=relatedPlayURLPrefetch",
-                "traceID=\(id)",
-                "metricsID=\(bvid)",
-                "cid=\(cid ?? 0)",
-                "q=\(preferredQuality ?? 0)",
-                "state=\(state)",
+            "event=relatedPlayURLPrefetch",
+            "traceID=\(id)",
+            "metricsID=\(bvid)",
+            "cid=\(cid ?? 0)",
+            "q=\(preferredQuality ?? 0)",
+            "preloadSource=\(preloadSource)",
+            "monoMs=\(String(format: "%.3f", CACurrentMediaTime() * 1_000))",
+            "state=\(state)",
                 reason.map { "detail=\($0)" },
             ].compactMap { $0 }.joined(separator: " ")
         )
@@ -3121,7 +3345,7 @@ actor VideoPreloadCenter {
     private func trimRelatedRowPlayURLPrefetchAttempts() {
         let expiry = CACurrentMediaTime() - 20 * 60
         relatedRowPlayURLPrefetchAttempts = relatedRowPlayURLPrefetchAttempts.filter {
-            $0.value.startedAt >= expiry
+            $0.value.scheduledAt >= expiry
         }
         relatedRowPlayURLPrefetchAttemptOrder.removeAll {
             relatedRowPlayURLPrefetchAttempts[$0] == nil
@@ -3159,9 +3383,12 @@ actor VideoPreloadCenter {
         let preferredQuality: Int?
         let codecPolicy: String
         let cacheKey: String
-        let startedAt: CFTimeInterval
+        var startedAt: CFTimeInterval?
+        let scheduledAt: CFTimeInterval
+        var completedAt: CFTimeInterval?
+        let preloadSource: String
         var state: String
-        var cacheExpiresAt: Date?
+        var cacheExpiresAt: CFTimeInterval?
     }
     #endif
 

@@ -1108,7 +1108,8 @@ extension VideoDetailViewModel {
                         preferredQuality: preferredQuality,
                         targetPreferredQuality: targetQuality,
                         cdnPreference: cdnPreference,
-                        playbackAdaptationProfile: adaptationProfile
+                        playbackAdaptationProfile: adaptationProfile,
+                        preloadSource: "history"
                     )
                 }
             )
@@ -1149,7 +1150,8 @@ extension VideoDetailViewModel {
                         warmsMedia: false,
                         mediaWarmupMode: .routePlanOnly,
                         mediaWarmupDelay: 0,
-                        playbackAdaptationProfile: adaptationProfile
+                        playbackAdaptationProfile: adaptationProfile,
+                        preloadSource: "history"
                     )
                 }
             )

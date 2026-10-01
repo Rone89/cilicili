@@ -53,7 +53,12 @@ struct VideoDetailView: View {
                 onNavigateBack: popOneVideoLevel,
                 lifecycleActions: contentLifecycleActions
             )
-            .environment(\.markRelatedVideoNavigation) {
+            .environment(\.markRelatedVideoNavigation) { video in
+                #if DEBUG
+                if let cid = video.cid {
+                    PlayerMetricsLog.markRelatedCandidateClicked(bvid: video.bvid, cid: cid)
+                }
+                #endif
                 holder.viewModel?.markRelatedVideoNavigation()
             }
         }

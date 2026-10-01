@@ -187,7 +187,8 @@ extension RootTabView {
                 warmsMedia: true,
                 mediaWarmupMode: .full,
                 mediaWarmupDelay: 0,
-                playbackAdaptationProfile: playbackAdaptationProfile
+                playbackAdaptationProfile: playbackAdaptationProfile,
+                preloadSource: "manual"
             )
         }
     }

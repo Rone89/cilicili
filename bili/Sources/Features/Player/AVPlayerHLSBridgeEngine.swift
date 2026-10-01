@@ -1306,6 +1306,15 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func handleCurrentItemReadyToPlay(_ item: AVPlayerItem) {
         guard isCurrentPlayerItem(item) else { return }
+        #if DEBUG
+        if let metricsID = source?.metricsID {
+            PlayerMetricsLog.recordStartupTraceEvent(
+                metricsID: metricsID,
+                event: "readyToPlay",
+                fields: ["status": "ready"]
+            )
+        }
+        #endif
         if !didLogCurrentItemReady, let currentItemCreatedAt, hlsBridge != nil {
             didLogCurrentItemReady = true
             let requests = hlsBridge?.requestCountSnapshot() ?? (total: 0, manifests: 0)
@@ -2871,6 +2880,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 )
                 let asset = AVURLAsset(url: manifest.masterPlaylistURL)
                 let item = AVPlayerItem(asset: asset)
+                #if DEBUG
+                PlayerMetricsLog.recordStartupTraceEvent(metricsID: source.metricsID, event: "playerItemCreated", fields: ["asset": "localHLS", "track": "audio"])
+                #endif
                 item.preferredForwardBufferDuration = PlaybackEnvironment.current.startupForwardBufferDuration
                 return PreparedPlayerItem(
                     item: item,
@@ -2883,6 +2895,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
             let asset = AVURLAsset(url: audioURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
             let item = AVPlayerItem(asset: asset)
+            #if DEBUG
+            PlayerMetricsLog.recordStartupTraceEvent(metricsID: source.metricsID, event: "playerItemCreated", fields: ["asset": "direct", "track": "audio"])
+            #endif
             item.preferredForwardBufferDuration = PlaybackEnvironment.current.startupForwardBufferDuration
             return PreparedPlayerItem(item: item, bridge: nil, liveProxy: nil, assets: [asset], isDirectLiveHLS: false)
         }
@@ -2910,6 +2925,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     }
                     let asset = AVURLAsset(url: manifest.masterPlaylistURL)
                     let item = AVPlayerItem(asset: asset)
+                    #if DEBUG
+                    PlayerMetricsLog.recordStartupTraceEvent(metricsID: source.metricsID, event: "playerItemCreated", fields: ["asset": "localHLS", "track": "audioVideo"])
+                    #endif
                     applyDolbyVisionMetadataPolicy(to: item, source: source)
                     item.preferredForwardBufferDuration = PlaybackEnvironment.current.startupForwardBufferDuration
                     return PreparedPlayerItem(item: item, bridge: bridge, liveProxy: nil, assets: [asset], isDirectLiveHLS: false)
@@ -2928,6 +2946,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             && (videoURL.isLikelyHLSManifest || (source.isLiveStream && source.isLiveHLS))
         let asset = AVURLAsset(url: videoURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let item = AVPlayerItem(asset: asset)
+        #if DEBUG
+        PlayerMetricsLog.recordStartupTraceEvent(metricsID: source.metricsID, event: "playerItemCreated", fields: ["asset": isDirectLiveHLS ? "directLiveHLS" : "direct", "track": "video"])
+        #endif
         applyDolbyVisionMetadataPolicy(to: item, source: source)
         item.preferredForwardBufferDuration = isDirectLiveHLS ? 0.5 : PlaybackEnvironment.current.startupForwardBufferDuration
         return PreparedPlayerItem(item: item, bridge: nil, liveProxy: nil, assets: [asset], isDirectLiveHLS: isDirectLiveHLS)
@@ -3588,6 +3609,9 @@ struct LocalHLSBridge: Sendable {
             metricsID: metricsID,
             "plannedVideo=\(qualitySummary(for: videoTracks))"
         )
+        #if DEBUG
+        await recordManifestStage(metricsID: metricsID, "manifestBuildStart")
+        #endif
         let (plan, planState) = try await routePlan(
             videoTracks: videoTracks,
             audioTrack: audioTrack,
@@ -3595,6 +3619,9 @@ struct LocalHLSBridge: Sendable {
             headers: headers,
             metricsID: metricsID
         )
+        #if DEBUG
+        await recordManifestStage(metricsID: metricsID, "routePlanReady state=\(planState)")
+        #endif
         let cacheKey = bridgeCacheKey(
             videoTracks: videoTracks,
             audioTrack: audioTrack,
@@ -3632,13 +3659,21 @@ struct LocalHLSBridge: Sendable {
         bridge.updateHeaders(headers)
         bridge.updateRemoteFailureHandler(onRemoteFailure)
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
+        #if DEBUG
+        await recordManifestStage(
+            metricsID: metricsID,
+            "bridgeRoutesReady routePlan=\(planState) server=\(bridgeResult.state.rawValue)"
+        )
+        #endif
         PlayerMetricsLog.logger.info(
             "hlsBridgeMakeReady routePlan=\(planState, privacy: .public) server=\(bridgeResult.state.rawValue, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
         )
+        #if DEBUG
         await recordManifestStage(
             metricsID: metricsID,
-            "bridge=\(planState) server=\(bridgeResult.state.rawValue) total=\(formatMilliseconds(elapsedMilliseconds))"
+            "manifestBuildComplete bridge=\(planState) server=\(bridgeResult.state.rawValue) total=\(formatMilliseconds(elapsedMilliseconds))"
         )
+        #endif
         return bridge
     }
 
@@ -4175,9 +4210,31 @@ struct LocalHLSBridge: Sendable {
         return 7
     }
 
-    private nonisolated static func recordManifestStage(metricsID: String?, _ message: String) async {
+    private nonisolated static func recordManifestStage(
+        metricsID: String?,
+        _ message: String,
+        at timestamp: CFTimeInterval? = nil
+    ) async {
         guard let metricsID, !metricsID.isEmpty else { return }
+        #if DEBUG
+        let eventTime = timestamp ?? CACurrentMediaTime()
+        let timestampedMessage = "\(message) monoMs=\(String(format: "%.3f", eventTime * 1_000))"
+        let stageEvent = RelatedPrefetchDiagnostics.stageEvent(from: message)
+        Task { @MainActor in
+            let didRecordTraceEvent = PlayerMetricsLog.recordStartupTraceEvent(
+                metricsID: metricsID,
+                event: stageEvent.name,
+                fields: stageEvent.fields,
+                kind: .manifestStage,
+                at: eventTime
+            )
+            if !didRecordTraceEvent {
+                PlayerMetricsLog.record(.manifestStage, metricsID: metricsID, message: timestampedMessage)
+            }
+        }
+        #else
         await PlayerMetricsLog.record(.manifestStage, metricsID: metricsID, message: message)
+        #endif
     }
 
     private nonisolated static func makeOptionalVideoRenditions(
@@ -4365,18 +4422,72 @@ struct LocalHLSBridge: Sendable {
         ) {
             let fetchStart = CACurrentMediaTime()
             let sourceURLs = [track.url] + track.fallbackURLs
+            #if DEBUG
+            let onBootstrapRequestStart: @Sendable (String, HTTPByteRange) async -> Void = { kind, range in
+                let suffix = switch kind {
+                case "indexOnly": "Index"
+                case "initialization": "Init"
+                default: "Index"
+                }
+                await Self.recordManifestStage(
+                    metricsID: metricsID,
+                    "\(mediaType)\(suffix)RangeRequestStart range=\(range.start)-\(range.endInclusive) bytes=\(range.length) rangeKind=\(kind) initRange=\(initialization.start)-\(initialization.endInclusive) indexRange=\(indexRange.start)-\(indexRange.endInclusive) cdn=\(RelatedPrefetchDiagnostics.cdnHostLabel(track.url.host))"
+                )
+            }
+            let onBootstrapFirstByte: @Sendable (String, URL, Int, Double, CFTimeInterval) async -> Void = {
+                kind, url, byteCount, elapsedMilliseconds, timestamp in
+                let suffix = switch kind {
+                case "indexOnly": "Index"
+                case "initialization": "Init"
+                default: "Index"
+                }
+                await Self.recordManifestStage(
+                    metricsID: metricsID,
+                    "\(mediaType)\(suffix)RangeFirstByte rangeKind=\(kind) source=network cdn=\(RelatedPrefetchDiagnostics.cdnHostLabel(url.host)) firstByteCount=\(byteCount) ttfbMs=\(formatMilliseconds(elapsedMilliseconds))",
+                    at: timestamp
+                )
+            }
+            let onBootstrapComplete: @Sendable (String, VideoRangeCacheFetchSource, URL, Int, Double) async -> Void = {
+                kind, source, url, bytes, elapsedMilliseconds in
+                let suffix = switch kind {
+                case "indexOnly": "Index"
+                case "initialization": "Init"
+                default: "Index"
+                }
+                let sourceLabel: String
+                switch source {
+                case .remote: sourceLabel = "network"
+                case .cache: sourceLabel = "memoryCache"
+                case .pending: sourceLabel = "joined"
+                }
+                await Self.recordManifestStage(
+                    metricsID: metricsID,
+                    "\(mediaType)\(suffix)RangeComplete rangeKind=\(kind) source=\(sourceLabel) cdn=\(RelatedPrefetchDiagnostics.cdnHostLabel(url.host)) bytes=\(bytes) elapsedMs=\(formatMilliseconds(elapsedMilliseconds))"
+                )
+            }
+            #else
+            let onBootstrapRequestStart: (@Sendable (String, HTTPByteRange) async -> Void)? = nil
+            let onBootstrapFirstByte: (@Sendable (String, URL, Int, Double, CFTimeInterval) async -> Void)? = nil
+            let onBootstrapComplete: (@Sendable (String, VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
+            #endif
             let bootstrapPayload = try await fetchRenditionBootstrapPayload(
                 initialization: initialization,
                 indexRange: indexRange,
                 from: sourceURLs,
-                headers: headers
+                headers: headers,
+                onRequestStart: onBootstrapRequestStart,
+                onFirstByte: onBootstrapFirstByte,
+                onComplete: onBootstrapComplete
             )
             let initializationData = try await resolvedInitializationData(
                 bootstrapPayload.initializationData,
                 for: track,
                 initialization: initialization,
                 from: sourceURLs,
-                headers: headers
+                headers: headers,
+                onRequestStart: onBootstrapRequestStart,
+                onFirstByte: onBootstrapFirstByte,
+                onComplete: onBootstrapComplete
             )
             let bootstrapMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: fetchStart)
             await recordManifestStage(
@@ -4393,6 +4504,9 @@ struct LocalHLSBridge: Sendable {
                 "hlsBridgeIndexFetched media=\(mediaType, privacy: .public) mode=\(bootstrapPayload.mode, privacy: .public) bytes=\(bootstrapPayload.indexData.count, privacy: .public) initBytes=\(initializationData?.count ?? 0, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
             )
             let parseStart = CACurrentMediaTime()
+            #if DEBUG
+            await recordManifestStage(metricsID: metricsID, "\(mediaType)SIDXParseStart bytes=\(bootstrapPayload.indexData.count)")
+            #endif
             let references = try SIDXParser.parseReferences(from: bootstrapPayload.indexData, sidxStartOffset: indexRange.start)
             let parseMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: parseStart)
             #if DEBUG
@@ -4414,6 +4528,9 @@ struct LocalHLSBridge: Sendable {
             let timelineMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: timelineStart)
             let indexPreparationMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: parseStart)
             let mapStart = CACurrentMediaTime()
+            #if DEBUG
+            await recordManifestStage(metricsID: metricsID, "\(mediaType)SegmentMapStart refs=\(references.count)")
+            #endif
             let rendition = try makeRendition(
                 for: track,
                 initialization: initialization,
@@ -4436,6 +4553,10 @@ struct LocalHLSBridge: Sendable {
         }
         let rendition = renditionResult.rendition
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
+        await recordManifestStage(
+            metricsID: metricsID,
+            "\(mediaType)RenditionReady cache=\(renditionResult.state.rawValue) refs=\(rendition.references.count) elapsedMs=\(formatMilliseconds(elapsedMilliseconds))"
+        )
         PlayerMetricsLog.logger.info(
             "hlsBridgeRenditionReady media=\(mediaType, privacy: .public) state=\(renditionResult.state.rawValue, privacy: .public) elapsedMs=\(elapsedMilliseconds, format: .fixed(precision: 1), privacy: .public)"
         )
@@ -4456,16 +4577,26 @@ struct LocalHLSBridge: Sendable {
         initialization: HTTPByteRange,
         indexRange: HTTPByteRange,
         from urls: [URL],
-        headers: [String: String]
+        headers: [String: String],
+        onRequestStart: (@Sendable (String, HTTPByteRange) async -> Void)? = nil,
+        onFirstByte: (@Sendable (String, URL, Int, Double, CFTimeInterval) async -> Void)? = nil,
+        onComplete: (@Sendable (String, VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
     ) async throws -> HLSRenditionBootstrapPayload {
         let strategy = bootstrapFetchStrategy(urlCount: urls.count)
         if let combinedRange = combinedBootstrapRange(initialization: initialization, indexRange: indexRange) {
             do {
+                await onRequestStart?("combinedInitAndIndex", combinedRange)
                 let combinedData = try await fetchByteRange(
                     combinedRange,
                     from: urls,
                     headers: headers,
-                    policy: strategy
+                    policy: strategy,
+                    onFirstByte: { url, count, ttfb, at in
+                        await onFirstByte?("combinedInitAndIndex", url, count, ttfb, at)
+                    },
+                    onComplete: { source, url, count, elapsed in
+                        await onComplete?("combinedInitAndIndex", source, url, count, elapsed)
+                    }
                 )
                 if let initializationData = dataSlice(for: initialization, in: combinedData, baseRange: combinedRange),
                    let indexData = dataSlice(for: indexRange, in: combinedData, baseRange: combinedRange) {
@@ -4482,11 +4613,18 @@ struct LocalHLSBridge: Sendable {
             }
         }
 
+        await onRequestStart?("indexOnly", indexRange)
         let indexData = try await fetchByteRange(
             indexRange,
             from: urls,
             headers: headers,
-            policy: strategy
+            policy: strategy,
+            onFirstByte: { url, count, ttfb, at in
+                await onFirstByte?("indexOnly", url, count, ttfb, at)
+            },
+            onComplete: { source, url, count, elapsed in
+                await onComplete?("indexOnly", source, url, count, elapsed)
+            }
         )
         return HLSRenditionBootstrapPayload(
             initializationData: nil,
@@ -4583,7 +4721,9 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from urls: [URL],
         headers: [String: String],
-        strategy: HLSByteRangeFetchStrategy = .sequential
+        strategy: HLSByteRangeFetchStrategy = .sequential,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil,
+        onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
     ) async throws -> Data {
         try await fetchByteRange(
             range,
@@ -4592,7 +4732,9 @@ struct LocalHLSBridge: Sendable {
             policy: HLSBootstrapFetchPolicy(
                 fetchStrategy: strategy,
                 remoteRequestPolicy: .default(for: range)
-            )
+            ),
+            onFirstByte: onFirstByte,
+            onComplete: onComplete
         )
     }
 
@@ -4600,7 +4742,9 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from urls: [URL],
         headers: [String: String],
-        policy: HLSBootstrapFetchPolicy
+        policy: HLSBootstrapFetchPolicy,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil,
+        onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
     ) async throws -> Data {
         let canonicalSourceURLs = urls.removingDuplicates()
         guard let primaryURL = canonicalSourceURLs.first else {
@@ -4613,7 +4757,9 @@ struct LocalHLSBridge: Sendable {
                 from: sourceURLs,
                 primaryURL: primaryURL,
                 headers: headers,
-                remoteRequestPolicy: policy.remoteRequestPolicy
+                remoteRequestPolicy: policy.remoteRequestPolicy,
+                onFirstByte: onFirstByte,
+                onComplete: onComplete
             )
         }
 
@@ -4622,7 +4768,9 @@ struct LocalHLSBridge: Sendable {
             from: sourceURLs,
             primaryURL: primaryURL,
             headers: headers,
-            remoteRequestPolicy: policy.remoteRequestPolicy
+            remoteRequestPolicy: policy.remoteRequestPolicy,
+            onFirstByte: onFirstByte,
+            onComplete: onComplete
         )
     }
 
@@ -4631,7 +4779,9 @@ struct LocalHLSBridge: Sendable {
         from sourceURLs: [URL],
         primaryURL: URL,
         headers: [String: String],
-        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
+        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)?,
+        onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)?
     ) async throws -> Data {
         guard !sourceURLs.isEmpty else {
             throw PlayerEngineError.unsupportedMedia
@@ -4645,10 +4795,12 @@ struct LocalHLSBridge: Sendable {
                         range,
                         from: url,
                         headers: headers,
-                        policy: remoteRequestPolicy
+                        policy: remoteRequestPolicy,
+                        onFirstByte: onFirstByte
                     )
                 }
                 let data = cacheResult.data
+                await onComplete?(cacheResult.source, url, data.count, PlayerMetricsLog.elapsedMilliseconds(since: fetchStart))
                 if cacheResult.source == .remote {
                     await HLSSourcePreferenceCache.shared.recordResult(
                         url: url,
@@ -4690,8 +4842,11 @@ struct LocalHLSBridge: Sendable {
         from sourceURLs: [URL],
         primaryURL: URL,
         headers: [String: String],
-        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy
+        remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)?,
+        onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)?
     ) async throws -> Data {
+        let fallbackStart = CACurrentMediaTime()
         let result: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error> = await withTaskGroup(of: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error>.self) { group in
             for (index, url) in sourceURLs.enumerated() {
                 group.addTask(priority: .userInitiated) {
@@ -4706,7 +4861,8 @@ struct LocalHLSBridge: Sendable {
                                 range,
                                 from: url,
                                 headers: headers,
-                                policy: remoteRequestPolicy
+                                policy: remoteRequestPolicy,
+                                onFirstByte: onFirstByte
                             )
                         }
                         let data = cacheResult.data
@@ -4747,6 +4903,14 @@ struct LocalHLSBridge: Sendable {
 
         switch result {
         case let .success(payload):
+            if let url = sourceURLs[safe: payload.index] {
+                await onComplete?(
+                    payload.source,
+                    url,
+                    payload.data.count,
+                    PlayerMetricsLog.elapsedMilliseconds(since: fallbackStart)
+                )
+            }
             if payload.source == .remote, let preferredURL = sourceURLs[safe: payload.index] {
                 await HLSSourcePreferenceCache.shared.recordPreferredURL(preferredURL, for: sourceURLs)
             }
@@ -4766,7 +4930,8 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from url: URL,
         headers: [String: String],
-        policy: HLSRemoteByteRangeRequestPolicy
+        policy: HLSRemoteByteRangeRequestPolicy,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
     ) async throws -> Data {
         var lastError: Error?
         for attempt in 0..<policy.attempts {
@@ -4775,7 +4940,8 @@ struct LocalHLSBridge: Sendable {
                     range,
                     from: url,
                     headers: headers,
-                    timeoutInterval: policy.timeoutInterval(for: range)
+                    timeoutInterval: policy.timeoutInterval(for: range),
+                    onFirstByte: onFirstByte
                 )
             } catch {
                 lastError = error
@@ -4806,7 +4972,8 @@ struct LocalHLSBridge: Sendable {
         _ range: HTTPByteRange,
         from url: URL,
         headers: [String: String],
-        timeoutInterval: TimeInterval
+        timeoutInterval: TimeInterval,
+        onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
     ) async throws -> Data {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -4818,7 +4985,34 @@ struct LocalHLSBridge: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await BiliPlaybackNetworkSessionPool.shared.playbackDataSession().data(for: request)
+            let session = BiliPlaybackNetworkSessionPool.shared.playbackDataSession()
+            if let onFirstByte, range.length <= 16 * 1024 {
+                // This buffered helper primarily fetches small SIDX/init ranges.
+                // Keep byte-wise diagnostics bounded so larger media responses
+                // retain the normal `data(for:)` path and its transfer behavior.
+                let requestStart = CACurrentMediaTime()
+                let (bytes, receivedResponse) = try await session.bytes(for: request)
+                response = receivedResponse
+                var collected = Data()
+                collected.reserveCapacity(Int(range.length))
+                var didReportFirstByte = false
+                for try await byte in bytes {
+                    if !didReportFirstByte {
+                        didReportFirstByte = true
+                        let firstByteAt = CACurrentMediaTime()
+                        await onFirstByte(
+                            url,
+                            1,
+                            max((firstByteAt - requestStart) * 1_000, 0),
+                            firstByteAt
+                        )
+                    }
+                    collected.append(byte)
+                }
+                data = collected
+            } else {
+                (data, response) = try await session.data(for: request)
+            }
         } catch let error as URLError {
             throw HLSBridgeRemoteFailure.urlSession(error, url: url, range: range)
         } catch {
@@ -5087,17 +5281,27 @@ struct LocalHLSBridge: Sendable {
         for track: HLSBridgeTrack,
         initialization: HTTPByteRange,
         from sourceURLs: [URL],
-        headers: [String: String]
+        headers: [String: String],
+        onRequestStart: (@Sendable (String, HTTPByteRange) async -> Void)? = nil,
+        onFirstByte: (@Sendable (String, URL, Int, Double, CFTimeInterval) async -> Void)? = nil,
+        onComplete: (@Sendable (String, VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
     ) async throws -> Data? {
         guard existingData == nil,
               track.mediaType.isVideo,
               track.dynamicRange.isHDR
         else { return existingData }
+        await onRequestStart?("initialization", initialization)
         return try await fetchByteRange(
             initialization,
             from: sourceURLs,
             headers: headers,
-            policy: bootstrapFetchStrategy(urlCount: sourceURLs.count)
+            policy: bootstrapFetchStrategy(urlCount: sourceURLs.count),
+            onFirstByte: { url, count, ttfb, at in
+                await onFirstByte?("initialization", url, count, ttfb, at)
+            },
+            onComplete: { source, url, count, elapsed in
+                await onComplete?("initialization", source, url, count, elapsed)
+            }
         )
     }
 
@@ -7505,6 +7709,24 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         }
 
         let sourceURLs = ([url] + fallbackURLs).removingDuplicates()
+        let startupMetricsID = metricsID
+        #if DEBUG
+        if let media = Self.startupRangeLabel(for: request.path), let metricsID {
+            PlayerMetricsLog.enqueueStartupTraceEvent(
+                metricsID: metricsID,
+                event: "\(media)RangeRequested",
+                fields: [
+                    "source": "pending",
+                    "requestedBytes": String(fetchRange.length),
+                    "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(url.host),
+                    "rangeKind": request.path.hasSuffix("/init.mp4")
+                        ? "initialization"
+                        : (request.path.contains("/segment-0.m4s") ? "firstMediaSegment" : "other"),
+                ],
+                kind: .manifestStage
+            )
+        }
+        #endif
         if let cached = await cachedRange(fetchRange, sourceURLs: sourceURLs, transform: transform) {
             let responseData = responseData(from: cached, servedRange: resolvedRange, transform: transform)
             let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
@@ -7525,6 +7747,21 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 elapsedMilliseconds: elapsedMilliseconds,
                 source: "cache"
             )
+            #if DEBUG
+            if let media = Self.startupRangeLabel(for: request.path), let metricsID {
+                PlayerMetricsLog.enqueueStartupTraceEvent(
+                    metricsID: metricsID,
+                    event: "\(media)RangeComplete",
+                    fields: [
+                        "source": "mediaCache",
+                        "bytes": String(responseData.count),
+                        "ttfbMs": "-",
+                        "elapsedMs": String(format: "%.1f", elapsedMilliseconds),
+                    ],
+                    kind: .manifestStage
+                )
+            }
+            #endif
             queue.async {
                 guard self.isConnectionActive(connectionID) else { return }
                 self.sendData(
@@ -7562,11 +7799,58 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 return
             }
 
+            #if DEBUG
+            let startupRange = Self.startupRangeLabel(for: request.path)
+            var onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)?
+            var onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)?
+            if let rangeLabel = startupRange {
+                onFirstByte = { sourceURL, byteCount, ttfbMilliseconds, timestamp in
+                    guard let startupMetricsID else { return }
+                    PlayerMetricsLog.enqueueStartupTraceEvent(
+                        metricsID: startupMetricsID,
+                        event: "\(rangeLabel)FirstByte",
+                        fields: [
+                            "source": "network",
+                            "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(sourceURL.host),
+                            "firstByteCount": String(byteCount),
+                            "ttfbMs": String(format: "%.1f", ttfbMilliseconds),
+                        ],
+                        kind: .manifestStage,
+                        at: timestamp
+                    )
+                }
+                onComplete = { source, sourceURL, byteCount, elapsedMilliseconds in
+                    guard let startupMetricsID else { return }
+                    let sourceLabel: String
+                    switch source {
+                    case .remote: sourceLabel = "network"
+                    case .cache: sourceLabel = "memoryCache"
+                    case .pending: sourceLabel = "joined"
+                    }
+                    PlayerMetricsLog.enqueueStartupTraceEvent(
+                        metricsID: startupMetricsID,
+                        event: "\(rangeLabel)RangeComplete",
+                        fields: [
+                            "source": sourceLabel,
+                            "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(sourceURL.host),
+                            "bytes": String(byteCount),
+                            "elapsedMs": String(format: "%.1f", elapsedMilliseconds),
+                        ],
+                        kind: .manifestStage
+                    )
+                }
+            }
+            #else
+            let onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
+            let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
+            #endif
             let fetchedData = try await LocalHLSBridge.fetchByteRange(
                 fetchRange,
                 from: sourceURLs,
                 headers: headers,
-                strategy: startupFetchStrategy(for: request.path)
+                strategy: startupFetchStrategy(for: request.path),
+                onFirstByte: onFirstByte,
+                onComplete: onComplete
             )
             let transformedData = transform?.apply(to: fetchedData) ?? fetchedData
             let data = responseData(from: transformedData, servedRange: resolvedRange, transform: transform)
@@ -7685,6 +7969,23 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             || path.contains("/segment-1.m4s")
     }
 
+    nonisolated private static func startupRangeLabel(for path: String) -> String? {
+        let track: String
+        if path.contains("/media/video/") {
+            track = "video"
+        } else if path.contains("/media/audio/") {
+            track = "audio"
+        } else {
+            return nil
+        }
+        if path.hasSuffix("/init.mp4") { return "\(track)Init" }
+        guard path.contains("/segment-0.m4s") else { return nil }
+        if path.contains("/segment-0.m4s") {
+            return "\(track)Media"
+        }
+        return nil
+    }
+
     nonisolated private static func shouldSessionAvoidSlowStartupHost(
         path: String,
         elapsedMilliseconds: Double,
@@ -7765,6 +8066,27 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             servedRange: servedRange
         )
         let startupMetricsID = metricsID
+        #if DEBUG
+        let onFirstByteReceived: @Sendable (URL, Int, Double, CFTimeInterval) -> Void = {
+            sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+            if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
+                PlayerMetricsLog.enqueueStartupTraceEvent(
+                    metricsID: startupMetricsID,
+                    event: "\(media)FirstByte",
+                    fields: [
+                        "source": "networkHedge",
+                        "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(sourceURL.host),
+                        "firstChunkBytes": String(firstChunkBytes),
+                        "ttfbMs": String(format: "%.1f", ttfbMilliseconds),
+                    ],
+                    kind: .manifestStage,
+                    at: firstByteAt
+                )
+            }
+        }
+        #else
+        let onFirstByteReceived: (@Sendable (URL, Int, Double, CFTimeInterval) -> Void)? = nil
+        #endif
         let result = try await HLSRemoteRangeStreamer.streamHedged(
             range: range,
             from: sourceURLs,
@@ -7774,7 +8096,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             cacheLimit: Self.maxStreamingCacheBytes,
             startupChunkSize: startupChunkSize(for: request.path, transform: transform),
             transform: transform,
-            hedgeDelayNanoseconds: Self.startupHedgeDelayNanoseconds
+            hedgeDelayNanoseconds: Self.startupHedgeDelayNanoseconds,
+            onFirstByteReceived: onFirstByteReceived
         ) { bytes in
             await HLSProxyStartupMetrics.shared.record(
                 metricsID: startupMetricsID,
@@ -7786,6 +8109,9 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         }
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: streamStart)
         let streamedBytes = result.cachePayload?.byteCount ?? Int(range.length)
+        #if DEBUG
+        let receivedBytesForDiagnostics = result.bytesReceived
+        #endif
         let selectedURL = result.sourceURL
         let shouldAvoidSlowStartupHost = Self.shouldSessionAvoidSlowStartupHost(
             path: request.path,
@@ -7828,6 +8154,21 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             elapsedMilliseconds: elapsedMilliseconds,
             source: "startupHedge"
         )
+        #if DEBUG
+        if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
+            PlayerMetricsLog.enqueueStartupTraceEvent(
+                metricsID: startupMetricsID,
+                event: "\(media)RangeComplete",
+                fields: [
+                    "source": "startupHedge",
+                    "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(selectedURL.host),
+                    "bytes": String(receivedBytesForDiagnostics),
+                    "elapsedMs": String(format: "%.1f", elapsedMilliseconds),
+                ],
+                kind: .manifestStage
+            )
+        }
+        #endif
         if let cacheData = result.cachePayload {
             do {
                 let data = try cacheData.loadData()
@@ -7924,6 +8265,16 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: cachedStart),
                     source: "streamCache"
                 )
+                #if DEBUG
+                if let media = Self.startupRangeLabel(for: request.path), let metricsID {
+                    PlayerMetricsLog.enqueueStartupTraceEvent(
+                        metricsID: metricsID,
+                        event: "\(media)RangeComplete",
+                        fields: ["source": "mediaCache", "bytes": String(responseData.count), "ttfbMs": "-"],
+                        kind: .manifestStage
+                    )
+                }
+                #endif
                 return
             case let .pending(task):
                 do {
@@ -7959,6 +8310,16 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                         elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: joinedStart),
                         source: "streamJoin"
                     )
+                    #if DEBUG
+                    if let media = Self.startupRangeLabel(for: request.path), let metricsID {
+                        PlayerMetricsLog.enqueueStartupTraceEvent(
+                            metricsID: metricsID,
+                            event: "\(media)RangeComplete",
+                            fields: ["source": "joined", "bytes": String(responseData.count), "ttfbMs": "-"],
+                            kind: .manifestStage
+                        )
+                    }
+                    #endif
                     return
                 } catch {
                     lastError = error
@@ -7979,7 +8340,28 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     servedRange: servedRange
                 )
                 let startupMetricsID = metricsID
-                let cacheData = try await HLSRemoteRangeStreamer.stream(
+                #if DEBUG
+                let onFirstByteReceived: @Sendable (URL, Int, Double, CFTimeInterval) -> Void = {
+                    sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+                    if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
+                        PlayerMetricsLog.enqueueStartupTraceEvent(
+                            metricsID: startupMetricsID,
+                            event: "\(media)FirstByte",
+                            fields: [
+                                "source": "network",
+                                "cdn": RelatedPrefetchDiagnostics.cdnHostLabel(sourceURL.host),
+                                "firstChunkBytes": String(firstChunkBytes),
+                                "ttfbMs": String(format: "%.1f", ttfbMilliseconds),
+                            ],
+                            kind: .manifestStage,
+                            at: firstByteAt
+                        )
+                    }
+                }
+                #else
+                let onFirstByteReceived: (@Sendable (URL, Int, Double, CFTimeInterval) -> Void)? = nil
+                #endif
+                let streamResult = try await HLSRemoteRangeStreamer.stream(
                     range: range,
                     from: url,
                     headers: headers,
@@ -7987,7 +8369,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     connection: connection,
                     cacheLimit: Self.maxStreamingCacheBytes,
                     startupChunkSize: startupChunkSize(for: request.path, transform: transform),
-                    transform: transform
+                    transform: transform,
+                    onFirstByteReceived: onFirstByteReceived
                 ) { bytes in
                     await HLSProxyStartupMetrics.shared.record(
                         metricsID: startupMetricsID,
@@ -7998,7 +8381,11 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     )
                 }
                 let streamElapsed = PlayerMetricsLog.elapsedMilliseconds(since: streamStart)
-                let streamedBytes = cacheData?.byteCount ?? Int(range.length)
+                let cacheData = streamResult.cachePayload
+                let streamedBytes = streamResult.cachePayload?.byteCount ?? Int(range.length)
+                #if DEBUG
+                let receivedBytesForDiagnostics = streamResult.bytesReceived
+                #endif
                 let shouldAvoidSlowStartupHost = Self.shouldSessionAvoidSlowStartupHost(
                     path: request.path,
                     elapsedMilliseconds: streamElapsed,
@@ -8040,6 +8427,20 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     bytes: streamedBytes,
                     elapsedMilliseconds: streamElapsed
                 )
+                #if DEBUG
+                if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
+                    PlayerMetricsLog.enqueueStartupTraceEvent(
+                        metricsID: startupMetricsID,
+                        event: "\(media)RangeComplete",
+                        fields: [
+                            "source": "network",
+                            "bytes": String(receivedBytesForDiagnostics),
+                            "elapsedMs": String(format: "%.1f", streamElapsed),
+                        ],
+                        kind: .manifestStage
+                    )
+                }
+                #endif
                 if !shouldAvoidSlowStartupHost {
                     await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs)
                 }

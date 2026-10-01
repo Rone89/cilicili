@@ -645,18 +645,387 @@ enum PlayerMetricsLog {
     nonisolated static let logger = Logger(subsystem: "cc.bili", category: "PlayerMetrics")
     nonisolated static let signposter = OSSignposter(logger: logger)
     private static let diagnosticsFileName = "player-diagnostics.log"
+    struct RelatedCandidateClickContext: Sendable {
+        let traceID: String
+        let bvid: String
+        let cid: Int
+        let clickedAt: CFTimeInterval
+        let state: String
+        let source: String
+        let requestedQuality: Int?
+        let requestedCodec: String?
+    }
     #if DEBUG
     @MainActor private static var startupTraceIDs: [String: String] = [:]
+    @MainActor private static var startupTraceStartedAt: [String: CFTimeInterval] = [:]
     @MainActor private static var startupTraceOrder: [String] = []
+    @MainActor private static var relatedCandidateTraces: [String: RelatedCandidateTrace] = [:]
+    @MainActor private static var relatedCandidateTraceOrder: [String] = []
+    @MainActor private static var latestRelatedTraceByCandidate: [String: String] = [:]
+    @MainActor private static var relatedPrefetchTraceIDsByEvent: [String: Set<String>] = [:]
+
+    private struct RelatedCandidateTrace {
+        let traceID: String
+        let bvid: String
+        let cid: Int
+        let source: String
+        let createdAt: CFTimeInterval
+        var visibleAt: CFTimeInterval?
+        var selectedAt: CFTimeInterval?
+        let requestedQuality: Int?
+        let requestedCodec: String?
+        var state: String
+        var stateChangedAt: CFTimeInterval
+        var clickedAt: CFTimeInterval?
+        var consumed: Bool
+    }
 
     @MainActor
     static func beginStartupTrace(metricsID: String, traceID: String) {
         startupTraceIDs[metricsID] = traceID
+        startupTraceStartedAt[metricsID] = CACurrentMediaTime()
         startupTraceOrder.removeAll { $0 == metricsID }
         startupTraceOrder.append(metricsID)
         while startupTraceOrder.count > 64 {
             let expiredMetricsID = startupTraceOrder.removeFirst()
             startupTraceIDs[expiredMetricsID] = nil
+            startupTraceStartedAt[expiredMetricsID] = nil
+        }
+    }
+
+    @MainActor
+    private static func associateStartupTraceIfNeeded(metricsID: String, traceID: String) {
+        guard startupTraceIDs[metricsID] != traceID else { return }
+        beginStartupTrace(metricsID: metricsID, traceID: traceID)
+    }
+
+    @MainActor
+    static func ensureRelatedCandidateTrace(
+        bvid: String,
+        cid: Int,
+        source: String,
+        requestedQuality: Int?,
+        requestedCodec: String?,
+        visible: Bool,
+        at timestamp: CFTimeInterval = CACurrentMediaTime()
+    ) -> String {
+        let key = relatedCandidateKey(bvid: bvid, cid: cid)
+        if let existingID = latestRelatedTraceByCandidate[key],
+           var existing = relatedCandidateTraces[existingID],
+           timestamp >= existing.createdAt,
+           timestamp - existing.createdAt < 120,
+           !existing.consumed {
+            if visible, existing.visibleAt == nil {
+                existing.visibleAt = timestamp
+                relatedCandidateTraces[existingID] = existing
+                trackRelatedPrefetchEvent("candidateVisible", traceID: existingID)
+                emitRelatedCandidateEvent(
+                    traceID: existingID,
+                    bvid: bvid,
+                    cid: cid,
+                    source: existing.source,
+                    event: "candidateVisible",
+                    at: timestamp,
+                    fields: ["visibility": "lazyTaskAppeared"]
+                )
+            }
+            return existingID
+        }
+
+        let traceID = String(UUID().uuidString.prefix(8)).lowercased()
+        relatedCandidateTraces[traceID] = RelatedCandidateTrace(
+            traceID: traceID,
+            bvid: bvid,
+            cid: cid,
+            source: source,
+            createdAt: timestamp,
+            visibleAt: visible ? timestamp : nil,
+            selectedAt: visible ? nil : timestamp,
+            requestedQuality: requestedQuality,
+            requestedCodec: requestedCodec,
+            state: visible ? "visible" : "selected",
+            stateChangedAt: timestamp,
+            clickedAt: nil,
+            consumed: false
+        )
+        latestRelatedTraceByCandidate[key] = traceID
+        relatedCandidateTraceOrder.removeAll { $0 == traceID }
+        relatedCandidateTraceOrder.append(traceID)
+        let event = visible ? "candidateVisible" : "candidateSelected"
+        trackRelatedPrefetchEvent(event, traceID: traceID)
+        emitRelatedCandidateEvent(
+            traceID: traceID,
+            bvid: bvid,
+            cid: cid,
+            source: source,
+            event: event,
+            at: timestamp,
+            fields: visible ? ["visibility": "lazyTaskAppeared"] : ["selection": "relatedStartup"]
+        )
+        trimRelatedCandidateTraces()
+        return traceID
+    }
+
+    @MainActor
+    static func markRelatedCandidateSelected(
+        traceID: String,
+        fields: [String: String] = [:],
+        at timestamp: CFTimeInterval = CACurrentMediaTime()
+    ) {
+        guard var trace = relatedCandidateTraces[traceID] else { return }
+        associateStartupTraceIfNeeded(metricsID: trace.bvid, traceID: traceID)
+        guard trace.selectedAt == nil else { return }
+        trace.selectedAt = timestamp
+        trace.state = "selected"
+        trace.stateChangedAt = timestamp
+        relatedCandidateTraces[traceID] = trace
+        trackRelatedPrefetchEvent("candidateSelected", traceID: traceID)
+        emitRelatedCandidateEvent(
+            traceID: traceID,
+            bvid: trace.bvid,
+            cid: trace.cid,
+            source: trace.source,
+            event: "candidateSelected",
+            at: timestamp,
+            fields: fields
+        )
+    }
+
+    @MainActor
+    static func updateRelatedCandidateTrace(
+        traceID: String,
+        event: String,
+        state: String,
+        fields: [String: String] = [:],
+        at timestamp: CFTimeInterval = CACurrentMediaTime()
+    ) {
+        guard var trace = relatedCandidateTraces[traceID] else { return }
+        let preserveExistingProgress = event == "prefetchScheduled"
+            && ["running", "completed", "completedUncached"].contains(trace.state)
+        if !preserveExistingProgress {
+            trace.state = state
+        }
+        trace.stateChangedAt = timestamp
+        relatedCandidateTraces[traceID] = trace
+        trackRelatedPrefetchEvent(event, traceID: traceID)
+        emitRelatedCandidateEvent(
+            traceID: traceID,
+            bvid: trace.bvid,
+            cid: trace.cid,
+            source: trace.source,
+            event: event,
+            at: timestamp,
+            fields: fields
+        )
+    }
+
+    @MainActor
+    static func markRelatedCandidateClicked(bvid: String, cid: Int) {
+        let key = relatedCandidateKey(bvid: bvid, cid: cid)
+        let timestamp = CACurrentMediaTime()
+        guard let traceID = latestRelatedTraceByCandidate[key],
+              var trace = relatedCandidateTraces[traceID]
+        else {
+            diagnostic("[StartupTrace] candidate=\(bvid):\(cid) event=userClicked source=relatedRow traceID=unmatched")
+            return
+        }
+        trace.clickedAt = timestamp
+        relatedCandidateTraces[traceID] = trace
+        trackRelatedPrefetchEvent("userClicked", traceID: traceID)
+        emitRelatedCandidateEvent(
+            traceID: traceID,
+            bvid: bvid,
+            cid: cid,
+            source: trace.source,
+            event: "userClicked",
+            at: timestamp,
+            fields: ["prefetchStateAtClick": trace.state]
+        )
+    }
+
+    @MainActor
+    static func takeRelatedCandidateClickContext(bvid: String, cid: Int?) -> RelatedCandidateClickContext? {
+        let exactTraceID: String? = cid.flatMap { candidateCID -> String? in
+            guard candidateCID > 0 else { return nil }
+            return latestRelatedTraceByCandidate[relatedCandidateKey(bvid: bvid, cid: candidateCID)]
+        }
+        let traceID = exactTraceID ?? relatedCandidateTraces.values
+            .filter { $0.bvid == bvid && $0.clickedAt != nil && !$0.consumed }
+            .max { ($0.clickedAt ?? 0) < ($1.clickedAt ?? 0) }?
+            .traceID
+        guard let traceID,
+              var trace = relatedCandidateTraces[traceID],
+              let clickedAt = trace.clickedAt,
+              !trace.consumed,
+              CACurrentMediaTime() - clickedAt < 120
+        else { return nil }
+        trace.consumed = true
+        relatedCandidateTraces[traceID] = trace
+        return RelatedCandidateClickContext(
+            traceID: trace.traceID,
+            bvid: trace.bvid,
+            cid: trace.cid,
+            clickedAt: clickedAt,
+            state: trace.state,
+            source: trace.source,
+            requestedQuality: trace.requestedQuality,
+            requestedCodec: trace.requestedCodec
+        )
+    }
+
+    @MainActor
+    @discardableResult
+    static func recordStartupTraceEvent(
+        metricsID: String,
+        event: String,
+        fields: [String: String] = [:],
+        kind: PlayerPerformanceEvent.Kind = .startupScheduler,
+        at timestamp: CFTimeInterval = CACurrentMediaTime()
+    ) -> Bool {
+        guard let traceID = startupTraceIDs[metricsID] else { return false }
+        let elapsedMilliseconds = startupTraceStartedAt[metricsID].map {
+            max((timestamp - $0) * 1_000, 0)
+        }
+        var values = [
+            "event=\(event)",
+            "traceID=\(traceID)",
+            "monoMs=\(String(format: "%.3f", timestamp * 1_000))",
+        ]
+        if let elapsedMilliseconds {
+            values.append("elapsedMs=\(String(format: "%.1f", elapsedMilliseconds))")
+        }
+        values.append(contentsOf: fields.keys.sorted().map { "\($0)=\(fields[$0] ?? "-")" })
+        record(kind, metricsID: metricsID, message: values.joined(separator: " "))
+        return true
+    }
+
+    nonisolated static func enqueueStartupTraceEvent(
+        metricsID: String,
+        event: String,
+        fields: [String: String] = [:],
+        kind: PlayerPerformanceEvent.Kind = .manifestStage,
+        at timestamp: CFTimeInterval = CACurrentMediaTime()
+    ) {
+        #if DEBUG
+        Task { @MainActor in
+            recordStartupTraceEvent(
+                metricsID: metricsID,
+                event: event,
+                fields: fields,
+                kind: kind,
+                at: timestamp
+            )
+        }
+        #else
+        _ = metricsID
+        _ = event
+        _ = fields
+        _ = kind
+        _ = timestamp
+        #endif
+    }
+
+    @MainActor
+    static func relatedPrefetchFunnelSummary() -> String {
+        let names = [
+            "candidateVisible", "candidateSelected", "prefetchScheduled", "prefetchStarted",
+            "prefetchNotScheduled", "prefetchCompleted", "prefetchFailed", "prefetchCancelled", "userClicked",
+            "clickState.completed", "clickState.completedUncached", "clickState.running", "clickState.scheduled",
+            "clickState.notScheduled", "clickState.failed", "clickState.cancelled", "clickState.expired", "clickState.evicted",
+            "consume.completedCacheHit", "consume.pendingJoin", "consume.missNoPrefetch", "consume.unknownMiss",
+            "consume.missExpired", "consume.missEvicted", "consume.missDifferentIdentity",
+            "consume.missDifferentQuality", "consume.missDifferentCodec", "consume.prefetchFailed",
+            "consume.completedUncached",
+            "lead.lt200ms", "lead.200-500ms", "lead.500-1000ms", "lead.1-2s", "lead.gt2s",
+            "lead.unknown", "qualityMatch.true", "qualityMatch.false", "codecPolicyMatch.true", "codecPolicyMatch.false",
+            "preloadSource.relatedRow", "preloadSource.relatedStartup", "preloadSource.startup", "preloadSource.home",
+            "preloadSource.dynamic", "preloadSource.history", "preloadSource.manual", "preloadSource.other",
+        ]
+        return names.map { "\($0)=\(relatedPrefetchTraceIDsByEvent[$0]?.count ?? 0)" }.joined(separator: ",")
+    }
+
+    @MainActor
+    static func recordRelatedCandidateClickResolution(
+        traceID: String,
+        stateAtClick: String,
+        consumeResult: String,
+        leadBucket: String,
+        qualityMatch: Bool?,
+        codecPolicyMatch: Bool?,
+        preloadSource: String,
+        at timestamp: CFTimeInterval
+    ) {
+        trackRelatedPrefetchEvent("clickState.\(stateAtClick)", traceID: traceID)
+        trackRelatedPrefetchEvent("consume.\(consumeResult)", traceID: traceID)
+        trackRelatedPrefetchEvent("lead.\(leadBucket)", traceID: traceID)
+        trackRelatedPrefetchEvent("preloadSource.\(preloadSource)", traceID: traceID)
+        if let qualityMatch {
+            trackRelatedPrefetchEvent("qualityMatch.\(qualityMatch)", traceID: traceID)
+        }
+        if let codecPolicyMatch {
+            trackRelatedPrefetchEvent("codecPolicyMatch.\(codecPolicyMatch)", traceID: traceID)
+        }
+        guard let trace = relatedCandidateTraces[traceID] else { return }
+        emitRelatedCandidateEvent(
+            traceID: traceID,
+            bvid: trace.bvid,
+            cid: trace.cid,
+            source: trace.source,
+            event: "foregroundConsume",
+            at: timestamp,
+            fields: [
+                "stateAtClick": stateAtClick,
+                "consumeResult": consumeResult,
+                "prefetchLeadTimeBucket": leadBucket,
+                "qualityMatch": qualityMatch.map { $0 ? "true" : "false" } ?? "unknown",
+                "codecPolicyMatch": codecPolicyMatch.map { $0 ? "true" : "false" } ?? "unknown",
+                "preloadSource": preloadSource,
+            ]
+        )
+    }
+
+    @MainActor
+    private static func emitRelatedCandidateEvent(
+        traceID: String,
+        bvid: String,
+        cid: Int,
+        source: String,
+        event: String,
+        at timestamp: CFTimeInterval,
+        fields: [String: String]
+    ) {
+        let trace = relatedCandidateTraces[traceID]
+        let elapsed = max((timestamp - (trace?.createdAt ?? timestamp)) * 1_000, 0)
+        var values = [
+            "[StartupTrace]", "traceID=\(traceID)", "candidate=\(bvid):\(cid)",
+                "traceSource=\(source)", "event=\(event)", "elapsedMs=\(String(format: "%.1f", elapsed))",
+            "monoMs=\(String(format: "%.3f", timestamp * 1_000))",
+        ]
+        values.append(contentsOf: fields.keys.sorted().map { "\($0)=\(fields[$0] ?? "-")" })
+        diagnostic(values.joined(separator: " "))
+    }
+
+    @MainActor
+    private static func relatedCandidateKey(bvid: String, cid: Int) -> String {
+        "\(bvid):\(cid)"
+    }
+
+    @MainActor
+    private static func trackRelatedPrefetchEvent(_ event: String, traceID: String) {
+        var traceIDs = relatedPrefetchTraceIDsByEvent[event, default: []]
+        guard traceIDs.count < 4_096 || traceIDs.contains(traceID) else { return }
+        traceIDs.insert(traceID)
+        relatedPrefetchTraceIDsByEvent[event] = traceIDs
+    }
+
+    @MainActor
+    private static func trimRelatedCandidateTraces() {
+        while relatedCandidateTraceOrder.count > 96 {
+            let removedID = relatedCandidateTraceOrder.removeFirst()
+            if let removed = relatedCandidateTraces.removeValue(forKey: removedID),
+               latestRelatedTraceByCandidate[relatedCandidateKey(bvid: removed.bvid, cid: removed.cid)] == removedID {
+                latestRelatedTraceByCandidate[relatedCandidateKey(bvid: removed.bvid, cid: removed.cid)] = nil
+            }
         }
     }
     #endif
@@ -818,7 +1187,7 @@ private actor PlayerDiagnosticsFileWriter {
 }
 
 struct PlayerPerformanceEvent: Identifiable, Equatable {
-    enum Kind: Equatable {
+    enum Kind: Equatable, Sendable {
         case routeOpen
         case detailLoadStart
         case detailLoaded

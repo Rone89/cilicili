@@ -47,7 +47,8 @@ extension HomeFeedMediaPreloadCoordinator {
                     warmsMedia: true,
                     mediaWarmupMode: isPrimary ? .full : .routePlanOnly,
                     mediaWarmupDelay: isPrimary ? 0 : 0.14,
-                    playbackAdaptationProfile: playbackAdaptationProfile
+                    playbackAdaptationProfile: playbackAdaptationProfile,
+                    preloadSource: "startup"
                 )
                 if index < candidates.count - 1 {
                     try? await Task.sleep(nanoseconds: 650_000_000)

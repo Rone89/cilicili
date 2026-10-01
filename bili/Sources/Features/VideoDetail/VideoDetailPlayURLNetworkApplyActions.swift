@@ -56,6 +56,17 @@ extension VideoDetailViewModel {
             title: detail.title,
             message: playURLLoadedMessage(source: "network", data: data)
         )
+        #if DEBUG
+        PlayerMetricsLog.recordStartupTraceEvent(
+            metricsID: detail.bvid,
+            event: "playURLResolved",
+            fields: [
+                "source": "network",
+                "variantCount": String(data.playVariants.filter(\.isPlayable).count),
+                "q": String(adaptiveStartupPreferredQuality ?? 0),
+            ]
+        )
+        #endif
         await applyPlayURLData(data, cid: cid, page: page, source: "network")
         return .applied(signpostMessage: "bvid=\(detail.bvid) network")
     }

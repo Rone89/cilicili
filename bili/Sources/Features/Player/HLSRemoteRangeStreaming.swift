@@ -3,10 +3,20 @@ import Network
 import QuartzCore
 
 enum HLSRemoteRangeStreamer {
+    struct StreamResult: Sendable {
+        let cachePayload: VideoRangeStreamCachePayload?
+        #if DEBUG
+        let bytesReceived: Int
+        #endif
+    }
+
     struct HedgedStreamResult: Sendable {
         let sourceURL: URL
         let sourceIndex: Int
         let cachePayload: VideoRangeStreamCachePayload?
+        #if DEBUG
+        let bytesReceived: Int
+        #endif
         let firstChunkElapsedMilliseconds: Double
     }
 
@@ -19,14 +29,18 @@ enum HLSRemoteRangeStreamer {
         cacheLimit: Int64,
         startupChunkSize: Int = 32 * 1024,
         transform: HLSMediaSegmentTransform? = nil,
+        onFirstByteReceived: (@Sendable (URL, Int, Double, CFTimeInterval) -> Void)? = nil,
         onFirstChunkSent: (@Sendable (Int) async -> Void)? = nil
-    ) async throws -> VideoRangeStreamCachePayload? {
+    ) async throws -> StreamResult {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.timeoutInterval = range.length > 1_500_000 ? 3.2 : 2.0
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
 
+        #if DEBUG
+        let requestStart = CACurrentMediaTime()
+        #endif
         let stream = HLSRemoteRangeStreamingSession.shared.start(request: request)
         defer {
             HLSRemoteRangeStreamingSession.shared.finish(task: stream.task)
@@ -44,6 +58,10 @@ enum HLSRemoteRangeStreamer {
 
         let cacheCollector = VideoRangeStreamCacheCollector(range: range, cacheLimit: cacheLimit)
         var didStartResponse = false
+        #if DEBUG
+        var didNotifyFirstByte = false
+        var receivedBytes = 0
+        #endif
         do {
             let chunkSize = min(max(startupChunkSize, 24 * 1024), 96 * 1024)
             var chunk = Data()
@@ -52,6 +70,21 @@ enum HLSRemoteRangeStreamer {
             chunk.reserveCapacity(chunkSize)
             for try await data in stream.handler.chunks {
                 try Task.checkCancellation()
+                #if DEBUG
+                if !data.isEmpty {
+                    receivedBytes += data.count
+                    if !didNotifyFirstByte {
+                        didNotifyFirstByte = true
+                        let firstByteAt = CACurrentMediaTime()
+                        onFirstByteReceived?(
+                            url,
+                            data.count,
+                            max((firstByteAt - requestStart) * 1_000, 0),
+                            firstByteAt
+                        )
+                    }
+                }
+                #endif
                 try cacheCollector?.append(data)
                 chunk.append(data)
                 if chunk.count >= chunkSize {
@@ -111,7 +144,11 @@ enum HLSRemoteRangeStreamer {
             throw HLSRangeStreamError.responseAlreadyStarted(error)
         }
         connection.cancel()
-        return try cacheCollector?.finish()
+        #if DEBUG
+        return StreamResult(cachePayload: try cacheCollector?.finish(), bytesReceived: receivedBytes)
+        #else
+        return StreamResult(cachePayload: try cacheCollector?.finish())
+        #endif
     }
 
     nonisolated static func streamHedged(
@@ -124,6 +161,7 @@ enum HLSRemoteRangeStreamer {
         startupChunkSize: Int = 32 * 1024,
         transform: HLSMediaSegmentTransform? = nil,
         hedgeDelayNanoseconds: UInt64,
+        onFirstByteReceived: (@Sendable (URL, Int, Double, CFTimeInterval) -> Void)? = nil,
         onFirstChunkSent: (@Sendable (Int) async -> Void)? = nil
     ) async throws -> HedgedStreamResult {
         let sourceURLs = urls.removingDuplicates()
@@ -132,7 +170,7 @@ enum HLSRemoteRangeStreamer {
         }
         guard sourceURLs.count > 1 else {
             let start = CACurrentMediaTime()
-            let payload = try await stream(
+            let result = try await stream(
                 range: range,
                 from: firstURL,
                 headers: headers,
@@ -141,14 +179,25 @@ enum HLSRemoteRangeStreamer {
                 cacheLimit: cacheLimit,
                 startupChunkSize: startupChunkSize,
                 transform: transform,
+                onFirstByteReceived: onFirstByteReceived,
                 onFirstChunkSent: onFirstChunkSent
             )
+            #if DEBUG
             return HedgedStreamResult(
                 sourceURL: firstURL,
                 sourceIndex: 0,
-                cachePayload: payload,
+                cachePayload: result.cachePayload,
+                bytesReceived: result.bytesReceived,
                 firstChunkElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: start)
             )
+            #else
+            return HedgedStreamResult(
+                sourceURL: firstURL,
+                sourceIndex: 0,
+                cachePayload: result.cachePayload,
+                firstChunkElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: start)
+            )
+            #endif
         }
 
         let result: Result<HLSRemoteRangePreparedCandidate, Error> = try await withThrowingTaskGroup(
@@ -185,6 +234,14 @@ enum HLSRemoteRangeStreamer {
                 switch candidateResult {
                 case let .success(candidate):
                     group.cancelAll()
+                    #if DEBUG
+                    onFirstByteReceived?(
+                        candidate.sourceURL,
+                        candidate.firstByteCount,
+                        candidate.firstByteElapsedMilliseconds,
+                        candidate.firstByteAt
+                    )
+                    #endif
                     do {
                         let payload = try await finishCandidate(
                             candidate,
@@ -192,7 +249,10 @@ enum HLSRemoteRangeStreamer {
                             connection: connection,
                             onFirstChunkSent: onFirstChunkSent
                         )
-                        candidate.finishedPayload = payload
+                        candidate.finishedPayload = payload.cachePayload
+                        #if DEBUG
+                        candidate.finishedByteCount = payload.bytesReceived
+                        #endif
                         return .success(candidate)
                     } catch {
                         lastError = error
@@ -206,12 +266,23 @@ enum HLSRemoteRangeStreamer {
 
         switch result {
         case let .success(candidate):
+            #if DEBUG
+            let receivedByteCount = candidate.finishedByteCount
+            return HedgedStreamResult(
+                sourceURL: candidate.sourceURL,
+                sourceIndex: candidate.sourceIndex,
+                cachePayload: candidate.finishedPayload,
+                bytesReceived: receivedByteCount,
+                firstChunkElapsedMilliseconds: candidate.firstChunkElapsedMilliseconds
+            )
+            #else
             return HedgedStreamResult(
                 sourceURL: candidate.sourceURL,
                 sourceIndex: candidate.sourceIndex,
                 cachePayload: candidate.finishedPayload,
                 firstChunkElapsedMilliseconds: candidate.firstChunkElapsedMilliseconds
             )
+            #endif
         case let .failure(error):
             throw error
         }
@@ -232,8 +303,8 @@ enum HLSRemoteRangeStreamer {
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         request.setValue("bytes=\(range.start)-\(range.endInclusive)", forHTTPHeaderField: "Range")
 
-        let stream = HLSRemoteRangeStreamingSession.shared.start(request: request)
         let requestStart = CACurrentMediaTime()
+        let stream = HLSRemoteRangeStreamingSession.shared.start(request: request)
         do {
             let response: URLResponse
             do {
@@ -273,7 +344,7 @@ enum HLSRemoteRangeStreamer {
         responseHeader: Data,
         connection: NWConnection,
         onFirstChunkSent: (@Sendable (Int) async -> Void)?
-    ) async throws -> VideoRangeStreamCachePayload? {
+    ) async throws -> StreamResult {
         var didStartResponse = false
         do {
             try await send(responseHeader, to: connection)
@@ -319,7 +390,14 @@ enum HLSRemoteRangeStreamer {
                 try await send(outboundChunk, to: connection)
             }
             connection.cancel()
-            return try candidate.cacheCollector?.finish()
+            #if DEBUG
+            return StreamResult(
+                cachePayload: try candidate.cacheCollector?.finish(),
+                bytesReceived: candidate.receivedByteCount
+            )
+            #else
+            return StreamResult(cachePayload: try candidate.cacheCollector?.finish())
+            #endif
         } catch {
             candidate.task.cancel()
             candidate.cacheCollector?.cancel()
@@ -356,6 +434,13 @@ nonisolated private final class HLSRemoteRangePreparedCandidate: @unchecked Send
     private(set) var transform: HLSMediaSegmentTransform?
     private(set) var firstChunkElapsedMilliseconds: Double = 0
     private(set) var firstOutboundChunk = Data()
+    #if DEBUG
+    private(set) var receivedByteCount = 0
+    private(set) var firstByteCount = 0
+    private(set) var firstByteElapsedMilliseconds: Double = 0
+    private(set) var firstByteAt: CFTimeInterval = 0
+    var finishedByteCount = 0
+    #endif
 
     private var iterator: AsyncThrowingStream<Data, Error>.Iterator
     var didApplyTransform: Bool
@@ -392,8 +477,22 @@ nonisolated private final class HLSRemoteRangePreparedCandidate: @unchecked Send
         self.transform = transform
         var chunk = Data()
         chunk.reserveCapacity(self.startupChunkSize)
+        #if DEBUG
+        var didNotifyFirstByte = false
+        #endif
         while let data = try await iterator.next() {
             try Task.checkCancellation()
+            #if DEBUG
+            if !data.isEmpty {
+                receivedByteCount += data.count
+                if !didNotifyFirstByte {
+                    didNotifyFirstByte = true
+                    firstByteCount = data.count
+                    firstByteAt = CACurrentMediaTime()
+                    firstByteElapsedMilliseconds = max((firstByteAt - startedAt) * 1_000, 0)
+                }
+            }
+            #endif
             try cacheCollector?.append(data)
             chunk.append(data)
             guard chunk.count >= self.startupChunkSize else { continue }
@@ -423,7 +522,11 @@ nonisolated private final class HLSRemoteRangePreparedCandidate: @unchecked Send
     }
 
     func nextChunk() async throws -> Data? {
-        try await iterator.next()
+        let data = try await iterator.next()
+        #if DEBUG
+        receivedByteCount += data?.count ?? 0
+        #endif
+        return data
     }
 
     deinit {

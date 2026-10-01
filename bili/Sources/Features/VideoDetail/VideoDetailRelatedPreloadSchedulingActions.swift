@@ -41,26 +41,49 @@ extension VideoDetailViewModel {
                 self.relatedPreloadGeneration == preloadGeneration
             else { return }
             if RelatedPlaybackEarlyPlayURLPrefetchPolicy.isEligible(
-                    environment: PlaybackEnvironment.current
-                ),
-                let firstCandidate = candidates.first,
-                let disposition = await VideoPreloadCenter.shared.preloadRelatedPlayURLAfterFirstFrame(
+                environment: PlaybackEnvironment.current
+            ), let firstCandidate = candidates.first, let cid = firstCandidate.cid {
+                #if DEBUG
+                let traceID = PlayerMetricsLog.ensureRelatedCandidateTrace(
+                    bvid: firstCandidate.bvid,
+                    cid: cid,
+                    source: "relatedStartup",
+                    requestedQuality: self.libraryStore.effectivePreferredVideoQuality,
+                    requestedCodec: VideoCodecPreference.stored().rawValue,
+                    visible: false
+                )
+                PlayerMetricsLog.markRelatedCandidateSelected(
+                    traceID: traceID,
+                    fields: ["selection": "firstFrameEarlyPrefetch"]
+                )
+                PlayerMetricsLog.updateRelatedCandidateTrace(
+                    traceID: traceID,
+                    event: "prefetchScheduled",
+                    state: "scheduled",
+                    fields: ["preloadSource": "relatedStartup"]
+                )
+                let relatedPrefetchID: String? = traceID
+                #else
+                let relatedPrefetchID: String? = nil
+                #endif
+                if let disposition = await VideoPreloadCenter.shared.preloadRelatedPlayURLAfterFirstFrame(
                     firstCandidate,
                     api: api,
                     preferredQuality: self.libraryStore.effectivePreferredVideoQuality,
                     cdnPreference: self.libraryStore.effectivePlaybackCDNPreference,
-                    playbackAdaptationProfile: self.playbackAdaptationProfile
-                )
-            {
-                PlayerMetricsLog.record(
-                    .startupScheduler,
-                    metricsID: bvid,
-                    message: RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticMessage(
-                        event: "scheduled",
-                        targetBVID: firstCandidate.bvid,
-                        disposition: disposition
+                    playbackAdaptationProfile: self.playbackAdaptationProfile,
+                    relatedPrefetchID: relatedPrefetchID
+                ) {
+                    PlayerMetricsLog.record(
+                        .startupScheduler,
+                        metricsID: bvid,
+                        message: RelatedPlaybackEarlyPlayURLPrefetchPolicy.diagnosticMessage(
+                            event: "scheduled",
+                            targetBVID: firstCandidate.bvid,
+                            disposition: disposition
+                        )
                     )
-                )
+                }
             }
             do {
                 try await Task.sleep(
@@ -125,7 +148,8 @@ extension VideoDetailViewModel {
                     warmsMedia: index == 0,
                     mediaWarmupMode: index == 0 ? .full : .routePlanOnly,
                     mediaWarmupDelay: index == 0 ? 0.15 : 0.4,
-                    playbackAdaptationProfile: playbackAdaptationProfile
+                    playbackAdaptationProfile: playbackAdaptationProfile,
+                    preloadSource: "relatedStartup"
                 )
             }
         }
