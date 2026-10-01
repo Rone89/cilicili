@@ -277,4 +277,41 @@ final class PlaybackStartupTraceDiagnosticsTests: XCTestCase {
         XCTAssertEqual(unstructured.fields["videoRefs"], "4")
         XCTAssertEqual(unstructured.fields["audioRefs"], "4")
     }
+
+    @MainActor
+    func testManifestStageExportRetainsStartupRangeEventsAcrossFullTrace() {
+        let metricsID = "gate7-trace-retention-\(UUID().uuidString)"
+        let store = PlayerPerformanceStore.shared
+
+        store.record(
+            .manifestStage,
+            metricsID: metricsID,
+            message: "videoIndexRangeFirstByte source=network ttfbMs=42.5"
+        )
+        for index in 0..<26 {
+            store.record(
+                .manifestStage,
+                metricsID: metricsID,
+                message: "startupStage\(index)=complete"
+            )
+        }
+        store.record(
+            .manifestStage,
+            metricsID: metricsID,
+            message: "videoMediaFirstByte source=network ttfbMs=88.0"
+        )
+        store.record(
+            .manifestStage,
+            metricsID: metricsID,
+            message: "audioMediaFirstByte source=memoryCache ttfbMs=-"
+        )
+
+        let exported = PlayerPerformanceCopyTextFormatter.performanceCopyText(
+            metricsID: metricsID,
+            session: store.session(for: metricsID)
+        )
+        XCTAssertTrue(exported.contains("videoIndexRangeFirstByte source=network ttfbMs=42.5"))
+        XCTAssertTrue(exported.contains("videoMediaFirstByte source=network ttfbMs=88.0"))
+        XCTAssertTrue(exported.contains("audioMediaFirstByte source=memoryCache ttfbMs=-"))
+    }
 }

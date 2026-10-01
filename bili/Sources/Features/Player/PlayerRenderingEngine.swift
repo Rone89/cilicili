@@ -3715,6 +3715,7 @@ final class PlayerPerformanceStore: ObservableObject {
 
     private static func appendManifestStageMessage(_ current: String?, _ next: String?) -> String? {
         guard let next, !next.isEmpty else { return current }
+        let maxParts = 32
         let pinnedKeys: Set<String> = [
             "startupWarmWait",
             "startupPrebuild",
@@ -3730,7 +3731,7 @@ final class PlayerPerformanceStore: ObservableObject {
             return diagnosticKey(in: part) == nextKey
         }
         parts.append(next)
-        while parts.count > 12 {
+        while parts.count > maxParts {
             if let removableIndex = parts.firstIndex(where: { part in
                 guard let key = diagnosticKey(in: part) else { return true }
                 return !pinnedKeys.contains(key)
