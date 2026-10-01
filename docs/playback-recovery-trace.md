@@ -62,3 +62,25 @@ Compare pause duration/buffer coverage, audio activation, play-to-playing and fr
 frame time. For seeks compare completion, target range source/first byte when available,
 surface/audio work, fresh target frame and UI reveal. Do not infer a playback strategy
 change from fixture timing or missing TTFB measurements.
+
+## Reveal and shared-task attribution
+
+`uiRevealDecision` records only changes in decision/reason, using the existing checks.
+It distinguishes playback gate, missing rendered time, target-window rejection,
+black/unavailable surface snapshots, settle start/reset, eligibility and 2.4s timeout
+fallback. No extra surface capture, pixel analysis or rendering check is introduced.
+The event includes observed frame/target/window values, check/reset counts and elapsed
+stable/reveal time when available.
+
+Range `taskID` identifies the actual VideoRangeCache producer or external reservation
+gate, not a URLSession task. Exact and containing joins carry the producer ID and its
+owner trace/request/origin. CDN candidates have separate cache keys and task IDs.
+`warmJoinConfirmed=true` on a `rangeTaskJoined` event proves that candidate joined a
+warm-owned producer from the same trace; it does not prove that candidate eventually
+won. Cache hits have no active task ID. Unreserved/hedged streaming explicitly has no
+shared cache-task identity.
+
+Fast fallback emits `rangeCandidateReady`, `rangeFallbackWinner` and
+`rangeFallbackGroupExited` separately. Winner-to-group-exit time measures child
+settlement after selection; per-producer completion is separate from the outer warm
+request's completion. Request cancellation/retry/scheduling remains unchanged.

@@ -351,6 +351,10 @@ nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
             "warmAndPlayerSameRange=\(sameRange)",
             "oldRangeStillActive=\(oldRangeStillActive)",
             "waitingReason=\(waitingReason)",
+            "uiRevealLastDecision=\(events.last(where: { $0.name == "uiRevealDecision" })?.fields["decision"] ?? "-")",
+            "uiRevealLastReason=\(events.last(where: { $0.name == "uiRevealDecision" })?.fields["reason"] ?? "-")",
+            "uiRevealResetCount=\(events.last(where: { $0.name == "uiRevealDecision" })?.fields["resetCount"] ?? "-")",
+            "uiRevealTimeoutFallback=\(events.contains(where: { $0.name == "uiRevealDecision" }) ? String(events.contains(where: { $0.name == "uiRevealDecision" && $0.fields["decision"] == "timeoutFallback" })) : "-")",
             "terminal=\(terminal)",
             "events=\(eventNames)",
         ]

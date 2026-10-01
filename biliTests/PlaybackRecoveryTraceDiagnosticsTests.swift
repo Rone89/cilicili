@@ -302,6 +302,18 @@ final class PlaybackRecoveryTraceDiagnosticsTests: XCTestCase {
         XCTAssertTrue(record.exportText.contains("at=1.000 event=resumeRequested"))
     }
 
+    func testRevealDecisionSummaryDistinguishesTimeoutFromReadiness() {
+        var record = RecoveryTraceRecord(id: "reveal", type: "userSeek", metricsID: nil, startedAt: 1)
+        XCTAssertTrue(record.summary.contains("uiRevealLastReason=-"))
+        XCTAssertTrue(record.summary.contains("uiRevealTimeoutFallback=-"))
+        record.record(name: "uiRevealDecision", at: 2, fields: ["decision": "blocked", "reason": "surfaceBlack", "resetCount": "2"])
+        XCTAssertTrue(record.summary.contains("uiRevealLastReason=surfaceBlack"))
+        XCTAssertTrue(record.summary.contains("uiRevealTimeoutFallback=false"))
+        record.record(name: "uiRevealDecision", at: 4, fields: ["decision": "timeoutFallback", "reason": "maximumWait", "resetCount": "2"])
+        XCTAssertTrue(record.summary.contains("uiRevealResetCount=2"))
+        XCTAssertTrue(record.summary.contains("uiRevealTimeoutFallback=true"))
+    }
+
     func testMissingSummaryValuesRemainUnknown() {
         let record = RecoveryTraceRecord(
             id: "trace-incomplete",

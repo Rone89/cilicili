@@ -536,6 +536,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pendingUserSeekRevealTargetTime: TimeInterval?
     private var pendingUserSeekRevealReadySince: CFTimeInterval?
     private var pendingUserSeekRevealStartedAt: CFTimeInterval?
+    #if DEBUG
+    private var debugSeekRevealState = RecoveryRevealDiagnosticState()
+    private var debugSeekRevealFields: [String: String] = [:]
+    #endif
     private var navigationAudioSuspension: NavigationAudioSuspension?
     private weak var seamlessPlaybackHandoffSource: PlayerStateViewModel?
     private var lastUsablePlaybackSnapshotImage: UIImage?
@@ -1019,12 +1023,18 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     ) -> Bool {
         if let renderedVideoTime = snapshot.renderedVideoTime {
             guard isSeekRecoveryMatch(currentTime: renderedVideoTime, pending: pending) else {
+                #if DEBUG
+                debugSeekRevealFields["blockingReason"] = "renderedTimeMismatch"
+                #endif
                 return false
             }
             return hasVisibleSeekRecoveryFrame()
         }
 
         if snapshot.requiresRenderedVideoTimeForRecovery {
+            #if DEBUG
+            debugSeekRevealFields["blockingReason"] = "renderedVideoTimeMissing"
+            #endif
             return false
         }
 
@@ -1040,7 +1050,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
         // If the current drawable surface is capturable but black, do not trust the
         // cached video frame: it may still be the frame from before the seek.
-        guard surfaceImage == nil else { return false }
+        guard surfaceImage == nil else {
+            #if DEBUG
+            debugSeekRevealFields["blockingReason"] = "surfaceBlack"
+            #endif
+            return false
+        }
 
         if let image = firstUsablePlaybackSnapshotImage(
             surfaceView?.makePlaybackTransitionSnapshotImage(),
@@ -1049,6 +1064,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             rememberUsablePlaybackSnapshotImage(image)
             return true
         }
+        #if DEBUG
+        debugSeekRevealFields["blockingReason"] = "noUsableSurfaceOrVideoSnapshot"
+        #endif
         return false
     }
 
@@ -5124,7 +5142,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
               wantsAutoplay,
               snapshot.isPlaying,
               !shouldResumePlaybackAfterUserScrub
-        else { return !isUserSeeking }
+        else {
+            #if DEBUG
+            if isUserSeeking {
+                debugSeekRevealFields = ["wantsAutoplay": String(wantsAutoplay), "snapshotPlayingFromRate": String(snapshot.isPlaying),
+                    "resumeAfterScrubPending": String(shouldResumePlaybackAfterUserScrub)]
+                debugRecordSeekRevealDecision("blocked", reason: "playbackGate")
+            }
+            #endif
+            return !isUserSeeking
+        }
         if pendingUserSeekRevealTargetTime != nil {
             guard hasSettledPendingUserSeekReveal(snapshot: snapshot) else { return false }
         } else if let pending = pendingSeekRecoveryMetric {
@@ -5532,10 +5559,23 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             clearPendingUserSeekRevealTarget()
             return
         }
+        #if DEBUG
+        debugSeekRevealState = RecoveryRevealDiagnosticState()
+        debugSeekRevealFields = [:]
+        #endif
         pendingUserSeekRevealTargetTime = targetTime
         pendingUserSeekRevealReadySince = nil
         pendingUserSeekRevealStartedAt = CACurrentMediaTime()
     }
+
+    #if DEBUG
+    private func debugRecordSeekRevealDecision(_ decision: String, reason: String) {
+        if let fields = debugSeekRevealState.transition(decision: decision, reason: reason,
+            at: CACurrentMediaTime(), fields: debugSeekRevealFields) {
+            engine.debugRecoveryEvent("uiRevealDecision", fields: fields)
+        }
+    }
+    #endif
 
     private func clearPendingUserSeekRevealTarget() {
         pendingUserSeekRevealTargetTime = nil
@@ -5556,19 +5596,43 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private func hasSettledPendingUserSeekReveal(snapshot: PlayerPlaybackSnapshot) -> Bool {
         guard let targetTime = pendingUserSeekRevealTargetTime else { return true }
         let now = CACurrentMediaTime()
+        #if DEBUG
+        debugSeekRevealFields = ["targetTime": String(targetTime),
+            "currentTime": snapshot.currentTime.map { String($0) } ?? "-",
+            "renderedVideoTime": snapshot.renderedVideoTime.map { String($0) } ?? "-",
+            "requiresRenderedVideoTime": String(snapshot.requiresRenderedVideoTimeForRecovery),
+            "snapshotPlayingFromRate": String(snapshot.isPlaying),
+            "revealElapsedMs": pendingUserSeekRevealStartedAt.map { String((now - $0) * 1_000) } ?? "-",
+            "readySince": pendingUserSeekRevealReadySince.map { String($0) } ?? "-",
+            "settleMs": String(userSeekRevealSettleDelay * 1_000)]
+        #endif
         if let startedAt = pendingUserSeekRevealStartedAt,
            now - startedAt >= userSeekRevealMaximumWait {
+            #if DEBUG
+            debugRecordSeekRevealDecision("timeoutFallback", reason: "maximumWait")
+            #endif
             return true
         }
         let pending = userSeekRevealMetric(targetTime: targetTime)
         guard isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot) else {
+            #if DEBUG
+            debugSeekRevealFields["settleWasReset"] = String(pendingUserSeekRevealReadySince != nil)
+            debugRecordSeekRevealDecision("blocked", reason: debugSeekRevealFields["blockingReason"] ?? "frameReadinessRejected")
+            #endif
             pendingUserSeekRevealReadySince = nil
             return false
         }
         guard let readySince = pendingUserSeekRevealReadySince else {
             pendingUserSeekRevealReadySince = now
+            #if DEBUG
+            debugRecordSeekRevealDecision("settleStarted", reason: "frameEligible")
+            #endif
             return false
         }
+        #if DEBUG
+        debugSeekRevealFields["stableElapsedMs"] = String((now - readySince) * 1_000)
+        debugRecordSeekRevealDecision(now - readySince >= userSeekRevealSettleDelay ? "ready" : "settling", reason: "frameEligible")
+        #endif
         return now - readySince >= userSeekRevealSettleDelay
     }
 
@@ -5656,7 +5720,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
         guard snapshot.isPlaying,
               let targetTime = pending.targetTime
-        else { return false }
+        else {
+            #if DEBUG
+            if !snapshot.isPlaying { debugSeekRevealFields["blockingReason"] = "snapshotNotPlaying" }
+            #endif
+            return false
+        }
         if let renderedVideoTime = snapshot.renderedVideoTime,
            renderedVideoTime.isFinite {
             return isSeekRevealTimeNearTarget(renderedVideoTime, targetTime: targetTime, snapshot: snapshot)
@@ -5664,7 +5733,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !snapshot.requiresRenderedVideoTimeForRecovery,
               let playbackTime = snapshot.currentTime,
               playbackTime.isFinite
-        else { return false }
+        else {
+            #if DEBUG
+            debugSeekRevealFields["blockingReason"] = "renderedVideoTimeMissing"
+            #endif
+            return false
+        }
         return isSeekRevealTimeNearTarget(playbackTime, targetTime: targetTime, snapshot: snapshot)
     }
 
@@ -5677,6 +5751,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let isNearEnd = resolvedDuration.map { targetTime >= max($0 - 0.35, 0) } ?? false
         let toleranceBefore: TimeInterval = isNearEnd ? 0.12 : 0.5
         let toleranceAfter: TimeInterval = isNearEnd ? 0.75 : 0.5
+        #if DEBUG
+        debugSeekRevealFields["evaluatedFrameTime"] = String(time)
+        debugSeekRevealFields["windowStart"] = String(max(targetTime - toleranceBefore, 0))
+        debugSeekRevealFields["windowEnd"] = String(targetTime + toleranceAfter)
+        if !(time >= max(targetTime - toleranceBefore, 0) && time <= targetTime + toleranceAfter) {
+            debugSeekRevealFields["blockingReason"] = "outsideRevealWindow"
+        }
+        #endif
         return time >= max(targetTime - toleranceBefore, 0)
             && time <= targetTime + toleranceAfter
     }

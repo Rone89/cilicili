@@ -422,3 +422,49 @@ nonisolated final class RecoveryRangeScope: @unchecked Sendable {
     }
 #endif
 }
+
+#if DEBUG
+/// Metadata follows the actual cache reservation; URL equality never implies task ownership.
+nonisolated struct RecoveryRangeTaskOwner: Sendable {
+    let taskID: String
+    let traceID: String
+    let requestID: String
+    let origin: String
+
+    init(context: RecoveryRangeTaskContext?) {
+        taskID = UUID().uuidString
+        traceID = context?.ticket.traceID ?? "-"
+        requestID = context?.ticket.requestID ?? "-"
+        origin = context?.ticket.origin ?? "other"
+    }
+}
+
+nonisolated struct RecoveryRangeTaskContext: Sendable {
+    @TaskLocal static var current: RecoveryRangeTaskContext?
+    let ticket: RecoveryRangeScope.Ticket
+
+    func record(_ event: String, owner: RecoveryRangeTaskOwner? = nil, url: URL? = nil,
+                range: HTTPByteRange? = nil, fields: [String: String] = [:]) {
+        var details = fields
+        details["requestID"] = ticket.requestID
+        details["origin"] = ticket.origin
+        details["track"] = ticket.identity.track
+        details["target"] = String(ticket.target)
+        details["taskID"] = owner?.taskID ?? "-"
+        details["ownerTraceID"] = owner?.traceID ?? "-"
+        details["ownerRequestID"] = owner?.requestID ?? "-"
+        details["ownerOrigin"] = owner?.origin ?? "unknown"
+        if let url { details["candidateHost"] = url.host ?? "-" }
+        if let range {
+            details["candidateRangeStart"] = String(range.start)
+            details["candidateRangeLength"] = String(range.length)
+        }
+        if event == "rangeTaskJoined" {
+            details["warmJoinConfirmed"] = owner.map {
+                $0.origin == "warm" && $0.traceID == ticket.traceID ? "true" : $0.origin == "other" ? "unknown" : "false"
+            } ?? "unknown"
+        }
+        RecoveryTraceStore.shared.event(ticket.traceID, event, fields: details)
+    }
+}
+#endif

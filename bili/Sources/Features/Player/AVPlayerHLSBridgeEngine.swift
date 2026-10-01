@@ -5113,8 +5113,16 @@ struct LocalHLSBridge: Sendable {
                                 succeeded: true
                             )
                         }
+                        #if DEBUG
+                        RecoveryRangeTaskContext.current?.record("rangeCandidateReady", url: url, range: range,
+                            fields: ["candidateIndex": String(index), "source": cacheResult.source == .cache ? "cache" : cacheResult.source == .pending ? "joined" : "network"])
+                        #endif
                         return .success((index, data, cacheResult.source))
                     } catch {
+                        #if DEBUG
+                        RecoveryRangeTaskContext.current?.record("rangeCandidateFailed", url: url, range: range,
+                            fields: ["candidateIndex": String(index), "cancelled": String(error is CancellationError || (error as? URLError)?.code == .cancelled)])
+                        #endif
                         await HLSSourcePreferenceCache.shared.recordFailure(
                             url: url,
                             for: sourceURLs,
@@ -5130,6 +5138,10 @@ struct LocalHLSBridge: Sendable {
             for await result in group {
                 switch result {
                 case let .success(payload):
+                    #if DEBUG
+                    RecoveryRangeTaskContext.current?.record("rangeFallbackWinner", url: sourceURLs[safe: payload.index], range: range,
+                        fields: ["candidateIndex": String(payload.index)])
+                    #endif
                     group.cancelAll()
                     return Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error>.success(payload)
                 case let .failure(error):
@@ -5139,6 +5151,9 @@ struct LocalHLSBridge: Sendable {
             return .failure(lastError ?? PlayerEngineError.unsupportedMedia)
         }
 
+        #if DEBUG
+        RecoveryRangeTaskContext.current?.record("rangeFallbackGroupExited")
+        #endif
         switch result {
         case let .success(payload):
             if let url = sourceURLs[safe: payload.index] {
@@ -6028,6 +6043,18 @@ private struct HLSBridgeSeekPlanner: Sendable {
             let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
             #endif
             do {
+                #if DEBUG
+                _ = try await RecoveryRangeTaskContext.$current.withValue(ticket.map { .init(ticket: $0) }) {
+                    return try await LocalHLSBridge.fetchByteRange(
+                    range,
+                    from: map.sourceURLs,
+                    headers: headers,
+                    strategy: .fastFallback,
+                    onFirstByte: onFirstByte,
+                    onComplete: onComplete
+                )
+                }
+                #else
                 _ = try await LocalHLSBridge.fetchByteRange(
                     range,
                     from: map.sourceURLs,
@@ -6036,6 +6063,7 @@ private struct HLSBridgeSeekPlanner: Sendable {
                     onFirstByte: onFirstByte,
                     onComplete: onComplete
                 )
+                #endif
                 guard !Task.isCancelled else { return didWarm }
                 didWarm = true
             } catch {
@@ -8061,6 +8089,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         do {
             let fetchStart = CACurrentMediaTime()
             if shouldStreamRemoteRange(request: request, range: fetchRange, transform: transform) {
+                #if DEBUG
+                try await RecoveryRangeTaskContext.$current.withValue(recoveryTicket.map { .init(ticket: $0) }) {
                 try await streamRemoteByteRange(
                     fetchRange,
                     from: sourceURLs,
@@ -8075,6 +8105,23 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     to: connection,
                     recoveryRequestID: recoveryRequestID
                 )
+                }
+                #else
+                try await streamRemoteByteRange(
+                    fetchRange,
+                    from: sourceURLs,
+                    primaryURL: url,
+                    contentType: contentType,
+                    transform: transform,
+                    request: request,
+                    headers: headers,
+                    totalLength: sourceRange.length,
+                    servedRange: resolvedRange,
+                    connectionID: connectionID,
+                    to: connection,
+                    recoveryRequestID: recoveryRequestID
+                )
+                #endif
                 PlayerMetricsLog.logger.info(
                     "hlsProxyRangeStreamed path=\(request.path, privacy: .public) bytes=\(fetchRange.length, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
                 )
@@ -8136,6 +8183,18 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             let onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
             let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
             #endif
+            #if DEBUG
+            let fetchedData = try await RecoveryRangeTaskContext.$current.withValue(recoveryTicket.map { .init(ticket: $0) }) {
+                return try await LocalHLSBridge.fetchByteRange(
+                fetchRange,
+                from: sourceURLs,
+                headers: headers,
+                strategy: startupFetchStrategy(for: request.path),
+                onFirstByte: onFirstByte,
+                onComplete: onComplete
+            )
+            }
+            #else
             let fetchedData = try await LocalHLSBridge.fetchByteRange(
                 fetchRange,
                 from: sourceURLs,
@@ -8144,6 +8203,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 onFirstByte: onFirstByte,
                 onComplete: onComplete
             )
+            #endif
             let transformedData = transform?.apply(to: fetchedData) ?? fetchedData
             let data = responseData(from: transformedData, servedRange: resolvedRange, transform: transform)
             let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
@@ -8516,6 +8576,9 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             path: request.path,
             sourceURLCount: canonicalURLs.count
         ) {
+            #if DEBUG
+            RecoveryRangeTaskContext.current?.record("rangeTaskUnreserved", fields: ["transport": "hedgedStreaming"])
+            #endif
             try await streamHedgedStartupRange(
                 range,
                 canonicalURLs: canonicalURLs,
