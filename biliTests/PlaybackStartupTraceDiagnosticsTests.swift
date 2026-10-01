@@ -59,7 +59,35 @@ final class PlaybackStartupTraceDiagnosticsTests: XCTestCase {
             preloadSource: "relatedStartup",
             at: CACurrentMediaTime()
         )
+        let relatedExport = PlayerPerformanceCopyTextFormatter.performanceCopyText(
+            metricsID: bvid,
+            session: PlayerPerformanceStore.shared.session(for: bvid)
+        )
+        for event in [
+            "event=candidateSelected",
+            "event=candidateVisible",
+            "event=prefetchScheduled",
+            "event=prefetchStarted",
+            "event=prefetchCompleted",
+            "event=userClicked",
+            "event=foregroundConsume",
+            "consumeResult=completedCacheHit",
+        ] {
+            XCTAssertTrue(relatedExport.contains(event), "missing \(event) in related prefetch export")
+        }
         XCTAssertNil(PlayerMetricsLog.takeRelatedCandidateClickContext(bvid: bvid, cid: cid))
+    }
+
+    @MainActor
+    func testPerformanceLogExportsRelatedPrefetchFunnelSummary() {
+        let exported = PlayerPerformanceCopyTextFormatter.performanceLogCopyText(
+            sessions: [],
+            sampleGroups: [],
+            relatedPrefetchFunnelSummary: "candidateVisible=4,candidateSelected=3,userClicked=1"
+        )
+
+        XCTAssertTrue(exported.contains("relatedPrefetchFunnel:"))
+        XCTAssertTrue(exported.contains("candidateVisible=4,candidateSelected=3,userClicked=1"))
     }
 
     @MainActor

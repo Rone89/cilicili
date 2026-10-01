@@ -678,6 +678,7 @@ enum PlayerMetricsLog {
         var stateChangedAt: CFTimeInterval
         var clickedAt: CFTimeInterval?
         var consumed: Bool
+        var events: [String]
     }
 
     @MainActor
@@ -746,7 +747,8 @@ enum PlayerMetricsLog {
             state: visible ? "visible" : "selected",
             stateChangedAt: timestamp,
             clickedAt: nil,
-            consumed: false
+            consumed: false,
+            events: []
         )
         latestRelatedTraceByCandidate[key] = traceID
         relatedCandidateTraceOrder.removeAll { $0 == traceID }
@@ -982,6 +984,13 @@ enum PlayerMetricsLog {
                 "preloadSource": preloadSource,
             ]
         )
+        if let trace = relatedCandidateTraces[traceID], !trace.events.isEmpty {
+            PlayerPerformanceStore.shared.record(
+                .startupScheduler,
+                metricsID: trace.bvid,
+                message: "relatedPrefetchTrace " + trace.events.joined(separator: "\n")
+            )
+        }
     }
 
     @MainActor
@@ -1002,7 +1011,15 @@ enum PlayerMetricsLog {
             "monoMs=\(String(format: "%.3f", timestamp * 1_000))",
         ]
         values.append(contentsOf: fields.keys.sorted().map { "\($0)=\(fields[$0] ?? "-")" })
-        diagnostic(values.joined(separator: " "))
+        let message = values.joined(separator: " ")
+        if var trace = relatedCandidateTraces[traceID] {
+            trace.events.append(message)
+            if trace.events.count > 24 {
+                trace.events.removeFirst(trace.events.count - 24)
+            }
+            relatedCandidateTraces[traceID] = trace
+        }
+        diagnostic(message)
     }
 
     @MainActor
@@ -1586,6 +1603,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
     var startupBreakdownMessage: String?
     var hlsStartupMessage: String?
     var startupSchedulerMessage: String?
+    var relatedPrefetchTraceMessage: String?
     var startupQuality: Int?
     var startupTargetQuality: Int?
     var startupCodec: String?
@@ -1648,6 +1666,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         startupBreakdownMessage = session.startupBreakdownMessage
         hlsStartupMessage = session.hlsStartupMessage
         startupSchedulerMessage = session.startupSchedulerMessage
+        relatedPrefetchTraceMessage = session.relatedPrefetchTraceMessage
         startupQuality = session.startupQuality
         startupTargetQuality = session.startupTargetQuality
         startupCodec = session.startupCodec
@@ -1711,6 +1730,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         session.startupBreakdownMessage = startupBreakdownMessage
         session.hlsStartupMessage = hlsStartupMessage
         session.startupSchedulerMessage = startupSchedulerMessage
+        session.relatedPrefetchTraceMessage = relatedPrefetchTraceMessage
         session.startupQuality = startupQuality
         session.startupTargetQuality = startupTargetQuality
         session.startupCodec = startupCodec
@@ -1877,6 +1897,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var networkMessage: String?
     var hlsStartupMessage: String?
     var startupSchedulerMessage: String?
+    var relatedPrefetchTraceMessage: String?
     var accessLogMessage: String?
     var decodeLogMessage: String?
     var observedBitrateKilobitsPerSecond: Int?
@@ -1948,7 +1969,8 @@ enum PlayerPerformanceCopyTextFormatter {
 
     static func performanceLogCopyText(
         sessions: [PlayerPerformanceSession],
-        sampleGroups: [PlayerPerformanceSampleGroup]
+        sampleGroups: [PlayerPerformanceSampleGroup],
+        relatedPrefetchFunnelSummary: String? = nil
     ) -> String {
         let reportableSessions = sessions.filter(isReportableSession)
         var sections = [
@@ -1956,6 +1978,9 @@ enum PlayerPerformanceCopyTextFormatter {
             "generated: \(copyDateFormatter.string(from: Date()))",
             "sessions: \(reportableSessions.count)",
         ]
+        if let relatedPrefetchFunnelSummary, !relatedPrefetchFunnelSummary.isEmpty {
+            sections.append("relatedPrefetchFunnel:\n  \(relatedPrefetchFunnelSummary)")
+        }
 
         if !sampleGroups.isEmpty {
             let sampleLines = sampleGroups.map { group in
@@ -2034,6 +2059,10 @@ enum PlayerPerformanceCopyTextFormatter {
         if let startupSchedulerMessage = session.startupSchedulerMessage {
             lines.append("startupScheduler:")
             lines.append("  \(startupSchedulerMessage)")
+        }
+        if let relatedPrefetchTraceMessage = session.relatedPrefetchTraceMessage {
+            lines.append("relatedPrefetchTrace:")
+            lines.append(contentsOf: relatedPrefetchTraceMessage.split(separator: "\n").map { "  \($0)" })
         }
         if let manifestStageMessage = session.manifestStageMessage {
             lines.append("manifestStage:")
@@ -2441,9 +2470,15 @@ final class PlayerPerformanceStore: ObservableObject {
     }
 
     func performanceLogCopyText() -> String {
-        PlayerPerformanceCopyTextFormatter.performanceLogCopyText(
+        #if DEBUG
+        let relatedPrefetchFunnelSummary = PlayerMetricsLog.relatedPrefetchFunnelSummary()
+        #else
+        let relatedPrefetchFunnelSummary: String? = nil
+        #endif
+        return PlayerPerformanceCopyTextFormatter.performanceLogCopyText(
             sessions: sessions,
-            sampleGroups: startupSampleGroups(limit: maxSessionCount)
+            sampleGroups: startupSampleGroups(limit: maxSessionCount),
+            relatedPrefetchFunnelSummary: relatedPrefetchFunnelSummary
         )
     }
 
@@ -2823,11 +2858,15 @@ final class PlayerPerformanceStore: ObservableObject {
                 )
             }
         case .startupScheduler:
-            session.startupSchedulerMessage = Self.appendDiagnosticMessage(
-                session.startupSchedulerMessage,
-                event.message,
-                maxParts: Self.startupSchedulerDiagnosticPartLimit
-            )
+            if let message = event.message, message.hasPrefix("relatedPrefetchTrace ") {
+                session.relatedPrefetchTraceMessage = String(message.dropFirst("relatedPrefetchTrace ".count))
+            } else {
+                session.startupSchedulerMessage = Self.appendDiagnosticMessage(
+                    session.startupSchedulerMessage,
+                    event.message,
+                    maxParts: Self.startupSchedulerDiagnosticPartLimit
+                )
+            }
         case .buffering:
             session.bufferCount += 1
             session.lastBufferMessage = event.message ?? session.lastBufferMessage
@@ -3247,6 +3286,7 @@ final class PlayerPerformanceStore: ObservableObject {
         session.networkMessage = nil
         session.hlsStartupMessage = nil
         session.startupSchedulerMessage = nil
+        session.relatedPrefetchTraceMessage = nil
         session.accessLogMessage = nil
         session.decodeLogMessage = nil
         session.observedBitrateKilobitsPerSecond = nil
