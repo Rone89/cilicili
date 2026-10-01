@@ -461,6 +461,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     let playbackClock = PlayerPlaybackClock()
 
     private(set) var wantsAutoplay = true
+    #if DEBUG
+    private var debugManualPauseStartedAt: Double?
+    #endif
     private let metricsID: String
     private let metricsStartTime = CACurrentMediaTime()
     private let streamSource: PlayerStreamSource
@@ -1659,6 +1662,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     @discardableResult
     func pauseForAppBackground() -> Bool {
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
+        #endif
         guard !isTerminated else { return false }
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
@@ -2503,6 +2510,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     func play() {
         guard !isTerminated else { return }
         syncPictureInPictureState()
+        #if DEBUG
+        if let pauseStartedAt = debugManualPauseStartedAt,
+           !isPlaybackStoppedForAppBackground, !isUserSeeking,
+           hasPresentedPlayback, engine.hasMedia, allowsPlaybackInCurrentApplicationState {
+            engine.debugBeginRecoveryTrace(type: "manualResume", at: CACurrentMediaTime(), fields: [
+                "pauseStartedAt": String(pauseStartedAt),
+            ])
+        }
+        debugManualPauseStartedAt = nil
+        #endif
         guard allowsPlaybackInCurrentApplicationState else {
             _ = pauseForAppBackground()
             return
@@ -2711,6 +2728,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func pause() {
+        #if DEBUG
+        if !isTerminated, hasPresentedPlayback, engine.hasMedia, !isUserSeeking,
+           wantsAutoplay || isPlaying {
+            debugManualPauseStartedAt = CACurrentMediaTime()
+        }
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "pause"])
+        #endif
         cancelSeamlessPlaybackHandoffForExplicitPause()
         if audioInterruptionState.isActive {
             audioInterruptionState.cancelAutomaticResume()
@@ -2764,6 +2788,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func pauseForNavigation() {
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
+        #endif
         guard !isTerminated else { return }
         isPlaybackStoppedForAppBackground = false
         didPrepareStoppedAppBackgroundPlayback = false
@@ -2885,6 +2913,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func suspendForNavigation() {
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
+        #endif
         guard !isTerminated else { return }
         mediaPreparationTask?.cancel()
         mediaPreparationTask = nil
@@ -2896,6 +2928,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func stop(reason: PlayerStopReason = .navigation) {
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
+        #endif
         guard !isStopping else { return }
         if isTerminated {
             ActivePlaybackCoordinator.shared.deactivate(self)
@@ -3122,6 +3158,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let resolvedDuration = duration ?? durationHint ?? playbackClock.duration ?? initialSnapshot.duration ?? 0
         let optimisticTargetTime = resolvedDuration > 0 ? targetProgress * resolvedDuration : nil
         let userSeekStart = CACurrentMediaTime()
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        engine.debugBeginRecoveryTrace(type: "userSeek", at: userSeekStart, fields: [
+            "rawTarget": optimisticTargetTime.map { String($0) } ?? "-",
+            "wasPlayingBeforeSeek": String(shouldResumeAfterSeek),
+        ])
+        #endif
         let scrubSource = activeUserScrubSource
         let scrubElapsed = activeUserScrubStartedAt.map {
             PlayerMetricsLog.elapsedMilliseconds(since: $0)
@@ -3234,6 +3277,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.shouldResumePlaybackAfterUserScrub = false
                 self.resumePlaybackAfterUserSeek()
             } else {
+                #if DEBUG
+                self.engine.debugRecoveryEvent("uiReveal", fields: ["reason": "pausedSeekOverlayRemoved"])
+                #endif
                 self.isUserSeeking = false
                 self.isBuffering = false
                 self.wantsAutoplay = false
@@ -3373,6 +3419,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func beginUserScrubInteraction(source: PlayerScrubInteractionSource = .nativeProgress) {
+        #if DEBUG
+        debugManualPauseStartedAt = nil
+        #endif
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
@@ -5089,6 +5138,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 source: "seekReveal"
             )
         }
+        #if DEBUG
+        engine.debugRecoveryEvent("uiReveal", fields: ["reason": "overlayRemoved"])
+        #endif
         isUserSeeking = false
         isBuffering = false
         shouldResumePlaybackAfterUserScrub = false

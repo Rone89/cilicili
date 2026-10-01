@@ -92,6 +92,21 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private weak var contentOverlayContainerView: UIView?
     private var pendingSurfaceDetachTask: Task<Void, Never>?
     private var shouldPrerollPausedRecoveryAfterSeek = false
+    #if DEBUG
+    var debugRecoveryTraceIdentity: String? { debugRecoveryTraceID }
+    private var debugRecoveryTraceID: String?
+    private var debugRecoveryType = ""
+    private var debugRecoveryStartedAt: Double = 0
+    private var debugRecoveryBaseline: Double = 0
+    private var debugRecoveryTarget: Double?
+    private var debugRecoverySeekCompleted = false
+    private var debugRecoveryPlayAt: Double?
+    private var debugRecoveryFrameObserved = false
+    private var debugRecoveryUIRevealed = false
+    private var debugRecoveryFrameTask: Task<Void, Never>?
+    private var debugAudioPhase = "other"
+    private var debugSeekProtectionTraceID: String?
+    #endif
 
     var hasMedia: Bool {
         !isStopped && player.currentItem != nil
@@ -245,6 +260,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     deinit {
+        #if DEBUG
+        debugRecoveryFrameTask?.cancel()
+        RecoveryTraceStore.shared.event(debugRecoveryTraceID, "sessionEnded", fields: ["reason": "engineDeinit"])
+        #endif
         pendingSurfaceDetachTask?.cancel()
         itemObservers.removeAll()
         layerReadyForDisplayObserver = nil
@@ -322,6 +341,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func recoverSurface() {
         guard !isStopped else { return }
+        #if DEBUG
+        debugRecoveryEvent("recoverSurfaceStart", fields: [:])
+        debugAudioPhase = "recoverSurface"
+        defer {
+            debugAudioPhase = "other"
+            debugRecoveryEvent("recoverSurfaceComplete", fields: [:])
+        }
+        #endif
         configureAudioSession()
         if let playerViewController {
             // AVPlayerViewController owns the active video layer for normal video
@@ -638,6 +665,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func play() {
         guard !isStopped, let item = player.currentItem else { return }
+        #if DEBUG
+        debugAudioPhase = "play"
+        defer { debugAudioPhase = "other" }
+        #endif
         shouldPrerollPausedRecoveryAfterSeek = false
         configureAudioSession()
         applyTargetAudioState()
@@ -690,6 +721,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func pauseForAppBackground() {
+        #if DEBUG
+        debugRecoveryEvent("sessionEnded", fields: ["reason": "appBackground"])
+        #endif
         guard !isStopped else { return }
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -703,6 +737,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func pauseForNavigation() {
+        #if DEBUG
+        debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
+        #endif
         guard !isStopped else { return }
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -718,6 +755,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func suspendForNavigation() {
+        #if DEBUG
+        debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
+        #endif
         guard !isStopped else { return }
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -730,6 +770,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func stop() {
+        #if DEBUG
+        debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
+        #endif
         playbackGeneration &+= 1
         isStopped = true
         shouldPrerollPausedRecoveryAfterSeek = false
@@ -946,21 +989,41 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let displayTarget = alignedInteractiveSeekTime(requestedDisplayTarget)
         let target = playerTime(fromDisplayTime: displayTarget)
         let targetTime = CMTime(seconds: target, preferredTimescale: 600)
+        #if DEBUG
+        let recoveryID = debugRecoveryTraceID
+        debugRecoveryTarget = displayTarget
+        debugRecoverySeekCompleted = false
+        debugRecoveryEvent("seekAligned", fields: ["rawTarget": String(requestedDisplayTarget), "alignedTarget": String(displayTarget),
+            "toleranceBefore": String(Self.interactiveSeekTolerance.seconds), "toleranceAfter": String(Self.interactiveSeekTolerance.seconds)])
+        hlsBridge?.debugAttachRecovery(traceID: recoveryID, target: displayTarget)
+        #endif
         wantsPlayback = false
         let seekPlaybackGeneration = playbackGeneration
         let generation = beginSeekTransaction(targetDisplayTime: displayTarget)
         publishPlaybackState(.buffering)
         warmSeekTargetIfNeeded(displayTarget)
         player.currentItem?.cancelPendingSeeks()
+        #if DEBUG
+        RecoveryTraceStore.shared.event(recoveryID, "seekCall")
+        #endif
         let finished = await withCheckedContinuation { continuation in
             player.seek(
                 to: targetTime,
                 toleranceBefore: Self.interactiveSeekTolerance,
                 toleranceAfter: Self.interactiveSeekTolerance
             ) { finished in
+                #if DEBUG
+                RecoveryTraceStore.shared.event(recoveryID, "seekCompletion", fields: ["finished": String(finished)])
+                #endif
                 continuation.resume(returning: finished)
             }
         }
+        #if DEBUG
+        if debugRecoveryTraceID == recoveryID {
+            debugRecoverySeekCompleted = finished
+            if finished { debugStartRecoveryFrameObservation() }
+        }
+        #endif
         nativeDolbyVideoOverlay.seek(to: displayTarget, shouldPlay: false)
         guard isCurrentPlaybackGeneration(seekPlaybackGeneration) else { return nil }
         finishSeekTransaction(generation: generation, finished: finished, shouldResume: false)
@@ -1060,6 +1123,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func startPlaybackImmediately() {
         guard !isStopped, player.currentItem != nil else { return }
         applyTargetAudioState()
+        #if DEBUG
+        if debugRecoveryTraceID != nil, debugRecoveryPlayAt == nil {
+            debugRecoveryPlayAt = CACurrentMediaTime()
+            RecoveryTraceStore.shared.event(debugRecoveryTraceID, "playCalled", at: debugRecoveryPlayAt!)
+            debugStartRecoveryFrameObservation()
+        }
+        #endif
         if LiveHLSFastStartPolicy.usesImmediatePlayback(
             isDirectLiveHLS: isDirectLiveHLS,
             isLiveStream: source?.isLiveStream == true,
@@ -1071,6 +1141,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         } else {
             player.playImmediately(atRate: currentRate)
         }
+        #if DEBUG
+        debugObserveRecoveryStatus(player.timeControlStatus, reason: player.reasonForWaitingToPlay?.rawValue, at: CACurrentMediaTime())
+        #endif
         nativeDolbyVideoOverlay.play(rate: currentRate)
         syncNativeDolbyVideoOverlay(reason: "begin", force: false)
     }
@@ -1175,6 +1248,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func tearDownCurrentItemForReplacement() {
+        #if DEBUG
+        debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
+        #endif
         let oldItem = player.currentItem
         let oldBridge = hlsBridge
         let oldLiveProxy = liveHLSProxy
@@ -1549,10 +1625,21 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func configureAudioSession() {
+        #if DEBUG
+        let phase = debugAudioPhase
+        RecoveryTraceStore.shared.event(debugRecoveryTraceID, "audioSessionActivationStart", fields: ["phase": phase])
+        var succeeded = false
+        defer {
+            RecoveryTraceStore.shared.event(debugRecoveryTraceID, "audioSessionActivationComplete", fields: ["phase": phase, "succeeded": String(succeeded)])
+        }
+        #endif
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setActive(true)
+            #if DEBUG
+            succeeded = true
+            #endif
         } catch {
             // Playback can still proceed if the simulator or system declines the session update.
         }
@@ -1648,11 +1735,18 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playerObservers = [
             player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
                 let status = player.timeControlStatus
+                #if DEBUG
+                let observedAt = CACurrentMediaTime()
+                let reason = player.reasonForWaitingToPlay?.rawValue
+                #endif
                 Task { @MainActor [weak self] in
                     guard let self,
                           !self.isStopped,
                           player.currentItem === self.playerItem
                     else { return }
+                    #if DEBUG
+                    self.debugObserveRecoveryStatus(status, reason: reason, at: observedAt)
+                    #endif
                     self.handleTimeControlStatus(status)
                 }
             },
@@ -1688,6 +1782,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 }
             }
         ]
+        #if DEBUG
+        playerObservers.append(player.observe(\.reasonForWaitingToPlay, options: [.new]) { [weak self] player, _ in
+            let observedAt = CACurrentMediaTime()
+            let reason = player.reasonForWaitingToPlay?.rawValue
+            let status = player.timeControlStatus
+            Task { @MainActor [weak self] in
+                self?.debugObserveRecoveryStatus(status, reason: reason, at: observedAt)
+            }
+        })
+        #endif
     }
 
     private func observeCurrentItem(_ item: AVPlayerItem) {
@@ -2348,6 +2452,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let wasActive = isSeekProtectionActive
         isSeekProtectionActive = true
         seekProtectionAppliedAt = CACurrentMediaTime()
+        #if DEBUG
+        debugSeekProtectionTraceID = debugRecoveryTraceID
+        debugRecoveryEvent("seekProtectOn", fields: [:])
+        #endif
         seekProtectionReleaseTask?.cancel()
         seekProtectionReleaseTask = nil
         let environment = PlaybackEnvironment.current
@@ -2386,6 +2494,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func releaseSeekProtection(reason: String) {
         guard isSeekProtectionActive else { return }
+        #if DEBUG
+        RecoveryTraceStore.shared.event(debugSeekProtectionTraceID, "seekProtectOff", fields: ["reason": reason])
+        debugSeekProtectionTraceID = nil
+        #endif
         isSeekProtectionActive = false
         seekProtectionReleaseTask?.cancel()
         seekProtectionReleaseTask = nil
@@ -2837,16 +2949,120 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         seekWarmupGeneration &+= 1
         let generation = seekWarmupGeneration
         let metricsID = source?.metricsID
+        #if DEBUG
+        let recoveryTraceID = debugRecoveryTraceID
+        RecoveryTraceStore.shared.event(recoveryTraceID, "seekWarmStarted", fields: ["target": String(displayTime)])
+        #endif
         seekWarmupTask?.cancel()
         seekWarmupTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
+            #if DEBUG
+            await hlsBridge.warmSeekTarget(around: displayTime, metricsID: metricsID, recoveryTraceID: recoveryTraceID)
+            #else
             await hlsBridge.warmSeekTarget(around: displayTime, metricsID: metricsID)
+            #endif
             guard !Task.isCancelled,
                   self.seekWarmupGeneration == generation
             else { return }
             self.seekWarmupTask = nil
         }
     }
+
+    #if DEBUG
+    func debugBeginRecoveryTrace(type: String, at: Double, fields: [String: String]) {
+        guard !isStopped, player.currentItem != nil, source?.isLiveStream != true, source?.playbackContentMode != .audioOnly else { return }
+        debugRecoveryEvent("superseded", fields: [:])
+        debugRecoveryType = type
+        debugRecoveryStartedAt = at
+        debugRecoveryBaseline = displayTime(fromPlayerTime: player.currentTime().seconds)
+        debugRecoveryTarget = nil
+        debugRecoverySeekCompleted = false
+        debugRecoveryPlayAt = nil
+        debugRecoveryFrameObserved = false
+        debugRecoveryUIRevealed = false
+        let environment = PlaybackEnvironment.current
+        let flags = NetworkPathSnapshot.shared.recoveryDiagnosticsFlags
+        var context = fields
+        context["networkClass"] = String(describing: environment.networkClass)
+        context["isConstrained"] = flags.map { String($0.isConstrained) } ?? "-"
+        context["isExpensive"] = flags.map { String($0.isExpensive) } ?? "-"
+        context["lowPowerMode"] = String(environment.isLowPowerModeEnabled)
+        context["currentTime"] = String(debugRecoveryBaseline)
+        context["frameObservation"] = "videoOutput+surfaceReady"
+        if let item = player.currentItem {
+            let coverage = RecoveryTraceDiagnostics.bufferCoverage(
+                currentTime: player.currentTime().seconds,
+                ranges: item.loadedTimeRanges.map { value in
+                    let range = value.timeRangeValue
+                    return .init(start: range.start.seconds, duration: range.duration.seconds)
+                })
+            context["bufferAheadAtResume"] = String(coverage.ahead)
+            context["bufferCoveredAtResume"] = String(coverage.covered)
+        }
+        debugRecoveryTraceID = RecoveryTraceStore.shared.start(type: type, metricsID: source?.metricsID, at: at, fields: context)
+        hlsBridge?.debugAttachRecovery(traceID: debugRecoveryTraceID, target: nil)
+    }
+
+    func debugRecoveryEvent(_ name: String, fields: [String: String] = [:]) {
+        guard let id = debugRecoveryTraceID else { return }
+        RecoveryTraceStore.shared.event(id, name, fields: fields)
+        if name == "uiReveal" { debugRecoveryUIRevealed = true }
+        if name == "sessionEnded" || name == "superseded" || (name == "uiReveal" && debugRecoveryFrameObserved) {
+            debugRecoveryFrameTask?.cancel()
+            debugRecoveryFrameTask = nil
+            hlsBridge?.debugDetachRecovery(traceID: id)
+            debugRecoveryTraceID = nil
+        }
+    }
+
+    private func debugObserveRecoveryStatus(_ status: AVPlayer.TimeControlStatus, reason: String?, at: Double) {
+        guard let id = debugRecoveryTraceID, at >= debugRecoveryStartedAt else { return }
+        let event = status == .playing ? "playing" : status == .waitingToPlayAtSpecifiedRate ? "waiting" : "paused"
+        // Discard queued status callbacks from before the trace's playback command.
+        if event == "playing", debugRecoveryPlayAt.map({ at < $0 }) ?? true { return }
+        RecoveryTraceStore.shared.event(id, event, at: at, fields: ["reason": reason ?? "-"])
+        RecoveryTraceStore.shared.event(id, "waitingReason", at: at, fields: ["reason": reason ?? "-"])
+    }
+
+    private func debugStartRecoveryFrameObservation() {
+        guard let id = debugRecoveryTraceID, !debugRecoveryFrameObserved, debugRecoveryFrameTask == nil else { return }
+        debugRecoveryFrameTask = Task { @MainActor [weak self] in
+            // Short-lived DEBUG sampling uses the existing output; no image conversion or rendering changes.
+            for _ in 0..<900 {
+                guard !Task.isCancelled, self?.debugPollRecoveryFrame(traceID: id) == true else { return }
+                try? await Task.sleep(nanoseconds: 16_666_667)
+            }
+            self?.debugRecoveryEvent("frameObservationTimeout", fields: [:])
+            self?.debugRecoveryEvent("sessionEnded", fields: ["reason": "frameObservationTimeout"])
+        }
+    }
+
+    private func debugPollRecoveryFrame(traceID: String) -> Bool {
+        guard debugRecoveryTraceID == traceID, !isStopped, !debugRecoveryFrameObserved,
+              let output = videoOutput, player.currentItem === playerItem else { return false }
+        let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
+        guard output.hasNewPixelBuffer(forItemTime: itemTime) else { return true }
+        var displayTime = CMTime.invalid
+        guard output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: &displayTime) != nil,
+              displayTime.isValid, displayTime.seconds.isFinite else { return true }
+        let frameTime = self.displayTime(fromPlayerTime: displayTime.seconds)
+        guard playerViewController?.isReadyForDisplay == true || playerLayer?.isReadyForDisplay == true else { return true }
+        guard RecoveryTraceDiagnostics.isRecoveryFrame(type: debugRecoveryType, frameTime: frameTime,
+              baseline: debugRecoveryBaseline, target: debugRecoveryTarget,
+              seekCompleted: debugRecoverySeekCompleted, playCalled: debugRecoveryPlayAt != nil) else { return true }
+        // A cached frame at the old playhead is not evidence of moving/target video.
+        guard abs(frameTime - debugRecoveryBaseline) > 0.001 else { return true }
+        debugRecoveryFrameObserved = true
+        RecoveryTraceStore.shared.event(traceID, debugRecoveryType == "manualResume" ? "firstNewFrame" : "firstTargetFrame",
+            fields: ["frameTime": String(frameTime), "observation": "videoOutput+surfaceReady"])
+        debugRecoveryFrameTask = nil
+        if debugRecoveryType == "manualResume" || debugRecoveryUIRevealed {
+            hlsBridge?.debugDetachRecovery(traceID: traceID)
+            debugRecoveryTraceID = nil
+        }
+        return false
+    }
+    #endif
 
     private func playerTime(fromDisplayTime time: TimeInterval) -> TimeInterval {
         guard mediaTimeOffset > 0 else { return time }
@@ -3521,6 +3737,24 @@ struct LocalHLSBridge: Sendable {
     private let seekPlanner: HLSBridgeSeekPlanner?
     private let server: LocalHLSProxyServer
 
+    #if DEBUG
+    nonisolated func debugAttachRecovery(traceID: String?, target: Double?) {
+        guard let traceID else { return }
+        var targets: [RecoveryRangeScope.Identity] = []
+        if let target, let seekPlanner {
+            for (track, map) in [("video", seekPlanner.video), ("audio", Optional(seekPlanner.audio))] {
+                if let map, let url = map.sourceURLs.first,
+                   let range = map.warmRanges(around: target).dropFirst().first {
+                    targets.append(RecoveryRangeScope.identity(url: url, track: track, range: range))
+                }
+            }
+        }
+        server.recoveryScope.attach(traceID: traceID, targets: targets)
+    }
+
+    nonisolated func debugDetachRecovery(traceID: String?) { server.recoveryScope.detach(traceID: traceID) }
+    #endif
+
     nonisolated func updateMetricsID(_ metricsID: String?) {
         server.updateMetricsID(metricsID)
     }
@@ -3564,9 +3798,13 @@ struct LocalHLSBridge: Sendable {
         seekPlanner?.alignedSeekTime(near: playbackTime)
     }
 
-    nonisolated func warmSeekTarget(around playbackTime: TimeInterval, metricsID: String?) async {
+    nonisolated func warmSeekTarget(around playbackTime: TimeInterval, metricsID: String?, recoveryTraceID: String? = nil) async {
         guard let seekPlanner else { return }
+        #if DEBUG
+        await seekPlanner.warm(around: playbackTime, metricsID: metricsID, recoveryScope: server.recoveryScope, recoveryTraceID: recoveryTraceID)
+        #else
         await seekPlanner.warm(around: playbackTime, metricsID: metricsID)
+        #endif
     }
 
     nonisolated static func make(
@@ -5727,7 +5965,7 @@ private struct HLSBridgeSeekPlanner: Sendable {
         (video ?? audio).alignedSeekTime(near: playbackTime)
     }
 
-    nonisolated func warm(around playbackTime: TimeInterval, metricsID: String?) async {
+    nonisolated func warm(around playbackTime: TimeInterval, metricsID: String?, recoveryScope: RecoveryRangeScope? = nil, recoveryTraceID: String? = nil) async {
         guard !Task.isCancelled else { return }
         let start = CACurrentMediaTime()
         let videoRanges = video?.warmRanges(around: playbackTime) ?? []
@@ -5738,12 +5976,12 @@ private struct HLSBridgeSeekPlanner: Sendable {
             if !videoRanges.isEmpty, !Task.isCancelled {
                 group.addTask(priority: .utility) {
                     guard let video else { return false }
-                    return await Self.warm(ranges: videoRanges, map: video, headers: headers)
+                    return await Self.warm(ranges: videoRanges, map: video, headers: headers, track: "video", recoveryScope: recoveryScope, recoveryTraceID: recoveryTraceID)
                 }
             }
             if !audioRanges.isEmpty, !Task.isCancelled {
                 group.addTask(priority: .utility) {
-                    await Self.warm(ranges: audioRanges, map: audio, headers: headers)
+                    await Self.warm(ranges: audioRanges, map: audio, headers: headers, track: "audio", recoveryScope: recoveryScope, recoveryTraceID: recoveryTraceID)
                 }
             }
             var didWarm = false
@@ -5766,22 +6004,45 @@ private struct HLSBridgeSeekPlanner: Sendable {
     private nonisolated static func warm(
         ranges: [HTTPByteRange],
         map: HLSBridgeSeekMap,
-        headers: [String: String]
+        headers: [String: String],
+        track: String,
+        recoveryScope: RecoveryRangeScope?,
+        recoveryTraceID: String?
     ) async -> Bool {
         guard !map.sourceURLs.isEmpty else { return false }
         var didWarm = false
         for range in ranges {
             guard !Task.isCancelled else { return didWarm }
+            #if DEBUG
+            let ticket = map.sourceURLs.first.flatMap { url in
+                recoveryScope?.begin(identity: RecoveryRangeScope.identity(url: url, track: track, range: range), origin: "warm", traceID: recoveryTraceID)
+            }
+            let onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = { sourceURL, count, _, at in
+                recoveryScope?.event(ticket, "rangeFirstByte", source: "network", bytes: count, host: sourceURL.host, at: at)
+            }
+            let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = { source, sourceURL, count, _ in
+                recoveryScope?.event(ticket, "rangeComplete", source: source == .cache ? "cache" : source == .pending ? "joined" : "network", bytes: count, host: sourceURL.host)
+            }
+            #else
+            let onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
+            let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
+            #endif
             do {
                 _ = try await LocalHLSBridge.fetchByteRange(
                     range,
                     from: map.sourceURLs,
                     headers: headers,
-                    strategy: .fastFallback
+                    strategy: .fastFallback,
+                    onFirstByte: onFirstByte,
+                    onComplete: onComplete
                 )
                 guard !Task.isCancelled else { return didWarm }
                 didWarm = true
-            } catch {}
+            } catch {
+                #if DEBUG
+                recoveryScope?.event(ticket, RecoveryTraceDiagnostics.rangeFailureEvent(error), source: "unknown")
+                #endif
+            }
         }
         return didWarm
     }
@@ -7417,6 +7678,9 @@ private actor HLSSourcePreferenceCache {
 }
 
 nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
+    #if DEBUG
+    let recoveryScope = RecoveryRangeScope()
+    #endif
     nonisolated private static let maxStreamingCacheBytes: Int64 = 24 * 1024 * 1024
 
     nonisolated(unsafe) private var headers: [String: String]
@@ -7578,6 +7842,9 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .cancelled, .failed:
+                #if DEBUG
+                self?.recoveryScope.connectionClosed(identifier)
+                #endif
                 self?.queue.async { [weak self] in
                     self?.activeConnections[identifier] = nil
                 }
@@ -7709,6 +7976,16 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         }
 
         let sourceURLs = ([url] + fallbackURLs).removingDuplicates()
+        #if DEBUG
+        let recoveryTicket = recoveryScope.begin(
+            identity: RecoveryRangeScope.identity(url: url, track: request.path.contains("/media/audio/") ? "audio" : "video", range: fetchRange),
+            origin: "player")
+        let recoveryRequestID = recoveryTicket?.requestID
+        recoveryScope.associateConnection(connectionID, requestID: recoveryRequestID)
+        defer { recoveryScope.event(recoveryTicket, "rangeEnded") }
+        #else
+        let recoveryRequestID: String? = nil
+        #endif
         let startupMetricsID = metricsID
         #if DEBUG
         if let media = Self.startupRangeLabel(for: request.path), let metricsID {
@@ -7728,6 +8005,10 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         }
         #endif
         if let cached = await cachedRange(fetchRange, sourceURLs: sourceURLs, transform: transform) {
+            #if DEBUG
+            recoveryScope.event(recoveryTicket, "rangeFirstByte", source: "cache", bytes: cached.count)
+            recoveryScope.event(recoveryTicket, "rangeComplete", source: "cache", bytes: cached.count)
+            #endif
             let responseData = responseData(from: cached, servedRange: resolvedRange, transform: transform)
             let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: start)
             PlayerMetricsLog.logger.info(
@@ -7791,7 +8072,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     totalLength: sourceRange.length,
                     servedRange: resolvedRange,
                     connectionID: connectionID,
-                    to: connection
+                    to: connection,
+                    recoveryRequestID: recoveryRequestID
                 )
                 PlayerMetricsLog.logger.info(
                     "hlsProxyRangeStreamed path=\(request.path, privacy: .public) bytes=\(fetchRange.length, privacy: .public) elapsedMs=\(PlayerMetricsLog.elapsedMilliseconds(since: fetchStart), format: .fixed(precision: 1), privacy: .public)"
@@ -7840,6 +8122,16 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     )
                 }
             }
+            let startupFirstByte = onFirstByte
+            let startupComplete = onComplete
+            onFirstByte = { [recoveryScope] sourceURL, count, ttfb, at in
+                recoveryScope.event(recoveryTicket, "rangeFirstByte", source: "network", bytes: count, host: sourceURL.host, at: at)
+                await startupFirstByte?(sourceURL, count, ttfb, at)
+            }
+            onComplete = { [recoveryScope] source, sourceURL, count, elapsed in
+                recoveryScope.event(recoveryTicket, "rangeComplete", source: source == .cache ? "cache" : source == .pending ? "joined" : "network", bytes: count, host: sourceURL.host)
+                await startupComplete?(source, sourceURL, count, elapsed)
+            }
             #else
             let onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)? = nil
             let onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)? = nil
@@ -7885,6 +8177,9 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 )
             }
         } catch {
+            #if DEBUG
+            recoveryScope.event(recoveryTicket, RecoveryTraceDiagnostics.rangeFailureEvent(error))
+            #endif
             let proxyFailure = HLSBridgeRemoteFailure.proxyHTTPStatus(for: error)
             let failureReason = HLSBridgeRemoteFailure.reason(for: error)
             failureStore.record(failureReason)
@@ -8055,8 +8350,12 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         headers: [String: String],
         totalLength: Int64,
         servedRange: HTTPByteRange?,
-        to connection: NWConnection
+        to connection: NWConnection,
+        recoveryRequestID: String? = nil
     ) async throws {
+        #if DEBUG
+        let recoveryTicket = recoveryScope.ticket(for: recoveryRequestID)
+        #endif
         let streamStart = CACurrentMediaTime()
         let responseHeader = streamingHeaderData(
             contentType: contentType,
@@ -8068,7 +8367,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         let startupMetricsID = metricsID
         #if DEBUG
         let onFirstByteReceived: @Sendable (URL, Int, Double, CFTimeInterval) -> Void = {
-            sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+            [recoveryScope] sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+            recoveryScope.event(recoveryTicket, "rangeFirstByte", source: "network", bytes: firstChunkBytes, host: sourceURL.host, at: firstByteAt)
             if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
                 PlayerMetricsLog.enqueueStartupTraceEvent(
                     metricsID: startupMetricsID,
@@ -8107,6 +8407,9 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 source: "startupHedge"
             )
         }
+        #if DEBUG
+        recoveryScope.event(recoveryTicket, "rangeComplete", source: "network", bytes: result.bytesReceived)
+        #endif
         let elapsedMilliseconds = PlayerMetricsLog.elapsedMilliseconds(since: streamStart)
         let streamedBytes = result.cachePayload?.byteCount ?? Int(range.length)
         #if DEBUG
@@ -8201,8 +8504,12 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         totalLength: Int64,
         servedRange: HTTPByteRange?,
         connectionID: ObjectIdentifier,
-        to connection: NWConnection
+        to connection: NWConnection,
+        recoveryRequestID: String? = nil
     ) async throws {
+        #if DEBUG
+        let recoveryTicket = recoveryScope.ticket(for: recoveryRequestID)
+        #endif
         let canonicalURLs = urls.removingDuplicates()
         let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalURLs)
         if Self.shouldHedgeStartupRange(
@@ -8220,7 +8527,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 headers: headers,
                 totalLength: totalLength,
                 servedRange: servedRange,
-                to: connection
+                to: connection,
+                recoveryRequestID: recoveryRequestID
             )
             return
         }
@@ -8234,6 +8542,10 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             )
             switch reservation {
             case let .cached(data):
+                #if DEBUG
+                recoveryScope.event(recoveryTicket, "rangeFirstByte", source: "cache", bytes: data.count)
+                recoveryScope.event(recoveryTicket, "rangeComplete", source: "cache", bytes: data.count)
+                #endif
                 let cachedStart = CACurrentMediaTime()
                 let responseData = transform?.apply(to: data) ?? data
                 queue.async {
@@ -8279,7 +8591,13 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             case let .pending(task):
                 do {
                     let joinedStart = CACurrentMediaTime()
+                    #if DEBUG
+                    recoveryScope.event(recoveryTicket, "rangeSource", source: "joined")
+                    #endif
                     let data = try await task.value
+                    #if DEBUG
+                    recoveryScope.event(recoveryTicket, "rangeComplete", source: "joined", bytes: data.count)
+                    #endif
                     let responseData = transform?.apply(to: data) ?? data
                     queue.async {
                         guard self.isConnectionActive(connectionID) else { return }
@@ -8342,7 +8660,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 let startupMetricsID = metricsID
                 #if DEBUG
                 let onFirstByteReceived: @Sendable (URL, Int, Double, CFTimeInterval) -> Void = {
-                    sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+                    [recoveryScope] sourceURL, firstChunkBytes, ttfbMilliseconds, firstByteAt in
+                    recoveryScope.event(recoveryTicket, "rangeFirstByte", source: "network", bytes: firstChunkBytes, host: sourceURL.host, at: firstByteAt)
                     if let media = Self.startupRangeLabel(for: request.path), let startupMetricsID {
                         PlayerMetricsLog.enqueueStartupTraceEvent(
                             metricsID: startupMetricsID,
@@ -8385,6 +8704,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 let streamedBytes = streamResult.cachePayload?.byteCount ?? Int(range.length)
                 #if DEBUG
                 let receivedBytesForDiagnostics = streamResult.bytesReceived
+                recoveryScope.event(recoveryTicket, "rangeComplete", source: "network", bytes: receivedBytesForDiagnostics)
                 #endif
                 let shouldAvoidSlowStartupHost = Self.shouldSessionAvoidSlowStartupHost(
                     path: request.path,

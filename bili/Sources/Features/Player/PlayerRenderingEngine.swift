@@ -446,6 +446,8 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     var onLoadingProgressChange: (@MainActor (Double) -> Void)? { get set }
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)? { get set }
 #if DEBUG
+    func debugBeginRecoveryTrace(type: String, at: Double, fields: [String: String])
+    func debugRecoveryEvent(_ name: String, fields: [String: String])
     var debugPlayerIdentity: ObjectIdentifier? { get }
     var debugPlayerItemIdentity: ObjectIdentifier? { get }
 #endif
@@ -499,6 +501,8 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
 
 extension PlayerRenderingEngine {
 #if DEBUG
+    func debugBeginRecoveryTrace(type: String, at: Double, fields: [String: String]) {}
+    func debugRecoveryEvent(_ name: String, fields: [String: String] = [:]) {}
     var debugPlayerIdentity: ObjectIdentifier? { nil }
 
     var debugPlayerItemIdentity: ObjectIdentifier? { nil }
@@ -2002,6 +2006,10 @@ enum PlayerPerformanceCopyTextFormatter {
                 })
         }
 
+        #if DEBUG
+        let recoveryText = RecoveryTraceStore.shared.exportText()
+        if !recoveryText.isEmpty { sections.append(recoveryText) }
+        #endif
         return redactedDiagnosticText(sections.joined(separator: "\n\n"))
     }
 

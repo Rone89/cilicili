@@ -294,6 +294,12 @@ final class NetworkPathSnapshot: @unchecked Sendable {
     nonisolated private let lock = NSLock()
     nonisolated(unsafe) private var cachedClass: PlaybackEnvironment.NetworkClass = .unknown
     nonisolated(unsafe) private var cachedUsesCellular = false
+    #if DEBUG
+    nonisolated(unsafe) private var cachedDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)?
+    nonisolated var recoveryDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)? {
+        lock.withLock { cachedDiagnosticsFlags }
+    }
+    #endif
 
     nonisolated private init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -323,6 +329,9 @@ final class NetworkPathSnapshot: @unchecked Sendable {
             value = .unknown
         }
         let didChange = lock.withLock {
+            #if DEBUG
+            cachedDiagnosticsFlags = (path.isConstrained, path.isExpensive)
+            #endif
             let previous = cachedClass
             let previousUsesCellular = cachedUsesCellular
             guard previous != value || previousUsesCellular != usesCellular else { return false }

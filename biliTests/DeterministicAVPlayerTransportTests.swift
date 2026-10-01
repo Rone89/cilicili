@@ -3,6 +3,7 @@ import AudioToolbox
 import CoreMedia
 import CoreVideo
 import Network
+import QuartzCore
 import UniformTypeIdentifiers
 import XCTest
 @testable import bili
@@ -99,6 +100,55 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         } catch {
             XCTFail("Deterministic playback scenario failed: \(error)")
         }
+    }
+
+    @MainActor
+    func testRecoveryTraceObservesFreshFramesWithoutReplacingItem() async throws {
+        let fixture = try await DeterministicDASHPlaybackFixture.make()
+        defer { fixture.server.stop() }
+        let engine = AVPlayerHLSBridgeEngine()
+        let host = PlaybackTestSurfaceHost()
+        defer { engine.stop(); host.close() }
+        engine.attachSurface(host.surface)
+        var firstFrame = false
+        engine.onFirstFrame = { _ in firstFrame = true }
+        try await engine.prepare(source: fixture.primarySource)
+        engine.play()
+        try await waitUntil("initial frame") { firstFrame }
+        try await waitUntil("moving playback") { (engine.snapshot(durationHint: 8).currentTime ?? 0) > 0.4 }
+        let item = engine.debugPlayerItemIdentity
+
+        engine.pause()
+        let pauseAt = CACurrentMediaTime()
+        engine.debugBeginRecoveryTrace(type: "manualResume", at: pauseAt, fields: ["pauseStartedAt": String(pauseAt)])
+        let resumeID = try XCTUnwrap(engine.debugRecoveryTraceIdentity)
+        engine.play()
+        try await waitUntil("new frame after resume") {
+            RecoveryTraceStore.shared.summary(resumeID)?.contains("firstNewFrame@") == true
+        }
+        let resumeSummary = try XCTUnwrap(RecoveryTraceStore.shared.summary(resumeID))
+        XCTAssertTrue(resumeSummary.contains("playCalled"))
+        XCTAssertTrue(resumeSummary.contains("audioSessionActivationComplete"))
+        XCTAssertFalse(resumeSummary.contains("bufferAheadAtResume=-"))
+        XCTAssertEqual(engine.debugPlayerItemIdentity, item)
+
+        engine.debugBeginRecoveryTrace(type: "userSeek", at: CACurrentMediaTime(), fields: ["rawTarget": "4.8", "wasPlayingBeforeSeek": "true"])
+        let seekID = try XCTUnwrap(engine.debugRecoveryTraceIdentity)
+        engine.pause()
+        let target = await engine.seekAfterUserScrub(toProgress: 0.6, duration: fixture.primarySource.durationHint)
+        XCTAssertNotNil(target)
+        engine.recoverSurface()
+        engine.play()
+        try await waitUntil("new target frame after seek") {
+            RecoveryTraceStore.shared.summary(seekID)?.contains("firstTargetFrame@") == true
+        }
+        let seekSummary = try XCTUnwrap(RecoveryTraceStore.shared.summary(seekID))
+        XCTAssertTrue(seekSummary.contains("seekCompletion"))
+        XCTAssertTrue(seekSummary.contains("recoverSurfaceComplete"))
+        XCTAssertTrue(seekSummary.contains("toleranceBefore=0.35"))
+        XCTAssertEqual(engine.debugPlayerItemIdentity, item)
+        engine.stop()
+        XCTAssertNil(engine.debugRecoveryTraceIdentity)
     }
 
     @MainActor
