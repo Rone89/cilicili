@@ -215,6 +215,94 @@ nonisolated enum RecoveryTraceDiagnostics {
     }
 }
 
+/// Timestamp evidence from existing reads only; never used to authorize playback or reveal.
+nonisolated struct RecoveryVideoObservation {
+    enum Origin: String, CaseIterable, Sendable {
+        case snapshot, renderedTime, frameImage, debugPoll
+    }
+
+    struct Sample: Equatable, Sendable {
+        let at: Double
+        let mediaTime: Double
+        let origin: Origin
+    }
+
+    private struct Counts {
+        var reads = 0
+        var missing = 0
+        var rejected = 0
+        var repeated = 0
+        var lastAt: Double?
+        var lastMediaTime: Double?
+        var maxGap: Double?
+    }
+
+    private var counts: [Origin: Counts] = [:]
+    private var comparisonSample: Sample?
+    private var lastAt: Double?
+    private(set) var firstAvailable: Sample?
+    private(set) var firstAdvancing: Sample?
+
+    /// Returns at most two milestone names per trace. Repeated/missing samples only update counters.
+    mutating func observe(frameTime: Double?, qualifies: Bool, origin: Origin, at: Double) -> String? {
+        guard at.isFinite, lastAt.map({ at >= $0 }) ?? true else { return nil }
+        lastAt = at
+        var values = counts[origin] ?? Counts()
+        values.reads += 1
+        if let previousAt = values.lastAt {
+            values.maxGap = max(values.maxGap ?? 0, at - previousAt)
+        }
+        values.lastAt = at
+        defer { counts[origin] = values }
+        guard let frameTime else {
+            values.missing += 1
+            return nil
+        }
+        guard qualifies, frameTime.isFinite, frameTime >= 0 else {
+            values.rejected += 1
+            return nil
+        }
+        if let previousTime = values.lastMediaTime, abs(frameTime - previousTime) <= 0.001 {
+            values.repeated += 1
+        }
+        values.lastMediaTime = frameTime
+        let sample = Sample(at: at, mediaTime: frameTime, origin: origin)
+        guard let previous = comparisonSample else {
+            comparisonSample = sample
+            firstAvailable = sample
+            return "targetVideoAvailable"
+        }
+        guard firstAdvancing == nil else { return nil }
+        if frameTime < previous.mediaTime - 0.001 {
+            comparisonSample = sample
+        } else if frameTime > previous.mediaTime + 0.001 {
+            firstAdvancing = sample
+            return "targetVideoAdvanceObserved"
+        }
+        return nil
+    }
+
+    var fields: [String: String] {
+        var fields = [
+            "availableAt": firstAvailable.map { String($0.at) } ?? "-",
+            "availableOrigin": firstAvailable?.origin.rawValue ?? "-",
+            "advancingAt": firstAdvancing.map { String($0.at) } ?? "-",
+            "advancingOrigin": firstAdvancing?.origin.rawValue ?? "-",
+            "observation": "videoOutputTimestampNotDisplayPresentation",
+        ]
+        for origin in Origin.allCases {
+            guard let value = counts[origin] else { continue }
+            let prefix = origin.rawValue
+            fields["\(prefix)Reads"] = String(value.reads)
+            fields["\(prefix)Missing"] = String(value.missing)
+            fields["\(prefix)Rejected"] = String(value.rejected)
+            fields["\(prefix)Repeated"] = String(value.repeated)
+            fields["\(prefix)MaxGapMs"] = value.maxGap.map { String($0 * 1_000) } ?? "-"
+        }
+        return fields
+    }
+}
+
 nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
     struct Event: Equatable, Sendable {
         let name: String
@@ -283,6 +371,12 @@ nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
         )
         let firstFrame = type == "userSeek" ? (firstTargetFrame ?? firstNewFrame) : (firstNewFrame ?? firstTargetFrame)
         let uiReveal = firstEvent(named: ["uiReveal"], after: seekRequested?.at)
+        let videoObservation = events.last { $0.name == "videoObservationSummary" }?.fields
+        let videoAvailableAt = recoveryTraceDouble(videoObservation?["availableAt"])
+        let videoAdvancingAt = recoveryTraceDouble(videoObservation?["advancingAt"])
+        let uiAdvanceConfirmation = events.first {
+            $0.name == "uiRevealDecision" && $0.fields["hasAdvancingRenderedFrames"] == "true"
+        }
 
         let resumeAnchor = resumeEvent?.at ?? (startedAt.isFinite ? startedAt : nil)
         let pauseDuration = resumeEvent.flatMap { event -> Double? in
@@ -343,6 +437,13 @@ nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
             "seekRequestedToFirstTargetFrame=\(recoveryTraceDuration(seekRequestedToFirstTargetFrame))",
             "firstTargetFrameToUIReveal=\(recoveryTraceDuration(firstTargetFrameToUIReveal))",
             "seekRequestedToUIReveal=\(recoveryTraceDuration(seekRequestedToUIReveal))",
+            "targetVideoAvailableToAdvance=\(recoveryTraceDuration(duration(from: videoAvailableAt, to: videoAdvancingAt)))",
+            "playToVideoAdvanceObserved=\(recoveryTraceDuration(duration(from: playCalled?.at, to: videoAdvancingAt)))",
+            "playingToVideoAdvanceObserved=\(recoveryTraceDuration(duration(from: playing?.at, to: videoAdvancingAt)))",
+            "videoAdvanceToUIConfirmation=\(recoveryTraceDuration(duration(from: videoAdvancingAt, to: uiAdvanceConfirmation?.at)))",
+            "videoAdvanceToUIReveal=\(recoveryTraceDuration(duration(from: videoAdvancingAt, to: uiReveal?.at)))",
+            "videoAvailableOrigin=\(videoObservation?["availableOrigin"] ?? "-")",
+            "videoAdvancingOrigin=\(videoObservation?["advancingOrigin"] ?? "-")",
             "targetVideoRangeSource=\(videoRange.source)",
             "targetVideoRangeTTFB=\(videoRange.ttfb)",
             "targetAudioRangeSource=\(audioRange.source)",

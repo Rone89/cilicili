@@ -110,3 +110,34 @@ created. Audio-only and near-end seeks retain their previous readiness behavior.
 a decodable static frame from observed advancing video. These are timestamp
 observations, not a physical-display measurement. The 2.4s timeout fallback
 remains a limitation when no moving-frame evidence arrives.
+
+## Video availability versus advancement attribution
+
+DEBUG `targetVideoAvailable` and `targetVideoAdvanceObserved` reuse timestamps
+returned by existing VideoOutput reads. Origins are `snapshot`, `renderedTime`,
+`frameImage`, and the existing `debugPoll`. No additional read, output, task or
+sampling cadence is introduced. Reads are counted only after user-seek completion
+and play issuance; qualifying samples require a ready surface and the diagnostic
+target window of ±0.75s. This window is broader than the UI eligibility window,
+so diagnostic advancement alone does not authorize reveal. Read counters include
+existing availability checks with no new pixel buffer. The image fallback read
+that does not request a display timestamp is excluded; no timestamp is invented.
+
+Availability may be a static target frame. Advancement requires two eligible
+timestamps showing forward progression; this is observed output progression,
+not proof of physical screen presentation. Missing samples and repeated timestamps
+do not establish advancement. A new trace starts without prior evidence.
+
+`videoObservationSummary` is emitted at UI reveal, supersession or termination.
+It retains first availability/advancement timestamps and origins, per-reader read,
+missing, rejected and repeated counts, and maximum read intervals. Large reader
+intervals indicate an observation gap, not necessarily a decoding stall.
+Summary timings separate availability-to-advancement, play/playing-to-advancement,
+advancement-to-UI-confirmation, and advancement-to-UI-reveal. Missing or reversed
+intervals remain `-`. Existing `firstTargetFrame` retains its original definition.
+
+Compare advancement origins and per-reader gaps on device. A frame first observed
+by DEBUG polling may precede UI confirmation; a late observation from every reader
+cannot distinguish delayed output from absence of intervening reads. The trace
+does not measure actual audible output or compositor scanout. The 120ms settle,
+2.4s fallback, mute/reveal behavior and all playback/network policies are unchanged.

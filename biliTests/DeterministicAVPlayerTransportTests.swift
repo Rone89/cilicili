@@ -146,6 +146,16 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertTrue(seekSummary.contains("seekCompletion"))
         XCTAssertTrue(seekSummary.contains("recoverSurfaceComplete"))
         XCTAssertTrue(seekSummary.contains("toleranceBefore=0.35"))
+        try await waitUntil("advancing target timestamps from existing snapshot reads") {
+            _ = engine.snapshot(durationHint: fixture.primarySource.durationHint)
+            return RecoveryTraceStore.shared.summary(seekID)?.contains("targetVideoAdvanceObserved@") == true
+        }
+        engine.debugRecoveryEvent("uiReveal", fields: ["reason": "testObservationBoundary"])
+        let observationSummary = try XCTUnwrap(RecoveryTraceStore.shared.summary(seekID))
+        XCTAssertTrue(observationSummary.contains("targetVideoAvailable@"))
+        XCTAssertTrue(observationSummary.contains("videoObservationSummary@"))
+        XCTAssertFalse(observationSummary.contains("playToVideoAdvanceObserved=-"))
+        XCTAssertFalse(observationSummary.contains("videoAdvancingOrigin=-"))
         XCTAssertEqual(engine.debugPlayerItemIdentity, item)
         engine.stop()
         XCTAssertNil(engine.debugRecoveryTraceIdentity)

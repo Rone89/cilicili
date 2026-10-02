@@ -104,6 +104,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var debugRecoveryFrameObserved = false
     private var debugRecoveryUIRevealed = false
     private var debugRecoveryFrameTask: Task<Void, Never>?
+    private var debugRecoveryVideoObservation = RecoveryVideoObservation()
     private var debugAudioPhase = "other"
     private var debugSeekProtectionTraceID: String?
     #endif
@@ -1060,6 +1061,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             forItemTime: hostItemTime,
             itemTimeForDisplay: &displayTime
         ) {
+            #if DEBUG
+            debugObserveRecoveryVideoSample(
+                displayTime.isValid ? self.displayTime(fromPlayerTime: displayTime.seconds) : nil,
+                origin: .frameImage
+            )
+            #endif
             return cacheVideoFrameImage(from: pixelBuffer)
         }
 
@@ -1088,8 +1095,18 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             forItemTime: hostItemTime,
             itemTimeForDisplay: &itemDisplayTime
         ) else {
+            #if DEBUG
+            debugObserveRecoveryVideoSample(nil, origin: cachesFrameImage ? .snapshot : .renderedTime)
+            #endif
             return nil
         }
+
+        #if DEBUG
+        debugObserveRecoveryVideoSample(
+            itemDisplayTime.isValid ? displayTime(fromPlayerTime: itemDisplayTime.seconds) : nil,
+            origin: cachesFrameImage ? .snapshot : .renderedTime
+        )
+        #endif
 
         if cachesFrameImage {
             _ = cacheVideoFrameImage(from: pixelBuffer)
@@ -2980,6 +2997,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryPlayAt = nil
         debugRecoveryFrameObserved = false
         debugRecoveryUIRevealed = false
+        debugRecoveryVideoObservation = RecoveryVideoObservation()
         let environment = PlaybackEnvironment.current
         let flags = NetworkPathSnapshot.shared.recoveryDiagnosticsFlags
         var context = fields
@@ -3005,6 +3023,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     func debugRecoveryEvent(_ name: String, fields: [String: String] = [:]) {
         guard let id = debugRecoveryTraceID else { return }
+        if debugRecoveryType == "userSeek", ["uiReveal", "sessionEnded", "superseded"].contains(name) {
+            RecoveryTraceStore.shared.event(id, "videoObservationSummary", fields: debugRecoveryVideoObservation.fields)
+        }
         RecoveryTraceStore.shared.event(id, name, fields: fields)
         if name == "uiReveal" { debugRecoveryUIRevealed = true }
         if name == "sessionEnded" || name == "superseded" || (name == "uiReveal" && debugRecoveryFrameObserved) {
@@ -3037,14 +3058,40 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private func debugObserveRecoveryVideoSample(_ frameTime: Double?, origin: RecoveryVideoObservation.Origin) {
+        guard let id = debugRecoveryTraceID, debugRecoveryType == "userSeek",
+              debugRecoverySeekCompleted, debugRecoveryPlayAt != nil else { return }
+        let surfaceReady = playerViewController?.isReadyForDisplay == true || playerLayer?.isReadyForDisplay == true
+        let qualifies = frameTime.map {
+            surfaceReady && RecoveryTraceDiagnostics.isRecoveryFrame(type: debugRecoveryType, frameTime: $0,
+                baseline: debugRecoveryBaseline, target: debugRecoveryTarget, seekCompleted: true, playCalled: true)
+        } ?? false
+        let at = CACurrentMediaTime()
+        if let event = debugRecoveryVideoObservation.observe(frameTime: frameTime, qualifies: qualifies, origin: origin, at: at) {
+            let status = player.timeControlStatus
+            let statusLabel = status == .playing ? "playing" : status == .waitingToPlayAtSpecifiedRate ? "waiting" : "paused"
+            RecoveryTraceStore.shared.event(id, event, at: at, fields: [
+                "origin": origin.rawValue, "frameTime": frameTime.map { String($0) } ?? "-",
+                "timeControlStatus": statusLabel,
+                "waitingReason": player.reasonForWaitingToPlay?.rawValue ?? "-",
+                "targetWindowSeconds": "0.75", "observation": "videoOutputTimestampNotDisplayPresentation",
+            ])
+        }
+    }
+
     private func debugPollRecoveryFrame(traceID: String) -> Bool {
         guard debugRecoveryTraceID == traceID, !isStopped, !debugRecoveryFrameObserved,
               let output = videoOutput, player.currentItem === playerItem else { return false }
         let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
-        guard output.hasNewPixelBuffer(forItemTime: itemTime) else { return true }
+        guard output.hasNewPixelBuffer(forItemTime: itemTime) else {
+            debugObserveRecoveryVideoSample(nil, origin: .debugPoll)
+            return true
+        }
         var displayTime = CMTime.invalid
-        guard output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: &displayTime) != nil,
-              displayTime.isValid, displayTime.seconds.isFinite else { return true }
+        let hasPixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: &displayTime) != nil
+        debugObserveRecoveryVideoSample(hasPixelBuffer && displayTime.isValid
+            ? self.displayTime(fromPlayerTime: displayTime.seconds) : nil, origin: .debugPoll)
+        guard hasPixelBuffer, displayTime.isValid, displayTime.seconds.isFinite else { return true }
         let frameTime = self.displayTime(fromPlayerTime: displayTime.seconds)
         guard playerViewController?.isReadyForDisplay == true || playerLayer?.isReadyForDisplay == true else { return true }
         guard RecoveryTraceDiagnostics.isRecoveryFrame(type: debugRecoveryType, frameTime: frameTime,
