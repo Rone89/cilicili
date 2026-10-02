@@ -94,4 +94,47 @@ final class PlaybackRecoveryVideoObservationTests: XCTestCase {
         XCTAssertTrue(record.summary.contains("targetVideoAvailableToAdvance=600.0ms"))
         XCTAssertEqual(RecoveryVideoObservation().fields["debugPollMaxGapMs"], "-")
     }
+
+    func testSummaryExportsWorkAndRevealScheduleSeparately() {
+        var work = RecoveryWorkTiming()
+        work.record(startedAt: 1, completedAt: 1.01)
+        var timing = RecoveryRevealTiming()
+        timing.recordEvaluation(startedAt: 2, completedAt: 2.005, readySince: 2, settleDelay: 0.12, settled: false)
+        timing.recordEvaluation(startedAt: 2.25, completedAt: 2.26, readySince: 2, settleDelay: 0.12, settled: true)
+        var record = RecoveryTraceRecord(id: "s", type: "userSeek", metricsID: nil, startedAt: 1)
+        record.record(name: "seekRequested", at: 1)
+        record.record(name: "videoObservationSummary", at: 2.26, fields: work.fields(prefix: "frameImageConvert"))
+        record.record(name: "uiRevealTiming", at: 2.26, fields: timing.fields)
+        record.record(name: "uiReveal", at: 2.27, fields: ["observation": "seekStateClearedNotDisplayPresentation"])
+        XCTAssertTrue(record.summary.contains("frameImageConvertCount=1"))
+        XCTAssertTrue(record.summary.contains("frameImageConvertMaxMs=10.0"))
+        XCTAssertTrue(record.summary.contains("uiEvaluationMaxGapMs=250.0"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineOvershootMs=130.0"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineToUIReveal=150.0ms"))
+        XCTAssertTrue(record.summary.contains("uiRevealObservation=seekStateClearedNotDisplayPresentation"))
+    }
+
+    func testSummaryKeepsUnobservedAndResetDeadlineMissing() {
+        var record = RecoveryTraceRecord(id: "s", type: "userSeek", metricsID: nil, startedAt: 1)
+        XCTAssertTrue(record.summary.contains("frameImageConvertTotalMs=-"))
+        XCTAssertTrue(record.summary.contains("uiEvaluationMaxGapMs=-"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineToUIReveal=-"))
+        var timing = RecoveryRevealTiming()
+        timing.recordEvaluation(startedAt: 2, completedAt: 2, readySince: nil, settleDelay: 0.12, settled: true)
+        record.record(name: "uiRevealTiming", at: 2, fields: timing.fields)
+        record.record(name: "uiReveal", at: 2)
+        XCTAssertTrue(record.summary.contains("uiEvaluationMaxMs=0.0"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineToUIReveal=-"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineOvershootMs=-"))
+    }
+
+    func testManualResumeSummaryIncludesReadWorkWithoutInventingUIEvidence() {
+        var work = RecoveryWorkTiming()
+        work.record(startedAt: 1, completedAt: 1.002)
+        var record = RecoveryTraceRecord(id: "r", type: "manualResume", metricsID: nil, startedAt: 1)
+        record.record(name: "videoObservationSummary", at: 1.1, fields: work.fields(prefix: "debugPollCopy"))
+        record.record(name: "firstNewFrame", at: 1.1)
+        XCTAssertTrue(record.summary.contains("debugPollCopyMaxMs=2.0"))
+        XCTAssertTrue(record.summary.contains("settleDeadlineToUIReveal=-"))
+    }
 }

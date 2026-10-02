@@ -105,6 +105,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var debugRecoveryUIRevealed = false
     private var debugRecoveryFrameTask: Task<Void, Never>?
     private var debugRecoveryVideoObservation = RecoveryVideoObservation()
+    private var debugRecoveryWorkTimings: [String: RecoveryWorkTiming] = [:]
     private var debugAudioPhase = "other"
     private var debugSeekProtectionTraceID: String?
     #endif
@@ -1057,10 +1058,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         let hostTime = CACurrentMediaTime()
         let hostItemTime = videoOutput.itemTime(forHostTime: hostTime)
         var displayTime = CMTime.invalid
-        if let pixelBuffer = videoOutput.copyPixelBuffer(
+        #if DEBUG
+        let copyStartedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        #endif
+        let copiedPixelBuffer = videoOutput.copyPixelBuffer(
             forItemTime: hostItemTime,
             itemTimeForDisplay: &displayTime
-        ) {
+        )
+        #if DEBUG
+        debugRecordRecoveryWork("frameImageCopy", startedAt: copyStartedAt)
+        #endif
+        if let pixelBuffer = copiedPixelBuffer {
             #if DEBUG
             debugObserveRecoveryVideoSample(
                 displayTime.isValid ? self.displayTime(fromPlayerTime: displayTime.seconds) : nil,
@@ -1071,10 +1079,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
 
         let currentItemTime = player.currentTime()
-        guard let pixelBuffer = videoOutput.copyPixelBuffer(
+        #if DEBUG
+        let fallbackCopyStartedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        #endif
+        let fallbackPixelBuffer = videoOutput.copyPixelBuffer(
             forItemTime: currentItemTime,
             itemTimeForDisplay: nil
-        ) else {
+        )
+        #if DEBUG
+        debugRecordRecoveryWork("frameImageCopy", startedAt: fallbackCopyStartedAt)
+        #endif
+        guard let pixelBuffer = fallbackPixelBuffer else {
             return lastVideoFrameImage
         }
         return cacheVideoFrameImage(from: pixelBuffer)
@@ -1091,10 +1106,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
         let hostItemTime = videoOutput.itemTime(forHostTime: CACurrentMediaTime())
         var itemDisplayTime = CMTime.invalid
-        guard let pixelBuffer = videoOutput.copyPixelBuffer(
+        #if DEBUG
+        let copyStartedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        #endif
+        let copiedPixelBuffer = videoOutput.copyPixelBuffer(
             forItemTime: hostItemTime,
             itemTimeForDisplay: &itemDisplayTime
-        ) else {
+        )
+        #if DEBUG
+        debugRecordRecoveryWork(cachesFrameImage ? "snapshotCopy" : "renderedTimeCopy", startedAt: copyStartedAt)
+        #endif
+        guard let pixelBuffer = copiedPixelBuffer else {
             #if DEBUG
             debugObserveRecoveryVideoSample(nil, origin: cachesFrameImage ? .snapshot : .renderedTime)
             #endif
@@ -1120,7 +1142,11 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     func currentSurfaceSnapshotImage() -> UIImage? {
-        surfaceView?.biliRenderedSnapshotImage()
+        #if DEBUG
+        let startedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        defer { debugRecordRecoveryWork("surfaceSnapshot", startedAt: startedAt) }
+        #endif
+        return surfaceView?.biliRenderedSnapshotImage()
     }
 
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? {
@@ -1334,6 +1360,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private func makeImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+        #if DEBUG
+        let startedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        defer { debugRecordRecoveryWork("frameImageConvert", startedAt: startedAt) }
+        #endif
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         guard width > 0, height > 0 else { return nil }
@@ -1347,7 +1377,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard let image = makeImage(from: pixelBuffer) else { return lastVideoFrameImage }
         // Do not replace a usable recovery frame with a transient black decoder
         // output. The old image is only used while a locked screen is recovering.
-        if !image.biliLooksLikeBlackFrame {
+        #if DEBUG
+        let checkStartedAt = debugRecoveryTraceID.map { _ in CACurrentMediaTime() }
+        #endif
+        let looksLikeBlackFrame = image.biliLooksLikeBlackFrame
+        #if DEBUG
+        debugRecordRecoveryWork("blackFrameCheck", startedAt: checkStartedAt)
+        #endif
+        if !looksLikeBlackFrame {
             lastVideoFrameImage = image
         }
         return image
@@ -3005,6 +3042,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryFrameObserved = false
         debugRecoveryUIRevealed = false
         debugRecoveryVideoObservation = RecoveryVideoObservation()
+        debugRecoveryWorkTimings.removeAll(keepingCapacity: true)
         let environment = PlaybackEnvironment.current
         let flags = NetworkPathSnapshot.shared.recoveryDiagnosticsFlags
         var context = fields
@@ -3086,8 +3124,19 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private func debugRecordRecoveryWork(_ prefix: String, startedAt: Double?) {
+        guard debugRecoveryTraceID != nil, let startedAt else { return }
+        debugRecoveryWorkTimings[prefix, default: RecoveryWorkTiming()].record(
+            startedAt: startedAt, completedAt: CACurrentMediaTime())
+    }
+
     private func debugRecordRecoveryVideoObservationSummary(traceID: String, boundary: String) {
         var fields = debugRecoveryVideoObservation.fields
+        for prefix in ["snapshotCopy", "renderedTimeCopy", "frameImageCopy", "debugPollCopy", "frameImageConvert", "blackFrameCheck", "surfaceSnapshot"] {
+            fields.merge((debugRecoveryWorkTimings[prefix] ?? RecoveryWorkTiming()).fields(prefix: prefix)) { _, new in new }
+        }
+        fields["workTimingScope"] = "activeRecoveryTraceExistingReads"
+        fields["uiRevealMeaning"] = "seekStateClearedNotDisplayPresentation"
         fields["boundary"] = boundary
         RecoveryTraceStore.shared.event(traceID, "videoObservationSummary", fields: fields)
     }
@@ -3101,7 +3150,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             return true
         }
         var displayTime = CMTime.invalid
+        let copyStartedAt = CACurrentMediaTime()
         let hasPixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: &displayTime) != nil
+        debugRecordRecoveryWork("debugPollCopy", startedAt: copyStartedAt)
         debugObserveRecoveryVideoSample(hasPixelBuffer && displayTime.isValid
             ? self.displayTime(fromPlayerTime: displayTime.seconds) : nil, origin: .debugPoll)
         guard hasPixelBuffer, displayTime.isValid, displayTime.seconds.isFinite else { return true }
@@ -3113,6 +3164,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         // A cached frame at the old playhead is not evidence of moving/target video.
         guard abs(frameTime - debugRecoveryBaseline) > 0.001 else { return true }
         debugRecoveryFrameObserved = true
+        if debugRecoveryType == "manualResume" {
+            debugRecordRecoveryVideoObservationSummary(traceID: traceID, boundary: "firstNewFrame")
+        }
         RecoveryTraceStore.shared.event(traceID, debugRecoveryType == "manualResume" ? "firstNewFrame" : "firstTargetFrame",
             fields: ["frameTime": String(frameTime), "observation": "videoOutput+surfaceReady"])
         debugRecoveryFrameTask = nil

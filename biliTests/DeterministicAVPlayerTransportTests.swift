@@ -130,6 +130,8 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertTrue(resumeSummary.contains("playCalled"))
         XCTAssertTrue(resumeSummary.contains("audioSessionActivationComplete"))
         XCTAssertFalse(resumeSummary.contains("bufferAheadAtResume=-"))
+        XCTAssertFalse(resumeSummary.contains("debugPollCopyMaxMs=-"))
+        XCTAssertTrue(resumeSummary.contains("videoObservationSummary@"))
         XCTAssertEqual(engine.debugPlayerItemIdentity, item)
 
         engine.debugBeginRecoveryTrace(type: "userSeek", at: CACurrentMediaTime(), fields: ["rawTarget": "4.8", "wasPlayingBeforeSeek": "true"])
@@ -156,6 +158,8 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertTrue(observationSummary.contains("videoObservationSummary@"))
         XCTAssertFalse(observationSummary.contains("playToVideoAdvanceObserved=-"))
         XCTAssertFalse(observationSummary.contains("videoAdvancingOrigin=-"))
+        XCTAssertFalse(observationSummary.contains("snapshotCopyMaxMs=-"))
+        XCTAssertFalse(observationSummary.contains("debugPollCopyMaxMs=-"))
         XCTAssertEqual(engine.debugPlayerItemIdentity, item)
 
         engine.debugBeginRecoveryTrace(type: "userSeek", at: CACurrentMediaTime(), fields: ["rawTarget": "2.4"])

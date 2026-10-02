@@ -377,6 +377,7 @@ nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
         let firstFrame = type == "userSeek" ? (firstTargetFrame ?? firstNewFrame) : (firstNewFrame ?? firstTargetFrame)
         let uiReveal = firstEvent(named: ["uiReveal"], after: seekRequested?.at)
         let videoObservation = events.last { $0.name == "videoObservationSummary" }?.fields
+        let revealTiming = events.last { $0.name == "uiRevealTiming" }?.fields
         let videoAvailableAt = recoveryTraceDouble(videoObservation?["availableAt"])
         let videoAdvancingAt = recoveryTraceDouble(videoObservation?["advancingAt"])
         let uiAdvanceConfirmation = events.first {
@@ -476,6 +477,20 @@ nonisolated struct RecoveryTraceRecord: Equatable, Sendable {
             "toleranceBefore=\(seekAligned?.fields["toleranceBefore"] ?? "-")",
             "toleranceAfter=\(seekAligned?.fields["toleranceAfter"] ?? "-")",
         ])
+        // Work totals are observational and can overlap UI evaluation time; do not add them.
+        for prefix in ["snapshotCopy", "renderedTimeCopy", "frameImageCopy", "debugPollCopy", "frameImageConvert", "blackFrameCheck", "surfaceSnapshot"] {
+            for suffix in ["Count", "TotalMs", "MeanMs", "MaxMs"] {
+                let key = prefix + suffix
+                parts.append("\(key)=\(videoObservation?[key] ?? "-")")
+            }
+        }
+        for key in ["uiEvaluationCount", "uiEvaluationTotalMs", "uiEvaluationMeanMs", "uiEvaluationMaxMs",
+                    "uiEvaluationMaxGapMs", "settleDeadlineOvershootMs"] {
+            parts.append("\(key)=\(revealTiming?[key] ?? "-")")
+        }
+        let deadlineToReveal = duration(from: recoveryTraceDouble(revealTiming?["settleDeadlineAt"]), to: uiReveal?.at)
+        parts.append("settleDeadlineToUIReveal=\(recoveryTraceDuration(deadlineToReveal))")
+        parts.append("uiRevealObservation=\(uiReveal?.fields["observation"] ?? "-")")
         return parts.joined(separator: " ")
     }
 

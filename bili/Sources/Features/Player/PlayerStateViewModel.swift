@@ -539,6 +539,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     #if DEBUG
     private var debugSeekRevealState = RecoveryRevealDiagnosticState()
     private var debugSeekRevealFields: [String: String] = [:]
+    private var debugSeekRevealTiming = RecoveryRevealTiming()
     #endif
     private var navigationAudioSuspension: NavigationAudioSuspension?
     private weak var seamlessPlaybackHandoffSource: PlayerStateViewModel?
@@ -5166,7 +5167,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             )
         }
         #if DEBUG
-        engine.debugRecoveryEvent("uiReveal", fields: ["reason": "overlayRemoved"])
+        engine.debugRecoveryEvent("uiRevealTiming", fields: debugSeekRevealTiming.fields)
+        engine.debugRecoveryEvent("uiReveal", fields: ["reason": "overlayRemoved", "observation": "seekStateClearedNotDisplayPresentation"])
         #endif
         isUserSeeking = false
         isBuffering = false
@@ -5562,6 +5564,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         #if DEBUG
         debugSeekRevealState = RecoveryRevealDiagnosticState()
         debugSeekRevealFields = [:]
+        debugSeekRevealTiming = RecoveryRevealTiming()
         #endif
         pendingUserSeekRevealTargetTime = targetTime
         pendingUserSeekRevealSettling.reset()
@@ -5597,6 +5600,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard let targetTime = pendingUserSeekRevealTargetTime else { return true }
         let now = CACurrentMediaTime()
         #if DEBUG
+        var diagnosticSettled = false
+        defer {
+            debugSeekRevealTiming.recordEvaluation(startedAt: now, completedAt: CACurrentMediaTime(),
+                readySince: pendingUserSeekRevealSettling.readySince,
+                settleDelay: userSeekRevealSettleDelay, settled: diagnosticSettled)
+        }
         debugSeekRevealFields = ["targetTime": String(targetTime),
             "currentTime": snapshot.currentTime.map { String($0) } ?? "-",
             "renderedVideoTime": snapshot.renderedVideoTime.map { String($0) } ?? "-",
@@ -5648,6 +5657,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             settleDelay: userSeekRevealSettleDelay
         )
         #if DEBUG
+        diagnosticSettled = settled
         debugSeekRevealFields["hasAdvancingRenderedFrames"] = String(pendingUserSeekRevealSettling.hasAdvancingRenderedFrames)
         debugSeekRevealFields["continuedVerifiedProgression"] = String(continuingVerifiedProgression)
         if let readySince = pendingUserSeekRevealSettling.readySince {
