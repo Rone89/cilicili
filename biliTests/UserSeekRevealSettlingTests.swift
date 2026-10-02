@@ -138,4 +138,98 @@ final class UserSeekRevealSettlingTests: XCTestCase {
         XCTAssertFalse(state.hasAdvancingRenderedFrames)
     }
 
+    func testNaturalForwardMotionPreservesSettleAfterLeavingTargetWindow() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 90.2667,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 0.255, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 90.3,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 0.575, settleDelay: 0.12)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 90.4333,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 0.6944276, settleDelay: 0.12))
+        let canContinue = state.canContinueAdvancingFrame(renderedVideoTime: 90.5333,
+            currentTime: 90.5602, isPlaying: true, playbackRate: 1, at: 0.812)
+        XCTAssertTrue(canContinue)
+        XCTAssertTrue(state.observe(frameReady: canContinue, renderedVideoTime: 90.5333,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 0.812, settleDelay: 0.12))
+        XCTAssertEqual(state.readySince, 0.575)
+    }
+
+    func testProgressionRequiresVerifiedAdvancingTargetAndResetsForNewSeek() {
+        var state = UserSeekRevealSettling()
+        func allowed(_ state: UserSeekRevealSettling) -> Bool {
+            state.canContinueAdvancingFrame(renderedVideoTime: 30.6, currentTime: 30.6,
+                isPlaying: true, playbackRate: 1, at: 1.3)
+        }
+        XCTAssertFalse(allowed(state))
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.3,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        XCTAssertFalse(allowed(state), "One static target frame cannot authorize continuation")
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.4,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        XCTAssertTrue(allowed(state))
+        state.reset()
+        XCTAssertFalse(allowed(state), "A new seek cannot inherit the previous target's motion")
+    }
+
+    func testProgressionRejectsBackwardFramesJumpsAndPlayheadMismatch() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.3,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.4,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        func allowed(frame: Double? = 30.6, playhead: Double? = 30.6,
+                     playing: Bool = true, rate: Double = 1, now: Double = 1.3) -> Bool {
+            state.canContinueAdvancingFrame(renderedVideoTime: frame, currentTime: playhead,
+                isPlaying: playing, playbackRate: rate, at: now)
+        }
+        XCTAssertTrue(allowed())
+        XCTAssertFalse(allowed(frame: 30.39, playhead: 30.39))
+        XCTAssertFalse(allowed(frame: 10, playhead: 10))
+        XCTAssertFalse(allowed(frame: 40, playhead: 40))
+        XCTAssertFalse(allowed(playhead: 32))
+        XCTAssertFalse(allowed(frame: nil))
+        XCTAssertFalse(allowed(frame: .nan))
+        XCTAssertFalse(allowed(playhead: nil))
+        XCTAssertFalse(allowed(playhead: .infinity))
+        XCTAssertFalse(allowed(playing: false))
+        XCTAssertFalse(allowed(rate: 0))
+        XCTAssertFalse(allowed(rate: .nan))
+        XCTAssertFalse(allowed(now: 0.9))
+        XCTAssertFalse(allowed(now: .nan))
+        let rejected = allowed(frame: 40, playhead: 40)
+        XCTAssertFalse(state.observe(frameReady: rejected, renderedVideoTime: 40,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.3, settleDelay: 0.12))
+        XCTAssertNil(state.readySince)
+        XCTAssertFalse(state.hasAdvancingRenderedFrames)
+    }
+
+    func testForwardMotionAllowanceUsesPlaybackRateAndOriginalAnchor() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.3,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 30.4,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        XCTAssertTrue(state.canContinueAdvancingFrame(renderedVideoTime: 31.2, currentTime: 31.2,
+            isPlaying: true, playbackRate: 2, at: 1.3))
+        XCTAssertFalse(state.canContinueAdvancingFrame(renderedVideoTime: 31.2, currentTime: 31.2,
+            isPlaying: true, playbackRate: 1, at: 1.3))
+        XCTAssertFalse(state.canContinueAdvancingFrame(renderedVideoTime: 31.2, currentTime: 31.2,
+            isPlaying: true, playbackRate: 0.5, at: 1.3))
+        _ = state.observe(frameReady: true, renderedVideoTime: 31.2,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.3, settleDelay: 0.12)
+        XCTAssertFalse(state.canContinueAdvancingFrame(renderedVideoTime: 32, currentTime: 32,
+            isPlaying: true, playbackRate: 2, at: 1.4), "Repeated samples must not extend the original motion budget")
+    }
 }

@@ -92,8 +92,14 @@ only after two matching rendered target timestamps show forward progression.
 A static target frame alone cannot authorize reveal. The window then retains
 verified advancing frames when a subsequent VideoOutput sample is absent, playback is still active,
 and the current playback time remains inside the existing target window. A missing
-sample cannot start the window. An explicitly rejected frame, an out-of-window
-playback position, or a new/cleared seek discards the evidence. The 2.4s fallback,
+sample cannot start the window. Once target timestamps have proved forward motion,
+a present frame may naturally leave the fixed target window during settling. It must
+remain nonregressing, within 0.5s of the current playhead, and within the elapsed-time
+allowance at the configured playback rate from the original verified frame. This
+does not widen initial target validation or authorize continuation from a missing
+sample outside the target window. DEBUG `continuedVerifiedProgression=true` and
+`reason=verifiedForwardProgression` identify this case. An invalid frame, implausible
+jump, playhead mismatch, or a new/cleared seek discards the evidence. The 2.4s fallback,
 seek tolerances, media warmup and AVPlayer configuration are unchanged.
 
 `uiRevealDecision` reports `reason=verifiedFrameSampleGap` and

@@ -5614,13 +5614,22 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return true
         }
         let pending = userSeekRevealMetric(targetTime: targetTime)
-        let frameReady = isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot)
+        let targetFrameReady = isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot)
         let previousReadySince = pendingUserSeekRevealSettling.readySince
         let isNearEnd = (snapshot.duration ?? duration ?? durationHint).map {
             targetTime >= max($0 - 0.35, 0)
         } ?? false
         let requiresAdvancingVideo = playbackContentMode == .video
             && snapshot.requiresRenderedVideoTimeForRecovery && !isNearEnd
+        let continuingVerifiedProgression = !targetFrameReady && requiresAdvancingVideo
+            && pendingUserSeekRevealSettling.canContinueAdvancingFrame(
+                renderedVideoTime: snapshot.renderedVideoTime,
+                currentTime: snapshot.currentTime,
+                isPlaying: snapshot.isPlaying,
+                playbackRate: playbackRate.rawValue,
+                at: now
+            )
+        let frameReady = targetFrameReady || continuingVerifiedProgression
         let missingSampleCanContinue = !frameReady && UserSeekRevealSettling.canContinueMissingSample(
             renderedVideoTime: snapshot.renderedVideoTime,
             requiresRenderedVideoTime: snapshot.requiresRenderedVideoTimeForRecovery,
@@ -5640,12 +5649,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         )
         #if DEBUG
         debugSeekRevealFields["hasAdvancingRenderedFrames"] = String(pendingUserSeekRevealSettling.hasAdvancingRenderedFrames)
+        debugSeekRevealFields["continuedVerifiedProgression"] = String(continuingVerifiedProgression)
         if let readySince = pendingUserSeekRevealSettling.readySince {
             debugSeekRevealFields.removeValue(forKey: "blockingReason")
             debugSeekRevealFields["stableElapsedMs"] = String((now - readySince) * 1_000)
             debugSeekRevealFields["preservedMissingSample"] = String(!frameReady)
             debugRecordSeekRevealDecision(settled ? "ready" : previousReadySince == nil ? "settleStarted" : "settling",
-                reason: frameReady ? "frameEligible" : "verifiedFrameSampleGap")
+                reason: continuingVerifiedProgression ? "verifiedForwardProgression"
+                    : frameReady ? "frameEligible" : "verifiedFrameSampleGap")
         } else {
             debugSeekRevealFields["settleWasReset"] = String(previousReadySince != nil)
             debugRecordSeekRevealDecision("blocked", reason: requiresAdvancingVideo && !pendingUserSeekRevealSettling.hasAdvancingRenderedFrames

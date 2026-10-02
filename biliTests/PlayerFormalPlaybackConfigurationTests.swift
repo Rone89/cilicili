@@ -1384,6 +1384,42 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
     }
 
+    @MainActor
+    func testUserSeekRevealsWhenVerifiedVideoNaturallyLeavesTargetWindow() async throws {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Seek advancing beyond target window", referer: "https://www.bilibili.com", engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        defer { player.stop(); coordinator.stopActivePlayback() }
+        engine.snapshotTime = 30.2667
+        engine.renderedVideoTime = 30.2667
+        engine.requiresRenderedVideoTimeForRecovery = true
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        for _ in 0..<100 where engine.playCallCount == 0 { await Task.yield() }
+        XCTAssertGreaterThan(engine.playCallCount, 0)
+        engine.snapshotTime = 30.3
+        engine.renderedVideoTime = 30.3
+        engine.onPlaybackStateChange?(.playing)
+        XCTAssertTrue(player.isUserSeeking)
+
+        // Normal forward motion crosses +0.5s before the settle timer is checked.
+        engine.snapshotTime = 30.5602
+        engine.renderedVideoTime = 30.5333
+        engine.onPlaybackStateChange?(.playing)
+        try await Task.sleep(nanoseconds: 180_000_000)
+        engine.onPlaybackStateChange?(.playing)
+        XCTAssertFalse(player.isUserSeeking, "Verified moving video must not wait for the 2.4s fallback")
+        player.finishUserSeekVisualReveal()
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
+    }
+
     private func makeUserDefaults() -> UserDefaults {
         let suiteName = "cc.bili.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
