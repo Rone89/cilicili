@@ -536,10 +536,17 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pendingUserSeekRevealTargetTime: TimeInterval?
     private var pendingUserSeekRevealSettling = UserSeekRevealSettling()
     private var pendingUserSeekRevealStartedAt: CFTimeInterval?
+    private var userSeekRevealDeadlineTask: Task<Void, Never>?
+    private var pendingUserSeekRevealDeadline: UserSeekRevealDeadline?
     #if DEBUG
     private var debugSeekRevealState = RecoveryRevealDiagnosticState()
     private var debugSeekRevealFields: [String: String] = [:]
     private var debugSeekRevealTiming = RecoveryRevealTiming()
+    var debugHasPendingUserSeekRevealDeadline: Bool { userSeekRevealDeadlineTask != nil }
+    func debugSuspendPeriodicPlaybackRefresh() {
+        timeObserver?.invalidate()
+        timeObserver = nil
+    }
     #endif
     private var navigationAudioSuspension: NavigationAudioSuspension?
     private weak var seamlessPlaybackHandoffSource: PlayerStateViewModel?
@@ -681,6 +688,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         appBackgroundResumeRecoveryTask = nil
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
+        userSeekRevealDeadlineTask?.cancel()
+        userSeekRevealDeadlineTask = nil
         surfaceReadinessResetTask?.cancel()
         surfaceReadinessResetTask = nil
         surfaceReadinessConfirmationTask?.cancel()
@@ -1104,6 +1113,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 )
             )
 #endif
+            cancelUserSeekRevealDeadline(reason: "surfaceChanged")
             surfaceAttachmentGeneration &+= 1
             if shouldPreservePlaybackReadinessDuringSurfaceHandoff(preservesReadinessDuringSurfaceHandoff) {
                 currentPlaybackSurfaceReadyGeneration = surfaceAttachmentGeneration
@@ -1264,6 +1274,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             )
         )
 #endif
+        cancelUserSeekRevealDeadline(reason: "surfaceDetached")
         surfaceAttachmentGeneration &+= 1
         surfaceReadinessConfirmationTask?.cancel()
         surfaceReadinessConfirmationTask = nil
@@ -3442,6 +3453,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         debugManualPauseStartedAt = nil
         #endif
         guard !isTerminated else { return }
+        cancelUserSeekRevealDeadline(reason: "newScrub")
         guard engine.hasMedia else { return }
         markUserSeekIntent()
         guard hasPresentedPlayback else { return }
@@ -5144,6 +5156,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
               snapshot.isPlaying,
               !shouldResumePlaybackAfterUserScrub
         else {
+            cancelUserSeekRevealDeadline(reason: "playbackGate")
             #if DEBUG
             if isUserSeeking {
                 debugSeekRevealFields = ["wantsAutoplay": String(wantsAutoplay), "snapshotPlayingFromRate": String(snapshot.isPlaying),
@@ -5557,6 +5570,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func setPendingUserSeekRevealTarget(_ targetTime: TimeInterval) {
+        cancelUserSeekRevealDeadline(reason: "targetChanged")
         guard targetTime.isFinite, targetTime >= 0 else {
             clearPendingUserSeekRevealTarget()
             return
@@ -5581,9 +5595,69 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     #endif
 
     private func clearPendingUserSeekRevealTarget() {
+        cancelUserSeekRevealDeadline(reason: "targetCleared")
         pendingUserSeekRevealTargetTime = nil
         pendingUserSeekRevealSettling.reset()
         pendingUserSeekRevealStartedAt = nil
+    }
+
+    private func cancelUserSeekRevealDeadline(reason: String) {
+        #if DEBUG
+        if pendingUserSeekRevealDeadline != nil {
+            engine.debugRecoveryEvent("uiRevealDeadlineCancelled", fields: ["reason": reason])
+        }
+        #endif
+        userSeekRevealDeadlineTask?.cancel()
+        userSeekRevealDeadlineTask = nil
+        pendingUserSeekRevealDeadline = nil
+    }
+
+    private func scheduleUserSeekRevealDeadlineIfNeeded() {
+        guard isUserSeeking, wantsAutoplay, !shouldResumePlaybackAfterUserScrub,
+              let target = pendingUserSeekRevealTargetTime,
+              let readySince = pendingUserSeekRevealSettling.readySince,
+              let deadline = UserSeekRevealDeadline(targetTime: target, readySince: readySince,
+                  settleDelay: userSeekRevealSettleDelay, seekGeneration: scrubSeekGeneration,
+                  surfaceGeneration: surfaceAttachmentGeneration),
+              deadline.remainingDelay(at: CACurrentMediaTime()) != nil
+        else {
+            cancelUserSeekRevealDeadline(reason: "windowUnavailableOrElapsed")
+            return
+        }
+        guard deadline != pendingUserSeekRevealDeadline else { return }
+        cancelUserSeekRevealDeadline(reason: "windowChanged")
+        pendingUserSeekRevealDeadline = deadline
+        let callbackGeneration = engineCallbackGeneration
+        #if DEBUG
+        engine.debugRecoveryEvent("uiRevealDeadlineScheduled", fields: ["deadlineAt": String(deadline.deadline)])
+        #endif
+        userSeekRevealDeadlineTask = Task { @MainActor [weak self] in
+            // Recalculate when the task starts so queueing does not extend the window.
+            if let delay = deadline.remainingDelay(at: CACurrentMediaTime()) {
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch { return }
+            }
+            guard !Task.isCancelled, let self,
+                  self.pendingUserSeekRevealDeadline == deadline else { return }
+            self.userSeekRevealDeadlineTask = nil
+            self.pendingUserSeekRevealDeadline = nil
+            guard !self.isTerminated, self.isUserSeeking, self.wantsAutoplay,
+                  !self.shouldResumePlaybackAfterUserScrub,
+                  self.engineCallbackGeneration == callbackGeneration,
+                  self.hasCurrentSurface(generation: deadline.surfaceGeneration),
+                  deadline.matches(targetTime: self.pendingUserSeekRevealTargetTime,
+                      readySince: self.pendingUserSeekRevealSettling.readySince,
+                      seekGeneration: self.scrubSeekGeneration,
+                      surfaceGeneration: self.surfaceAttachmentGeneration)
+            else { return }
+            #if DEBUG
+            self.engine.debugRecoveryEvent("uiRevealDeadlineCheck", fields: ["deadlineAt": String(deadline.deadline)])
+            #endif
+            // Take a fresh snapshot through the existing path. Reaching the deadline
+            // is only a reason to check; it never authorizes reveal by itself.
+            self.refreshPlaybackState()
+        }
     }
 
     private func userSeekRevealMetric(targetTime: TimeInterval) -> PendingSeekRecoveryMetric {
@@ -5656,6 +5730,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             at: now,
             settleDelay: userSeekRevealSettleDelay
         )
+        if settled {
+            cancelUserSeekRevealDeadline(reason: "windowSettled")
+        } else {
+            scheduleUserSeekRevealDeadlineIfNeeded()
+        }
         #if DEBUG
         diagnosticSettled = settled
         debugSeekRevealFields["hasAdvancingRenderedFrames"] = String(pendingUserSeekRevealSettling.hasAdvancingRenderedFrames)

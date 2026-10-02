@@ -1420,6 +1420,130 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
     }
 
+    @MainActor
+    func testSeekDeadlineRechecksFreshSnapshotWithoutPeriodicOrEngineCallbacks() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer {
+            withExtendedLifetime(surface) { player.stop() }
+            ActivePlaybackCoordinator.shared.stopActivePlayback()
+        }
+        try await waitForSeekDeadlineCondition { engine.recoveryEvents.contains("uiRevealDeadlineCheck") }
+        XCTAssertFalse(player.isUserSeeking)
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, true,
+            "Deadline reveal must still wait for the visual release callback before restoring audio")
+        player.finishUserSeekVisualReveal()
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
+    }
+
+    @MainActor
+    func testSeekDeadlineRejectsFreshInvalidFrame() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer {
+            withExtendedLifetime(surface) { player.stop() }
+            ActivePlaybackCoordinator.shared.stopActivePlayback()
+        }
+        engine.renderedVideoTime = 5
+        try await waitForSeekDeadlineCondition { engine.recoveryEvents.contains("uiRevealDeadlineCheck") }
+        XCTAssertTrue(player.isUserSeeking, "The timer itself must never authorize reveal")
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, true)
+    }
+
+    @MainActor
+    func testPauseCancelsPendingSeekDeadline() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer {
+            withExtendedLifetime(surface) { player.stop() }
+            ActivePlaybackCoordinator.shared.stopActivePlayback()
+        }
+        player.pause()
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(engine.recoveryEvents.contains("uiRevealDeadlineCheck"))
+        XCTAssertFalse(player.wantsAutoplay)
+    }
+
+    @MainActor
+    func testNewSeekToSameTargetCannotConsumeOldDeadline() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer {
+            withExtendedLifetime(surface) { player.stop() }
+            ActivePlaybackCoordinator.shared.stopActivePlayback()
+        }
+        let previousPlayCount = engine.playCallCount
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        try await waitForSeekDeadlineCondition { engine.playCallCount > previousPlayCount }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(engine.recoveryEvents.contains("uiRevealDeadlineCheck"))
+        XCTAssertTrue(player.isUserSeeking, "The replacement seek still has only a static frame")
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, true)
+    }
+
+    @MainActor
+    func testSurfaceDetachCancelsPendingSeekDeadline() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer { player.stop(); ActivePlaybackCoordinator.shared.stopActivePlayback() }
+        player.detachSurface(surface)
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(engine.recoveryEvents.contains("uiRevealDeadlineCheck"))
+    }
+
+    @MainActor
+    func testStopCancelsPendingSeekDeadline() async throws {
+        let (player, engine, surface) = try await makePlayerWithPendingSeekDeadline()
+        defer {
+            withExtendedLifetime(surface) {}
+            ActivePlaybackCoordinator.shared.stopActivePlayback()
+        }
+        player.stop()
+        XCTAssertFalse(player.debugHasPendingUserSeekRevealDeadline)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(engine.recoveryEvents.contains("uiRevealDeadlineCheck"))
+        XCTAssertFalse(engine.hasMedia)
+    }
+
+    @MainActor
+    private func makePlayerWithPendingSeekDeadline() async throws -> (PlayerStateViewModel, PlayerLifecycleEngineSpy, VideoSurfaceContainerView) {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Seek deadline recheck", referer: "https://www.bilibili.com", engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        engine.snapshotTime = 30
+        engine.renderedVideoTime = 30
+        engine.requiresRenderedVideoTimeForRecovery = true
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        try await waitForSeekDeadlineCondition { engine.playCallCount > 0 }
+        engine.snapshotTime = 30.04
+        engine.renderedVideoTime = 30.04
+        engine.onPlaybackStateChange?(.playing)
+        try await waitForSeekDeadlineCondition { player.debugHasPendingUserSeekRevealDeadline }
+        // Exclude the periodic fallback so this scenario proves the one-shot callback.
+        player.debugSuspendPeriodicPlaybackRefresh()
+        return (player, engine, surface)
+    }
+
+    @MainActor
+    private func waitForSeekDeadlineCondition(_ predicate: () -> Bool) async throws {
+        let timeout = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < timeout {
+            if predicate() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("Seek deadline condition did not become true")
+        throw NSError(domain: "SeekDeadlineTest", code: 1)
+    }
+
     private func makeUserDefaults() -> UserDefaults {
         let suiteName = "cc.bili.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -1448,6 +1572,12 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     var onPlaybackIntentChange: (@MainActor (Bool) -> Void)?
     var onLoadingProgressChange: (@MainActor (Double) -> Void)?
     var onFirstFrame: (@MainActor (TimeInterval) -> Void)?
+    #if DEBUG
+    private(set) var recoveryEvents: [String] = []
+    func debugRecoveryEvent(_ name: String, fields: [String: String]) {
+        recoveryEvents.append(name)
+    }
+    #endif
 
     private var isPlaying: Bool
     var snapshotTime: TimeInterval = 12
