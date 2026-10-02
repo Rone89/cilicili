@@ -534,7 +534,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var activeUserScrubSource: PlayerScrubInteractionSource?
     private var activeUserScrubStartedAt: CFTimeInterval?
     private var pendingUserSeekRevealTargetTime: TimeInterval?
-    private var pendingUserSeekRevealReadySince: CFTimeInterval?
+    private var pendingUserSeekRevealSettling = UserSeekRevealSettling()
     private var pendingUserSeekRevealStartedAt: CFTimeInterval?
     #if DEBUG
     private var debugSeekRevealState = RecoveryRevealDiagnosticState()
@@ -5564,7 +5564,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         debugSeekRevealFields = [:]
         #endif
         pendingUserSeekRevealTargetTime = targetTime
-        pendingUserSeekRevealReadySince = nil
+        pendingUserSeekRevealSettling.reset()
         pendingUserSeekRevealStartedAt = CACurrentMediaTime()
     }
 
@@ -5579,7 +5579,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     private func clearPendingUserSeekRevealTarget() {
         pendingUserSeekRevealTargetTime = nil
-        pendingUserSeekRevealReadySince = nil
+        pendingUserSeekRevealSettling.reset()
         pendingUserSeekRevealStartedAt = nil
     }
 
@@ -5603,7 +5603,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             "requiresRenderedVideoTime": String(snapshot.requiresRenderedVideoTimeForRecovery),
             "snapshotPlayingFromRate": String(snapshot.isPlaying),
             "revealElapsedMs": pendingUserSeekRevealStartedAt.map { String((now - $0) * 1_000) } ?? "-",
-            "readySince": pendingUserSeekRevealReadySince.map { String($0) } ?? "-",
+            "readySince": pendingUserSeekRevealSettling.readySince.map { String($0) } ?? "-",
             "settleMs": String(userSeekRevealSettleDelay * 1_000)]
         #endif
         if let startedAt = pendingUserSeekRevealStartedAt,
@@ -5614,26 +5614,37 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return true
         }
         let pending = userSeekRevealMetric(targetTime: targetTime)
-        guard isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot) else {
-            #if DEBUG
-            debugSeekRevealFields["settleWasReset"] = String(pendingUserSeekRevealReadySince != nil)
-            debugRecordSeekRevealDecision("blocked", reason: debugSeekRevealFields["blockingReason"] ?? "frameReadinessRejected")
-            #endif
-            pendingUserSeekRevealReadySince = nil
-            return false
-        }
-        guard let readySince = pendingUserSeekRevealReadySince else {
-            pendingUserSeekRevealReadySince = now
-            #if DEBUG
-            debugRecordSeekRevealDecision("settleStarted", reason: "frameEligible")
-            #endif
-            return false
-        }
+        let frameReady = isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot)
+        let previousReadySince = pendingUserSeekRevealSettling.readySince
+        let missingSampleCanContinue = !frameReady && UserSeekRevealSettling.canContinueMissingSample(
+            renderedVideoTime: snapshot.renderedVideoTime,
+            requiresRenderedVideoTime: snapshot.requiresRenderedVideoTimeForRecovery,
+            isPlaying: snapshot.isPlaying,
+            currentTime: snapshot.currentTime,
+            playbackTimeNearTarget: snapshot.currentTime.map {
+                isSeekRevealTimeNearTarget($0, targetTime: targetTime, snapshot: snapshot)
+            } == true
+        )
+        let settled = pendingUserSeekRevealSettling.observe(
+            frameReady: frameReady,
+            renderedVideoTime: snapshot.renderedVideoTime,
+            missingSampleCanContinue: missingSampleCanContinue,
+            at: now,
+            settleDelay: userSeekRevealSettleDelay
+        )
         #if DEBUG
-        debugSeekRevealFields["stableElapsedMs"] = String((now - readySince) * 1_000)
-        debugRecordSeekRevealDecision(now - readySince >= userSeekRevealSettleDelay ? "ready" : "settling", reason: "frameEligible")
+        if let readySince = pendingUserSeekRevealSettling.readySince {
+            debugSeekRevealFields.removeValue(forKey: "blockingReason")
+            debugSeekRevealFields["stableElapsedMs"] = String((now - readySince) * 1_000)
+            debugSeekRevealFields["preservedMissingSample"] = String(!frameReady)
+            debugRecordSeekRevealDecision(settled ? "ready" : previousReadySince == nil ? "settleStarted" : "settling",
+                reason: frameReady ? "frameEligible" : "verifiedFrameSampleGap")
+        } else {
+            debugSeekRevealFields["settleWasReset"] = String(previousReadySince != nil)
+            debugRecordSeekRevealDecision("blocked", reason: debugSeekRevealFields["blockingReason"] ?? "frameReadinessRejected")
+        }
         #endif
-        return now - readySince >= userSeekRevealSettleDelay
+        return settled
     }
 
     @discardableResult

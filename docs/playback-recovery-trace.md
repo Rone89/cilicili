@@ -84,3 +84,17 @@ Fast fallback emits `rangeCandidateReady`, `rangeFallbackWinner` and
 `rangeFallbackGroupExited` separately. Winner-to-group-exit time measures child
 settlement after selection; per-producer completion is separate from the outer warm
 request's completion. Request cancellation/retry/scheduling remains unchanged.
+
+## Seek reveal sample gaps
+
+The 120ms reveal settle window now retains a previously verified rendered target
+frame when a subsequent VideoOutput sample is absent, playback is still active,
+and the current playback time remains inside the existing target window. A missing
+sample cannot start the window. An explicitly rejected frame, an out-of-window
+playback position, or a new/cleared seek discards the evidence. The 2.4s fallback,
+seek tolerances, media warmup and AVPlayer configuration are unchanged.
+
+`uiRevealDecision` reports `reason=verifiedFrameSampleGap` and
+`preservedMissingSample=true` when this retention is used. Compare reset counts
+and frame-to-reveal time on the same device/network. This addresses UI eligibility;
+it does not shorten slow media requests or establish a measured runtime speedup.
