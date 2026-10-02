@@ -89,4 +89,53 @@ final class UserSeekRevealSettlingTests: XCTestCase {
         XCTAssertFalse(allowed(near: false))
     }
 
+    func testStaticTargetFrameAndMissingSamplesNeverAuthorizeMovingVideoReveal() {
+        var state = UserSeekRevealSettling()
+        for time in [1.0, 1.1, 1.2] {
+            XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 248.9,
+                missingSampleCanContinue: false, requiresAdvancingVideo: true,
+                at: time, settleDelay: 0.12))
+        }
+        XCTAssertFalse(state.observe(frameReady: false, renderedVideoTime: nil,
+            missingSampleCanContinue: true, requiresAdvancingVideo: true,
+            at: 1.5, settleDelay: 0.12))
+        XCTAssertNil(state.readySince)
+        XCTAssertFalse(state.hasAdvancingRenderedFrames)
+    }
+
+    func testAdvancingTargetFramesStartSettleAndSurviveSamplingGaps() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 120,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.04,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.2, settleDelay: 0.12))
+        XCTAssertTrue(state.hasAdvancingRenderedFrames)
+        XCTAssertEqual(state.readySince, 1.2)
+        XCTAssertTrue(state.observe(frameReady: false, renderedVideoTime: nil,
+            missingSampleCanContinue: true, requiresAdvancingVideo: true,
+            at: 1.4, settleDelay: 0.12))
+        state.reset()
+        XCTAssertFalse(state.hasAdvancingRenderedFrames)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.08,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 2, settleDelay: 0.12))
+    }
+
+    func testTimestampRegressionRestartsMotionVerification() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 120,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 120.04,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 119.9,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.3, settleDelay: 0.12))
+        XCTAssertNil(state.readySince)
+        XCTAssertFalse(state.hasAdvancingRenderedFrames)
+    }
+
 }

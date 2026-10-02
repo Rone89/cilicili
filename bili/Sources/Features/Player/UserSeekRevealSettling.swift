@@ -1,14 +1,18 @@
 import Foundation
 
 /// Scoped to one committed seek. An absent output sample does not invalidate
-/// a target frame that was already verified during this settle window.
+/// advancing target frames already verified during this settle window.
 nonisolated struct UserSeekRevealSettling {
     private(set) var readySince: TimeInterval?
     private var hasVerifiedRenderedFrame = false
+    private var firstRenderedVideoTime: TimeInterval?
+    private(set) var hasAdvancingRenderedFrames = false
 
     mutating func reset() {
         readySince = nil
         hasVerifiedRenderedFrame = false
+        firstRenderedVideoTime = nil
+        hasAdvancingRenderedFrames = false
     }
 
     static func canContinueMissingSample(
@@ -29,6 +33,7 @@ nonisolated struct UserSeekRevealSettling {
         frameReady: Bool,
         renderedVideoTime: TimeInterval?,
         missingSampleCanContinue: Bool,
+        requiresAdvancingVideo: Bool = false,
         at now: TimeInterval,
         settleDelay: TimeInterval
     ) -> Bool {
@@ -36,13 +41,28 @@ nonisolated struct UserSeekRevealSettling {
             && renderedVideoTime == nil
             && missingSampleCanContinue
             && hasVerifiedRenderedFrame
-            && readySince != nil
         guard frameReady || preservingVerifiedFrame else {
             reset()
             return false
         }
         if frameReady, let time = renderedVideoTime, time.isFinite, time >= 0 {
             hasVerifiedRenderedFrame = true
+            if let first = firstRenderedVideoTime {
+                if time > first + 0.001 {
+                    hasAdvancingRenderedFrames = true
+                } else if time < first - 0.001 {
+                    // A regressing sample cannot carry forward a prior settle window.
+                    readySince = nil
+                    hasAdvancingRenderedFrames = false
+                    firstRenderedVideoTime = time
+                }
+            } else {
+                firstRenderedVideoTime = time
+            }
+        }
+        if requiresAdvancingVideo && !hasAdvancingRenderedFrames {
+            readySince = nil
+            return false
         }
         guard let readySince else {
             readySince = now

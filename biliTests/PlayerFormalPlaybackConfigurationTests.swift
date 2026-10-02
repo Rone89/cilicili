@@ -1348,6 +1348,42 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertTrue(manager.makePlayer() is AVPlayerAdapter)
     }
 
+    @MainActor
+    func testUserSeekKeepsAudioSuppressedUntilTargetVideoAdvancesAndUIReveals() async throws {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
+            title: "Seek moving-frame reveal", referer: "https://www.bilibili.com", engine: engine)
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+        defer { player.stop(); coordinator.stopActivePlayback() }
+        engine.snapshotTime = 30
+        engine.renderedVideoTime = 30
+        engine.requiresRenderedVideoTimeForRecovery = true
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.5)
+        for _ in 0..<100 where engine.playCallCount == 0 { await Task.yield() }
+        XCTAssertGreaterThan(engine.playCallCount, 0)
+        let suppressionStart = try XCTUnwrap(engine.temporaryAudioSuppressionValues.lastIndex(of: true))
+        try await Task.sleep(nanoseconds: 200_000_000)
+        engine.onPlaybackStateChange?(.playing)
+        player.finishUserSeekVisualReveal()
+        XCTAssertTrue(player.isUserSeeking, "A static target frame must not release audio/video")
+        XCTAssertFalse(engine.temporaryAudioSuppressionValues.dropFirst(suppressionStart).contains(false))
+        engine.renderedVideoTime = 30.04
+        engine.snapshotTime = 30.04
+        engine.onPlaybackStateChange?(.playing)
+        try await Task.sleep(nanoseconds: 180_000_000)
+        engine.onPlaybackStateChange?(.playing)
+        XCTAssertFalse(player.isUserSeeking)
+        player.finishUserSeekVisualReveal()
+        XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
+    }
+
     private func makeUserDefaults() -> UserDefaults {
         let suiteName = "cc.bili.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -1380,6 +1416,7 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     private var isPlaying: Bool
     var snapshotTime: TimeInterval = 12
     var renderedVideoTime: TimeInterval?
+    var requiresRenderedVideoTimeForRecovery = false
     var videoOutputRefreshResult = true
     var pausedPlaybackWarmResult = true
     var playerItemRecoveryResult: TimeInterval? = 12
@@ -1507,6 +1544,8 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot {
         PlayerPlaybackSnapshot(
             currentTime: snapshotTime,
+            renderedVideoTime: renderedVideoTime,
+            requiresRenderedVideoTimeForRecovery: requiresRenderedVideoTimeForRecovery,
             duration: durationHint ?? 60,
             isPlaying: isPlaying,
             isSeekable: true,

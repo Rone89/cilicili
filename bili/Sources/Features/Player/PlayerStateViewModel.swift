@@ -5616,6 +5616,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let pending = userSeekRevealMetric(targetTime: targetTime)
         let frameReady = isSeekRecoveryFrameReadyForReveal(pending: pending, snapshot: snapshot)
         let previousReadySince = pendingUserSeekRevealSettling.readySince
+        let isNearEnd = (snapshot.duration ?? duration ?? durationHint).map {
+            targetTime >= max($0 - 0.35, 0)
+        } ?? false
+        let requiresAdvancingVideo = playbackContentMode == .video
+            && snapshot.requiresRenderedVideoTimeForRecovery && !isNearEnd
         let missingSampleCanContinue = !frameReady && UserSeekRevealSettling.canContinueMissingSample(
             renderedVideoTime: snapshot.renderedVideoTime,
             requiresRenderedVideoTime: snapshot.requiresRenderedVideoTimeForRecovery,
@@ -5629,10 +5634,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             frameReady: frameReady,
             renderedVideoTime: snapshot.renderedVideoTime,
             missingSampleCanContinue: missingSampleCanContinue,
+            requiresAdvancingVideo: requiresAdvancingVideo,
             at: now,
             settleDelay: userSeekRevealSettleDelay
         )
         #if DEBUG
+        debugSeekRevealFields["hasAdvancingRenderedFrames"] = String(pendingUserSeekRevealSettling.hasAdvancingRenderedFrames)
         if let readySince = pendingUserSeekRevealSettling.readySince {
             debugSeekRevealFields.removeValue(forKey: "blockingReason")
             debugSeekRevealFields["stableElapsedMs"] = String((now - readySince) * 1_000)
@@ -5641,7 +5648,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 reason: frameReady ? "frameEligible" : "verifiedFrameSampleGap")
         } else {
             debugSeekRevealFields["settleWasReset"] = String(previousReadySince != nil)
-            debugRecordSeekRevealDecision("blocked", reason: debugSeekRevealFields["blockingReason"] ?? "frameReadinessRejected")
+            debugRecordSeekRevealDecision("blocked", reason: requiresAdvancingVideo && !pendingUserSeekRevealSettling.hasAdvancingRenderedFrames
+                && (frameReady || missingSampleCanContinue) ? "awaitingAdvancingTargetFrame"
+                : debugSeekRevealFields["blockingReason"] ?? "frameReadinessRejected")
         }
         #endif
         return settled

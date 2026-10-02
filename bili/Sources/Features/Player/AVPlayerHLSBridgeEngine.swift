@@ -2436,7 +2436,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private var shouldReportRenderedVideoTimeForSeekRecovery: Bool {
         guard source?.playbackContentMode != .audioOnly else { return false }
-        if isPerformingSeek || isSeekProtectionActive {
+        if isPerformingSeek || isSeekProtectionActive || viewModel?.isUserSeeking == true {
             return true
         }
         guard let lastSeekFinishedAt else { return false }

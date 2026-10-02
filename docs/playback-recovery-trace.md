@@ -87,8 +87,10 @@ request's completion. Request cancellation/retry/scheduling remains unchanged.
 
 ## Seek reveal sample gaps
 
-The 120ms reveal settle window now retains a previously verified rendered target
-frame when a subsequent VideoOutput sample is absent, playback is still active,
+For an ordinary playing video seek, the 120ms reveal settle window now starts
+only after two matching rendered target timestamps show forward progression.
+A static target frame alone cannot authorize reveal. The window then retains
+verified advancing frames when a subsequent VideoOutput sample is absent, playback is still active,
 and the current playback time remains inside the existing target window. A missing
 sample cannot start the window. An explicitly rejected frame, an out-of-window
 playback position, or a new/cleared seek discards the evidence. The 2.4s fallback,
@@ -98,3 +100,13 @@ seek tolerances, media warmup and AVPlayer configuration are unchanged.
 `preservedMissingSample=true` when this retention is used. Compare reset counts
 and frame-to-reveal time on the same device/network. This addresses UI eligibility;
 it does not shorten slow media requests or establish a measured runtime speedup.
+
+Audio remains temporarily suppressed until the existing visual-reveal callback;
+no audio policy or AVPlayer buffer configuration is changed. While user-seek UI
+is pending, the engine keeps reporting existing VideoOutput samples, including
+beyond the prior 1.2s reporting window. No extra output or rendering pipeline is
+created. Audio-only and near-end seeks retain their previous readiness behavior.
+`hasAdvancingRenderedFrames` and `awaitingAdvancingTargetFrame` distinguish
+a decodable static frame from observed advancing video. These are timestamp
+observations, not a physical-display measurement. The 2.4s timeout fallback
+remains a limitation when no moving-frame evidence arrives.
