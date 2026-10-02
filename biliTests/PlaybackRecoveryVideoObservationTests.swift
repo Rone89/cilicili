@@ -44,7 +44,7 @@ final class PlaybackRecoveryVideoObservationTests: XCTestCase {
         observation = RecoveryVideoObservation()
         XCTAssertNil(observation.firstAvailable)
         XCTAssertNil(observation.firstAdvancing)
-        XCTAssertNil(observation.fields["snapshotReads"])
+        XCTAssertEqual(observation.fields["snapshotReads"], "-")
     }
 
     func testReaderGapsAreSeparateAndNonMonotonicCallsAreRejected() {
@@ -91,5 +91,7 @@ final class PlaybackRecoveryVideoObservationTests: XCTestCase {
         XCTAssertTrue(record.summary.contains("videoAdvancingOrigin=-"))
         record.record(name: "videoObservationSummary", at: 2, fields: ["availableAt": "1.2", "advancingAt": "1.8"])
         XCTAssertTrue(record.summary.contains("videoAdvanceToUIReveal=-"))
+        XCTAssertTrue(record.summary.contains("targetVideoAvailableToAdvance=600.0ms"))
+        XCTAssertEqual(RecoveryVideoObservation().fields["debugPollMaxGapMs"], "-")
     }
 }

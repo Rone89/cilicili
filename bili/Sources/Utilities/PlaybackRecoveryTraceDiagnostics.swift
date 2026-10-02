@@ -291,8 +291,13 @@ nonisolated struct RecoveryVideoObservation {
             "observation": "videoOutputTimestampNotDisplayPresentation",
         ]
         for origin in Origin.allCases {
-            guard let value = counts[origin] else { continue }
             let prefix = origin.rawValue
+            guard let value = counts[origin] else {
+                for suffix in ["Reads", "Missing", "Rejected", "Repeated", "MaxGapMs"] {
+                    fields["\(prefix)\(suffix)"] = "-"
+                }
+                continue
+            }
             fields["\(prefix)Reads"] = String(value.reads)
             fields["\(prefix)Missing"] = String(value.missing)
             fields["\(prefix)Rejected"] = String(value.rejected)

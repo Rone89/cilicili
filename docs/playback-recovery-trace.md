@@ -129,6 +129,8 @@ not proof of physical screen presentation. Missing samples and repeated timestam
 do not establish advancement. A new trace starts without prior evidence.
 
 `videoObservationSummary` is emitted at UI reveal, supersession or termination.
+If the target frame arrives after early UI reveal, a final `firstFrameAfterUI`
+boundary refreshes the observation summary before diagnostic detachment.
 It retains first availability/advancement timestamps and origins, per-reader read,
 missing, rejected and repeated counts, and maximum read intervals. Large reader
 intervals indicate an observation gap, not necessarily a decoding stall.

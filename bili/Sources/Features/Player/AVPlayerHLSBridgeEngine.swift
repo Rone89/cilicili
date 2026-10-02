@@ -3024,7 +3024,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     func debugRecoveryEvent(_ name: String, fields: [String: String] = [:]) {
         guard let id = debugRecoveryTraceID else { return }
         if debugRecoveryType == "userSeek", ["uiReveal", "sessionEnded", "superseded"].contains(name) {
-            RecoveryTraceStore.shared.event(id, "videoObservationSummary", fields: debugRecoveryVideoObservation.fields)
+            debugRecordRecoveryVideoObservationSummary(traceID: id, boundary: name)
         }
         RecoveryTraceStore.shared.event(id, name, fields: fields)
         if name == "uiReveal" { debugRecoveryUIRevealed = true }
@@ -3079,6 +3079,12 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    private func debugRecordRecoveryVideoObservationSummary(traceID: String, boundary: String) {
+        var fields = debugRecoveryVideoObservation.fields
+        fields["boundary"] = boundary
+        RecoveryTraceStore.shared.event(traceID, "videoObservationSummary", fields: fields)
+    }
+
     private func debugPollRecoveryFrame(traceID: String) -> Bool {
         guard debugRecoveryTraceID == traceID, !isStopped, !debugRecoveryFrameObserved,
               let output = videoOutput, player.currentItem === playerItem else { return false }
@@ -3104,6 +3110,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             fields: ["frameTime": String(frameTime), "observation": "videoOutput+surfaceReady"])
         debugRecoveryFrameTask = nil
         if debugRecoveryType == "manualResume" || debugRecoveryUIRevealed {
+            if debugRecoveryType == "userSeek", debugRecoveryUIRevealed {
+                debugRecordRecoveryVideoObservationSummary(traceID: traceID, boundary: "firstFrameAfterUI")
+            }
             hlsBridge?.debugDetachRecovery(traceID: traceID)
             debugRecoveryTraceID = nil
         }

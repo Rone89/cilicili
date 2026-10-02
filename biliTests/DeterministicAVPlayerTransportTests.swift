@@ -157,6 +157,24 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertFalse(observationSummary.contains("playToVideoAdvanceObserved=-"))
         XCTAssertFalse(observationSummary.contains("videoAdvancingOrigin=-"))
         XCTAssertEqual(engine.debugPlayerItemIdentity, item)
+
+        engine.debugBeginRecoveryTrace(type: "userSeek", at: CACurrentMediaTime(), fields: ["rawTarget": "2.4"])
+        let earlyRevealID = try XCTUnwrap(engine.debugRecoveryTraceIdentity)
+        engine.pause()
+        let earlyRevealTarget = await engine.seekAfterUserScrub(toProgress: 0.3, duration: fixture.primarySource.durationHint)
+        XCTAssertNotNil(earlyRevealTarget)
+        engine.recoverSurface()
+        engine.play()
+        // Model an existing early reveal/fallback without changing the product's deadline.
+        engine.debugRecoveryEvent("uiReveal", fields: ["reason": "testEarlyBoundary"])
+        try await waitUntil("frame observation after early UI reveal") {
+            RecoveryTraceStore.shared.summary(earlyRevealID)?.contains("firstTargetFrame@") == true
+        }
+        let lateFrameLines = RecoveryTraceStore.shared.exportText().components(separatedBy: "\n")
+        XCTAssertTrue(lateFrameLines.contains { $0.contains("id=\(earlyRevealID)") && $0.contains("boundary=firstFrameAfterUI") })
+        let lateSummary = try XCTUnwrap(RecoveryTraceStore.shared.summary(earlyRevealID))
+        XCTAssertFalse(lateSummary.contains("videoAvailableOrigin=-"))
+        XCTAssertEqual(engine.debugPlayerItemIdentity, item)
         engine.stop()
         XCTAssertNil(engine.debugRecoveryTraceIdentity)
     }
