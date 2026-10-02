@@ -3921,17 +3921,13 @@ actor VideoRangeCache {
 
     private struct PendingRangeEntry: Sendable {
         let range: HTTPByteRange
-        let task: Task<Data, Error>
-    }
-
-    private enum PendingRangeError: Error {
-        case invalidData
+        let fetch: VideoRangeSharedFetch
     }
 
     private let maxCacheBytes: Int64 = 512 * 1024 * 1024
     private let fileManager = FileManager.default
     private let rootURL: URL
-    private var pendingFetches: [String: Task<Data, Error>] = [:]
+    private var pendingFetches: [String: VideoRangeSharedFetch] = [:]
     #if DEBUG
     private var recoveryTaskOwners: [String: RecoveryRangeTaskOwner] = [:]
     #endif
@@ -3941,11 +3937,10 @@ actor VideoRangeCache {
     private var storeCountSinceTrim = 0
     private var trimTask: Task<Void, Never>?
 
-    init() {
-        rootURL =
-            fileManager
-            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    init(rootURL: URL? = nil) {
+        let defaultRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VideoRangeCache", isDirectory: true)
+        self.rootURL = rootURL ?? defaultRoot
     }
 
     func data(url: URL, range: HTTPByteRange) -> Data? {
@@ -3981,47 +3976,64 @@ actor VideoRangeCache {
             return (cached, .cache)
         }
 
+        try Task.checkCancellation()
         let key = cacheKey(url: url, range: range)
-        if let pendingFetch = pendingFetches[key] {
+        if let pendingFetch = pendingFetches[key], let lease = pendingFetch.joinLease() {
             #if DEBUG
             recoveryContext?.record("rangeTaskJoined", owner: recoveryTaskOwners[key], url: url, range: range, fields: ["joinKind": "exact"])
             #endif
-            return (try await pendingFetch.value, .pending)
+            return (try await lease.value, .pending)
         }
-        if let pendingFetch = containingPendingFetch(url: url, range: range) {
-            return (try await pendingFetch.value, .pending)
+        if let pendingLease = containingPendingFetch(url: url, range: range) {
+            return (try await pendingLease.value, .pending)
         }
 
-        let pendingFetch = Task.detached(priority: .userInitiated) {
-            try await loader()
-        }
+        let pendingFetch = VideoRangeSharedFetch()
+        let lease = pendingFetch.makeLease()
         #if DEBUG
         let recoveryOwner = RecoveryRangeTaskOwner(context: recoveryContext)
         recoveryTaskOwners[key] = recoveryOwner
         recoveryContext?.record("rangeTaskCreated", owner: recoveryOwner, url: url, range: range)
         #endif
         pendingFetches[key] = pendingFetch
-        indexPendingRange(url: url, range: range, task: pendingFetch)
-
-        do {
-            let data = try await pendingFetch.value
+        indexPendingRange(url: url, range: range, fetch: pendingFetch)
+        #if DEBUG
+        let completionContext = recoveryContext
+        #endif
+        pendingFetch.start(loader: loader) { result in
             #if DEBUG
-            recoveryContext?.record("rangeTaskCompleted", owner: recoveryOwner, url: url, range: range, fields: ["bytes": String(data.count)])
-            recoveryTaskOwners[key] = nil
+            await RecoveryRangeTaskContext.$current.withValue(completionContext) {
+                await self.finishBufferedFetch(pendingFetch, url: url, range: range, result: result)
+            }
+            #else
+            await self.finishBufferedFetch(pendingFetch, url: url, range: range, result: result)
             #endif
-            pendingFetches[key] = nil
-            removePendingRange(url: url, range: range)
-            store(data, url: url, range: range)
-            return (data, .remote)
-        } catch {
-            #if DEBUG
-            recoveryContext?.record(RecoveryTraceDiagnostics.rangeFailureEvent(error) == "rangeCancelled" ? "rangeTaskCancelled" : "rangeTaskFailed", owner: recoveryOwner, url: url, range: range)
-            recoveryTaskOwners[key] = nil
-            #endif
-            pendingFetches[key] = nil
-            removePendingRange(url: url, range: range)
-            throw error
         }
+        return (try await lease.value, .remote)
+    }
+
+    private func finishBufferedFetch(
+        _ fetch: VideoRangeSharedFetch,
+        url: URL,
+        range: HTTPByteRange,
+        result: Result<Data, Error>
+    ) {
+        let key = cacheKey(url: url, range: range)
+        // A cancelled generation may already have been replaced by a new request.
+        guard pendingFetches[key] === fetch else { return }
+        #if DEBUG
+        let owner = recoveryTaskOwners[key]
+        switch result {
+        case let .success(data):
+            RecoveryRangeTaskContext.current?.record("rangeTaskCompleted", owner: owner, url: url, range: range, fields: ["bytes": String(data.count)])
+        case let .failure(error):
+            RecoveryRangeTaskContext.current?.record(RecoveryTraceDiagnostics.rangeFailureEvent(error) == "rangeCancelled" ? "rangeTaskCancelled" : "rangeTaskFailed", owner: owner, url: url, range: range)
+        }
+        recoveryTaskOwners[key] = nil
+        #endif
+        pendingFetches[key] = nil
+        removePendingRange(url: url, range: range)
+        if case let .success(data) = result { store(data, url: url, range: range) }
     }
 
     func reserveExternalFetch(
@@ -4039,11 +4051,11 @@ actor VideoRangeCache {
             return .cached(cached)
         }
         let key = cacheKey(url: url, range: range)
-        if let pendingFetch = pendingFetches[key] {
+        if let pendingFetch = pendingFetches[key], let lease = pendingFetch.joinLease() {
             #if DEBUG
             recoveryContext?.record("rangeTaskJoined", owner: recoveryTaskOwners[key], url: url, range: range, fields: ["joinKind": "exact"])
             #endif
-            return .pending(pendingFetch)
+            return .pending(lease)
         }
         if let pendingFetch = containingPendingFetch(url: url, range: range) {
             return .pending(pendingFetch)
@@ -4055,47 +4067,44 @@ actor VideoRangeCache {
             return .unreserved
         }
 
-        let completion = VideoRangePendingCompletion()
-        let pendingFetch = Task.detached(priority: .userInitiated) {
-            try await completion.value()
-        }
+        let pendingFetch = VideoRangeSharedFetch(hasExternalOwner: true)
         #if DEBUG
         let recoveryOwner = RecoveryRangeTaskOwner(context: recoveryContext)
         recoveryTaskOwners[key] = recoveryOwner
         recoveryContext?.record("rangeTaskCreated", owner: recoveryOwner, url: url, range: range)
         #endif
         pendingFetches[key] = pendingFetch
-        indexPendingRange(url: url, range: range, task: pendingFetch)
+        indexPendingRange(url: url, range: range, fetch: pendingFetch)
         return .reserved(
             VideoRangeExternalFetchToken(
                 key: key,
                 url: url,
                 range: range,
-                completion: completion
+                completion: pendingFetch
             ))
     }
 
     func finishExternalFetch(_ token: VideoRangeExternalFetchToken, data: Data) {
-        guard pendingFetches[token.key] != nil else { return }
+        guard pendingFetches[token.key] === token.completion else { return }
         #if DEBUG
         RecoveryRangeTaskContext.current?.record("rangeTaskCompleted", owner: recoveryTaskOwners[token.key], url: token.url, range: token.range)
         recoveryTaskOwners[token.key] = nil
         #endif
         pendingFetches[token.key] = nil
         removePendingRange(url: token.url, range: token.range)
-        token.completion.succeed(data)
+        token.completion.complete(.success(data))
         store(data, url: token.url, range: token.range)
     }
 
     func failExternalFetch(_ token: VideoRangeExternalFetchToken, error: Error) {
-        guard pendingFetches[token.key] != nil else { return }
+        guard pendingFetches[token.key] === token.completion else { return }
         #if DEBUG
         RecoveryRangeTaskContext.current?.record("rangeTaskFailed", owner: recoveryTaskOwners[token.key], url: token.url, range: token.range)
         recoveryTaskOwners[token.key] = nil
         #endif
         pendingFetches[token.key] = nil
         removePendingRange(url: token.url, range: token.range)
-        token.completion.fail(error)
+        token.completion.complete(.failure(error))
     }
 
     func store(_ data: Data, url: URL, range: HTTPByteRange) {
@@ -4125,9 +4134,9 @@ actor VideoRangeCache {
     func clear() {
         trimTask?.cancel()
         trimTask = nil
+        // Disk eviction must not discard ownership of still-active range requests.
         try? fileManager.removeItem(at: rootURL)
         cachedRangesByURLHash.removeAll(keepingCapacity: true)
-        pendingRangesByURLHash.removeAll(keepingCapacity: true)
         estimatedCacheBytes = 0
         storeCountSinceTrim = 0
     }
@@ -4210,39 +4219,26 @@ actor VideoRangeCache {
         return nil
     }
 
-    private func containingPendingFetch(url: URL, range: HTTPByteRange) -> Task<Data, Error>? {
+    private func containingPendingFetch(url: URL, range: HTTPByteRange) -> VideoRangeFetchLease? {
         guard range.length > 0 else { return nil }
         let urlHash = Self.stableCacheHash(url.absoluteString)
         guard let entries = pendingRangesByURLHash[urlHash], !entries.isEmpty else { return nil }
-        let candidates =
-            entries
+        let candidate = entries
             .filter {
-                $0.range.start <= range.start
+                $0.fetch.isJoinable && $0.range.start <= range.start
                     && $0.range.endInclusive >= range.endInclusive
             }
-            .sorted { $0.range.length < $1.range.length }
-        guard let candidate = candidates.first,
-            let lowerBound = Int(exactly: range.start - candidate.range.start),
-            let length = Int(exactly: range.length),
-            length > 0
+            .min { $0.range.length < $1.range.length }
+        guard let candidate,
+              let offset = Int(exactly: range.start - candidate.range.start),
+              let length = Int(exactly: range.length)
         else { return nil }
-
         #if DEBUG
         RecoveryRangeTaskContext.current?.record("rangeTaskJoined",
             owner: recoveryTaskOwners[cacheKey(url: url, range: candidate.range)], url: url, range: range,
             fields: ["joinKind": "containing", "ownerRangeStart": String(candidate.range.start), "ownerRangeLength": String(candidate.range.length)])
         #endif
-        let sourceTask = candidate.task
-        return Task.detached(priority: .userInitiated) {
-            let data = try await sourceTask.value
-            guard lowerBound >= 0, lowerBound + length <= data.count else {
-                throw PendingRangeError.invalidData
-            }
-            PlayerMetricsLog.logger.info(
-                "videoRangeCachePendingSubrangeJoin bytes=\(length, privacy: .public) sourceBytes=\(data.count, privacy: .public)"
-            )
-            return data.subdata(in: lowerBound..<(lowerBound + length))
-        }
+        return candidate.fetch.joinLease(offset: offset, length: length)
     }
 
     private func indexCachedRange(url: URL, range: HTTPByteRange, fileURL: URL) {
@@ -4256,14 +4252,11 @@ actor VideoRangeCache {
         cachedRangesByURLHash[urlHash] = entries
     }
 
-    private func indexPendingRange(url: URL, range: HTTPByteRange, task: Task<Data, Error>) {
+    private func indexPendingRange(url: URL, range: HTTPByteRange, fetch: VideoRangeSharedFetch) {
         let urlHash = Self.stableCacheHash(url.absoluteString)
         var entries = pendingRangesByURLHash[urlHash] ?? []
         entries.removeAll { $0.range == range }
-        entries.append(PendingRangeEntry(range: range, task: task))
-        if entries.count > 128 {
-            entries.removeFirst(entries.count - 128)
-        }
+        entries.append(PendingRangeEntry(range: range, fetch: fetch))
         pendingRangesByURLHash[urlHash] = entries
     }
 
@@ -4336,7 +4329,6 @@ actor VideoRangeCache {
             if totalSize <= targetBytes { break }
         }
         cachedRangesByURLHash.removeAll(keepingCapacity: true)
-        pendingRangesByURLHash.removeAll(keepingCapacity: true)
         estimatedCacheBytes = totalSize
     }
 
@@ -4359,7 +4351,7 @@ actor VideoRangeCache {
 
 enum VideoRangeExternalFetchReservation: Sendable {
     case cached(Data)
-    case pending(Task<Data, Error>)
+    case pending(VideoRangeFetchLease)
     case reserved(VideoRangeExternalFetchToken)
     case unreserved
 }
@@ -4374,51 +4366,7 @@ struct VideoRangeExternalFetchToken: Sendable {
     let key: String
     let url: URL
     let range: HTTPByteRange
-    let completion: VideoRangePendingCompletion
-}
-
-nonisolated final class VideoRangePendingCompletion: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Data, Error>?
-    private var result: Result<Data, Error>?
-
-    func value() async throws -> Data {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                lock.lock()
-                if let result {
-                    lock.unlock()
-                    continuation.resume(with: result)
-                    return
-                }
-                self.continuation = continuation
-                lock.unlock()
-            }
-        } onCancel: {
-            complete(.failure(CancellationError()))
-        }
-    }
-
-    func succeed(_ data: Data) {
-        complete(.success(data))
-    }
-
-    func fail(_ error: Error) {
-        complete(.failure(error))
-    }
-
-    private func complete(_ result: Result<Data, Error>) {
-        lock.lock()
-        guard self.result == nil else {
-            lock.unlock()
-            return
-        }
-        self.result = result
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-        continuation?.resume(with: result)
-    }
+    let completion: VideoRangeSharedFetch
 }
 
 private struct PlayableMediaWarmupSource: Sendable {

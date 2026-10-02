@@ -1114,6 +1114,40 @@ final class LocalHLSProxyServerIntegrationTests: XCTestCase {
         XCTAssertTrue(requests.contains { $0.path == "/video-backup.m4s" }, "requests=\(requests.map(\.path))")
     }
 
+    @MainActor
+    func testBufferedFallbackReturnsWithoutWaitingForCancelledSlowCandidate() async throws {
+        try XCTSkipIf(PlaybackEnvironment.current.shouldPreferConservativePlayback,
+                      "Parallel range fallback is disabled by the current network policy.")
+        let data = testData(byteCount: 128, seed: 23)
+        let upstream = try TestHTTPRangeServer(routes: [
+            "/slow-init.m4s": .data(data, contentType: "video/mp4", responseDelayNanoseconds: 900_000_000),
+            "/fast-init.m4s": .data(data, contentType: "video/mp4"),
+            "/audio.m4s": .data(data, contentType: "audio/mp4")
+        ])
+        try await upstream.start()
+        defer { upstream.stop() }
+        let nonce = UUID().uuidString
+        let primary = upstream.url(path: "/slow-init.m4s").appending(queryItems: [.init(name: "test", value: nonce)])
+        let backup = upstream.url(path: "/fast-init.m4s").appending(queryItems: [.init(name: "test", value: nonce)])
+        let bridge = try await LocalHLSBridge.makeForTesting(
+            from: makeRoutePlan(videoURL: primary, videoFallbackURLs: [backup], audioURL: upstream.url(path: "/audio.m4s")),
+            headers: ["User-Agent": "LocalHLSProxyServerIntegrationTests/1.0"],
+            metricsID: "buffered-fallback-cancellation-test"
+        )
+        defer { bridge.stop() }
+        let url = bridge.masterPlaylistURL.deletingLastPathComponent().appendingPathComponent("media/video/init.mp4")
+        let start = CACurrentMediaTime()
+        let response = try await fetch(url)
+        XCTAssertEqual(response.response.statusCode, 200)
+        XCTAssertEqual(response.data, data.prefix(10))
+        // The fixture holds the losing request for 900ms. Returning before that
+        // distinguishes cancellation from merely waiting for the loser to finish.
+        XCTAssertLessThan(PlayerMetricsLog.elapsedMilliseconds(since: start), 800)
+        let requests = await upstream.recordedRequests()
+        XCTAssertTrue(requests.contains { $0.path == "/slow-init.m4s" })
+        XCTAssertTrue(requests.contains { $0.path == "/fast-init.m4s" })
+    }
+
     private func makeRoutePlan(
         videoURL: URL,
         videoFallbackURLs: [URL] = [],

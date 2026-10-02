@@ -622,11 +622,11 @@ nonisolated final class PlaybackURLPreferenceStore: @unchecked Sendable {
             .map(\.url)
     }
 
-    func record(url: URL, elapsedMilliseconds: Double, bytes: Int64, succeeded: Bool) {
+    func record(url: URL, elapsedMilliseconds: Double, bytes: Int64, succeeded: Bool, networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass) {
         guard let host = url.host else { return }
         loadStoreIfNeeded()
         lock.withLock {
-            let key = scoreKey(for: host)
+            let key = "\(networkClass.cacheKey)|\(host.lowercased())"
             var score = scores[key] ?? HostScore()
             score.record(
                 elapsedMilliseconds: elapsedMilliseconds,
@@ -647,7 +647,8 @@ nonisolated final class PlaybackURLPreferenceStore: @unchecked Sendable {
         observedKilobitsPerSecond: Int,
         transferMilliseconds: Int,
         bytes: Int64,
-        stallCount: Int
+        stallCount: Int,
+        networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass
     ) {
         guard let host = url.host else { return }
         let boundedTransferMilliseconds = min(max(Double(transferMilliseconds), 10), 8_000)
@@ -666,7 +667,7 @@ nonisolated final class PlaybackURLPreferenceStore: @unchecked Sendable {
         guard syntheticBytes > 0 || stallCount > 0 else { return }
         loadStoreIfNeeded()
         lock.withLock {
-            let key = scoreKey(for: host)
+            let key = "\(networkClass.cacheKey)|\(host.lowercased())"
             var score = scores[key] ?? HostScore()
             let now = Date()
             if syntheticBytes > 0 {

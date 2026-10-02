@@ -2177,6 +2177,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         reason: String,
         errorMessage: String?
     ) async {
+        let networkClass = PlaybackEnvironment.current.networkClass
         var seenHosts = Set<String>()
         var hosts = [String]()
         for url in [source.videoURL, source.audioURL] {
@@ -2199,7 +2200,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 host: host,
                 reason: messageReason,
                 metricsID: source.metricsID,
-                title: source.title
+                title: source.title,
+                networkClass: networkClass
             )
         }
     }
@@ -2255,6 +2257,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         bytes: Int64,
         stallDelta: Int
     ) -> String? {
+        let networkClass = PlaybackEnvironment.current.networkClass
         guard observedKilobitsPerSecond > 0 || bytes > 0 || stallDelta > 0 else { return nil }
         guard let videoURL = source.videoURL ?? source.audioURL else { return nil }
         PlaybackURLPreferenceStore.shared.recordPlaybackFeedback(
@@ -2262,7 +2265,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             observedKilobitsPerSecond: max(observedKilobitsPerSecond, 0),
             transferMilliseconds: max(transferMilliseconds, 0),
             bytes: max(bytes, 0),
-            stallCount: stallDelta
+            stallCount: stallDelta,
+            networkClass: networkClass
         )
         if stallDelta > 0,
            let audioURL = source.audioURL,
@@ -2272,7 +2276,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 observedKilobitsPerSecond: 0,
                 transferMilliseconds: max(transferMilliseconds, 0),
                 bytes: 0,
-                stallCount: stallDelta
+                stallCount: stallDelta,
+                networkClass: networkClass
             )
         }
         if stallDelta > 0 {
@@ -2283,14 +2288,16 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     host: videoHost,
                     reason: "accesslog-stall-\(stallDelta)",
                     metricsID: source.metricsID,
-                    title: source.title
+                    title: source.title,
+                    networkClass: networkClass
                 )
                 if audioHost?.lowercased() != videoHost?.lowercased() {
                     await HLSSourcePreferenceCache.shared.recordSessionAvoidance(
                         host: audioHost,
                         reason: "accesslog-stall-\(stallDelta)",
                         metricsID: source.metricsID,
-                        title: source.title
+                        title: source.title,
+                        networkClass: networkClass
                     )
                 }
             }
@@ -5044,7 +5051,8 @@ struct LocalHLSBridge: Sendable {
         guard let primaryURL = canonicalSourceURLs.first else {
             throw PlayerEngineError.unsupportedMedia
         }
-        let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalSourceURLs)
+        let networkClass = PlaybackEnvironment.current.networkClass
+        let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalSourceURLs, networkClass: networkClass)
         guard policy.fetchStrategy.isFastFallback, sourceURLs.count > 1 else {
             return try await fetchByteRangeSequential(
                 range,
@@ -5052,6 +5060,7 @@ struct LocalHLSBridge: Sendable {
                 primaryURL: primaryURL,
                 headers: headers,
                 remoteRequestPolicy: policy.remoteRequestPolicy,
+                networkClass: networkClass,
                 onFirstByte: onFirstByte,
                 onComplete: onComplete
             )
@@ -5063,6 +5072,7 @@ struct LocalHLSBridge: Sendable {
             primaryURL: primaryURL,
             headers: headers,
             remoteRequestPolicy: policy.remoteRequestPolicy,
+            networkClass: networkClass,
             onFirstByte: onFirstByte,
             onComplete: onComplete
         )
@@ -5074,6 +5084,7 @@ struct LocalHLSBridge: Sendable {
         primaryURL: URL,
         headers: [String: String],
         remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy,
+        networkClass: PlaybackEnvironment.NetworkClass,
         onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)?,
         onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)?
     ) async throws -> Data {
@@ -5082,6 +5093,7 @@ struct LocalHLSBridge: Sendable {
         }
         var lastError: Error?
         for (index, url) in sourceURLs.enumerated() {
+            try Task.checkCancellation()
             let fetchStart = CACurrentMediaTime()
             do {
                 let cacheResult = try await VideoRangeCache.shared.cachedOrFetchWithSource(url: url, range: range) {
@@ -5101,12 +5113,13 @@ struct LocalHLSBridge: Sendable {
                         for: sourceURLs,
                         elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
                         bytes: Int64(data.count),
-                        succeeded: true
+                        succeeded: true,
+                        networkClass: networkClass
                     )
                 }
                 if index > 0 {
                     if cacheResult.source == .remote {
-                        await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: sourceURLs)
+                        await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: sourceURLs, networkClass: networkClass)
                     }
                     await VideoRangeCache.shared.store(data, url: primaryURL, range: range)
                     PlayerMetricsLog.logger.info(
@@ -5119,7 +5132,8 @@ struct LocalHLSBridge: Sendable {
                     url: url,
                     for: sourceURLs,
                     elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
-                    error: error
+                    error: error,
+                    networkClass: networkClass
                 )
                 lastError = error
                 guard index < sourceURLs.count - 1, !Task.isCancelled else { break }
@@ -5137,6 +5151,7 @@ struct LocalHLSBridge: Sendable {
         primaryURL: URL,
         headers: [String: String],
         remoteRequestPolicy: HLSRemoteByteRangeRequestPolicy,
+        networkClass: PlaybackEnvironment.NetworkClass,
         onFirstByte: (@Sendable (URL, Int, Double, CFTimeInterval) async -> Void)?,
         onComplete: (@Sendable (VideoRangeCacheFetchSource, URL, Int, Double) async -> Void)?
     ) async throws -> Data {
@@ -5144,12 +5159,14 @@ struct LocalHLSBridge: Sendable {
         let result: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error> = await withTaskGroup(of: Result<(index: Int, data: Data, source: VideoRangeCacheFetchSource), Error>.self) { group in
             for (index, url) in sourceURLs.enumerated() {
                 group.addTask(priority: .userInitiated) {
-                    let fetchStart = CACurrentMediaTime()
+                    var fetchStart = CACurrentMediaTime()
                     do {
                         if index > 0 {
                             let delay = remoteRequestPolicy.fastFallbackDelayNanoseconds(forSourceIndex: index)
                             try await Task.sleep(nanoseconds: delay)
                         }
+                        // CDN scoring measures request work, excluding fallback scheduling delay.
+                        fetchStart = CACurrentMediaTime()
                         let cacheResult = try await VideoRangeCache.shared.cachedOrFetchWithSource(url: url, range: range) {
                             try await fetchRemoteByteRangeWithRetry(
                                 range,
@@ -5166,7 +5183,8 @@ struct LocalHLSBridge: Sendable {
                                 for: sourceURLs,
                                 elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
                                 bytes: Int64(data.count),
-                                succeeded: true
+                                succeeded: true,
+                                networkClass: networkClass
                             )
                         }
                         #if DEBUG
@@ -5183,7 +5201,8 @@ struct LocalHLSBridge: Sendable {
                             url: url,
                             for: sourceURLs,
                             elapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: fetchStart),
-                            error: error
+                            error: error,
+                            networkClass: networkClass
                         )
                         return .failure(error)
                     }
@@ -5221,7 +5240,7 @@ struct LocalHLSBridge: Sendable {
                 )
             }
             if payload.source == .remote, let preferredURL = sourceURLs[safe: payload.index] {
-                await HLSSourcePreferenceCache.shared.recordPreferredURL(preferredURL, for: sourceURLs)
+                await HLSSourcePreferenceCache.shared.recordPreferredURL(preferredURL, for: sourceURLs, networkClass: networkClass)
             }
             if payload.index > 0 {
                 await VideoRangeCache.shared.store(payload.data, url: primaryURL, range: range)
@@ -7295,7 +7314,7 @@ private actor LocalHLSBridgeInstanceCache {
     }
 }
 
-private actor HLSSourcePreferenceCache {
+actor HLSSourcePreferenceCache {
     static let shared = HLSSourcePreferenceCache()
 
     private let ttl: TimeInterval = 24 * 60 * 60
@@ -7312,21 +7331,20 @@ private actor HLSSourcePreferenceCache {
     private var persistTask: Task<Void, Never>?
     private var persistDirty = false
 
-    init() {
-        storeURL = fileManager
-            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HLSSourcePreferenceCache.json")
-        hostScoreStoreURL = fileManager
-            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HLSSourceScores.json")
+    init(directory: URL? = nil) {
+        let defaultDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let directory = directory ?? defaultDirectory
+        // Old host-only observations have no reliable network attribution.
+        storeURL = directory.appendingPathComponent("HLSSourcePreferenceCache-v2.json")
+        hostScoreStoreURL = directory.appendingPathComponent("HLSSourceScores-v2.json")
     }
 
-    func preferredURLs(for urls: [URL]) -> [URL] {
+    func preferredURLs(for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass) -> [URL] {
         loadStoreIfNeeded()
         trimExpired()
         guard urls.count > 1 else { return urls }
         let scoredURLs = urls.enumerated().map { index, url -> (index: Int, url: URL, score: Double?) in
-            guard let host = url.host, let hostScore = hostScores[host] else {
+            guard let host = url.host, let hostScore = hostScores[hostScoreKey(host, networkClass: networkClass)] else {
                 return (index, url, nil)
             }
             return (index, url, hostScore.rankScore)
@@ -7346,35 +7364,35 @@ private actor HLSSourcePreferenceCache {
                     return lhs.index < rhs.index
                 }
                 .map(\.url)
-            return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(ordered))
+            return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(ordered, networkClass: networkClass), networkClass: networkClass)
         }
-        guard let preferredURL = preferredURL(for: urls),
+        guard let preferredURL = preferredURL(for: urls, networkClass: networkClass),
               let preferredIndex = urls.firstIndex(of: preferredURL),
               preferredIndex > 0
         else {
-            return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(urls))
+            return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(urls, networkClass: networkClass), networkClass: networkClass)
         }
         var reordered = urls
         let preferred = reordered.remove(at: preferredIndex)
         reordered.insert(preferred, at: 0)
-        return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(reordered))
+        return applyingCellularBiliTrafficCompatibility(to: demoteSessionAvoidedHosts(reordered, networkClass: networkClass), networkClass: networkClass)
     }
 
-    private func applyingCellularBiliTrafficCompatibility(to urls: [URL]) -> [URL] {
+    private func applyingCellularBiliTrafficCompatibility(to urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> [URL] {
         guard CellularBiliTrafficCompatibilityExperiment.currentState.isActive else { return urls }
 
-        let availableURLs = urls.filter { !isSessionAvoided($0.host) }
-        let avoidedURLs = urls.filter { isSessionAvoided($0.host) }
+        let availableURLs = urls.filter { !isSessionAvoided($0.host, networkClass: networkClass) }
+        let avoidedURLs = urls.filter { isSessionAvoided($0.host, networkClass: networkClass) }
         return CellularBiliTrafficCompatibilityExperiment.prioritizedURLsForCurrentEnvironment(availableURLs)
             + avoidedURLs
     }
 
-    func recordPreferredURL(_ url: URL, for urls: [URL]) {
+    func recordPreferredURL(_ url: URL, for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass) {
         loadStoreIfNeeded()
         guard urls.contains(url) else { return }
         let now = Date()
-        entries[exactCacheKey(for: urls)] = Entry(preferredURLString: url.absoluteString, date: now)
-        if let hostKey = hostCacheKey(for: urls) {
+        entries[exactCacheKey(for: urls, networkClass: networkClass)] = Entry(preferredURLString: url.absoluteString, date: now)
+        if let hostKey = hostCacheKey(for: urls, networkClass: networkClass) {
             entries[hostKey] = Entry(preferredURLString: url.absoluteString, date: now)
         }
         trimExpired()
@@ -7392,12 +7410,13 @@ private actor HLSSourcePreferenceCache {
         failureReason: String? = nil,
         failurePenaltyMultiplier: Int = 1,
         metricsID: String? = nil,
-        title: String? = nil
+        title: String? = nil,
+        networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass
     ) {
         loadStoreIfNeeded()
         guard urls.contains(url), let host = url.host else { return }
         let now = Date()
-        var score = hostScores[host] ?? HostScore()
+        var score = hostScores[hostScoreKey(host, networkClass: networkClass)] ?? HostScore()
         score.record(
             elapsedMilliseconds: elapsedMilliseconds,
             bytes: bytes,
@@ -7408,13 +7427,14 @@ private actor HLSSourcePreferenceCache {
             url: url,
             elapsedMilliseconds: elapsedMilliseconds,
             bytes: bytes,
-            succeeded: succeeded
+            succeeded: succeeded,
+            networkClass: networkClass
         )
-        hostScores[host] = score
+        hostScores[hostScoreKey(host, networkClass: networkClass)] = score
         if succeeded {
-            clearSessionAvoidance(for: host)
-            entries[exactCacheKey(for: urls)] = Entry(preferredURLString: url.absoluteString, date: now)
-            if let hostKey = hostCacheKey(for: urls) {
+            clearSessionAvoidance(for: host, networkClass: networkClass)
+            entries[exactCacheKey(for: urls, networkClass: networkClass)] = Entry(preferredURLString: url.absoluteString, date: now)
+            if let hostKey = hostCacheKey(for: urls, networkClass: networkClass) {
                 entries[hostKey] = Entry(preferredURLString: url.absoluteString, date: now)
             }
         } else {
@@ -7423,7 +7443,8 @@ private actor HLSSourcePreferenceCache {
                 reason: failureReason ?? "range-failed",
                 penaltyMultiplier: max(failurePenaltyMultiplier, 1),
                 metricsID: metricsID,
-                title: title
+                title: title,
+                networkClass: networkClass
             )
         }
         trimExpired()
@@ -7439,7 +7460,8 @@ private actor HLSSourcePreferenceCache {
         elapsedMilliseconds: Double,
         error: Error,
         metricsID: String? = nil,
-        title: String? = nil
+        title: String? = nil,
+        networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass
     ) {
         guard HLSBridgeRemoteFailure.shouldRecordSourceFailure(error) else { return }
         recordResult(
@@ -7451,7 +7473,8 @@ private actor HLSSourcePreferenceCache {
             failureReason: HLSBridgeRemoteFailure.sourceAvoidanceReason(for: error),
             failurePenaltyMultiplier: HLSBridgeRemoteFailure.sourceAvoidancePenaltyMultiplier(for: error),
             metricsID: metricsID,
-            title: title
+            title: title,
+            networkClass: networkClass
         )
     }
 
@@ -7459,7 +7482,8 @@ private actor HLSSourcePreferenceCache {
         host: String?,
         reason: String,
         metricsID: String?,
-        title: String? = nil
+        title: String? = nil,
+        networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass
     ) {
         loadStoreIfNeeded()
         guard let host else { return }
@@ -7468,22 +7492,23 @@ private actor HLSSourcePreferenceCache {
             reason: reason,
             penaltyMultiplier: 2,
             metricsID: metricsID,
-            title: title
+            title: title,
+            networkClass: networkClass
         )
     }
 
-    func diagnostics(for urls: [URL]) -> [HLSBridgeSourceDiagnosticsSnapshot] {
+    func diagnostics(for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass = PlaybackEnvironment.current.networkClass) -> [HLSBridgeSourceDiagnosticsSnapshot] {
         loadStoreIfNeeded()
         trimExpired()
-        let orderedURLs = preferredURLs(for: urls.removingDuplicates())
+        let orderedURLs = preferredURLs(for: urls.removingDuplicates(), networkClass: networkClass)
         let now = Date()
         var seenHosts = Set<String>()
         return orderedURLs.enumerated().compactMap { index, url -> HLSBridgeSourceDiagnosticsSnapshot? in
             guard let host = normalizedHost(url.host),
                   seenHosts.insert(host).inserted
             else { return nil }
-            let score = hostScores[host] ?? url.host.flatMap { hostScores[$0] }
-            let avoidance = sessionAvoidance[host]
+            let score = hostScores[hostScoreKey(host, networkClass: networkClass)]
+            let avoidance = sessionAvoidance[hostScoreKey(host, networkClass: networkClass)]
             let isAvoided = avoidance.map { $0.expiresAt > now } ?? false
             return HLSBridgeSourceDiagnosticsSnapshot(
                 host: host,
@@ -7499,8 +7524,8 @@ private actor HLSSourcePreferenceCache {
         }
     }
 
-    private func preferredURL(for urls: [URL]) -> URL? {
-        let keys = [exactCacheKey(for: urls), hostCacheKey(for: urls)]
+    private func preferredURL(for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> URL? {
+        let keys = [exactCacheKey(for: urls, networkClass: networkClass), hostCacheKey(for: urls, networkClass: networkClass)]
             .compactMap { $0 }
         for key in keys {
             guard let entry = entries[key],
@@ -7517,25 +7542,25 @@ private actor HLSSourcePreferenceCache {
         return nil
     }
 
-    private func exactCacheKey(for urls: [URL]) -> String {
-        "exact|" + urls
+    private func exactCacheKey(for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> String {
+        "\(networkClass.performanceSampleKey)|exact|" + urls
             .map(\.absoluteString)
             .joined(separator: "|")
     }
 
-    private func hostCacheKey(for urls: [URL]) -> String? {
+    private func hostCacheKey(for urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> String? {
         let hosts = urls.compactMap(\.host)
         guard hosts.count > 1 else { return nil }
-        return "host|" + hosts.joined(separator: "|")
+        return "\(networkClass.performanceSampleKey)|host|" + hosts.joined(separator: "|")
     }
 
-    private func demoteSessionAvoidedHosts(_ urls: [URL]) -> [URL] {
+    private func demoteSessionAvoidedHosts(_ urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> [URL] {
         trimSessionAvoidance()
         guard !sessionAvoidance.isEmpty else { return urls }
         var preferred: [URL] = []
         var avoided: [URL] = []
         for url in urls {
-            if isSessionAvoided(url.host) {
+            if isSessionAvoided(url.host, networkClass: networkClass) {
                 avoided.append(url)
             } else {
                 preferred.append(url)
@@ -7550,9 +7575,11 @@ private actor HLSSourcePreferenceCache {
         reason: String,
         penaltyMultiplier: Int,
         metricsID: String?,
-        title: String?
+        title: String?,
+        networkClass: PlaybackEnvironment.NetworkClass
     ) {
-        guard let key = normalizedHost(host) else { return }
+        guard let host = normalizedHost(host) else { return }
+        let key = hostScoreKey(host, networkClass: networkClass)
         trimSessionAvoidance()
         let existing = sessionAvoidance[key]
         let failureCount = min((existing?.failureCount ?? 0) + max(penaltyMultiplier, 1), 8)
@@ -7564,7 +7591,7 @@ private actor HLSSourcePreferenceCache {
             expiresAt: expiresAt
         )
         PlayerMetricsLog.logger.info(
-            "hlsSourceSessionAvoid host=\(key, privacy: .public) reason=\(reason, privacy: .public) failures=\(failureCount, privacy: .public) ttl=\(Int(penaltySeconds), privacy: .public)s"
+            "hlsSourceSessionAvoid host=\(host, privacy: .public) network=\(networkClass.performanceSampleKey, privacy: .public) reason=\(reason, privacy: .public) failures=\(failureCount, privacy: .public) ttl=\(Int(penaltySeconds), privacy: .public)s"
         )
         if let metricsID {
             Task { @MainActor in
@@ -7572,21 +7599,27 @@ private actor HLSSourcePreferenceCache {
                     .network,
                     metricsID: metricsID,
                     title: title,
-                    message: "sessionAvoid host=\(key) reason=\(reason) failures=\(failureCount) ttl=\(Int(penaltySeconds))s"
+                    message: "sessionAvoid host=\(host) network=\(networkClass.performanceSampleKey) reason=\(reason) failures=\(failureCount) ttl=\(Int(penaltySeconds))s"
                 )
             }
         }
     }
 
-    private func clearSessionAvoidance(for host: String) {
-        guard let key = normalizedHost(host) else { return }
+    private func clearSessionAvoidance(for host: String, networkClass: PlaybackEnvironment.NetworkClass) {
+        guard let host = normalizedHost(host) else { return }
+        let key = hostScoreKey(host, networkClass: networkClass)
         sessionAvoidance[key] = nil
     }
 
-    private func isSessionAvoided(_ host: String?) -> Bool {
-        guard let key = normalizedHost(host) else { return false }
+    private func isSessionAvoided(_ host: String?, networkClass: PlaybackEnvironment.NetworkClass) -> Bool {
+        guard let host = normalizedHost(host) else { return false }
+        let key = hostScoreKey(host, networkClass: networkClass)
         guard let avoidance = sessionAvoidance[key] else { return false }
         return avoidance.expiresAt > Date()
+    }
+
+    private func hostScoreKey(_ host: String, networkClass: PlaybackEnvironment.NetworkClass) -> String {
+        "\(networkClass.performanceSampleKey)|\(host.lowercased())"
     }
 
     private func normalizedHost(_ host: String?) -> String? {
@@ -8401,11 +8434,12 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         path: String,
         elapsedMilliseconds: Double,
         bytes: Int,
-        sourceURLCount: Int
+        sourceURLCount: Int,
+        environment: PlaybackEnvironment
     ) -> Bool {
         guard sourceURLCount > 1,
               isStartupCriticalMediaPath(path),
-              !PlaybackEnvironment.current.shouldPreferConservativePlayback
+              !environment.shouldPreferConservativePlayback
         else { return false }
 
         if path.hasSuffix("/init.mp4") {
@@ -8434,11 +8468,12 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
 
     nonisolated private static func shouldHedgeStartupRange(
         path: String,
-        sourceURLCount: Int
+        sourceURLCount: Int,
+        environment: PlaybackEnvironment
     ) -> Bool {
         sourceURLCount > 1
             && isStartupCriticalMediaPath(path)
-            && !PlaybackEnvironment.current.shouldPreferConservativePlayback
+            && !environment.shouldPreferConservativePlayback
     }
 
     nonisolated private static func slowStartupAvoidanceReason(path: String, elapsedMilliseconds: Double) -> String {
@@ -8459,6 +8494,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         _ range: HTTPByteRange,
         canonicalURLs: [URL],
         sourceURLs: [URL],
+        environment: PlaybackEnvironment,
         primaryURL: URL,
         contentType: String,
         transform: HLSMediaSegmentTransform?,
@@ -8472,6 +8508,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         #if DEBUG
         let recoveryTicket = recoveryScope.ticket(for: recoveryRequestID)
         #endif
+        let networkClass = environment.networkClass
         let streamStart = CACurrentMediaTime()
         let responseHeader = streamingHeaderData(
             contentType: contentType,
@@ -8536,7 +8573,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             path: request.path,
             elapsedMilliseconds: elapsedMilliseconds,
             bytes: streamedBytes,
-            sourceURLCount: canonicalURLs.count
+            sourceURLCount: canonicalURLs.count,
+            environment: environment
         )
         await HLSSourcePreferenceCache.shared.recordResult(
             url: selectedURL,
@@ -8544,7 +8582,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             elapsedMilliseconds: elapsedMilliseconds,
             bytes: Int64(streamedBytes),
             succeeded: true,
-            metricsID: metricsID
+            metricsID: metricsID,
+            networkClass: networkClass
         )
         if shouldAvoidSlowStartupHost {
             let reason = Self.slowStartupAvoidanceReason(
@@ -8554,10 +8593,11 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
             await HLSSourcePreferenceCache.shared.recordSessionAvoidance(
                 host: selectedURL.host,
                 reason: reason,
-                metricsID: metricsID
+                metricsID: metricsID,
+                networkClass: networkClass
             )
         } else {
-            await HLSSourcePreferenceCache.shared.recordPreferredURL(selectedURL, for: canonicalURLs)
+            await HLSSourcePreferenceCache.shared.recordPreferredURL(selectedURL, for: canonicalURLs, networkClass: networkClass)
         }
         await HLSProxyCacheMetrics.shared.record(
             metricsID: metricsID,
@@ -8627,10 +8667,13 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         let recoveryTicket = recoveryScope.ticket(for: recoveryRequestID)
         #endif
         let canonicalURLs = urls.removingDuplicates()
-        let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalURLs)
+        let environment = PlaybackEnvironment.current
+        let networkClass = environment.networkClass
+        let sourceURLs = await HLSSourcePreferenceCache.shared.preferredURLs(for: canonicalURLs, networkClass: networkClass)
         if Self.shouldHedgeStartupRange(
             path: request.path,
-            sourceURLCount: canonicalURLs.count
+            sourceURLCount: canonicalURLs.count,
+            environment: environment
         ) {
             #if DEBUG
             RecoveryRangeTaskContext.current?.record("rangeTaskUnreserved", fields: ["transport": "hedgedStreaming"])
@@ -8639,6 +8682,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 range,
                 canonicalURLs: canonicalURLs,
                 sourceURLs: sourceURLs,
+                environment: environment,
                 primaryURL: primaryURL,
                 contentType: contentType,
                 transform: transform,
@@ -8654,6 +8698,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         var lastError: Error?
 
         for (index, url) in sourceURLs.enumerated() {
+            try Task.checkCancellation()
             let reservation = await VideoRangeCache.shared.reserveExternalFetch(
                 url: url,
                 range: range,
@@ -8829,7 +8874,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     path: request.path,
                     elapsedMilliseconds: streamElapsed,
                     bytes: streamedBytes,
-                    sourceURLCount: canonicalURLs.count
+                    sourceURLCount: canonicalURLs.count,
+                    environment: environment
                 )
                 await HLSSourcePreferenceCache.shared.recordResult(
                     url: url,
@@ -8837,14 +8883,16 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     elapsedMilliseconds: streamElapsed,
                     bytes: Int64(streamedBytes),
                     succeeded: true,
-                    metricsID: metricsID
+                    metricsID: metricsID,
+                    networkClass: networkClass
                 )
                 if shouldAvoidSlowStartupHost {
                     let reason = Self.slowStartupAvoidanceReason(path: request.path, elapsedMilliseconds: streamElapsed)
                     await HLSSourcePreferenceCache.shared.recordSessionAvoidance(
                         host: url.host,
                         reason: reason,
-                        metricsID: metricsID
+                        metricsID: metricsID,
+                        networkClass: networkClass
                     )
                     await PlayerMetricsLog.record(
                         .network,
@@ -8881,7 +8929,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                 }
                 #endif
                 if !shouldAvoidSlowStartupHost {
-                    await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs)
+                    await HLSSourcePreferenceCache.shared.recordPreferredURL(url, for: canonicalURLs, networkClass: networkClass)
                 }
                 if case let .reserved(token) = reservation {
                     if let cacheData {
@@ -8924,7 +8972,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
                     for: canonicalURLs,
                     elapsedMilliseconds: 0,
                     error: error,
-                    metricsID: metricsID
+                    metricsID: metricsID,
+                    networkClass: networkClass
                 )
                 lastError = error
                 if let streamError = error as? HLSRangeStreamError,
