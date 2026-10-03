@@ -1,6 +1,18 @@
 import MetalKit
 import UIKit
 
+enum MetalDanmakuFrameRatePolicy {
+    static func preferredFramesPerSecond(
+        displayMaximum: Int,
+        isLoadShedding: Bool,
+        isLowPowerMode: Bool,
+        isThermallyConstrained: Bool
+    ) -> Int {
+        guard !isLoadShedding, !isLowPowerMode, !isThermallyConstrained else { return 30 }
+        return min(max(displayMaximum > 0 ? displayMaximum : 60, 30), 120)
+    }
+}
+
 @MainActor
 final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     let metalView: MTKView
@@ -200,7 +212,13 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         if metalView.isPaused { DanmakuRendererDiagnostics.shared.resetMetalCadence() }
         #endif
         let environment = PlaybackEnvironment.current
-        metalView.preferredFramesPerSecond = isLoadSheddingValue || environment.isLowPowerModeEnabled || environment.isThermallyConstrained ? 30 : 60
+        let displayMaximumFPS = window?.screen.maximumFramesPerSecond ?? 60
+        metalView.preferredFramesPerSecond = MetalDanmakuFrameRatePolicy.preferredFramesPerSecond(
+            displayMaximum: displayMaximumFPS,
+            isLoadShedding: isLoadSheddingValue,
+            isLowPowerMode: environment.isLowPowerModeEnabled,
+            isThermallyConstrained: environment.isThermallyConstrained
+        )
     }
     private func drawOnceIfVisible() {
         if !metalView.isHidden && !suspended && window != nil { metalView.draw() }

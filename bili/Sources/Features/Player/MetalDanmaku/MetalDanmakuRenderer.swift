@@ -161,7 +161,9 @@ final class MetalDanmakuRenderer {
             pages: atlas.textures.count, usedPixels: atlas.usedPixels, capacityPixels: atlas.capacityPixels,
             rejected: atlas.rejectedGlyphs, skipped: skippedFrames,
             preparationMs: (CACurrentMediaTime() - start) * 1_000, timestamp: start,
-            expectedInterval: view.isPaused ? 0 : 1 / Double(view.preferredFramesPerSecond))
+            expectedInterval: view.isPaused ? 0 : 1 / Double(view.preferredFramesPerSecond),
+            requestedFPS: view.preferredFramesPerSecond,
+            displayMaximumFPS: view.window?.screen.maximumFramesPerSecond ?? 60)
         #endif
     }
 

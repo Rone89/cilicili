@@ -67,6 +67,8 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         var rejectedGlyphs = 0
         var skippedFrames = 0
         var frames = 0
+        var requestedFPS = 0
+        var displayMaximumFPS = 0
         var preparationTotalMs = 0.0
         var preparationMaxMs = 0.0
         var gpuSamples = 0
@@ -87,7 +89,8 @@ final class DanmakuRendererDiagnostics: ObservableObject {
 
     func recordMetalFrame(active: Int, glyphs: Int, drawCalls: Int, pages: Int,
                           usedPixels: Int, capacityPixels: Int, rejected: Int, skipped: Int,
-                          preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double) {
+                          preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double,
+                          requestedFPS: Int, displayMaximumFPS: Int) {
         guard isRecording else { return }
         metalSummary.active = active
         metalSummary.peakActive = max(metalSummary.peakActive, active)
@@ -99,6 +102,8 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         metalSummary.rejectedGlyphs = rejected
         metalSummary.skippedFrames = skipped
         metalSummary.frames += 1
+        metalSummary.requestedFPS = requestedFPS
+        metalSummary.displayMaximumFPS = displayMaximumFPS
         metalSummary.preparationTotalMs += preparationMs
         metalSummary.preparationMaxMs = max(metalSummary.preparationMaxMs, preparationMs)
         if expectedInterval > 0, let previous = metalSummary.previousTimestamp {
@@ -280,6 +285,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         lines.append("Metal active/peak/glyphs/drawCalls: \(metal.active)/\(metal.peakActive)/\(metal.glyphs)/\(metal.drawCalls)")
         lines.append("Metal atlas pages/used/capacity/rejected: \(metal.pages)/\(metal.usedPixels)/\(metal.capacityPixels)/\(metal.rejectedGlyphs)")
         lines.append("Metal frames/estimated FPS/callback gaps/busy slot drops: \(metal.frames)/\(metal.medianFPS.map { String(format: "%.1f", $0) } ?? "-")/\(metal.callbackGaps)/\(metal.skippedFrames)")
+        lines.append("Metal requested/display maximum FPS: \(metal.requestedFPS)/\(metal.displayMaximumFPS)")
         lines.append("Metal CPU preparation average/max ms: \(metal.cpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")/\(String(format: "%.3f", metal.preparationMaxMs))")
         lines.append("Metal GPU command average ms: \(metal.gpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")")
         #endif
