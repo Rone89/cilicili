@@ -70,6 +70,15 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func updateNavigationHistory(_ history: NavigationHistoryContext?) {
+        contentController.contentModel.updateNavigationHistory(history)
+    }
+
+    func scheduleNavigationHistoryUpdate(_ history: NavigationHistoryContext?) {
+        guard history != nil || contentController.contentModel.navigationHistory != nil else { return }
+        DispatchQueue.main.async { [weak self] in self?.updateNavigationHistory(history) }
+    }
+
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         AppOrientationLock.supportedOrientations
     }

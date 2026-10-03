@@ -82,6 +82,18 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
+            Toggle(isOn: Binding(
+                get: { libraryStore.videoDetailBottomHistoryBackButtonExperimentEnabled },
+                set: { libraryStore.setVideoDetailBottomHistoryBackButtonExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("视频底部历史返回", systemImage: "chevron.backward")
+                    Text("轻点返回上一页，长按选择导航栈中的历史页面。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Toggle(isOn: $dynamicAdaptiveImageGridEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("动态与评论多图自适应布局", systemImage: "square.grid.3x3")

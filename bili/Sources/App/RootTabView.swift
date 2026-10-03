@@ -167,6 +167,7 @@ struct RootTabView: View {
                 .toolbarVisibility(.visible, for: .navigationBar)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle(rootNavigationTitle(for: tab))
+                .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
                 .environment(
                     \.rootNavigationTitleHidden,
@@ -180,6 +181,7 @@ struct RootTabView: View {
                         sessionStore: dependencies.sessionStore,
                         api: dependencies.api
                     )
+                    .navigationHistoryTitle(route.navigationDisplayTitle)
                 }
                 .videoDestinations()
                 .dynamicDetailDestinations(
@@ -189,6 +191,10 @@ struct RootTabView: View {
         }
         .coordinatesRootTabBarTransitions(
             isDetailPresented: !detailPath.wrappedValue.isEmpty
+        )
+        .navigationHistoryStack(
+            path: detailPath, rootTitle: tab.title,
+            enabled: libraryStore.videoDetailBottomHistoryBackButtonExperimentEnabled
         )
     }
 

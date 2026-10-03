@@ -3,6 +3,7 @@ import SwiftUI
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.navigationHistoryContext) private var navigationHistory
     let seedVideo: VideoItem
     private let playbackOptions: VideoDetailPlaybackOptions
     private let onRequestClose: (() -> Void)?
@@ -62,6 +63,13 @@ struct VideoDetailView: View {
                 holder.viewModel?.markRelatedVideoNavigation()
             }
         }
+        .navigationHistoryTitle(seedVideo.title)
+        .environment(\.navigationHistoryBackAction, historyBackAction)
+    }
+
+    private var historyBackAction: (() -> Void)? {
+        guard navigationHistory != nil else { return nil }
+        return { popOneVideoLevel() }
     }
 
     private var contentLifecycleActions: VideoDetailViewContentLifecycleActions {

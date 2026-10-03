@@ -14,6 +14,23 @@ enum MineOverlayRoute: Hashable {
     case contentFilterSettings
     case privacySettings
 
+    var navigationDisplayTitle: String {
+        switch self {
+        case .accountMessages: "通知"
+        case .accountManagement: "账号管理"
+        case .history: AccountLibraryKind.history.title
+        case .favorites: AccountLibraryKind.favorites.title
+        case .watchLater: AccountLibraryKind.watchLater.title
+        case .interfaceSettings: "界面设置"
+        case .homeAndSearchSettings: "首页与搜索"
+        case .playbackSettings: "播放设置"
+        case .cacheSettings: "缓存管理"
+        case .developerDiagnostics: "开发者诊断"
+        case .contentFilterSettings: "内容过滤"
+        case .privacySettings: "隐私设置"
+        }
+    }
+
     var isSettingsRoute: Bool {
         switch self {
         case .interfaceSettings, .homeAndSearchSettings, .playbackSettings, .contentFilterSettings,

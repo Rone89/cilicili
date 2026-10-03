@@ -148,6 +148,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var multiAccountEnabled: Bool
     @available(*, deprecated, message: "Use multiAccountEnabled")
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
+    @Published private(set) var videoDetailBottomHistoryBackButtonExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
@@ -231,6 +232,8 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
+    private static let videoDetailBottomHistoryBackButtonExperimentEnabledKey =
+        "cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let videoDetailActionButtonStyleKey =
@@ -641,6 +644,8 @@ final class LibraryStore: ObservableObject {
         if userDefaults.object(forKey: Self.multiAccountExperimentEnabledKey) as? Bool != true {
             userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
         }
+        self.videoDetailBottomHistoryBackButtonExperimentEnabled =
+            Self.boolValue(forKey: Self.videoDetailBottomHistoryBackButtonExperimentEnabledKey, in: userDefaults) ?? false
         self.dynamicCommentHitAreaVisualizationExperimentEnabled =
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
@@ -1282,6 +1287,11 @@ final class LibraryStore: ObservableObject {
     func setMultiAccountExperimentEnabled(_ isEnabled: Bool) {
         guard isEnabled else { return }
         userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
+    }
+
+    func setVideoDetailBottomHistoryBackButtonExperimentEnabled(_ isEnabled: Bool) {
+        videoDetailBottomHistoryBackButtonExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.videoDetailBottomHistoryBackButtonExperimentEnabledKey)
     }
 
     func setDynamicCommentHitAreaVisualizationExperimentEnabled(_ isEnabled: Bool) {

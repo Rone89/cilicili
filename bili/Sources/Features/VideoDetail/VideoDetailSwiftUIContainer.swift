@@ -23,6 +23,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     #if DEBUG
         let playerFrameUpdates = CurrentValueSubject<CGRect, Never>(.zero)
     #endif
+    @Published private(set) var navigationHistory: NavigationHistoryContext?
     @Published var rootSafeAreaInsets = UIEdgeInsets.zero
     private(set) var interactiveScrollOffset: CGFloat = 0
 
@@ -63,6 +64,11 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         bind()
         bindVideoAspectRatio(to: initialPlayerViewModel)
         bindPlaybackState(to: initialPlayerViewModel)
+    }
+
+    func updateNavigationHistory(_ history: NavigationHistoryContext?) {
+        guard navigationHistory?.controller !== history?.controller else { return }
+        navigationHistory = history
     }
 
     var isInteractiveScrollCollapseActive: Bool {
@@ -790,6 +796,8 @@ struct VideoDetailSwiftUIContainer: View {
             }
         }
         .background(.black)
+        .environment(\.navigationHistoryContext, model.navigationHistory)
+        .environment(\.navigationHistoryBackAction, model.navigationHistory != nil ? onNavigateBack : nil)
         .environment(
             \.videoDetailActionButtonStyle,
             dependencies.libraryStore.videoDetailActionButtonStyle

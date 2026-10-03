@@ -38,12 +38,15 @@ extension View {
         }
         .navigationDestination(for: PgcSeasonRoute.self) { route in
             PgcSeasonPlaybackRouteView(route: route)
+                .navigationHistoryTitle(route.title)
         }
         .navigationDestination(for: VideoOwner.self) { owner in
             UploaderView(owner: owner)
+                .navigationHistoryTitle(owner.name)
         }
         .navigationDestination(for: LiveRoom.self) { room in
             LiveRoomDetailView(seedRoom: room)
+                .navigationHistoryTitle(room.title)
         }
     }
 }

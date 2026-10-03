@@ -229,6 +229,7 @@ private struct DynamicDetailDestination: View {
             }
         }
         .toolbarBackground(.automatic, for: .navigationBar)
+        .navigationHistoryTitle("动态详情")
     }
 
     private func refreshLoadedDetail(id: String) async {

@@ -6,6 +6,7 @@ enum UITestFixtureScenario: String {
     case dynamicDetail
     case fullscreen
     case commentAction
+    case historyBack
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments

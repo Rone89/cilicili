@@ -7,6 +7,7 @@ import SwiftUI
 struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.openVideoOwnerRouteAction) private var openVideoOwnerRoute
+    @Environment(\.navigationHistoryContext) private var navigationHistory
     let seedVideo: VideoItem
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -25,7 +26,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         // 否则内容区设置（诊断按钮/进度条等）取默认值。
         runtimeSettings.bind(dependencies.libraryStore)
         let systemChromeVisibility = $hidesSystemChrome
-        return VideoDetailRotationBridgeViewController(
+        let controller = VideoDetailRotationBridgeViewController(
             initialVideo: seedVideo,
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,
@@ -68,12 +69,16 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
             },
             onNavigateBack: onNavigateBack
         )
+        controller.updateNavigationHistory(navigationHistory)
+        return controller
     }
 
     func updateUIViewController(
-        _: VideoDetailRotationBridgeViewController,
+        _ controller: VideoDetailRotationBridgeViewController,
         context _: Context
-    ) {}
+    ) {
+        controller.scheduleNavigationHistoryUpdate(navigationHistory)
+    }
 
     static func dismantleUIViewController(
         _ uiViewController: VideoDetailRotationBridgeViewController,

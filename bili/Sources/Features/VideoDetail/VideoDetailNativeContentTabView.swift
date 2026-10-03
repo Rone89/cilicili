@@ -3,6 +3,7 @@ import SwiftUI
 struct VideoDetailNativeContentTabView<Content: View>: View {
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
+    @Environment(\.navigationHistoryContext) private var navigationHistory
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
@@ -35,6 +36,11 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .toolbar {
+            if let navigationHistory {
+                ToolbarItem(placement: .bottomBar) {
+                    VideoDetailHistoryBackMenu(history: navigationHistory)
+                }
+            }
             if onOpenCommentComposer != nil {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
