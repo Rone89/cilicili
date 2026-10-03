@@ -161,6 +161,54 @@ final class MetalDanmakuTimelineTests: XCTestCase {
         XCTAssertEqual(Set(timeline.active.map(\.item.id)), ["old"])
     }
 
+    func testWindowRefreshPreservesInFlightEntries() {
+        let settings = overlapSettings(displayArea: .full, trackHeight: 30)
+        let oldItems = makeItems(count: 24, time: 10, mode: 1)
+        let lateItems = (0..<6).map { makeItem(id: "late-\($0)", time: 10.25, mode: 1) }
+        let refreshedItems = oldItems + lateItems
+        let size = CGSize(width: 80, height: 20)
+        let measure: (DanmakuItem) -> CGSize? = { _ in size }
+
+        let timeline = makeTimeline(
+            viewport: CGSize(width: 320, height: 300),
+            settings: settings,
+            maximumActiveCount: 24
+        )
+        timeline.replaceItems(oldItems, at: 10, measure: measure)
+        timeline.advance(to: 10.5, measure: measure)
+        let activeBeforeRefresh = Set(timeline.active.map(\.item.id))
+        XCTAssertEqual(activeBeforeRefresh.count, 24)
+
+        XCTAssertTrue(timeline.canPreserveActiveEntries(with: refreshedItems, at: 10.5))
+        XCTAssertTrue(timeline.replaceItemsPreservingActive(refreshedItems, at: 10.5))
+
+        XCTAssertEqual(Set(timeline.active.map(\.item.id)), activeBeforeRefresh)
+        XCTAssertEqual(timeline.active.count, 24)
+
+        let rebuilt = makeTimeline(
+            viewport: CGSize(width: 320, height: 300),
+            settings: settings,
+            maximumActiveCount: 24
+        )
+        rebuilt.replaceItems(oldItems, at: 10, measure: measure)
+        rebuilt.replaceItems(refreshedItems, at: 10.5, measure: measure)
+        XCTAssertLessThan(Set(rebuilt.active.map(\.item.id)).intersection(activeBeforeRefresh).count, 24)
+    }
+
+    func testWindowRefreshDoesNotPreserveEntriesAcrossSeekOrSourceChange() {
+        let timeline = makeTimeline(
+            viewport: CGSize(width: 320, height: 300),
+            settings: overlapSettings(displayArea: .full, trackHeight: 30),
+            maximumActiveCount: 10
+        )
+        let old = makeItem(id: "old", time: 10, mode: 1)
+        let measure: (DanmakuItem) -> CGSize? = { _ in CGSize(width: 80, height: 20) }
+        timeline.replaceItems([old], at: 10, measure: measure)
+
+        XCTAssertFalse(timeline.canPreserveActiveEntries(with: [old], at: 20))
+        XCTAssertFalse(timeline.canPreserveActiveEntries(with: [makeItem(id: "new", time: 10, mode: 1)], at: 10))
+    }
+
     func testCollisionRejectsALaterWideItemThatWouldCatchUp() throws {
         let viewportWidth: CGFloat = 320
         let duration: CGFloat = 7.2

@@ -33,6 +33,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     #if DEBUG
     var debugMaximumActiveCount: Int?
     var debugActiveCount: Int { timeline.active.count }
+    var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
     var debugRenderer: MetalDanmakuRenderer { renderer }
     #endif
 
@@ -105,8 +106,17 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         stopped = false
         configureTimeline()
         if previous?.itemsRevision != next.itemsRevision {
-            layouts.removeAll(keepingCapacity: true)
-            timeline.replaceItems(next.items, at: effectiveTime(), measure: measure)
+            let time = effectiveTime()
+            let settingsUnchanged = previous?.settings == next.settings
+                && previous?.topInset == next.topInset
+                && previous?.bottomInset == next.bottomInset
+            if settingsUnchanged, timeline.replaceItemsPreservingActive(next.items, at: time) {
+                let retainedIDs = Set(next.items.map(\.id)).union(timeline.active.map { $0.item.id })
+                layouts = layouts.filter { retainedIDs.contains($0.key) }
+            } else {
+                layouts.removeAll(keepingCapacity: true)
+                timeline.replaceItems(next.items, at: time, measure: measure)
+            }
             lastRevision = -1
         } else if previous?.settings != next.settings || previous?.topInset != next.topInset || previous?.bottomInset != next.bottomInset {
             layouts.removeAll(keepingCapacity: true)

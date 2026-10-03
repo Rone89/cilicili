@@ -33,10 +33,44 @@ final class MetalDanmakuTimeline {
 
     func replaceItems(_ items: [DanmakuItem], at time: TimeInterval,
                       measure: (DanmakuItem) -> CGSize?) {
-        self.items = items.filter { $0.time.isFinite && $0.fontSize.isFinite }.sorted {
-            $0.time == $1.time ? $0.id < $1.id : $0.time < $1.time
-        }
+        self.items = normalizedItems(items)
         rebuild(at: time, measure: measure)
+    }
+
+    func canPreserveActiveEntries(with updatedItems: [DanmakuItem], at time: TimeInterval) -> Bool {
+        canPreserveActiveEntries(withNormalizedItems: normalizedItems(updatedItems), at: time)
+    }
+
+    @discardableResult
+    func replaceItemsPreservingActive(_ updatedItems: [DanmakuItem], at time: TimeInterval) -> Bool {
+        let normalized = normalizedItems(updatedItems)
+        guard canPreserveActiveEntries(withNormalizedItems: normalized, at: time) else { return false }
+        items = normalized
+        active.removeAll { $0.endTime <= time }
+        cursor = index(after: time)
+        lastTime = time
+        nextExpiry = active.map(\.endTime).min() ?? .infinity
+        revision &+= 1
+        return true
+    }
+
+    private func canPreserveActiveEntries(
+        withNormalizedItems updatedItems: [DanmakuItem],
+        at time: TimeInterval
+    ) -> Bool {
+        guard time.isFinite, let lastTime, abs(time - lastTime) <= 1.25 else { return false }
+        var updatedByID: [String: DanmakuItem] = [:]
+        for item in updatedItems where updatedByID[item.id] == nil {
+            updatedByID[item.id] = item
+        }
+
+        var hasUnchangedOverlap = false
+        for item in items {
+            guard let updatedItem = updatedByID[item.id] else { continue }
+            guard item == updatedItem else { return false }
+            hasUnchangedOverlap = true
+        }
+        return hasUnchangedOverlap
     }
 
     func rebuild(at time: TimeInterval, measure: (DanmakuItem) -> CGSize?) {
@@ -140,5 +174,11 @@ final class MetalDanmakuTimeline {
             if items[mid].time <= time { low = mid + 1 } else { high = mid }
         }
         return low
+    }
+
+    private func normalizedItems(_ items: [DanmakuItem]) -> [DanmakuItem] {
+        items.filter { $0.time.isFinite && $0.fontSize.isFinite }.sorted {
+            $0.time == $1.time ? $0.id < $1.id : $0.time < $1.time
+        }
     }
 }

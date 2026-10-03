@@ -90,6 +90,31 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         }
     }
 
+    func testWindowRefreshKeepsAlreadyScrollingItemsVisible() throws {
+        guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
+        defer { view.stop() }
+        view.frame = CGRect(x: 0, y: 0, width: 900, height: 400)
+        view.debugMaximumActiveCount = 24
+        view.layoutIfNeeded()
+
+        let existing = (0..<24).map { index in
+            DanmakuItem(id: "existing-\(index)", time: 1, mode: 1, fontSize: 25,
+                        color: 0xFFFFFF, text: "existing \(index)")
+        }
+        view.apply(configuration: configuration(items: existing, time: 1, revision: 1))
+        let activeBeforeRefresh = view.debugActiveItemIDs
+        XCTAssertEqual(activeBeforeRefresh.count, 24)
+
+        let newlyVisible = (0..<6).map { index in
+            DanmakuItem(id: "new-\(index)", time: 1.25, mode: 1, fontSize: 25,
+                        color: 0xFFFFFF, text: "new \(index)")
+        }
+        view.apply(configuration: configuration(items: existing + newlyVisible, time: 1.5, revision: 2))
+
+        XCTAssertEqual(view.debugActiveItemIDs, activeBeforeRefresh)
+        XCTAssertEqual(view.debugActiveCount, 24)
+    }
+
     func testActualShaderRendersDensityFixturesWithTransparentBackgroundAndFewDrawCalls() throws {
         for count in [10, 50, 100, 300, 600] {
             guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
