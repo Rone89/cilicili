@@ -28,6 +28,10 @@ final class DanmakuKitOverlayView: UIView {
     private var emoteLoadTasks: [URL: Task<Void, Never>] = [:]
     private var lastLayoutSize = CGSize.zero
 
+    #if DEBUG
+    var debugMaximumActiveCount: Int?
+    #endif
+
     var isLoadSheddingValue: Bool { isLoadShedding }
 
     override init(frame: CGRect) {
@@ -259,7 +263,7 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func displayDuration(for item: DanmakuItem) -> TimeInterval {
-        item.isScrolling ? maximumDisplayDuration : 4.2
+        DanmakuRenderPolicy.duration(for: item, viewportWidth: bounds.width)
     }
 
     private func configureRenderer() {
@@ -486,39 +490,15 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func isSupported(_ item: DanmakuItem) -> Bool {
-        guard item.isSupported,
-              !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return false }
-        if item.isScrolling { return settings.danmakuKit.enablesFloating }
-        if item.isTopAnchored { return settings.danmakuKit.enablesTop }
-        if item.isBottomAnchored { return settings.danmakuKit.enablesBottom }
-        return false
+        DanmakuRenderPolicy.supports(item, settings: settings)
     }
 
     private var maximumActiveCount: Int {
-        let environment = PlaybackEnvironment.current
-        let sheddingFactor = isLoadShedding ? 0.46 : 1.0
-        let rateFactor: Double
-        if playbackRate >= 1.75 {
-            rateFactor = 0.58
-        } else if playbackRate > 1.15 {
-            rateFactor = 0.72
-        } else {
-            rateFactor = 1.0
-        }
-        let thermalFactor: Double
-        if environment.isThermallyConstrained || environment.isLowPowerModeEnabled {
-            thermalFactor = min(settings.loadFactor, 0.50)
-        } else if environment.isThermallyElevated {
-            thermalFactor = min(settings.loadFactor, 0.66)
-        } else if environment.shouldPreferConservativePlayback {
-            thermalFactor = min(settings.loadFactor, 0.72)
-        } else {
-            thermalFactor = settings.loadFactor
-        }
-        let baseCount = bounds.width > 640 ? 44 : 24
-        let minimumCount = isLoadShedding ? 5 : 8
-        return max(minimumCount, Int(Double(baseCount) * thermalFactor * sheddingFactor * rateFactor))
+        #if DEBUG
+        if let count = debugMaximumActiveCount { return min(max(count, 1), 600) }
+        #endif
+        return DanmakuRenderPolicy.maximumActiveCount(width: bounds.width, settings: settings,
+            rate: playbackRate, loadShedding: isLoadShedding)
     }
 
     private func loadEmotes(_ urls: [URL]) {

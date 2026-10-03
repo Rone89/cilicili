@@ -82,6 +82,20 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
+            Toggle(isOn: Binding(
+                get: { libraryStore.metalDanmakuRendererExperimentEnabled },
+                set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("Metal 弹幕渲染实验", systemImage: "sparkles.tv")
+                    Text("用 GPU 批量绘制普通文字弹幕。关闭后使用 DanmakuKit；图片表情暂以文字显示。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.metalDanmaku")
+
             Toggle(isOn: $dynamicAdaptiveImageGridEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("动态与评论多图自适应布局", systemImage: "square.grid.3x3")

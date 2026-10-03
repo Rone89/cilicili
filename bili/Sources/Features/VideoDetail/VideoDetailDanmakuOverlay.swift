@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailDanmakuOverlay: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let store: VideoDetailDanmakuRenderStore
     let playerViewModel: PlayerStateViewModel
     let clock: PlayerPlaybackClock
@@ -27,7 +28,8 @@ struct VideoDetailDanmakuOverlay: View {
             bottomInset: usesLandscapePlaybackChrome ? 84 : 54,
             isLayoutTransitioning: isLayoutTransitioning,
             playbackClock: clock,
-            onPlaybackTime: onPlaybackTime
+            onPlaybackTime: onPlaybackTime,
+            metalRendererEnabled: libraryStore.metalDanmakuRendererExperimentEnabled
         )
         .padding(.horizontal, usesLandscapePlaybackChrome ? 0 : 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

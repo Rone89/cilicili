@@ -31,11 +31,8 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
         } else {
             type = .floating
         }
-        let compactScale: CGFloat = viewportWidth > 640 ? 0.86 : 0.70
-        let maximumSize: CGFloat = viewportWidth > 640 ? 24 : 18
-        let minimumSize: CGFloat = viewportWidth > 640 ? 15 : 13
-        let pointSize = min(max(CGFloat(item.fontSize) * compactScale * CGFloat(fontScale), minimumSize * 0.9), maximumSize * 1.35)
-        let uiFont = UIFont.systemFont(ofSize: pointSize, weight: Self.uiWeight(for: fontWeight))
+        let uiFont = DanmakuRenderPolicy.font(for: item, viewportWidth: viewportWidth,
+            scale: fontScale, weight: fontWeight)
         font = uiFont
         let color = UIColor(
             red: CGFloat((item.color >> 16) & 0xFF) / 255,
@@ -72,18 +69,6 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
 
     func isEqual(to cellModel: DanmakuCellModel) -> Bool {
         identifier == cellModel.identifier
-    }
-
-    private static func uiWeight(for weight: DanmakuFontWeightOption) -> UIFont.Weight {
-        switch weight {
-        case .light: .light
-        case .regular: .regular
-        case .medium: .medium
-        case .semibold: .semibold
-        case .bold: .bold
-        case .heavy: .heavy
-        case .black: .black
-        }
     }
 
     private static func render(

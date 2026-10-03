@@ -55,6 +55,71 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         }
     }
 
+    #if DEBUG
+    struct MetalSummary {
+        var active = 0
+        var peakActive = 0
+        var glyphs = 0
+        var drawCalls = 0
+        var pages = 0
+        var usedPixels = 0
+        var capacityPixels = 0
+        var rejectedGlyphs = 0
+        var skippedFrames = 0
+        var frames = 0
+        var preparationTotalMs = 0.0
+        var preparationMaxMs = 0.0
+        var gpuSamples = 0
+        var gpuTotalMs = 0.0
+        var previousTimestamp: CFTimeInterval?
+        var intervals: [Double] = []
+        var callbackGaps = 0
+        var medianFPS: Double? {
+            guard !intervals.isEmpty else { return nil }
+            let median = intervals.sorted()[intervals.count / 2]
+            return median > 0 ? 1 / median : nil
+        }
+        var cpuAverageMs: Double? { frames > 0 ? preparationTotalMs / Double(frames) : nil }
+        var gpuAverageMs: Double? { gpuSamples > 0 ? gpuTotalMs / Double(gpuSamples) : nil }
+    }
+    var rendererType = "DanmakuKit"
+    private(set) var metalSummary = MetalSummary()
+
+    func recordMetalFrame(active: Int, glyphs: Int, drawCalls: Int, pages: Int,
+                          usedPixels: Int, capacityPixels: Int, rejected: Int, skipped: Int,
+                          preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double) {
+        guard isRecording else { return }
+        metalSummary.active = active
+        metalSummary.peakActive = max(metalSummary.peakActive, active)
+        metalSummary.glyphs = glyphs
+        metalSummary.drawCalls = drawCalls
+        metalSummary.pages = pages
+        metalSummary.usedPixels = usedPixels
+        metalSummary.capacityPixels = capacityPixels
+        metalSummary.rejectedGlyphs = rejected
+        metalSummary.skippedFrames = skipped
+        metalSummary.frames += 1
+        metalSummary.preparationTotalMs += preparationMs
+        metalSummary.preparationMaxMs = max(metalSummary.preparationMaxMs, preparationMs)
+        if expectedInterval > 0, let previous = metalSummary.previousTimestamp {
+            let gap = timestamp - previous
+            if gap > 0, gap < 1 {
+                metalSummary.intervals.append(gap)
+                if metalSummary.intervals.count > 512 { metalSummary.intervals.removeFirst() }
+                if expectedInterval > 0, gap > max(expectedInterval * 1.5, expectedInterval + 0.008) { metalSummary.callbackGaps += 1 }
+            }
+        }
+        metalSummary.previousTimestamp = expectedInterval > 0 ? timestamp : nil
+    }
+    func recordMetalGPU(milliseconds: Double?) {
+        guard isRecording, let milliseconds, milliseconds.isFinite else { return }
+        metalSummary.gpuSamples += 1
+        metalSummary.gpuTotalMs += milliseconds
+    }
+    func clearMetalActiveCount() { metalSummary.active = 0; metalSummary.previousTimestamp = nil }
+    func resetMetalCadence() { metalSummary.previousTimestamp = nil }
+    #endif
+
     @Published private(set) var isRecording = false
     @Published private(set) var revision = 0
     private(set) var startedAt: Date?
@@ -62,6 +127,9 @@ final class DanmakuRendererDiagnostics: ObservableObject {
 
     func start() {
         danmakuKitSummary = DanmakuKitSummary()
+        #if DEBUG
+        metalSummary = MetalSummary()
+        #endif
         startedAt = Date()
         isRecording = true
         revision &+= 1
@@ -191,7 +259,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let summary = danmakuKitSummary
         var lines = [
-            "DanmakuKit Renderer Diagnostics",
+            "Danmaku Renderer Diagnostics",
             "time: \(formatter.string(from: Date()))",
             "capture: \(isRecording ? "recording" : "stopped"), \(String(format: "%.1f", duration)) sec",
             "device: \(UIDevice.current.model)",
@@ -206,6 +274,15 @@ final class DanmakuRendererDiagnostics: ObservableObject {
             "emote image loads/failures: \(summary.emoteImageLoads)/\(summary.emoteImageLoadFailures)",
             "recent entry events (id suffix, path, age, source, draw):"
         ]
+        #if DEBUG
+        let metal = metalSummary
+        lines.append("renderer: \(rendererType)")
+        lines.append("Metal active/peak/glyphs/drawCalls: \(metal.active)/\(metal.peakActive)/\(metal.glyphs)/\(metal.drawCalls)")
+        lines.append("Metal atlas pages/used/capacity/rejected: \(metal.pages)/\(metal.usedPixels)/\(metal.capacityPixels)/\(metal.rejectedGlyphs)")
+        lines.append("Metal frames/estimated FPS/callback gaps/busy slot drops: \(metal.frames)/\(metal.medianFPS.map { String(format: "%.1f", $0) } ?? "-")/\(metal.callbackGaps)/\(metal.skippedFrames)")
+        lines.append("Metal CPU preparation average/max ms: \(metal.cpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")/\(String(format: "%.3f", metal.preparationMaxMs))")
+        lines.append("Metal GPU command average ms: \(metal.gpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")")
+        #endif
         for event in summary.entryEvents {
             let draw = event.drawMilliseconds.map { String(format: "%.3f ms", $0) } ?? "pending"
             lines.append(

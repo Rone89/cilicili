@@ -5,6 +5,7 @@ import UIKit
 struct DanmakuOverlayView: UIViewRepresentable {
     fileprivate struct ConfigurationSignature: Equatable {
         let itemsRevision: Int
+        let metalRendererEnabled: Bool
         let currentTimeBucket: Int?
         let isPlaying: Bool
         let playbackRateTenths: Int
@@ -17,6 +18,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
 
         init(
             itemsRevision: Int,
+            metalRendererEnabled: Bool,
             currentTime: TimeInterval,
             usesExternalClock: Bool,
             isPlaying: Bool,
@@ -29,6 +31,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
             bottomInset: CGFloat
         ) {
             self.itemsRevision = itemsRevision
+            self.metalRendererEnabled = metalRendererEnabled
             // When a PlayerPlaybackClock is bound, UIKit receives time ticks directly.
             // Without one, keep a coarse time bucket so live-style callers can resync.
             currentTimeBucket = usesExternalClock ? nil : Int(max(0, currentTime) * 2)
@@ -43,6 +46,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
         }
     }
 
+    let metalRendererEnabled: Bool
     let items: [DanmakuItem]
     let itemsRevision: Int
     let currentTime: TimeInterval
@@ -72,8 +76,10 @@ struct DanmakuOverlayView: UIViewRepresentable {
         bottomInset: CGFloat,
         isLayoutTransitioning: Bool = false,
         playbackClock: PlayerPlaybackClock? = nil,
-        onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil
+        onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
+        metalRendererEnabled: Bool = false
     ) {
+        self.metalRendererEnabled = metalRendererEnabled
         self.items = items
         self.itemsRevision = itemsRevision
         self.currentTime = currentTime
@@ -94,12 +100,13 @@ struct DanmakuOverlayView: UIViewRepresentable {
         Coordinator()
     }
 
-    func makeUIView(context: Context) -> DanmakuKitOverlayView {
-        let view = DanmakuKitOverlayView(frame: .zero)
+    func makeUIView(context: Context) -> DanmakuRendererHostView {
+        let view = DanmakuRendererHostView(frame: .zero)
+        view.selectRenderer(metalEnabled: metalRendererEnabled)
         view.setLayoutTransitioning(isLayoutTransitioning)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
-        view.apply(
+        view.apply(configuration: DanmakuOverlayConfiguration(
             items: items,
             itemsRevision: itemsRevision,
             currentTime: resolvedCurrentTime,
@@ -111,20 +118,21 @@ struct DanmakuOverlayView: UIViewRepresentable {
             settings: settings,
             topInset: topInset,
             bottomInset: bottomInset
-        )
+        ))
         context.coordinator.markApplied(signature)
         context.coordinator.bind(clock: playbackClock, uiView: view, onPlaybackTime: onPlaybackTime)
         return view
     }
 
-    func updateUIView(_ uiView: DanmakuKitOverlayView, context: Context) {
+    func updateUIView(_ uiView: DanmakuRendererHostView, context: Context) {
+        uiView.selectRenderer(metalEnabled: metalRendererEnabled)
         if isLayoutTransitioning {
             uiView.setLayoutTransitioning(true)
         }
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
         if context.coordinator.shouldApply(signature) {
-            uiView.apply(
+            uiView.apply(configuration: DanmakuOverlayConfiguration(
                 items: items,
                 itemsRevision: itemsRevision,
                 currentTime: resolvedCurrentTime,
@@ -136,7 +144,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
                 settings: settings,
                 topInset: topInset,
                 bottomInset: bottomInset
-            )
+            ))
             context.coordinator.markApplied(signature)
         }
         if !isLayoutTransitioning {
@@ -148,6 +156,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
     private func configurationSignature(resolvedCurrentTime: TimeInterval) -> ConfigurationSignature {
         ConfigurationSignature(
             itemsRevision: itemsRevision,
+            metalRendererEnabled: metalRendererEnabled,
             currentTime: resolvedCurrentTime,
             usesExternalClock: playbackClock != nil,
             isPlaying: isPlaying,
@@ -161,7 +170,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
         )
     }
 
-    static func dismantleUIView(_ uiView: DanmakuKitOverlayView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: DanmakuRendererHostView, coordinator: Coordinator) {
         coordinator.unbind()
         uiView.stop()
     }
@@ -185,7 +194,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
 
         func bind(
             clock: PlayerPlaybackClock?,
-            uiView: DanmakuKitOverlayView,
+            uiView: DanmakuRendererHostView,
             onPlaybackTime: ((TimeInterval, Bool) -> Void)?
         ) {
             self.onPlaybackTime = onPlaybackTime

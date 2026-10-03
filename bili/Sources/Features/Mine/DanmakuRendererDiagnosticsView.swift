@@ -29,10 +29,27 @@ struct DanmakuRendererDiagnosticsView: View {
                 }
                 .accessibilityIdentifier("mine.danmakuDiagnostics.recording")
             } header: {
-                Text("DanmakuKit 弹幕采集")
+                Text("弹幕渲染采集")
             } footer: {
                 Text("开始后返回视频页播放一段，再回到此页停止并复制。采集仅保存在本机内存中。")
             }
+
+            #if DEBUG
+            Section("Metal 实验") {
+                let m = diagnostics.metalSummary
+                LabeledContent("当前 Renderer", value: diagnostics.rendererType)
+                LabeledContent("活跃 / 峰值 / glyph", value: "\(m.active) / \(m.peakActive) / \(m.glyphs)")
+                LabeledContent("draw call / atlas 页数", value: "\(m.drawCalls) / \(m.pages)")
+                LabeledContent("Atlas 使用 / 容量（像素）", value: "\(m.usedPixels) / \(m.capacityPixels)")
+                LabeledContent("估算 FPS", value: m.medianFPS.map { String(format: "%.1f", $0) } ?? "—")
+                LabeledContent("CPU 准备 / GPU 平均", value: "\(m.cpuAverageMs.map { String(format: "%.3fms", $0) } ?? "—") / \(m.gpuAverageMs.map { String(format: "%.3fms", $0) } ?? "—")")
+                LabeledContent("GPU 忙跳帧 / 回调漏间隔", value: "\(m.skippedFrames) / \(m.callbackGaps)")
+                LabeledContent("Atlas 拒绝的新 glyph", value: "\(m.rejectedGlyphs)")
+                NavigationLink("本地密度与同步测试") { DanmakuRendererBenchmarkView() }
+                Text("FPS 来自回调间隔，不是屏幕呈现测量。CPU / 功耗 / 全进程内存请用 Instruments 对比。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            #endif
 
             Section("DanmakuKit") {
                 LabeledContent(
