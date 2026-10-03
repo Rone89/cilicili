@@ -87,6 +87,11 @@ struct DynamicImageCell: View {
                 .aspectRatio(aspectRatio, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .clipped()
+                .videoCoverSurface(
+                    cornerRadius: displayMode.cornerRadius,
+                    borderOpacityScale: thumbnailShadowOpacityScale,
+                    appliesUnifiedBorder: false
+                )
         case .fixedHeight(let height, let cornerRadius):
             imageContent
                 .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)

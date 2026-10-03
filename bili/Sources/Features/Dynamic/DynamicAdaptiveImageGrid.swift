@@ -1,9 +1,5 @@
 import SwiftUI
 
-enum DynamicImageGridExperiments {
-    static let adaptiveLayoutEnabledKey = "dynamic.imageGrid.adaptiveLayoutExperimentEnabled"
-}
-
 struct DynamicAdaptiveImageGrid: View {
     let imagesCount: Int
     let displayedImages: [DynamicImageDisplayItem]

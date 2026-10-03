@@ -41,56 +41,25 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                     VideoDetailHistoryBackMenu(history: navigationHistory)
                 }
             }
-            if onOpenCommentComposer != nil {
+            if let onOpenCommentComposer {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    Group {
-                        if selection == .comments {
-                            VideoDetailToolbarCommentRefreshButton(action: onRefreshComments)
-                                .transition(.scale(scale: 0.82).combined(with: .opacity))
-                        } else {
-                            Color.clear
-                                .frame(
-                                    width: VideoDetailToolbarCommentComposerButton.size,
-                                    height: VideoDetailToolbarCommentComposerButton.size
-                                )
-                        }
-                    }
-                    .animation(.smooth(duration: 0.22), value: selection)
-                    .allowsHitTesting(selection == .comments)
-                    .accessibilityHidden(selection != .comments)
-                }
-                .sharedBackgroundVisibility(selection == .comments ? .automatic : .hidden)
-                ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     VideoDetailToolbarSegmentedPickerView(selection: toolbarSelection)
-                        .frame(width: VideoDetailToolbarSegmentedPickerView.compactWidth)
+                        .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                 }
-                ToolbarSpacer(.fixed, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    Group {
-                        if selection == .comments, let onOpenCommentComposer {
-                            VideoDetailToolbarCommentComposerButton(action: onOpenCommentComposer)
-                                .transition(.scale(scale: 0.82).combined(with: .opacity))
-                        } else {
-                            Color.clear
-                                .frame(
-                                    width: VideoDetailToolbarCommentComposerButton.size,
-                                    height: VideoDetailToolbarCommentComposerButton.size
-                                )
-                        }
-                    }
-                    .animation(.smooth(duration: 0.22), value: selection)
-                    .allowsHitTesting(selection == .comments)
-                    .accessibilityHidden(selection != .comments)
-                }
-                .sharedBackgroundVisibility(selection == .comments ? .automatic : .hidden)
                 ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    VideoDetailToolbarCommentMoreMenu(
+                        onComment: onOpenCommentComposer,
+                        onRefresh: onRefreshComments
+                    )
+                }
+                .sharedBackgroundVisibility(.automatic)
             } else {
                 ToolbarItemGroup(placement: .bottomBar) {
                     Spacer(minLength: 0)
                     VideoDetailToolbarSegmentedPickerView(selection: toolbarSelection)
-                        .frame(width: VideoDetailToolbarSegmentedPickerView.compactWidth)
+                        .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                     Spacer(minLength: 0)
                 }
             }
@@ -544,35 +513,26 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
     }
 }
 
-private struct VideoDetailToolbarCommentComposerButton: View {
+private struct VideoDetailToolbarCommentMoreMenu: View {
     static let size: CGFloat = 38
 
-    let action: () -> Void
+    let onComment: () -> Void
+    let onRefresh: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "square.and.pencil")
+        Menu {
+            Button(action: onComment) {
+                Label("评论", systemImage: "square.and.pencil")
+            }
+            Button(action: onRefresh) {
+                Label("刷新评论区", systemImage: "arrow.clockwise")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
                 .frame(width: Self.size, height: Self.size)
         }
         .tint(.primary)
-        .accessibilityLabel("发表评论")
-        .accessibilityIdentifier("video.detail.toolbar-comment-compose")
-    }
-}
-
-private struct VideoDetailToolbarCommentRefreshButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.clockwise")
-                .frame(
-                    width: VideoDetailToolbarCommentComposerButton.size,
-                    height: VideoDetailToolbarCommentComposerButton.size
-                )
-        }
-        .tint(.primary)
-        .accessibilityLabel("刷新评论")
-        .accessibilityIdentifier("video.detail.toolbar-comment-refresh")
+        .accessibilityLabel("更多评论操作")
+        .accessibilityIdentifier("video.detail.toolbar-comment-more")
     }
 }

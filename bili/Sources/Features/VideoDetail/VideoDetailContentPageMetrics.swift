@@ -8,10 +8,6 @@ private struct VideoDetailActionButtonStyleKey: EnvironmentKey {
     static let defaultValue: VideoDetailActionButtonStyle = .plain
 }
 
-private struct VideoDetailSegmentedPickerGlassStyleKey: EnvironmentKey {
-    static let defaultValue: VideoDetailSegmentedPickerGlassStyle = .clear
-}
-
 extension EnvironmentValues {
     /// App-wide horizontal inset for standard video-detail content.
     var videoDetailStandardHorizontalInset: CGFloat {
@@ -22,11 +18,6 @@ extension EnvironmentValues {
     var videoDetailActionButtonStyle: VideoDetailActionButtonStyle {
         get { self[VideoDetailActionButtonStyleKey.self] }
         set { self[VideoDetailActionButtonStyleKey.self] = newValue }
-    }
-
-    var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle {
-        get { self[VideoDetailSegmentedPickerGlassStyleKey.self] }
-        set { self[VideoDetailSegmentedPickerGlassStyleKey.self] = newValue }
     }
 }
 

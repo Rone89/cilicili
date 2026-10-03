@@ -565,18 +565,6 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStorePersistsVideoDetailSegmentedPickerGlassStyle() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertEqual(store.videoDetailSegmentedPickerGlassStyle, .clear)
-        store.setVideoDetailSegmentedPickerGlassStyle(.regular)
-
-        let restoredStore = LibraryStore(userDefaults: defaults)
-        XCTAssertEqual(restoredStore.videoDetailSegmentedPickerGlassStyle, .regular)
-    }
-
-    @MainActor
     func testLibraryStoreDefaultsImageDiagnosticsOnAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)

@@ -2,8 +2,6 @@ import SwiftUI
 
 struct CompactDynamicImageMosaicGrid: View {
     @StateObject private var previewGroup = ZoomyImagePreviewGroup()
-    @AppStorage(DynamicImageGridExperiments.adaptiveLayoutEnabledKey)
-    private var adaptiveLayoutEnabled = false
     @State private var availableWidth: CGFloat = CompactDynamicImageMosaicMetrics.compactWidth
     private let imageCount: Int
     private let displayedImages: [CompactDynamicImageDisplayItem]
@@ -31,7 +29,7 @@ struct CompactDynamicImageMosaicGrid: View {
 
     var body: some View {
         if imageCount > 0 {
-            if adaptiveLayoutEnabled, imageCount > 1 {
+            if imageCount > 1 {
                 mosaicContent
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(widthReader)
@@ -53,7 +51,6 @@ struct CompactDynamicImageMosaicGrid: View {
             previewGroup: previewGroup,
             accessibilityName: accessibilityName,
             placeholderFill: placeholderFill,
-            adaptiveLayoutEnabled: adaptiveLayoutEnabled,
             adaptiveWidth: resolvedWidth
         )
     }

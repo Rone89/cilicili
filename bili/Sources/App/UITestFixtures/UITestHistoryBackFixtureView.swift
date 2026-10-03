@@ -2,7 +2,6 @@ import SwiftUI
 
 /// Network-free NavigationStack using the production toolbar and history bridge.
 struct UITestHistoryBackFixtureView: View {
-    @ObservedObject var libraryStore: LibraryStore
     @State private var path = NavigationPath()
 
     private var mixed: Bool { ProcessInfo.processInfo.arguments.contains("--history-mixed") }
@@ -31,13 +30,12 @@ struct UITestHistoryBackFixtureView: View {
                         .navigationTitle("某 UP 主空间")
                         .navigationHistoryTitle("某 UP 主空间")
                 case .video(let index, let title):
-                    VideoPage(index: index, title: title, libraryStore: libraryStore) { openVideo(index + 1) }
+                    VideoPage(index: index, title: title) { openVideo(index + 1) }
                         .navigationHistoryTitle(title)
                 }
             }
         }
-        .navigationHistoryStack(path: $path, rootTitle: mixed ? "搜索" : "首页",
-            enabled: libraryStore.videoDetailBottomHistoryBackButtonExperimentEnabled)
+        .navigationHistoryStack(path: $path, rootTitle: mixed ? "搜索" : "首页")
     }
 
     private func openVideo(_ index: Int) {
@@ -56,7 +54,6 @@ struct UITestHistoryBackFixtureView: View {
     private struct VideoPage: View {
         let index: Int
         let title: String
-        @ObservedObject var libraryStore: LibraryStore
         let onNext: () -> Void
         @State private var instanceID = UUID()
         @State private var selection = VideoDetailContentTab.detail
@@ -67,10 +64,6 @@ struct UITestHistoryBackFixtureView: View {
                 Text(instanceID.uuidString).accessibilityIdentifier("history.fixture.instance")
                 Text(selection.rawValue).accessibilityIdentifier("history.fixture.selection")
                 Button("下一个视频", action: onNext).accessibilityIdentifier("history.fixture.next")
-                Button("切换实验") {
-                    libraryStore.setVideoDetailBottomHistoryBackButtonExperimentEnabled(
-                        !libraryStore.videoDetailBottomHistoryBackButtonExperimentEnabled)
-                }.accessibilityIdentifier("history.fixture.toggle")
                 VideoDetailNativeContentTabView(
                     selection: $selection, layoutWidth: 390, topInset: 0,
                     mountsSecondaryContent: true, onScrollOffsetChange: nil,

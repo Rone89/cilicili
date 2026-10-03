@@ -138,27 +138,6 @@ struct MineDisplaySettingsSection: View {
 
             Picker(
                 selection: Binding(
-                    get: { libraryStore.videoDetailSegmentedPickerGlassStyle },
-                    set: { libraryStore.setVideoDetailSegmentedPickerGlassStyle($0) }
-                )
-            ) {
-                ForEach(VideoDetailSegmentedPickerGlassStyle.allCases) { glassStyle in
-                    Text(glassStyle.title).tag(glassStyle)
-                }
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("底部栏 Liquid Glass 材质", systemImage: "circle.lefthalf.filled")
-
-                    Text("选择视频详情页底部切换器的清透或常规材质。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .pickerStyle(.menu)
-
-            Picker(
-                selection: Binding(
                     get: { libraryStore.videoDetailActionButtonStyle },
                     set: { libraryStore.setVideoDetailActionButtonStyle($0) }
                 )

@@ -148,11 +148,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var multiAccountEnabled: Bool
     @available(*, deprecated, message: "Use multiAccountEnabled")
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
-    @Published private(set) var videoDetailBottomHistoryBackButtonExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
-    @Published private(set) var videoDetailSegmentedPickerGlassStyle: VideoDetailSegmentedPickerGlassStyle
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
     @Published private(set) var remoteImageQualityPreference: RemoteImageQualityPreference
     @Published private(set) var videoCoverBadgeShadowOpacity: Double
@@ -232,15 +230,11 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
-    private static let videoDetailBottomHistoryBackButtonExperimentEnabledKey =
-        "cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let videoDetailActionButtonStyleKey =
         "cc.bili.videoDetail.actionButtonStyle.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
-    private static let videoDetailSegmentedPickerGlassStyleKey =
-        "cc.bili.videoDetail.segmentedPickerGlassStyle.v1"
     private static let liquidGlassStylePreferenceKey = AppLiquidGlassStylePreference.storageKey
     private static let remoteImageQualityPreferenceKey = RemoteImageQualityPreference.storageKey
     private static let videoCoverBadgeShadowOpacityKey = VideoCoverBadgeShadow.storageKey
@@ -248,6 +242,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
         "cc.bili.playback.bilibiliResourceLoaderManifestExperimentEnabled.v1",
+        "cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1",
         "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
         "cc.bili.experimental.commentSheetPrimaryAuthorName.v1",
         "cc.bili.experimental.scrollableTabHeaders.v1",
@@ -644,8 +639,6 @@ final class LibraryStore: ObservableObject {
         if userDefaults.object(forKey: Self.multiAccountExperimentEnabledKey) as? Bool != true {
             userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
         }
-        self.videoDetailBottomHistoryBackButtonExperimentEnabled =
-            Self.boolValue(forKey: Self.videoDetailBottomHistoryBackButtonExperimentEnabledKey, in: userDefaults) ?? false
         self.dynamicCommentHitAreaVisualizationExperimentEnabled =
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
@@ -654,12 +647,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.string(forKey: Self.videoDetailActionButtonStyleKey)
             .flatMap(VideoDetailActionButtonStyle.init(rawValue:)) ?? .plain
         self.minimizesTabBarOnScroll = userDefaults.object(forKey: Self.minimizesTabBarOnScrollKey) as? Bool ?? true
-        self.videoDetailSegmentedPickerGlassStyle =
-            VideoDetailSegmentedPickerGlassStyle(
-                rawValue: userDefaults.string(
-                    forKey: Self.videoDetailSegmentedPickerGlassStyleKey
-                ) ?? ""
-            ) ?? .clear
         self.liquidGlassStylePreference = AppLiquidGlassStylePreference(
             storedRawValue: userDefaults.string(forKey: Self.liquidGlassStylePreferenceKey)
         )
@@ -1289,11 +1276,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
     }
 
-    func setVideoDetailBottomHistoryBackButtonExperimentEnabled(_ isEnabled: Bool) {
-        videoDetailBottomHistoryBackButtonExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.videoDetailBottomHistoryBackButtonExperimentEnabledKey)
-    }
-
     func setDynamicCommentHitAreaVisualizationExperimentEnabled(_ isEnabled: Bool) {
         dynamicCommentHitAreaVisualizationExperimentEnabled = isEnabled
         userDefaults.set(
@@ -1325,13 +1307,6 @@ final class LibraryStore: ObservableObject {
     func setMinimizesTabBarOnScroll(_ isEnabled: Bool) {
         minimizesTabBarOnScroll = isEnabled
         userDefaults.set(isEnabled, forKey: Self.minimizesTabBarOnScrollKey)
-    }
-
-    func setVideoDetailSegmentedPickerGlassStyle(
-        _ glassStyle: VideoDetailSegmentedPickerGlassStyle
-    ) {
-        videoDetailSegmentedPickerGlassStyle = glassStyle
-        userDefaults.set(glassStyle.rawValue, forKey: Self.videoDetailSegmentedPickerGlassStyleKey)
     }
 
     func setLiquidGlassStylePreference(_ preference: AppLiquidGlassStylePreference) {
@@ -1559,22 +1534,6 @@ enum AppAppearanceMode: String, CaseIterable, Identifiable {
             return .light
         case .dark:
             return .dark
-        }
-    }
-}
-
-enum VideoDetailSegmentedPickerGlassStyle: String, CaseIterable, Identifiable {
-    case clear
-    case regular
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .clear:
-            return "清透"
-        case .regular:
-            return "常规"
         }
     }
 }

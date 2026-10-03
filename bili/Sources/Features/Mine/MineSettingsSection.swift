@@ -110,7 +110,6 @@ struct MineSettingsSection: View {
         if !libraryStore.followsSystemFontSize {
             parts.append("固定字号：\(libraryStore.manualFontSize.title)")
         }
-        parts.append("底部栏：\(libraryStore.videoDetailSegmentedPickerGlassStyle.title)")
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 

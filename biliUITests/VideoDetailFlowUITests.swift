@@ -58,7 +58,6 @@ final class VideoDetailFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-reset-state",
-            "-cc.bili.videoDetail.segmentedPickerGlassStyle.v1", "regular",
             "--start-tab", "home",
             "--start-bvid", "BV1xx411c7mD",
         ]
@@ -67,7 +66,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let picker = element("video.detail.toolbar-picker", in: app).firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
         XCTAssertEqual(picker.buttons.count, 2)
-        XCTAssertEqual(picker.frame.width, 144, accuracy: 2)
+        XCTAssertEqual(picker.frame.width, 180, accuracy: 2)
         XCTAssertEqual(picker.frame.height, 38, accuracy: 2)
         let appFrame = app.windows.firstMatch.frame
         let pickerFrame = picker.frame
@@ -114,10 +113,14 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testVideoDetailToolbarCommentComposerIsAvailableWithoutExperimentFlag() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        let moreButton = app.buttons["video.detail.toolbar-comment-more"]
+        XCTAssertTrue(moreButton.waitForExistence(timeout: 10))
+
         let picker = element("video.detail.toolbar-picker", in: app).firstMatch
         let commentsButton = picker.buttons["评论"]
         XCTAssertTrue(commentsButton.waitForExistence(timeout: 5))
         commentsButton.tap()
+        XCTAssertTrue(moreButton.isHittable)
 
         let composeButton = app.buttons["video.detail.toolbar-comment-compose"]
         XCTAssertTrue(composeButton.waitForExistence(timeout: 5))

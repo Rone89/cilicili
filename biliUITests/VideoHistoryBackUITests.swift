@@ -82,16 +82,6 @@ final class VideoHistoryBackUITests: XCTestCase {
     }
 
     @MainActor
-    func testExperimentOffKeepsOriginalToolbar() {
-        let app = launch(enabled: false)
-        app.buttons["history.fixture.open"].tap()
-        XCTAssertTrue(app.buttons["history.fixture.next"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["video.detail.history-back"].exists)
-        XCTAssertTrue(app.buttons["简介"].exists)
-        XCTAssertTrue(app.buttons["评论"].exists)
-    }
-
-    @MainActor
     func testFullLongTitleReachesSystemMenu() {
         let app = launch(extra: ["--history-long-title"])
         app.buttons["history.fixture.open"].tap()
@@ -105,29 +95,9 @@ final class VideoHistoryBackUITests: XCTestCase {
     }
 
     @MainActor
-    func testEnablingMidStackAndDisablingPreservesHistoryPages() {
-        let app = launch(enabled: false)
-        app.buttons["history.fixture.open"].tap()
-        next(in: app)
-        let instance = app.staticTexts["history.fixture.instance"].label
-        next(in: app)
-        app.buttons["history.fixture.toggle"].tap()
-        back(in: app).press(forDuration: 1)
-        XCTAssertEqual(app.buttons["video.detail.history.depth.2"].label, "Video B")
-        XCTAssertEqual(app.buttons["video.detail.history.depth.1"].label, "Video A")
-        app.buttons["video.detail.history.depth.2"].tap()
-        XCTAssertTrue(app.buttons["history.fixture.next"].waitForExistence(timeout: 3))
-        XCTAssertEqual(app.staticTexts["history.fixture.instance"].label, instance)
-        app.buttons["history.fixture.toggle"].tap()
-        XCTAssertFalse(app.buttons["video.detail.history-back"].waitForExistence(timeout: 2))
-        XCTAssertEqual(app.staticTexts["history.fixture.instance"].label, instance)
-    }
-
-    @MainActor
-    private func launch(enabled: Bool = true, extra: [String] = []) -> XCUIApplication {
+    private func launch(extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-test-fixture", "historyBack", "--ui-test-enable-animations",
-            "-cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1", enabled ? "YES" : "NO"] + extra
+        app.launchArguments = ["--ui-test-fixture", "historyBack", "--ui-test-enable-animations"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["history.fixture.open"].waitForExistence(timeout: 5))
         return app

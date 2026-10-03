@@ -20,7 +20,7 @@ struct UITestFixtureRootView: View {
             case .commentAction:
                 UITestCommentActionFixtureView(api: dependencies.api)
             case .historyBack:
-                UITestHistoryBackFixtureView(libraryStore: dependencies.libraryStore)
+                UITestHistoryBackFixtureView()
             }
         }
         .environmentObject(dependencies)

@@ -19,7 +19,6 @@ struct VideoDetailHistoryBackMenu: View {
         } label: {
             Image(systemName: "chevron.backward")
         } primaryAction: {
-            guard controller.isEnabled else { return }
             if let onBack { onBack() }
             else { history.popOne() }
         }

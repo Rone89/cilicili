@@ -42,10 +42,6 @@ struct RootTabView: View {
         .environment(\.openAppURLAction, openAppURL)
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.videoDetailActionButtonStyle, libraryStore.videoDetailActionButtonStyle)
-        .environment(
-            \.videoDetailSegmentedPickerGlassStyle,
-            libraryStore.videoDetailSegmentedPickerGlassStyle
-        )
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
@@ -192,10 +188,7 @@ struct RootTabView: View {
         .coordinatesRootTabBarTransitions(
             isDetailPresented: !detailPath.wrappedValue.isEmpty
         )
-        .navigationHistoryStack(
-            path: detailPath, rootTitle: tab.title,
-            enabled: libraryStore.videoDetailBottomHistoryBackButtonExperimentEnabled
-        )
+        .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
     }
 
     @ViewBuilder

@@ -1,20 +1,18 @@
 import SwiftUI
 
 struct VideoDetailToolbarSegmentedPickerView: View {
-    static let compactWidth: CGFloat = 144
+    static let toolbarWidth: CGFloat = 180
     private static let height: CGFloat = 38
 
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.videoDetailSegmentedPickerGlassStyle) private var glassStyle
     @Binding var selection: VideoDetailContentTab
-    @Namespace private var selectionIndicatorNamespace
+    @Namespace private var selectionNamespace
 
     var body: some View {
         HStack(spacing: 0) {
             segment(title: "简介", tab: .detail)
             segment(title: "评论", tab: .comments)
         }
-        .frame(width: Self.compactWidth, height: Self.height)
+        .frame(width: Self.toolbarWidth, height: Self.height)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("内容")
         .accessibilityIdentifier("video.detail.toolbar-picker")
@@ -23,51 +21,32 @@ struct VideoDetailToolbarSegmentedPickerView: View {
 
     private func segment(title: String, tab: VideoDetailContentTab) -> some View {
         Button {
+            guard selection != tab else { return }
             withAnimation(.smooth(duration: 0.22)) {
                 selection = tab
             }
         } label: {
             Text(title)
                 .font(.subheadline.weight(.medium))
+                .foregroundStyle(selection == tab ? .primary : .secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Capsule())
                 .background {
                     if selection == tab {
-                        selectionSurface
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
-                            }
-                            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                        Capsule()
+                            .fill(Color.primary.opacity(0.08))
+                            .padding(.horizontal, 1)
                             .matchedGeometryEffect(
                                 id: "video-detail-toolbar-selection",
-                                in: selectionIndicatorNamespace
+                                in: selectionNamespace
                             )
                     }
                 }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityValue(selection == tab ? "已选中" : "未选中")
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
-    }
-
-    @ViewBuilder
-    private var selectionSurface: some View {
-        switch glassStyle {
-        case .clear:
-            Capsule()
-                .fill(.clear)
-                .biliPlayerClearGlass(interactive: false, in: Capsule())
-        case .regular:
-            Capsule()
-                .fill(selectionFill)
-                .biliRegularGlassEffect(interactive: false, in: Capsule())
-        }
-    }
-
-    private var selectionFill: Color {
-        colorScheme == .light ? .white.opacity(0.75) : .primary.opacity(0.14)
     }
 }
 
@@ -76,7 +55,7 @@ private struct VideoDetailToolbarSegmentedPickerPreview: View {
 
     var body: some View {
         VideoDetailToolbarSegmentedPickerView(selection: $selection)
-            .frame(width: VideoDetailToolbarSegmentedPickerView.compactWidth)
+            .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
     }
 }
 

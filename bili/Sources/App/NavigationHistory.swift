@@ -16,16 +16,15 @@ final class NavigationHistoryController: ObservableObject {
     @Published private(set) var entries: [NavigationHistoryEntry] = []
     weak var navigationController: UINavigationController?
     private var titles: [ObjectIdentifier: String] = [:]
-    private(set) var isEnabled = true
 
     func register(title: String, controller: UIViewController, in navigation: UINavigationController) {
-        guard isEnabled, navigationController == nil || navigationController === navigation else { return }
+        guard navigationController == nil || navigationController === navigation else { return }
         navigationController = navigation
         titles[ObjectIdentifier(controller)] = title
     }
 
     func refresh(pathDepth: Int, rootTitle: String) {
-        guard isEnabled, let controllers = navigationController?.viewControllers,
+        guard let controllers = navigationController?.viewControllers,
               controllers.count == pathDepth + 1 else {
             if !entries.isEmpty { entries = [] }
             return
@@ -43,8 +42,7 @@ final class NavigationHistoryController: ObservableObject {
     }
 
     private static func pageTitle(in controller: UIViewController) -> String? {
-        // A retained page already owns its route title. Read that metadata even
-        // when the experiment was enabled after this page became covered.
+        // A retained destination owns its route title even after another page is pushed above it.
         var children = controller.children
         while let child = children.first {
             children.removeFirst()
@@ -55,24 +53,12 @@ final class NavigationHistoryController: ObservableObject {
     }
 
     func removalCount(to entry: NavigationHistoryEntry, pathDepth: Int) -> Int? {
-        guard isEnabled, let navigationController, navigationController.transitionCoordinator == nil,
+        guard let navigationController, navigationController.transitionCoordinator == nil,
               navigationController.viewControllers.count == pathDepth + 1,
               entry.depth >= 0, entry.depth < pathDepth,
               ObjectIdentifier(navigationController.viewControllers[entry.depth]) == entry.id
         else { return nil }
         return pathDepth - entry.depth
-    }
-
-    func reset() {
-        isEnabled = false
-        entries = []
-        titles = [:]
-        navigationController = nil
-    }
-
-    func setEnabled(_ enabled: Bool) {
-        if enabled { isEnabled = true }
-        else { reset() }
     }
 }
 
@@ -91,7 +77,7 @@ struct NavigationHistoryContext {
     }
 
     func popOne() {
-        guard controller.isEnabled, !path.wrappedValue.isEmpty else { return }
+        guard !path.wrappedValue.isEmpty else { return }
         path.wrappedValue.removeLast()
     }
 }
@@ -117,8 +103,8 @@ extension EnvironmentValues {
 }
 
 extension View {
-    func navigationHistoryStack(path: Binding<NavigationPath>, rootTitle: String, enabled: Bool) -> some View {
-        modifier(NavigationHistoryStackModifier(path: path, rootTitle: rootTitle, enabled: enabled))
+    func navigationHistoryStack(path: Binding<NavigationPath>, rootTitle: String) -> some View {
+        modifier(NavigationHistoryStackModifier(path: path, rootTitle: rootTitle))
     }
 
     func navigationHistoryTitle(_ title: String) -> some View {
@@ -129,21 +115,16 @@ extension View {
 private struct NavigationHistoryStackModifier: ViewModifier {
     let path: Binding<NavigationPath>
     let rootTitle: String
-    let enabled: Bool
     @StateObject private var controller = NavigationHistoryController()
 
     func body(content: Content) -> some View {
         content
-            .environment(\.navigationHistoryContext, enabled
-                ? NavigationHistoryContext(controller: controller, path: path, rootTitle: rootTitle) : nil)
+            .environment(\.navigationHistoryContext,
+                NavigationHistoryContext(controller: controller, path: path, rootTitle: rootTitle))
             .onChange(of: path.wrappedValue.count) { _, _ in
-                guard enabled else { return }
                 controller.refresh(pathDepth: path.wrappedValue.count, rootTitle: rootTitle)
             }
-            .onChange(of: enabled) { _, isEnabled in
-                controller.setEnabled(isEnabled)
-            }
-            .onAppear { controller.setEnabled(enabled) }
+            .onAppear { controller.refresh(pathDepth: path.wrappedValue.count, rootTitle: rootTitle) }
     }
 }
 
@@ -153,8 +134,7 @@ private struct NavigationHistoryTitleModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background {
-            // Title metadata belongs to the existing page, not to a shadow route
-            // stack. Without an enabled context this probe performs no work.
+            // Title metadata belongs to the existing page, not to a shadow route stack.
             NavigationHistoryTitleProbe(title: title, history: history)
                 .allowsHitTesting(false)
         }
@@ -205,7 +185,7 @@ private struct NavigationHistoryTitleProbe: UIViewControllerRepresentable {
         }
 
         private func refresh() {
-            guard let history, history.controller.isEnabled, let navigation = navigationController else { return }
+            guard let history, let navigation = navigationController else { return }
             var ancestor = parent
             while let controller = ancestor {
                 if navigation.viewControllers.contains(where: { $0 === controller }) {

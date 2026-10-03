@@ -104,7 +104,7 @@ final class NavigationHistoryTests: XCTestCase {
     }
 
     @MainActor
-    func testDisabledResetReleasesHistoryAndDoesNotOwnNavigationController() {
+    func testHistoryMetadataDoesNotRetainNavigationController() {
         let history = NavigationHistoryController()
         weak var weakNavigation: UINavigationController?
         autoreleasepool {
@@ -114,34 +114,18 @@ final class NavigationHistoryTests: XCTestCase {
             history.register(title: "首页", controller: root, in: navigation)
         }
         XCTAssertNil(weakNavigation)
-        history.reset()
-        XCTAssertTrue(history.entries.isEmpty)
         XCTAssertNil(history.navigationController)
     }
 
     @MainActor
-    func testDisableRejectsLateTitleRegistrationAndOldMenuActions() {
-        let (history, navigation, pages) = makeStack(["首页", "A", "B"])
-        let oldEntry = history.entries[0]
-        history.setEnabled(false)
-        history.register(title: "late", controller: pages[1], in: navigation)
-        history.refresh(pathDepth: 2, rootTitle: "首页")
-        XCTAssertTrue(history.entries.isEmpty)
-        XCTAssertNil(history.navigationController)
-        XCTAssertNil(history.removalCount(to: oldEntry, pathDepth: 2))
-    }
-
-    @MainActor
-    func testFlagDefaultsOffAndPersistsWithoutChangingRoutes() {
+    func testLegacyExperimentPreferenceIsRemoved() {
         let suite = "HistoryBackTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.videoDetailBottomHistoryBackButtonExperimentEnabled)
-        store.setVideoDetailBottomHistoryBackButtonExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).videoDetailBottomHistoryBackButtonExperimentEnabled)
-        store.setVideoDetailBottomHistoryBackButtonExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailBottomHistoryBackButtonExperimentEnabled)
+        let legacyKey = "cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1"
+        defaults.set(false, forKey: legacyKey)
+        _ = LibraryStore(userDefaults: defaults)
+        XCTAssertNil(defaults.object(forKey: legacyKey))
     }
 
     @MainActor

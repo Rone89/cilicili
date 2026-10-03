@@ -8,11 +8,10 @@ struct CompactDynamicImageMosaicContent: View {
     let previewGroup: ZoomyImagePreviewGroup
     let accessibilityName: String
     let placeholderFill: Color
-    let adaptiveLayoutEnabled: Bool
     let adaptiveWidth: CGFloat
 
     var body: some View {
-        if adaptiveLayoutEnabled, displayedImages.count > 1 {
+        if displayedImages.count > 1 {
             DynamicAdaptiveImageGrid(
                 imagesCount: imageCount,
                 displayedImages: adaptiveDisplayedImages,
