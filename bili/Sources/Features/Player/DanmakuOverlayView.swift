@@ -6,6 +6,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
     fileprivate struct ConfigurationSignature: Equatable {
         let itemsRevision: Int
         let metalRendererEnabled: Bool
+        let stageTransitionExperimentEnabled: Bool
+        let videoAspectRatioMilli: Int?
         let currentTimeBucket: Int?
         let isPlaying: Bool
         let playbackRateTenths: Int
@@ -19,6 +21,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
         init(
             itemsRevision: Int,
             metalRendererEnabled: Bool,
+            stageTransitionExperimentEnabled: Bool,
+            videoAspectRatio: CGFloat?,
             currentTime: TimeInterval,
             usesExternalClock: Bool,
             isPlaying: Bool,
@@ -32,6 +36,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
         ) {
             self.itemsRevision = itemsRevision
             self.metalRendererEnabled = metalRendererEnabled
+            self.stageTransitionExperimentEnabled = stageTransitionExperimentEnabled
+            videoAspectRatioMilli = videoAspectRatio.flatMap { $0.isFinite ? Int(($0 * 1_000).rounded()) : nil }
             // When a PlayerPlaybackClock is bound, UIKit receives time ticks directly.
             // Without one, keep a coarse time bucket so live-style callers can resync.
             currentTimeBucket = usesExternalClock ? nil : Int(max(0, currentTime) * 2)
@@ -47,6 +53,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     let metalRendererEnabled: Bool
+    let stageTransitionExperimentEnabled: Bool
+    let videoAspectRatio: CGFloat?
     let logicalCanvasSize: CGSize?
     let items: [DanmakuItem]
     let itemsRevision: Int
@@ -79,9 +87,13 @@ struct DanmakuOverlayView: UIViewRepresentable {
         playbackClock: PlayerPlaybackClock? = nil,
         onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
         metalRendererEnabled: Bool = false,
-        logicalCanvasSize: CGSize? = nil
+        logicalCanvasSize: CGSize? = nil,
+        stageTransitionExperimentEnabled: Bool = false,
+        videoAspectRatio: CGFloat? = nil
     ) {
         self.metalRendererEnabled = metalRendererEnabled
+        self.stageTransitionExperimentEnabled = stageTransitionExperimentEnabled
+        self.videoAspectRatio = videoAspectRatio
         self.logicalCanvasSize = logicalCanvasSize
         self.items = items
         self.itemsRevision = itemsRevision
@@ -106,7 +118,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
     func makeUIView(context: Context) -> DanmakuRendererHostView {
         let view = DanmakuRendererHostView(frame: .zero)
         view.setLogicalCanvasSize(logicalCanvasSize)
-        view.selectRenderer(metalEnabled: metalRendererEnabled)
+        view.selectRenderer(metalEnabled: metalRendererEnabled,
+                            stageTransitionExperimentEnabled: stageTransitionExperimentEnabled)
         view.setLayoutTransitioning(isLayoutTransitioning)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
@@ -121,7 +134,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
             isLoadShedding: isLoadShedding,
             settings: settings,
             topInset: topInset,
-            bottomInset: bottomInset
+            bottomInset: bottomInset,
+            videoAspectRatio: videoAspectRatio
         ))
         context.coordinator.markApplied(signature)
         context.coordinator.bind(clock: playbackClock, uiView: view, onPlaybackTime: onPlaybackTime)
@@ -129,10 +143,15 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: DanmakuRendererHostView, context: Context) {
-        uiView.setLogicalCanvasSize(logicalCanvasSize)
-        uiView.selectRenderer(metalEnabled: metalRendererEnabled)
-        if isLayoutTransitioning {
-            uiView.setLayoutTransitioning(true)
+        if metalRendererEnabled && stageTransitionExperimentEnabled {
+            uiView.selectRenderer(metalEnabled: true, stageTransitionExperimentEnabled: true)
+            if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
+            uiView.setLogicalCanvasSize(logicalCanvasSize)
+        } else {
+            uiView.setLogicalCanvasSize(logicalCanvasSize)
+            uiView.selectRenderer(metalEnabled: metalRendererEnabled,
+                                  stageTransitionExperimentEnabled: false)
+            if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
         }
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
@@ -148,7 +167,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
                 isLoadShedding: isLoadShedding,
                 settings: settings,
                 topInset: topInset,
-                bottomInset: bottomInset
+                bottomInset: bottomInset,
+                videoAspectRatio: videoAspectRatio
             ))
             context.coordinator.markApplied(signature)
         }
@@ -162,6 +182,8 @@ struct DanmakuOverlayView: UIViewRepresentable {
         ConfigurationSignature(
             itemsRevision: itemsRevision,
             metalRendererEnabled: metalRendererEnabled,
+            stageTransitionExperimentEnabled: stageTransitionExperimentEnabled,
+            videoAspectRatio: videoAspectRatio,
             currentTime: resolvedCurrentTime,
             usesExternalClock: playbackClock != nil,
             isPlaying: isPlaying,

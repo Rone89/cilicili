@@ -128,6 +128,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
+    @Published private(set) var metalDanmakuStageTransitionExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -203,6 +204,8 @@ final class LibraryStore: ObservableObject {
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
+    private static let metalDanmakuStageTransitionExperimentEnabledKey =
+        "cc.bili.playback.metalDanmakuStageTransitionExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -594,6 +597,8 @@ final class LibraryStore: ObservableObject {
             self.danmakuSettings = .default
         }
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
+        self.metalDanmakuStageTransitionExperimentEnabled =
+            userDefaults.object(forKey: Self.metalDanmakuStageTransitionExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
@@ -1196,6 +1201,11 @@ final class LibraryStore: ObservableObject {
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
         metalDanmakuRendererExperimentEnabled = enabled
         userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
+    }
+
+    func setMetalDanmakuStageTransitionExperimentEnabled(_ enabled: Bool) {
+        metalDanmakuStageTransitionExperimentEnabled = enabled
+        userDefaults.set(enabled, forKey: Self.metalDanmakuStageTransitionExperimentEnabledKey)
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

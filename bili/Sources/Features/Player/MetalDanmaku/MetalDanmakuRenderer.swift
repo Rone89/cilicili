@@ -14,6 +14,9 @@ final class MetalDanmakuRenderer {
     let atlas: DanmakuGlyphAtlas
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let fragmentFunction: MTLFunction
+    private let stageTransitionVertexFunction: MTLFunction?
+    private var stageTransitionPipeline: MTLRenderPipelineState?
     private let sampler: MTLSamplerState
     private var instances: [DanmakuGlyphInstance] = []
     private var batches: [(page: Int, start: Int, count: Int)] = []
@@ -32,25 +35,20 @@ final class MetalDanmakuRenderer {
         var version = -1
     }
 
+    private struct StageUniforms {
+        var transform: SIMD4<Float>
+        var videoViewport: SIMD4<Float>
+    }
+
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue(),
               let atlas = DanmakuGlyphAtlas(device: device),
               let library = device.makeDefaultLibrary(),
               let vertex = library.makeFunction(name: "danmakuGlyphVertex"),
-              let fragment = library.makeFunction(name: "danmakuGlyphFragment") else { return nil }
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.label = "Experimental danmaku glyph batch"
-        descriptor.vertexFunction = vertex
-        descriptor.fragmentFunction = fragment
-        let color = descriptor.colorAttachments[0]!
-        color.pixelFormat = .bgra8Unorm
-        color.isBlendingEnabled = true
-        color.sourceRGBBlendFactor = .one
-        color.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        color.sourceAlphaBlendFactor = .one
-        color.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        guard let pipeline = try? device.makeRenderPipelineState(descriptor: descriptor) else { return nil }
+              let fragment = library.makeFunction(name: "danmakuGlyphFragment"),
+              let pipeline = Self.makePipeline(device: device, vertex: vertex, fragment: fragment,
+                                               label: "Experimental danmaku glyph batch") else { return nil }
         let sampling = MTLSamplerDescriptor()
         sampling.minFilter = .linear
         sampling.magFilter = .linear
@@ -61,7 +59,42 @@ final class MetalDanmakuRenderer {
         self.queue = queue
         self.atlas = atlas
         self.pipeline = pipeline
+        self.fragmentFunction = fragment
+        self.stageTransitionVertexFunction = library.makeFunction(name: "danmakuGlyphStageVertex")
         self.sampler = sampler
+    }
+
+    /// Keep startup work unchanged unless the independent stage experiment is enabled.
+    func prepareStageTransitionPipeline() -> Bool {
+        if stageTransitionPipeline != nil { return true }
+        guard let stageTransitionVertexFunction else { return false }
+        stageTransitionPipeline = Self.makePipeline(
+            device: device,
+            vertex: stageTransitionVertexFunction,
+            fragment: fragmentFunction,
+            label: "Experimental danmaku stage-transition glyph batch"
+        )
+        return stageTransitionPipeline != nil
+    }
+
+    private static func makePipeline(
+        device: MTLDevice,
+        vertex: MTLFunction,
+        fragment: MTLFunction,
+        label: String
+    ) -> MTLRenderPipelineState? {
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.label = label
+        descriptor.vertexFunction = vertex
+        descriptor.fragmentFunction = fragment
+        let color = descriptor.colorAttachments[0]!
+        color.pixelFormat = .bgra8Unorm
+        color.isBlendingEnabled = true
+        color.sourceRGBBlendFactor = .one
+        color.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        color.sourceAlphaBlendFactor = .one
+        color.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        return try? device.makeRenderPipelineState(descriptor: descriptor)
     }
 
     func layout(for item: DanmakuItem, width: CGFloat, settings: DanmakuSettings,
@@ -84,9 +117,12 @@ final class MetalDanmakuRenderer {
                 Float((rgb >> 8) & 255) / 255, Float(rgb & 255) / 255, Float(opacity))
             for glyph in layout.glyphs where pages.indices.contains(glyph.pageIndex) {
                 pages[glyph.pageIndex].append(DanmakuGlyphInstance(
-                    motion: SIMD4(Float(entry.startX + glyph.offset.x), Float(entry.y + glyph.offset.y),
-                                  Float(entry.item.time), Float(entry.velocity)),
-                    geometry: SIMD4(Float(glyph.size.width), Float(glyph.size.height), Float(entry.endTime), 0),
+                motion: SIMD4(Float(entry.startX + glyph.offset.x * entry.glyphScale),
+                              Float(entry.y + glyph.offset.y * entry.glyphScale),
+                              Float(entry.item.time), Float(entry.velocity)),
+                geometry: SIMD4(Float(glyph.size.width * entry.glyphScale),
+                                Float(glyph.size.height * entry.glyphScale),
+                                Float(entry.endTime), Float(entry.glyphScale)),
                     uv: glyph.uvRect, color: color))
             }
         }
@@ -105,7 +141,7 @@ final class MetalDanmakuRenderer {
     #endif
 
     func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil,
-                isManualRefresh: Bool = false) {
+                isManualRefresh: Bool = false, stage: MetalDanmakuRenderStage? = nil) {
         #if DEBUG
         let acquisitionStarted = CACurrentMediaTime()
         let start = preparationStartedAt ?? acquisitionStarted
@@ -162,7 +198,9 @@ final class MetalDanmakuRenderer {
         }
         drawCalls = 0
         if !instances.isEmpty, let buffer = slot.buffer {
-            encodeGlyphs(encoder: encoder, buffer: buffer, size: view.bounds.size, time: time)
+            encodeGlyphs(encoder: encoder, buffer: buffer, size: view.bounds.size, time: time,
+                         drawableSize: CGSize(width: drawable.texture.width, height: drawable.texture.height),
+                         stage: stage)
         }
         encoder.endEncoding()
         command.present(drawable)
@@ -215,11 +253,33 @@ final class MetalDanmakuRenderer {
     }
 
     private func encodeGlyphs(encoder: MTLRenderCommandEncoder, buffer: MTLBuffer,
-                              size: CGSize, time: TimeInterval) {
-        encoder.setRenderPipelineState(pipeline)
+                              size: CGSize, time: TimeInterval, drawableSize: CGSize? = nil,
+                              stage: MetalDanmakuRenderStage? = nil) {
+        encoder.setRenderPipelineState(stage == nil ? pipeline : (stageTransitionPipeline ?? pipeline))
         encoder.setVertexBuffer(buffer, offset: 0, index: 0)
         var frame = SIMD4<Float>(Float(size.width), Float(size.height), Float(time), 0)
         encoder.setVertexBytes(&frame, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
+        if let stage {
+            var uniforms = StageUniforms(
+                transform: SIMD4(Float(stage.transform.scale), Float(stage.transform.translation.x),
+                                 Float(stage.transform.translation.y), 0),
+                videoViewport: SIMD4(Float(stage.videoViewport.minX), Float(stage.videoViewport.minY),
+                                     Float(stage.videoViewport.width), Float(stage.videoViewport.height))
+            )
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<StageUniforms>.stride, index: 2)
+            if let drawableSize {
+                let scaleX = drawableSize.width / max(size.width, 1)
+                let scaleY = drawableSize.height / max(size.height, 1)
+                let minX = max(0, Int(floor(stage.videoViewport.minX * scaleX)))
+                let minY = max(0, Int(floor(stage.videoViewport.minY * scaleY)))
+                let maxX = min(Int(drawableSize.width), Int(ceil(stage.videoViewport.maxX * scaleX)))
+                let maxY = min(Int(drawableSize.height), Int(ceil(stage.videoViewport.maxY * scaleY)))
+                if maxX > minX, maxY > minY {
+                    encoder.setScissorRect(MTLScissorRect(x: minX, y: minY,
+                                                          width: maxX - minX, height: maxY - minY))
+                }
+            }
+        }
         encoder.setFragmentSamplerState(sampler, index: 0)
         for batch in batches {
             encoder.setFragmentTexture(atlas.textures[batch.page], index: 0)

@@ -27,6 +27,11 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private var anchorHostTime = CACurrentMediaTime()
     private var lastRawTime: TimeInterval = 0
     private var transitioning = false
+    private var stageTransitionExperimentEnabled = false
+    private var stageTransitionActive = false
+    private var stageSourceViewport = CGSize.zero
+    private var stageTransform = MetalDanmakuStageTransform.identity
+    private var videoViewport = CGRect.zero
     private var suspended = false
     private var stopped = false
     var isLoadSheddingValue: Bool { configuration?.isLoadShedding ?? false }
@@ -42,8 +47,19 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
     var debugRenderer: MetalDanmakuRenderer { renderer }
     var debugTimelineRevision: Int { timeline.revision }
+    var debugStageTransitionActive: Bool { stageTransitionActive }
+    var debugTimelineViewport: CGSize { timeline.viewport }
+    var debugStageTransform: MetalDanmakuStageTransform { stageTransform }
     func debugFrames(at time: TimeInterval) -> [String: CGRect] {
         Dictionary(uniqueKeysWithValues: timeline.active.map { ($0.item.id, $0.frame(at: time)) })
+    }
+    func debugPresentedFrames(at time: TimeInterval) -> [String: CGRect] {
+        Dictionary(uniqueKeysWithValues: timeline.active.map { entry in
+            var frame = stageTransform.map(entry.frame(at: time))
+            frame.origin.x += videoViewport.minX
+            frame.origin.y += videoViewport.minY
+            return (entry.item.id, frame)
+        })
     }
     #endif
 
@@ -87,15 +103,26 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         super.layoutSubviews()
         metalView.frame = bounds
         let scale = window?.screen.scale ?? traitCollection.displayScale
-        if bounds.size != lastSize || scale != lastScale {
+        let sizeChanged = bounds.size != lastSize
+        let scaleChanged = scale != lastScale
+        let nextVideoViewport = resolvedVideoViewport()
+        let viewportChanged = nextVideoViewport != videoViewport
+        videoViewport = nextVideoViewport
+        if stageTransitionActive {
+            updateStageTransform(logViewportChange: viewportChanged)
+        }
+        if sizeChanged || scaleChanged {
             lastSize = bounds.size
             lastScale = scale
             metalView.contentScaleFactor = scale
-            layouts.removeAll(keepingCapacity: true)
-            configureTimeline()
-            rebuild(reason: "layout-or-scale")
+            if !stageTransitionActive {
+                layouts.removeAll(keepingCapacity: true)
+                configureTimeline()
+                rebuild(reason: "layout-or-scale")
+            }
         }
         updateDrawLoop()
+        if stageTransitionActive && viewportChanged { drawOnceIfVisible() }
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -114,14 +141,26 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         lastRawTime = raw
         configuration = next
         stopped = false
-        configureTimeline()
+        let nextVideoViewport = resolvedVideoViewport()
+        let viewportChanged = nextVideoViewport != videoViewport
+        videoViewport = nextVideoViewport
+        if stageTransitionActive {
+            updateStageTransform(logViewportChange: viewportChanged)
+        } else {
+            configureTimeline()
+        }
         if previous?.itemsRevision != next.itemsRevision {
             let before = timeline.active.count
             let time = effectiveTime()
             let settingsUnchanged = previous?.settings == next.settings
                 && previous?.topInset == next.topInset
                 && previous?.bottomInset == next.bottomInset
-            if settingsUnchanged, timeline.replaceItemsPreservingActive(next.items, at: time) {
+            if stageTransitionActive {
+                timeline.replaceItemsKeepingActiveDuringStageTransition(next.items, at: time)
+                let retainedIDs = Set(next.items.map(\.id)).union(timeline.active.map { $0.item.id })
+                layouts = layouts.filter { retainedIDs.contains($0.key) }
+                traceScene("stage-items-preserved", before: before)
+            } else if settingsUnchanged, timeline.replaceItemsPreservingActive(next.items, at: time) {
                 let retainedIDs = Set(next.items.map(\.id)).union(timeline.active.map { $0.item.id })
                 layouts = layouts.filter { retainedIDs.contains($0.key) }
                 traceScene("items-preserved", before: before)
@@ -131,9 +170,15 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
                 traceScene("items-replaced", before: before)
             }
             lastRevision = -1
-        } else if previous?.settings != next.settings || previous?.topInset != next.topInset || previous?.bottomInset != next.bottomInset {
+        } else if !stageTransitionActive,
+                  previous?.settings != next.settings || previous?.topInset != next.topInset
+                    || previous?.bottomInset != next.bottomInset {
             layouts.removeAll(keepingCapacity: true)
             rebuild(reason: "settings-or-insets")
+        } else if stageTransitionExperimentEnabled, !stageTransitionActive, viewportChanged {
+            layouts.removeAll(keepingCapacity: true)
+            configureTimeline()
+            rebuild(reason: "video-viewport")
         } else if abs(raw - previousTime) > max(1.25, 0.7 * next.playbackRate) {
             rebuild(reason: "configuration-time-jump")
         }
@@ -159,6 +204,18 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     }
 
     func setLayoutTransitioning(_ transitioning: Bool) {
+        if stageTransitionExperimentEnabled {
+            self.transitioning = false
+            if transitioning {
+                beginStageTransitionIfNeeded()
+            } else {
+                finishStageTransitionIfNeeded()
+            }
+            updateDrawLoop()
+            drawOnceIfVisible()
+            return
+        }
+        if stageTransitionActive { finishStageTransitionIfNeeded() }
         guard self.transitioning != transitioning else { return }
         self.transitioning = transitioning
         if transitioning {
@@ -206,25 +263,34 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         // Admission and shader lifetime must use the same accepted clock sample.
         // Tiny player-clock corrections must not hide newly admitted glyphs.
         let presentationTime = timeline.presentationTime ?? sampledTime
+        let renderStage = stageTransitionExperimentEnabled
+            ? MetalDanmakuRenderStage(
+                transform: stageTransitionActive ? stageTransform : .identity,
+                videoViewport: videoViewport
+            )
+            : nil
         #if DEBUG
         renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
-                        isManualRefresh: isManualRefresh)
+                        isManualRefresh: isManualRefresh, stage: renderStage)
         #else
-        renderer.render(view: view, time: presentationTime, preparationStartedAt: start)
+        renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
+                        stage: renderStage)
         #endif
     }
 
     private var shouldRender: Bool {
         guard let c = configuration else { return false }
-        return c.isEnabled && c.hasPresentedPlayback && !c.items.isEmpty && bounds.width > 20 && bounds.height > 20
+        let size = stageTransitionExperimentEnabled ? videoViewport.size : bounds.size
+        return c.isEnabled && c.hasPresentedPlayback && !c.items.isEmpty && size.width > 20 && size.height > 20
     }
     private func configureTimeline() {
         guard let c = configuration else { return }
-        timeline.viewport = bounds.size
+        guard !stageTransitionActive else { return }
+        timeline.viewport = stageTransitionExperimentEnabled ? videoViewport.size : bounds.size
         timeline.settings = c.settings.normalized
         timeline.topInset = c.topInset
         timeline.bottomInset = c.bottomInset
-        timeline.maximumActiveCount = DanmakuRenderPolicy.maximumActiveCount(width: bounds.width,
+        timeline.maximumActiveCount = DanmakuRenderPolicy.maximumActiveCount(width: timeline.viewport.width,
             settings: c.settings, rate: c.playbackRate, loadShedding: c.isLoadShedding)
         #if DEBUG
         if let count = debugMaximumActiveCount { timeline.maximumActiveCount = min(max(count, 1), 600) }
@@ -233,7 +299,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private func measure(_ item: DanmakuItem) -> CGSize? {
         if let layout = layouts[item.id] { return layout.size }
         guard let c = configuration,
-              let layout = renderer.layout(for: item, width: bounds.width, settings: c.settings,
+              let layout = renderer.layout(for: item, width: timeline.viewport.width, settings: timeline.settings,
                                            scale: max(lastScale, 1)) else { return nil }
         layouts[item.id] = layout
         return layout.size
@@ -255,6 +321,94 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         guard lastRevision != timeline.revision else { return }
         renderer.update(entries: timeline.active, layouts: layouts, opacity: timeline.settings.danmakuKit.opacity)
         lastRevision = timeline.revision
+    }
+
+    func setStageTransitionExperimentEnabled(_ enabled: Bool) {
+        guard stageTransitionExperimentEnabled != enabled else { return }
+        if enabled, !renderer.prepareStageTransitionPipeline() {
+            #if DEBUG
+            print("[DanmakuStage] event=pipeline-unavailable; keeping current Metal renderer path")
+            #endif
+            return
+        }
+        if !enabled { finishStageTransitionIfNeeded() }
+        let previousViewport = stageTransitionExperimentEnabled ? videoViewport.size : bounds.size
+        stageTransitionExperimentEnabled = enabled
+        transitioning = false
+        metalView.isHidden = false
+        videoViewport = resolvedVideoViewport()
+
+        if enabled {
+            let transform = MetalDanmakuStageTransform.aspectFit(from: previousViewport, into: videoViewport.size)
+            timeline.rebaseActive(using: transform, at: effectiveTime())
+            configureTimeline()
+            traceStage("enabled", transform: transform)
+        } else {
+            stageTransitionActive = false
+            stageSourceViewport = .zero
+            stageTransform = .identity
+            transitioning = false
+            layouts.removeAll(keepingCapacity: true)
+            configureTimeline()
+            rebuild(reason: "stage-experiment-disabled")
+            traceStage("disabled", transform: .identity)
+        }
+        lastRevision = -1
+        updateInstances()
+        updateDrawLoop()
+        drawOnceIfVisible()
+    }
+
+    private func resolvedVideoViewport() -> CGRect {
+        MetalDanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: configuration?.videoAspectRatio)
+    }
+
+    private func beginStageTransitionIfNeeded() {
+        guard !stageTransitionActive else { return }
+        stageTransitionActive = true
+        stageSourceViewport = timeline.viewport.width > 0 && timeline.viewport.height > 0
+            ? timeline.viewport : videoViewport.size
+        updateStageTransform(logViewportChange: true)
+        traceStage("transition-begin", transform: stageTransform)
+    }
+
+    private func updateStageTransform(logViewportChange: Bool) {
+        guard stageTransitionActive else { return }
+        let next = MetalDanmakuStageTransform.aspectFit(from: stageSourceViewport, into: videoViewport.size)
+        guard next != stageTransform || logViewportChange else { return }
+        stageTransform = next
+        if logViewportChange { traceStage("viewport-change", transform: next) }
+    }
+
+    private func finishStageTransitionIfNeeded() {
+        guard stageTransitionActive else { return }
+        let transform = MetalDanmakuStageTransform.aspectFit(from: stageSourceViewport, into: videoViewport.size)
+        let before = timeline.active.count
+        timeline.rebaseActive(using: transform, at: effectiveTime())
+        traceStage("transition-end", transform: transform)
+        stageTransitionActive = false
+        stageSourceViewport = .zero
+        stageTransform = .identity
+        configureTimeline()
+        lastRevision = -1
+        updateInstances()
+        traceScene("stage-transition-end tracks-updated", before: before)
+        if timeline.active.isEmpty, shouldRender { rebuild(reason: "stage-transition-refill") }
+    }
+
+    private func traceStage(_ event: String, transform: MetalDanmakuStageTransform) {
+        #if DEBUG
+        let diagnostics = debugDiagnostics ?? .shared
+        diagnostics.recordMetalSceneEvent("stage-\(event)", time: effectiveTime(),
+                                          before: timeline.active.count, after: timeline.active.count)
+        print("[DanmakuStage] event=\(event) experiment=\(stageTransitionExperimentEnabled) "
+            + "source=\(Int(stageSourceViewport.width))x\(Int(stageSourceViewport.height)) "
+            + "video=\(Int(videoViewport.width))x\(Int(videoViewport.height)) "
+            + "scale=\(transform.scale) "
+            + "offset=\(Int(transform.translation.x)),\(Int(transform.translation.y)) "
+            + "active=\(timeline.active.count) atlasPages=\(renderer.atlas.textures.count) "
+            + "rasterizations=\(renderer.atlas.rasterizationCount)")
+        #endif
     }
     private func setAnchor(_ time: TimeInterval) {
         anchorTime = time

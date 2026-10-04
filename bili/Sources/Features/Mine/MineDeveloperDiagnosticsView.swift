@@ -94,6 +94,20 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.metalDanmaku")
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.metalDanmakuStageTransitionExperimentEnabled },
+                set: { libraryStore.setMetalDanmakuStageTransitionExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("Metal 弹幕舞台过渡实验", systemImage: "arrow.up.left.and.arrow.down.right")
+                    Text("横竖屏和全屏切换时保留弹幕并缩放逻辑舞台；需同时开启 Metal 弹幕渲染实验。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.metalDanmakuStageTransition")
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

@@ -13,6 +13,10 @@ struct DanmakuVertex {
     float4 color;
     float4 uvBounds [[flat]];
 };
+struct DanmakuStageUniforms {
+    float4 transform; // scale, translation x/y
+    float4 videoViewport; // origin x/y, width/height in points
+};
 
 vertex DanmakuVertex danmakuGlyphVertex(uint vertexID [[vertex_id]],
     uint instanceID [[instance_id]], const device DanmakuGlyphInstance *instances [[buffer(0)]],
@@ -23,6 +27,26 @@ vertex DanmakuVertex danmakuGlyphVertex(uint vertexID [[vertex_id]],
     float2 corner = corners[vertexID];
     float age = max(0.0f, frame.z - i.motion.z);
     float2 point = float2(i.motion.x - age * i.motion.w, i.motion.y) + corner * i.geometry.xy;
+    DanmakuVertex out;
+    out.position = float4(point.x / frame.x * 2 - 1, 1 - point.y / frame.y * 2, 0, 1);
+    out.uv = i.uv.xy + corner * i.uv.zw;
+    out.color = i.color;
+    out.uvBounds = i.uv;
+    if (frame.z < i.motion.z || frame.z >= i.geometry.z) out.color.a = 0;
+    return out;
+}
+
+vertex DanmakuVertex danmakuGlyphStageVertex(uint vertexID [[vertex_id]],
+    uint instanceID [[instance_id]], const device DanmakuGlyphInstance *instances [[buffer(0)]],
+    constant float4 &frame [[buffer(1)]],
+    constant DanmakuStageUniforms &stage [[buffer(2)]]) {
+    const float2 corners[6] = {float2(0,0), float2(1,0), float2(0,1),
+                              float2(0,1), float2(1,0), float2(1,1)};
+    DanmakuGlyphInstance i = instances[instanceID];
+    float2 corner = corners[vertexID];
+    float age = max(0.0f, frame.z - i.motion.z);
+    float2 logicalPoint = float2(i.motion.x - age * i.motion.w, i.motion.y) + corner * i.geometry.xy;
+    float2 point = logicalPoint * stage.transform.x + stage.transform.yz + stage.videoViewport.xy;
     DanmakuVertex out;
     out.position = float4(point.x / frame.x * 2 - 1, 1 - point.y / frame.y * 2, 0, 1);
     out.uv = i.uv.xy + corner * i.uv.zw;

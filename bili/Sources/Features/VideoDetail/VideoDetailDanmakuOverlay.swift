@@ -7,13 +7,13 @@ struct VideoDetailDanmakuOverlay: View {
     let clock: PlayerPlaybackClock
     let usesLandscapePlaybackChrome: Bool
     let logicalCanvasSize: CGSize?
+    let videoAspectRatio: CGFloat?
     let isLayoutTransitioning: Bool
     let onPlaybackTime: (TimeInterval, Bool) -> Void
     @StateObject private var state = VideoDetailDanmakuOverlayState()
 
     var body: some View {
         let snapshot = state.snapshot
-        let horizontalInset: CGFloat = usesLandscapePlaybackChrome ? 0 : 4
         let isVisibleInCurrentOrientation = usesLandscapePlaybackChrome || !snapshot.settings.hidesInPortrait
 
         DanmakuOverlayView(
@@ -32,11 +32,10 @@ struct VideoDetailDanmakuOverlay: View {
             playbackClock: clock,
             onPlaybackTime: onPlaybackTime,
             metalRendererEnabled: libraryStore.metalDanmakuRendererExperimentEnabled,
-            logicalCanvasSize: logicalCanvasSize.map {
-                CGSize(width: max(0, $0.width - 2 * horizontalInset), height: $0.height)
-            }
+            logicalCanvasSize: logicalCanvasSize,
+            stageTransitionExperimentEnabled: libraryStore.metalDanmakuStageTransitionExperimentEnabled,
+            videoAspectRatio: videoAspectRatio
         )
-        .padding(.horizontal, horizontalInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .videoDetailDanmakuOverlayLifecycle(

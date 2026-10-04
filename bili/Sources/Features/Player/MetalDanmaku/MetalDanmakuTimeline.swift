@@ -13,6 +13,7 @@ final class MetalDanmakuTimeline {
         let y: CGFloat
         let velocity: CGFloat
         let endTime: TimeInterval
+        var glyphScale: CGFloat = 1
 
         func frame(at time: TimeInterval) -> CGRect {
             CGRect(x: startX - velocity * max(0, time - item.time), y: y,
@@ -59,6 +60,43 @@ final class MetalDanmakuTimeline {
         nextExpiry = active.map(\.endTime).min() ?? .infinity
         revision &+= 1
         return true
+    }
+
+    /// Updates the future admission window without rebuilding active entries.
+    /// Used only while the Metal stage is being resized.
+    func replaceItemsKeepingActiveDuringStageTransition(_ updatedItems: [DanmakuItem], at time: TimeInterval) {
+        guard time.isFinite else { return }
+        items = normalizedItems(updatedItems)
+        active.removeAll { $0.endTime <= time }
+        cursor = index(after: time)
+        lastTime = time
+        nextExpiry = active.map(\.endTime).min() ?? .infinity
+        revision &+= 1
+    }
+
+    /// Rebases active entries once after a stage transition. Media timestamps and
+    /// lane identities are preserved; only their logical geometry is transformed.
+    func rebaseActive(using transform: MetalDanmakuStageTransform, at time: TimeInterval) {
+        guard transform.scale.isFinite, transform.scale > 0,
+              transform.translation.x.isFinite, transform.translation.y.isFinite else { return }
+        active = active.compactMap { entry in
+            guard entry.endTime > time else { return nil }
+            let origin = transform.map(CGPoint(x: entry.startX, y: entry.y))
+            return Entry(
+                item: entry.item,
+                size: CGSize(width: entry.size.width * transform.scale,
+                             height: entry.size.height * transform.scale),
+                lane: entry.lane,
+                startX: origin.x,
+                y: origin.y,
+                velocity: entry.velocity * transform.scale,
+                endTime: entry.endTime,
+                glyphScale: entry.glyphScale * transform.scale
+            )
+        }
+        nextExpiry = active.map(\.endTime).min() ?? .infinity
+        lastTime = time
+        revision &+= 1
     }
 
     private func canPreserveActiveEntries(

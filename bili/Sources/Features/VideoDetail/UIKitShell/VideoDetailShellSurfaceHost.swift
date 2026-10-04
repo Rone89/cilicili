@@ -752,6 +752,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                         playerViewModel: viewModel,
                         usesLandscapePlaybackChrome: danmakuUsesLandscapePlaybackChrome,
                         logicalCanvasSize: danmakuCanvasSize,
+                        videoAspectRatio: videoAspectRatio,
                         // The bare-surface flag also covers control-tree
                         // prewarming. Danmaku must only see the real UIKit
                         // rotation transition; prewarm should not pause or

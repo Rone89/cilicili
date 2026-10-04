@@ -33,12 +33,13 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
     }
 
     private func configuration(items: [DanmakuItem], time: Double = 1, revision: Int = 1,
-                               playing: Bool = false) -> DanmakuOverlayConfiguration {
+                               playing: Bool = false,
+                               videoAspectRatio: CGFloat? = nil) -> DanmakuOverlayConfiguration {
         DanmakuOverlayConfiguration(items: items, itemsRevision: revision, currentTime: time,
             isPlaying: playing, playbackRate: 1, isEnabled: true, hasPresentedPlayback: true,
             isLoadShedding: false, settings: DanmakuSettings(hidesInPortrait: false,
                 danmakuKit: DanmakuKitRenderSettings(displayArea: .full, allowsDanmakuOverlap: true)),
-            topInset: 0, bottomInset: 0)
+            topInset: 0, bottomInset: 0, videoAspectRatio: videoAspectRatio)
     }
     private func items(count: Int) -> [DanmakuItem] {
         (0..<count).map { DanmakuItem(id: "fixture-\($0)", time: 0, mode: 1, fontSize: 25,
@@ -164,10 +165,108 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
         XCTAssertFalse(store.metalDanmakuRendererExperimentEnabled)
+        XCTAssertFalse(store.metalDanmakuStageTransitionExperimentEnabled)
         store.setMetalDanmakuRendererExperimentEnabled(true)
         XCTAssertTrue(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
+        store.setMetalDanmakuStageTransitionExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).metalDanmakuStageTransitionExperimentEnabled)
         store.setMetalDanmakuRendererExperimentEnabled(false)
         XCTAssertFalse(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
+        store.setMetalDanmakuStageTransitionExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).metalDanmakuStageTransitionExperimentEnabled)
+    }
+
+    func testMetalStageTransitionKeepsActiveEntriesAndPresentsContinuously() throws {
+        guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
+        defer { view.stop() }
+        view.frame = CGRect(x: 0, y: 0, width: 900, height: 500)
+        view.setStageTransitionExperimentEnabled(true)
+        view.layoutIfNeeded()
+        let fixture = items(count: 10) + [
+            DanmakuItem(id: "stage-top", time: 0, mode: 5, fontSize: 25,
+                        color: 0xFFFFFF, text: "顶部锚点"),
+            DanmakuItem(id: "stage-bottom", time: 0, mode: 4, fontSize: 25,
+                        color: 0xFFFFFF, text: "底部锚点")
+        ]
+        view.apply(configuration: configuration(items: fixture, videoAspectRatio: 1.8))
+        let idsBefore = view.debugActiveItemIDs
+        XCTAssertEqual(idsBefore.count, fixture.count)
+        let timelineRevision = view.debugTimelineRevision
+        let atlasRasterizations = view.debugRenderer.atlas.rasterizationCount
+        let atlasPages = view.debugRenderer.atlas.textures.count
+        let beforeFrames = view.debugPresentedFrames(at: 1.5)
+
+        view.setLayoutTransitioning(true)
+        XCTAssertTrue(view.debugStageTransitionActive)
+        XCTAssertFalse(view.metalView.isHidden)
+        view.frame.size = CGSize(width: 500, height: 900)
+        view.layoutIfNeeded()
+
+        XCTAssertEqual(view.debugActiveItemIDs, idsBefore)
+        XCTAssertEqual(view.debugTimelineRevision, timelineRevision)
+        XCTAssertEqual(view.debugTimelineViewport, CGSize(width: 900, height: 500))
+        XCTAssertEqual(view.debugRenderer.atlas.rasterizationCount, atlasRasterizations)
+        XCTAssertEqual(view.debugRenderer.atlas.textures.count, atlasPages)
+
+        let duringFrames = view.debugPresentedFrames(at: 1.5)
+        let targetViewport = MetalDanmakuVideoViewport.aspectFit(
+            in: view.bounds, aspectRatio: 1.8
+        )
+        for id in idsBefore {
+            let source = try XCTUnwrap(beforeFrames[id])
+            let actual = try XCTUnwrap(duringFrames[id])
+            var expected = view.debugStageTransform.map(source)
+            expected.origin.x += targetViewport.minX
+            expected.origin.y += targetViewport.minY
+            XCTAssertEqual(actual.minX, expected.minX, accuracy: 0.01, id)
+            XCTAssertEqual(actual.minY, expected.minY, accuracy: 0.01, id)
+            XCTAssertEqual(actual.width, expected.width, accuracy: 0.01, id)
+            XCTAssertEqual(actual.height, expected.height, accuracy: 0.01, id)
+        }
+
+        view.setLayoutTransitioning(false)
+        XCTAssertFalse(view.debugStageTransitionActive)
+        XCTAssertEqual(view.debugActiveItemIDs, idsBefore)
+        XCTAssertEqual(view.debugTimelineViewport.width, targetViewport.width, accuracy: 0.01)
+        XCTAssertEqual(view.debugTimelineViewport.height, targetViewport.height, accuracy: 0.01)
+        let afterFrames = view.debugPresentedFrames(at: 1.5)
+        for id in idsBefore {
+            let during = try XCTUnwrap(duringFrames[id])
+            let after = try XCTUnwrap(afterFrames[id])
+            XCTAssertEqual(after.minX, during.minX, accuracy: 0.01, id)
+            XCTAssertEqual(after.minY, during.minY, accuracy: 0.01, id)
+            XCTAssertEqual(after.width, during.width, accuracy: 0.01, id)
+            XCTAssertEqual(after.height, during.height, accuracy: 0.01, id)
+        }
+        XCTAssertEqual(view.debugRenderer.atlas.rasterizationCount, atlasRasterizations)
+        XCTAssertEqual(view.debugRenderer.atlas.textures.count, atlasPages)
+    }
+
+    func testMetalStageTransitionCanBeInterruptedAndSeekUsesNewMediaTime() throws {
+        guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
+        defer { view.stop() }
+        view.frame = CGRect(x: 0, y: 0, width: 900, height: 500)
+        view.setStageTransitionExperimentEnabled(true)
+        view.layoutIfNeeded()
+        let fixture = items(count: 20)
+        view.apply(configuration: configuration(items: fixture, videoAspectRatio: 1.8))
+        view.setLayoutTransitioning(true)
+
+        view.frame.size = CGSize(width: 500, height: 900)
+        view.layoutIfNeeded()
+        let firstTransform = view.debugStageTransform
+        view.frame.size = CGSize(width: 850, height: 400)
+        view.layoutIfNeeded()
+        XCTAssertTrue(view.debugStageTransitionActive)
+        XCTAssertNotEqual(view.debugStageTransform, firstTransform)
+        XCTAssertEqual(view.debugStageTransform.scale, 0.8, accuracy: 0.01)
+
+        view.synchronizePlaybackTime(2, force: true)
+        XCTAssertTrue(view.debugStageTransitionActive)
+        XCTAssertEqual(view.debugActiveItemIDs, Set(fixture.filter { $0.time <= 2 }.map(\.id)))
+        view.setLayoutTransitioning(false)
+        XCTAssertFalse(view.debugStageTransitionActive)
+        XCTAssertEqual(view.debugActiveItemIDs, Set(fixture.filter { $0.time <= 2 }.map(\.id)))
     }
 
     func testHostSwitchHasExactlyOneRendererAndOffRestoresDanmakuKit() async throws {

@@ -12,6 +12,7 @@ struct DanmakuOverlayConfiguration {
     let settings: DanmakuSettings
     let topInset: CGFloat
     let bottomInset: CGFloat
+    var videoAspectRatio: CGFloat? = nil
 }
 
 @MainActor
@@ -68,20 +69,26 @@ final class DanmakuRendererHostView: UIView {
     required init?(coder: NSCoder) { nil }
     isolated deinit { renderer?.stop() }
 
-    func selectRenderer(metalEnabled: Bool) {
-        guard renderer == nil || requestedMetal != metalEnabled else { return }
-        renderer?.stop()
-        renderer?.removeFromSuperview()
-        renderer = nil
-        requestedMetal = metalEnabled
-        if metalEnabled, let metal = MetalDanmakuView.make() {
-            renderer = metal
-            usesMetal = true
-        } else {
-            renderer = DanmakuKitOverlayView(frame: bounds)
-            usesMetal = false
+    func selectRenderer(metalEnabled: Bool, stageTransitionExperimentEnabled: Bool = false) {
+        let rendererChanged = renderer == nil || requestedMetal != metalEnabled
+        if rendererChanged {
+            renderer?.stop()
+            renderer?.removeFromSuperview()
+            renderer = nil
+            requestedMetal = metalEnabled
+            if metalEnabled, let metal = MetalDanmakuView.make() {
+                renderer = metal
+                usesMetal = true
+            } else {
+                renderer = DanmakuKitOverlayView(frame: bounds)
+                usesMetal = false
+            }
         }
         guard let renderer else { return }
+        (renderer as? MetalDanmakuView)?.setStageTransitionExperimentEnabled(
+            metalEnabled && stageTransitionExperimentEnabled
+        )
+        guard rendererChanged else { return }
         #if DEBUG
         (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
         (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
