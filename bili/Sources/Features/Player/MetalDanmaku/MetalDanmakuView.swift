@@ -35,6 +35,10 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     var debugActiveCount: Int { timeline.active.count }
     var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
     var debugRenderer: MetalDanmakuRenderer { renderer }
+    var debugTimelineRevision: Int { timeline.revision }
+    func debugFrames(at time: TimeInterval) -> [String: CGRect] {
+        Dictionary(uniqueKeysWithValues: timeline.active.map { ($0.item.id, $0.frame(at: time)) })
+    }
     #endif
 
     static func make() -> MetalDanmakuView? {

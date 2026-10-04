@@ -47,6 +47,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     let metalRendererEnabled: Bool
+    let logicalCanvasSize: CGSize?
     let items: [DanmakuItem]
     let itemsRevision: Int
     let currentTime: TimeInterval
@@ -77,9 +78,11 @@ struct DanmakuOverlayView: UIViewRepresentable {
         isLayoutTransitioning: Bool = false,
         playbackClock: PlayerPlaybackClock? = nil,
         onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
-        metalRendererEnabled: Bool = false
+        metalRendererEnabled: Bool = false,
+        logicalCanvasSize: CGSize? = nil
     ) {
         self.metalRendererEnabled = metalRendererEnabled
+        self.logicalCanvasSize = logicalCanvasSize
         self.items = items
         self.itemsRevision = itemsRevision
         self.currentTime = currentTime
@@ -102,6 +105,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> DanmakuRendererHostView {
         let view = DanmakuRendererHostView(frame: .zero)
+        view.setLogicalCanvasSize(logicalCanvasSize)
         view.selectRenderer(metalEnabled: metalRendererEnabled)
         view.setLayoutTransitioning(isLayoutTransitioning)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
@@ -125,6 +129,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: DanmakuRendererHostView, context: Context) {
+        uiView.setLogicalCanvasSize(logicalCanvasSize)
         uiView.selectRenderer(metalEnabled: metalRendererEnabled)
         if isLayoutTransitioning {
             uiView.setLayoutTransitioning(true)

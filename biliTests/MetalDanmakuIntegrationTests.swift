@@ -22,6 +22,119 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
                                     color: 0xFFFFFF, text: "测试 ABC \($0)") }
     }
 
+    func testCollapsedHostPreservesDanmakuKitTracksWithoutViewportRebuild() throws {
+        let diagnostics = DanmakuRendererDiagnostics.shared
+        diagnostics.start()
+        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        defer { host.stop(); diagnostics.stop() }
+        host.setLogicalCanvasSize(host.bounds.size)
+        host.selectRenderer(metalEnabled: false)
+        host.layoutIfNeeded()
+        let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
+        child.layoutIfNeeded()
+        host.apply(configuration: configuration(items: items(count: 10)))
+        let rebuilds = diagnostics.danmakuKitSummary.rebuilds
+        XCTAssertGreaterThan(rebuilds, 0)
+
+        for height in [500.0, 350, 220, 54, 600] {
+            host.frame.size.height = height
+            host.layoutIfNeeded()
+            child.layoutIfNeeded()
+            XCTAssertTrue(host.subviews.first === child)
+            XCTAssertEqual(child.frame, CGRect(x: 0, y: 0, width: 390, height: 600))
+            XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, rebuilds)
+            XCTAssertTrue(host.clipsToBounds)
+        }
+        // A genuine canvas change still updates the tracks.
+        host.setLogicalCanvasSize(CGSize(width: 844, height: 390))
+        child.layoutIfNeeded()
+        XCTAssertGreaterThan(diagnostics.danmakuKitSummary.rebuilds, rebuilds)
+    }
+
+    func testCollapsedHostPreservesMetalFramesAndTimelineThenSupportsSeek() throws {
+        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        defer { host.stop() }
+        host.setLogicalCanvasSize(host.bounds.size)
+        host.selectRenderer(metalEnabled: true)
+        guard host.usesMetal else { throw XCTSkip("Metal unavailable") }
+        host.layoutIfNeeded()
+        let child = try XCTUnwrap(host.subviews.first as? MetalDanmakuView)
+        child.layoutIfNeeded()
+        let fixture = items(count: 10) + [
+            DanmakuItem(id: "top", time: 0, mode: 5, fontSize: 25, color: 0xFFFFFF, text: "顶部"),
+            DanmakuItem(id: "bottom", time: 0, mode: 4, fontSize: 25, color: 0xFFFFFF, text: "底部")
+        ]
+        host.apply(configuration: configuration(items: fixture))
+        let frames = child.debugFrames(at: 1)
+        XCTAssertNotNil(frames["top"])
+        XCTAssertNotNil(frames["bottom"])
+        XCTAssertFalse(frames.isEmpty)
+        let revision = child.debugTimelineRevision
+        let rasterizations = child.debugRenderer.atlas.rasterizationCount
+
+        for height in [500.0, 350, 220, 54, 600] {
+            host.frame.size.height = height
+            host.layoutIfNeeded()
+            child.layoutIfNeeded()
+            XCTAssertTrue(host.subviews.first === child)
+            XCTAssertEqual(child.bounds.size, CGSize(width: 390, height: 600))
+            XCTAssertEqual(child.debugFrames(at: 1), frames)
+            XCTAssertEqual(child.debugTimelineRevision, revision)
+            XCTAssertEqual(child.debugRenderer.atlas.rasterizationCount, rasterizations)
+        }
+        XCTAssertNotEqual(child.debugFrames(at: 2), frames, "Media time must still move the glyphs")
+        host.frame.size.height = 220
+        host.layoutIfNeeded()
+        host.synchronizePlaybackTime(30, force: true)
+        XCTAssertEqual(child.debugActiveCount, 0, "Expired entries must not return on expansion")
+        host.frame.size.height = 600
+        host.layoutIfNeeded()
+        XCTAssertEqual(child.debugActiveCount, 0)
+        host.synchronizePlaybackTime(1, force: true)
+        XCTAssertEqual(child.debugFrames(at: 1), frames, "Backward seek must reconstruct at logical size")
+        host.setLogicalCanvasSize(CGSize(width: 844, height: 390))
+        child.layoutIfNeeded()
+        XCTAssertEqual(child.bounds.size, CGSize(width: 844, height: 390))
+        XCTAssertNotEqual(child.debugFrames(at: 1), frames)
+    }
+
+    func testHostWithoutCanvasOverrideFollowsBoundsAndRejectsInvalidSizes() throws {
+        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        defer { host.stop() }
+        host.selectRenderer(metalEnabled: false)
+        let child = try XCTUnwrap(host.subviews.first)
+        host.frame.size.height = 220
+        host.layoutIfNeeded()
+        XCTAssertEqual(child.frame, host.bounds)
+        host.setLogicalCanvasSize(CGSize(width: 390, height: 600))
+        XCTAssertEqual(child.frame.size.height, 600)
+        for invalid in [CGSize.zero, CGSize(width: CGFloat.nan, height: 600),
+                        CGSize(width: 390, height: CGFloat.infinity), CGSize(width: -1, height: 600)] {
+            host.setLogicalCanvasSize(invalid)
+            XCTAssertEqual(child.frame, host.bounds)
+        }
+    }
+
+    func testRendererSwitchWhileCollapsedKeepsCanvasAndReleasesPreviousChild() throws {
+        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 220))
+        defer { host.stop() }
+        host.setLogicalCanvasSize(CGSize(width: 390, height: 600))
+        host.selectRenderer(metalEnabled: false)
+        let previous = try XCTUnwrap(host.subviews.first)
+        host.selectRenderer(metalEnabled: true)
+        XCTAssertNil(previous.superview)
+        XCTAssertEqual(host.subviews.count, 1)
+        XCTAssertEqual(host.subviews.first?.frame, CGRect(x: 0, y: 0, width: 390, height: 600))
+        host.selectRenderer(metalEnabled: false)
+        XCTAssertEqual(host.subviews.count, 1)
+        XCTAssertTrue(host.subviews.first is DanmakuKitOverlayView)
+        XCTAssertEqual(host.subviews.first?.frame.size.height, 600)
+        host.setLogicalCanvasSize(nil)
+        XCTAssertEqual(host.subviews.first?.frame, host.bounds)
+        host.stop()
+        XCTAssertTrue(host.subviews.isEmpty)
+    }
+
     func testExperimentDefaultsOffAndPersistsAcrossStoreRecreation() {
         let suite = "metal-tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

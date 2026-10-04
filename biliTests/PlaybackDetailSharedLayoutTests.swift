@@ -6,6 +6,33 @@ import XCTest
 
 final class PlaybackDetailSharedLayoutTests: XCTestCase {
     @MainActor
+    func testDanmakuCanvasStaysExpandedAcrossCollapseAndPauseButChangesForFullscreen() {
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let aspect: CGFloat = 9.0 / 16
+        let expanded = VideoDetailShellLayout.expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: aspect)
+        for playing in [true, false] {
+            for height in [expanded, 350, 220, 54] {
+                let layout = VideoDetailShellLayout.resolve(bounds: bounds, safeAreaTop: 59,
+                    videoAspectRatio: aspect, currentPlayerHeight: height, isPlaybackActive: playing,
+                    isLandscape: false, isPortraitFullscreen: false)
+                XCTAssertEqual(layout.danmakuCanvasSize, CGSize(width: 390, height: expanded))
+                XCTAssertLessThanOrEqual(layout.playerFrame.height, expanded)
+            }
+        }
+        for landscape in [false, true] {
+            let fullscreenBounds = landscape ? CGRect(x: 0, y: 0, width: 844, height: 390) : bounds
+            let layout = VideoDetailShellLayout.resolve(bounds: fullscreenBounds, safeAreaTop: 0,
+                videoAspectRatio: aspect, currentPlayerHeight: 220, isPlaybackActive: true,
+                isLandscape: landscape, isPortraitFullscreen: !landscape)
+            XCTAssertEqual(layout.danmakuCanvasSize, fullscreenBounds.size)
+        }
+        let wide = VideoDetailShellLayout.resolve(bounds: bounds, safeAreaTop: 59,
+            videoAspectRatio: 16.0 / 9, currentPlayerHeight: 54, isPlaybackActive: false,
+            isLandscape: false, isPortraitFullscreen: false)
+        XCTAssertEqual(wide.danmakuCanvasSize.height, VideoDetailShellLayout.standardPlayerHeight(forWidth: 390))
+    }
+
+    @MainActor
     func testContentUpdateGateCoalescesDeferredChangesIntoOneRefresh() async {
         let gate = VideoDetailContentUpdateGate()
 

@@ -37,6 +37,7 @@ extension DanmakuKitOverlayView: DanmakuOverlayRendering {
 final class DanmakuRendererHostView: UIView {
     private var renderer: (UIView & DanmakuOverlayRendering)?
     private var requestedMetal: Bool?
+    private var logicalCanvasSize: CGSize?
     private var isTransitioning = false
     private(set) var usesMetal = false
     var isLoadSheddingValue: Bool { renderer?.isLoadSheddingValue ?? false }
@@ -78,10 +79,32 @@ final class DanmakuRendererHostView: UIView {
         (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
         DanmakuRendererDiagnostics.shared.rendererType = usesMetal ? "Metal" : (metalEnabled ? "DanmakuKit (Metal unavailable)" : "DanmakuKit")
         #endif
-        renderer.frame = bounds
-        renderer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(renderer)
+        layoutRenderer()
         renderer.setLayoutTransitioning(isTransitioning)
+    }
+
+    /// Only the host follows the visible window. The child keeps its track coordinates.
+    func setLogicalCanvasSize(_ size: CGSize?) {
+        let valid = size.flatMap { size -> CGSize? in
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
+            return size
+        }
+        guard logicalCanvasSize != valid else { return }
+        logicalCanvasSize = valid
+        setNeedsLayout()
+        layoutRenderer()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutRenderer()
+    }
+
+    private func layoutRenderer() {
+        guard let renderer else { return }
+        let frame = CGRect(origin: .zero, size: logicalCanvasSize ?? bounds.size)
+        if renderer.frame != frame { renderer.frame = frame }
     }
 
     func apply(configuration: DanmakuOverlayConfiguration) { renderer?.apply(configuration: configuration) }

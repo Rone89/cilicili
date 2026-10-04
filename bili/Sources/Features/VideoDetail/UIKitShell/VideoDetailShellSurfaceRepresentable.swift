@@ -14,6 +14,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
     let runtimeSettings: VideoDetailRuntimeSettingsStore
     let rotationCoordinator: PlaybackRotationCoordinator
     let videoAspectRatio: CGFloat
+    let danmakuCanvasSize: CGSize?
     let isBareSurfaceTransitionActive: Bool
     let retainsChromeDuringBareSurfaceTransition: Bool
     let isCollapsedChromeActive: Bool
@@ -31,6 +32,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VideoDetailShellSurfaceHost {
         let host = makeHost()
+        host.setDanmakuCanvasSize(danmakuCanvasSize)
         context.coordinator.configure(host: host, playerViewModel: playerViewModel)
         context.coordinator.attachIfPossible(to: host)
         return host
@@ -46,6 +48,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         coordinator.scheduleConfigurationIfNeeded(
             playerViewModel: playerViewModel,
             videoAspectRatio: videoAspectRatio,
+            danmakuCanvasSize: danmakuCanvasSize,
             isCollapsedChromeActive: isCollapsedChromeActive,
             isBareSurfaceTransitionActive: isBareSurfaceTransitionActive,
             retainsChromeDuringBareSurfaceTransition: retainsChromeDuringBareSurfaceTransition
@@ -84,6 +87,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         private weak var observedPlayer: PlayerStateViewModel?
         private weak var configuredPlayer: PlayerStateViewModel?
         private var configuredAspectRatio: CGFloat?
+        private var configuredDanmakuCanvasSize: CGSize?
         private var configuredCollapsedChrome: Bool?
         private var configuredBareSurface: Bool?
         private var configuredRetainsChrome: Bool?
@@ -122,12 +126,14 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         func scheduleConfigurationIfNeeded(
             playerViewModel: PlayerStateViewModel,
             videoAspectRatio: CGFloat,
+            danmakuCanvasSize: CGSize?,
             isCollapsedChromeActive: Bool,
             isBareSurfaceTransitionActive: Bool,
             retainsChromeDuringBareSurfaceTransition: Bool
         ) {
             let changed = configuredPlayer !== playerViewModel
                 || configuredAspectRatio != videoAspectRatio
+                || configuredDanmakuCanvasSize != danmakuCanvasSize
                 || configuredCollapsedChrome != isCollapsedChromeActive
                 || configuredBareSurface != isBareSurfaceTransitionActive
                 || configuredRetainsChrome != retainsChromeDuringBareSurfaceTransition
@@ -135,6 +141,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
 
             configuredPlayer = playerViewModel
             configuredAspectRatio = videoAspectRatio
+            configuredDanmakuCanvasSize = danmakuCanvasSize
             configuredCollapsedChrome = isCollapsedChromeActive
             configuredBareSurface = isBareSurfaceTransitionActive
             configuredRetainsChrome = retainsChromeDuringBareSurfaceTransition
@@ -152,6 +159,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                 }
 
                 host.setPlayerViewModel(playerViewModel)
+                host.setDanmakuCanvasSize(self.configuredDanmakuCanvasSize)
                 if let videoAspectRatio = self.configuredAspectRatio {
                     host.setVideoAspectRatio(videoAspectRatio)
                 }
@@ -193,6 +201,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             observedPlayer = nil
             configuredPlayer = nil
             configuredAspectRatio = nil
+            configuredDanmakuCanvasSize = nil
             configuredCollapsedChrome = nil
             configuredBareSurface = nil
             configuredRetainsChrome = nil

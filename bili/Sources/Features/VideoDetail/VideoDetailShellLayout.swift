@@ -11,6 +11,8 @@ struct VideoDetailShellLayout: Equatable {
     static let collapsedToolbarHeight: CGFloat = 54
 
     let playerFrame: CGRect
+    /// Scheduling canvas stays expanded while only the visible player window collapses.
+    let danmakuCanvasSize: CGSize
     let contentFrame: CGRect
     let contentTopInset: CGFloat?
     let usesFullscreenLayout: Bool
@@ -110,6 +112,7 @@ struct VideoDetailShellLayout: Equatable {
         if usesFullscreenLayout {
             return Self(
                 playerFrame: bounds,
+                danmakuCanvasSize: bounds.size,
                 contentFrame: CGRect(
                     x: bounds.minX,
                     y: bounds.maxY,
@@ -127,6 +130,10 @@ struct VideoDetailShellLayout: Equatable {
                 y: bounds.minY + max(0, safeAreaTop),
                 width: bounds.width,
                 height: max(playerHeight, 0)
+            ),
+            danmakuCanvasSize: CGSize(
+                width: bounds.width,
+                height: expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: videoAspectRatio)
             ),
             contentFrame: CGRect(
                 x: bounds.minX,

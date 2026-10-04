@@ -596,6 +596,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     runtimeSettings: runtimeSettings,
                     rotationCoordinator: rotationCoordinator,
                     videoAspectRatio: model.videoAspectRatio,
+                    danmakuCanvasSize: layout.usesFullscreenLayout ? nil : layout.danmakuCanvasSize,
                     isBareSurfaceTransitionActive: model.isBareSurfaceTransitionActive,
                     retainsChromeDuringBareSurfaceTransition: model.retainsChromeDuringBareSurfaceTransition,
                     isCollapsedChromeActive: showsCollapsedChrome,
