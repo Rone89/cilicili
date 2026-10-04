@@ -73,6 +73,35 @@ final class DanmakuRendererDiagnosticsTests: XCTestCase {
         XCTAssertEqual(diagnostics.metalSummary.medianFPS ?? 0, 60, accuracy: 0.001)
     }
 
+    func testManualRefreshHasSeparateTimingAndDoesNotPolluteAutomaticCadence() {
+        let diagnostics = DanmakuRendererDiagnostics()
+        diagnostics.start(at: 0)
+        func record(at time: Double, manual: Bool, acquisition: Double) {
+            diagnostics.recordMetalFrame(active: 10, glyphs: 100, drawCalls: 1, pages: 1,
+                usedPixels: 10, capacityPixels: 100, rejected: 0, skipped: 0,
+                preparationMs: acquisition, timestamp: time, expectedInterval: 1.0 / 60,
+                requestedFPS: 60, displayMaximumFPS: 120, drawableAcquisitionMs: acquisition,
+                isManualRefresh: manual)
+        }
+        record(at: 0, manual: false, acquisition: 2)
+        record(at: 0.005, manual: true, acquisition: 8)
+        record(at: 1, manual: false, acquisition: 4)
+        record(at: 1 + 1.0 / 60, manual: false, acquisition: 3)
+        XCTAssertEqual(diagnostics.metalSummary.automaticFrames, 3)
+        XCTAssertEqual(diagnostics.metalSummary.manualRefreshFrames, 1)
+        XCTAssertEqual(diagnostics.metalSummary.automaticDrawableAcquisition.average, 3)
+        XCTAssertEqual(diagnostics.metalSummary.manualDrawableAcquisition.average, 8)
+        XCTAssertEqual(diagnostics.metalSummary.intervals.count, 1)
+        XCTAssertEqual(diagnostics.metalSummary.medianFPS ?? 0, 60, accuracy: 0.001)
+        XCTAssertEqual(diagnostics.metalSummary.callbackGaps, 0)
+        XCTAssertTrue(diagnostics.makeReport().contains("Metal frame source automatic/manual refresh: 3/1"))
+        diagnostics.stop()
+        diagnostics.start(at: 2)
+        XCTAssertEqual(diagnostics.metalSummary.automaticFrames, 0)
+        XCTAssertEqual(diagnostics.metalSummary.manualRefreshFrames, 0)
+        XCTAssertNil(diagnostics.metalSummary.manualDrawableAcquisition.average)
+    }
+
     func testBenchmarkMetadataAndKitFrameLoadsResetForEachCapture() {
         let diagnostics = DanmakuRendererDiagnostics()
         diagnostics.startBenchmark(.init(renderer: "DanmakuKit", density: 300, requestedFPS: 60,

@@ -267,6 +267,10 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
             throw XCTSkip("No window scene in this runtime")
         }
+        let diagnostics = DanmakuRendererDiagnostics()
+        view.debugDiagnostics = diagnostics
+        diagnostics.start()
+        defer { diagnostics.stop() }
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 900, height: 400)
         let controller = UIViewController()
@@ -283,12 +287,34 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(view.debugRenderer.submittedFrames, 3)
         XCTAssertFalse(view.metalView.isPaused)
+        XCTAssertEqual(view.debugManualRefreshCount, 0)
+        XCTAssertEqual(diagnostics.metalSummary.manualRefreshFrames, 0)
+        XCTAssertGreaterThanOrEqual(diagnostics.metalSummary.automaticFrames, 3)
+        // Clock/configuration updates must not synchronously submit extra frames
+        // while MTKView already owns the active draw loop.
+        let submitted = view.debugRenderer.submittedFrames
+        for _ in 0..<20 {
+            view.apply(configuration: configuration(items: items(count: 10), time: 1.5, playing: true))
+        }
+        view.synchronizePlaybackTime(2, force: true)
+        view.setLayoutTransitioning(true)
+        view.setLayoutTransitioning(false)
+        XCTAssertEqual(view.debugRenderer.submittedFrames, submitted)
+        XCTAssertEqual(view.debugManualRefreshCount, 0)
+
         view.apply(configuration: configuration(items: items(count: 10), time: 1.5, playing: false))
         XCTAssertTrue(view.metalView.isPaused)
-        view.apply(configuration: configuration(items: items(count: 10), time: 1.5, playing: true))
+        XCTAssertEqual(view.debugManualRefreshCount, 1, "Paused updates still need a single-frame refresh")
+        view.synchronizePlaybackTime(2, force: true)
+        XCTAssertEqual(view.debugManualRefreshCount, 2, "Paused seek must refresh its target frame")
+        XCTAssertGreaterThan(diagnostics.metalSummary.manualRefreshFrames, 0)
+        view.apply(configuration: configuration(items: items(count: 10), time: 2, playing: true))
         XCTAssertFalse(view.metalView.isPaused)
+        XCTAssertEqual(view.debugManualRefreshCount, 2, "Resume uses the scheduled loop")
         view.removeFromSuperview()
         XCTAssertTrue(view.metalView.isPaused)
+        view.apply(configuration: configuration(items: items(count: 10), time: 3, playing: false))
+        XCTAssertEqual(view.debugManualRefreshCount, 2, "Detached surfaces must not draw")
         view.stop()
         XCTAssertEqual(view.debugActiveCount, 0)
     }

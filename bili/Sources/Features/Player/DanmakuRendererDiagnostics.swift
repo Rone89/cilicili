@@ -105,6 +105,10 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         var drawableAcquisition = TimingSummary()
         var encoding = TimingSummary()
         var commit = TimingSummary()
+        var automaticFrames = 0
+        var manualRefreshFrames = 0
+        var automaticDrawableAcquisition = TimingSummary()
+        var manualDrawableAcquisition = TimingSummary()
         var activeLoad = LoadSummary()
         var glyphLoad = LoadSummary()
         var drawCallLoad = LoadSummary()
@@ -144,8 +148,15 @@ final class DanmakuRendererDiagnostics: ObservableObject {
                           preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double,
                           requestedFPS: Int, displayMaximumFPS: Int,
                           scenePreparationMs: Double? = nil, drawableAcquisitionMs: Double? = nil,
-                          encodingMs: Double? = nil, commitMs: Double? = nil) {
+                          encodingMs: Double? = nil, commitMs: Double? = nil, isManualRefresh: Bool = false) {
         guard isRecording else { return }
+        if isManualRefresh {
+            metalSummary.manualRefreshFrames += 1
+            metalSummary.manualDrawableAcquisition.record(drawableAcquisitionMs)
+        } else {
+            metalSummary.automaticFrames += 1
+            metalSummary.automaticDrawableAcquisition.record(drawableAcquisitionMs)
+        }
         metalSummary.scenePreparation.record(scenePreparationMs)
         metalSummary.drawableAcquisition.record(drawableAcquisitionMs)
         metalSummary.encoding.record(encodingMs)
@@ -168,7 +179,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         metalSummary.displayMaximumFPS = displayMaximumFPS
         metalSummary.preparationTotalMs += preparationMs
         metalSummary.preparationMaxMs = max(metalSummary.preparationMaxMs, preparationMs)
-        if expectedInterval > 0, let previous = metalSummary.previousTimestamp {
+        if !isManualRefresh, expectedInterval > 0, let previous = metalSummary.previousTimestamp {
             let gap = timestamp - previous
             if gap > 0, gap < 1 {
                 metalSummary.intervals.append(gap)
@@ -176,7 +187,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
                 if expectedInterval > 0, gap > max(expectedInterval * 1.5, expectedInterval + 0.008) { metalSummary.callbackGaps += 1 }
             }
         }
-        metalSummary.previousTimestamp = expectedInterval > 0 ? timestamp : nil
+        metalSummary.previousTimestamp = !isManualRefresh && expectedInterval > 0 ? timestamp : nil
     }
     func recordMetalGPU(milliseconds: Double?, captureID: UUID? = nil) {
         guard isRecording, captureID == nil || captureID == self.captureID,
@@ -380,6 +391,9 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         lines.append("Metal active/peak/glyphs/drawCalls: \(metal.active)/\(metal.peakActive)/\(metal.glyphs)/\(metal.drawCalls)")
         lines.append("Metal atlas pages/used/capacity/rejected (atlas lifetime): \(metal.pages)/\(metal.usedPixels)/\(metal.capacityPixels)/\(metal.rejectedGlyphs)")
         lines.append("Metal frames/callback median Hz/callback gaps/busy slot drops since first frame: \(metal.frames)/\(metal.medianFPS.map { String(format: "%.1f", $0) } ?? "-")/\(metal.callbackGaps)/\(metal.skippedFrames)")
+        lines.append("Metal frame source automatic/manual refresh: \(metal.automaticFrames)/\(metal.manualRefreshFrames)")
+        lines.append("Metal automatic drawable acquisition avg/max ms: \(metal.automaticDrawableAcquisition.report)")
+        lines.append("Metal manual drawable acquisition avg/max ms: \(metal.manualDrawableAcquisition.report)")
         lines.append("Metal requested/display maximum FPS: \(metal.requestedFPS)/\(metal.displayMaximumFPS)")
         lines.append("Metal draw callback elapsed average/max ms (includes drawable acquisition): \(metal.cpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")/\(String(format: "%.3f", metal.preparationMaxMs))")
         lines.append("Metal scene preparation avg/max ms: \(metal.scenePreparation.report)")

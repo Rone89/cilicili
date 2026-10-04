@@ -104,7 +104,8 @@ final class MetalDanmakuRenderer {
     private var diagnostics: DanmakuRendererDiagnostics { debugDiagnostics ?? .shared }
     #endif
 
-    func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil) {
+    func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil,
+                isManualRefresh: Bool = false) {
         #if DEBUG
         let acquisitionStarted = CACurrentMediaTime()
         let start = preparationStartedAt ?? acquisitionStarted
@@ -184,7 +185,7 @@ final class MetalDanmakuRenderer {
             scenePreparationMs: (acquisitionStarted - start) * 1_000,
             drawableAcquisitionMs: (acquisitionFinished - acquisitionStarted) * 1_000,
             encodingMs: (commitStarted - acquisitionFinished) * 1_000,
-            commitMs: (commitFinished - commitStarted) * 1_000)
+            commitMs: (commitFinished - commitStarted) * 1_000, isManualRefresh: isManualRefresh)
         #endif
     }
 

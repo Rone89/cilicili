@@ -35,6 +35,8 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         didSet { renderer.debugDiagnostics = debugDiagnostics }
     }
     var debugPreferredFramesPerSecond: Int? { didSet { updateDrawLoop() } }
+    private var isManualRefresh = false
+    private(set) var debugManualRefreshCount = 0
     var debugMaximumActiveCount: Int?
     var debugActiveCount: Int { timeline.active.count }
     var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
@@ -177,7 +179,12 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             timeline.advance(to: effectiveTime(), measure: measure)
             updateInstances()
         }
+        #if DEBUG
+        renderer.render(view: view, time: effectiveTime(), preparationStartedAt: start,
+                        isManualRefresh: isManualRefresh)
+        #else
         renderer.render(view: view, time: effectiveTime(), preparationStartedAt: start)
+        #endif
     }
 
     private var shouldRender: Bool {
@@ -244,7 +251,15 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         #endif
     }
     private func drawOnceIfVisible() {
-        if !metalView.isHidden && !suspended && window != nil { metalView.draw() }
+        // The running MTKView loop will present updated state on its next tick.
+        // A synchronous extra draw competes for drawables and disturbs that cadence.
+        guard metalView.isPaused, !metalView.isHidden, !suspended, window != nil else { return }
+        #if DEBUG
+        debugManualRefreshCount += 1
+        isManualRefresh = true
+        defer { isManualRefresh = false }
+        #endif
+        metalView.draw()
     }
     @objc private func suspend() {
         setAnchor(effectiveTime())
