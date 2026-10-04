@@ -29,10 +29,31 @@ struct DanmakuRendererDiagnosticsView: View {
                 }
                 .accessibilityIdentifier("mine.danmakuDiagnostics.recording")
             } header: {
-                Text("DanmakuKit 弹幕采集")
+                Text("弹幕渲染采集")
             } footer: {
                 Text("开始后返回视频页播放一段，再回到此页停止并复制。采集仅保存在本机内存中。")
             }
+
+            #if DEBUG
+            Section("Metal 实验") {
+                let m = diagnostics.metalSummary
+                LabeledContent("当前 Renderer", value: diagnostics.rendererType)
+                LabeledContent("活跃 / 峰值 / glyph", value: "\(m.active) / \(m.peakActive) / \(m.glyphs)")
+                LabeledContent("draw call / atlas 页数", value: "\(m.drawCalls) / \(m.pages)")
+                LabeledContent("Atlas 使用 / 容量（像素）", value: "\(m.usedPixels) / \(m.capacityPixels)")
+                LabeledContent("回调 Hz", value: m.medianFPS.map { String(format: "%.1f", $0) } ?? "—")
+                LabeledContent("回调耗时 / GPU 平均", value: "\(m.cpuAverageMs.map { String(format: "%.3fms", $0) } ?? "—") / \(m.gpuAverageMs.map { String(format: "%.3fms", $0) } ?? "—")")
+                LabeledContent("场景准备平均 / 最大 ms", value: m.scenePreparation.report)
+                LabeledContent("Drawable 获取平均 / 最大 ms", value: m.drawableAcquisition.report)
+                LabeledContent("编码平均 / 最大 ms", value: m.encoding.report)
+                LabeledContent("提交平均 / 最大 ms", value: m.commit.report)
+                LabeledContent("GPU 忙跳帧 / 回调漏间隔", value: "\(m.skippedFrames) / \(m.callbackGaps)")
+                LabeledContent("Atlas 拒绝的新 glyph", value: "\(m.rejectedGlyphs)")
+                NavigationLink("本地密度与同步测试") { DanmakuRendererBenchmarkView() }
+                Text("回调耗时包含 drawable 获取，不等于 CPU 使用率。回调 Hz 不是屏幕呈现测量。CPU / 功耗 / 全进程内存请用 Instruments 对比。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            #endif
 
             Section("DanmakuKit") {
                 LabeledContent(

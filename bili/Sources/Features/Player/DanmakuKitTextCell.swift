@@ -2,6 +2,9 @@ import DanmakuKit
 import UIKit
 
 final class DanmakuKitTextCellModel: DanmakuCellModel {
+    #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics?
+    #endif
     let cellClass: DanmakuCell.Type = DanmakuKitTextCell.self
     let item: DanmakuItem
     let size: CGSize
@@ -31,11 +34,8 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
         } else {
             type = .floating
         }
-        let compactScale: CGFloat = viewportWidth > 640 ? 0.86 : 0.70
-        let maximumSize: CGFloat = viewportWidth > 640 ? 24 : 18
-        let minimumSize: CGFloat = viewportWidth > 640 ? 15 : 13
-        let pointSize = min(max(CGFloat(item.fontSize) * compactScale * CGFloat(fontScale), minimumSize * 0.9), maximumSize * 1.35)
-        let uiFont = UIFont.systemFont(ofSize: pointSize, weight: Self.uiWeight(for: fontWeight))
+        let uiFont = DanmakuRenderPolicy.font(for: item, viewportWidth: viewportWidth,
+            scale: fontScale, weight: fontWeight)
         font = uiFont
         let color = UIColor(
             red: CGFloat((item.color >> 16) & 0xFF) / 255,
@@ -72,18 +72,6 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
 
     func isEqual(to cellModel: DanmakuCellModel) -> Bool {
         identifier == cellModel.identifier
-    }
-
-    private static func uiWeight(for weight: DanmakuFontWeightOption) -> UIFont.Weight {
-        switch weight {
-        case .light: .light
-        case .regular: .regular
-        case .medium: .medium
-        case .semibold: .semibold
-        case .bold: .bold
-        case .heavy: .heavy
-        case .black: .black
-        }
     }
 
     private static func render(
@@ -226,6 +214,10 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
 }
 
 final class DanmakuKitTextCell: DanmakuCell {
+    #if DEBUG
+    private var drawDiagnostics: DanmakuRendererDiagnostics?
+    private var drawCaptureID: UUID?
+    #endif
     private var displayRequestedAt: CFTimeInterval?
 
     required init(frame: CGRect) {
@@ -258,6 +250,10 @@ final class DanmakuKitTextCell: DanmakuCell {
 
     override func willDisplay() {
         displayRequestedAt = CACurrentMediaTime()
+        #if DEBUG
+        drawDiagnostics = (model as? DanmakuKitTextCellModel)?.debugDiagnostics ?? .shared
+        drawCaptureID = drawDiagnostics?.captureID
+        #endif
     }
 
     override func didDisplay(_ finished: Bool) {
@@ -266,11 +262,20 @@ final class DanmakuKitTextCell: DanmakuCell {
         else { return }
         let elapsed = max(0, CACurrentMediaTime() - displayRequestedAt) * 1_000
         self.displayRequestedAt = nil
+        #if DEBUG
+        let diagnostics = drawDiagnostics ?? .shared
+        let captureID = drawCaptureID
+        drawDiagnostics = nil
+        drawCaptureID = nil
+        #else
+        let diagnostics = DanmakuRendererDiagnostics.shared
+        let captureID: UUID? = nil
+        #endif
         guard finished else { return }
-        Task { @MainActor in
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitCellDraw(
+        Task { @MainActor [weak diagnostics] in
+            diagnostics?.recordDanmakuKitCellDraw(
                 identifier: identifier,
-                milliseconds: elapsed
+                milliseconds: elapsed, captureID: captureID
             )
         }
     }

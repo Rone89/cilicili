@@ -28,6 +28,20 @@ final class DanmakuKitOverlayView: UIView {
     private var emoteLoadTasks: [URL: Task<Void, Never>] = [:]
     private var lastLayoutSize = CGSize.zero
 
+    #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics?
+    var debugPreferredFramesPerSecond: Int? { didSet { updateDisplayLinkState() } }
+    var debugMaximumActiveCount: Int?
+    #endif
+
+    private var diagnostics: DanmakuRendererDiagnostics {
+        #if DEBUG
+        return debugDiagnostics ?? .shared
+        #else
+        return .shared
+        #endif
+    }
+
     var isLoadSheddingValue: Bool { isLoadShedding }
 
     override init(frame: CGRect) {
@@ -128,7 +142,7 @@ final class DanmakuKitOverlayView: UIView {
             renderer.clean()
             displayedUntil.removeAll(keepingCapacity: true)
             lastTimelineTime = playbackTime
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(0)
+            diagnostics.recordDanmakuKitActiveItems(0)
             updatePlaybackState()
             return
         }
@@ -172,7 +186,7 @@ final class DanmakuKitOverlayView: UIView {
             renderer.clean()
             displayedUntil.removeAll(keepingCapacity: true)
             lastTimelineTime = effectivePlaybackTime()
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(0)
+            diagnostics.recordDanmakuKitActiveItems(0)
             updateDisplayLinkState()
             return
         }
@@ -235,7 +249,7 @@ final class DanmakuKitOverlayView: UIView {
         lastTimelineTime = nil
         clearedThroughPlaybackTime = nil
         hasPlaybackAnchor = false
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(0)
+        diagnostics.recordDanmakuKitActiveItems(0)
     }
 
     private var shouldRender: Bool {
@@ -259,7 +273,7 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func displayDuration(for item: DanmakuItem) -> TimeInterval {
-        item.isScrolling ? maximumDisplayDuration : 4.2
+        DanmakuRenderPolicy.duration(for: item, viewportWidth: bounds.width)
     }
 
     private func configureRenderer() {
@@ -303,6 +317,12 @@ final class DanmakuKitOverlayView: UIView {
         if isLoadShedding || environment.isThermallyConstrained || environment.isLowPowerModeEnabled {
             return CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
         }
+        #if DEBUG
+        if let requested = debugPreferredFramesPerSecond {
+            let fps = Float(min(window?.screen.maximumFramesPerSecond ?? 60, max(30, requested)))
+            return CAFrameRateRange(minimum: fps, maximum: fps, preferred: fps)
+        }
+        #endif
         return CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     }
 
@@ -340,13 +360,16 @@ final class DanmakuKitOverlayView: UIView {
     @objc private func tick(_ displayLink: CADisplayLink) {
         guard shouldRender, isPlaying, !isLayoutTransitioning else { return }
         let start = CACurrentMediaTime()
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitDisplayLinkTick(
+        diagnostics.recordDanmakuKitDisplayLinkTick(
             timestamp: displayLink.timestamp,
             expectedInterval: displayLink.targetTimestamp - displayLink.timestamp
         )
         let time = effectivePlaybackTime(hostTime: displayLink.timestamp)
         advanceTimeline(from: lastTimelineTime ?? currentTime, to: time)
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitDisplayLinkWork(
+        #if DEBUG
+        diagnostics.recordDanmakuKitFrameLoad(displayedUntil.count)
+        #endif
+        diagnostics.recordDanmakuKitDisplayLinkWork(
             milliseconds: (CACurrentMediaTime() - start) * 1_000
         )
     }
@@ -356,10 +379,10 @@ final class DanmakuKitOverlayView: UIView {
             renderer.clean()
             displayedUntil.removeAll(keepingCapacity: true)
             lastTimelineTime = time
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(0)
+            diagnostics.recordDanmakuKitActiveItems(0)
             return
         }
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitRebuild(reason: reason)
+        diagnostics.recordDanmakuKitRebuild(reason: reason)
         if renderer.status == .stop {
             renderer.play()
         }
@@ -382,7 +405,7 @@ final class DanmakuKitOverlayView: UIView {
             )
         }
         lastTimelineTime = time
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(displayedUntil.count)
+        diagnostics.recordDanmakuKitActiveItems(displayedUntil.count)
         updatePlaybackState()
     }
 
@@ -397,7 +420,7 @@ final class DanmakuKitOverlayView: UIView {
             guard displayedUntil[item.id] == nil else { continue }
             display(item, at: time, source: "new-data")
         }
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(displayedUntil.count)
+        diagnostics.recordDanmakuKitActiveItems(displayedUntil.count)
     }
 
     private func advanceTimeline(from previousTime: TimeInterval, to time: TimeInterval) {
@@ -435,7 +458,7 @@ final class DanmakuKitOverlayView: UIView {
         let isLiveFloatingEntry = item.isScrolling && isPlaying
             && (source == "timeline" || source == "new-data")
         guard !isLiveFloatingEntry || age <= lateDataEntryGracePeriod else {
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitEntry(
+            diagnostics.recordDanmakuKitEntry(
                 identifier: item.id,
                 path: "late-drop",
                 age: age,
@@ -454,12 +477,15 @@ final class DanmakuKitOverlayView: UIView {
             viewportWidth: bounds.width,
             displayTime: displayTime
         )
+        #if DEBUG
+        model.debugDiagnostics = diagnostics
+        #endif
         if isRecentFloatingEntry {
             if renderer.status != .play {
                 renderer.play()
             }
             renderer.shoot(danmaku: model)
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitEntry(
+            diagnostics.recordDanmakuKitEntry(
                 identifier: item.id,
                 path: "shoot",
                 age: age,
@@ -468,7 +494,7 @@ final class DanmakuKitOverlayView: UIView {
             )
         } else {
             renderer.sync(danmaku: model, at: Float(min(age / fullDuration, 0.999)))
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitEntry(
+            diagnostics.recordDanmakuKitEntry(
                 identifier: item.id,
                 path: "sync",
                 age: age,
@@ -486,39 +512,15 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func isSupported(_ item: DanmakuItem) -> Bool {
-        guard item.isSupported,
-              !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return false }
-        if item.isScrolling { return settings.danmakuKit.enablesFloating }
-        if item.isTopAnchored { return settings.danmakuKit.enablesTop }
-        if item.isBottomAnchored { return settings.danmakuKit.enablesBottom }
-        return false
+        DanmakuRenderPolicy.supports(item, settings: settings)
     }
 
     private var maximumActiveCount: Int {
-        let environment = PlaybackEnvironment.current
-        let sheddingFactor = isLoadShedding ? 0.46 : 1.0
-        let rateFactor: Double
-        if playbackRate >= 1.75 {
-            rateFactor = 0.58
-        } else if playbackRate > 1.15 {
-            rateFactor = 0.72
-        } else {
-            rateFactor = 1.0
-        }
-        let thermalFactor: Double
-        if environment.isThermallyConstrained || environment.isLowPowerModeEnabled {
-            thermalFactor = min(settings.loadFactor, 0.50)
-        } else if environment.isThermallyElevated {
-            thermalFactor = min(settings.loadFactor, 0.66)
-        } else if environment.shouldPreferConservativePlayback {
-            thermalFactor = min(settings.loadFactor, 0.72)
-        } else {
-            thermalFactor = settings.loadFactor
-        }
-        let baseCount = bounds.width > 640 ? 44 : 24
-        let minimumCount = isLoadShedding ? 5 : 8
-        return max(minimumCount, Int(Double(baseCount) * thermalFactor * sheddingFactor * rateFactor))
+        #if DEBUG
+        if let count = debugMaximumActiveCount { return min(max(count, 1), 600) }
+        #endif
+        return DanmakuRenderPolicy.maximumActiveCount(width: bounds.width, settings: settings,
+            rate: playbackRate, loadShedding: isLoadShedding)
     }
 
     private func loadEmotes(_ urls: [URL]) {
@@ -527,7 +529,7 @@ final class DanmakuKitOverlayView: UIView {
                 let image = await BiliEmoteImageStore.shared.image(for: url)
                 guard !Task.isCancelled, let self else { return }
                 self.emoteLoadTasks[url] = nil
-                DanmakuRendererDiagnostics.shared.recordDanmakuKitEmoteImageLoad(succeeded: image != nil)
+                diagnostics.recordDanmakuKitEmoteImageLoad(succeeded: image != nil)
                 guard image != nil else { return }
                 guard self.shouldRender, !self.isLayoutTransitioning else { return }
                 self.refreshVisibleEmoteCells(for: url)
@@ -551,6 +553,9 @@ final class DanmakuKitOverlayView: UIView {
             guard abs(updatedModel.size.width - oldModel.size.width) < 1,
                   abs(updatedModel.size.height - oldModel.size.height) < 1
             else { continue }
+            #if DEBUG
+            updatedModel.debugDiagnostics = diagnostics
+            #endif
             cell.model = updatedModel
             cell.redraw()
             loadEmotes(updatedModel.missingEmoteURLs)
@@ -559,7 +564,7 @@ final class DanmakuKitOverlayView: UIView {
 
     private func pruneDisplayedItems(at time: TimeInterval) {
         displayedUntil = displayedUntil.filter { $0.value > time }
-        DanmakuRendererDiagnostics.shared.recordDanmakuKitActiveItems(displayedUntil.count)
+        diagnostics.recordDanmakuKitActiveItems(displayedUntil.count)
     }
 
     private func firstItemIndex(atOrAfter time: TimeInterval) -> Int {

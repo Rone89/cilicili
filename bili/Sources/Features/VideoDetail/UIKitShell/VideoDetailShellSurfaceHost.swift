@@ -18,6 +18,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         @Published var playbackControlsHideRequestGeneration = 0
         @Published var playerViewModel: PlayerStateViewModel
         @Published var videoAspectRatio: CGFloat = 16.0 / 9.0
+        @Published var danmakuCanvasSize: CGSize?
 
         init(playerViewModel: PlayerStateViewModel) {
             self.playerViewModel = playerViewModel
@@ -279,6 +280,11 @@ final class VideoDetailShellSurfaceHost: UIView {
         surfaceHostView.setVideoGravity(gravity)
     }
 
+    func setDanmakuCanvasSize(_ size: CGSize?) {
+        guard state.danmakuCanvasSize != size else { return }
+        state.danmakuCanvasSize = size
+    }
+
     func setVideoAspectRatio(_ aspectRatio: CGFloat) {
         guard aspectRatio > 0.1, abs(state.videoAspectRatio - aspectRatio) > 0.001 else { return }
         state.videoAspectRatio = aspectRatio
@@ -489,6 +495,7 @@ private struct PlayerOverlayHostRoot: View {
             isCollapsedChromeActive: state.isCollapsedChromeActive,
             playbackControlsHideRequestGeneration: state.playbackControlsHideRequestGeneration,
             videoAspectRatio: state.videoAspectRatio,
+            danmakuCanvasSize: state.danmakuCanvasSize,
             onShowMoreControls: onShowMoreControls,
             onDismissMoreControls: onDismissMoreControls,
             onToggleDanmaku: onToggleDanmaku,
@@ -527,6 +534,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let isCollapsedChromeActive: Bool
     let playbackControlsHideRequestGeneration: Int
     let videoAspectRatio: CGFloat
+    let danmakuCanvasSize: CGSize?
     let onShowMoreControls: (@escaping () -> Void) -> Void
     let onDismissMoreControls: () -> Void
     let onToggleDanmaku: () -> Void
@@ -573,6 +581,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         isCollapsedChromeActive: Bool,
         playbackControlsHideRequestGeneration: Int,
         videoAspectRatio: CGFloat,
+        danmakuCanvasSize: CGSize?,
         onShowMoreControls: @escaping (@escaping () -> Void) -> Void,
         onDismissMoreControls: @escaping () -> Void,
         onToggleDanmaku: @escaping () -> Void,
@@ -595,6 +604,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.isCollapsedChromeActive = isCollapsedChromeActive
         self.playbackControlsHideRequestGeneration = playbackControlsHideRequestGeneration
         self.videoAspectRatio = videoAspectRatio
+        self.danmakuCanvasSize = danmakuCanvasSize
         self.onShowMoreControls = onShowMoreControls
         self.onDismissMoreControls = onDismissMoreControls
         self.onToggleDanmaku = onToggleDanmaku
@@ -741,6 +751,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                         store: detailViewModel.danmakuRenderStore,
                         playerViewModel: viewModel,
                         usesLandscapePlaybackChrome: danmakuUsesLandscapePlaybackChrome,
+                        logicalCanvasSize: danmakuCanvasSize,
                         // The bare-surface flag also covers control-tree
                         // prewarming. Danmaku must only see the real UIKit
                         // rotation transition; prewarm should not pause or

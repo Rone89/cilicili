@@ -4,6 +4,7 @@ struct VideoDetailPlayerSurfaceDanmakuLayer: View {
     let store: VideoDetailDanmakuRenderStore
     let playerViewModel: PlayerStateViewModel
     let usesLandscapePlaybackChrome: Bool
+    let logicalCanvasSize: CGSize?
     let isLayoutTransitioning: Bool
     let onPlaybackTime: (TimeInterval, Bool) -> Void
 
@@ -13,6 +14,7 @@ struct VideoDetailPlayerSurfaceDanmakuLayer: View {
             playerViewModel: playerViewModel,
             clock: playerViewModel.playbackClock,
             usesLandscapePlaybackChrome: usesLandscapePlaybackChrome,
+            logicalCanvasSize: logicalCanvasSize,
             isLayoutTransitioning: isLayoutTransitioning,
             onPlaybackTime: onPlaybackTime
         )

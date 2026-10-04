@@ -1,0 +1,133 @@
+import UIKit
+
+struct DanmakuOverlayConfiguration {
+    let items: [DanmakuItem]
+    let itemsRevision: Int
+    var currentTime: TimeInterval
+    let isPlaying: Bool
+    let playbackRate: Double
+    let isEnabled: Bool
+    let hasPresentedPlayback: Bool
+    let isLoadShedding: Bool
+    let settings: DanmakuSettings
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+}
+
+@MainActor
+protocol DanmakuOverlayRendering: AnyObject {
+    var isLoadSheddingValue: Bool { get }
+    func apply(configuration: DanmakuOverlayConfiguration)
+    func synchronizePlaybackTime(_ time: TimeInterval, force: Bool)
+    func setLayoutTransitioning(_ transitioning: Bool)
+    func stop()
+}
+
+extension DanmakuKitOverlayView: DanmakuOverlayRendering {
+    func apply(configuration c: DanmakuOverlayConfiguration) {
+        apply(items: c.items, itemsRevision: c.itemsRevision, currentTime: c.currentTime,
+              isPlaying: c.isPlaying, playbackRate: c.playbackRate, isEnabled: c.isEnabled,
+              hasPresentedPlayback: c.hasPresentedPlayback, isLoadShedding: c.isLoadShedding,
+              settings: c.settings, topInset: c.topInset, bottomInset: c.bottomInset)
+    }
+}
+
+/// One UIKit host and one clock subscription. Switching only replaces its child;
+/// it never loads data or touches AVPlayer / PlayerItem.
+final class DanmakuRendererHostView: UIView {
+    private var renderer: (UIView & DanmakuOverlayRendering)?
+    private var requestedMetal: Bool?
+    private var logicalCanvasSize: CGSize?
+    private var isTransitioning = false
+    private(set) var usesMetal = false
+    var isLoadSheddingValue: Bool { renderer?.isLoadSheddingValue ?? false }
+    #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics? { didSet { configureDebugRenderer() } }
+    var debugPreferredFramesPerSecond: Int? { didSet { configureDebugRenderer() } }
+    private func configureDebugRenderer() {
+        (renderer as? MetalDanmakuView)?.debugDiagnostics = debugDiagnostics
+        (renderer as? DanmakuKitOverlayView)?.debugDiagnostics = debugDiagnostics
+        (renderer as? MetalDanmakuView)?.debugPreferredFramesPerSecond = debugPreferredFramesPerSecond
+        (renderer as? DanmakuKitOverlayView)?.debugPreferredFramesPerSecond = debugPreferredFramesPerSecond
+    }
+    var debugMaximumActiveCount: Int? {
+        didSet {
+            (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
+            (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
+        }
+    }
+    #endif
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+    }
+    required init?(coder: NSCoder) { nil }
+    isolated deinit { renderer?.stop() }
+
+    func selectRenderer(metalEnabled: Bool) {
+        guard renderer == nil || requestedMetal != metalEnabled else { return }
+        renderer?.stop()
+        renderer?.removeFromSuperview()
+        renderer = nil
+        requestedMetal = metalEnabled
+        if metalEnabled, let metal = MetalDanmakuView.make() {
+            renderer = metal
+            usesMetal = true
+        } else {
+            renderer = DanmakuKitOverlayView(frame: bounds)
+            usesMetal = false
+        }
+        guard let renderer else { return }
+        #if DEBUG
+        (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
+        (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
+        configureDebugRenderer()
+        (debugDiagnostics ?? .shared).rendererType = usesMetal ? "Metal" : (metalEnabled ? "DanmakuKit (Metal unavailable)" : "DanmakuKit")
+        #endif
+        addSubview(renderer)
+        layoutRenderer()
+        renderer.setLayoutTransitioning(isTransitioning)
+    }
+
+    /// Only the host follows the visible window. The child keeps its track coordinates.
+    func setLogicalCanvasSize(_ size: CGSize?) {
+        let valid = size.flatMap { size -> CGSize? in
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
+            return size
+        }
+        guard logicalCanvasSize != valid else { return }
+        logicalCanvasSize = valid
+        setNeedsLayout()
+        layoutRenderer()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutRenderer()
+    }
+
+    private func layoutRenderer() {
+        guard let renderer else { return }
+        let frame = CGRect(origin: .zero, size: logicalCanvasSize ?? bounds.size)
+        if renderer.frame != frame { renderer.frame = frame }
+    }
+
+    func apply(configuration: DanmakuOverlayConfiguration) { renderer?.apply(configuration: configuration) }
+    func synchronizePlaybackTime(_ time: TimeInterval, force: Bool = false) {
+        renderer?.synchronizePlaybackTime(time, force: force)
+    }
+    func setLayoutTransitioning(_ transitioning: Bool) {
+        isTransitioning = transitioning
+        renderer?.setLayoutTransitioning(transitioning)
+    }
+    func stop() {
+        renderer?.stop()
+        renderer?.removeFromSuperview()
+        renderer = nil
+        requestedMetal = nil
+    }
+}
