@@ -99,12 +99,21 @@ final class MetalDanmakuRenderer {
         revision &+= 1
     }
 
+    #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics?
+    private var diagnostics: DanmakuRendererDiagnostics { debugDiagnostics ?? .shared }
+    #endif
+
     func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil) {
         #if DEBUG
-        let start = preparationStartedAt ?? CACurrentMediaTime()
+        let acquisitionStarted = CACurrentMediaTime()
+        let start = preparationStartedAt ?? acquisitionStarted
         #endif
         guard view.bounds.width > 0, view.bounds.height > 0,
               let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else { return }
+        #if DEBUG
+        let acquisitionFinished = CACurrentMediaTime()
+        #endif
         // Never wait on the GPU on the UI thread. A busy slot drops this draw.
         let slot = slots[nextSlot]
         guard slot.available.wait(timeout: .now()) == .success else {
@@ -139,31 +148,43 @@ final class MetalDanmakuRenderer {
         let semaphore = slot.available
         #if DEBUG
         let token = generation
-        let shouldRecord = DanmakuRendererDiagnostics.shared.isRecording
-        command.addCompletedHandler { [weak self] completed in
+        let diagnostics = diagnostics
+        let captureID = diagnostics.captureID
+        let shouldRecord = diagnostics.isRecording
+        command.addCompletedHandler { [weak self, weak diagnostics] completed in
             semaphore.signal()
             guard shouldRecord else { return }
             let duration = completed.gpuEndTime - completed.gpuStartTime
-            Task { @MainActor [weak self] in
+            Task { @MainActor [weak self, weak diagnostics] in
                 guard let self, self.generation == token else { return }
-                DanmakuRendererDiagnostics.shared.recordMetalGPU(milliseconds: duration > 0 ? duration * 1_000 : nil)
+                diagnostics?.recordMetalGPU(milliseconds: duration > 0 ? duration * 1_000 : nil, captureID: captureID)
             }
         }
         #else
         command.addCompletedHandler { _ in semaphore.signal() }
         #endif
         submitted = true
+        #if DEBUG
+        let commitStarted = CACurrentMediaTime()
+        #endif
         command.commit()
+        #if DEBUG
+        let commitFinished = CACurrentMediaTime()
+        #endif
         submittedFrames += 1
         #if DEBUG
-        DanmakuRendererDiagnostics.shared.recordMetalFrame(
+        diagnostics.recordMetalFrame(
             active: activeCount, glyphs: instances.count, drawCalls: drawCalls,
             pages: atlas.textures.count, usedPixels: atlas.usedPixels, capacityPixels: atlas.capacityPixels,
             rejected: atlas.rejectedGlyphs, skipped: skippedFrames,
             preparationMs: (CACurrentMediaTime() - start) * 1_000, timestamp: start,
             expectedInterval: view.isPaused ? 0 : 1 / Double(view.preferredFramesPerSecond),
             requestedFPS: view.preferredFramesPerSecond,
-            displayMaximumFPS: view.window?.screen.maximumFramesPerSecond ?? 60)
+            displayMaximumFPS: view.window?.screen.maximumFramesPerSecond ?? 60,
+            scenePreparationMs: (acquisitionStarted - start) * 1_000,
+            drawableAcquisitionMs: (acquisitionFinished - acquisitionStarted) * 1_000,
+            encodingMs: (commitStarted - acquisitionFinished) * 1_000,
+            commitMs: (commitFinished - commitStarted) * 1_000)
         #endif
     }
 
@@ -217,7 +238,7 @@ final class MetalDanmakuRenderer {
         generation &+= 1
         activeCount = 0
         #if DEBUG
-        DanmakuRendererDiagnostics.shared.clearMetalActiveCount()
+        diagnostics.clearMetalActiveCount()
         #endif
         instances.removeAll(keepingCapacity: false)
         batches.removeAll(keepingCapacity: false)

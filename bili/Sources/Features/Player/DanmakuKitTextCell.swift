@@ -2,6 +2,9 @@ import DanmakuKit
 import UIKit
 
 final class DanmakuKitTextCellModel: DanmakuCellModel {
+    #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics?
+    #endif
     let cellClass: DanmakuCell.Type = DanmakuKitTextCell.self
     let item: DanmakuItem
     let size: CGSize
@@ -211,6 +214,10 @@ final class DanmakuKitTextCellModel: DanmakuCellModel {
 }
 
 final class DanmakuKitTextCell: DanmakuCell {
+    #if DEBUG
+    private var drawDiagnostics: DanmakuRendererDiagnostics?
+    private var drawCaptureID: UUID?
+    #endif
     private var displayRequestedAt: CFTimeInterval?
 
     required init(frame: CGRect) {
@@ -243,6 +250,10 @@ final class DanmakuKitTextCell: DanmakuCell {
 
     override func willDisplay() {
         displayRequestedAt = CACurrentMediaTime()
+        #if DEBUG
+        drawDiagnostics = (model as? DanmakuKitTextCellModel)?.debugDiagnostics ?? .shared
+        drawCaptureID = drawDiagnostics?.captureID
+        #endif
     }
 
     override func didDisplay(_ finished: Bool) {
@@ -251,11 +262,20 @@ final class DanmakuKitTextCell: DanmakuCell {
         else { return }
         let elapsed = max(0, CACurrentMediaTime() - displayRequestedAt) * 1_000
         self.displayRequestedAt = nil
+        #if DEBUG
+        let diagnostics = drawDiagnostics ?? .shared
+        let captureID = drawCaptureID
+        drawDiagnostics = nil
+        drawCaptureID = nil
+        #else
+        let diagnostics = DanmakuRendererDiagnostics.shared
+        let captureID: UUID? = nil
+        #endif
         guard finished else { return }
-        Task { @MainActor in
-            DanmakuRendererDiagnostics.shared.recordDanmakuKitCellDraw(
+        Task { @MainActor [weak diagnostics] in
+            diagnostics?.recordDanmakuKitCellDraw(
                 identifier: identifier,
-                milliseconds: elapsed
+                milliseconds: elapsed, captureID: captureID
             )
         }
     }

@@ -31,6 +31,10 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private var stopped = false
     var isLoadSheddingValue: Bool { configuration?.isLoadShedding ?? false }
     #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics? {
+        didSet { renderer.debugDiagnostics = debugDiagnostics }
+    }
+    var debugPreferredFramesPerSecond: Int? { didSet { updateDrawLoop() } }
     var debugMaximumActiveCount: Int?
     var debugActiveCount: Int { timeline.active.count }
     var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
@@ -223,7 +227,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         metalView.isHidden = !shouldRender || transitioning || stopped
         metalView.isPaused = metalView.isHidden || suspended || window == nil || configuration?.isPlaying != true
         #if DEBUG
-        if metalView.isPaused { DanmakuRendererDiagnostics.shared.resetMetalCadence() }
+        if metalView.isPaused { (debugDiagnostics ?? .shared).resetMetalCadence() }
         #endif
         let environment = PlaybackEnvironment.current
         let displayMaximumFPS = window?.screen.maximumFramesPerSecond ?? 60
@@ -233,6 +237,11 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             isLowPowerMode: environment.isLowPowerModeEnabled,
             isThermallyConstrained: environment.isThermallyConstrained
         )
+        #if DEBUG
+        if let requested = debugPreferredFramesPerSecond {
+            metalView.preferredFramesPerSecond = min(metalView.preferredFramesPerSecond, max(1, requested))
+        }
+        #endif
     }
     private func drawOnceIfVisible() {
         if !metalView.isHidden && !suspended && window != nil { metalView.draw() }

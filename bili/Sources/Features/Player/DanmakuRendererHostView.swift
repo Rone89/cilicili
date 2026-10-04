@@ -42,6 +42,14 @@ final class DanmakuRendererHostView: UIView {
     private(set) var usesMetal = false
     var isLoadSheddingValue: Bool { renderer?.isLoadSheddingValue ?? false }
     #if DEBUG
+    var debugDiagnostics: DanmakuRendererDiagnostics? { didSet { configureDebugRenderer() } }
+    var debugPreferredFramesPerSecond: Int? { didSet { configureDebugRenderer() } }
+    private func configureDebugRenderer() {
+        (renderer as? MetalDanmakuView)?.debugDiagnostics = debugDiagnostics
+        (renderer as? DanmakuKitOverlayView)?.debugDiagnostics = debugDiagnostics
+        (renderer as? MetalDanmakuView)?.debugPreferredFramesPerSecond = debugPreferredFramesPerSecond
+        (renderer as? DanmakuKitOverlayView)?.debugPreferredFramesPerSecond = debugPreferredFramesPerSecond
+    }
     var debugMaximumActiveCount: Int? {
         didSet {
             (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
@@ -77,7 +85,8 @@ final class DanmakuRendererHostView: UIView {
         #if DEBUG
         (renderer as? MetalDanmakuView)?.debugMaximumActiveCount = debugMaximumActiveCount
         (renderer as? DanmakuKitOverlayView)?.debugMaximumActiveCount = debugMaximumActiveCount
-        DanmakuRendererDiagnostics.shared.rendererType = usesMetal ? "Metal" : (metalEnabled ? "DanmakuKit (Metal unavailable)" : "DanmakuKit")
+        configureDebugRenderer()
+        (debugDiagnostics ?? .shared).rendererType = usesMetal ? "Metal" : (metalEnabled ? "DanmakuKit (Metal unavailable)" : "DanmakuKit")
         #endif
         addSubview(renderer)
         layoutRenderer()

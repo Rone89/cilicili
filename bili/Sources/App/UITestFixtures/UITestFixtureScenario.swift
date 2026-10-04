@@ -3,6 +3,9 @@ import Foundation
 /// Opt-in UI-test entry points. Production launches never select a fixture.
 enum UITestFixtureScenario: String {
     case danmaku
+    #if DEBUG
+    case danmakuBenchmark
+    #endif
     case dynamicDetail
     case fullscreen
     case commentAction

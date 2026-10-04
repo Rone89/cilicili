@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import UIKit
+import QuartzCore
 
 @MainActor
 final class DanmakuRendererDiagnostics: ObservableObject {
@@ -56,7 +57,57 @@ final class DanmakuRendererDiagnostics: ObservableObject {
     }
 
     #if DEBUG
+    struct TimingSummary {
+        var count = 0
+        var total = 0.0
+        var maximum = 0.0
+        var average: Double? { count > 0 ? total / Double(count) : nil }
+        mutating func record(_ milliseconds: Double?) {
+            guard let milliseconds, milliseconds.isFinite, milliseconds >= 0 else { return }
+            count += 1; total += milliseconds; maximum = max(maximum, milliseconds)
+        }
+        var report: String {
+            guard let average else { return "-/- (n=0)" }
+            return String(format: "%.3f/%.3f (n=%d)", average, maximum, count)
+        }
+    }
+    struct LoadSummary {
+        var samples = 0
+        var total = 0
+        var minimum: Int?
+        var maximum = 0
+        mutating func record(_ value: Int) {
+            let value = max(0, value)
+            samples += 1; total += value
+            minimum = min(minimum ?? value, value); maximum = max(maximum, value)
+        }
+        var report: String {
+            guard samples > 0 else { return "-/-/- (n=0)" }
+            return String(format: "%.1f/%d/%d (n=%d)", Double(total) / Double(samples), minimum ?? 0, maximum, samples)
+        }
+    }
+    struct BenchmarkConfiguration {
+        let renderer: String
+        let density: Int
+        let requestedFPS: Int?
+        let playbackRate: Double
+        let viewport: CGSize
+    }
+    private var benchmarkEnvironment: PlaybackEnvironment?
+    private(set) var benchmarkConfiguration: BenchmarkConfiguration?
+    private(set) var kitLoad = LoadSummary()
+    func recordDanmakuKitFrameLoad(_ active: Int) {
+        guard isRecording else { return }
+        kitLoad.record(active)
+    }
     struct MetalSummary {
+        var scenePreparation = TimingSummary()
+        var drawableAcquisition = TimingSummary()
+        var encoding = TimingSummary()
+        var commit = TimingSummary()
+        var activeLoad = LoadSummary()
+        var glyphLoad = LoadSummary()
+        var drawCallLoad = LoadSummary()
         var active = 0
         var peakActive = 0
         var glyphs = 0
@@ -66,6 +117,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         var capacityPixels = 0
         var rejectedGlyphs = 0
         var skippedFrames = 0
+        var firstSkippedCount: Int?
         var frames = 0
         var requestedFPS = 0
         var displayMaximumFPS = 0
@@ -90,8 +142,17 @@ final class DanmakuRendererDiagnostics: ObservableObject {
     func recordMetalFrame(active: Int, glyphs: Int, drawCalls: Int, pages: Int,
                           usedPixels: Int, capacityPixels: Int, rejected: Int, skipped: Int,
                           preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double,
-                          requestedFPS: Int, displayMaximumFPS: Int) {
+                          requestedFPS: Int, displayMaximumFPS: Int,
+                          scenePreparationMs: Double? = nil, drawableAcquisitionMs: Double? = nil,
+                          encodingMs: Double? = nil, commitMs: Double? = nil) {
         guard isRecording else { return }
+        metalSummary.scenePreparation.record(scenePreparationMs)
+        metalSummary.drawableAcquisition.record(drawableAcquisitionMs)
+        metalSummary.encoding.record(encodingMs)
+        metalSummary.commit.record(commitMs)
+        metalSummary.activeLoad.record(active)
+        metalSummary.glyphLoad.record(glyphs)
+        metalSummary.drawCallLoad.record(drawCalls)
         metalSummary.active = active
         metalSummary.peakActive = max(metalSummary.peakActive, active)
         metalSummary.glyphs = glyphs
@@ -100,7 +161,8 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         metalSummary.usedPixels = usedPixels
         metalSummary.capacityPixels = capacityPixels
         metalSummary.rejectedGlyphs = rejected
-        metalSummary.skippedFrames = skipped
+        if metalSummary.firstSkippedCount == nil { metalSummary.firstSkippedCount = skipped }
+        metalSummary.skippedFrames = max(0, skipped - (metalSummary.firstSkippedCount ?? skipped))
         metalSummary.frames += 1
         metalSummary.requestedFPS = requestedFPS
         metalSummary.displayMaximumFPS = displayMaximumFPS
@@ -116,8 +178,9 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         }
         metalSummary.previousTimestamp = expectedInterval > 0 ? timestamp : nil
     }
-    func recordMetalGPU(milliseconds: Double?) {
-        guard isRecording, let milliseconds, milliseconds.isFinite else { return }
+    func recordMetalGPU(milliseconds: Double?, captureID: UUID? = nil) {
+        guard isRecording, captureID == nil || captureID == self.captureID,
+              let milliseconds, milliseconds.isFinite, milliseconds >= 0 else { return }
         metalSummary.gpuSamples += 1
         metalSummary.gpuTotalMs += milliseconds
     }
@@ -128,19 +191,42 @@ final class DanmakuRendererDiagnostics: ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var revision = 0
     private(set) var startedAt: Date?
+    private(set) var captureID = UUID()
+    private var startTimestamp: CFTimeInterval?
+    private var stopTimestamp: CFTimeInterval?
+    func captureDuration(at timestamp: CFTimeInterval = CACurrentMediaTime()) -> Double {
+        guard let startTimestamp else { return 0 }
+        return max(0, (stopTimestamp ?? timestamp) - startTimestamp)
+    }
     private(set) var danmakuKitSummary = DanmakuKitSummary()
 
-    func start() {
+    func start(at timestamp: CFTimeInterval = CACurrentMediaTime()) {
         danmakuKitSummary = DanmakuKitSummary()
         #if DEBUG
         metalSummary = MetalSummary()
+        kitLoad = LoadSummary()
+        benchmarkConfiguration = nil
+        benchmarkEnvironment = nil
         #endif
+        captureID = UUID()
+        startTimestamp = timestamp
+        stopTimestamp = nil
         startedAt = Date()
         isRecording = true
         revision &+= 1
     }
 
-    func stop() {
+    #if DEBUG
+    func startBenchmark(_ configuration: BenchmarkConfiguration) {
+        start()
+        benchmarkConfiguration = configuration
+        benchmarkEnvironment = .current
+    }
+    #endif
+
+    func stop(at timestamp: CFTimeInterval = CACurrentMediaTime()) {
+        guard isRecording else { return }
+        stopTimestamp = timestamp
         isRecording = false
         revision &+= 1
     }
@@ -222,8 +308,8 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         )
     }
 
-    func recordDanmakuKitCellDraw(identifier: String, milliseconds: Double) {
-        guard isRecording, milliseconds.isFinite else { return }
+    func recordDanmakuKitCellDraw(identifier: String, milliseconds: Double, captureID: UUID? = nil) {
+        guard isRecording, captureID == nil || captureID == self.captureID, milliseconds.isFinite else { return }
         let duration = max(0, milliseconds)
         danmakuKitSummary.cellDrawCount += 1
         danmakuKitSummary.totalCellDrawMilliseconds += duration
@@ -259,7 +345,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
 
     func makeReport() -> String {
         let formatter = ISO8601DateFormatter()
-        let duration = startedAt.map { max(0, Date().timeIntervalSince($0)) } ?? 0
+        let duration = captureDuration()
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let summary = danmakuKitSummary
@@ -280,14 +366,31 @@ final class DanmakuRendererDiagnostics: ObservableObject {
             "recent entry events (id suffix, path, age, source, draw):"
         ]
         #if DEBUG
+        lines.append("capture ID: \(captureID.uuidString)")
+        if let configuration = benchmarkConfiguration {
+            lines.append("fixture: local-text-v1; loop media time 7s → 1s (rebuild); overlap enabled")
+            lines.append("benchmark renderer/density/requested callback FPS/rate/viewport pt: \(configuration.renderer)/\(configuration.density)/\(configuration.requestedFPS.map(String.init) ?? "default")/\(configuration.playbackRate)/\(Int(configuration.viewport.width))x\(Int(configuration.viewport.height))")
+            if let environment = benchmarkEnvironment {
+                lines.append("environment at start: lowPower=\(environment.isLowPowerModeEnabled) thermal=\(environment.thermalPressure)")
+            }
+            lines.append("Kit active avg/min/max: \(kitLoad.report)")
+        }
         let metal = metalSummary
         lines.append("renderer: \(rendererType)")
         lines.append("Metal active/peak/glyphs/drawCalls: \(metal.active)/\(metal.peakActive)/\(metal.glyphs)/\(metal.drawCalls)")
-        lines.append("Metal atlas pages/used/capacity/rejected: \(metal.pages)/\(metal.usedPixels)/\(metal.capacityPixels)/\(metal.rejectedGlyphs)")
-        lines.append("Metal frames/estimated FPS/callback gaps/busy slot drops: \(metal.frames)/\(metal.medianFPS.map { String(format: "%.1f", $0) } ?? "-")/\(metal.callbackGaps)/\(metal.skippedFrames)")
+        lines.append("Metal atlas pages/used/capacity/rejected (atlas lifetime): \(metal.pages)/\(metal.usedPixels)/\(metal.capacityPixels)/\(metal.rejectedGlyphs)")
+        lines.append("Metal frames/callback median Hz/callback gaps/busy slot drops since first frame: \(metal.frames)/\(metal.medianFPS.map { String(format: "%.1f", $0) } ?? "-")/\(metal.callbackGaps)/\(metal.skippedFrames)")
         lines.append("Metal requested/display maximum FPS: \(metal.requestedFPS)/\(metal.displayMaximumFPS)")
-        lines.append("Metal CPU preparation average/max ms: \(metal.cpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")/\(String(format: "%.3f", metal.preparationMaxMs))")
-        lines.append("Metal GPU command average ms: \(metal.gpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")")
+        lines.append("Metal draw callback elapsed average/max ms (includes drawable acquisition): \(metal.cpuAverageMs.map { String(format: "%.3f", $0) } ?? "-")/\(String(format: "%.3f", metal.preparationMaxMs))")
+        lines.append("Metal scene preparation avg/max ms: \(metal.scenePreparation.report)")
+        lines.append("Metal render-pass + drawable acquisition avg/max ms: \(metal.drawableAcquisition.report)")
+        lines.append("Metal encode/setup avg/max ms: \(metal.encoding.report)")
+        lines.append("Metal commit avg/max ms: \(metal.commit.report)")
+        lines.append("Metal active avg/min/max: \(metal.activeLoad.report)")
+        lines.append("Metal glyphs avg/min/max: \(metal.glyphLoad.report)")
+        lines.append("Metal draw calls avg/min/max: \(metal.drawCallLoad.report)")
+        lines.append("Measurement scope: callback Hz is not presented FPS; gap counts are callback gaps, not measured dropped frames. Elapsed ms is not process CPU utilization. Kit display-link work excludes Core Animation/render-server work; text draw is per cell. Use Instruments for CPU/energy A/B.")
+        lines.append("Metal GPU command average ms: \(metal.gpuAverageMs.map { String(format: "%.3f", $0) } ?? "-") (n=\(metal.gpuSamples))")
         #endif
         for event in summary.entryEvents {
             let draw = event.drawMilliseconds.map { String(format: "%.3f ms", $0) } ?? "pending"

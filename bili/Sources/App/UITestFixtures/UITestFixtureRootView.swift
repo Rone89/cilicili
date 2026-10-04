@@ -11,6 +11,10 @@ struct UITestFixtureRootView: View {
             switch scenario {
             case .danmaku:
                 UITestDanmakuFixtureView(libraryStore: dependencies.libraryStore)
+            #if DEBUG
+            case .danmakuBenchmark:
+                NavigationStack { DanmakuRendererBenchmarkView() }
+            #endif
             case .dynamicDetail:
                 UITestDynamicDetailFixtureView(
                     api: dependencies.api
