@@ -6,6 +6,57 @@ import XCTest
 
 @MainActor
 final class MetalDanmakuTimelineTests: XCTestCase {
+    func testSmallClockCorrectionDoesNotClearStillScrollingEntries() {
+        let timeline = makeTimeline(viewport: CGSize(width: 320, height: 300),
+            settings: overlapSettings(displayArea: .full, trackHeight: 30), maximumActiveCount: 1)
+        let measure: (DanmakuItem) -> CGSize? = { _ in CGSize(width: 80, height: 20) }
+        // The later fixed entry is rejected while the scrolling entry occupies the cap.
+        // At 4.5s it has expired; reconstructing only the latest item would empty the scene.
+        timeline.replaceItems([makeItem(id: "scroll", time: 0, mode: 1),
+            makeItem(id: "fixed", time: 0.1, mode: 5)], at: 0, measure: measure)
+        for time in [1.0, 2, 3, 4, 4.5] { timeline.advance(to: time, measure: measure) }
+        let revision = timeline.revision
+        XCTAssertEqual(timeline.active.map(\.item.id), ["scroll"])
+        XCTAssertTrue(timeline.active[0].frame(at: 4.5).intersects(CGRect(x: 0, y: 0, width: 320, height: 300)))
+
+        timeline.advance(to: 4.48, measure: measure)
+        XCTAssertEqual(timeline.presentationTime, 4.5)
+        XCTAssertEqual(timeline.active.map(\.item.id), ["scroll"])
+        XCTAssertEqual(timeline.revision, revision)
+        timeline.advance(to: 4.6, measure: measure)
+        XCTAssertEqual(timeline.presentationTime, 4.6)
+        XCTAssertEqual(timeline.active.map(\.item.id), ["scroll"])
+    }
+
+    func testClockCorrectionPreservesEntriesRemovedFromTheInputWindow() {
+        let timeline = makeTimeline(viewport: CGSize(width: 320, height: 300),
+            settings: overlapSettings(displayArea: .full, trackHeight: 30), maximumActiveCount: 4)
+        let measure: (DanmakuItem) -> CGSize? = { _ in CGSize(width: 80, height: 20) }
+        let old = makeItem(id: "old", time: 10, mode: 1)
+        let future = makeItem(id: "future", time: 20, mode: 1)
+        timeline.replaceItems([old, future], at: 10, measure: measure)
+        for time in [11.0, 12, 13, 14, 15, 16, 16.3] { timeline.advance(to: time, measure: measure) }
+        XCTAssertTrue(timeline.replaceItemsPreservingActive([future], at: 16.3))
+        timeline.advance(to: 16.28, measure: measure)
+        XCTAssertEqual(timeline.active.map(\.item.id), ["old"])
+        timeline.advance(to: 17.2, measure: measure)
+        XCTAssertTrue(timeline.active.isEmpty, "Normal expiry must still remove the preserved entry")
+    }
+
+    func testRepeatedSmallCorrectionsDoNotMaskARealBackwardJump() {
+        let timeline = makeTimeline(viewport: CGSize(width: 320, height: 300),
+            settings: overlapSettings(displayArea: .full, trackHeight: 30), maximumActiveCount: 4)
+        let measure: (DanmakuItem) -> CGSize? = { _ in CGSize(width: 80, height: 20) }
+        timeline.replaceItems([makeItem(id: "current", time: 10, mode: 1)], at: 10, measure: measure)
+        timeline.advance(to: 10.1, measure: measure)
+        timeline.advance(to: 10.02, measure: measure)
+        timeline.advance(to: 9.94, measure: measure)
+        XCTAssertEqual(timeline.active.map(\.item.id), ["current"])
+        timeline.advance(to: 9.8, measure: measure)
+        XCTAssertEqual(timeline.presentationTime, 9.8)
+        XCTAssertTrue(timeline.active.isEmpty, "Accumulate correction against the last forward time, not each previous sample")
+    }
+
     func testScrollingFramesUseAbsoluteMediaTime() throws {
         let timeline = makeTimeline(
             viewport: CGSize(width: 320, height: 200),

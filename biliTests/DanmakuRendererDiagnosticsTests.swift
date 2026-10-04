@@ -5,6 +5,47 @@ import XCTest
 
 @MainActor
 final class DanmakuRendererDiagnosticsTests: XCTestCase {
+    func testSceneEventsAreBoundedAndResetBetweenCaptures() {
+        let diagnostics = DanmakuRendererDiagnostics()
+        diagnostics.recordMetalSceneEvent("ignored", time: 1, before: 1, after: 0)
+        XCTAssertTrue(diagnostics.metalSummary.sceneEvents.isEmpty)
+        diagnostics.start()
+        for index in 0..<25 {
+            diagnostics.recordMetalSceneEvent("event-\(index)", time: Double(index), before: 10, after: 0)
+        }
+        diagnostics.recordMetalSceneEvent("invalid", time: .nan, before: 10, after: 0)
+        XCTAssertEqual(diagnostics.metalSummary.sceneEvents.count, 20)
+        XCTAssertTrue(diagnostics.metalSummary.sceneEvents.first?.contains("reason=event-5 ") == true)
+        XCTAssertTrue(diagnostics.makeReport().contains("reason=event-24 active=10→0"))
+        diagnostics.stop()
+        diagnostics.recordMetalSceneEvent("after-stop", time: 30, before: 10, after: 0)
+        XCTAssertEqual(diagnostics.metalSummary.sceneEvents.count, 20)
+        diagnostics.start()
+        XCTAssertTrue(diagnostics.metalSummary.sceneEvents.isEmpty)
+    }
+
+    func testRenderFailuresAndEmptyGlyphFramesAreCaptureIsolated() {
+        let diagnostics = DanmakuRendererDiagnostics()
+        diagnostics.start()
+        let oldID = diagnostics.captureID
+        diagnostics.recordMetalRenderFailure("encoder-unavailable", captureID: oldID)
+        XCTAssertEqual(diagnostics.metalSummary.renderFailures["encoder-unavailable"], 1)
+        for load in [(0, 0), (10, 0), (10, 100)] {
+            diagnostics.recordMetalFrame(active: load.0, glyphs: load.1, drawCalls: 0, pages: 1,
+                usedPixels: 1, capacityPixels: 100, rejected: 0, skipped: 0,
+                preparationMs: 0, timestamp: 0, expectedInterval: 0, requestedFPS: 60, displayMaximumFPS: 120)
+        }
+        XCTAssertEqual(diagnostics.metalSummary.emptyGlyphFrames, 1)
+        diagnostics.stop()
+        diagnostics.recordMetalRenderFailure("after-stop")
+        XCTAssertNil(diagnostics.metalSummary.renderFailures["after-stop"])
+        diagnostics.start()
+        diagnostics.recordMetalRenderFailure("old-command-error", captureID: oldID)
+        XCTAssertTrue(diagnostics.metalSummary.renderFailures.isEmpty)
+        XCTAssertEqual(diagnostics.metalSummary.emptyGlyphFrames, 0)
+        XCTAssertTrue(diagnostics.makeReport().contains("Metal render failures: none"))
+    }
+
     func testStoppedDurationUsesMonotonicClockAndRemainsFrozen() {
         let diagnostics = DanmakuRendererDiagnostics()
         diagnostics.start(at: 100)

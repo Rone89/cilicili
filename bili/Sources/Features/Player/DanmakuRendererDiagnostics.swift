@@ -101,6 +101,9 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         kitLoad.record(active)
     }
     struct MetalSummary {
+        var sceneEvents: [String] = []
+        var renderFailures: [String: Int] = [:]
+        var emptyGlyphFrames = 0
         var scenePreparation = TimingSummary()
         var drawableAcquisition = TimingSummary()
         var encoding = TimingSummary()
@@ -143,6 +146,19 @@ final class DanmakuRendererDiagnostics: ObservableObject {
     var rendererType = "DanmakuKit"
     private(set) var metalSummary = MetalSummary()
 
+    func recordMetalSceneEvent(_ reason: String, time: TimeInterval, before: Int, after: Int) {
+        guard isRecording, time.isFinite else { return }
+        let elapsed = captureDuration()
+        metalSummary.sceneEvents.append(String(format: "at=%.3fs media=%.3fs reason=%@ active=%d→%d",
+            elapsed, time, reason, before, after))
+        if metalSummary.sceneEvents.count > 20 { metalSummary.sceneEvents.removeFirst() }
+    }
+
+    func recordMetalRenderFailure(_ reason: String, captureID: UUID? = nil) {
+        guard isRecording, captureID == nil || captureID == self.captureID else { return }
+        metalSummary.renderFailures[reason, default: 0] += 1
+    }
+
     func recordMetalFrame(active: Int, glyphs: Int, drawCalls: Int, pages: Int,
                           usedPixels: Int, capacityPixels: Int, rejected: Int, skipped: Int,
                           preparationMs: Double, timestamp: CFTimeInterval, expectedInterval: Double,
@@ -150,6 +166,7 @@ final class DanmakuRendererDiagnostics: ObservableObject {
                           scenePreparationMs: Double? = nil, drawableAcquisitionMs: Double? = nil,
                           encodingMs: Double? = nil, commitMs: Double? = nil, isManualRefresh: Bool = false) {
         guard isRecording else { return }
+        if active > 0, glyphs == 0 { metalSummary.emptyGlyphFrames += 1 }
         if isManualRefresh {
             metalSummary.manualRefreshFrames += 1
             metalSummary.manualDrawableAcquisition.record(drawableAcquisitionMs)
@@ -405,6 +422,11 @@ final class DanmakuRendererDiagnostics: ObservableObject {
         lines.append("Metal draw calls avg/min/max: \(metal.drawCallLoad.report)")
         lines.append("Measurement scope: callback Hz is not presented FPS; gap counts are callback gaps, not measured dropped frames. Elapsed ms is not process CPU utilization. Kit display-link work excludes Core Animation/render-server work; text draw is per cell. Use Instruments for CPU/energy A/B.")
         lines.append("Metal GPU command average ms: \(metal.gpuAverageMs.map { String(format: "%.3f", $0) } ?? "-") (n=\(metal.gpuSamples))")
+        lines.append("Metal active-without-glyph frames: \(metal.emptyGlyphFrames)")
+        let failures = metal.renderFailures.keys.sorted().map { "\($0)=\(metal.renderFailures[$0] ?? 0)" }
+        lines.append("Metal render failures: \(failures.isEmpty ? "none" : failures.joined(separator: ", "))")
+        lines.append("Metal recent scene events (last 20; empty expiry and test loop rebuilds may be expected):")
+        lines.append(contentsOf: metal.sceneEvents.map { "  " + $0 })
         #endif
         for event in summary.entryEvents {
             let draw = event.drawMilliseconds.map { String(format: "%.3f ms", $0) } ?? "pending"

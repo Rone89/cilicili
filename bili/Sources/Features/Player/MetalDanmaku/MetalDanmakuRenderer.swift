@@ -111,7 +111,12 @@ final class MetalDanmakuRenderer {
         let start = preparationStartedAt ?? acquisitionStarted
         #endif
         guard view.bounds.width > 0, view.bounds.height > 0,
-              let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else { return }
+              let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else {
+            #if DEBUG
+            diagnostics.recordMetalRenderFailure("drawable-or-pass-unavailable")
+            #endif
+            return
+        }
         #if DEBUG
         let acquisitionFinished = CACurrentMediaTime()
         #endif
@@ -124,14 +129,24 @@ final class MetalDanmakuRenderer {
         nextSlot = (nextSlot + 1) % slots.count
         var submitted = false
         defer { if !submitted { slot.available.signal() } }
-        guard let command = queue.makeCommandBuffer() else { return }
+        guard let command = queue.makeCommandBuffer() else {
+            #if DEBUG
+            diagnostics.recordMetalRenderFailure("command-buffer-unavailable")
+            #endif
+            return
+        }
         if !instances.isEmpty {
             let bytes = instances.count * MemoryLayout<DanmakuGlyphInstance>.stride
             if slot.buffer == nil || slot.buffer!.length < bytes {
                 slot.buffer = device.makeBuffer(length: max(bytes, 64 * 1024), options: .storageModeShared)
                 slot.version = -1
             }
-            guard let buffer = slot.buffer else { return }
+            guard let buffer = slot.buffer else {
+                #if DEBUG
+                diagnostics.recordMetalRenderFailure("instance-buffer-unavailable")
+                #endif
+                return
+            }
             if slot.version != revision {
                 instances.withUnsafeBytes { data in
                     if let base = data.baseAddress { buffer.contents().copyMemory(from: base, byteCount: data.count) }
@@ -139,7 +154,12 @@ final class MetalDanmakuRenderer {
                 slot.version = revision
             }
         }
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else {
+            #if DEBUG
+            diagnostics.recordMetalRenderFailure("encoder-unavailable")
+            #endif
+            return
+        }
         drawCalls = 0
         if !instances.isEmpty, let buffer = slot.buffer {
             encodeGlyphs(encoder: encoder, buffer: buffer, size: view.bounds.size, time: time)
@@ -156,8 +176,13 @@ final class MetalDanmakuRenderer {
             semaphore.signal()
             guard shouldRecord else { return }
             let duration = completed.gpuEndTime - completed.gpuStartTime
+            let failure = completed.status == .error ? "command-error-\((completed.error as NSError?)?.code ?? -1)" : nil
             Task { @MainActor [weak self, weak diagnostics] in
                 guard let self, self.generation == token else { return }
+                if let failure {
+                    diagnostics?.recordMetalRenderFailure(failure, captureID: captureID)
+                    return
+                }
                 diagnostics?.recordMetalGPU(milliseconds: duration > 0 ? duration * 1_000 : nil, captureID: captureID)
             }
         }

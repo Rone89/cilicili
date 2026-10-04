@@ -93,7 +93,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             metalView.contentScaleFactor = scale
             layouts.removeAll(keepingCapacity: true)
             configureTimeline()
-            rebuild()
+            rebuild(reason: "layout-or-scale")
         }
         updateDrawLoop()
     }
@@ -116,6 +116,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         stopped = false
         configureTimeline()
         if previous?.itemsRevision != next.itemsRevision {
+            let before = timeline.active.count
             let time = effectiveTime()
             let settingsUnchanged = previous?.settings == next.settings
                 && previous?.topInset == next.topInset
@@ -123,19 +124,24 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             if settingsUnchanged, timeline.replaceItemsPreservingActive(next.items, at: time) {
                 let retainedIDs = Set(next.items.map(\.id)).union(timeline.active.map { $0.item.id })
                 layouts = layouts.filter { retainedIDs.contains($0.key) }
+                traceScene("items-preserved", before: before)
             } else {
                 layouts.removeAll(keepingCapacity: true)
                 timeline.replaceItems(next.items, at: time, measure: measure)
+                traceScene("items-replaced", before: before)
             }
             lastRevision = -1
         } else if previous?.settings != next.settings || previous?.topInset != next.topInset || previous?.bottomInset != next.bottomInset {
             layouts.removeAll(keepingCapacity: true)
-            rebuild()
+            rebuild(reason: "settings-or-insets")
         } else if abs(raw - previousTime) > max(1.25, 0.7 * next.playbackRate) {
-            rebuild()
+            rebuild(reason: "configuration-time-jump")
         }
-        if !shouldRender { timeline.clear(); lastRevision = -1 }
-        else if previous?.isEnabled == false || previous?.hasPresentedPlayback == false { rebuild() }
+        if !shouldRender {
+            let before = timeline.active.count
+            timeline.clear(); lastRevision = -1
+            if before > 0 { traceScene("visibility-clear enabled=\(next.isEnabled) presented=\(next.hasPresentedPlayback) items=\(next.items.count)", before: before) }
+        } else if previous?.isEnabled == false || previous?.hasPresentedPlayback == false { rebuild(reason: "visibility-restored") }
         updateInstances()
         updateDrawLoop()
         drawOnceIfVisible()
@@ -147,7 +153,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         let raw = max(0, time)
         if force || abs(raw - lastRawTime) >= 0.05 { setAnchor(raw) }
         lastRawTime = raw
-        if force || raw + 0.2 < previous || abs(raw - previous) > 1.25 { rebuild() }
+        if force || raw + 0.2 < previous || abs(raw - previous) > 1.25 { rebuild(reason: force ? "forced-clock-sync" : "clock-sync-jump") }
         updateInstances()
         if configuration?.isPlaying != true { drawOnceIfVisible() }
     }
@@ -155,16 +161,22 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     func setLayoutTransitioning(_ transitioning: Bool) {
         guard self.transitioning != transitioning else { return }
         self.transitioning = transitioning
-        if transitioning { timeline.clear(); updateInstances() } else { rebuild() }
+        if transitioning {
+            let before = timeline.active.count
+            timeline.clear(); updateInstances()
+            traceScene("layout-transition-clear", before: before)
+        } else { rebuild(reason: "layout-transition-end") }
         updateDrawLoop()
         drawOnceIfVisible()
     }
 
     func stop() {
+        let before = timeline.active.count
         stopped = true
         metalView.isPaused = true
         metalView.isHidden = true
         timeline.clear()
+        traceScene("stop", before: before)
         layouts.removeAll()
         renderer.reset()
         configuration = nil
@@ -175,15 +187,30 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard !stopped, !suspended, window != nil else { return }
         let start = CACurrentMediaTime()
+        let sampledTime = effectiveTime()
         if shouldRender && !transitioning {
-            timeline.advance(to: effectiveTime(), measure: measure)
+            #if DEBUG
+            let before = timeline.active.count
+            let rebuildCount = timeline.rebuildCount
+            #endif
+            timeline.advance(to: sampledTime, measure: measure)
+            #if DEBUG
+            if timeline.rebuildCount != rebuildCount {
+                traceScene(timeline.lastRebuildReason, before: before)
+            } else if before > 0 && timeline.active.isEmpty {
+                traceScene("natural-expiry", before: before)
+            }
+            #endif
             updateInstances()
         }
+        // Admission and shader lifetime must use the same accepted clock sample.
+        // Tiny player-clock corrections must not hide newly admitted glyphs.
+        let presentationTime = timeline.presentationTime ?? sampledTime
         #if DEBUG
-        renderer.render(view: view, time: effectiveTime(), preparationStartedAt: start,
+        renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
                         isManualRefresh: isManualRefresh)
         #else
-        renderer.render(view: view, time: effectiveTime(), preparationStartedAt: start)
+        renderer.render(view: view, time: presentationTime, preparationStartedAt: start)
         #endif
     }
 
@@ -211,11 +238,18 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         layouts[item.id] = layout
         return layout.size
     }
-    private func rebuild() {
+    private func rebuild(reason: String = "explicit") {
         guard shouldRender, !transitioning else { return }
-        timeline.rebuild(at: effectiveTime(), measure: measure)
+        let before = timeline.active.count
+        timeline.rebuild(at: effectiveTime(), measure: measure, reason: reason)
+        traceScene(reason, before: before)
         lastRevision = -1
         updateInstances()
+    }
+    private func traceScene(_ reason: String, before: Int) {
+        #if DEBUG
+        (debugDiagnostics ?? .shared).recordMetalSceneEvent(reason, time: effectiveTime(), before: before, after: timeline.active.count)
+        #endif
     }
     private func updateInstances() {
         guard lastRevision != timeline.revision else { return }
@@ -231,9 +265,15 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         return anchorTime + max(0, CACurrentMediaTime() - anchorHostTime) * (configuration?.playbackRate ?? 1)
     }
     private func updateDrawLoop() {
+        #if DEBUG
+        let wasHidden = metalView.isHidden
+        #endif
         metalView.isHidden = !shouldRender || transitioning || stopped
         metalView.isPaused = metalView.isHidden || suspended || window == nil || configuration?.isPlaying != true
         #if DEBUG
+        if wasHidden != metalView.isHidden {
+            traceScene("hidden=\(metalView.isHidden) renderable=\(shouldRender) transitioning=\(transitioning) stopped=\(stopped)", before: timeline.active.count)
+        }
         if metalView.isPaused { (debugDiagnostics ?? .shared).resetMetalCadence() }
         #endif
         let environment = PlaybackEnvironment.current
@@ -264,21 +304,24 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     @objc private func suspend() {
         setAnchor(effectiveTime())
         suspended = true
+        traceScene("suspend", before: timeline.active.count)
         updateDrawLoop()
     }
     @objc private func activate() {
         suspended = false
         setAnchor(lastRawTime)
-        rebuild()
+        rebuild(reason: "foreground")
         updateDrawLoop()
         drawOnceIfVisible()
     }
     @objc private func memoryWarning() {
+        let before = timeline.active.count
         timeline.clear()
+        traceScene("memory-warning-clear", before: before)
         layouts.removeAll()
         renderer.reset()
         lastRevision = -1
         // Refill lazily on the next valid clock/render event.
-        if shouldRender { rebuild(); drawOnceIfVisible() }
+        if shouldRender { rebuild(reason: "memory-warning-refill"); drawOnceIfVisible() }
     }
 }

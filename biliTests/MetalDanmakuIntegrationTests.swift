@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class MetalDanmakuIntegrationTests: XCTestCase {
+    func testCorrectedClockKeepsNewlyAdmittedGlyphsVisibleInShader() throws {
+        guard let renderer = MetalDanmakuRenderer() else { throw XCTSkip("Metal unavailable") }
+        let size = CGSize(width: 320, height: 200)
+        let item = DanmakuItem(id: "new-top", time: 10, mode: 5, fontSize: 25,
+            color: 0xFFFFFF, text: "clock correction")
+        let settings = DanmakuSettings(hidesInPortrait: false,
+            danmakuKit: DanmakuKitRenderSettings(displayArea: .full, allowsDanmakuOverlap: true))
+        let layout = try XCTUnwrap(renderer.layout(for: item, width: size.width, settings: settings, scale: 1))
+        let timeline = MetalDanmakuTimeline()
+        timeline.viewport = size
+        timeline.settings = settings
+        timeline.replaceItems([item], at: 10.1) { _ in layout.size }
+        timeline.advance(to: 9.95) { _ in layout.size }
+        renderer.update(entries: timeline.active, layouts: [item.id: layout], opacity: 1)
+        let texture = try XCTUnwrap(renderer.debugRenderOffscreen(size: size,
+            time: try XCTUnwrap(timeline.presentationTime)))
+        let pixels = read(texture)
+        XCTAssertTrue(stride(from: 3, to: pixels.count, by: 4).contains { pixels[$0] > 0 },
+            "Shader lifetime must follow the accepted clock, not hide the glyph on a tiny correction")
+        timeline.rebuild(at: 9.95) { _ in layout.size }
+        XCTAssertTrue(timeline.active.isEmpty, "An explicit seek must still reconstruct at its actual target")
+    }
+
     private final class WeakView {
         weak var value: UIView?
         init(_ value: UIView?) { self.value = value }

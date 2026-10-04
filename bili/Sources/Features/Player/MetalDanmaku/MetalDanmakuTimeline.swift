@@ -4,6 +4,7 @@ import UIKit
 /// be used without creating animated views. Data, timing and admission rules
 /// remain shared; no API loading or filtering business lives here.
 final class MetalDanmakuTimeline {
+    static let backwardClockCorrectionTolerance: TimeInterval = 0.2
     struct Entry {
         let item: DanmakuItem
         let size: CGSize
@@ -23,6 +24,12 @@ final class MetalDanmakuTimeline {
     private(set) var revision = 0
     private var items: [DanmakuItem] = []
     private var lastTime: TimeInterval?
+    /// Use the same accepted clock for admission and the shader's lifetime gate.
+    var presentationTime: TimeInterval? { lastTime }
+    #if DEBUG
+    private(set) var rebuildCount = 0
+    private(set) var lastRebuildReason = "none"
+    #endif
     private var nextExpiry = TimeInterval.infinity
     private var cursor = 0
     var viewport = CGSize.zero
@@ -73,7 +80,11 @@ final class MetalDanmakuTimeline {
         return hasUnchangedOverlap
     }
 
-    func rebuild(at time: TimeInterval, measure: (DanmakuItem) -> CGSize?) {
+    func rebuild(at time: TimeInterval, measure: (DanmakuItem) -> CGSize?, reason: String = "explicit") {
+        #if DEBUG
+        rebuildCount += 1
+        lastRebuildReason = reason
+        #endif
         clear()
         guard time.isFinite else { return }
         let start = index(after: time - (viewport.width > 640 ? 8.4 : 7.2))
@@ -86,8 +97,18 @@ final class MetalDanmakuTimeline {
 
     func advance(to time: TimeInterval, measure: (DanmakuItem) -> CGSize?) {
         guard time.isFinite else { return }
-        guard let lastTime, time >= lastTime, time - lastTime <= 1.25 else {
-            rebuild(at: time, measure: measure)
+        guard let lastTime else {
+            rebuild(at: time, measure: measure, reason: "clock-initial")
+            return
+        }
+        // The draw loop extrapolates between player clock samples. A small
+        // correction backwards is not a seek: rebuilding loses admitted entries
+        // that have since left the input window or no longer fit the latest cap.
+        if time < lastTime, time >= lastTime - Self.backwardClockCorrectionTolerance {
+            return
+        }
+        guard time >= lastTime, time - lastTime <= 1.25 else {
+            rebuild(at: time, measure: measure, reason: time < lastTime ? "clock-backward-jump" : "clock-forward-gap")
             return
         }
         if time >= nextExpiry {
