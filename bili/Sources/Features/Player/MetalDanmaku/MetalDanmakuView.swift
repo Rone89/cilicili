@@ -15,6 +15,7 @@ enum MetalDanmakuFrameRatePolicy {
 
 @MainActor
 final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
+    private static let fontScaleSettleDuration: TimeInterval = 0.14
     let metalView: MTKView
     private let renderer: MetalDanmakuRenderer
     private let timeline = MetalDanmakuTimeline()
@@ -53,13 +54,37 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     func debugFrames(at time: TimeInterval) -> [String: CGRect] {
         Dictionary(uniqueKeysWithValues: timeline.active.map { ($0.item.id, $0.frame(at: time)) })
     }
-    func debugPresentedFrames(at time: TimeInterval) -> [String: CGRect] {
+    func debugPresentedFrames(at time: TimeInterval,
+                              hostTime: TimeInterval = CACurrentMediaTime()) -> [String: CGRect] {
         Dictionary(uniqueKeysWithValues: timeline.active.map { entry in
-            var frame = stageTransform.map(entry.frame(at: time))
+            let scale = entry.glyphScale(at: hostTime)
+            let layout = layouts[entry.item.id]
+            let anchorX: CGFloat = entry.item.isScrolling ? 0 : 0.5
+            let anchorY: CGFloat = entry.item.isBottomAnchored ? 1 : 0
+            let originX = entry.startX - entry.velocity * max(0, time - entry.item.time)
+                + (1 - scale) * (layout?.size.width ?? entry.size.width) * anchorX
+            let originY = entry.y + (1 - scale) * (layout?.size.height ?? entry.size.height) * anchorY
+            var frame = CGRect(x: originX, y: originY,
+                               width: (layout?.size.width ?? entry.size.width) * scale,
+                               height: (layout?.size.height ?? entry.size.height) * scale)
+            if stageTransitionActive { frame = stageTransform.map(frame) }
             frame.origin.x += videoViewport.minX
             frame.origin.y += videoViewport.minY
             return (entry.item.id, frame)
         })
+    }
+    func debugDisplayedFontPointSize(for id: String, at hostTime: TimeInterval) -> CGFloat? {
+        guard let entry = timeline.active.first(where: { $0.item.id == id }),
+              let layout = layouts[id] else { return nil }
+        return layout.fontPointSize * entry.glyphScale(at: hostTime)
+    }
+    func debugFontScaleSettleEnd(for id: String) -> TimeInterval? {
+        timeline.active.first(where: { $0.item.id == id }).flatMap { entry in
+            entry.fontScaleSettleStartHostTime.map { $0 + entry.fontScaleSettleDuration }
+        }
+    }
+    func debugFontScaleSettleStart(for id: String) -> TimeInterval? {
+        timeline.active.first(where: { $0.item.id == id })?.fontScaleSettleStartHostTime
     }
     #endif
 
@@ -244,6 +269,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard !stopped, !suspended, window != nil else { return }
         let start = CACurrentMediaTime()
+        completeFontScaleSettles(at: start)
         let sampledTime = effectiveTime()
         if shouldRender && !transitioning {
             #if DEBUG
@@ -298,7 +324,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     }
     private func measure(_ item: DanmakuItem) -> CGSize? {
         if let layout = layouts[item.id] { return layout.size }
-        guard let c = configuration,
+        guard configuration != nil,
               let layout = renderer.layout(for: item, width: timeline.viewport.width, settings: timeline.settings,
                                            scale: max(lastScale, 1)) else { return nil }
         layouts[item.id] = layout
@@ -319,7 +345,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     }
     private func updateInstances() {
         guard lastRevision != timeline.revision else { return }
-        renderer.update(entries: timeline.active, layouts: layouts, opacity: timeline.settings.danmakuKit.opacity)
+        renderer.update(entries: timeline.active, layouts: layouts,
+                        opacity: timeline.settings.danmakuKit.opacity,
+                        stageTransitionEnabled: stageTransitionExperimentEnabled)
         lastRevision = timeline.revision
     }
 
@@ -342,6 +370,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             let transform = MetalDanmakuStageTransform.aspectFit(from: previousViewport, into: videoViewport.size)
             timeline.rebaseActive(using: transform, at: effectiveTime())
             configureTimeline()
+            normalizeActiveFonts(at: effectiveTime(), hostTime: CACurrentMediaTime())
             traceStage("enabled", transform: transform)
         } else {
             stageTransitionActive = false
@@ -351,6 +380,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             layouts.removeAll(keepingCapacity: true)
             configureTimeline()
             rebuild(reason: "stage-experiment-disabled")
+            renderer.discardStageTransitionBuffers()
             traceStage("disabled", transform: .identity)
         }
         lastRevision = -1
@@ -365,6 +395,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
 
     private func beginStageTransitionIfNeeded() {
         guard !stageTransitionActive else { return }
+        materializeFontScaleSettle(at: CACurrentMediaTime())
         stageTransitionActive = true
         stageSourceViewport = timeline.viewport.width > 0 && timeline.viewport.height > 0
             ? timeline.viewport : videoViewport.size
@@ -390,6 +421,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         stageSourceViewport = .zero
         stageTransform = .identity
         configureTimeline()
+        normalizeActiveFonts(at: effectiveTime(), hostTime: CACurrentMediaTime())
         lastRevision = -1
         updateInstances()
         traceScene("stage-transition-end tracks-updated", before: before)
@@ -410,6 +442,51 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
             + "rasterizations=\(renderer.atlas.rasterizationCount)")
         #endif
     }
+    private func normalizeActiveFonts(at time: TimeInterval, hostTime: TimeInterval) {
+        let previousLayouts = layouts
+        var targetLayouts: [String: DanmakuGlyphLayout] = [:]
+        var pairs: [String: (previous: DanmakuGlyphLayout, target: DanmakuGlyphLayout)] = [:]
+        targetLayouts.reserveCapacity(timeline.active.count)
+        pairs.reserveCapacity(timeline.active.count)
+
+        for entry in timeline.active {
+            guard let target = renderer.layout(for: entry.item, width: timeline.viewport.width,
+                                               settings: timeline.settings,
+                                               scale: max(lastScale, 1)) else {
+                if let previous = previousLayouts[entry.item.id] {
+                    targetLayouts[entry.item.id] = previous
+                }
+                continue
+            }
+            targetLayouts[entry.item.id] = target
+            pairs[entry.item.id] = (previousLayouts[entry.item.id] ?? target, target)
+        }
+
+        layouts = targetLayouts
+        timeline.normalizeActiveFonts(at: time, hostTime: hostTime,
+                                      duration: Self.fontScaleSettleDuration, layouts: pairs)
+        lastRevision = -1
+        #if DEBUG
+        print("[DanmakuStage] event=font-normalize active=\(pairs.count) durationMs=\(Int(Self.fontScaleSettleDuration * 1_000)) "
+            + "atlasPages=\(renderer.atlas.textures.count) rasterizations=\(renderer.atlas.rasterizationCount)")
+        #endif
+    }
+
+    private func materializeFontScaleSettle(at hostTime: TimeInterval) {
+        guard timeline.materializeFontScaleSettle(at: hostTime,
+            layoutForItem: { [layouts] item in layouts[item.id] }) else { return }
+        lastRevision = -1
+        updateInstances()
+    }
+
+    private func completeFontScaleSettles(at hostTime: TimeInterval) {
+        guard timeline.completeFontScaleSettles(at: hostTime,
+            layoutForItem: { [layouts] item in layouts[item.id] }) else { return }
+        lastRevision = -1
+        updateInstances()
+        updateDrawLoop()
+    }
+
     private func setAnchor(_ time: TimeInterval) {
         anchorTime = time
         anchorHostTime = CACurrentMediaTime()
@@ -423,7 +500,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         let wasHidden = metalView.isHidden
         #endif
         metalView.isHidden = !shouldRender || transitioning || stopped
-        metalView.isPaused = metalView.isHidden || suspended || window == nil || configuration?.isPlaying != true
+        let fontSettleActive = timeline.hasActiveFontScaleSettle(at: CACurrentMediaTime())
+        metalView.isPaused = metalView.isHidden || suspended || window == nil
+            || (configuration?.isPlaying != true && !fontSettleActive)
         #if DEBUG
         if wasHidden != metalView.isHidden {
             traceScene("hidden=\(metalView.isHidden) renderable=\(shouldRender) transitioning=\(transitioning) stopped=\(stopped)", before: timeline.active.count)

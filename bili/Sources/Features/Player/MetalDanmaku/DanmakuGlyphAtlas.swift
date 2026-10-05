@@ -11,6 +11,7 @@ struct DanmakuGlyphPlacement: Equatable, Sendable {
 
 struct DanmakuGlyphLayout: Equatable, Sendable {
     let size: CGSize
+    let fontPointSize: CGFloat
     let glyphs: [DanmakuGlyphPlacement]
 }
 
@@ -237,7 +238,8 @@ final class DanmakuGlyphAtlas {
             )
         }
 
-        return DanmakuGlyphLayout(size: shapedLine.size, glyphs: glyphPlacements)
+        return DanmakuGlyphLayout(size: shapedLine.size, fontPointSize: font.pointSize,
+                                  glyphs: glyphPlacements)
     }
 
     func reset() {

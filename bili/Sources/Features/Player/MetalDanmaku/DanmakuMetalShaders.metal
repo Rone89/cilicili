@@ -7,6 +7,13 @@ struct DanmakuGlyphInstance {
     float4 uv;
     float4 color;
 };
+struct DanmakuStageGlyphInstance {
+    float4 motion; // startX, y, media start time, points / media second
+    float4 geometry; // width, height, media end time, starting glyph scale
+    float4 uv;
+    float4 color;
+    float4 fontTransition; // anchor-relative glyph offset, host start time, duration
+};
 struct DanmakuVertex {
     float4 position [[position]];
     float2 uv;
@@ -37,15 +44,23 @@ vertex DanmakuVertex danmakuGlyphVertex(uint vertexID [[vertex_id]],
 }
 
 vertex DanmakuVertex danmakuGlyphStageVertex(uint vertexID [[vertex_id]],
-    uint instanceID [[instance_id]], const device DanmakuGlyphInstance *instances [[buffer(0)]],
+    uint instanceID [[instance_id]], const device DanmakuStageGlyphInstance *instances [[buffer(0)]],
     constant float4 &frame [[buffer(1)]],
     constant DanmakuStageUniforms &stage [[buffer(2)]]) {
     const float2 corners[6] = {float2(0,0), float2(1,0), float2(0,1),
                               float2(0,1), float2(1,0), float2(1,1)};
-    DanmakuGlyphInstance i = instances[instanceID];
+    DanmakuStageGlyphInstance i = instances[instanceID];
     float2 corner = corners[vertexID];
     float age = max(0.0f, frame.z - i.motion.z);
-    float2 logicalPoint = float2(i.motion.x - age * i.motion.w, i.motion.y) + corner * i.geometry.xy;
+    float elapsed = frame.w - i.fontTransition.z;
+    if (elapsed < 0.0f) elapsed += 64.0f;
+    float progress = i.fontTransition.w > 0.0f
+        ? clamp(elapsed / i.fontTransition.w, 0.0f, 1.0f)
+        : 0.0f;
+    float scale = mix(i.geometry.w, 1.0f, progress);
+    float2 logicalPoint = float2(i.motion.x - age * i.motion.w, i.motion.y)
+        + i.fontTransition.xy * (scale - i.geometry.w)
+        + corner * i.geometry.xy * (scale / max(i.geometry.w, 0.0001f));
     float2 point = logicalPoint * stage.transform.x + stage.transform.yz + stage.videoViewport.xy;
     DanmakuVertex out;
     out.position = float4(point.x / frame.x * 2 - 1, 1 - point.y / frame.y * 2, 0, 1);

@@ -14,6 +14,15 @@ final class MetalDanmakuTimeline {
         let velocity: CGFloat
         let endTime: TimeInterval
         var glyphScale: CGFloat = 1
+        var fontScaleSettleStartHostTime: TimeInterval?
+        var fontScaleSettleDuration: TimeInterval = 0
+
+        func glyphScale(at hostTime: TimeInterval) -> CGFloat {
+            guard let start = fontScaleSettleStartHostTime,
+                  fontScaleSettleDuration > 0 else { return glyphScale }
+            let progress = min(max((hostTime - start) / fontScaleSettleDuration, 0), 1)
+            return glyphScale + (1 - glyphScale) * progress
+        }
 
         func frame(at time: TimeInterval) -> CGRect {
             CGRect(x: startX - velocity * max(0, time - item.time), y: y,
@@ -97,6 +106,112 @@ final class MetalDanmakuTimeline {
         nextExpiry = active.map(\.endTime).min() ?? .infinity
         lastTime = time
         revision &+= 1
+    }
+
+    /// Re-layouts active comments once for the settled viewport. Media lifetime
+    /// and lane identity stay fixed while the Metal shader eases glyph scale.
+    func normalizeActiveFonts(
+        at time: TimeInterval,
+        hostTime: TimeInterval,
+        duration: TimeInterval,
+        layouts: [String: (previous: DanmakuGlyphLayout, target: DanmakuGlyphLayout)]
+    ) {
+        guard time.isFinite, hostTime.isFinite, duration.isFinite, duration >= 0 else { return }
+        active = active.compactMap { entry in
+            guard entry.endTime > time else { return nil }
+            guard let pair = layouts[entry.item.id], pair.previous.fontPointSize > 0,
+                  pair.target.fontPointSize > 0 else { return entry }
+
+            let scale = entry.glyphScale * pair.previous.fontPointSize / pair.target.fontPointSize
+            guard scale.isFinite, scale >= 0.25, scale <= 8 else { return entry }
+            let targetSize = pair.target.size
+            let settling = duration > 0 && abs(scale - 1) > 0.005
+            let initialScale = settling ? scale : 1
+            let initialSize = CGSize(width: targetSize.width * initialScale,
+                                     height: targetSize.height * initialScale)
+            let startX = entry.item.isScrolling
+                ? entry.startX
+                : (viewport.width - targetSize.width) / 2
+            let y = entry.item.isBottomAnchored
+                ? entry.y + entry.size.height - targetSize.height
+                : entry.y
+
+            return Entry(
+                item: entry.item,
+                size: initialSize,
+                lane: entry.lane,
+                startX: startX,
+                y: y,
+                velocity: entry.velocity,
+                endTime: entry.endTime,
+                glyphScale: initialScale,
+                fontScaleSettleStartHostTime: settling ? hostTime : nil,
+                fontScaleSettleDuration: settling ? duration : 0
+            )
+        }
+        nextExpiry = active.map(\.endTime).min() ?? .infinity
+        lastTime = time
+        revision &+= 1
+    }
+
+    /// Commits an in-progress scale animation before another resize interrupts it.
+    @discardableResult
+    func materializeFontScaleSettle(
+        at hostTime: TimeInterval,
+        layoutForItem: (DanmakuItem) -> DanmakuGlyphLayout?
+    ) -> Bool {
+        var changed = false
+        active = active.map { entry in
+            guard entry.fontScaleSettleStartHostTime != nil,
+                  let layout = layoutForItem(entry.item) else { return entry }
+            let scale = entry.glyphScale(at: hostTime)
+            guard scale.isFinite, scale > 0 else { return entry }
+            changed = true
+            // The stage shader still applies center/bottom anchor compensation
+            // from glyphScale. Keep the anchor origin unchanged when committing
+            // the animation or an interrupted resize would apply it twice.
+            return Entry(
+                item: entry.item,
+                size: CGSize(width: layout.size.width * scale, height: layout.size.height * scale),
+                lane: entry.lane,
+                startX: entry.startX,
+                y: entry.y,
+                velocity: entry.velocity,
+                endTime: entry.endTime,
+                glyphScale: scale
+            )
+        }
+        if changed { revision &+= 1 }
+        return changed
+    }
+
+    @discardableResult
+    func completeFontScaleSettles(
+        at hostTime: TimeInterval,
+        layoutForItem: (DanmakuItem) -> DanmakuGlyphLayout?
+    ) -> Bool {
+        var changed = false
+        active = active.map { entry in
+            guard let start = entry.fontScaleSettleStartHostTime,
+                  hostTime >= start + entry.fontScaleSettleDuration,
+                  let layout = layoutForItem(entry.item) else { return entry }
+            changed = true
+            return Entry(item: entry.item, size: layout.size, lane: entry.lane,
+                         startX: entry.startX, y: entry.y, velocity: entry.velocity,
+                         endTime: entry.endTime, glyphScale: 1)
+        }
+        if changed {
+            nextExpiry = active.map(\.endTime).min() ?? .infinity
+            revision &+= 1
+        }
+        return changed
+    }
+
+    func hasActiveFontScaleSettle(at hostTime: TimeInterval) -> Bool {
+        active.contains { entry in
+            guard let start = entry.fontScaleSettleStartHostTime else { return false }
+            return hostTime < start + entry.fontScaleSettleDuration
+        }
     }
 
     private func canPreserveActiveEntries(

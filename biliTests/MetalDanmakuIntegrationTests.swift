@@ -195,12 +195,16 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         let atlasRasterizations = view.debugRenderer.atlas.rasterizationCount
         let atlasPages = view.debugRenderer.atlas.textures.count
         let beforeFrames = view.debugPresentedFrames(at: 1.5)
+        let sourceFontPointSizes = try Dictionary(uniqueKeysWithValues: fixture.map { item in
+            (item.id, try XCTUnwrap(view.debugDisplayedFontPointSize(for: item.id, at: 0)))
+        })
 
         view.setLayoutTransitioning(true)
         XCTAssertTrue(view.debugStageTransitionActive)
         XCTAssertFalse(view.metalView.isHidden)
         view.frame.size = CGSize(width: 500, height: 900)
         view.layoutIfNeeded()
+        let finalTransform = view.debugStageTransform
 
         XCTAssertEqual(view.debugActiveItemIDs, idsBefore)
         XCTAssertEqual(view.debugTimelineRevision, timelineRevision)
@@ -229,17 +233,45 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertEqual(view.debugActiveItemIDs, idsBefore)
         XCTAssertEqual(view.debugTimelineViewport.width, targetViewport.width, accuracy: 0.01)
         XCTAssertEqual(view.debugTimelineViewport.height, targetViewport.height, accuracy: 0.01)
-        let afterFrames = view.debugPresentedFrames(at: 1.5)
-        for id in idsBefore {
-            let during = try XCTUnwrap(duringFrames[id])
-            let after = try XCTUnwrap(afterFrames[id])
-            XCTAssertEqual(after.minX, during.minX, accuracy: 0.01, id)
-            XCTAssertEqual(after.minY, during.minY, accuracy: 0.01, id)
-            XCTAssertEqual(after.width, during.width, accuracy: 0.01, id)
-            XCTAssertEqual(after.height, during.height, accuracy: 0.01, id)
+        let settleStart = try XCTUnwrap(view.debugFontScaleSettleStart(for: fixture[0].id))
+        let settleEnd = try XCTUnwrap(view.debugFontScaleSettleEnd(for: fixture[0].id))
+        let afterFrames = view.debugPresentedFrames(at: 1.5, hostTime: settleStart)
+        let targetSettings = configuration(items: fixture).settings.danmakuKit
+        for item in fixture {
+            let during = try XCTUnwrap(duringFrames[item.id])
+            let after = try XCTUnwrap(afterFrames[item.id])
+            if item.isScrolling {
+                XCTAssertEqual(after.minX, during.minX, accuracy: 0.1, item.id)
+                XCTAssertEqual(after.minY, during.minY, accuracy: 0.1, item.id)
+            } else {
+                XCTAssertEqual(after.midX, during.midX, accuracy: 0.1, item.id)
+                if item.isBottomAnchored {
+                    XCTAssertEqual(after.maxY, during.maxY, accuracy: 0.1, item.id)
+                } else {
+                    XCTAssertEqual(after.minY, during.minY, accuracy: 0.1, item.id)
+                }
+            }
+
+            let targetFontPointSize = DanmakuRenderPolicy.font(
+                for: item, viewportWidth: targetViewport.width,
+                scale: targetSettings.fontScale,
+                weight: targetSettings.fontWeight
+            ).pointSize
+            let fontAtSettleStart = try XCTUnwrap(
+                view.debugDisplayedFontPointSize(for: item.id, at: settleStart)
+            )
+            XCTAssertEqual(fontAtSettleStart,
+                           try XCTUnwrap(sourceFontPointSizes[item.id]) * finalTransform.scale,
+                           accuracy: 0.1,
+                           "The new layout must begin at the currently visible stage-scaled font size: \(item.id)")
+            XCTAssertEqual(try XCTUnwrap(
+                view.debugDisplayedFontPointSize(for: item.id, at: settleEnd)
+            ), targetFontPointSize, accuracy: 0.1,
+               "Existing comments must converge to the normal final-viewport font size: \(item.id)")
         }
-        XCTAssertEqual(view.debugRenderer.atlas.rasterizationCount, atlasRasterizations)
-        XCTAssertEqual(view.debugRenderer.atlas.textures.count, atlasPages)
+        XCTAssertGreaterThanOrEqual(view.debugRenderer.atlas.rasterizationCount, atlasRasterizations)
+        XCTAssertGreaterThanOrEqual(view.debugRenderer.atlas.textures.count, atlasPages)
+        XCTAssertLessThanOrEqual(view.debugRenderer.atlas.textures.count, 4)
     }
 
     func testMetalStageTransitionCanBeInterruptedAndSeekUsesNewMediaTime() throws {

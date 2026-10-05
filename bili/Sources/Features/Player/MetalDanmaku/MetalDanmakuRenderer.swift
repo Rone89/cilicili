@@ -8,8 +8,17 @@ struct DanmakuGlyphInstance {
     var color: SIMD4<Float>
 }
 
+struct DanmakuStageGlyphInstance {
+    var motion: SIMD4<Float>
+    var geometry: SIMD4<Float>
+    var uv: SIMD4<Float>
+    var color: SIMD4<Float>
+    var fontTransition: SIMD4<Float>
+}
+
 @MainActor
 final class MetalDanmakuRenderer {
+    private static let fontTransitionClockPeriod: TimeInterval = 64
     let device: MTLDevice
     let atlas: DanmakuGlyphAtlas
     private let queue: MTLCommandQueue
@@ -19,6 +28,7 @@ final class MetalDanmakuRenderer {
     private var stageTransitionPipeline: MTLRenderPipelineState?
     private let sampler: MTLSamplerState
     private var instances: [DanmakuGlyphInstance] = []
+    private var stageInstances: [DanmakuStageGlyphInstance] = []
     private var batches: [(page: Int, start: Int, count: Int)] = []
     private var revision = 0
     private var nextSlot = 0
@@ -33,6 +43,8 @@ final class MetalDanmakuRenderer {
         let available = DispatchSemaphore(value: 1)
         var buffer: MTLBuffer?
         var version = -1
+        var stageBuffer: MTLBuffer?
+        var stageVersion = -1
     }
 
     private struct StageUniforms {
@@ -106,8 +118,10 @@ final class MetalDanmakuRenderer {
 
     /// Only called on entry/expiry/rebuild. Motion itself stays entirely in the shader.
     func update(entries: [MetalDanmakuTimeline.Entry], layouts: [String: DanmakuGlyphLayout],
-                opacity: Double) {
+                opacity: Double, stageTransitionEnabled: Bool = false) {
         var pages = [[DanmakuGlyphInstance]](repeating: [], count: atlas.textures.count)
+        var stagePages = stageTransitionEnabled
+            ? [[DanmakuStageGlyphInstance]](repeating: [], count: atlas.textures.count) : []
         activeCount = 0
         for entry in entries {
             guard let layout = layouts[entry.item.id] else { continue }
@@ -116,14 +130,44 @@ final class MetalDanmakuRenderer {
             let color = SIMD4<Float>(Float((rgb >> 16) & 255) / 255,
                 Float((rgb >> 8) & 255) / 255, Float(rgb & 255) / 255, Float(opacity))
             for glyph in layout.glyphs where pages.indices.contains(glyph.pageIndex) {
+                let scale = entry.glyphScale
+                let motion = SIMD4(Float(entry.startX + glyph.offset.x * scale),
+                                   Float(entry.y + glyph.offset.y * scale),
+                                   Float(entry.item.time), Float(entry.velocity))
+                let geometry = SIMD4(Float(glyph.size.width * scale),
+                                     Float(glyph.size.height * scale),
+                                     Float(entry.endTime), Float(scale))
                 pages[glyph.pageIndex].append(DanmakuGlyphInstance(
-                motion: SIMD4(Float(entry.startX + glyph.offset.x * entry.glyphScale),
-                              Float(entry.y + glyph.offset.y * entry.glyphScale),
-                              Float(entry.item.time), Float(entry.velocity)),
-                geometry: SIMD4(Float(glyph.size.width * entry.glyphScale),
-                                Float(glyph.size.height * entry.glyphScale),
-                                Float(entry.endTime), Float(entry.glyphScale)),
-                    uv: glyph.uvRect, color: color))
+                    motion: motion, geometry: geometry, uv: glyph.uvRect, color: color
+                ))
+
+                if stageTransitionEnabled {
+                    let horizontalAnchor: CGFloat = entry.item.isScrolling ? 0 : 0.5
+                    let verticalAnchor: CGFloat = entry.item.isBottomAnchored ? 1 : 0
+                    let stageMotion = SIMD4(
+                        Float(entry.startX + glyph.offset.x * scale
+                              + (1 - scale) * layout.size.width * horizontalAnchor),
+                        Float(entry.y + glyph.offset.y * scale
+                              + (1 - scale) * layout.size.height * verticalAnchor),
+                        Float(entry.item.time), Float(entry.velocity)
+                    )
+                    let stageGeometry = SIMD4(Float(glyph.size.width * scale),
+                                              Float(glyph.size.height * scale),
+                                              Float(entry.endTime), Float(scale))
+                    stagePages[glyph.pageIndex].append(DanmakuStageGlyphInstance(
+                        motion: stageMotion,
+                        geometry: stageGeometry,
+                        uv: glyph.uvRect,
+                        color: color,
+                        fontTransition: SIMD4(
+                            Float(glyph.offset.x - layout.size.width * horizontalAnchor),
+                            Float(glyph.offset.y - layout.size.height * verticalAnchor),
+                            Float((entry.fontScaleSettleStartHostTime ?? 0)
+                                .truncatingRemainder(dividingBy: Self.fontTransitionClockPeriod)),
+                            Float(entry.fontScaleSettleDuration)
+                        )
+                    ))
+                }
             }
         }
         instances.removeAll(keepingCapacity: true)
@@ -132,7 +176,21 @@ final class MetalDanmakuRenderer {
             batches.append((page, instances.count, glyphs.count))
             instances.append(contentsOf: glyphs)
         }
+        stageInstances.removeAll(keepingCapacity: stageTransitionEnabled)
+        if stageTransitionEnabled {
+            for (page, glyphs) in stagePages.enumerated() where !glyphs.isEmpty {
+                stageInstances.append(contentsOf: glyphs)
+            }
+        }
         revision &+= 1
+    }
+
+    func discardStageTransitionBuffers() {
+        stageInstances.removeAll(keepingCapacity: false)
+        for slot in slots {
+            slot.stageBuffer = nil
+            slot.stageVersion = -1
+        }
     }
 
     #if DEBUG
@@ -171,7 +229,9 @@ final class MetalDanmakuRenderer {
             #endif
             return
         }
-        if !instances.isEmpty {
+        let frameInstanceCount = stage == nil ? instances.count : stageInstances.count
+        var frameBuffer: MTLBuffer?
+        if stage == nil, !instances.isEmpty {
             let bytes = instances.count * MemoryLayout<DanmakuGlyphInstance>.stride
             if slot.buffer == nil || slot.buffer!.length < bytes {
                 slot.buffer = device.makeBuffer(length: max(bytes, 64 * 1024), options: .storageModeShared)
@@ -189,6 +249,26 @@ final class MetalDanmakuRenderer {
                 }
                 slot.version = revision
             }
+            frameBuffer = buffer
+        } else if stage != nil, !stageInstances.isEmpty {
+            let bytes = stageInstances.count * MemoryLayout<DanmakuStageGlyphInstance>.stride
+            if slot.stageBuffer == nil || slot.stageBuffer!.length < bytes {
+                slot.stageBuffer = device.makeBuffer(length: max(bytes, 64 * 1024), options: .storageModeShared)
+                slot.stageVersion = -1
+            }
+            guard let buffer = slot.stageBuffer else {
+                #if DEBUG
+                diagnostics.recordMetalRenderFailure("stage-instance-buffer-unavailable")
+                #endif
+                return
+            }
+            if slot.stageVersion != revision {
+                stageInstances.withUnsafeBytes { data in
+                    if let base = data.baseAddress { buffer.contents().copyMemory(from: base, byteCount: data.count) }
+                }
+                slot.stageVersion = revision
+            }
+            frameBuffer = buffer
         }
         guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else {
             #if DEBUG
@@ -197,7 +277,7 @@ final class MetalDanmakuRenderer {
             return
         }
         drawCalls = 0
-        if !instances.isEmpty, let buffer = slot.buffer {
+        if frameInstanceCount > 0, let buffer = frameBuffer {
             encodeGlyphs(encoder: encoder, buffer: buffer, size: view.bounds.size, time: time,
                          drawableSize: CGSize(width: drawable.texture.width, height: drawable.texture.height),
                          stage: stage)
@@ -238,7 +318,7 @@ final class MetalDanmakuRenderer {
         submittedFrames += 1
         #if DEBUG
         diagnostics.recordMetalFrame(
-            active: activeCount, glyphs: instances.count, drawCalls: drawCalls,
+            active: activeCount, glyphs: frameInstanceCount, drawCalls: drawCalls,
             pages: atlas.textures.count, usedPixels: atlas.usedPixels, capacityPixels: atlas.capacityPixels,
             rejected: atlas.rejectedGlyphs, skipped: skippedFrames,
             preparationMs: (CACurrentMediaTime() - start) * 1_000, timestamp: start,
@@ -257,7 +337,9 @@ final class MetalDanmakuRenderer {
                               stage: MetalDanmakuRenderStage? = nil) {
         encoder.setRenderPipelineState(stage == nil ? pipeline : (stageTransitionPipeline ?? pipeline))
         encoder.setVertexBuffer(buffer, offset: 0, index: 0)
-        var frame = SIMD4<Float>(Float(size.width), Float(size.height), Float(time), 0)
+        var frame = SIMD4<Float>(Float(size.width), Float(size.height), Float(time),
+                                 stage == nil ? 0 : Float(CACurrentMediaTime()
+                                    .truncatingRemainder(dividingBy: Self.fontTransitionClockPeriod)))
         encoder.setVertexBytes(&frame, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
         if let stage {
             var uniforms = StageUniforms(
@@ -327,10 +409,16 @@ final class MetalDanmakuRenderer {
         diagnostics.clearMetalActiveCount()
         #endif
         instances.removeAll(keepingCapacity: false)
+        stageInstances.removeAll(keepingCapacity: false)
         batches.removeAll(keepingCapacity: false)
         atlas.reset()
         revision &+= 1
         // In-flight command buffers retain their resources; do not mutate their bytes.
-        for slot in slots { slot.buffer = nil; slot.version = -1 }
+        for slot in slots {
+            slot.buffer = nil
+            slot.version = -1
+            slot.stageBuffer = nil
+            slot.stageVersion = -1
+        }
     }
 }
