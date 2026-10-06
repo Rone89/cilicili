@@ -5,7 +5,7 @@ enum UITestFixtureScenario: String {
     case danmaku
     #if DEBUG
     case danmakuBenchmark
-    case videoSponsoredBadge
+    case searchScroll
     case videoOwnerMenu
     #endif
     case dynamicDetail

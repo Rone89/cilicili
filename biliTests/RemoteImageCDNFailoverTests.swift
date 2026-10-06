@@ -3,6 +3,19 @@ import UIKit
 @testable import bili
 
 final class RemoteImageCDNFailoverTests: XCTestCase {
+    private var previousDiagnosticsEnabled = false
+
+    override func setUp() {
+        super.setUp()
+        previousDiagnosticsEnabled = RemoteImageDiagnosticsRuntime.shared.isEnabled
+        RemoteImageDiagnosticsRuntime.shared.setEnabled(true)
+    }
+
+    override func tearDown() {
+        RemoteImageDiagnosticsRuntime.shared.setEnabled(previousDiagnosticsEnabled)
+        super.tearDown()
+    }
+
     func testEligibleImageURLAddsInterchangeableCDNHosts() throws {
         let memory = RemoteImageCDNHealthMemory()
         let url = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/archive/example.jpg?imageView2/1/w/640"))
@@ -197,7 +210,7 @@ final class RemoteImageCDNFailoverTests: XCTestCase {
         XCTAssertTrue(text.contains("滚动中后台预取延后: 4"))
         XCTAssertTrue(text.contains("快速滚动负载抑制: 已启用"))
         XCTAssertTrue(text.contains("自动切换: 已启用"))
-        XCTAssertTrue(text.contains("i0.hdslb.com: 请求 50 · 成功 49 · 瞬时失败 1 · 失败率 2%"))
+        XCTAssertTrue(text.contains("i0.hdslb.com: 请求 50 · 成功 49 · 瞬时失败 1 · HTTP失败 0 · 解码失败 0 · 其他失败 0 · 取消 0"))
         XCTAssertTrue(text.contains("i1.hdslb.com: 剩余 42 秒"))
         XCTAssertFalse(text.contains("https://"))
         XCTAssertFalse(text.contains("example.jpg"))

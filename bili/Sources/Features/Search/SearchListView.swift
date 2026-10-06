@@ -4,6 +4,14 @@ struct SearchListView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
+    @State private var scrollPosition = ScrollPosition()
+    // Offset samples do not drive UI updates while the user scrolls.
+    @State private var scrollOffsets = ScrollOffsets()
+
+    private final class ScrollOffsets {
+        var current: CGFloat = 0
+        var saved: CGFloat?
+    }
 
     private let discoveryColumns = [
         GridItem(.flexible(), spacing: 10),
@@ -28,12 +36,36 @@ struct SearchListView: View {
             .padding(.horizontal, horizontalInset)
             .padding(.bottom, 18)
         }
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            scrollOffsets.current = offset
+        }
+        .onDisappear { scrollOffsets.saved = scrollOffsets.current }
+        .onAppear {
+            if let saved = scrollOffsets.saved {
+                scrollPosition.scrollTo(y: saved)
+            }
+        }
+        .onChange(of: viewModel.query) { _, _ in resetScrollPosition() }
+        .onChange(of: viewModel.selectedScope) { _, _ in resetScrollPosition() }
+        .onChange(of: viewModel.selectedOrder) { _, _ in resetScrollPosition() }
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemGroupedBackground))
         .nativeTopScrollEdgeEffect()
+    }
+
+    private func resetScrollPosition() {
+        scrollOffsets.saved = nil
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scrollPosition.scrollTo(edge: .top)
+        }
     }
 
     @ViewBuilder

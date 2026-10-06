@@ -7,7 +7,6 @@ final class VideoDetailDescriptionRenderStore: ObservableObject {
     private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailDescriptionRenderSnapshot>()
 
     var titleText: String { snapshot.titleText }
-    var isSponsored: Bool { snapshot.isSponsored }
     var owner: VideoOwner? { snapshot.owner }
     var viewCountText: String { snapshot.viewCountText }
     var fanCountText: String { snapshot.fanCountText }

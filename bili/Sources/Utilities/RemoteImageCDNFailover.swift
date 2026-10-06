@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated enum RemoteImageDiagnosticsSettings {
     static let storageKey = "cc.bili.display.remoteImageDiagnosticsEnabled.v1"
-    static let defaultIsEnabled = true
+    static let defaultIsEnabled = false
 
     static func isEnabled(in userDefaults: UserDefaults = .standard) -> Bool {
         userDefaults.object(forKey: storageKey) as? Bool ?? defaultIsEnabled

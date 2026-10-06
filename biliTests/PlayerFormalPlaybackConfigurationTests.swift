@@ -565,11 +565,25 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryStoreDefaultsImageDiagnosticsOnAndPersistsToggle() {
+    func testRemovedSponsoredBadgePreferenceIsCleared() {
+        for value in [false, true] {
+            let defaults = makeUserDefaults()
+            let key = "cc.bili.experimental.videoDetailSponsoredBadge.v1"
+            defaults.set(value, forKey: key)
+            _ = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+    }
+
+    @MainActor
+    func testLibraryStoreDefaultsImageDiagnosticsOffAndPersistsToggle() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        XCTAssertTrue(store.remoteImageDiagnosticsEnabled)
+        XCTAssertFalse(store.remoteImageDiagnosticsEnabled)
+        XCTAssertFalse(RemoteImageDiagnosticsSettings.isEnabled(in: defaults))
+        store.setRemoteImageDiagnosticsEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).remoteImageDiagnosticsEnabled)
         store.setRemoteImageDiagnosticsEnabled(false)
 
         XCTAssertFalse(

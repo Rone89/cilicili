@@ -12,21 +12,18 @@ extension View {
         title: String = "",
         onSubmit: @escaping () -> Void
     ) -> some View {
-        if isEnabled {
-            background {
-                NativeNavigationSearchBridge(
-                    text: text,
-                    isPresented: isPresented,
-                    isKeyboardVisible: isKeyboardVisible,
-                    isEnabled: true,
-                    prompt: prompt,
-                    title: title,
-                    onSubmit: onSubmit
-                )
-                .frame(width: 0, height: 0)
-            }
-        } else {
-            self
+        // Keep the content's identity stable when navigation hides the search bar.
+        background {
+            NativeNavigationSearchBridge(
+                text: text,
+                isPresented: isPresented,
+                isKeyboardVisible: isKeyboardVisible,
+                isEnabled: isEnabled,
+                prompt: prompt,
+                title: title,
+                onSubmit: onSubmit
+            )
+            .frame(width: 0, height: 0)
         }
     }
 }

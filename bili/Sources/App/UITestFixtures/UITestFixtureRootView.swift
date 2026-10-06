@@ -14,8 +14,8 @@ struct UITestFixtureRootView: View {
             #if DEBUG
             case .danmakuBenchmark:
                 NavigationStack { DanmakuRendererBenchmarkView() }
-            case .videoSponsoredBadge:
-                UITestVideoSponsoredBadgeFixtureView(libraryStore: dependencies.libraryStore)
+            case .searchScroll:
+                UITestSearchScrollFixtureView(api: dependencies.api)
             case .videoOwnerMenu:
                 UITestVideoOwnerMenuFixtureView(libraryStore: dependencies.libraryStore)
             #endif

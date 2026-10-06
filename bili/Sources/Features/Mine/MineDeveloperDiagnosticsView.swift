@@ -81,20 +81,6 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
-                get: { libraryStore.videoDetailSponsoredBadgeExperimentEnabled },
-                set: { libraryStore.setVideoDetailSponsoredBadgeExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("视频详情恰饭标识", systemImage: "tag")
-                    Text("仅在视频详情标题前标示 Bilibili 详情数据中的商业推广属性。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.videoDetailSponsoredBadge")
-
-            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

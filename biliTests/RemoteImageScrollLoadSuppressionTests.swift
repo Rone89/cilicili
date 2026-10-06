@@ -3,6 +3,19 @@ import XCTest
 @testable import bili
 
 final class RemoteImageScrollLoadSuppressionTests: XCTestCase {
+    private var previousDiagnosticsEnabled = false
+
+    override func setUp() {
+        super.setUp()
+        previousDiagnosticsEnabled = RemoteImageDiagnosticsRuntime.shared.isEnabled
+        RemoteImageDiagnosticsRuntime.shared.setEnabled(true)
+    }
+
+    override func tearDown() {
+        RemoteImageDiagnosticsRuntime.shared.setEnabled(previousDiagnosticsEnabled)
+        super.tearDown()
+    }
+
     func testPolicySuppressesInteractiveAndDeceleratingScroll() {
         XCTAssertTrue(FastScrollImageLoadSuppressionPolicy.suppressesNetworkLoads(
             phase: .interacting

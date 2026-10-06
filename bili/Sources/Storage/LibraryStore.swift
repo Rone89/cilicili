@@ -127,7 +127,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recommendMinimumLikeRatioPercent: Int
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
-    @Published private(set) var videoDetailSponsoredBadgeExperimentEnabled: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
@@ -202,7 +201,6 @@ final class LibraryStore: ObservableObject {
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
-    private static let videoDetailSponsoredBadgeExperimentEnabledKey = "cc.bili.experimental.videoDetailSponsoredBadge.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
@@ -242,6 +240,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.experimental.videoDetailSponsoredBadge.v1",
         "cc.bili.experimental.videoDetailOwnerMenu.v1",
         "cc.bili.playback.danmakuStageTransitionExperimentEnabled.v1",
         "cc.bili.playback.metalDanmakuStageTransitionExperimentEnabled.v1",
@@ -597,8 +596,6 @@ final class LibraryStore: ObservableObject {
         } else {
             self.danmakuSettings = .default
         }
-        self.videoDetailSponsoredBadgeExperimentEnabled =
-            userDefaults.object(forKey: Self.videoDetailSponsoredBadgeExperimentEnabledKey) as? Bool ?? false
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
@@ -1193,11 +1190,6 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
-    }
-
-    func setVideoDetailSponsoredBadgeExperimentEnabled(_ enabled: Bool) {
-        videoDetailSponsoredBadgeExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.videoDetailSponsoredBadgeExperimentEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

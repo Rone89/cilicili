@@ -2,7 +2,6 @@ import Foundation
 
 struct VideoDetailDescriptionRenderSnapshot: Equatable {
     var titleText = ""
-    var isSponsored = false
     var owner: VideoOwner?
     var viewCountText = "-"
     var fanCountText = "粉丝 -"
@@ -24,7 +23,6 @@ struct VideoDetailDescriptionRenderSnapshot: Equatable {
         let trimmedTitle = detail.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         titleText = detail.title
-        isSponsored = detail.isSponsored
         owner = detail.owner
         viewCountText = BiliFormatters.compactCount(detail.stat?.view)
         fanCountText = viewModel.uploaderFanCountText
