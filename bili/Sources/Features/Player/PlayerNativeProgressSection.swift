@@ -22,7 +22,6 @@ struct PlayerNativeProgressSection: View {
             onScrubEnded: onScrubEnded,
             onScrubCancelled: onScrubCancelled
         )
-        .padding(.horizontal, metrics.sliderHorizontalPadding)
         .frame(maxWidth: .infinity)
         .frame(height: metrics.progressControlHeight)
     }

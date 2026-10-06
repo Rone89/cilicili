@@ -9,7 +9,6 @@ struct PlayerNativeControlMetrics: Equatable {
     let stackSpacing: CGFloat
     let groupSpacing: CGFloat
     let controlSpacing: CGFloat
-    let sliderHorizontalPadding: CGFloat
     let timeLabelWidth: CGFloat
     let qualityButtonMaxWidth: CGFloat
     let qualityHorizontalPadding: CGFloat
@@ -27,7 +26,6 @@ struct PlayerNativeControlMetrics: Equatable {
         stackSpacing: 5,
         groupSpacing: 5,
         controlSpacing: 4,
-        sliderHorizontalPadding: 8,
         timeLabelWidth: 104,
         qualityButtonMaxWidth: 68,
         qualityHorizontalPadding: 6
@@ -42,7 +40,6 @@ struct PlayerNativeControlMetrics: Equatable {
         stackSpacing: 7,
         groupSpacing: 7,
         controlSpacing: 7,
-        sliderHorizontalPadding: 10,
         timeLabelWidth: 104,
         qualityButtonMaxWidth: 68,
         qualityHorizontalPadding: 8
@@ -57,7 +54,6 @@ struct PlayerNativeControlMetrics: Equatable {
         stackSpacing: 7,
         groupSpacing: 7,
         controlSpacing: 6,
-        sliderHorizontalPadding: 11,
         timeLabelWidth: 86,
         qualityButtonMaxWidth: 92,
         qualityHorizontalPadding: 9
@@ -73,7 +69,6 @@ struct PlayerNativeControlMetrics: Equatable {
             stackSpacing: stackSpacing,
             groupSpacing: groupSpacing,
             controlSpacing: controlSpacing,
-            sliderHorizontalPadding: sliderHorizontalPadding,
             timeLabelWidth: timeLabelWidth,
             qualityButtonMaxWidth: qualityButtonMaxWidth,
             qualityHorizontalPadding: qualityHorizontalPadding

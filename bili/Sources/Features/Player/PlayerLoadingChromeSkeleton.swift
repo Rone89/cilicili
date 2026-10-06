@@ -9,11 +9,11 @@ struct PlayerLoadingChromeSkeleton: View {
             topLeadingBackControl
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.top, 10)
-                .padding(.leading, 10)
+                .padding(.leading, 20)
 
             bottomControls
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 20)
                 .padding(.bottom, 8)
         }
         .opacity(0.36)
@@ -33,7 +33,6 @@ struct PlayerLoadingChromeSkeleton: View {
                 .fill(Color.white.opacity(0.20))
                 .frame(height: visibleProgressHeight)
                 .frame(height: metrics.progressControlHeight, alignment: .center)
-                .padding(.horizontal, metrics.sliderHorizontalPadding)
 
             HStack(spacing: metrics.controlSpacing) {
                 skeletonCircle
