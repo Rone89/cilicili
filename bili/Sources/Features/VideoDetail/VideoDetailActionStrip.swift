@@ -2,21 +2,11 @@ import SwiftUI
 
 struct VideoDetailActionStrip: View, Equatable {
     enum Metrics {
-        static let columnSpacing: CGFloat = 7
-        static let rowHeight: CGFloat = 32
-        static let actionLabelSide: CGFloat = 28
-        static let avatarImageSide: CGFloat = 34
-        static let avatarSide: CGFloat = avatarImageSide
-        static let followHeight: CGFloat = actionLabelSide
-        static let iconSize: CGFloat = 13
+        static let rowHeight: CGFloat = 44
+        static let actionLabelSide: CGFloat = 32
+        static let avatarImageSide: CGFloat = 44
+        static let iconSize: CGFloat = 17
         static let avatarPixelSize = 112
-
-        static let plainRowHeight: CGFloat = 44
-        static let plainActionLabelSide: CGFloat = 32
-        static let plainAvatarImageSide: CGFloat = plainRowHeight
-        static let plainFollowColumnWidth: CGFloat = 64
-        static let plainFollowHeight: CGFloat = 32
-        static let plainIconSize: CGFloat = 17
     }
 
     let model: VideoDetailActionStripModel
@@ -33,10 +23,7 @@ struct VideoDetailActionStrip: View, Equatable {
 
     var body: some View {
         let usesPlainStyle = actionButtonStyle.usesPlainStyle
-        let layout = VideoDetailActionStripLayout(
-            contentWidth: model.contentWidth,
-            usesPlainStyle: usesPlainStyle
-        )
+        let layout = VideoDetailActionStripLayout(contentWidth: model.contentWidth)
 
         Group {
             if usesPlainStyle {

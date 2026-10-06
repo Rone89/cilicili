@@ -51,7 +51,7 @@ struct PlaybackDetailOwnerAvatar: View {
     }
 }
 
-private struct PlaybackDetailOwnerAvatarImage: View {
+struct PlaybackDetailOwnerAvatarImage: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let urlString: String?

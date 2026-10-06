@@ -142,7 +142,7 @@ private struct HomeAccountMessageButtonContent: View {
         Button(action: action) {
             Image(systemName: "bell.fill")
                 .symbolRenderingMode(.monochrome)
-                .font(.system(size: VideoDetailActionStrip.Metrics.iconSize, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(hasUnread ? appTintColor : Color.primary)
         }
         .accessibilityLabel("账号消息")

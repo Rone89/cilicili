@@ -14,21 +14,27 @@ struct VideoDetailActionStripButtonRow: View {
 
     var body: some View {
         HStack(spacing: layout.columnSpacing) {
-            VideoDetailActionStripOwnerAvatar(
-                owner: model.owner,
-                side: layout.avatarImageSide
-            )
+            Group {
+                if let owner = model.owner, owner.mid > 0 {
+                    VideoDetailActionStripOwnerMenu(
+                        owner: owner,
+                        side: layout.avatarImageSide,
+                        isFollowing: model.isFollowing,
+                        isMutatingFollow: model.isMutatingFollow,
+                        onFollow: onFollow
+                    )
+                } else {
+                    PlaybackDetailOwnerAvatarImage(
+                        urlString: nil,
+                        side: layout.avatarImageSide,
+                        pixelSize: VideoDetailActionStrip.Metrics.avatarPixelSize,
+                        showsShadow: false,
+                        showsBorder: false
+                    )
+                    .accessibilityHidden(true)
+                }
+            }
             .frame(width: layout.avatarColumnWidth, height: layout.rowHeight)
-
-            VideoDetailActionStripFollowControl(
-                isFollowing: model.isFollowing,
-                canFollow: (model.owner?.mid ?? 0) > 0,
-                isMutating: model.isMutatingFollow,
-                action: onFollow,
-                usesPlainStyle: usesPlainStyle,
-                height: layout.followHeight
-            )
-            .frame(width: layout.followColumnWidth, height: layout.rowHeight)
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "点赞",
@@ -39,6 +45,7 @@ struct VideoDetailActionStripButtonRow: View {
                 usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .accessibilityIdentifier("video.detail.like")
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "投币",
@@ -49,6 +56,7 @@ struct VideoDetailActionStripButtonRow: View {
                 usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .accessibilityIdentifier("video.detail.coin")
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: model.isFavorited ? "已收藏" : "收藏",
@@ -59,6 +67,7 @@ struct VideoDetailActionStripButtonRow: View {
                 usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .accessibilityIdentifier("video.detail.favorite")
 
             VideoDetailActionStripShareButton(
                 shareURL: model.shareURL,
@@ -68,6 +77,7 @@ struct VideoDetailActionStripButtonRow: View {
                 usesPlainStyle: usesPlainStyle
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
+            .accessibilityIdentifier("video.detail.share")
         }
     }
 

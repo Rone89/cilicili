@@ -240,6 +240,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.experimental.videoDetailOwnerMenu.v1",
         "cc.bili.playback.danmakuStageTransitionExperimentEnabled.v1",
         "cc.bili.playback.metalDanmakuStageTransitionExperimentEnabled.v1",
         "cc.bili.display.mineSettingsGroupingExperimentEnabled.v1",

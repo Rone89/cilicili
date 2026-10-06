@@ -99,19 +99,17 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertEqual(LibraryStore(userDefaults: defaults).videoDetailActionButtonStyle, .plain)
     }
 
-    func testVideoDetailInlineActionsPlainLayoutUsesExpandedTouchTarget() {
-        let plainLayout = VideoDetailActionStripLayout(
-            contentWidth: 390,
-            usesPlainStyle: true
+    func testVideoDetailInlineActionsUseExpandedTouchTarget() {
+        let layout = VideoDetailActionStripLayout(
+            contentWidth: 390
         )
 
-        XCTAssertEqual(plainLayout.rowHeight, 44)
-        XCTAssertEqual(plainLayout.actionLabelSide, 32)
-        XCTAssertEqual(plainLayout.avatarImageSide, 44)
-        XCTAssertEqual(plainLayout.columnWidth, 44)
-        XCTAssertEqual(plainLayout.followColumnWidth, 64)
-        XCTAssertEqual(plainLayout.columnSpacing, (390 - 44 * 5 - 64) / 5)
-        XCTAssertGreaterThan(plainLayout.rowHeight, VideoDetailActionStrip.Metrics.rowHeight)
+        XCTAssertEqual(layout.rowHeight, 44)
+        XCTAssertEqual(layout.actionLabelSide, 32)
+        XCTAssertEqual(layout.avatarImageSide, 44)
+        XCTAssertEqual(layout.columnWidth, 44)
+        XCTAssertEqual(layout.columnSpacing, (390 - 44 * 5) / 4)
+        XCTAssertEqual(layout.rowHeight, VideoDetailActionStrip.Metrics.rowHeight)
     }
 
     func testRetiredVideoDetailExperimentPreferencesAreCleared() {

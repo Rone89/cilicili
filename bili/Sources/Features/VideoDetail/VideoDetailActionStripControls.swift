@@ -31,16 +31,11 @@ struct VideoDetailActionStripShareButton: View {
                 VideoDetailActionStripIconLabel(
                     systemImage: "square.and.arrow.up",
                     foregroundStyle: usesPlainStyle ? .secondary : .primary,
-                    side: usesPlainStyle
-                        ? VideoDetailActionStrip.Metrics.plainActionLabelSide
-                        : VideoDetailActionStrip.Metrics.actionLabelSide,
-                    iconSize: usesPlainStyle
-                        ? VideoDetailActionStrip.Metrics.plainIconSize
-                        : VideoDetailActionStrip.Metrics.iconSize
+                    side: VideoDetailActionStrip.Metrics.actionLabelSide,
+                    iconSize: VideoDetailActionStrip.Metrics.iconSize
                 )
             }
             .videoDetailActionStripButtonAppearance(
-                shape: .circle,
                 usesPlainStyle: usesPlainStyle,
                 tint: usesPlainStyle ? .secondary : nil
             )

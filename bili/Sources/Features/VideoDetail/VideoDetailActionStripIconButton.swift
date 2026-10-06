@@ -29,16 +29,11 @@ struct VideoDetailActionStripIconButton: View {
             VideoDetailActionStripIconLabel(
                 systemImage: systemImage,
                 foregroundStyle: foregroundStyle,
-                side: usesPlainStyle
-                    ? VideoDetailActionStrip.Metrics.plainActionLabelSide
-                    : VideoDetailActionStrip.Metrics.actionLabelSide,
-                iconSize: usesPlainStyle
-                    ? VideoDetailActionStrip.Metrics.plainIconSize
-                    : VideoDetailActionStrip.Metrics.iconSize
+                side: VideoDetailActionStrip.Metrics.actionLabelSide,
+                iconSize: VideoDetailActionStrip.Metrics.iconSize
             )
         }
         .videoDetailActionStripButtonAppearance(
-            shape: .circle,
             usesPlainStyle: usesPlainStyle,
             tint: usesPlainStyle ? foregroundStyle : nil
         )
@@ -50,73 +45,32 @@ struct VideoDetailActionStripIconButton: View {
     }
 }
 
-enum VideoDetailActionStripButtonShape {
-    case circle
-    case capsule
-}
-
 private struct VideoDetailActionStripButtonAppearanceModifier: ViewModifier {
-    let shape: VideoDetailActionStripButtonShape
     let usesPlainStyle: Bool
-    let prominent: Bool
     let tint: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if usesPlainStyle {
-            switch shape {
-            case .circle:
-                content
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.circle)
-                    .controlSize(.regular)
-                    .tint(tint ?? .secondary)
-            case .capsule:
-                if prominent {
-                    content
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.regular)
-                        .tint(tint ?? .secondary)
-                } else {
-                    content
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.regular)
-                        .tint(tint ?? .secondary)
-                }
-            }
+            content
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
+                .tint(tint ?? .secondary)
         } else {
-            switch shape {
-            case .circle:
-                content
-                    .buttonBorderShape(.circle)
-                    .controlSize(.mini)
-                    .biliGlassButtonStyle(prominent: prominent)
-            case .capsule:
-                content
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.mini)
-                    .biliGlassButtonStyle(prominent: prominent)
-            }
+            content
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
+                .biliGlassButtonStyle()
         }
     }
 }
 
 extension View {
     func videoDetailActionStripButtonAppearance(
-        shape: VideoDetailActionStripButtonShape,
         usesPlainStyle: Bool,
-        prominent: Bool = false,
         tint: Color? = nil
     ) -> some View {
-        modifier(
-            VideoDetailActionStripButtonAppearanceModifier(
-                shape: shape,
-                usesPlainStyle: usesPlainStyle,
-                prominent: prominent,
-                tint: tint
-            )
-        )
+        modifier(VideoDetailActionStripButtonAppearanceModifier(usesPlainStyle: usesPlainStyle, tint: tint))
     }
 }
