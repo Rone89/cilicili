@@ -76,6 +76,7 @@ cp Config/Signing.local.env.example Config/Signing.local.env
 - [PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)
 - [MiniBili](https://github.com/ResistanceTo/MiniBili-WEB)
 - [PiliPod](https://github.com/BPTPW/PiliPod)
+- [DanmakuKit](https://github.com/qyz777/DanmakuKit)
 
 ## 许可证
 
