@@ -1027,6 +1027,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             }
         }
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
+        // Render the glass with the same SwiftUI container/visibility as the other controls.
+        .biliPlayerClearGlass(interactive: true, in: Circle())
         .frame(width: 44, height: controlMetrics.controlHeight, alignment: .trailing)
         .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
         .accessibilityLabel("更多播放设置")
@@ -1126,7 +1128,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private var horizontalControlsPadding: CGFloat {
-        usesFullscreenChromeSpacing ? 14 : 10
+        20
     }
 
     private func fullscreenSafeAreaInsets() -> UIEdgeInsets {
@@ -3005,7 +3007,8 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
     }
 
     private var configuration: UIButton.Configuration {
-        var configuration = UIButton.Configuration.clearGlass()
+        // The owning SwiftUI view supplies the glass; UIKit only owns touch delivery.
+        var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .white
         configuration.contentInsets = .zero
         return configuration

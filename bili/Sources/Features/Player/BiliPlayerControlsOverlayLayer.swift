@@ -88,7 +88,7 @@ struct BiliPlayerControlsOverlayLayer: View {
     }
 
     private var horizontalControlsPadding: CGFloat {
-        usesFullscreenChromeSpacing ? 14 : 10
+        20
     }
 
     private var bottomControlsPadding: CGFloat {
