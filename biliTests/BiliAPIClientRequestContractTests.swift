@@ -2646,7 +2646,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             requestExpectation.fulfill()
             return Self.response(
                 for: request,
-                body: Self.videoItemResponse(bvid: "BV1aid", aid: 1003)
+                body: Self.videoItemResponse(bvid: "BV1aid", aid: 1003, attribute: 4096)
             )
         }
         defer { RequestContractURLProtocol.reset() }
@@ -2657,6 +2657,8 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         await fulfillment(of: [requestExpectation], timeout: 2)
 
         XCTAssertEqual(detail.bvid, "BV1aid")
+        XCTAssertTrue(detail.isSponsored)
+        XCTAssertEqual(recorder.requests.count, 1)
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/view")
         XCTAssertEqual(Self.queryValues(for: request), ["aid": "1003"])
@@ -3742,8 +3744,9 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         return PlayerPerformanceStore.shared.session(for: metricsID)?.startupSchedulerMessage ?? ""
     }
 
-    private nonisolated static func videoItemResponse(bvid: String, aid: Int) -> String {
-        #"{"code":0,"data":{"bvid":"\#(bvid)","aid":\#(aid),"title":"视频详情"}}"#
+    private nonisolated static func videoItemResponse(bvid: String, aid: Int, attribute: Int? = nil) -> String {
+        let attributeField = attribute.map { ",\"attribute\":\($0)" } ?? ""
+        return #"{"code":0,"data":{"bvid":"\#(bvid)","aid":\#(aid),"title":"视频详情"\#(attributeField)}}"#
     }
 
     private func cookieValues(in header: String?) -> [String: String] {

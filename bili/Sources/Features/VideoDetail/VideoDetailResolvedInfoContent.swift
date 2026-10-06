@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailResolvedInfoContent: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var store: VideoDetailDescriptionRenderStore
     @Binding var isExpanded: Bool
 
@@ -10,7 +11,11 @@ struct VideoDetailResolvedInfoContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            VideoDetailInfoTitleText(text: presentation.titleText, isExpanded: isExpanded)
+            VideoDetailInfoTitleText(
+                text: presentation.titleText,
+                isExpanded: isExpanded,
+                showsSponsoredBadge: libraryStore.videoDetailSponsoredBadgeExperimentEnabled && store.isSponsored
+            )
                 .commentCopyContextMenu(text: store.titleText, title: "复制标题")
 
             VideoDetailInfoMetadataRow(

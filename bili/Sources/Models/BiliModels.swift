@@ -142,10 +142,17 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     let recommendReason: String?
     let pgcSeasonID: Int?
     let pgcEpisodeID: Int?
+    let attribute: Int?
+
+    /// Bilibili archive attribute bit 12 identifies commercial promotion.
+    nonisolated var isSponsored: Bool {
+        guard let attribute, attribute >= 0 else { return false }
+        return (attribute & (1 << 12)) != 0
+    }
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, desc, duration, pubdate, owner, stat, cid, pages, dimension
-        case historyResumeTime, historyCID, recommendReason, pgcSeasonID, pgcEpisodeID
+        case historyResumeTime, historyCID, recommendReason, pgcSeasonID, pgcEpisodeID, attribute
     }
 
     init(
@@ -165,7 +172,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         historyCID: Int? = nil,
         recommendReason: String? = nil,
         pgcSeasonID: Int? = nil,
-        pgcEpisodeID: Int? = nil
+        pgcEpisodeID: Int? = nil,
+        attribute: Int? = nil
     ) {
         self.bvid = bvid
         self.aid = aid
@@ -184,6 +192,32 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         self.recommendReason = recommendReason
         self.pgcSeasonID = pgcSeasonID
         self.pgcEpisodeID = pgcEpisodeID
+        self.attribute = attribute
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            bvid: try container.decode(String.self, forKey: .bvid),
+            aid: try container.decodeIfPresent(Int.self, forKey: .aid),
+            title: try container.decode(String.self, forKey: .title),
+            pic: try container.decodeIfPresent(String.self, forKey: .pic),
+            desc: try container.decodeIfPresent(String.self, forKey: .desc),
+            duration: try container.decodeIfPresent(Int.self, forKey: .duration),
+            pubdate: try container.decodeIfPresent(Int.self, forKey: .pubdate),
+            owner: try container.decodeIfPresent(VideoOwner.self, forKey: .owner),
+            stat: try container.decodeIfPresent(VideoStat.self, forKey: .stat),
+            cid: try container.decodeIfPresent(Int.self, forKey: .cid),
+            pages: try container.decodeIfPresent([VideoPage].self, forKey: .pages),
+            dimension: try container.decodeIfPresent(VideoDimension.self, forKey: .dimension),
+            historyResumeTime: try container.decodeIfPresent(TimeInterval.self, forKey: .historyResumeTime),
+            historyCID: try container.decodeIfPresent(Int.self, forKey: .historyCID),
+            recommendReason: try container.decodeIfPresent(String.self, forKey: .recommendReason),
+            pgcSeasonID: try container.decodeIfPresent(Int.self, forKey: .pgcSeasonID),
+            pgcEpisodeID: try container.decodeIfPresent(Int.self, forKey: .pgcEpisodeID),
+            // A malformed optional attribute must not reject otherwise valid detail data.
+            attribute: try? container.decodeIfPresent(Int.self, forKey: .attribute)
+        )
     }
 
     nonisolated func mergingFilledValues(from fullDetail: VideoItem) -> VideoItem {
@@ -220,7 +254,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             historyCID: historyCID ?? fullDetail.historyCID,
             recommendReason: recommendReason ?? fullDetail.recommendReason,
             pgcSeasonID: pgcSeasonID ?? fullDetail.pgcSeasonID,
-            pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID
+            pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID,
+            attribute: fullDetail.attribute
         )
     }
 
