@@ -128,7 +128,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
-    @Published private(set) var metalDanmakuStageTransitionExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -144,7 +143,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var videoDetailAutoplayEnabled: Bool
     @Published private(set) var videoListenPlaybackOrder: VideoListenPlaybackOrder
     @Published private(set) var videoListenPlaylistSortOrder: VideoListenPlaylistSortOrder
-    @Published private(set) var cellularBiliTrafficCompatibilityExperimentEnabled: Bool
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountEnabled: Bool
@@ -204,8 +202,6 @@ final class LibraryStore: ObservableObject {
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
-    private static let metalDanmakuStageTransitionExperimentEnabledKey =
-        "cc.bili.playback.metalDanmakuStageTransitionExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -230,8 +226,6 @@ final class LibraryStore: ObservableObject {
     private static let videoDetailAutoplayEnabledKey = "cc.bili.videoDetail.autoplayEnabled.v1"
     private static let videoListenPlaybackOrderKey = "cc.bili.playback.videoListenPlaybackOrder.v1"
     private static let videoListenPlaylistSortOrderKey = "cc.bili.playback.videoListenPlaylistSortOrder.v1"
-    private static let cellularBiliTrafficCompatibilityExperimentEnabledKey = CellularBiliTrafficCompatibilityExperiment
-        .storageKey
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
@@ -246,6 +240,10 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.playback.danmakuStageTransitionExperimentEnabled.v1",
+        "cc.bili.playback.metalDanmakuStageTransitionExperimentEnabled.v1",
+        "cc.bili.display.mineSettingsGroupingExperimentEnabled.v1",
+        "cc.bili.playback.cellularBiliTrafficCompatibilityExperimentEnabled.v1",
         "cc.bili.playback.bilibiliResourceLoaderManifestExperimentEnabled.v1",
         "cc.bili.videoDetail.bottomHistoryBackButtonExperimentEnabled.v1",
         "cc.bili.experimental.videoDetailToolbarCommentComposer.v1",
@@ -597,8 +595,6 @@ final class LibraryStore: ObservableObject {
             self.danmakuSettings = .default
         }
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
-        self.metalDanmakuStageTransitionExperimentEnabled =
-            userDefaults.object(forKey: Self.metalDanmakuStageTransitionExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
@@ -633,10 +629,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.string(
                 forKey: Self.videoListenPlaylistSortOrderKey
             ).flatMap(VideoListenPlaylistSortOrder.init(rawValue:)) ?? .normal
-        self.cellularBiliTrafficCompatibilityExperimentEnabled =
-            userDefaults.object(
-                forKey: Self.cellularBiliTrafficCompatibilityExperimentEnabledKey
-            ) as? Bool ?? CellularBiliTrafficCompatibilityExperiment.defaultIsEnabled
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         // Multi-account routing is now a regular account feature. Preserve the
@@ -1203,11 +1195,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
     }
 
-    func setMetalDanmakuStageTransitionExperimentEnabled(_ enabled: Bool) {
-        metalDanmakuStageTransitionExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.metalDanmakuStageTransitionExperimentEnabledKey)
-    }
-
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {
         playerPerformanceOverlayEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.playerPerformanceOverlayEnabledKey)
@@ -1267,14 +1254,6 @@ final class LibraryStore: ObservableObject {
     func setVideoListenPlaylistSortOrder(_ order: VideoListenPlaylistSortOrder) {
         videoListenPlaylistSortOrder = order
         userDefaults.set(order.rawValue, forKey: Self.videoListenPlaylistSortOrderKey)
-    }
-
-    func setCellularBiliTrafficCompatibilityExperimentEnabled(_ isEnabled: Bool) {
-        cellularBiliTrafficCompatibilityExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.cellularBiliTrafficCompatibilityExperimentEnabledKey)
-        Task {
-            await LocalHLSBridge.clearWarmupCache()
-        }
     }
 
     func setIncognitoModeEnabled(_ isEnabled: Bool) {

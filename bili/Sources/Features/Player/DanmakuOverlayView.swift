@@ -6,7 +6,6 @@ struct DanmakuOverlayView: UIViewRepresentable {
     fileprivate struct ConfigurationSignature: Equatable {
         let itemsRevision: Int
         let metalRendererEnabled: Bool
-        let stageTransitionExperimentEnabled: Bool
         let videoAspectRatioMilli: Int?
         let currentTimeBucket: Int?
         let isPlaying: Bool
@@ -21,7 +20,6 @@ struct DanmakuOverlayView: UIViewRepresentable {
         init(
             itemsRevision: Int,
             metalRendererEnabled: Bool,
-            stageTransitionExperimentEnabled: Bool,
             videoAspectRatio: CGFloat?,
             currentTime: TimeInterval,
             usesExternalClock: Bool,
@@ -36,7 +34,6 @@ struct DanmakuOverlayView: UIViewRepresentable {
         ) {
             self.itemsRevision = itemsRevision
             self.metalRendererEnabled = metalRendererEnabled
-            self.stageTransitionExperimentEnabled = stageTransitionExperimentEnabled
             videoAspectRatioMilli = videoAspectRatio.flatMap { $0.isFinite ? Int(($0 * 1_000).rounded()) : nil }
             // When a PlayerPlaybackClock is bound, UIKit receives time ticks directly.
             // Without one, keep a coarse time bucket so live-style callers can resync.
@@ -53,7 +50,6 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     let metalRendererEnabled: Bool
-    let stageTransitionExperimentEnabled: Bool
     let videoAspectRatio: CGFloat?
     let logicalCanvasSize: CGSize?
     let items: [DanmakuItem]
@@ -88,11 +84,9 @@ struct DanmakuOverlayView: UIViewRepresentable {
         onPlaybackTime: ((TimeInterval, Bool) -> Void)? = nil,
         metalRendererEnabled: Bool = false,
         logicalCanvasSize: CGSize? = nil,
-        stageTransitionExperimentEnabled: Bool = false,
         videoAspectRatio: CGFloat? = nil
     ) {
         self.metalRendererEnabled = metalRendererEnabled
-        self.stageTransitionExperimentEnabled = stageTransitionExperimentEnabled
         self.videoAspectRatio = videoAspectRatio
         self.logicalCanvasSize = logicalCanvasSize
         self.items = items
@@ -118,8 +112,7 @@ struct DanmakuOverlayView: UIViewRepresentable {
     func makeUIView(context: Context) -> DanmakuRendererHostView {
         let view = DanmakuRendererHostView(frame: .zero)
         view.setLogicalCanvasSize(logicalCanvasSize)
-        view.selectRenderer(metalEnabled: metalRendererEnabled,
-                            stageTransitionExperimentEnabled: stageTransitionExperimentEnabled)
+        view.selectRenderer(metalEnabled: metalRendererEnabled)
         view.setLayoutTransitioning(isLayoutTransitioning)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
@@ -143,16 +136,9 @@ struct DanmakuOverlayView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: DanmakuRendererHostView, context: Context) {
-        if metalRendererEnabled && stageTransitionExperimentEnabled {
-            uiView.selectRenderer(metalEnabled: true, stageTransitionExperimentEnabled: true)
-            if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
-            uiView.setLogicalCanvasSize(logicalCanvasSize)
-        } else {
-            uiView.setLogicalCanvasSize(logicalCanvasSize)
-            uiView.selectRenderer(metalEnabled: metalRendererEnabled,
-                                  stageTransitionExperimentEnabled: false)
-            if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
-        }
+        uiView.selectRenderer(metalEnabled: metalRendererEnabled)
+        if isLayoutTransitioning { uiView.setLayoutTransitioning(true) }
+        uiView.setLogicalCanvasSize(logicalCanvasSize)
         let resolvedCurrentTime = playbackClock?.currentTime ?? currentTime
         let signature = configurationSignature(resolvedCurrentTime: resolvedCurrentTime)
         if context.coordinator.shouldApply(signature) {
@@ -182,7 +168,6 @@ struct DanmakuOverlayView: UIViewRepresentable {
         ConfigurationSignature(
             itemsRevision: itemsRevision,
             metalRendererEnabled: metalRendererEnabled,
-            stageTransitionExperimentEnabled: stageTransitionExperimentEnabled,
             videoAspectRatio: videoAspectRatio,
             currentTime: resolvedCurrentTime,
             usesExternalClock: playbackClock != nil,

@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class MetalDanmakuStageTransitionTests: XCTestCase {
     func testAspectFitMapsLogicalStageIntoTargetWithoutStretching() {
-        let transform = MetalDanmakuStageTransform.aspectFit(
+        let transform = DanmakuStageTransform.aspectFit(
             from: CGSize(width: 900, height: 500),
             into: CGSize(width: 500, height: 900)
         )
@@ -21,7 +21,7 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
 
     func testVideoViewportUsesActualAspectFitRectAndPreservesOrigin() {
         let bounds = CGRect(x: 12, y: 24, width: 500, height: 900)
-        let viewport = MetalDanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: 16.0 / 9.0)
+        let viewport = DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: 16.0 / 9.0)
 
         XCTAssertEqual(viewport.minX, 12, accuracy: 0.001)
         XCTAssertEqual(viewport.minY, 24 + (900 - 500 / (16.0 / 9.0)) / 2, accuracy: 0.001)
@@ -31,9 +31,9 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
 
     func testUnknownOrInvalidVideoAspectFallsBackToBounds() {
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 400)
-        XCTAssertEqual(MetalDanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: nil), bounds)
-        XCTAssertEqual(MetalDanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: .nan), bounds)
-        XCTAssertEqual(MetalDanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: 0), bounds)
+        XCTAssertEqual(DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: nil), bounds)
+        XCTAssertEqual(DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: .nan), bounds)
+        XCTAssertEqual(DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: 0), bounds)
     }
 
     func testFontNormalizationConvergesInBothOrientationDirectionsWithoutResettingMotion() throws {
@@ -57,7 +57,7 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
             )
             timeline.replaceItems([item], at: 1) { _ in oldLayout.size }
             let before = try XCTUnwrap(timeline.active.first)
-            let transform = MetalDanmakuStageTransform.aspectFit(from: testCase.source,
+            let transform = DanmakuStageTransform.aspectFit(from: testCase.source,
                                                                   into: testCase.target)
             timeline.rebaseActive(using: transform, at: 1)
             let rebased = try XCTUnwrap(timeline.active.first)

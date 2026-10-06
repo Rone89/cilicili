@@ -159,28 +159,67 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertTrue(host.subviews.isEmpty)
     }
 
-    func testExperimentDefaultsOffAndPersistsAcrossStoreRecreation() {
+    func testMetalRendererExperimentDefaultsOffAndPersistsAcrossStoreRecreation() {
         let suite = "metal-tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
         XCTAssertFalse(store.metalDanmakuRendererExperimentEnabled)
-        XCTAssertFalse(store.metalDanmakuStageTransitionExperimentEnabled)
         store.setMetalDanmakuRendererExperimentEnabled(true)
         XCTAssertTrue(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
-        store.setMetalDanmakuStageTransitionExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).metalDanmakuStageTransitionExperimentEnabled)
         store.setMetalDanmakuRendererExperimentEnabled(false)
         XCTAssertFalse(LibraryStore(userDefaults: defaults).metalDanmakuRendererExperimentEnabled)
-        store.setMetalDanmakuStageTransitionExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).metalDanmakuStageTransitionExperimentEnabled)
+    }
+
+    func testDanmakuKitStageTransitionPreservesSceneAndResynchronizesOnFinalCanvas() throws {
+        let diagnostics = DanmakuRendererDiagnostics.shared
+        diagnostics.start()
+        let host = DanmakuRendererHostView(frame: CGRect(x: 0, y: 0, width: 900, height: 500))
+        defer { host.stop(); diagnostics.stop() }
+        host.debugDiagnostics = diagnostics
+        host.setLogicalCanvasSize(CGSize(width: 900, height: 500))
+        host.selectRenderer(metalEnabled: false)
+        host.layoutIfNeeded()
+        let child = try XCTUnwrap(host.subviews.first as? DanmakuKitOverlayView)
+        child.layoutIfNeeded()
+        host.apply(configuration: configuration(items: items(count: 10), videoAspectRatio: 1.8))
+
+        let initialRebuilds = diagnostics.danmakuKitSummary.rebuilds
+        let initialActiveCount = diagnostics.danmakuKitSummary.activeItems
+        XCTAssertGreaterThan(initialActiveCount, 0)
+        let originalBounds = child.bounds
+
+        host.setLayoutTransitioning(true)
+        host.frame = CGRect(x: 0, y: 0, width: 500, height: 900)
+        host.setLogicalCanvasSize(CGSize(width: 500, height: 500 / 1.8))
+        host.apply(configuration: configuration(items: items(count: 10), videoAspectRatio: 1.8))
+        host.layoutIfNeeded()
+        child.layoutIfNeeded()
+
+        XCTAssertTrue(host.subviews.first === child)
+        XCTAssertEqual(child.bounds, originalBounds, "DanmakuKit must retain its source stage during the transition")
+        XCTAssertEqual(child.transform.a, child.transform.d, accuracy: 0.001)
+        XCTAssertEqual(child.transform.a, 0.5 / 0.9, accuracy: 0.01)
+        XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, initialRebuilds,
+                       "Viewport animation must not repeatedly rebuild or reassign tracks")
+        XCTAssertEqual(diagnostics.danmakuKitSummary.activeItems, initialActiveCount)
+
+        host.setLayoutTransitioning(false)
+        child.layoutIfNeeded()
+
+        XCTAssertEqual(child.transform, .identity)
+        XCTAssertEqual(child.bounds.size.width, 500, accuracy: 0.01)
+        XCTAssertEqual(child.bounds.size.height, 500 / 1.8, accuracy: 0.01)
+        XCTAssertEqual(diagnostics.danmakuKitSummary.rebuilds, initialRebuilds + 1)
+        XCTAssertEqual(diagnostics.danmakuKitSummary.lastRebuildReason, "stage-transition")
+        XCTAssertGreaterThan(diagnostics.danmakuKitSummary.activeItems, 0,
+                             "Existing comments must be reconstructed at their current media-time progress")
     }
 
     func testMetalStageTransitionKeepsActiveEntriesAndPresentsContinuously() throws {
         guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
         defer { view.stop() }
         view.frame = CGRect(x: 0, y: 0, width: 900, height: 500)
-        view.setStageTransitionExperimentEnabled(true)
         view.layoutIfNeeded()
         let fixture = items(count: 10) + [
             DanmakuItem(id: "stage-top", time: 0, mode: 5, fontSize: 25,
@@ -213,7 +252,7 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertEqual(view.debugRenderer.atlas.textures.count, atlasPages)
 
         let duringFrames = view.debugPresentedFrames(at: 1.5)
-        let targetViewport = MetalDanmakuVideoViewport.aspectFit(
+        let targetViewport = DanmakuVideoViewport.aspectFit(
             in: view.bounds, aspectRatio: 1.8
         )
         for id in idsBefore {
@@ -278,7 +317,6 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
         defer { view.stop() }
         view.frame = CGRect(x: 0, y: 0, width: 900, height: 500)
-        view.setStageTransitionExperimentEnabled(true)
         view.layoutIfNeeded()
         let fixture = items(count: 20)
         view.apply(configuration: configuration(items: fixture, videoAspectRatio: 1.8))
@@ -345,7 +383,8 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
             view.synchronizePlaybackTime(1, force: true)
             XCTAssertEqual(view.debugRenderer.atlas.rasterizationCount, rasterizations)
             view.setLayoutTransitioning(true)
-            XCTAssertTrue(view.metalView.isHidden)
+            XCTAssertTrue(view.debugStageTransitionActive)
+            XCTAssertFalse(view.metalView.isHidden)
             view.frame.size = CGSize(width: 400, height: 900)
             view.layoutIfNeeded()
             view.setLayoutTransitioning(false)

@@ -94,20 +94,6 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.metalDanmaku")
 
-            Toggle(isOn: Binding(
-                get: { libraryStore.metalDanmakuStageTransitionExperimentEnabled },
-                set: { libraryStore.setMetalDanmakuStageTransitionExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("Metal 弹幕舞台过渡实验", systemImage: "arrow.up.left.and.arrow.down.right")
-                    Text("横竖屏和全屏切换时保留弹幕并缩放逻辑舞台；需同时开启 Metal 弹幕渲染实验。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.metalDanmakuStageTransition")
-
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
@@ -147,21 +133,6 @@ struct MineDeveloperDiagnosticsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("可播放降级限时实验", systemImage: "timer")
                     Text("已有可播放低档位后，完整取流最多再等待 650ms。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(
-                isOn: Binding(
-                    get: { libraryStore.cellularBiliTrafficCompatibilityExperimentEnabled },
-                    set: { libraryStore.setCellularBiliTrafficCompatibilityExperimentEnabled($0) }
-                )
-            ) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("蜂窝网络定向流量兼容实验", systemImage: "antenna.radiowaves.left.and.right")
-                    Text("使用手机流量时优先 B 站域名，无法保证套餐实际免流。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

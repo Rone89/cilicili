@@ -33,7 +33,6 @@ struct VideoDetailDanmakuOverlay: View {
             onPlaybackTime: onPlaybackTime,
             metalRendererEnabled: libraryStore.metalDanmakuRendererExperimentEnabled,
             logicalCanvasSize: logicalCanvasSize,
-            stageTransitionExperimentEnabled: libraryStore.metalDanmakuStageTransitionExperimentEnabled,
             videoAspectRatio: videoAspectRatio
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)

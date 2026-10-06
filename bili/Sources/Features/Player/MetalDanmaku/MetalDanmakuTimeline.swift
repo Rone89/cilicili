@@ -85,7 +85,7 @@ final class MetalDanmakuTimeline {
 
     /// Rebases active entries once after a stage transition. Media timestamps and
     /// lane identities are preserved; only their logical geometry is transformed.
-    func rebaseActive(using transform: MetalDanmakuStageTransform, at time: TimeInterval) {
+    func rebaseActive(using transform: DanmakuStageTransform, at time: TimeInterval) {
         guard transform.scale.isFinite, transform.scale > 0,
               transform.translation.x.isFinite, transform.translation.y.isFinite else { return }
         active = active.compactMap { entry in

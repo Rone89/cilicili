@@ -3,6 +3,8 @@ import SwiftUI
 struct MineDisplaySettingsSection: View {
     @ObservedObject var libraryStore: LibraryStore
     @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
+    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
+    private var commentLongPressActionsEnabled = false
 
     var body: some View {
         Section("显示") {
@@ -156,6 +158,17 @@ struct MineDisplaySettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
+
+            Toggle(isOn: $commentLongPressActionsEnabled) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("长按评论显示操作", systemImage: "hand.point.up.left")
+
+                    Text("开启后，轻点评论不会打开输入框；长按可选择“复制评论”或“回复”。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             Toggle(
                 isOn: Binding(

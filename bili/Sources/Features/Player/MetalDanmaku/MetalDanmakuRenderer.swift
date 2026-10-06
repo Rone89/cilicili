@@ -60,7 +60,7 @@ final class MetalDanmakuRenderer {
               let vertex = library.makeFunction(name: "danmakuGlyphVertex"),
               let fragment = library.makeFunction(name: "danmakuGlyphFragment"),
               let pipeline = Self.makePipeline(device: device, vertex: vertex, fragment: fragment,
-                                               label: "Experimental danmaku glyph batch") else { return nil }
+                                               label: "Danmaku glyph batch") else { return nil }
         let sampling = MTLSamplerDescriptor()
         sampling.minFilter = .linear
         sampling.magFilter = .linear
@@ -76,7 +76,7 @@ final class MetalDanmakuRenderer {
         self.sampler = sampler
     }
 
-    /// Keep startup work unchanged unless the independent stage experiment is enabled.
+    /// Build the stage-aware pipeline once when this renderer is created.
     func prepareStageTransitionPipeline() -> Bool {
         if stageTransitionPipeline != nil { return true }
         guard let stageTransitionVertexFunction else { return false }
@@ -84,7 +84,7 @@ final class MetalDanmakuRenderer {
             device: device,
             vertex: stageTransitionVertexFunction,
             fragment: fragmentFunction,
-            label: "Experimental danmaku stage-transition glyph batch"
+            label: "Danmaku stage-transition glyph batch"
         )
         return stageTransitionPipeline != nil
     }
@@ -118,10 +118,9 @@ final class MetalDanmakuRenderer {
 
     /// Only called on entry/expiry/rebuild. Motion itself stays entirely in the shader.
     func update(entries: [MetalDanmakuTimeline.Entry], layouts: [String: DanmakuGlyphLayout],
-                opacity: Double, stageTransitionEnabled: Bool = false) {
+                opacity: Double) {
         var pages = [[DanmakuGlyphInstance]](repeating: [], count: atlas.textures.count)
-        var stagePages = stageTransitionEnabled
-            ? [[DanmakuStageGlyphInstance]](repeating: [], count: atlas.textures.count) : []
+        var stagePages = [[DanmakuStageGlyphInstance]](repeating: [], count: atlas.textures.count)
         activeCount = 0
         for entry in entries {
             guard let layout = layouts[entry.item.id] else { continue }
@@ -141,33 +140,31 @@ final class MetalDanmakuRenderer {
                     motion: motion, geometry: geometry, uv: glyph.uvRect, color: color
                 ))
 
-                if stageTransitionEnabled {
-                    let horizontalAnchor: CGFloat = entry.item.isScrolling ? 0 : 0.5
-                    let verticalAnchor: CGFloat = entry.item.isBottomAnchored ? 1 : 0
-                    let stageMotion = SIMD4(
-                        Float(entry.startX + glyph.offset.x * scale
-                              + (1 - scale) * layout.size.width * horizontalAnchor),
-                        Float(entry.y + glyph.offset.y * scale
-                              + (1 - scale) * layout.size.height * verticalAnchor),
-                        Float(entry.item.time), Float(entry.velocity)
+                let horizontalAnchor: CGFloat = entry.item.isScrolling ? 0 : 0.5
+                let verticalAnchor: CGFloat = entry.item.isBottomAnchored ? 1 : 0
+                let stageMotion = SIMD4(
+                    Float(entry.startX + glyph.offset.x * scale
+                          + (1 - scale) * layout.size.width * horizontalAnchor),
+                    Float(entry.y + glyph.offset.y * scale
+                          + (1 - scale) * layout.size.height * verticalAnchor),
+                    Float(entry.item.time), Float(entry.velocity)
+                )
+                let stageGeometry = SIMD4(Float(glyph.size.width * scale),
+                                          Float(glyph.size.height * scale),
+                                          Float(entry.endTime), Float(scale))
+                stagePages[glyph.pageIndex].append(DanmakuStageGlyphInstance(
+                    motion: stageMotion,
+                    geometry: stageGeometry,
+                    uv: glyph.uvRect,
+                    color: color,
+                    fontTransition: SIMD4(
+                        Float(glyph.offset.x - layout.size.width * horizontalAnchor),
+                        Float(glyph.offset.y - layout.size.height * verticalAnchor),
+                        Float((entry.fontScaleSettleStartHostTime ?? 0)
+                            .truncatingRemainder(dividingBy: Self.fontTransitionClockPeriod)),
+                        Float(entry.fontScaleSettleDuration)
                     )
-                    let stageGeometry = SIMD4(Float(glyph.size.width * scale),
-                                              Float(glyph.size.height * scale),
-                                              Float(entry.endTime), Float(scale))
-                    stagePages[glyph.pageIndex].append(DanmakuStageGlyphInstance(
-                        motion: stageMotion,
-                        geometry: stageGeometry,
-                        uv: glyph.uvRect,
-                        color: color,
-                        fontTransition: SIMD4(
-                            Float(glyph.offset.x - layout.size.width * horizontalAnchor),
-                            Float(glyph.offset.y - layout.size.height * verticalAnchor),
-                            Float((entry.fontScaleSettleStartHostTime ?? 0)
-                                .truncatingRemainder(dividingBy: Self.fontTransitionClockPeriod)),
-                            Float(entry.fontScaleSettleDuration)
-                        )
-                    ))
-                }
+                ))
             }
         }
         instances.removeAll(keepingCapacity: true)
@@ -176,21 +173,11 @@ final class MetalDanmakuRenderer {
             batches.append((page, instances.count, glyphs.count))
             instances.append(contentsOf: glyphs)
         }
-        stageInstances.removeAll(keepingCapacity: stageTransitionEnabled)
-        if stageTransitionEnabled {
-            for (page, glyphs) in stagePages.enumerated() where !glyphs.isEmpty {
-                stageInstances.append(contentsOf: glyphs)
-            }
+        stageInstances.removeAll(keepingCapacity: true)
+        for (page, glyphs) in stagePages.enumerated() where !glyphs.isEmpty {
+            stageInstances.append(contentsOf: glyphs)
         }
         revision &+= 1
-    }
-
-    func discardStageTransitionBuffers() {
-        stageInstances.removeAll(keepingCapacity: false)
-        for slot in slots {
-            slot.stageBuffer = nil
-            slot.stageVersion = -1
-        }
     }
 
     #if DEBUG

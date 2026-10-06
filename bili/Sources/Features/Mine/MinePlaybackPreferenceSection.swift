@@ -101,10 +101,7 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
         let networkTitle = libraryStore.playbackNetworkAddressFamilyPreference == .automatic
             ? "自动网络"
             : libraryStore.playbackNetworkAddressFamilyPreference.title
-        let compatibilityTitle = libraryStore.cellularBiliTrafficCompatibilityExperimentEnabled
-            ? "B站域名优先"
-            : "常规线路"
-        return "\(cdnTitle) · \(networkTitle) · \(compatibilityTitle)"
+        return "\(cdnTitle) · \(networkTitle) · 蜂窝 B 站域名优先"
     }
 
     private var playbackAutoOptimizationPicker: some View {

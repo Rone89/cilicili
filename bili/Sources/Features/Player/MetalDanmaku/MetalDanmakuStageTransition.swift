@@ -1,10 +1,10 @@
 import CoreGraphics
 
-struct MetalDanmakuStageTransform: Equatable {
+struct DanmakuStageTransform: Equatable {
     let scale: CGFloat
     let translation: CGPoint
 
-    static let identity = MetalDanmakuStageTransform(scale: 1, translation: .zero)
+    static let identity = DanmakuStageTransform(scale: 1, translation: .zero)
 
     static func aspectFit(from source: CGSize, into target: CGSize) -> Self {
         guard source.width.isFinite, source.height.isFinite,
@@ -36,7 +36,7 @@ struct MetalDanmakuStageTransform: Equatable {
     }
 }
 
-enum MetalDanmakuVideoViewport {
+enum DanmakuVideoViewport {
     static func aspectFit(in bounds: CGRect, aspectRatio: CGFloat?) -> CGRect {
         guard bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0,
@@ -56,7 +56,7 @@ enum MetalDanmakuVideoViewport {
 }
 
 struct MetalDanmakuRenderStage {
-    let transform: MetalDanmakuStageTransform
+    let transform: DanmakuStageTransform
     /// The actual aspect-fit video rectangle in the MTKView's point coordinates.
     let videoViewport: CGRect
 }

@@ -1,9 +1,6 @@
 import Foundation
 
-nonisolated enum CellularBiliTrafficCompatibilityExperiment {
-    static let storageKey = "cc.bili.playback.cellularBiliTrafficCompatibilityExperimentEnabled.v1"
-    static let defaultIsEnabled = false
-
+nonisolated enum CellularBiliTrafficCompatibility {
     enum HostClassification: String, Equatable, Sendable {
         case bili
         case external
@@ -22,45 +19,23 @@ nonisolated enum CellularBiliTrafficCompatibilityExperiment {
     }
 
     struct RuntimeState: Equatable, Sendable {
-        let isEnabled: Bool
         let isCellularNetwork: Bool
 
-        static let inactive = RuntimeState(isEnabled: false, isCellularNetwork: false)
+        static let inactive = RuntimeState(isCellularNetwork: false)
 
-        var isActive: Bool {
-            isEnabled && isCellularNetwork
-        }
+        var isActive: Bool { isCellularNetwork }
 
         var diagnosticSummary: String {
-            if !isEnabled {
-                return "off"
-            }
-            if !isCellularNetwork {
-                return "on waitingForCellular"
-            }
-            return "on biliDomainFirst"
+            isActive ? "cellularBiliDomainsFirst" : "originalOrder"
         }
 
         var userFacingStatus: String {
-            if !isEnabled {
-                return "未开启"
-            }
-            if !isCellularNetwork {
-                return "已开启，等待使用蜂窝网络"
-            }
-            return "已启用 B站域名优先"
+            isActive ? "蜂窝网络：优先 B 站域名" : "Wi-Fi/其他网络：保持原线路排序"
         }
     }
 
     static var currentState: RuntimeState {
-        RuntimeState(
-            isEnabled: stored(),
-            isCellularNetwork: NetworkPathSnapshot.shared.usesCellular
-        )
-    }
-
-    static func stored(in userDefaults: UserDefaults = .standard) -> Bool {
-        userDefaults.object(forKey: storageKey) as? Bool ?? defaultIsEnabled
+        RuntimeState(isCellularNetwork: NetworkPathSnapshot.shared.usesCellular)
     }
 
     static func classify(host: String?) -> HostClassification {
@@ -71,12 +46,8 @@ nonisolated enum CellularBiliTrafficCompatibilityExperiment {
         return .external
     }
 
-    static func prioritizedURLs(
-        _ urls: [URL],
-        isEnabled: Bool,
-        isCellularNetwork: Bool
-    ) -> [URL] {
-        guard isEnabled, isCellularNetwork else { return urls }
+    static func prioritizedURLs(_ urls: [URL], isCellularNetwork: Bool) -> [URL] {
+        guard isCellularNetwork else { return urls }
 
         var biliURLs = [URL]()
         var fallbackURLs = [URL]()
@@ -91,12 +62,7 @@ nonisolated enum CellularBiliTrafficCompatibilityExperiment {
     }
 
     static func prioritizedURLsForCurrentEnvironment(_ urls: [URL]) -> [URL] {
-        let state = currentState
-        return prioritizedURLs(
-            urls,
-            isEnabled: state.isEnabled,
-            isCellularNetwork: state.isCellularNetwork
-        )
+        prioritizedURLs(urls, isCellularNetwork: currentState.isCellularNetwork)
     }
 
     static func sourceHostSummary(videoHost: String?, audioHost: String?) -> String {

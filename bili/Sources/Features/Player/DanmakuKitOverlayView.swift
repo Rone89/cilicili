@@ -23,7 +23,6 @@ final class DanmakuKitOverlayView: UIView {
     private var topInset: CGFloat = 0
     private var bottomInset: CGFloat = 0
     private var isLayoutTransitioning = false
-    private var needsLayoutRebuild = false
     private var displayedUntil: [String: TimeInterval] = [:]
     private var emoteLoadTasks: [URL: Task<Void, Never>] = [:]
     private var lastLayoutSize = CGSize.zero
@@ -74,13 +73,13 @@ final class DanmakuKitOverlayView: UIView {
         super.layoutSubviews()
         let sizeChanged = abs(bounds.width - lastLayoutSize.width) > 1
             || abs(bounds.height - lastLayoutSize.height) > 1
-        configureRenderer()
+        if !isLayoutTransitioning {
+            configureRenderer()
+        }
         guard sizeChanged else { return }
         lastLayoutSize = bounds.size
         guard sizeIsUsable else { return }
-        if isLayoutTransitioning {
-            needsLayoutRebuild = true
-        } else if shouldRender {
+        if !isLayoutTransitioning, shouldRender {
             rebuildVisibleItems(at: effectivePlaybackTime(), reason: "viewport")
         }
     }
@@ -123,7 +122,12 @@ final class DanmakuKitOverlayView: UIView {
         settings = normalizedSettings
         topInset = max(0, newTopInset)
         bottomInset = max(0, newBottomInset)
-        configureRenderer()
+        let preservesStage = isLayoutTransitioning
+        if preservesStage {
+            configurePlaybackRate()
+        } else {
+            configureRenderer()
+        }
 
         let clockAdvanced = abs(currentTime - previousTime) >= 0.05
         if !hasPlaybackAnchor || clockAdvanced {
@@ -147,20 +151,20 @@ final class DanmakuKitOverlayView: UIView {
             return
         }
 
-        if isLayoutTransitioning {
-            if currentTime + 0.2 < previousEffectiveTime {
-                clearedThroughPlaybackTime = nil
-            }
-            clearDanmakuThrough(playbackTime)
-            needsLayoutRebuild = true
-            lastTimelineTime = playbackTime
-            updatePlaybackState()
-            return
-        }
-
         let jumped = hasPlaybackAnchor
             && (currentTime + 0.2 < previousEffectiveTime
                 || (clockAdvanced && abs(currentTime - previousEffectiveTime) > seekJumpThreshold))
+        if preservesStage {
+            if jumped {
+                clearedThroughPlaybackTime = nil
+                rebuildVisibleItems(at: playbackTime, reason: "stage-media-jump")
+            } else {
+                if itemsChanged { synchronizeNewlyLoadedItems(at: playbackTime) }
+                advanceTimeline(from: lastTimelineTime ?? previousEffectiveTime, to: playbackTime)
+            }
+            updatePlaybackState()
+            return
+        }
         if jumped {
             clearedThroughPlaybackTime = nil
         }
@@ -180,27 +184,14 @@ final class DanmakuKitOverlayView: UIView {
         guard isLayoutTransitioning != transitioning else { return }
         isLayoutTransitioning = transitioning
         if transitioning {
-            needsLayoutRebuild = false
-            clearDanmakuThrough(effectivePlaybackTime())
-            renderer.pause()
-            renderer.clean()
-            displayedUntil.removeAll(keepingCapacity: true)
             lastTimelineTime = effectivePlaybackTime()
-            diagnostics.recordDanmakuKitActiveItems(0)
             updateDisplayLinkState()
-            return
-        }
-        clearDanmakuThrough(effectivePlaybackTime())
-        guard needsLayoutRebuild || abs(bounds.width - lastLayoutSize.width) > 1
-                || abs(bounds.height - lastLayoutSize.height) > 1
-        else {
             updatePlaybackState()
             return
         }
-        needsLayoutRebuild = false
         lastLayoutSize = bounds.size
         configureRenderer()
-        rebuildVisibleItems(at: effectivePlaybackTime(), reason: "layout-transition")
+        rebuildVisibleItems(at: effectivePlaybackTime(), reason: "stage-transition")
     }
 
     func synchronizePlaybackTime(_ time: TimeInterval, force: Bool = false) {
@@ -217,16 +208,6 @@ final class DanmakuKitOverlayView: UIView {
             lastTimelineTime = playbackTime
             return
         }
-        if isLayoutTransitioning {
-            if sanitizedTime + 0.2 < previousEffectiveTime {
-                clearedThroughPlaybackTime = nil
-            }
-            clearDanmakuThrough(playbackTime)
-            needsLayoutRebuild = true
-            lastTimelineTime = playbackTime
-            return
-        }
-
         let jumped = force
             || sanitizedTime + 0.2 < previousEffectiveTime
             || (clockAdvanced && abs(sanitizedTime - previousEffectiveTime) > seekJumpThreshold)
@@ -296,6 +277,10 @@ final class DanmakuKitOverlayView: UIView {
         renderer.enableFloatingDanmaku = settings.danmakuKit.enablesFloating
         renderer.enableTopDanmaku = settings.danmakuKit.enablesTop
         renderer.enableBottomDanmaku = settings.danmakuKit.enablesBottom
+        configurePlaybackRate()
+    }
+
+    private func configurePlaybackRate() {
         let normalizedRate = Float(playbackRate)
         if abs(renderer.playingSpeed - normalizedRate) > 0.001 {
             renderer.playingSpeed = normalizedRate
@@ -303,7 +288,7 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func updatePlaybackState() {
-        guard shouldRender, !isLayoutTransitioning, isPlaying else {
+        guard shouldRender, isPlaying else {
             renderer.pause()
             updateDisplayLinkState()
             return
@@ -327,7 +312,7 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     private func updateDisplayLinkState() {
-        guard shouldRender, !isLayoutTransitioning, isPlaying, window != nil else {
+        guard shouldRender, isPlaying, window != nil else {
             stopDisplayLink()
             return
         }
@@ -358,7 +343,7 @@ final class DanmakuKitOverlayView: UIView {
     }
 
     @objc private func tick(_ displayLink: CADisplayLink) {
-        guard shouldRender, isPlaying, !isLayoutTransitioning else { return }
+        guard shouldRender, isPlaying else { return }
         let start = CACurrentMediaTime()
         diagnostics.recordDanmakuKitDisplayLinkTick(
             timestamp: displayLink.timestamp,

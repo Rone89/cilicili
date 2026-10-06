@@ -4,96 +4,110 @@ struct MineSettingsSection: View {
     @ObservedObject var libraryStore: LibraryStore
     let onOpenRoute: (MineOverlayRoute) -> Void
 
+    @ViewBuilder
     var body: some View {
-        Section("设置") {
-            MineOverlayNavigationButton {
-                onOpenRoute(.interfaceSettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "界面显示",
-                    subtitle: interfaceSettingsSummary,
-                    systemImage: "paintpalette"
-                )
-            }
-            .accessibilityIdentifier("mine.settings.interface")
+        groupedSettings
+    }
 
-            MineOverlayNavigationButton {
-                onOpenRoute(.homeAndSearchSettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "首页与搜索",
-                    subtitle: homeAndSearchSummary,
-                    systemImage: "house"
-                )
-            }
-
-            MineOverlayNavigationButton {
-                onOpenRoute(.playbackSettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "播放偏好",
-                    subtitle: playbackSettingsSummary,
-                    systemImage: "play.rectangle"
-                )
-            }
-
-            MineOverlayNavigationButton {
-                onOpenRoute(.cacheSettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "缓存空间与清理",
-                    subtitle: "查看占用空间并清理可重新获取的内容",
-                    systemImage: "internaldrive"
-                )
-            }
-
-            MineOverlayNavigationButton {
-                onOpenRoute(.developerDiagnostics)
-            } label: {
-                SettingsNavigationRow(
-                    title: "开发者与诊断",
-                    subtitle: "诊断、实验和高级播放工具",
-                    systemImage: "wrench.and.screwdriver"
-                )
-            }
-
-            MineOverlayNavigationButton {
-                onOpenRoute(.contentFilterSettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "内容过滤",
-                    subtitle: contentFilterSummary,
-                    systemImage: "line.3.horizontal.decrease.circle"
-                )
-            }
-
-            MineOverlayNavigationButton {
-                onOpenRoute(.privacySettings)
-            } label: {
-                SettingsNavigationRow(
-                    title: "隐私",
-                    subtitle: privacySummary,
-                    systemImage: "hand.raised"
-                )
-            }
-
+    @ViewBuilder
+    private var groupedSettings: some View {
+        Section("日常体验") {
+            interfaceSettingsLink
+            homeAndSearchSettingsLink
+            playbackSettingsLink
         }
 
-        Section("评论") {
-            Toggle(isOn: $commentLongPressActionsEnabled) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("长按评论显示操作", systemImage: "hand.point.up.left")
-                    Text("开启后，轻点评论不会打开输入框；长按可选择“复制评论”或“回复”。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        Section("内容与隐私") {
+            contentFilterSettingsLink
+            privacySettingsLink
+        }
+
+        Section("存储与诊断") {
+            cacheSettingsLink
+            developerDiagnosticsLink
         }
     }
 
-    @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
-    private var commentLongPressActionsEnabled = false
+    private var interfaceSettingsLink: some View {
+        settingsLink(
+            route: .interfaceSettings,
+            title: "界面显示",
+            subtitle: interfaceSettingsSummary,
+            systemImage: "paintpalette"
+        )
+        .accessibilityIdentifier("mine.settings.interface")
+    }
+
+    private var homeAndSearchSettingsLink: some View {
+        settingsLink(
+            route: .homeAndSearchSettings,
+            title: "首页与搜索",
+            subtitle: homeAndSearchSummary,
+            systemImage: "house"
+        )
+    }
+
+    private var playbackSettingsLink: some View {
+        settingsLink(
+            route: .playbackSettings,
+            title: "播放偏好",
+            subtitle: playbackSettingsSummary,
+            systemImage: "play.rectangle"
+        )
+    }
+
+    private var cacheSettingsLink: some View {
+        settingsLink(
+            route: .cacheSettings,
+            title: "缓存空间与清理",
+            subtitle: "查看占用空间并清理可重新获取的内容",
+            systemImage: "internaldrive"
+        )
+    }
+
+    private var developerDiagnosticsLink: some View {
+        settingsLink(
+            route: .developerDiagnostics,
+            title: "开发者与诊断",
+            subtitle: "诊断、实验和高级播放工具",
+            systemImage: "wrench.and.screwdriver"
+        )
+    }
+
+    private var contentFilterSettingsLink: some View {
+        settingsLink(
+            route: .contentFilterSettings,
+            title: "内容过滤",
+            subtitle: contentFilterSummary,
+            systemImage: "line.3.horizontal.decrease.circle"
+        )
+    }
+
+    private var privacySettingsLink: some View {
+        settingsLink(
+            route: .privacySettings,
+            title: "隐私",
+            subtitle: privacySummary,
+            systemImage: "hand.raised"
+        )
+    }
+
+    private func settingsLink(
+        route: MineOverlayRoute,
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        MineOverlayNavigationButton {
+            onOpenRoute(route)
+        } label: {
+            SettingsNavigationRow(
+                title: title,
+                subtitle: subtitle,
+                systemImage: systemImage
+            )
+        }
+    }
 
     private var interfaceSettingsSummary: String {
         let tabs = libraryStore.visibleRootTabs

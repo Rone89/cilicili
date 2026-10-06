@@ -9,15 +9,12 @@ extension PlaybackNetworkDiagnosticsTextBuilder {
         lines.append("播放自动优化：\(libraryStore.playbackAutoOptimizationMode.title)")
         lines.append("视频 Host：\(variant?.videoURL?.host ?? "未获取")")
         lines.append("音频 Host：\(variant?.audioURL?.host ?? "未获取")")
-        let compatibilityState = CellularBiliTrafficCompatibilityExperiment.RuntimeState(
-            isEnabled: libraryStore.cellularBiliTrafficCompatibilityExperimentEnabled,
-            isCellularNetwork: NetworkPathSnapshot.shared.usesCellular
-        )
+        let compatibilityState = CellularBiliTrafficCompatibility.currentState
         let sourceDiagnostics = playerViewModel?.engineDiagnostics
-        lines.append("B站定向流量兼容：\(compatibilityState.userFacingStatus)")
-        lines.append("媒体域名归类：\(CellularBiliTrafficCompatibilityExperiment.sourceHostSummary(videoHost: sourceDiagnostics?.sourceVideoHost, audioHost: sourceDiagnostics?.sourceAudioHost))")
+        lines.append("蜂窝网络线路策略：\(compatibilityState.userFacingStatus)；不代表运营商套餐免流承诺")
+        lines.append("媒体域名归类：\(CellularBiliTrafficCompatibility.sourceHostSummary(videoHost: sourceDiagnostics?.sourceVideoHost, audioHost: sourceDiagnostics?.sourceAudioHost))")
         if compatibilityState.isActive,
-           CellularBiliTrafficCompatibilityExperiment.hasExternalMediaHost(
+           CellularBiliTrafficCompatibility.hasExternalMediaHost(
             videoHost: sourceDiagnostics?.sourceVideoHost,
             audioHost: sourceDiagnostics?.sourceAudioHost
            ) {

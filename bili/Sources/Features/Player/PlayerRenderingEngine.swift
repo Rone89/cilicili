@@ -181,7 +181,7 @@ struct PlayerEngineDiagnostics: Equatable, Sendable {
     var localPlaylistURL: String?
     var sourceVideoHost: String?
     var sourceAudioHost: String?
-    var cellularBiliTrafficCompatibility: CellularBiliTrafficCompatibilityExperiment.RuntimeState = .inactive
+    var cellularBiliTrafficCompatibility: CellularBiliTrafficCompatibility.RuntimeState = .inactive
     var hlsVideoVariantCount: Int
     var hlsVideoVariantQualities: [Int]
     var hlsVideoVariantDetails: [String]

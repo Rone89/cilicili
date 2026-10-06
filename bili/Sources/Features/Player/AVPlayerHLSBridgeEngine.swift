@@ -160,7 +160,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             localPlaylistURL: diagnosticsLocalPlaylistURL,
             sourceVideoHost: isAudioOnly ? nil : source?.videoURL?.host,
             sourceAudioHost: source?.audioURL?.host,
-            cellularBiliTrafficCompatibility: CellularBiliTrafficCompatibilityExperiment.currentState,
+            cellularBiliTrafficCompatibility: CellularBiliTrafficCompatibility.currentState,
             hlsVideoVariantCount: hlsBridge?.videoVariantCount ?? 0,
             hlsVideoVariantQualities: hlsBridge?.videoVariantQualities ?? [],
             hlsVideoVariantDetails: diagnosticVideoVariantDetails,
@@ -7433,11 +7433,11 @@ actor HLSSourcePreferenceCache {
     }
 
     private func applyingCellularBiliTrafficCompatibility(to urls: [URL], networkClass: PlaybackEnvironment.NetworkClass) -> [URL] {
-        guard CellularBiliTrafficCompatibilityExperiment.currentState.isActive else { return urls }
+        guard CellularBiliTrafficCompatibility.currentState.isActive else { return urls }
 
         let availableURLs = urls.filter { !isSessionAvoided($0.host, networkClass: networkClass) }
         let avoidedURLs = urls.filter { isSessionAvoided($0.host, networkClass: networkClass) }
-        return CellularBiliTrafficCompatibilityExperiment.prioritizedURLsForCurrentEnvironment(availableURLs)
+        return CellularBiliTrafficCompatibility.prioritizedURLsForCurrentEnvironment(availableURLs)
             + avoidedURLs
     }
 

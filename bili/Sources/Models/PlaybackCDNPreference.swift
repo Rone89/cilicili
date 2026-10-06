@@ -420,7 +420,7 @@ enum PlaybackCDNPreference: String, CaseIterable, Identifiable, Codable, Sendabl
             }
         }
 
-        let compatibleOrder = CellularBiliTrafficCompatibilityExperiment
+        let compatibleOrder = CellularBiliTrafficCompatibility
             .prioritizedURLsForCurrentEnvironment(ordered)
         return (compatibleOrder.first, Array(compatibleOrder.dropFirst()))
     }
