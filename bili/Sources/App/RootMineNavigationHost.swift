@@ -43,6 +43,7 @@ struct RootMineNavigationDestination: View {
             )
         case .history:
             accountLibraryPage(kind: .history)
+                .toolbarVisibility(.hidden, for: .tabBar)
         case .favorites:
             accountLibraryPage(kind: .favorites)
         case .watchLater:
