@@ -12,6 +12,7 @@ struct DynamicRichTextView: View {
     let usesTextKitLayout: Bool
     let onContentLayoutChange: (() -> Void)?
     private let textInput: DynamicAttributedTextInput
+    private let appliesNativeLineSpacing: Bool
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -36,6 +37,7 @@ struct DynamicRichTextView: View {
         self.usesTextKitLayout = usesTextKitLayout
         self.onContentLayoutChange = onContentLayoutChange
 
+        self.appliesNativeLineSpacing = false
         self.textInput = DynamicAttributedTextInput(
             segments: segments.isEmpty ? [.text(" ")] : segments,
             baseFont: font,
@@ -48,6 +50,7 @@ struct DynamicRichTextView: View {
 
     init(
         input: DynamicAttributedTextInput,
+        appliesNativeLineSpacing: Bool = false,
         preferredWidth: CGFloat? = nil,
         onNonLinkTap: (() -> Void)? = nil,
         usesTextKitLayout: Bool = false,
@@ -63,6 +66,7 @@ struct DynamicRichTextView: View {
         self.usesTextKitLayout = usesTextKitLayout
         self.onContentLayoutChange = onContentLayoutChange
         self.textInput = input
+        self.appliesNativeLineSpacing = appliesNativeLineSpacing
     }
 
     var body: some View {
@@ -86,7 +90,9 @@ struct DynamicRichTextView: View {
 
     @ViewBuilder
     private func plainTextView(input: DynamicAttributedTextInput, plainText: String) -> some View {
-        let text = Text(input.nativeAttributedPlainText(plainText))
+        // SwiftUI owns extra line spacing; paragraph metadata still controls wrapping.
+        let nativeInput = appliesNativeLineSpacing ? input.replacingLineSpacing(0) : input
+        let text = Text(nativeInput.nativeAttributedPlainText(plainText))
             .font(input.nativeSwiftUIFont())
             .foregroundStyle(Color(input.textColor))
             .lineLimit(input.maxLines)
@@ -96,12 +102,20 @@ struct DynamicRichTextView: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(plainText)
 
+        let spacedText = Group {
+            if appliesNativeLineSpacing {
+                text.lineSpacing(input.lineSpacing)
+            } else {
+                text
+            }
+        }
+
         if let onNonLinkTap {
-            text
+            spacedText
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onNonLinkTap)
         } else {
-            text
+            spacedText
         }
     }
 

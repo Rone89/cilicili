@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicOriginalPreview: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.appThemeTintColor) private var appTintColor
 
     let item: DynamicOriginalItem
@@ -91,7 +92,10 @@ struct DynamicOriginalPreview: View {
 
                 if topLevelDisplayText?.isEmpty == false {
                     DynamicRichTextView(
-                        input: textInput,
+                        input: textInput.replacingLineSpacing(FeedTypography.bodyLineSpacing(
+                            readingExperimentEnabled: libraryStore.dynamicFeedReadingSpacingExperimentEnabled
+                        )),
+                        appliesNativeLineSpacing: libraryStore.dynamicFeedReadingSpacingExperimentEnabled,
                         preferredWidth: originalContentWidth,
                         onNonLinkTap: onOpenDetail
                     )

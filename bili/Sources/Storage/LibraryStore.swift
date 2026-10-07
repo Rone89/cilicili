@@ -149,6 +149,7 @@ final class LibraryStore: ObservableObject {
     @available(*, deprecated, message: "Use multiAccountEnabled")
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
+    @Published private(set) var dynamicFeedReadingSpacingExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -231,6 +232,8 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
+    private static let dynamicFeedReadingSpacingExperimentEnabledKey =
+        "cc.bili.experimental.dynamicFeedReadingSpacing.v1"
     private static let videoDetailActionButtonStyleKey =
         "cc.bili.videoDetail.actionButtonStyle.v1"
     private static let minimizesTabBarOnScrollKey = "cc.bili.display.minimizesTabBarOnScroll.v1"
@@ -644,6 +647,8 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
+        self.dynamicFeedReadingSpacingExperimentEnabled =
+            userDefaults.object(forKey: Self.dynamicFeedReadingSpacingExperimentEnabledKey) as? Bool ?? false
         self.videoDetailActionButtonStyle =
             userDefaults.string(forKey: Self.videoDetailActionButtonStyleKey)
             .flatMap(VideoDetailActionButtonStyle.init(rawValue:)) ?? .plain
@@ -1280,6 +1285,11 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
         )
+    }
+
+    func setDynamicFeedReadingSpacingExperimentEnabled(_ isEnabled: Bool) {
+        dynamicFeedReadingSpacingExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.dynamicFeedReadingSpacingExperimentEnabledKey)
     }
 
     func setVideoDetailActionButtonStyle(_ style: VideoDetailActionButtonStyle) {

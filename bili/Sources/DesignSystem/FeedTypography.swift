@@ -286,6 +286,11 @@ enum FeedTypography {
     // extra fixed value makes the feed look different at each Dynamic Type
     // size, so keep the additional spacing neutral.
     static let bodyLineSpacing: CGFloat = 0
+    static let experimentalBodyLineSpacing: CGFloat = 3
+
+    static func bodyLineSpacing(readingExperimentEnabled: Bool) -> CGFloat {
+        readingExperimentEnabled ? experimentalBodyLineSpacing : bodyLineSpacing
+    }
 
     static let bodyFont: Font = .system(size: primaryTextSize, weight: .regular)
     static let titleFont: Font = .system(size: primaryTextSize, weight: .semibold)

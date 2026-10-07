@@ -4,6 +4,118 @@ import XCTest
 
 final class DynamicRichTextInteractionTests: XCTestCase {
     @MainActor
+    func testReadingSpacingChangesRenderCacheAndMeasuredHeightWithoutChangingFont() throws {
+        let original = DynamicAttributedTextInput.dynamicFeedBody(
+            segments: [.text("第一行\n第二行\n第三行")], emoteSize: 23, maxLines: nil
+        ).resolvingTypography(contentSizeCategory: .large)
+        let off = original.replacingLineSpacing(FeedTypography.bodyLineSpacing(readingExperimentEnabled: false))
+        let on = original.replacingLineSpacing(FeedTypography.bodyLineSpacing(readingExperimentEnabled: true))
+        XCTAssertEqual(off, original)
+        XCTAssertEqual(off.cacheKey, original.cacheKey)
+        XCTAssertNotEqual(off, on)
+        XCTAssertNotEqual(off.cacheKey, on.cacheKey)
+        XCTAssertEqual(off.baseFont, on.baseFont)
+
+        let coordinator = DynamicAttributedTextLabel.Coordinator()
+        let offRender = coordinator.render(off)
+        let onRender = coordinator.render(on)
+        XCTAssertNotEqual(offRender.key, onRender.key)
+        let style = try XCTUnwrap(onRender.attributedString.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        XCTAssertEqual(style.minimumLineHeight, on.baseFont.lineHeight + 3, accuracy: 0.001)
+        XCTAssertEqual(style.maximumLineHeight, style.minimumLineHeight)
+        XCTAssertEqual(coordinator.render(off).key, offRender.key)
+        XCTAssertEqual(coordinator.render(off).attributedString, offRender.attributedString)
+        let offLabel = makeLabel(input: off, attributedString: offRender.attributedString)
+        let onLabel = makeLabel(input: on, attributedString: onRender.attributedString)
+        XCTAssertEqual(onLabel.bounds.height - offLabel.bounds.height, 9, accuracy: 1)
+    }
+
+    @MainActor
+    func testReadingSpacingKeepsMixedGlyphBaselinesAndEmoteBoundsAcrossDynamicType() throws {
+        let input = DynamicAttributedTextInput.dynamicFeedBody(segments: [
+            .text("中文 CJK\nEnglish 123\n🥰👨‍👩‍👧‍👦🏳️‍🌈\n𰻞 العربية\n"),
+            .emoji(text: "[表情]", url: "https://example.com/spacing-emote"),
+            .text("\n"), .mention(text: "@用户", mid: 1, url: nil),
+            .text("\n"), .link(title: "链接", url: "https://example.com/")
+        ], emoteSize: 40, maxLines: nil)
+        for category in [UIContentSizeCategory.large, .extraExtraExtraLarge, .accessibilityExtraExtraExtraLarge] {
+            let off = input.resolvingTypography(contentSizeCategory: category)
+            let on = input.replacingLineSpacing(3).resolvingTypography(contentSizeCategory: category)
+            XCTAssertEqual(off.baseFont.pointSize, on.baseFont.pointSize)
+            let offRender = off.render().attributedString
+            let onRender = on.render().attributedString
+            let offBaselines = baselineOffsets(for: offRender, fittingWidth: 2_000)
+            let baselines = baselineOffsets(for: onRender, fittingWidth: 2_000)
+            XCTAssertEqual(baselines.count, 7)
+            // Fallback fonts have their own glyph metrics. The experiment must add
+            // exactly 3pt per line without introducing any new baseline variation.
+            for index in baselines.indices {
+                XCTAssertEqual(baselines[index] - offBaselines[index], CGFloat(index + 1) * 3, accuracy: 0.01)
+            }
+            var offBounds: CGRect?
+            var onBounds: CGRect?
+            offRender.enumerateAttribute(.attachment, in: fullRange(in: offRender)) { value, _, _ in
+                if let attachment = value as? NSTextAttachment { offBounds = attachment.bounds }
+            }
+            onRender.enumerateAttribute(.attachment, in: fullRange(in: onRender)) { value, _, _ in
+                if let attachment = value as? NSTextAttachment { onBounds = attachment.bounds }
+            }
+            XCTAssertNotNil(onBounds)
+            XCTAssertEqual(onBounds, offBounds)
+        }
+    }
+
+    @MainActor
+    func testReadingSpacingKeepsSixLineLimitAndExpandedMeasurementConsistent() {
+        for category in [UIContentSizeCategory.large, .accessibilityExtraExtraExtraLarge] {
+            for spacing in [CGFloat(0), 3] {
+                for count in [2, 6, 7] {
+                    let text = (1...count).map { "第\($0)行" }.joined(separator: "\n")
+                    let collapsed = DynamicAttributedTextInput.dynamicFeedBody(
+                        segments: [.text(text)], emoteSize: 23, maxLines: 6
+                    ).replacingLineSpacing(spacing).resolvingTypography(contentSizeCategory: category)
+                    let expanded = DynamicAttributedTextInput.dynamicFeedBody(
+                        segments: [.text(text)], emoteSize: 23, maxLines: nil
+                    ).replacingLineSpacing(spacing).resolvingTypography(contentSizeCategory: category)
+                    XCTAssertEqual(collapsed.exceedsMaximumLineCount(fittingWidth: 320), count > 6)
+                    let collapsedLabel = makeLabel(input: collapsed, attributedString: collapsed.render().attributedString)
+                    let expandedLabel = makeLabel(input: expanded, attributedString: expanded.render().attributedString)
+                    let offInput = collapsed.replacingLineSpacing(0)
+                    let offLabel = makeLabel(input: offInput, attributedString: offInput.render().attributedString)
+                    XCTAssertEqual(collapsedLabel.bounds.height - offLabel.bounds.height,
+                                   CGFloat(min(count, 6)) * spacing, accuracy: 1)
+                    if count > 6 { XCTAssertGreaterThan(expandedLabel.bounds.height, collapsedLabel.bounds.height) }
+                    else { XCTAssertEqual(expandedLabel.bounds.height, collapsedLabel.bounds.height) }
+                }
+                let wrapped = DynamicAttributedTextInput.dynamicFeedBody(
+                    segments: [.text(String(repeating: "长正文自动换行。", count: 40))], emoteSize: 23, maxLines: 6
+                ).replacingLineSpacing(spacing).resolvingTypography(contentSizeCategory: category)
+                XCTAssertTrue(wrapped.exceedsMaximumLineCount(fittingWidth: 120))
+                XCTAssertFalse(wrapped.exceedsMaximumLineCount(fittingWidth: 10_000))
+            }
+        }
+    }
+
+    @MainActor
+    func testParagraphExperimentDoesNotInferBlocksFromInlineNodes() throws {
+        let plain = try JSONDecoder().decode(DynamicText.self, from: Data(#"{"text":"第一段\n\n第二段\n\n\n第三段"}"#.utf8))
+        XCTAssertEqual(plain.segments, [.text("第一段\n\n第二段\n\n\n第三段")])
+        // The decoder drops a standalone whitespace-only rich-text node.
+        // Such input cannot reliably distinguish paragraph boundaries from runs.
+        let rich = try JSONDecoder().decode(DynamicText.self, from: Data(#"{"rich_text_nodes":[{"type":"RICH_TEXT_NODE_TYPE_TEXT","text":"第一段"},{"type":"RICH_TEXT_NODE_TYPE_TEXT","text":"\n\n"},{"type":"RICH_TEXT_NODE_TYPE_TEXT","text":"第二段"}]}"#.utf8))
+        XCTAssertEqual(rich.segments, [.text("第一段第二段")])
+        let input = DynamicAttributedTextInput.dynamicFeedBody(segments: plain.segments, emoteSize: 23, maxLines: nil)
+            .replacingLineSpacing(3)
+        let rendered = input.render().attributedString
+        XCTAssertEqual(rendered.string, "第一段\n\n第二段\n\n\n第三段")
+        rendered.enumerateAttribute(.paragraphStyle, in: fullRange(in: rendered)) { value, _, _ in
+            let style = value as? NSParagraphStyle
+            XCTAssertEqual(style?.paragraphSpacing, 0)
+            XCTAssertEqual(style?.paragraphSpacingBefore, 0)
+        }
+    }
+
+    @MainActor
     func testPlainTextTapTriggersNonLinkFallback() throws {
         let input = makeInput(segments: [.text("普通正文")])
         let rendered = input.render().attributedString
