@@ -41,7 +41,7 @@ struct DynamicAttributedTextInput: Equatable {
             emoteSize: emoteSize,
             maxLines: maxLines,
             typographyRole: .dynamicBody,
-            lineSpacing: 0
+            lineSpacing: FeedTypography.bodyLineSpacing
         )
     }
 

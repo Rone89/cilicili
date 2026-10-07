@@ -81,20 +81,6 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
-                get: { libraryStore.dynamicFeedReadingSpacingExperimentEnabled },
-                set: { libraryStore.setDynamicFeedReadingSpacingExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("动态正文阅读间距", systemImage: "text.alignleft")
-                    Text("动态正文增加少量行间距，保持现有字号。暂不调整段落间距。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.dynamicFeedReadingSpacing")
-
-            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

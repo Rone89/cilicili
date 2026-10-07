@@ -4,6 +4,7 @@ struct DynamicFeedCardTextSection: View {
     let display: DynamicFeedCardDisplayModel
     let preferredWidth: CGFloat?
     let onOpenDetail: (() -> Void)?
+    var allowsTextCollapsing: Bool = true
     @Binding var isTextExpanded: Bool
 
     var body: some View {
@@ -14,6 +15,7 @@ struct DynamicFeedCardTextSection: View {
                 copyText: text,
                 preferredWidth: preferredWidth,
                 onOpenDetail: onOpenDetail,
+                allowsCollapsing: allowsTextCollapsing,
                 isExpanded: $isTextExpanded
             )
             .frame(maxWidth: .infinity, alignment: .leading)

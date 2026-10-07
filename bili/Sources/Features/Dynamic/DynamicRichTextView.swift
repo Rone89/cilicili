@@ -12,7 +12,6 @@ struct DynamicRichTextView: View {
     let usesTextKitLayout: Bool
     let onContentLayoutChange: (() -> Void)?
     private let textInput: DynamicAttributedTextInput
-    private let appliesNativeLineSpacing: Bool
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -37,7 +36,6 @@ struct DynamicRichTextView: View {
         self.usesTextKitLayout = usesTextKitLayout
         self.onContentLayoutChange = onContentLayoutChange
 
-        self.appliesNativeLineSpacing = false
         self.textInput = DynamicAttributedTextInput(
             segments: segments.isEmpty ? [.text(" ")] : segments,
             baseFont: font,
@@ -50,7 +48,6 @@ struct DynamicRichTextView: View {
 
     init(
         input: DynamicAttributedTextInput,
-        appliesNativeLineSpacing: Bool = false,
         preferredWidth: CGFloat? = nil,
         onNonLinkTap: (() -> Void)? = nil,
         usesTextKitLayout: Bool = false,
@@ -66,7 +63,6 @@ struct DynamicRichTextView: View {
         self.usesTextKitLayout = usesTextKitLayout
         self.onContentLayoutChange = onContentLayoutChange
         self.textInput = input
-        self.appliesNativeLineSpacing = appliesNativeLineSpacing
     }
 
     var body: some View {
@@ -91,6 +87,7 @@ struct DynamicRichTextView: View {
     @ViewBuilder
     private func plainTextView(input: DynamicAttributedTextInput, plainText: String) -> some View {
         // SwiftUI owns extra line spacing; paragraph metadata still controls wrapping.
+        let appliesNativeLineSpacing = input.typographyRole == .dynamicBody
         let nativeInput = appliesNativeLineSpacing ? input.replacingLineSpacing(0) : input
         let text = Text(nativeInput.nativeAttributedPlainText(plainText))
             .font(input.nativeSwiftUIFont())

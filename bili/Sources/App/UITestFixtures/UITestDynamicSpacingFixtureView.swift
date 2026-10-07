@@ -1,20 +1,14 @@
 #if DEBUG
 import SwiftUI
 
-/// Production body views, isolated preferences, and examples A–I for spacing validation.
+/// Production body views, production spacing, and examples A–I for spacing validation.
 struct UITestDynamicSpacingFixtureView: View {
-    @StateObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var dependencies: AppDependencies
+    @State private var path = NavigationPath()
     @State private var expanded: [String: Bool] = [:]
 
-    init() {
-        let suite = "cc.bili.ui-tests.dynamic-spacing"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        _libraryStore = StateObject(wrappedValue: LibraryStore(userDefaults: defaults))
-    }
-
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(Self.samples, id: \.id) { sample in
@@ -29,19 +23,28 @@ struct UITestDynamicSpacingFixtureView: View {
                 .padding(20)
             }
             .navigationTitle("动态间距验证")
+            .dynamicDetailDestinations(path: $path, api: dependencies.api)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Toggle("间距实验", isOn: Binding(
-                        get: { libraryStore.dynamicFeedReadingSpacingExperimentEnabled },
-                        set: { libraryStore.setDynamicFeedReadingSpacingExperimentEnabled($0) }
-                    ))
-                    .accessibilityIdentifier("spacing.toggle")
+                    NavigationLink("动态详情", value: DynamicDetailTarget.loaded(Self.detailItem))
+                        .accessibilityIdentifier("spacing.detail")
                 }
             }
         }
-        .environmentObject(libraryStore)
         .environment(\.dynamicTypeSize, ProcessInfo.processInfo.arguments.contains("--spacing-accessibility") ? .accessibility3 : .large)
     }
+
+    private static let detailItem: DynamicFeedItem = {
+        let text = (1...9).map { "详情第\($0)行全文" }.joined(separator: "\n")
+        let originalText = (1...9).map { "原文第\($0)行全文" }.joined(separator: "\n")
+        let json: [String: Any] = [
+            "id_str": "spacing-detail", "type": "DYNAMIC_TYPE_FORWARD",
+            "modules": ["module_dynamic": ["desc": ["text": text]]],
+            "orig": ["id_str": "spacing-original", "type": "DYNAMIC_TYPE_WORD",
+                     "modules": ["module_dynamic": ["desc": ["text": originalText]]]]
+        ]
+        return try! JSONDecoder.bili.decode(DynamicFeedItem.self, from: JSONSerialization.data(withJSONObject: json))
+    }()
 
     private static let samples: [DynamicSpacingSample] = [
         .init(id: "A", segments: [.text("第一行纯中文正文\n第二行纯中文正文")]),

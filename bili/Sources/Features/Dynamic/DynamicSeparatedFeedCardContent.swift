@@ -5,6 +5,7 @@ struct DynamicSeparatedFeedCardContent: View {
     let display: DynamicFeedCardDisplayModel
     let contentWidth: CGFloat?
     let usesExternalHorizontalInsets: Bool
+    let allowsTextCollapsing: Bool
     @Binding var isTextExpanded: Bool
     let onShowComments: () -> Void
     let onOpenDetail: (() -> Void)?
@@ -41,6 +42,7 @@ struct DynamicSeparatedFeedCardContent: View {
                     display: display,
                     preferredWidth: textWidth,
                     onOpenDetail: onOpenDetail,
+                    allowsTextCollapsing: allowsTextCollapsing,
                     isTextExpanded: $isTextExpanded
                 )
 
@@ -63,6 +65,7 @@ struct DynamicSeparatedFeedCardContent: View {
                         item: original,
                         parentID: item.id,
                         contentWidth: textWidth,
+                        maxTextLines: allowsTextCollapsing ? 5 : nil,
                         onOpenDetail: onOpenOriginalDetail.map { action in
                             { action(original) }
                         }

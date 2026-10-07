@@ -5,25 +5,11 @@ import XCTest
 
 @MainActor
 final class DynamicInteractionAndDetailTests: XCTestCase {
-    func testDynamicFeedReadingSpacingDefaultsOffAndPersistsLiveChanges() {
-        let suiteName = "cc.bili.tests.dynamic-feed-spacing.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = LibraryStore(userDefaults: defaults)
-
-        XCTAssertFalse(store.dynamicFeedReadingSpacingExperimentEnabled)
-        XCTAssertEqual(FeedTypography.bodyLineSpacing(readingExperimentEnabled: false), 0)
+    func testDynamicFeedBodyUsesProductionReadingSpacing() {
+        let input = DynamicAttributedTextInput.dynamicFeedBody(segments: [.text("正文")], emoteSize: 23, maxLines: 6)
+        XCTAssertEqual(FeedTypography.bodyLineSpacing, 3)
+        XCTAssertEqual(input.lineSpacing, 3)
         XCTAssertEqual(FeedTypography.primaryTextSize, 15)
-
-        store.setDynamicFeedReadingSpacingExperimentEnabled(true)
-        XCTAssertTrue(store.dynamicFeedReadingSpacingExperimentEnabled)
-        XCTAssertEqual(FeedTypography.bodyLineSpacing(readingExperimentEnabled: true), 3)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicFeedReadingSpacingExperimentEnabled)
-        XCTAssertFalse(store.dynamicCommentHitAreaVisualizationExperimentEnabled)
-
-        store.setDynamicFeedReadingSpacingExperimentEnabled(false)
-        XCTAssertFalse(store.dynamicFeedReadingSpacingExperimentEnabled)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).dynamicFeedReadingSpacingExperimentEnabled)
     }
 
     func testDynamicBodyUsesSeventeenPointRegularBodyRole() {

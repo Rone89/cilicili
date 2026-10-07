@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct DynamicOriginalPreview: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.appThemeTintColor) private var appTintColor
 
     let item: DynamicOriginalItem
@@ -25,6 +24,7 @@ struct DynamicOriginalPreview: View {
         item: DynamicOriginalItem,
         parentID: String,
         contentWidth: CGFloat? = nil,
+        maxTextLines: Int? = 5,
         onOpenDetail: (() -> Void)? = nil
     ) {
         self.item = item
@@ -44,7 +44,7 @@ struct DynamicOriginalPreview: View {
         self.textInput = .dynamicFeedBody(
             segments: item.textSegments,
             emoteSize: 20,
-            maxLines: 5
+            maxLines: maxTextLines
         )
         self.topLevelDisplayText = DynamicTextSegment.displayText(from: item.textSegments)
     }
@@ -92,10 +92,7 @@ struct DynamicOriginalPreview: View {
 
                 if topLevelDisplayText?.isEmpty == false {
                     DynamicRichTextView(
-                        input: textInput.replacingLineSpacing(FeedTypography.bodyLineSpacing(
-                            readingExperimentEnabled: libraryStore.dynamicFeedReadingSpacingExperimentEnabled
-                        )),
-                        appliesNativeLineSpacing: libraryStore.dynamicFeedReadingSpacingExperimentEnabled,
+                        input: textInput,
                         preferredWidth: originalContentWidth,
                         onNonLinkTap: onOpenDetail
                     )

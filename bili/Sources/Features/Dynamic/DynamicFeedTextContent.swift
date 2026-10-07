@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct DynamicFeedTextContent: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -10,6 +9,7 @@ struct DynamicFeedTextContent: View {
     let copyText: String?
     let preferredWidth: CGFloat?
     let onOpenDetail: (() -> Void)?
+    var allowsCollapsing: Bool = true
     @Binding var isExpanded: Bool
     @State private var measuredShowsExpandButton: Bool?
     @State private var measuredTextWidth: CGFloat = 0
@@ -63,23 +63,13 @@ struct DynamicFeedTextContent: View {
         .onChange(of: collapsedInput) { _, _ in
             updateExpansionVisibility(fittingWidth: measuredTextWidth)
         }
-        .onChange(of: bodyLineSpacing) { _, _ in
-            updateExpansionVisibility(fittingWidth: measuredTextWidth)
-        }
     }
 
     private var displayedInput: DynamicAttributedTextInput {
-        let input = isExpanded ? expandedInput : collapsedInput
-        return input.replacingLineSpacing(bodyLineSpacing)
+        allowsCollapsing && !isExpanded ? collapsedInput : expandedInput
     }
 
-    private var bodyLineSpacing: CGFloat {
-        FeedTypography.bodyLineSpacing(
-            readingExperimentEnabled: libraryStore.dynamicFeedReadingSpacingExperimentEnabled
-        )
-    }
-
-    private var shouldShowExpandButton: Bool { measuredShowsExpandButton == true }
+    private var shouldShowExpandButton: Bool { allowsCollapsing && measuredShowsExpandButton == true }
 
     private func toggleExpanded() {
         var transaction = Transaction(animation: nil)
@@ -90,13 +80,12 @@ struct DynamicFeedTextContent: View {
     }
 
     private func updateExpansionVisibility(fittingWidth width: CGFloat) {
-        guard width.isFinite, width > 1 else {
+        guard allowsCollapsing, width.isFinite, width > 1 else {
             measuredShowsExpandButton = nil
             return
         }
 
         let input = collapsedInput
-            .replacingLineSpacing(bodyLineSpacing)
             .resolvingTypography(
                 contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
             )

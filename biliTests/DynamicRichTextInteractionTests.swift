@@ -8,10 +8,10 @@ final class DynamicRichTextInteractionTests: XCTestCase {
         let original = DynamicAttributedTextInput.dynamicFeedBody(
             segments: [.text("第一行\n第二行\n第三行")], emoteSize: 23, maxLines: nil
         ).resolvingTypography(contentSizeCategory: .large)
-        let off = original.replacingLineSpacing(FeedTypography.bodyLineSpacing(readingExperimentEnabled: false))
-        let on = original.replacingLineSpacing(FeedTypography.bodyLineSpacing(readingExperimentEnabled: true))
-        XCTAssertEqual(off, original)
-        XCTAssertEqual(off.cacheKey, original.cacheKey)
+        let off = original.replacingLineSpacing(0)
+        let on = original
+        XCTAssertEqual(on, original)
+        XCTAssertEqual(on.cacheKey, original.cacheKey)
         XCTAssertNotEqual(off, on)
         XCTAssertNotEqual(off.cacheKey, on.cacheKey)
         XCTAssertEqual(off.baseFont, on.baseFont)
@@ -39,7 +39,7 @@ final class DynamicRichTextInteractionTests: XCTestCase {
             .text("\n"), .link(title: "链接", url: "https://example.com/")
         ], emoteSize: 40, maxLines: nil)
         for category in [UIContentSizeCategory.large, .extraExtraExtraLarge, .accessibilityExtraExtraExtraLarge] {
-            let off = input.resolvingTypography(contentSizeCategory: category)
+            let off = input.replacingLineSpacing(0).resolvingTypography(contentSizeCategory: category)
             let on = input.replacingLineSpacing(3).resolvingTypography(contentSizeCategory: category)
             XCTAssertEqual(off.baseFont.pointSize, on.baseFont.pointSize)
             let offRender = off.render().attributedString

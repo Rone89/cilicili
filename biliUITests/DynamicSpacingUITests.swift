@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class DynamicSpacingUITests: XCTestCase {
-    func testLiveSpacingToggleExpandCollapseAndCommentIsolation() {
+    func testProductionSpacingAndDetailFullText() {
         verifySpacing(accessibility: false)
     }
 
@@ -17,50 +17,36 @@ final class DynamicSpacingUITests: XCTestCase {
             + (accessibility ? ["--spacing-accessibility"] : [])
         app.launch()
         defer { app.terminate() }
-        XCTAssertTrue(app.descendants(matching: .any)["spacing.toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["spacing.detail"].waitForExistence(timeout: 5))
 
-        let ids = Array("ABCDEFGHI").map(String.init) + ["original", "comment"]
-        var off: [String: Double] = [:]
-        for id in ids {
-            off[id] = height(id, in: app)
-            if id == "A" { capture(app, name: "OFF-top-\(accessibility ? "accessibility" : "standard")") }
-        }
+        let firstHeight = height("A", in: app)
+        if !accessibility { XCTAssertEqual(firstHeight, 51, accuracy: 1) }
         XCTAssertFalse(app.otherElements["spacing.card.A"].buttons["展开"].exists)
-        capture(app, name: "OFF-\(accessibility ? "accessibility" : "standard")")
-
-        app.descendants(matching: .any)["spacing.toggle"].tap()
-        returnToStart(app)
-        var on: [String: Double] = [:]
-        for id in ids {
-            on[id] = height(id, in: app)
-            if id == "comment" { XCTAssertEqual(on[id]!, off[id]!, accuracy: 1) }
-            else { XCTAssertGreaterThan(on[id]!, off[id]!, id) }
-            if id == "A" { capture(app, name: "ON-top-\(accessibility ? "accessibility" : "standard")") }
-            if id == "E" { capture(app, name: "ON-emote-\(accessibility ? "accessibility" : "standard")") }
-        }
-        if !accessibility {
-            XCTAssertEqual(on["A"]! - off["A"]!, 6, accuracy: 1)
-            // The native Text path uses system font metrics; it must grow without
-            // requiring identical outer bounds to the TextKit line-box model.
-        }
-        capture(app, name: "ON-\(accessibility ? "accessibility" : "standard")")
-
-        _ = height("I", in: app, direction: .down)
+        capture(app, name: "Production-top")
+        for id in Array("BCDEFGH").map(String.init) { XCTAssertGreaterThan(height(id, in: app), 0) }
+        let collapsed = height("I", in: app)
         let row = app.otherElements["spacing.card.I"]
         XCTAssertTrue(row.buttons["展开"].exists)
         row.buttons["展开"].tap()
-        let expanded = height("I", in: app)
-        XCTAssertGreaterThan(expanded, on["I"]!)
+        XCTAssertGreaterThan(height("I", in: app), collapsed)
         row.buttons["收起"].tap()
-        XCTAssertEqual(height("I", in: app), on["I"]!, accuracy: 1)
-
-        app.descendants(matching: .any)["spacing.toggle"].tap()
+        XCTAssertEqual(height("I", in: app), collapsed, accuracy: 1)
+        XCTAssertGreaterThan(height("original", in: app), 0)
+        XCTAssertGreaterThan(height("comment", in: app), 0)
         returnToStart(app)
-        XCTAssertEqual(height("A", in: app), off["A"]!, accuracy: 1)
-        XCTAssertFalse(app.otherElements["spacing.card.A"].buttons["展开"].exists)
-        // Scroll back through reused rows after disabling the experiment.
-        XCTAssertEqual(height("E", in: app), off["E"]!, accuracy: 1)
-        XCTAssertEqual(height("I", in: app), off["I"]!, accuracy: 1)
+        XCTAssertEqual(height("A", in: app), firstHeight, accuracy: 1)
+
+        app.buttons["spacing.detail"].tap()
+        XCTAssertTrue(app.scrollViews["dynamic.detail.scroll"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["展开"].exists)
+        XCTAssertFalse(app.buttons["收起"].exists)
+        for prefix in ["详情", "原文"] {
+            let text = (1...9).map { "\(prefix)第\($0)行全文" }.joined(separator: "\n")
+            let body = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", text)).firstMatch
+            XCTAssertTrue(body.exists)
+            XCTAssertGreaterThan(body.frame.height, accessibility ? 400 : 200)
+        }
+        capture(app, name: "Detail-full-text")
     }
 
     private enum Direction { case up, down }
