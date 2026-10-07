@@ -20,6 +20,8 @@ struct UITestFixtureRootView: View {
                 UITestRootTabScrollFixtureView(dependencies: dependencies)
             case .commentSpacing:
                 UITestCommentSpacingFixtureView()
+            case .dynamicReplies:
+                UITestDynamicRepliesFixtureView(dependencies: dependencies)
             case .dynamicSpacing:
                 UITestDynamicSpacingFixtureView()
             case .videoOwnerMenu:

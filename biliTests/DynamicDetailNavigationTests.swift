@@ -180,6 +180,24 @@ final class DynamicDetailNavigationTests: XCTestCase {
     }
 
     @MainActor
+    func testDynamicNextReplyPageAppendsBelowLoadedRepliesAndDeduplicates() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":2,"count":3},"replies":[{"rpid":201},{"rpid":202}]}}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":2,"count":3},"replies":[{"rpid":202},{"rpid":203}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":99}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(), blocksGoodsComments: false)
+        await store.loadReplies(for: root)
+        XCTAssertEqual(store.repliesSnapshot(for: root).replyItems.map(\.id), [201, 202])
+        await store.loadMoreReplies(for: root)
+        XCTAssertEqual(store.repliesSnapshot(for: root).replyItems.map(\.id), [201, 202, 203])
+        XCTAssertFalse(store.hasMoreReplies(for: root))
+        XCTAssertEqual(responses.requestedPages, [1, 2])
+    }
+
+    @MainActor
     func testVideoReplyPaginationRetriesSamePageAndStopsAtServerTotal() async throws {
         let responses = DynamicCommentsResponseSequence([
             .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":201}]}}"#),

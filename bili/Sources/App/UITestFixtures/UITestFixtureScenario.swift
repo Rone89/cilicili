@@ -8,6 +8,7 @@ enum UITestFixtureScenario: String {
     case searchScroll
     case rootTabScroll
     case commentSpacing
+    case dynamicReplies
     case dynamicSpacing
     case videoOwnerMenu
     #endif

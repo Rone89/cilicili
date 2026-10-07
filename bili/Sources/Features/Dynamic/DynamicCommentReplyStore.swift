@@ -227,7 +227,9 @@ final class DynamicCommentReplyStore: ObservableObject {
             let existingReplies = reset
                 ? filteredComments(comment.replies ?? [])
                 : filteredComments(snapshot.replyThreads[comment.id] ?? comment.replies ?? [])
-            let replies = uniqueComments(fetchedReplies + existingReplies)
+            let replies = uniqueComments(reset
+                ? fetchedReplies + existingReplies
+                : existingReplies + fetchedReplies)
             updateSnapshot {
                 $0.replyThreads[comment.id] = replies
                 $0.replyPages[comment.id] = nextPage
