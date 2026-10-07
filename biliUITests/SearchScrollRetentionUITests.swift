@@ -43,10 +43,23 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["排序方式"].isHittable)
         XCTAssertEqual(app.buttons.matching(identifier: "搜索类型").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "排序方式").count, 1)
+        let keyboard = app.keyboards.firstMatch
+        let filtersAboveKeyboard = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let bottom = min(keyboard.frame.minY, app.frame.maxY)
+                return app.buttons["搜索类型"].frame.maxY <= bottom
+                    && app.buttons["排序方式"].frame.maxY <= bottom
+                    && app.buttons["搜索类型"].frame.maxX < app.buttons["排序方式"].frame.minX
+            },
+            object: nil
+        )
+        let keyboardLayoutResult = XCTWaiter.wait(for: [filtersAboveKeyboard], timeout: 5)
         let activeScreenshot = XCTAttachment(screenshot: app.screenshot())
         activeScreenshot.name = "Native search presentation"
         activeScreenshot.lifetime = .keepAlways
         add(activeScreenshot)
+        XCTAssertEqual(keyboardLayoutResult, .completed,
+                       "keyboard: \(keyboard.frame), app: \(app.frame), scope: \(app.buttons["搜索类型"].frame)")
         search.typeText(" native\n")
         XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))

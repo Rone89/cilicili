@@ -38,7 +38,7 @@ struct SearchTabBottomAccessory: View {
     @ViewBuilder
     var body: some View {
         if let viewModel = store.viewModel {
-            SearchFilterCapsule(viewModel: viewModel)
+            SearchFilterCapsule(viewModel: viewModel, usesKeyboardControls: store.usesKeyboardControls)
                 .frame(maxWidth: .infinity, minHeight: 40)
                 .padding(.horizontal, libraryStore.standardPageHorizontalInset)
         }
@@ -47,12 +47,19 @@ struct SearchTabBottomAccessory: View {
 
 private struct SearchFilterCapsule: View {
     @ObservedObject var viewModel: SearchViewModel
+    let usesKeyboardControls: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            scopeMenu
-            orderMenu
+        HStack(spacing: usesKeyboardControls ? 12 : 0) {
+            if usesKeyboardControls {
+                scopeMenu.buttonStyle(.glass)
+                orderMenu.buttonStyle(.glass)
+            } else {
+                scopeMenu.buttonStyle(.plain)
+                orderMenu.buttonStyle(.plain)
+            }
         }
+        .buttonBorderShape(.capsule)
         .font(.subheadline.weight(.medium))
         .lineLimit(1)
         .frame(maxWidth: .infinity, minHeight: 40)
@@ -78,7 +85,6 @@ private struct SearchFilterCapsule: View {
         } label: {
             filterLabel(title: viewModel.selectedScope.title)
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, minHeight: 40)
         .contentShape(Rectangle())
         .accessibilityLabel("搜索类型")
@@ -102,7 +108,6 @@ private struct SearchFilterCapsule: View {
         } label: {
             filterLabel(title: viewModel.selectedOrder.title)
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, minHeight: 40)
         .contentShape(Rectangle())
         .disabled(!viewModel.selectedScope.supportsOrder)
@@ -118,6 +123,7 @@ private struct SearchFilterCapsule: View {
                 .font(.caption2.weight(.bold))
         }
         .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, minHeight: 40)
         .contentShape(Rectangle())
     }
 }
