@@ -75,6 +75,7 @@ private struct UITestDynamicDetailFixtureView: View {
     @State private var selectedTab: UITestRootTab = .dynamic
     @State private var searchQuery = ""
     @State private var isSearchPresented = false
+    @State private var preservesSearchResultsOnDismissal = false
 
     var body: some View {
         ZStack {
@@ -119,7 +120,10 @@ private struct UITestDynamicDetailFixtureView: View {
         }
         .tabBarMinimizeBehavior(.never)
         .onChange(of: selectedTab) { _, tab in
-            if tab != .search { isSearchPresented = false }
+            if tab != .search {
+                preservesSearchResultsOnDismissal = true
+                isSearchPresented = false
+            }
         }
     }
 
@@ -170,9 +174,12 @@ private struct UITestDynamicDetailFixtureView: View {
             searchRootContent
                 .searchable(text: $searchQuery, isPresented: $isSearchPresented, prompt: "搜索")
                 .onChange(of: searchQuery) { oldQuery, query in
-                    if query.isEmpty && !isSearchPresented && !oldQuery.isEmpty {
+                    if query.isEmpty && !isSearchPresented && preservesSearchResultsOnDismissal && !oldQuery.isEmpty {
                         DispatchQueue.main.async { searchQuery = oldQuery }
                     }
+                }
+                .onChange(of: isSearchPresented) { _, isPresented in
+                    if isPresented { preservesSearchResultsOnDismissal = false }
                 }
         }
     }
@@ -181,6 +188,7 @@ private struct UITestDynamicDetailFixtureView: View {
         ScrollView {
             VStack(spacing: 20) {
                 Button("打开搜索结果详情") {
+                    preservesSearchResultsOnDismissal = true
                     isSearchPresented = false
                     DispatchQueue.main.async {
                         activeNavigationPath.wrappedValue.append(

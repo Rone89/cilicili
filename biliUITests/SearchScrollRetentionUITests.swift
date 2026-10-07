@@ -2,6 +2,30 @@ import XCTest
 
 @MainActor
 final class SearchScrollRetentionUITests: XCTestCase {
+    func testCancelAfterSubmittedSearchRestoresHotSearches() {
+        let app = launchFixture()
+        let search = app.searchFields.firstMatch
+        search.tap()
+        search.typeText(" native\n")
+        XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+
+        search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["大家都在搜"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
+        XCTAssertFalse(app.staticTexts["滚动位置测试 native 1"].exists)
+        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
+
+        app.tabBars.buttons["首页"].tap()
+        app.tabBars.buttons["搜索"].tap()
+        XCTAssertTrue(app.staticTexts["大家都在搜"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
+    }
+
     func testNativeSearchPresentationSubmitCancelAndClear() {
         let app = launchFixture()
         let search = app.searchFields.firstMatch

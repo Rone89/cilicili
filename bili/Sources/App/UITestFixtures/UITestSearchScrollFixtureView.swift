@@ -8,6 +8,8 @@ struct UITestSearchScrollFixtureView: View {
     @State private var path: [String] = []
     @State private var selectedTab: AppTab = .search
     @State private var isSearchPresented = false
+    @State private var preservesSearchResultsOnDismissal = false
+    @State private var searchText = "滚动位置测试"
     @FocusState private var isSearchFocused: Bool
 
     init(api: BiliAPIClient) {
@@ -16,6 +18,8 @@ struct UITestSearchScrollFixtureView: View {
         viewModel.selectedScope = .video
         viewModel.results = Self.videos(prefix: "结果")
         viewModel.state = .loaded
+        viewModel.hotSearches = [HotSearchItem(keyword: "热搜保留测试", showName: nil, icon: nil)]
+        viewModel.hotSearchState = .loaded
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
@@ -48,29 +52,34 @@ struct UITestSearchScrollFixtureView: View {
             }
         }
         .onChange(of: selectedTab) { _, tab in
-            if tab != .search { isSearchPresented = false }
+            if tab != .search {
+                preservesSearchResultsOnDismissal = true
+                isSearchPresented = false
+            }
         }
     }
 
     private var searchNavigationStack: some View {
         NavigationStack(path: $path) {
-            SearchContentView(viewModel: viewModel, showsHotSearches: false, accessoryStore: accessoryStore)
+            SearchContentView(viewModel: viewModel, showsHotSearches: true, accessoryStore: accessoryStore)
                 .toolbarTitleDisplayMode(.inline)
                 .navigationTitle("搜索")
                 .searchable(
-                    text: $viewModel.query,
+                    text: searchTextBinding,
                     isPresented: $isSearchPresented,
                     prompt: "搜索"
                 )
                 .searchFocused($isSearchFocused)
-                .onChange(of: viewModel.query) { oldQuery, query in
-                    if query.isEmpty && !isSearchPresented && !oldQuery.isEmpty {
-                        DispatchQueue.main.async { viewModel.query = oldQuery }
-                    }
+                .onChange(of: viewModel.query) { _, query in
+                    searchText = query
+                }
+                .onChange(of: isSearchPresented) { _, isPresented in
+                    if isPresented { preservesSearchResultsOnDismissal = false }
                 }
                 .onSubmit(of: .search) {
                     let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !keyword.isEmpty else { return }
+                    preservesSearchResultsOnDismissal = true
                     isSearchPresented = false
                     viewModel.results = Self.videos(prefix: keyword)
                     viewModel.state = .loaded
@@ -79,7 +88,10 @@ struct UITestSearchScrollFixtureView: View {
                     accessoryStore.isSearchFocused = isFocused
                 }
                 .onChange(of: path.count) { _, count in
-                    if count > 0 { isSearchPresented = false }
+                    if count > 0 {
+                        preservesSearchResultsOnDismissal = true
+                        isSearchPresented = false
+                    }
                 }
                 .environment(\.openVideoAction, { video in path.append(video.bvid) })
                 .navigationDestination(for: String.self) { id in
@@ -102,6 +114,28 @@ struct UITestSearchScrollFixtureView: View {
                 }
         }
         .coordinatesRootTabBarTransitions(isDetailPresented: !path.isEmpty)
+    }
+
+    private var searchTextBinding: Binding<String> {
+        Binding(
+            get: { searchText },
+            set: { query in
+                if query.isEmpty && !isSearchPresented && preservesSearchResultsOnDismissal {
+                    let retainedQuery = viewModel.query
+                    searchText = ""
+                    DispatchQueue.main.async {
+                        guard !isSearchPresented, preservesSearchResultsOnDismissal,
+                              searchText.isEmpty else { return }
+                        searchText = viewModel.query.isEmpty ? retainedQuery : viewModel.query
+                    }
+                    return
+                }
+                searchText = query
+                guard viewModel.query != query else { return }
+                viewModel.query = query
+                viewModel.queryChanged()
+            }
+        )
     }
 
     private static func videos(prefix: String) -> [SearchResultItem] {

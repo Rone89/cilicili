@@ -18,6 +18,7 @@ struct RootTabView: View {
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
     @State private var isRootSearchPresented = false
+    @State private var preservesSearchResultsOnDismissal = false
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
     @State var isMineSearchEditing = false
@@ -88,6 +89,7 @@ struct RootTabView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             if tab != .search {
+                preservesSearchResultsOnDismissal = true
                 isRootSearchPresented = false
             }
             if tab != .mine {
@@ -97,8 +99,12 @@ struct RootTabView: View {
         }
         .onChange(of: searchNavigationPath.count) { _, count in
             if count > 0 {
+                preservesSearchResultsOnDismissal = true
                 isRootSearchPresented = false
             }
+        }
+        .onChange(of: isRootSearchPresented) { _, isPresented in
+            if isPresented { preservesSearchResultsOnDismissal = false }
         }
         .onChange(of: isRootSearchFocused) { _, isFocused in
             searchBottomAccessoryStore.isSearchFocused = isFocused
@@ -379,14 +385,15 @@ struct RootTabView: View {
         Binding(
             get: { rootSearchQueryBuffer },
             set: { query in
-                // Native dismissal clears the field. Keep the current query/results;
-                // the clear button during an active search still resets discovery.
-                if query.isEmpty && !isRootSearchPresented {
+                // Preserve results only when the app closes search to submit or navigate.
+                // The system's Cancel and clear actions must restore discovery.
+                if query.isEmpty && !isRootSearchPresented && preservesSearchResultsOnDismissal {
                     let retainedQuery = searchViewModelHolder.viewModel?.query ?? rootSearchQueryBuffer
                     rootSearchQueryBuffer = ""
                     if !retainedQuery.isEmpty {
                         DispatchQueue.main.async {
-                            guard !isRootSearchPresented, rootSearchQueryBuffer.isEmpty else { return }
+                            guard !isRootSearchPresented, preservesSearchResultsOnDismissal,
+                                  rootSearchQueryBuffer.isEmpty else { return }
                             rootSearchQueryBuffer = searchViewModelHolder.viewModel?.query ?? retainedQuery
                         }
                     }
@@ -416,6 +423,7 @@ struct RootTabView: View {
         guard let viewModel = searchViewModelHolder.viewModel else { return }
         let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return }
+        preservesSearchResultsOnDismissal = true
         isRootSearchPresented = false
         Task { await viewModel.search(keyword) }
     }

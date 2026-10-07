@@ -580,7 +580,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
             app.tabBars.buttons["搜索"].tap()
             XCTAssertTrue(searchField.waitForExistence(timeout: 3))
             searchField.tap()
-            XCTAssertEqual(searchField.value as? String, "导航实验")
+            XCTAssertEqual(searchField.value as? String, "搜索")
             app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭", "Cancel", "取消"])).firstMatch.tap()
         }
     }
