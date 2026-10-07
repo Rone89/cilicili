@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SearchListView: View {
+    @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
@@ -46,6 +48,13 @@ struct SearchListView: View {
         .onAppear {
             if let saved = scrollOffsets.saved {
                 scrollPosition.scrollTo(y: saved)
+            }
+        }
+        .onChange(of: rootTabScrollRequest) { _, request in
+            guard request != nil, scrollOffsets.current > 0.5 else { return }
+            scrollOffsets.saved = nil
+            withAnimation(reduceMotion ? nil : .smooth(duration: 0.34)) {
+                scrollPosition.scrollTo(edge: .top)
             }
         }
         .onChange(of: viewModel.query) { _, _ in resetScrollPosition() }

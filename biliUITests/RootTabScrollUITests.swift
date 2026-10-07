@@ -1,0 +1,175 @@
+import XCTest
+
+@MainActor
+final class RootTabScrollUITests: XCTestCase {
+    private let tabs = ["首页", "动态", "直播", "搜索", "我的"]
+
+    func testRootTabReselectionScrollsToTopWithoutRefresh() {
+        verifyReselection(arguments: [])
+    }
+
+    func testReselectionWithMinimizedTabBar() {
+        verifyReselection(arguments: ["--test-minimize"])
+    }
+
+    func testReselectionWithReduceMotion() {
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        settings.launch()
+        for _ in 0..<5 { settings.swipeDown() }
+        let accessibility = settings.staticTexts.matching(NSPredicate(format: "label IN %@", ["Accessibility", "辅助功能"])).firstMatch
+        for _ in 0..<6 where !accessibility.isHittable { settings.swipeUp() }
+        XCTAssertTrue(accessibility.exists)
+        accessibility.tap()
+        settings.staticTexts.matching(NSPredicate(format: "label IN %@", ["Motion", "动态效果"])).firstMatch.tap()
+        let toggle = settings.switches.matching(NSPredicate(format: "label IN %@", ["Reduce Motion", "减弱动态效果"])).firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        let original = toggle.value as? String
+        if original != "1" { toggle.tap() }
+        defer {
+            settings.activate()
+            if toggle.value as? String != original { toggle.tap() }
+        }
+        verifyReselection(arguments: [])
+    }
+
+    func testFormDoesNotReplayOldRequestAfterPushAndSwitch() {
+        let app = launch()
+        select("我的", in: app)
+        mainScroll(in: app).swipeUp()
+        app.tabBars.buttons["我的"].tap()
+        assertOffset(0, in: app, message: "Mine first request")
+        let scroll = mainScroll(in: app)
+        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+            .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)),
+                   withVelocity: .slow, thenHoldForDuration: 0.1)
+        let before = offset(app)
+        app.buttons["fixture.root.detail"].tap()
+        app.buttons["返回"].tap()
+        XCTAssertEqual(offset(app), before, accuracy: 8)
+        select("首页", in: app)
+        select("我的", in: app)
+        XCTAssertEqual(offset(app), before, accuracy: 8)
+    }
+
+    func testOrdinaryTabSwitchesKeepEveryRootOffset() {
+        let app = launch()
+        for tab in tabs {
+            select(tab, in: app)
+            mainScroll(in: app).swipeUp()
+            let before = offset(app)
+            XCTAssertGreaterThan(before, 50, tab)
+            let other = tab == "首页" ? "动态" : "首页"
+            select(other, in: app)
+            select(tab, in: app)
+            XCTAssertEqual(offset(app), before, accuracy: 8, tab)
+        }
+    }
+
+    func testPushPopKeepsEveryRootOffsetAndHidesTabs() {
+        let app = launch()
+        for tab in tabs {
+            select(tab, in: app)
+            let scroll = mainScroll(in: app)
+            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+                .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)),
+                       withVelocity: .slow, thenHoldForDuration: 0.1)
+            let before = offset(app)
+            app.buttons["fixture.root.detail"].tap()
+            XCTAssertTrue(app.staticTexts["二级页面"].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.tabBars.firstMatch.exists)
+            app.buttons["fixture.root.reselect"].tap()
+            XCTAssertTrue(app.staticTexts["二级页面"].exists)
+            XCTAssertEqual(offset(app), before, accuracy: 8, tab)
+            app.buttons["返回"].tap()
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 3))
+            XCTAssertEqual(offset(app), before, accuracy: 8, tab)
+        }
+    }
+
+    func testActiveSearchScrollRequestKeepsQueryKeyboardAndFilters() {
+        let app = launch()
+        select("搜索", in: app)
+        mainScroll(in: app).swipeUp()
+        mainScroll(in: app).swipeUp()
+        app.buttons["fixture.root.focusSearch"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let search = app.searchFields.firstMatch
+        let query = search.value as? String
+        let scope = app.buttons["搜索类型"].value as? String
+        let order = app.buttons["排序方式"].value as? String
+        XCTAssertGreaterThan(offset(app), 50)
+        // The software keyboard covers the TabBar. Exercise the same selection Binding.
+        app.buttons["fixture.root.reselect"].tap()
+        assertOffset(0, in: app, message: "Active search")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertEqual(search.value as? String, query)
+        XCTAssertEqual(app.buttons["搜索类型"].value as? String, scope)
+        XCTAssertEqual(app.buttons["排序方式"].value as? String, order)
+        XCTAssertEqual(app.searchFields.count, 1)
+    }
+
+    private func verifyReselection(arguments: [String]) {
+        let app = launch(arguments: arguments)
+        for tab in tabs {
+            select(tab, in: app)
+            let top = offset(app)
+            let scroll = mainScroll(in: app)
+            scroll.swipeUp()
+            scroll.swipeUp()
+            XCTAssertGreaterThan(offset(app), top + 50, tab)
+            let requests = app.staticTexts["fixture.root.requests"].label
+            app.tabBars.buttons[tab].tap()
+            assertOffset(top, in: app, message: tab)
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+            XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests, "Reselection must not refresh \(tab)")
+            app.tabBars.buttons[tab].tap()
+            assertOffset(top, in: app, message: "Already at top: \(tab)")
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+            XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests)
+            XCTAssertTrue(app.tabBars.firstMatch.exists)
+            if tab != "搜索" {
+                XCTAssertTrue(app.tabBars.buttons["首页"].exists)
+                XCTAssertTrue(app.tabBars.buttons["我的"].exists)
+            } else {
+                XCTAssertTrue(app.buttons["搜索类型"].isHittable)
+                XCTAssertTrue(app.buttons["排序方式"].isHittable)
+                // In the minimized Search role, the field may be represented by a button.
+                XCTAssertEqual(app.staticTexts["fixture.root.query"].label, "保留关键词")
+            }
+        }
+    }
+
+    private func launch(arguments: [String] = []) -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-fixture", "rootTabScroll", "--ui-test-enable-animations"] + arguments
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 5))
+        addTeardownBlock { app.terminate() }
+        return app
+    }
+
+    private func select(_ tab: String, in app: XCUIApplication) {
+        if !app.tabBars.buttons[tab].exists { app.tabBars.buttons.firstMatch.tap() }
+        XCTAssertTrue(app.tabBars.buttons[tab].waitForExistence(timeout: 3))
+        if !app.tabBars.buttons[tab].isSelected { app.tabBars.buttons[tab].tap() }
+    }
+
+    private func mainScroll(in app: XCUIApplication) -> XCUIElement {
+        let scroll = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        return scroll
+    }
+
+    private func assertOffset(_ target: Double, in app: XCUIApplication, message: String) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            abs(self.offset(app) - target) < 8
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed,
+                       "\(message): expected \(target), got \(offset(app))")
+    }
+
+    private func offset(_ app: XCUIApplication) -> Double {
+        Double(app.staticTexts["fixture.root.offset"].label) ?? -999
+    }
+}

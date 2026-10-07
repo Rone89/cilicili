@@ -27,6 +27,7 @@ struct MineContentView: View {
         .formStyle(.grouped)
         .contentMargins(.top, 0, for: .scrollContent)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
+        .formScrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
         .scrollDismissesKeyboard(.interactively)
         .simultaneousGesture(TapGesture().onEnded {

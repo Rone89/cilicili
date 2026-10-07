@@ -5,6 +5,15 @@ extension RootTabView {
         Binding(
             get: { selectedTab },
             set: { tab in
+                guard tab != selectedTab else {
+                    guard activeRootNavigationPathIsEmpty else { return }
+                    if tab == .home {
+                        homeActionStore.scroll.requestScrollToTop()
+                    } else {
+                        rootTabScrollRequests[tab] = RootTabScrollRequest()
+                    }
+                    return
+                }
                 selectAvailableRootTab(tab)
             }
         )

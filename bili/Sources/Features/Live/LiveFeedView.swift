@@ -16,6 +16,7 @@ struct LiveFeedView: View {
             }
         }
         .contentMargins(.top, 0, for: .scrollContent)
+        .scrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
         .scrollBounceBehavior(.always, axes: .vertical)
         .background(Color(.systemBackground))

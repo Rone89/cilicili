@@ -11,6 +11,7 @@ struct RootTabView: View {
     @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
     @State var selectedTab = Self.initialTab.appTab
+    @State var rootTabScrollRequests: [AppTab: RootTabScrollRequest] = [:]
     @State var homeNavigationPath = NavigationPath()
     @State var searchNavigationPath = NavigationPath()
     @State var dynamicNavigationPath = NavigationPath()
@@ -185,6 +186,7 @@ struct RootTabView: View {
     ) -> some View {
         NavigationStack(path: detailPath) {
             rootTabContentWithChrome(for: tab, detailPath: detailPath)
+                .environment(\.rootTabScrollRequest, rootTabScrollRequests[tab])
                 .toolbarVisibility(.visible, for: .navigationBar)
                 .toolbarBackground(.automatic, for: .navigationBar)
                 .navigationTitle(rootNavigationTitle(for: tab))
@@ -211,7 +213,9 @@ struct RootTabView: View {
                 )
         }
         .coordinatesRootTabBarTransitions(
-            isDetailPresented: !detailPath.wrappedValue.isEmpty
+            isDetailPresented: !detailPath.wrappedValue.isEmpty,
+            onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = tab } : nil,
+            capturesSearchReselection: tab == .search
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
     }

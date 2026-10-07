@@ -6,6 +6,7 @@ enum UITestFixtureScenario: String {
     #if DEBUG
     case danmakuBenchmark
     case searchScroll
+    case rootTabScroll
     case videoOwnerMenu
     #endif
     case dynamicDetail
