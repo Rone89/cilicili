@@ -43,15 +43,15 @@ struct CommentRow: View, Equatable {
         } header: {
             CommentRowHeader(comment: comment, display: display)
         } bodyContent: {
-            BiliEmoteText(
+            CommentBodyText(
                 content: comment.content,
                 font: .subheadline,
                 textColor: .primary,
                 emoteSize: 21,
+                legacyOuterLineSpacing: 1,
                 typographyRole: .commentBody,
                 onNonLinkTap: commentTapAction
             )
-                .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
         } media: {
             CommentImageButton(

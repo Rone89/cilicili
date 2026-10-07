@@ -48,16 +48,16 @@ struct CommentDialogRow: View {
                         CommentLikeButton(comment: reply)
                     }
 
-                    BiliEmoteText(
+                    CommentBodyText(
                         content: reply.content,
                         font: .subheadline,
                         textColor: .primary,
                         emoteSize: 22,
+                        legacyOuterLineSpacing: 2,
                         typographyRole: .commentBody,
                         onNonLinkTap: commentTapAction
                     )
                     .padding(.top, 4)
-                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                     if !display.pictures.isEmpty {

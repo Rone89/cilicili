@@ -310,10 +310,17 @@ final class BiliInteractiveAttributedLabel: UILabel {
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-        guard recognizer.state == .ended,
-              let attributedText,
+        guard recognizer.state == .ended else {
+            onNonLinkTap?()
+            return
+        }
+        handleTap(at: recognizer.location(in: self))
+    }
+
+    func handleTap(at point: CGPoint) {
+        guard let attributedText,
               attributedText.length > 0,
-              let characterIndex = characterIndex(at: recognizer.location(in: self)),
+              let characterIndex = characterIndex(at: point),
               characterIndex >= 0,
               characterIndex < attributedText.length
         else {
@@ -594,7 +601,7 @@ nonisolated enum BiliEmoteCacheBudget {
     }
 }
 
-private struct BiliEmoteRenderInput {
+struct BiliEmoteRenderInput {
     let content: CommentContent?
     let inlineEmotes: [String: BiliInlineEmote]
     let plainText: String?
@@ -922,7 +929,7 @@ private struct BiliEmoteRenderInput {
     }
 }
 
-private struct BiliEmoteRenderResult {
+struct BiliEmoteRenderResult {
     let key: String
     let attributedString: NSAttributedString
     let missingImageURLs: [URL]

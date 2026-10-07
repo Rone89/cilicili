@@ -18,7 +18,7 @@ struct ReplyPreviewRow: View {
     }
 
     var body: some View {
-        BiliEmoteText(
+        CommentBodyText(
             content: reply.content,
             font: .caption,
             textColor: .primary,

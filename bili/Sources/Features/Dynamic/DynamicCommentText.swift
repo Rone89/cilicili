@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DynamicCommentText: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -40,7 +41,7 @@ struct DynamicCommentText: View {
 
     var body: some View {
         Group {
-            if let nativeText {
+            if !libraryStore.commentTextTypographyUnificationExperimentEnabled, let nativeText {
                 Text(nativeText)
                     .lineLimit(lineLimit)
                     .multilineTextAlignment(.leading)
@@ -57,7 +58,10 @@ struct DynamicCommentText: View {
                     emoteSize: emoteSize,
                     leadingName: leadingName,
                     leadingNameColor: leadingNameColor,
-                    lineSpacing: lineSpacing,
+                    lineSpacing: CommentTypography.resolvedBodyLineSpacing(
+                        legacy: lineSpacing,
+                        experimentEnabled: libraryStore.commentTextTypographyUnificationExperimentEnabled
+                    ),
                     typographyRole: typographyRole,
                     onNonLinkTap: onNonLinkTap
                 )
