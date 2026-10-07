@@ -558,11 +558,13 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(searchField.waitForExistence(timeout: 3))
-        XCTAssertEqual(searchField.value as? String, "导航实验")
         XCTAssertEqual(
             app.staticTexts["fixture.search.queryValue"].label,
             "导航实验"
         )
+        searchField.tap()
+        XCTAssertEqual(searchField.value as? String, "导航实验")
+        app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭", "Cancel", "取消"])).firstMatch.tap()
 
         for tab in ["首页", "动态", "直播", "我的"] {
             app.tabBars.buttons[tab].tap()
@@ -577,7 +579,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
             app.tabBars.buttons["搜索"].tap()
             XCTAssertTrue(searchField.waitForExistence(timeout: 3))
+            searchField.tap()
             XCTAssertEqual(searchField.value as? String, "导航实验")
+            app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭", "Cancel", "取消"])).firstMatch.tap()
         }
     }
 

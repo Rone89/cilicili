@@ -74,7 +74,7 @@ private struct UITestDynamicDetailFixtureView: View {
     @State private var mineNavigationPath = NavigationPath()
     @State private var selectedTab: UITestRootTab = .dynamic
     @State private var searchQuery = ""
-    @State private var isSearchFocused = false
+    @State private var isSearchPresented = false
 
     var body: some View {
         ZStack {
@@ -109,7 +109,7 @@ private struct UITestDynamicDetailFixtureView: View {
                 ],
                 id: \.self
             ) { tab in
-                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
+                Tab(tab.title, systemImage: tab.systemImage, value: tab, role: tab == .search ? .search : nil) {
                     rootTabNavigationStack(
                         for: tab,
                         detailPath: navigationPathBinding(for: tab)
@@ -118,6 +118,9 @@ private struct UITestDynamicDetailFixtureView: View {
             }
         }
         .tabBarMinimizeBehavior(.never)
+        .onChange(of: selectedTab) { _, tab in
+            if tab != .search { isSearchPresented = false }
+        }
     }
 
     @ViewBuilder
@@ -127,15 +130,6 @@ private struct UITestDynamicDetailFixtureView: View {
     ) -> some View {
         NavigationStack(path: detailPath) {
             rootTabContent(for: tab)
-                .nativeNavigationSearch(
-                    text: $searchQuery,
-                    isPresented: $isSearchFocused,
-                    isEnabled: tab == .search
-                        && selectedTab == .search
-                        && detailPath.wrappedValue.isEmpty,
-                    prompt: "搜索",
-                    title: "搜索"
-                ) {}
                 .toolbar {
                     if tab == .home {
                         ToolbarItem(placement: .topBarLeading) {
@@ -174,6 +168,12 @@ private struct UITestDynamicDetailFixtureView: View {
             dynamicFeed
         case .search:
             searchRootContent
+                .searchable(text: $searchQuery, isPresented: $isSearchPresented, prompt: "搜索")
+                .onChange(of: searchQuery) { oldQuery, query in
+                    if query.isEmpty && !isSearchPresented && !oldQuery.isEmpty {
+                        DispatchQueue.main.async { searchQuery = oldQuery }
+                    }
+                }
         }
     }
 
@@ -181,7 +181,7 @@ private struct UITestDynamicDetailFixtureView: View {
         ScrollView {
             VStack(spacing: 20) {
                 Button("打开搜索结果详情") {
-                    isSearchFocused = false
+                    isSearchPresented = false
                     DispatchQueue.main.async {
                         activeNavigationPath.wrappedValue.append(
                             DynamicDetailTarget.loaded(Self.imageItem)

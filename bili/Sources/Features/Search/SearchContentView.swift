@@ -23,12 +23,6 @@ struct SearchContentView: View {
         }
         .onDisappear {
             accessoryStore.isSearchFocused = false
-            accessoryStore.isKeyboardVisible = false
-        }
-        .toolbar {
-            ToolbarItem(placement: .keyboard) {
-                SearchFilterCapsule(viewModel: viewModel)
-            }
         }
     }
 

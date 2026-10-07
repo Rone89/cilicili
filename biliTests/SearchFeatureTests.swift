@@ -22,16 +22,12 @@ final class SearchFeatureTests: XCTestCase {
         XCTAssertTrue(gate.shouldBeginPreload(for: "BV1", now: start.addingTimeInterval(1.3)))
     }
 
-    func testSearchControlsOnlyMoveToKeyboardWhenKeyboardIsVisible() {
+    func testSearchControlsFollowNativeSearchFieldFocus() {
         let store = SearchBottomAccessoryStore()
-
-        store.isSearchFocused = true
         XCTAssertFalse(store.usesKeyboardControls)
-
-        store.isKeyboardVisible = true
+        store.isSearchFocused = true
         XCTAssertTrue(store.usesKeyboardControls)
-
-        store.isKeyboardVisible = false
+        store.isSearchFocused = false
         XCTAssertFalse(store.usesKeyboardControls)
     }
 }

@@ -6,6 +6,9 @@ struct UITestSearchScrollFixtureView: View {
     @StateObject private var viewModel: SearchViewModel
     @StateObject private var accessoryStore = SearchBottomAccessoryStore()
     @State private var path: [String] = []
+    @State private var selectedTab: AppTab = .search
+    @State private var isSearchPresented = false
+    @FocusState private var isSearchFocused: Bool
 
     init(api: BiliAPIClient) {
         let viewModel = SearchViewModel(api: api)
@@ -17,16 +20,67 @@ struct UITestSearchScrollFixtureView: View {
     }
 
     var body: some View {
+        TabView(selection: $selectedTab) {
+            ForEach(AppTab.defaultVisibleTabs) { tab in
+                Tab(value: tab, role: tab == .search ? .search : nil) {
+                    if tab == .search {
+                        searchNavigationStack
+                    } else {
+                        NavigationStack {
+                            Color.clear.navigationTitle(tab.title)
+                        }
+                    }
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
+                }
+            }
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory(
+            isEnabled: selectedTab == .search && path.isEmpty && !accessoryStore.usesKeyboardControls
+        ) {
+            SearchTabBottomAccessory(store: accessoryStore)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selectedTab == .search && path.isEmpty && isSearchFocused {
+                SearchTabBottomAccessory(store: accessoryStore)
+                    .padding(.vertical, 8)
+            }
+        }
+        .onChange(of: selectedTab) { _, tab in
+            if tab != .search { isSearchPresented = false }
+        }
+    }
+
+    private var searchNavigationStack: some View {
         NavigationStack(path: $path) {
             SearchContentView(viewModel: viewModel, showsHotSearches: false, accessoryStore: accessoryStore)
                 .toolbarTitleDisplayMode(.inline)
-                .nativeNavigationSearch(
+                .navigationTitle("搜索")
+                .searchable(
                     text: $viewModel.query,
-                    isPresented: $accessoryStore.isSearchFocused,
-                    isKeyboardVisible: $accessoryStore.isKeyboardVisible,
-                    isEnabled: path.isEmpty,
-                    prompt: "搜索", title: "搜索", onSubmit: {}
+                    isPresented: $isSearchPresented,
+                    prompt: "搜索"
                 )
+                .searchFocused($isSearchFocused)
+                .onChange(of: viewModel.query) { oldQuery, query in
+                    if query.isEmpty && !isSearchPresented && !oldQuery.isEmpty {
+                        DispatchQueue.main.async { viewModel.query = oldQuery }
+                    }
+                }
+                .onSubmit(of: .search) {
+                    let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !keyword.isEmpty else { return }
+                    isSearchPresented = false
+                    viewModel.results = Self.videos(prefix: keyword)
+                    viewModel.state = .loaded
+                }
+                .onChange(of: isSearchFocused) { _, isFocused in
+                    accessoryStore.isSearchFocused = isFocused
+                }
+                .onChange(of: path.count) { _, count in
+                    if count > 0 { isSearchPresented = false }
+                }
                 .environment(\.openVideoAction, { video in path.append(video.bvid) })
                 .navigationDestination(for: String.self) { id in
                     VStack(spacing: 20) {
@@ -47,6 +101,7 @@ struct UITestSearchScrollFixtureView: View {
                     }
                 }
         }
+        .coordinatesRootTabBarTransitions(isDetailPresented: !path.isEmpty)
     }
 
     private static func videos(prefix: String) -> [SearchResultItem] {

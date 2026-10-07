@@ -17,6 +17,8 @@ struct RootTabView: View {
     @State var liveNavigationPath = NavigationPath()
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
+    @State private var isRootSearchPresented = false
+    @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
     @State var isMineSearchEditing = false
     @FocusState var isMineSearchFocused: Bool
@@ -85,10 +87,24 @@ struct RootTabView: View {
             repairSelectedTabIfNeeded(visibleTabs: tabs)
         }
         .onChange(of: selectedTab) { _, tab in
+            if tab != .search {
+                isRootSearchPresented = false
+            }
             if tab != .mine {
                 isMineSearchFocused = false
                 isMineSearchEditing = false
             }
+        }
+        .onChange(of: searchNavigationPath.count) { _, count in
+            if count > 0 {
+                isRootSearchPresented = false
+            }
+        }
+        .onChange(of: isRootSearchFocused) { _, isFocused in
+            searchBottomAccessoryStore.isSearchFocused = isFocused
+        }
+        .onChange(of: searchViewModelHolder.viewModel?.query) { _, query in
+            rootSearchQueryBuffer = query ?? ""
         }
         .onChange(of: isMineSearchFocused) { wasFocused, isFocused in
             if wasFocused && !isFocused {
@@ -126,7 +142,7 @@ struct RootTabView: View {
     private var rootTabBar: some View {
         TabView(selection: tabSelection) {
             ForEach(visibleRootTabs) { tab in
-                Tab(value: tab) {
+                Tab(value: tab, role: tab == .search ? .search : nil) {
                     rootTabNavigationStack(
                         for: tab,
                         detailPath: rootNavigationPathBinding(for: tab)
@@ -142,7 +158,10 @@ struct RootTabView: View {
         }
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showsMineKeyboardSearch {
+            if showsSearchKeyboardFilters {
+                SearchTabBottomAccessory(store: searchBottomAccessoryStore)
+                    .padding(.vertical, 8)
+            } else if showsMineKeyboardSearch {
                 MineKeyboardSearchAccessory(
                     text: $mineSearchQuery,
                     isFocused: $isMineSearchFocused
@@ -214,17 +233,6 @@ struct RootTabView: View {
                 rootTabContent(for: tab, detailPath: detailPath)
             }
         }
-        .nativeNavigationSearch(
-            text: rootSearchQueryBinding,
-            isPresented: $searchBottomAccessoryStore.isSearchFocused,
-            isKeyboardVisible: $searchBottomAccessoryStore.isKeyboardVisible,
-            isEnabled: tab == .search
-                && selectedTab == .search
-                && detailPath.wrappedValue.isEmpty,
-            prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
-            title: "搜索",
-            onSubmit: submitRootSearch
-        )
     }
 
     @ViewBuilder
@@ -251,6 +259,15 @@ struct RootTabView: View {
                 holder: searchViewModelHolder,
                 accessoryStore: searchBottomAccessoryStore
             )
+            .searchable(
+                text: rootSearchQueryBinding,
+                isPresented: $isRootSearchPresented,
+                prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
+            )
+            .searchFocused($isRootSearchFocused)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onSubmit(of: .search, submitRootSearch)
         }
     }
 
@@ -288,6 +305,10 @@ struct RootTabView: View {
 
     private var showsMineBottomAccessory: Bool {
         selectedTab == .mine && mineNavigationPath.isEmpty && !isMineSearchEditing
+    }
+
+    private var showsSearchKeyboardFilters: Bool {
+        selectedTab == .search && searchNavigationPath.isEmpty && isRootSearchFocused
     }
 
     private var showsMineKeyboardSearch: Bool {
@@ -356,10 +377,24 @@ struct RootTabView: View {
 
     private var rootSearchQueryBinding: Binding<String> {
         Binding(
-            get: { searchViewModelHolder.viewModel?.query ?? rootSearchQueryBuffer },
+            get: { rootSearchQueryBuffer },
             set: { query in
+                // Native dismissal clears the field. Keep the current query/results;
+                // the clear button during an active search still resets discovery.
+                if query.isEmpty && !isRootSearchPresented {
+                    let retainedQuery = searchViewModelHolder.viewModel?.query ?? rootSearchQueryBuffer
+                    rootSearchQueryBuffer = ""
+                    if !retainedQuery.isEmpty {
+                        DispatchQueue.main.async {
+                            guard !isRootSearchPresented, rootSearchQueryBuffer.isEmpty else { return }
+                            rootSearchQueryBuffer = searchViewModelHolder.viewModel?.query ?? retainedQuery
+                        }
+                    }
+                    return
+                }
                 rootSearchQueryBuffer = query
                 guard let viewModel = searchViewModelHolder.viewModel else { return }
+                guard viewModel.query != query else { return }
                 viewModel.query = query
                 viewModel.queryChanged()
             }
@@ -379,7 +414,10 @@ struct RootTabView: View {
 
     private func submitRootSearch() {
         guard let viewModel = searchViewModelHolder.viewModel else { return }
-        Task { await viewModel.search() }
+        let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else { return }
+        isRootSearchPresented = false
+        Task { await viewModel.search(keyword) }
     }
 
     var activeRootNavigationPathIsEmpty: Bool {
