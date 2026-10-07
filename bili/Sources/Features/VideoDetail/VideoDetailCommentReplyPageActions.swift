@@ -29,26 +29,17 @@ extension VideoDetailViewModel {
             let replies = uniqueComments(existingReplies + fetchedReplies)
             replyThreads[comment.id] = replies
             replyThreadPages[comment.id] = nextPage
-            let totalCount = comment.replyCount ?? Int.max
-            replyThreadHasMore[comment.id] = !fetchedReplies.isEmpty && replies.count < totalCount
+            replyThreadHasMore[comment.id] = page.hasMoreReplyPages(requestedPage: nextPage)
             replyThreadStates[comment.id] = .loaded
         } catch {
             guard isCurrentReplyThreadLoad(commentID: comment.id, token: token, target: target) else {
                 return
             }
             if reset {
-                let fallbackReplies = filteredComments(comment.replies ?? [])
-                replyThreads[comment.id] = fallbackReplies
-                if fallbackReplies.isEmpty {
-                    replyThreadStates[comment.id] = .failed(error.localizedDescription)
-                } else {
-                    replyThreadHasMore[comment.id] = false
-                    replyThreadStates[comment.id] = .loaded
-                }
-            } else {
-                replyThreadHasMore[comment.id] = false
-                replyThreadStates[comment.id] = .loaded
+                replyThreads[comment.id] = filteredComments(comment.replies ?? [])
             }
+            // Preserve the last successful page so retry requests the same next page.
+            replyThreadStates[comment.id] = .failed(error.localizedDescription)
         }
     }
 }

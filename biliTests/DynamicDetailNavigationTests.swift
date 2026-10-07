@@ -139,6 +139,75 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(viewModel.displayedReplyCount, 2)
     }
 
+    @MainActor
+    func testReplyPaginationStopsAtServerTotalDespiteStaleParentCount() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":20,"count":3},"replies":[{"rpid":201},{"rpid":202},{"rpid":203}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":99}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(), blocksGoodsComments: false)
+        await store.loadReplies(for: root)
+        XCTAssertEqual(store.replies(for: root).map(\.id), [201, 202, 203])
+        XCTAssertFalse(store.hasMoreReplies(for: root))
+        await store.loadMoreReplies(for: root)
+        XCTAssertEqual(store.replyState(for: root), .loaded)
+    }
+
+    @MainActor
+    func testFailedReplyPageCanRetryWithoutLosingExistingReplies() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":201}]}}"#),
+            .success(#"{"code":-400,"message":"分页请求失败"}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":202}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":99}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(), blocksGoodsComments: false)
+        await store.loadReplies(for: root)
+        XCTAssertTrue(store.hasMoreReplies(for: root))
+        await store.loadMoreReplies(for: root)
+        guard case .failed = store.replyState(for: root) else { return XCTFail("Expected a retryable failure") }
+        XCTAssertEqual(store.replies(for: root).map(\.id), [201])
+        XCTAssertTrue(store.hasMoreReplies(for: root))
+        await store.loadMoreReplies(for: root)
+        XCTAssertEqual(Set(store.replies(for: root).map(\.id)), [201, 202])
+        XCTAssertFalse(store.hasMoreReplies(for: root))
+        XCTAssertEqual(store.replyState(for: root), .loaded)
+        XCTAssertEqual(responses.requestedPages, [1, 2, 2])
+    }
+
+    @MainActor
+    func testVideoReplyPaginationRetriesSamePageAndStopsAtServerTotal() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":201}]}}"#),
+            .success(#"{"code":-400,"message":"分页请求失败"}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":202}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":99}"#.utf8))
+        let service = "VideoReplyPaginationTests.\(UUID().uuidString)"
+        let viewModel = VideoDetailViewModel(
+            seedVideo: VideoItem(bvid: "BV-replies", aid: 456, title: "Replies", pic: nil, desc: nil, duration: 60, pubdate: nil, owner: nil, stat: nil, cid: 11, pages: nil, dimension: nil),
+            api: try makeCommentsAPI(),
+            libraryStore: LibraryStore(userDefaults: UserDefaults(suiteName: service)!),
+            sessionStore: SessionStore(keychain: KeychainStore(service: service)),
+            sponsorBlockService: SponsorBlockService(session: URLSession(configuration: .ephemeral))
+        )
+        await viewModel.loadReplies(for: root)
+        XCTAssertTrue(viewModel.hasMoreReplies(for: root))
+        await viewModel.loadMoreReplies(for: root)
+        guard case .failed = viewModel.replyThreadStates[root.id] else { return XCTFail("Expected retryable failure") }
+        XCTAssertEqual(viewModel.replies(for: root).map(\.id), [201])
+        await viewModel.loadMoreReplies(for: root)
+        XCTAssertEqual(viewModel.replies(for: root).map(\.id), [201, 202])
+        XCTAssertFalse(viewModel.hasMoreReplies(for: root))
+        XCTAssertEqual(responses.requestedPages, [1, 2, 2])
+    }
+
     private func decodeOriginal(_ json: String) throws -> DynamicOriginalItem {
         try JSONDecoder.bili.decode(DynamicOriginalItem.self, from: Data(json.utf8))
     }
@@ -301,6 +370,13 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
 
     private let lock = NSLock()
     private var responses: [Response]
+    private var pages: [Int] = []
+
+    var requestedPages: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return pages
+    }
 
     init(_ responses: [Response]) {
         self.responses = responses
@@ -308,6 +384,10 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
 
     func nextResponse(for request: URLRequest) throws -> (HTTPURLResponse, Data) {
         lock.lock()
+        if let url = request.url,
+           let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pn" })?.value.flatMap(Int.init) {
+            pages.append(page)
+        }
         let response = responses.isEmpty ? nil : responses.removeFirst()
         lock.unlock()
 
@@ -337,7 +417,7 @@ private final class DynamicCommentsURLProtocol: URLProtocol {
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "api.bilibili.com"
-            && request.url?.path == "/x/v2/reply/main"
+            && ["/x/v2/reply/main", "/x/v2/reply/reply"].contains(request.url?.path ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {

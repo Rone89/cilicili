@@ -3002,9 +3002,10 @@ nonisolated struct CommentPage: Decodable, Sendable {
     let topReplies: [Comment]?
     let root: Comment?
     let cursor: CommentCursor?
+    let page: CommentReplyPagination?
 
     enum CodingKeys: String, CodingKey {
-        case replies, root, cursor
+        case replies, root, cursor, page
         case topReplies = "top_replies"
     }
 
@@ -3012,12 +3013,37 @@ nonisolated struct CommentPage: Decodable, Sendable {
         replies: [Comment]?,
         topReplies: [Comment]?,
         root: Comment? = nil,
-        cursor: CommentCursor?
+        cursor: CommentCursor?,
+        page: CommentReplyPagination? = nil
     ) {
         self.replies = replies
         self.topReplies = topReplies
         self.root = root
         self.cursor = cursor
+        self.page = page
+    }
+}
+
+// Reply pagination describes server-visible replies, independently of local filtering
+// and the parent comment's potentially stale reply count.
+nonisolated struct CommentReplyPagination: Decodable, Sendable {
+    let num: Int?
+    let size: Int?
+    let count: Int?
+}
+
+extension CommentPage {
+    nonisolated func hasMoreReplyPages(requestedPage: Int) -> Bool {
+        let receivedCount = replies?.count ?? 0
+        guard receivedCount > 0 else { return false }
+        if let page, let size = page.size, let num = page.num, let count = page.count,
+           size > 0, num > 0, count >= 0 {
+            let pageCount = count / size + (count % size == 0 ? 0 : 1)
+            return max(requestedPage, num) < pageCount
+        }
+        // The reply endpoint requests 20 replies. Without page metadata, a short
+        // page is terminal; don't infer remaining pages from the parent count.
+        return receivedCount >= 20
     }
 }
 

@@ -228,11 +228,10 @@ final class DynamicCommentReplyStore: ObservableObject {
                 ? filteredComments(comment.replies ?? [])
                 : filteredComments(snapshot.replyThreads[comment.id] ?? comment.replies ?? [])
             let replies = uniqueComments(fetchedReplies + existingReplies)
-            let totalCount = comment.replyCount ?? Int.max
             updateSnapshot {
                 $0.replyThreads[comment.id] = replies
                 $0.replyPages[comment.id] = nextPage
-                $0.replyHasMore[comment.id] = !fetchedReplies.isEmpty && replies.count < totalCount
+                $0.replyHasMore[comment.id] = page.hasMoreReplyPages(requestedPage: nextPage)
                 $0.replyStates[comment.id] = .loaded
             }
             return .refreshed
@@ -240,18 +239,10 @@ final class DynamicCommentReplyStore: ObservableObject {
             guard generation == replyLoadGenerations[comment.id] else { return .superseded }
             updateSnapshot {
                 if reset {
-                    let fallbackReplies = filteredComments(comment.replies ?? [])
-                    $0.replyThreads[comment.id] = fallbackReplies
-                    if fallbackReplies.isEmpty {
-                        $0.replyStates[comment.id] = .failed(error.localizedDescription)
-                    } else {
-                        $0.replyHasMore[comment.id] = false
-                        $0.replyStates[comment.id] = .loaded
-                    }
-                } else {
-                    $0.replyHasMore[comment.id] = false
-                    $0.replyStates[comment.id] = .loaded
+                    $0.replyThreads[comment.id] = filteredComments(comment.replies ?? [])
                 }
+                // Keep replies and pagination intact for the footer's retry action.
+                $0.replyStates[comment.id] = .failed(error.localizedDescription)
             }
             return .failed
         }

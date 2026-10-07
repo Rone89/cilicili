@@ -2,6 +2,30 @@ import XCTest
 @testable import bili
 
 final class VideoDetailCommentDeepLinkResolutionTests: XCTestCase {
+    func testReplyPageUsesServerPaginationRatherThanVisibleReplyCount() throws {
+        let page = try JSONDecoder.bili.decode(CommentPage.self, from: Data(#"{"page":{"num":1,"size":20,"count":21},"replies":[{"rpid":201}]}"#.utf8))
+        XCTAssertTrue(page.hasMoreReplyPages(requestedPage: 1))
+        XCTAssertFalse(page.hasMoreReplyPages(requestedPage: 2))
+    }
+
+    func testEmptyReplyPageIsTerminalEvenWithStaleServerCount() throws {
+        let page = try JSONDecoder.bili.decode(CommentPage.self, from: Data(#"{"page":{"num":1,"size":20,"count":99},"replies":[]}"#.utf8))
+        XCTAssertFalse(page.hasMoreReplyPages(requestedPage: 1))
+    }
+
+    func testLegacyReplyPageWithoutMetadataStopsOnShortPage() throws {
+        let reply = try comment(id: 201)
+        let short = CommentPage(replies: [reply], topReplies: nil, cursor: nil)
+        XCTAssertFalse(short.hasMoreReplyPages(requestedPage: 1))
+        let full = CommentPage(replies: Array(repeating: reply, count: 20), topReplies: nil, cursor: nil)
+        XCTAssertTrue(full.hasMoreReplyPages(requestedPage: 1))
+    }
+
+    func testIncompletePageMetadataDoesNotBreakOtherCommentEndpoints() throws {
+        let page = try JSONDecoder.bili.decode(CommentPage.self, from: Data(#"{"page":{"count":3},"replies":[{"rpid":201}]}"#.utf8))
+        XCTAssertFalse(page.hasMoreReplyPages(requestedPage: 1))
+    }
+
     func testTargetLookupSkipsExtraPagesWhenTheFirstPageAlreadyContainsTheReply() {
         XCTAssertEqual(
             VideoDetailCommentDeepLinkResolution.additionalPageNumbers(
