@@ -24,14 +24,6 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
            (video.owner?.mid ?? 0) > 0 || (actions.canSubmit && video.recommendationFeedback?.hasReasons == true) {
             content
             .overlay {
-                if isMenuPresented {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: 3)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("home.recommendation.selected.\(video.id)")
-                }
-            }
-            .overlay {
                 HomeRecommendationMenuInteraction(
                     menu: { nativeMenu(actions: actions) },
                     onTap: onTap,
@@ -95,9 +87,19 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
             items.append(UIMenu(title: "不感兴趣", image: UIImage(systemName: "hand.thumbsdown"), children: groups))
         }
         if let owner = video.owner, owner.mid > 0 {
-            items.append(UIAction(title: "屏蔽该 UP", image: UIImage(systemName: "person.crop.circle.badge.xmark"), attributes: attributes) { _ in
-                showsBlockConfirmation = true
-            })
+            var blockActions: [UIMenuElement] = [
+                UIAction(title: "仅在本机屏蔽", image: UIImage(systemName: "iphone"), attributes: attributes.union(.destructive)) { _ in
+                    Task { await actions.block(owner, false) }
+                }
+            ]
+            if actions.canSynchronizeBlock {
+                blockActions.append(UIAction(title: "拉黑并同步到 Bilibili", image: UIImage(systemName: "person.crop.circle.badge.xmark"), attributes: attributes.union(.destructive)) { _ in
+                    Task { await actions.block(owner, true) }
+                })
+            }
+            items.append(UIMenu(title: "屏蔽该 UP", image: UIImage(systemName: "person.crop.circle.badge.xmark"), children: [
+                UIMenu(title: blockTitle + "\n之后首页推荐将不再显示该 UP 的内容。", options: .displayInline, children: blockActions)
+            ]))
         }
         return UIMenu(children: items)
     }
@@ -112,8 +114,8 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
     }
 }
 
-/// Public UIKit preview delegates suppress the lift backdrop throughout the transition,
-/// not just after the menu finishes appearing. No custom long-press recognizer is used.
+/// The selected card preview stays above the system dimming surface.
+/// No custom long-press recognizer or app-wide dimming overlay is used.
 private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
     let menu: () -> UIMenu
     let onTap: () -> Void
@@ -142,43 +144,60 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var parent: HomeRecommendationMenuInteraction
-        private let previewAnchor: UIView = {
-            let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
-            view.backgroundColor = .clear
-            view.isUserInteractionEnabled = false
-            view.isAccessibilityElement = false
-            return view
-        }()
+        private let previewImage = UIImageView()
 
         init(_ parent: HomeRecommendationMenuInteraction) { self.parent = parent }
         @objc func tap() { parent.onTap() }
         @objc func press() { parent.onPress() }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-            UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: nil) { [weak self] _ in
+            captureCard(interaction)
+            return UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: { [weak self] in
+                guard let image = self?.previewImage.image else { return nil }
+                let controller = UIViewController()
+                let imageView = UIImageView(image: image)
+                imageView.contentMode = .scaleAspectFit
+                imageView.backgroundColor = .clear
+                controller.view = imageView
+                controller.preferredContentSize = image.size
+                return controller
+            }) { [weak self] _ in
                 self?.parent.menu()
             }
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, highlightPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
-            invisiblePreview(interaction)
+            cardPreview(interaction)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, dismissalPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
-            invisiblePreview(interaction)
+            cardPreview(interaction)
         }
 
-        private func invisiblePreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
-            guard let source = interaction.view, let window = source.window else { return nil }
-            source.addSubview(previewAnchor)
-            previewAnchor.center = CGPoint(x: source.bounds.midX, y: source.bounds.midY)
+        private func captureCard(_ interaction: UIContextMenuInteraction) {
+            guard let source = interaction.view, let window = source.window,
+                  source.bounds.width > 0, source.bounds.height > 0 else { return }
+            let rect = source.convert(source.bounds, to: window)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = source.traitCollection.displayScale
+            previewImage.image = UIGraphicsImageRenderer(size: rect.size, format: format).image { context in
+                context.cgContext.translateBy(x: -rect.minX, y: -rect.minY)
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            }
+            previewImage.frame = CGRect(origin: .zero, size: rect.size)
+            previewImage.backgroundColor = .clear
+        }
+
+        private func cardPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
+            guard let source = interaction.view, let window = source.window,
+                  previewImage.image != nil else { return nil }
             let parameters = UIPreviewParameters()
             parameters.backgroundColor = .clear
-            parameters.visiblePath = UIBezierPath(rect: previewAnchor.bounds)
+            parameters.visiblePath = UIBezierPath(roundedRect: previewImage.bounds, cornerRadius: 18)
             parameters.shadowPath = UIBezierPath()
-            let center = source.convert(previewAnchor.center, to: window)
+            let center = source.convert(CGPoint(x: source.bounds.midX, y: source.bounds.midY), to: window)
             let target = UIPreviewTarget(container: window, center: center)
-            return UITargetedPreview(view: previewAnchor, parameters: parameters, target: target)
+            return UITargetedPreview(view: previewImage, parameters: parameters, target: target)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
@@ -187,9 +206,13 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
             if let animator {
-                animator.addCompletion { [weak self] in self?.parent.onPresentationChange(false) }
+                animator.addCompletion { [weak self] in
+                    self?.parent.onPresentationChange(false)
+                    self?.previewImage.image = nil
+                }
             } else {
                 parent.onPresentationChange(false)
+                previewImage.image = nil
             }
         }
     }

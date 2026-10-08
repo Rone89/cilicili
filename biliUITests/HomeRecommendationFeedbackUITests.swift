@@ -54,11 +54,11 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         XCTAssertTrue(local.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["拉黑并同步到 Bilibili"].exists)
         local.tap()
+        XCTAssertTrue(app.images["fixture.feedback.message"].waitForExistence(timeout: 3))
+        screenshot(app, "Local block completion")
         XCTAssertTrue(card(1, app).waitForNonExistence(timeout: 3))
         XCTAssertFalse(card(3, app).exists)
         XCTAssertTrue(card(2, app).exists)
-        XCTAssertTrue(app.images["fixture.feedback.message"].waitForExistence(timeout: 3))
-        screenshot(app, "Local block removes same UP rows")
     }
 
     func testCancelBlockLeavesFeedAndShortTapIntact() {
@@ -67,7 +67,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         card(1, app).press(forDuration: 1.5)
         app.buttons["屏蔽该 UP"].tap()
         XCTAssertTrue(app.buttons["拉黑并同步到 Bilibili"].waitForExistence(timeout: 3))
-        screenshot(app, "Native block confirmation")
+        screenshot(app, "Native block submenu")
         if app.buttons["取消"].exists {
             app.buttons["取消"].tap()
         } else {
