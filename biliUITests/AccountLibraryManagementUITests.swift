@@ -4,6 +4,37 @@ import XCTest
 final class AccountLibraryManagementUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    func testDetailMoreMenuWatchLaterRoundTrip() {
+        let app = launch(["--library-detail-menu"])
+        let menu = app.buttons["video.detail.toolbar-comment-more"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        let remove = app.buttons["从稍后再看移除"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["评论"].exists)
+        remove.tap()
+        menu.tap()
+        let add = app.buttons["添加到稍后再看"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+        menu.tap()
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        app.buttons["评论"].tap()
+        XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
+    }
+
+    func testDetailMoreMenuExperimentOffPreservesCommentActions() {
+        let app = launch(["--library-detail-menu", "--library-off"])
+        let menu = app.buttons["video.detail.toolbar-comment-more"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        XCTAssertTrue(app.buttons["评论"].exists)
+        XCTAssertTrue(app.buttons["刷新评论区"].exists)
+        XCTAssertFalse(app.buttons["video.detail.watchLater"].exists)
+        app.buttons["刷新评论区"].tap()
+        XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "刷新评论区")
+    }
+
     func testWatchLaterNativeSelectionAndBatchRemoval() {
         let app = launch()
         let select = app.buttons["library.manage.select"]

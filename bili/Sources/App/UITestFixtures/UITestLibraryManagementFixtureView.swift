@@ -8,10 +8,12 @@ struct UITestLibraryManagementFixtureView: View {
     @StateObject private var model: MineViewModel
     @State private var openedTitle = ""
     private let favorites: Bool
+    private let showsDetailMenu: Bool
 
     init() {
         let args = ProcessInfo.processInfo.arguments
         favorites = args.contains("--library-favorites")
+        showsDetailMenu = args.contains("--library-detail-menu")
         let name = "LibraryManagementFixture.\(UUID().uuidString)"
         let session = SessionStore(keychain: KeychainStore(service: name))
         if !args.contains("--library-logged-out") {
@@ -34,6 +36,13 @@ struct UITestLibraryManagementFixtureView: View {
                 .navigationTitle(favorites ? "收藏夹" : "稍后再看")
                 .environment(\.openVideoAction, { openedTitle = $0.title })
                 .toolbar {
+                    if showsDetailMenu {
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailMoreMenu(api: model.libraryManagement.api, aid: 1,
+                                onComment: { openedTitle = "发表评论" },
+                                onRefresh: { openedTitle = "刷新评论区" })
+                        }
+                    }
                     ToolbarItem(placement: .topBarLeading) {
                         Text(openedTitle.isEmpty ? "未打开视频" : openedTitle)
                             .accessibilityIdentifier("library.fixture.openedVideo")
@@ -72,6 +81,8 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         var data: [String: Any] = [:]
         switch path {
         case "/x/v2/history/toview": data = ["list": watchIDs.map(video)]
+        case "/x/v2/history/toview/add":
+            if let aid = Int(body["aid"] ?? ""), !watchIDs.contains(aid) { watchIDs.append(aid) }
         case "/x/v2/history/toview/v2/dels": watchIDs.removeAll { resources.contains($0) }
         case "/x/v2/history/toview/clear": watchIDs = []
         case "/x/v3/fav/folder/created/list-all":

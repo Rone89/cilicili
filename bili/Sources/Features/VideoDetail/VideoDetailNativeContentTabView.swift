@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
+    @EnvironmentObject private var dependencies: AppDependencies
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.navigationHistoryContext) private var navigationHistory
@@ -15,6 +16,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var placesTopInsetInScrollContent = false
     var interactiveMinimumPlayerHeight = VideoDetailShellLayout.collapsedToolbarHeight
     var contentRevision: Int = 0
+    var watchLaterAID: Int? = nil
     var onOpenCommentComposer: (() -> Void)?
     var onRefreshComments: () -> Void = {}
     var onSelectionWillChange: ((VideoDetailContentTab) -> Void)? = nil
@@ -49,7 +51,9 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    VideoDetailToolbarCommentMoreMenu(
+                    VideoDetailMoreMenu(
+                        api: dependencies.api,
+                        aid: watchLaterAID,
                         onComment: onOpenCommentComposer,
                         onRefresh: onRefreshComments
                     )
@@ -510,29 +514,5 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
                 content(tab)
             }
         }
-    }
-}
-
-private struct VideoDetailToolbarCommentMoreMenu: View {
-    static let size: CGFloat = 38
-
-    let onComment: () -> Void
-    let onRefresh: () -> Void
-
-    var body: some View {
-        Menu {
-            Button(action: onComment) {
-                Label("评论", systemImage: "square.and.pencil")
-            }
-            Button(action: onRefresh) {
-                Label("刷新评论区", systemImage: "arrow.clockwise")
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .frame(width: Self.size, height: Self.size)
-        }
-        .tint(.primary)
-        .accessibilityLabel("更多评论操作")
-        .accessibilityIdentifier("video.detail.toolbar-comment-more")
     }
 }

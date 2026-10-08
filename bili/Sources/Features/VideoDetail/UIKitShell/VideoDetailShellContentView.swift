@@ -116,6 +116,7 @@ private struct VideoDetailShellContentBody: View {
             placesTopInsetInScrollContent: placesTopInsetInScrollContent,
             interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
             contentRevision: contentRevision,
+            watchLaterAID: viewModel.detail.aid,
             onOpenCommentComposer: { onOpenCommentComposer(nil) },
             onRefreshComments: onRefreshComments,
             onSelectionWillChange: onSelectionWillChange,
