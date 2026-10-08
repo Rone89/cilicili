@@ -142,41 +142,36 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
         context.coordinator.parent = self
     }
 
+    static func dismantleUIView(_ button: UIButton, coordinator: Coordinator) {
+        coordinator.removeHighlight()
+    }
+
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var parent: HomeRecommendationMenuInteraction
+        private var isPresentingMenu = false
         private let previewImage = UIImageView()
+        private let emptyPreview = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
 
         init(_ parent: HomeRecommendationMenuInteraction) { self.parent = parent }
-        @objc func tap() { parent.onTap() }
+        @objc func tap() {
+            guard !isPresentingMenu else { return }
+            parent.onTap()
+        }
         @objc func press() { parent.onPress() }
 
+        func removeHighlight() {
+            previewImage.removeFromSuperview()
+            previewImage.image = nil
+        }
+
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+            isPresentingMenu = true
             captureCard(interaction)
             return UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: { [weak self] in
-                guard let image = self?.previewImage.image else { return nil }
+                guard let self else { return nil }
                 let controller = UIViewController()
-                // Leave the system's outer rounding in transparent space, so it
-                // cannot increase the card's own 18pt continuous corner radius.
-                let inset: CGFloat = 24
-                let size = CGSize(width: image.size.width + inset * 2, height: image.size.height + inset * 2)
-                let container = UIView(frame: CGRect(origin: .zero, size: size))
-                container.backgroundColor = .clear
-                let imageView = UIImageView(image: image)
-                imageView.contentMode = .scaleAspectFit
-                imageView.backgroundColor = .clear
-                imageView.layer.cornerRadius = 18
-                imageView.layer.cornerCurve = .continuous
-                imageView.clipsToBounds = true
-                imageView.translatesAutoresizingMaskIntoConstraints = false
-                container.addSubview(imageView)
-                NSLayoutConstraint.activate([
-                    imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: inset),
-                    imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -inset),
-                    imageView.topAnchor.constraint(equalTo: container.topAnchor, constant: inset),
-                    imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -inset)
-                ])
-                controller.view = container
-                controller.preferredContentSize = size
+                controller.view.backgroundColor = .clear
+                controller.preferredContentSize = self.previewImage.bounds.size
                 return controller
             }) { [weak self] _ in
                 self?.parent.menu()
@@ -201,7 +196,13 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
                 context.cgContext.translateBy(x: -rect.minX, y: -rect.minY)
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
             }
-            previewImage.frame = CGRect(origin: .zero, size: rect.size)
+            emptyPreview.frame = CGRect(origin: .zero, size: rect.size)
+            previewImage.frame = rect
+            previewImage.isUserInteractionEnabled = false
+            previewImage.isAccessibilityElement = false
+            previewImage.layer.cornerRadius = 18
+            previewImage.layer.cornerCurve = .continuous
+            previewImage.clipsToBounds = true
             previewImage.backgroundColor = .clear
         }
 
@@ -210,26 +211,39 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
                   previewImage.image != nil else { return nil }
             let parameters = UIPreviewParameters()
             parameters.backgroundColor = .clear
-            parameters.visiblePath = UIBezierPath(roundedRect: previewImage.bounds, cornerRadius: 18)
+            parameters.visiblePath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 1, height: 1))
             parameters.shadowPath = UIBezierPath()
             let center = source.convert(CGPoint(x: source.bounds.midX, y: source.bounds.midY), to: window)
             let target = UIPreviewTarget(container: window, center: center)
-            return UITargetedPreview(view: previewImage, parameters: parameters, target: target)
+            return UITargetedPreview(view: emptyPreview, parameters: parameters, target: target)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
             parent.onPresentationChange(true)
+            // Keep the selected card at its original position above the system dimming.
+            // The menu has no content preview to lift, resize, or relocate.
+            let showHighlight = { [weak self, weak interaction] in
+                guard let self, let window = interaction?.view?.window else { return }
+                window.addSubview(self.previewImage)
+            }
+            if let animator {
+                animator.addCompletion(showHighlight)
+            } else {
+                showHighlight()
+            }
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
             if let animator {
                 animator.addCompletion { [weak self] in
+                    self?.isPresentingMenu = false
                     self?.parent.onPresentationChange(false)
-                    self?.previewImage.image = nil
+                    self?.removeHighlight()
                 }
             } else {
+                isPresentingMenu = false
                 parent.onPresentationChange(false)
-                previewImage.image = nil
+                removeHighlight()
             }
         }
     }
