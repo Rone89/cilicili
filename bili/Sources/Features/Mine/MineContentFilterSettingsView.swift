@@ -42,6 +42,15 @@ struct MineContentFilterSettingsView: View {
             }
 
             Section("推荐过滤") {
+                NavigationLink {
+                    LocalBlockedUPSettingsView(libraryStore: libraryStore)
+                } label: {
+                    PlainSettingsNavigationRow(
+                        title: "本地已屏蔽的 UP 主",
+                        subtitle: "\(libraryStore.blockedHomeRecommendationUPMIDs.count) 位 UP 主"
+                    )
+                }
+
                 Picker(selection: Binding(
                     get: { libraryStore.recommendMinimumDurationSeconds },
                     set: { libraryStore.setRecommendMinimumDurationSeconds($0) }
@@ -116,5 +125,49 @@ struct MineContentFilterSettingsView: View {
 
     private func recommendLikeRatioTitle(_ percent: Int) -> String {
         percent == 0 ? "不过滤" : "\(percent)%"
+    }
+}
+
+private struct LocalBlockedUPSettingsView: View {
+    @ObservedObject var libraryStore: LibraryStore
+
+    var body: some View {
+        List {
+            Section {
+                if libraryStore.blockedHomeRecommendationUPMIDs.isEmpty {
+                    Text("暂无本地屏蔽的 UP 主")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(libraryStore.blockedHomeRecommendationUPMIDs.sorted(), id: \.self) { mid in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? "UP 主 · UID \(mid)")
+                                if libraryStore.blockedHomeRecommendationUPNames[String(mid)] != nil {
+                                    Text("UID \(mid)").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Button("解除屏蔽") {
+                                libraryStore.unblockHomeRecommendationUP(mid: mid)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("解除屏蔽 \(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? String(mid))")
+                        }
+                    }
+                    .onDelete { offsets in
+                        let mids = libraryStore.blockedHomeRecommendationUPMIDs.sorted()
+                        for index in offsets { libraryStore.unblockHomeRecommendationUP(mid: mids[index]) }
+                    }
+                }
+            } header: {
+                Text("本地已屏蔽的 UP 主")
+            } footer: {
+                Text("仅管理本机首页推荐屏蔽，不会解除 Bilibili 服务器拉黑。解除后，该 UP 的内容可在后续推荐中再次出现。首页推荐反馈实验关闭时，本地屏蔽数据仍保留，但不参与推荐过滤。")
+            }
+        }
+        .tint(libraryStore.appTintColor)
+        .listStyle(.insetGrouped)
+        .nativeTopScrollEdgeEffect()
+        .hiddenInlineNavigationTitle()
     }
 }

@@ -141,7 +141,7 @@ final class HomeViewModel: ObservableObject {
         defer { isSubmittingRecommendationFeedback = false }
         do {
             if synchronize { try await pageCoordinator.api.blockUploader(mid: owner.mid) }
-            libraryStore.blockHomeRecommendationUP(mid: Int64(owner.mid))
+            libraryStore.blockHomeRecommendationUP(mid: Int64(owner.mid), name: owner.name)
             // The publisher prunes current/retained recommendation rows immediately.
             recommendationFeedbackNotice = .success(synchronize ? "已拉黑并屏蔽该 UP 的推荐" : "已在本机屏蔽该 UP 的推荐")
         } catch {

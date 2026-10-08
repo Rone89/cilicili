@@ -150,6 +150,7 @@ final class LibraryStore: ObservableObject {
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
     @Published private(set) var homeRecommendationFeedbackContextMenuExperimentEnabled: Bool
     @Published private(set) var blockedHomeRecommendationUPMIDs: Set<Int64>
+    @Published private(set) var blockedHomeRecommendationUPNames: [String: String]
     @Published private(set) var commentTextTypographyUnificationExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
@@ -235,6 +236,7 @@ final class LibraryStore: ObservableObject {
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let homeRecommendationFeedbackContextMenuExperimentEnabledKey = "cc.bili.experimental.homeRecommendationFeedbackContextMenu.v1"
+    private static let blockedHomeRecommendationUPNamesKey = "cc.bili.home.blockedUPNames.v1"
     private static let blockedHomeRecommendationUPMIDsKey = "cc.bili.home.blockedUPMIDs.v1"
     private static let commentTextTypographyUnificationExperimentEnabledKey =
         "cc.bili.experimental.commentTextTypographyUnification.v1"
@@ -653,6 +655,7 @@ final class LibraryStore: ObservableObject {
             ) as? Bool ?? false
         self.homeRecommendationFeedbackContextMenuExperimentEnabled =
             userDefaults.object(forKey: Self.homeRecommendationFeedbackContextMenuExperimentEnabledKey) as? Bool ?? false
+        self.blockedHomeRecommendationUPNames = userDefaults.dictionary(forKey: Self.blockedHomeRecommendationUPNamesKey) as? [String: String] ?? [:]
         self.blockedHomeRecommendationUPMIDs = Set((userDefaults.stringArray(forKey: Self.blockedHomeRecommendationUPMIDsKey) ?? []).compactMap(Int64.init).filter { $0 > 0 })
         self.commentTextTypographyUnificationExperimentEnabled =
             userDefaults.object(forKey: Self.commentTextTypographyUnificationExperimentEnabledKey) as? Bool ?? false
@@ -1299,8 +1302,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(isEnabled, forKey: Self.homeRecommendationFeedbackContextMenuExperimentEnabledKey)
     }
 
-    func blockHomeRecommendationUP(mid: Int64) {
-        guard mid > 0, !blockedHomeRecommendationUPMIDs.contains(mid) else { return }
+    func blockHomeRecommendationUP(mid: Int64, name: String? = nil) {
+        guard mid > 0 else { return }
+        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty, name != "Unknown" {
+            blockedHomeRecommendationUPNames[String(mid)] = name
+        }
         blockedHomeRecommendationUPMIDs.insert(mid)
         persistBlockedHomeRecommendationUPs()
     }
@@ -1308,6 +1314,7 @@ final class LibraryStore: ObservableObject {
     func unblockHomeRecommendationUP(mid: Int64) {
         guard blockedHomeRecommendationUPMIDs.contains(mid) else { return }
         blockedHomeRecommendationUPMIDs.remove(mid)
+        blockedHomeRecommendationUPNames.removeValue(forKey: String(mid))
         persistBlockedHomeRecommendationUPs()
     }
 
@@ -1316,6 +1323,7 @@ final class LibraryStore: ObservableObject {
     }
 
     private func persistBlockedHomeRecommendationUPs() {
+        userDefaults.set(blockedHomeRecommendationUPNames, forKey: Self.blockedHomeRecommendationUPNamesKey)
         userDefaults.set(blockedHomeRecommendationUPMIDs.sorted().map(String.init), forKey: Self.blockedHomeRecommendationUPMIDsKey)
     }
 

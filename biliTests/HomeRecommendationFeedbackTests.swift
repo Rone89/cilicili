@@ -9,7 +9,7 @@ final class HomeRecommendationFeedbackTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
         XCTAssertFalse(store.homeRecommendationFeedbackContextMenuExperimentEnabled)
-        store.blockHomeRecommendationUP(mid: 123)
+        store.blockHomeRecommendationUP(mid: 123, name: "测试 UP")
         store.blockHomeRecommendationUP(mid: 123)
         store.blockHomeRecommendationUP(mid: 0)
         XCTAssertEqual(store.blockedHomeRecommendationUPMIDs, [123])
@@ -18,9 +18,11 @@ final class HomeRecommendationFeedbackTests: XCTestCase {
         let restored = LibraryStore(userDefaults: defaults)
         XCTAssertTrue(restored.homeRecommendationFeedbackContextMenuExperimentEnabled)
         XCTAssertEqual(restored.blockedHomeRecommendationUPMIDs, [123])
+        XCTAssertEqual(restored.blockedHomeRecommendationUPNames["123"], "测试 UP")
         restored.setHomeRecommendationFeedbackContextMenuExperimentEnabled(false)
         XCTAssertTrue(restored.containsBlockedHomeRecommendationUP(mid: 123))
         restored.unblockHomeRecommendationUP(mid: 123)
+        XCTAssertNil(LibraryStore(userDefaults: defaults).blockedHomeRecommendationUPNames["123"])
         XCTAssertFalse(LibraryStore(userDefaults: defaults).containsBlockedHomeRecommendationUP(mid: 123))
     }
 
