@@ -24,6 +24,8 @@ struct UITestFixtureRootView: View {
                 UITestDynamicRepliesFixtureView(dependencies: dependencies)
             case .dynamicSpacing:
                 UITestDynamicSpacingFixtureView()
+            case .homeFeedback:
+                UITestHomeFeedbackFixtureView()
             case .videoOwnerMenu:
                 UITestVideoOwnerMenuFixtureView(libraryStore: dependencies.libraryStore)
             #endif

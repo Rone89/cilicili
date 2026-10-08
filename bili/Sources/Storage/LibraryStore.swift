@@ -148,6 +148,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var multiAccountEnabled: Bool
     @available(*, deprecated, message: "Use multiAccountEnabled")
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
+    @Published private(set) var homeRecommendationFeedbackContextMenuExperimentEnabled: Bool
+    @Published private(set) var blockedHomeRecommendationUPMIDs: Set<Int64>
     @Published private(set) var commentTextTypographyUnificationExperimentEnabled: Bool
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
@@ -232,6 +234,8 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
+    private static let homeRecommendationFeedbackContextMenuExperimentEnabledKey = "cc.bili.experimental.homeRecommendationFeedbackContextMenu.v1"
+    private static let blockedHomeRecommendationUPMIDsKey = "cc.bili.home.blockedUPMIDs.v1"
     private static let commentTextTypographyUnificationExperimentEnabledKey =
         "cc.bili.experimental.commentTextTypographyUnification.v1"
     private static let videoDetailActionButtonStyleKey =
@@ -647,6 +651,9 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
+        self.homeRecommendationFeedbackContextMenuExperimentEnabled =
+            userDefaults.object(forKey: Self.homeRecommendationFeedbackContextMenuExperimentEnabledKey) as? Bool ?? false
+        self.blockedHomeRecommendationUPMIDs = Set((userDefaults.stringArray(forKey: Self.blockedHomeRecommendationUPMIDsKey) ?? []).compactMap(Int64.init).filter { $0 > 0 })
         self.commentTextTypographyUnificationExperimentEnabled =
             userDefaults.object(forKey: Self.commentTextTypographyUnificationExperimentEnabledKey) as? Bool ?? false
         self.videoDetailActionButtonStyle =
@@ -1285,6 +1292,31 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
         )
+    }
+
+    func setHomeRecommendationFeedbackContextMenuExperimentEnabled(_ isEnabled: Bool) {
+        homeRecommendationFeedbackContextMenuExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.homeRecommendationFeedbackContextMenuExperimentEnabledKey)
+    }
+
+    func blockHomeRecommendationUP(mid: Int64) {
+        guard mid > 0, !blockedHomeRecommendationUPMIDs.contains(mid) else { return }
+        blockedHomeRecommendationUPMIDs.insert(mid)
+        persistBlockedHomeRecommendationUPs()
+    }
+
+    func unblockHomeRecommendationUP(mid: Int64) {
+        guard blockedHomeRecommendationUPMIDs.contains(mid) else { return }
+        blockedHomeRecommendationUPMIDs.remove(mid)
+        persistBlockedHomeRecommendationUPs()
+    }
+
+    func containsBlockedHomeRecommendationUP(mid: Int64) -> Bool {
+        blockedHomeRecommendationUPMIDs.contains(mid)
+    }
+
+    private func persistBlockedHomeRecommendationUPs() {
+        userDefaults.set(blockedHomeRecommendationUPMIDs.sorted().map(String.init), forKey: Self.blockedHomeRecommendationUPMIDsKey)
     }
 
     func setCommentTextTypographyUnificationExperimentEnabled(_ isEnabled: Bool) {

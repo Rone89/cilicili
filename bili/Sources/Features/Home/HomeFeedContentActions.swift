@@ -8,4 +8,5 @@ struct HomeFeedContentActions {
     let onCardDisappear: (VideoItem) -> Void
     let onLoadMore: (VideoItem) async -> Void
     let onRefreshFromLastSeenMarker: () async -> Void
+    var recommendationFeedback: HomeRecommendationFeedbackActions? = nil
 }

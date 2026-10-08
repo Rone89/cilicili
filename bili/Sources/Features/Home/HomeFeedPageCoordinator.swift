@@ -22,7 +22,10 @@ final class HomeFeedPageCoordinator {
 
     func filterFeedRecommendations(_ videos: [VideoItem]) -> [VideoItem] {
         VideoRecommendationFilter.filtered(
-            videos,
+            HomeRecommendationFeedbackPolicy.filtered(
+                videos, blockedMIDs: libraryStore.blockedHomeRecommendationUPMIDs,
+                enabled: libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled
+            ),
             configuration: libraryStore.videoRecommendationFilterConfiguration,
             context: .feed
         )

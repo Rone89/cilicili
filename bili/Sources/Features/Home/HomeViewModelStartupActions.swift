@@ -58,6 +58,7 @@ extension HomeViewModel {
     }
 
     func reloadForRecommendContextChange() async {
+        hiddenRecommendationIDs.removeAll()
         retainedRecommendVideos.removeAll()
         retainedRecommendLastSeenMarkerIndex = nil
         guard mode == .recommend else { return }

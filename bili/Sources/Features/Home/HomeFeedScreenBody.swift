@@ -44,6 +44,21 @@ struct HomeFeedScreenBody: View {
             viewModel.updateImagePrefetchProfile(imagePrefetchProfile)
         }
         .background(layout.homeFeedBackground)
+        .overlay(alignment: .top) {
+            if let message = viewModel.recommendationFeedbackMessage {
+                VideoDetailNoticeLabel(message: message, systemImage: "info.circle")
+                    .padding(12)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 12))
+                    .padding()
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("home.recommendation.feedbackMessage")
+            }
+        }
+        .task(id: viewModel.recommendationFeedbackMessage) {
+            guard viewModel.recommendationFeedbackMessage != nil else { return }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            viewModel.recommendationFeedbackMessage = nil
+        }
         .homeFeedScreenLifecycle(
             viewModel: viewModel,
             runtimeSettings: runtimeSettings,

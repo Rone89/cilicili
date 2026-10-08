@@ -10,6 +10,7 @@ enum UITestFixtureScenario: String {
     case commentSpacing
     case dynamicReplies
     case dynamicSpacing
+    case homeFeedback
     case videoOwnerMenu
     #endif
     case dynamicDetail

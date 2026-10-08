@@ -3595,6 +3595,177 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testRecommendationFeedbackMapsServerReasonsAndCancellationWithSignedMainAccount() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":null}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: "main-access-key")
+        let metadata = try XCTUnwrap(HomeFeedbackTestData.video().recommendationFeedback)
+        for kind in [RecommendationFeedbackKind.dislike, .feedback] {
+            for cancel in [false, true] {
+                let reason = try XCTUnwrap(metadata.reasons(for: kind).first)
+                try await api.submitRecommendationFeedback(metadata: metadata, kind: kind, reason: reason, cancel: cancel)
+                let request = try XCTUnwrap(recorder.request)
+                let query = Self.queryValues(for: request)
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.host, "app.bilibili.com")
+                XCTAssertEqual(request.url?.path, cancel ? "/x/feed/dislike/cancel" : "/x/feed/dislike")
+                XCTAssertEqual(query["goto"], "av")
+                XCTAssertEqual(query["id"], "1001")
+                XCTAssertEqual(query[kind.requestKey], String(reason.id!))
+                XCTAssertNil(query[kind == .dislike ? "feedback_id" : "reason_id"])
+                XCTAssertEqual(query["access_key"], "main-access-key")
+                XCTAssertEqual(query["appkey"], BiliAppSigner.Profile.androidHD.appKey)
+                XCTAssertEqual(query["build"], "1")
+                XCTAssertEqual(query["mobi_app"], "android")
+                var unsigned = query
+                unsigned.removeValue(forKey: "sign")
+                XCTAssertEqual(query["sign"], BiliAppSigner.sign(unsigned, profile: .androidHD)["sign"])
+                XCTAssertNotNil(query["ts"])
+                XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+            }
+        }
+    }
+
+    @MainActor
+    func testRecommendationFeedbackGuestAndMissingAccessKeyNeverSendRequest() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0}"#)
+        }
+        let metadata = try XCTUnwrap(HomeFeedbackTestData.video().recommendationFeedback)
+        let reason = try XCTUnwrap(metadata.reasons(for: .dislike).first)
+        for (key, guest) in [(Optional<String>.none, false), ("main-access-key", true)] {
+            let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: key, guestModeEnabled: guest)
+            do {
+                try await api.submitRecommendationFeedback(metadata: metadata, kind: .dislike, reason: reason)
+                XCTFail("Anonymous feedback must be rejected")
+            } catch {}
+        }
+        XCTAssertNil(recorder.request)
+    }
+
+    @MainActor
+    func testHomeFeedbackSuccessRemovesOnlyCurrentVideoAndRejectsInFlightReinsertion() async throws {
+        RequestContractURLProtocol.install { request in Self.response(for: request, body: #"{"code":0}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: "main-access-key")
+        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let videos = try [HomeFeedbackTestData.video(id: 1), HomeFeedbackTestData.video(id: 2, mid: 456), HomeFeedbackTestData.video(id: 3)]
+        model.updateFeed(videos)
+        model.updateLastSeenMarkerIndex(2)
+        let reason = try XCTUnwrap(videos[0].recommendationFeedback?.reasons(for: .dislike).first)
+        await model.performRecommendationFeedback(video: videos[0], kind: .dislike, reason: reason)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2", "BV3"])
+        XCTAssertEqual(model.lastSeenMarkerIndex, 1)
+        XCTAssertEqual(model.recommendationFeedbackMessage, reason.toast)
+        XCTAssertTrue(api.libraryStore.blockedHomeRecommendationUPMIDs.isEmpty)
+        model.updateFeed(videos) // Response started before feedback completed.
+        XCTAssertEqual(model.videos.map(\.id), ["BV2", "BV3"])
+        XCTAssertFalse(model.isSubmittingRecommendationFeedback)
+    }
+
+    @MainActor
+    func testHomeFeedbackAndRemoteBlockFailureDoNotMutateFeedOrBlocks() async throws {
+        RequestContractURLProtocol.install { request in Self.response(for: request, body: #"{"code":-400,"message":"操作失败"}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001; bili_jct=csrf", accessKey: "main-access-key")
+        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let video = try HomeFeedbackTestData.video()
+        model.updateFeed([video])
+        let reason = try XCTUnwrap(video.recommendationFeedback?.reasons(for: .dislike).first)
+        await model.performRecommendationFeedback(video: video, kind: .dislike, reason: reason)
+        XCTAssertEqual(model.videos, [video])
+        XCTAssertTrue(model.hiddenRecommendationIDs.isEmpty)
+        await model.blockRecommendationUP(try XCTUnwrap(video.owner), synchronize: true)
+        XCTAssertEqual(model.videos, [video])
+        XCTAssertTrue(api.libraryStore.blockedHomeRecommendationUPMIDs.isEmpty)
+        XCTAssertTrue(model.recommendationFeedbackMessage?.contains("失败") == true)
+    }
+
+    @MainActor
+    func testLocalBlockPrunesAllUPRowsRetainedFeedAndFutureResponsesOnlyWhenEnabled() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0}"#)
+        }
+        let api = try makeAPI(cookieHeader: "")
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let videos = try [HomeFeedbackTestData.video(id: 1), HomeFeedbackTestData.video(id: 2, mid: 456), HomeFeedbackTestData.video(id: 3)]
+        api.libraryStore.blockHomeRecommendationUP(mid: 123)
+        model.updateFeed(videos)
+        XCTAssertEqual(model.videos, videos) // Default OFF remains exact legacy.
+        model.retainedRecommendVideos = videos
+        model.retainedRecommendLastSeenMarkerIndex = 2
+        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
+        XCTAssertEqual(model.retainedRecommendVideos.map(\.id), ["BV2"])
+        XCTAssertEqual(model.retainedRecommendLastSeenMarkerIndex, 1)
+        model.updateFeed(videos)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
+        api.libraryStore.unblockHomeRecommendationUP(mid: 123)
+        model.updateFeed(videos)
+        await model.blockRecommendationUP(try XCTUnwrap(videos[0].owner), synchronize: false)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
+        XCTAssertNil(recorder.request)
+        model.mode = .popular
+        model.updateFeed(videos)
+        XCTAssertEqual(model.videos, videos)
+        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(false)
+        model.mode = .recommend
+        model.updateFeed(videos)
+        XCTAssertEqual(model.videos, videos)
+        XCTAssertTrue(api.libraryStore.containsBlockedHomeRecommendationUP(mid: 123))
+    }
+
+    @MainActor
+    func testRemoteBlockReusesRelationAPIAndPersistsOnlyAfterSuccess() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001; bili_jct=csrf")
+        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let video = try HomeFeedbackTestData.video()
+        model.updateFeed([video])
+        XCTAssertTrue(model.canSynchronizeRecommendationBlock)
+        await model.blockRecommendationUP(try XCTUnwrap(video.owner), synchronize: true)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/relation/modify")
+        XCTAssertEqual(request.httpMethod, "POST")
+        let form = formValues(in: request)
+        XCTAssertEqual(form["fid"], "123")
+        XCTAssertEqual(form["act"], "5")
+        XCTAssertEqual(form["re_src"], "11")
+        XCTAssertEqual(form["csrf"], "csrf")
+        XCTAssertTrue(api.libraryStore.containsBlockedHomeRecommendationUP(mid: 123))
+        XCTAssertTrue(model.videos.isEmpty)
+    }
+
+    @MainActor
+    func testRemoteBlockSupportsExistingSignedAppAccessKeyFallback() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: "main-access-key")
+        try await api.blockUploader(mid: 123)
+        let form = formValues(in: try XCTUnwrap(recorder.request))
+        XCTAssertEqual(form["access_key"], "main-access-key")
+        XCTAssertEqual(form["act"], "5")
+        XCTAssertEqual(form["fid"], "123")
+        XCTAssertNotNil(form["sign"])
+        XCTAssertNil(form["csrf"])
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

@@ -140,12 +140,13 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     let historyResumeTime: TimeInterval?
     let historyCID: Int?
     let recommendReason: String?
+    let recommendationFeedback: HomeRecommendationFeedbackMetadata?
     let pgcSeasonID: Int?
     let pgcEpisodeID: Int?
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, desc, duration, pubdate, owner, stat, cid, pages, dimension
-        case historyResumeTime, historyCID, recommendReason, pgcSeasonID, pgcEpisodeID
+        case historyResumeTime, historyCID, recommendReason, recommendationFeedback, pgcSeasonID, pgcEpisodeID
     }
 
     init(
@@ -164,6 +165,7 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         historyResumeTime: TimeInterval? = nil,
         historyCID: Int? = nil,
         recommendReason: String? = nil,
+        recommendationFeedback: HomeRecommendationFeedbackMetadata? = nil,
         pgcSeasonID: Int? = nil,
         pgcEpisodeID: Int? = nil
     ) {
@@ -182,6 +184,7 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         self.historyResumeTime = historyResumeTime
         self.historyCID = historyCID
         self.recommendReason = recommendReason
+        self.recommendationFeedback = recommendationFeedback
         self.pgcSeasonID = pgcSeasonID
         self.pgcEpisodeID = pgcEpisodeID
     }
@@ -219,6 +222,7 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             historyResumeTime: historyResumeTime ?? fullDetail.historyResumeTime,
             historyCID: historyCID ?? fullDetail.historyCID,
             recommendReason: recommendReason ?? fullDetail.recommendReason,
+            recommendationFeedback: recommendationFeedback ?? fullDetail.recommendationFeedback,
             pgcSeasonID: pgcSeasonID ?? fullDetail.pgcSeasonID,
             pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID
         )
@@ -1333,6 +1337,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
     let topRecommendReasonStyle: RecommendFeedReason?
     let stat: VideoStat?
     let dimension: VideoDimension?
+    let threePointV2: [RecommendationThreePoint]?
 
     nonisolated var resolvedCardKind: String {
         goto ?? cardGoto ?? "-"
@@ -1345,6 +1350,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
 
     enum CodingKeys: String, CodingKey {
         case aid, bvid, cid, title, pic, cover, uri, param, goto, idx, duration, pubdate, ctime, owner, args, desc, stat, dimension
+        case threePointV2 = "three_point_v2"
         case idValue = "id"
         case cardGoto = "card_goto"
         case ownerInfo = "owner_info"
@@ -1409,6 +1415,7 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText1))
             ?? Self.stat(from: container.decodeLossyStringIfPresent(forKey: .coverLeftText2))
         dimension = try container.decodeIfPresent(VideoDimension.self, forKey: .dimension)
+        threePointV2 = try container.decodeIfPresent([RecommendationThreePoint].self, forKey: .threePointV2)
     }
 
     nonisolated func asVideoItem() -> VideoItem? {
@@ -1429,8 +1436,17 @@ nonisolated struct RecommendFeedItem: Identifiable, Decodable, Hashable, Sendabl
             cid: cid,
             pages: nil,
             dimension: dimension,
-            recommendReason: sanitizedRecommendReason
+            recommendReason: sanitizedRecommendReason,
+            recommendationFeedback: feedbackMetadata
         )
+    }
+
+    private nonisolated var feedbackMetadata: HomeRecommendationFeedbackMetadata? {
+        guard let points = threePointV2, !points.isEmpty,
+              let target = cardGoto ?? goto,
+              let id = param.flatMap(Int.init) ?? idValue ?? aid, id > 0
+        else { return nil }
+        return HomeRecommendationFeedbackMetadata(goto: target, targetID: id, threePointV2: points)
     }
 
     private nonisolated var sanitizedRecommendReason: String? {

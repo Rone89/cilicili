@@ -16,7 +16,17 @@ struct HomeFeedScreenContentActionsBuilder {
             onCardAppear: recordExposure,
             onCardDisappear: recordCardDisappearance,
             onLoadMore: loadMoreIfNeeded,
-            onRefreshFromLastSeenMarker: refreshFromLastSeenMarker
+            onRefreshFromLastSeenMarker: refreshFromLastSeenMarker,
+            recommendationFeedback: HomeRecommendationFeedbackPolicy.isAvailable(
+                experimentEnabled: viewModel.libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled,
+                mode: viewModel.mode
+            ) ? HomeRecommendationFeedbackActions(
+                canSubmit: viewModel.canSubmitRecommendationFeedback,
+                canSynchronizeBlock: viewModel.canSynchronizeRecommendationBlock,
+                isBusy: viewModel.isSubmittingRecommendationFeedback,
+                submit: viewModel.performRecommendationFeedback,
+                block: viewModel.blockRecommendationUP
+            ) : nil
         )
     }
 

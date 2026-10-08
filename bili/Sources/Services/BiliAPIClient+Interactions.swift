@@ -302,15 +302,24 @@ extension BiliAPIClient {
     }
 
     func setUploaderFollowing(mid: Int, following: Bool) async throws {
+        try await modifyUploaderRelation(mid: mid, action: following ? "1" : "2")
+    }
+
+    func blockUploader(mid: Int) async throws {
+        guard mid > 0 else { throw BiliAPIError.missingPayload }
+        try await modifyUploaderRelation(mid: mid, action: "5")
+    }
+
+    private func modifyUploaderRelation(mid: Int, action: String) async throws {
         let context = await interactionRequestContext(purpose: .main)
         if let csrf = context.csrfToken, context.isLoggedIn {
-            try await setUploaderFollowingWithWeb(mid: mid, following: following, csrf: csrf)
+            try await modifyUploaderRelationWithWeb(mid: mid, action: action, csrf: csrf, cookieHeader: context.cookieHeader)
             return
         }
         if let accessKey = context.appAccessKey, !accessKey.isEmpty {
-            try await setUploaderFollowingWithAppAccessKey(
+            try await modifyUploaderRelationWithAppAccessKey(
                 mid: mid,
-                following: following,
+                action: action,
                 accessKey: accessKey,
                 cookieHeader: context.cookieHeader
             )
@@ -319,27 +328,28 @@ extension BiliAPIClient {
         throw BiliAPIError.missingSESSDATA
     }
 
-    private func setUploaderFollowingWithWeb(mid: Int, following: Bool, csrf: String) async throws {
+    private func modifyUploaderRelationWithWeb(mid: Int, action: String, csrf: String, cookieHeader: String) async throws {
         let response: BiliResponse<EmptyBiliPayload> = try await postForm(
             base: baseURL,
             path: "/x/relation/modify",
             body: [
                 "fid": String(mid),
-                "act": following ? "1" : "2",
+                "act": action,
                 "re_src": "11",
                 "csrf": csrf,
                 "gaia_source": "web_normal",
                 "ga": "1",
-            ]
+            ],
+            cookieHeader: cookieHeader
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
     }
 
-    private func setUploaderFollowingWithAppAccessKey(
+    private func modifyUploaderRelationWithAppAccessKey(
         mid: Int,
-        following: Bool,
+        action: String,
         accessKey: String,
         cookieHeader: String
     ) async throws {
@@ -349,7 +359,7 @@ extension BiliAPIClient {
             fields: [
                 "access_key": accessKey,
                 "fid": String(mid),
-                "act": following ? "1" : "2",
+                "act": action,
                 "re_src": "11",
                 "gaia_source": "app_normal",
             ],
