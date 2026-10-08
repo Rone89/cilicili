@@ -2,6 +2,8 @@ import SwiftUI
 
 struct VideoDetailViewContentResolver: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var sessionStore: SessionStore
     let seedVideo: VideoItem
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
     @ObservedObject var viewModel: VideoDetailViewModel
@@ -56,6 +58,10 @@ struct VideoDetailViewContentResolver: View {
                 }
             )
             .allowsHitTesting(false)
+        }
+        .task(id: "\(viewModel.detail.aid ?? 0)-\(libraryStore.accountLibraryManagementExperimentEnabled)-\(libraryStore.accountFavoriteChangeRevision)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.accountConfigurationVersion)") {
+            guard dependencies.libraryStore.accountLibraryManagementExperimentEnabled else { return }
+            await viewModel.loadFavoriteFoldersForCurrentVideo(forceRefresh: true)
         }
         .task(id: commentAnchorTaskID) {
             await presentPendingCommentIfPossible()

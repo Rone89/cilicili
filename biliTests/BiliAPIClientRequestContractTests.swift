@@ -38,6 +38,259 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         } catch BiliAPIError.missingSESSDATA {}
     }
 
+
+    @MainActor
+    func testLibraryManagementBatchRequestsOnlyChangeSpecifiedFolder() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in
+            library.setAccountLibraryManagementExperimentEnabled(true)
+        })
+        let context = try await api.libraryManagementContext(purpose: .interaction)
+        try await api.changeFavoriteResources(aids: [11, 12], removeFolderID: 9, context: context)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/v3/fav/resource/batch-deal")
+        XCTAssertEqual(formValues(in: request)["resources"], "11:2,12:2")
+        XCTAssertEqual(formValues(in: request)["del_media_ids"], "9")
+        XCTAssertEqual(formValues(in: request)["add_media_ids"], "")
+        XCTAssertEqual(formValues(in: request)["csrf"], "csrf")
+    }
+
+    @MainActor
+    func testLibraryManagementMoveReportsSecondStepFailure() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let body = recorder.requests.count == 2 ? #"{"code":-400,"message":"remove failed"}"# : #"{"code":0,"data":{}}"#
+            return Self.response(for: request, body: body)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in
+            library.setAccountLibraryManagementExperimentEnabled(true)
+        })
+        let controller = AccountLibraryManagementController(api: api)
+        controller.setDisplayedContext(api.requestSnapshot(purpose: .interaction), purpose: .interaction)
+        let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
+        let entries = try JSONDecoder.bili.decode(DynamicJSONValue.self, from: Data(#"[{"bvid":"BVtest","aid":11,"title":"test"}]"#.utf8)).accountVideoEntries
+        await controller.perform(entries: entries, source: folder, action: .move(10))
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertEqual(formValues(in: recorder.requests[0])["add_media_ids"], "10")
+        XCTAssertEqual(formValues(in: recorder.requests[0])["del_media_ids"], "")
+        XCTAssertEqual(formValues(in: recorder.requests[1])["del_media_ids"], "9")
+        XCTAssertTrue(controller.message?.contains("已加入目标收藏夹") == true)
+        XCTAssertTrue(controller.message?.contains("已完成 0") == true)
+        XCTAssertFalse(controller.isBusy)
+    }
+
+    @MainActor
+    func testLibraryManagementCopyKeepsSourceAndChunksRequests() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let controller = AccountLibraryManagementController(api: api)
+        controller.setDisplayedContext(api.requestSnapshot(purpose: .interaction), purpose: .interaction)
+        let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
+        let data = try JSONSerialization.data(withJSONObject: (1...45).map { ["aid": $0, "bvid": "BV\($0)", "title": "test"] })
+        let entries = try JSONDecoder.bili.decode(DynamicJSONValue.self, from: data).accountVideoEntries
+        await controller.perform(entries: entries, source: folder, action: .copy(10))
+        XCTAssertEqual(recorder.requests.count, 3)
+        for request in recorder.requests {
+            XCTAssertEqual(formValues(in: request)["del_media_ids"], "")
+            XCTAssertLessThanOrEqual(formValues(in: request)["resources"]!.split(separator: ",").count, 20)
+        }
+        XCTAssertEqual(controller.message, "已完成 45 项")
+    }
+
+    @MainActor
+    func testLibraryManagementFailureStopsFurtherBatches() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if recorder.requests.count == 2 { throw URLError(.timedOut) }
+            return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let controller = AccountLibraryManagementController(api: api)
+        controller.setDisplayedContext(api.requestSnapshot(purpose: .historyRead), purpose: .historyRead)
+        let data = try JSONSerialization.data(withJSONObject: (1...45).map { ["aid": $0, "bvid": "BV\($0)", "title": "test"] })
+        let entries = try JSONDecoder.bili.decode(DynamicJSONValue.self, from: data).accountVideoEntries
+        await controller.perform(entries: entries, source: nil, action: .remove)
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertTrue(controller.message?.contains("已完成 20 项") == true)
+        XCTAssertTrue(controller.message?.contains("其余操作未完成") == true)
+    }
+
+    @MainActor
+    func testLibraryManagementOffAndEmptySelectionNeverMutate() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        XCTAssertFalse(api.libraryStore.accountLibraryManagementExperimentEnabled)
+        let controller = AccountLibraryManagementController(api: api)
+        let entries = try JSONDecoder.bili.decode(DynamicJSONValue.self, from: Data(#"[{"bvid":"BVtest","aid":11}]"#.utf8)).accountVideoEntries
+        await controller.perform(entries: entries, source: nil, action: .remove)
+        api.libraryStore.setAccountLibraryManagementExperimentEnabled(true)
+        await controller.perform(entries: [], source: nil, action: .remove)
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    @MainActor
+    func testLibraryManagementCapturedAccountCannotMutateAfterSwitch() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        let context = try await api.libraryManagementContext(purpose: .historyRead)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002", "bili_jct":"newcsrf"], credentialKind: .web)
+        do { try await api.removeWatchLater(aids: [11], context: context); XCTFail("Must reject old context") }
+        catch is CancellationError {}
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    @MainActor
+    func testLibraryManagementWatchLaterContractsAndChangeRevision() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        let context = try await api.libraryManagementContext(purpose: .historyRead)
+        try await api.setWatchLater(aid: 11, added: true, context: context)
+        try await api.removeWatchLater(aids: [11, 12], context: context)
+        try await api.clearWatchLater(context: context)
+        XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/history/toview/add", "/x/v2/history/toview/v2/dels", "/x/v2/history/toview/clear"])
+        XCTAssertEqual(formValues(in: recorder.requests[0])["aid"], "11")
+        XCTAssertEqual(formValues(in: recorder.requests[1])["resources"], "11,12")
+        XCTAssertEqual(formValues(in: recorder.requests[2])["clean_type"], nil)
+        XCTAssertEqual(api.libraryStore.accountLibraryChangeRevision, 3)
+        XCTAssertEqual(api.libraryStore.accountWatchLaterChangeRevision, 3)
+        XCTAssertEqual(api.libraryStore.accountFavoriteChangeRevision, 0)
+    }
+
+    @MainActor
+    func testLibraryManagementDefaultAndForeignFolderProtection() async throws {
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        let context = try await api.libraryManagementContext(purpose: .interaction)
+        let standard = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":1}"#.utf8))
+        XCTAssertTrue(standard.isDefaultFolder)
+        XCTAssertTrue(standard.isPrivateFolder)
+        let foreign = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":10,"mid":2002,"attr":2}"#.utf8))
+        XCTAssertFalse(foreign.canManage(accountMID: 1001))
+        for folder in [standard, foreign] {
+            do { try await api.deleteFavoriteFolder(folder, context: context); XCTFail("Protected folder") }
+            catch BiliAPIError.api {}
+        }
+    }
+
+    @MainActor
+    func testLibraryManagementFolderCRUDAndSortContracts() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0,"data":{}}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        let context = try await api.libraryManagementContext(purpose: .interaction)
+        let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2,"cover":"https://example.com/cover"}"#.utf8))
+        try await api.saveFavoriteFolder(folder: nil, title: "新收藏夹", intro: "介绍", isPrivate: true, context: context)
+        try await api.saveFavoriteFolder(folder: folder, title: "重命名", intro: "新介绍", isPrivate: false, context: context)
+        try await api.sortFavoriteFolders(ids: [1,9,10], context: context)
+        try await api.deleteFavoriteFolder(folder, context: context)
+        XCTAssertEqual(formValues(in: recorder.requests[0])["privacy"], "1")
+        XCTAssertEqual(formValues(in: recorder.requests[1])["media_id"], "9")
+        XCTAssertEqual(formValues(in: recorder.requests[1])["cover"], "https://example.com/cover")
+        XCTAssertEqual(formValues(in: recorder.requests[2])["sort"], "1,9,10")
+        XCTAssertNotNil(formValues(in: recorder.requests[2])["sign"])
+        XCTAssertEqual(formValues(in: recorder.requests[3])["media_ids"], "9")
+    }
+
+    @MainActor
+    func testLibraryManagementLoggedOutCannotReadMutationContext() async throws {
+        let api = try makeAPI(cookieHeader: "")
+        do { _ = try await api.libraryManagementContext(purpose: .interaction); XCTFail("Login required") }
+        catch BiliAPIError.missingSESSDATA {}
+    }
+
+
+    @MainActor
+    func testLibraryManagementRefreshKeepsAllLoadedPagesAndServerCounts() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v3/fav/folder/created/list-all" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"id":9,"mid":1001,"attr":2,"media_count":40}]}}"#)
+            }
+            let pn = Int(Self.queryValue(named: "pn", in: request) ?? "1") ?? 1
+            let medias = ((pn - 1) * 20 + 1...pn * 20).map { ["aid": $0, "bvid": "BV\($0)", "title": "test"] }
+            let data = try JSONSerialization.data(withJSONObject: ["code": 0, "data": ["medias": medias, "has_more": pn == 1]])
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let model = MineViewModel(api: api, sessionStore: api.sessionStore)
+        let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
+        await model.refreshFavoriteFolder(folder)
+        await model.loadMoreFavoriteFolder(folder)
+        XCTAssertEqual(model.favoriteFolderEntries[9]?.count, 40)
+        api.libraryStore.recordAccountLibraryChange()
+        await model.refreshFavoriteFolder(folder)
+        XCTAssertEqual(model.favoriteFolderEntries[9]?.count, 40)
+        XCTAssertEqual(model.favoriteFolders.first?.mediaCount, 40)
+        XCTAssertEqual(model.favoriteFolderHasMore[9], false)
+        let pageReads = recorder.requests.filter { $0.url?.path == "/x/v3/fav/resource/list" }
+        XCTAssertEqual(pageReads.map { Self.queryValue(named: "pn", in: $0) }, ["1", "2", "1", "2"])
+    }
+
+    @MainActor
+    func testLibraryManagementLateReadDoesNotRepopulateOldAccount() async throws {
+        let started = expectation(description: "old request started")
+        let gate = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            if request.value(forHTTPHeaderField: "Cookie")?.contains("DedeUserID=1001") == true {
+                started.fulfill()
+                _ = gate.wait(timeout: .now() + 2)
+                return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"aid":11,"bvid":"BVold","title":"old"}]}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"aid":22,"bvid":"BVnew","title":"new"}]}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let model = MineViewModel(api: api, sessionStore: api.sessionStore)
+        let pending = Task { await model.refreshWatchLater() }
+        await fulfillment(of: [started], timeout: 2)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002", "bili_jct":"newcsrf"], credentialKind: .web)
+        gate.signal()
+        await pending.value
+        XCTAssertTrue(model.accountWatchLater.isEmpty)
+        await model.synchronizeManagedLibrary(kind: .watchLater)
+        XCTAssertEqual(model.accountWatchLater.map(\.bvid), ["BVnew"])
+    }
+
+    @MainActor
+    func testLibraryManagementWatchLaterUsesHistoryAccountNotInteractionAccount() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0}"#) }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001; bili_jct=csrf-main")
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"playback", "DedeUserID":"2002", "bili_jct":"csrf-playback"], credentialKind: .web)
+        try api.sessionStore.selectMainAccount(mid: 1001)
+        try api.sessionStore.selectPlaybackAccount(mid: 2002)
+        try api.sessionStore.selectInteractionAccount(mid: 1001)
+        try api.sessionStore.setHistoryAccountPolicy(.playback)
+        let context = try await api.libraryManagementContext(purpose: .historyRead)
+        try await api.removeWatchLater(aids: [11], context: context)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("DedeUserID=2002") == true)
+        XCTAssertEqual(formValues(in: request)["csrf"], "csrf-playback")
+    }
+
+    @MainActor
+    func testLibraryManagementFlagPersistsWithoutChangingLibraryData() {
+        let defaults = UserDefaults(suiteName: "LibraryManagementFlagTests.\(UUID().uuidString)")!
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.accountLibraryManagementExperimentEnabled)
+        store.setAccountLibraryManagementExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).accountLibraryManagementExperimentEnabled)
+        store.setAccountLibraryManagementExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).accountLibraryManagementExperimentEnabled)
+    }
+
     override func tearDown() {
         RequestContractURLProtocol.reset()
         super.tearDown()

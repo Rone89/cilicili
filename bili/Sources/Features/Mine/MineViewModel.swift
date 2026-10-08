@@ -42,6 +42,7 @@ final class MineViewModel: ObservableObject {
     @Published private(set) var accountLibraryRevision = 0
     @Published private(set) var favoriteFolderRevision = 0
 
+    let libraryManagement: AccountLibraryManagementController
     private let api: BiliAPIClient
     private let sessionStore: SessionStore
     private var qrLoginTask: Task<Void, Never>?
@@ -50,6 +51,7 @@ final class MineViewModel: ObservableObject {
     private var favoriteFolderPages: [Int: Int] = [:]
 
     init(api: BiliAPIClient, sessionStore: SessionStore) {
+        self.libraryManagement = AccountLibraryManagementController(api: api)
         self.api = api
         self.sessionStore = sessionStore
     }
@@ -100,44 +102,79 @@ final class MineViewModel: ObservableObject {
     }
 
     func refreshFavorites() async {
+        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
+        let revision = api.libraryStore.accountFavoriteChangeRevision
+        let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn else { return }
         favoriteState = .loading
         do {
-            favoriteFolders = try await api.fetchFavoriteFolders()
-            accountFavorites = try await api.fetchAccountFavorites()
+            let folders = try await api.fetchFavoriteFolders()
+            if !managed { favoriteFolders = folders }
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            let favorites = try await api.fetchAccountFavorites(knownFolders: managed ? folders : nil)
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            if managed { libraryManagement.setDisplayedContext(identity, purpose: .interaction) }
+            favoriteFolders = folders
+            accountFavorites = favorites
             favoriteState = .loaded
         } catch {
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteState = .failed(error.localizedDescription)
         }
     }
 
     func refreshWatchLater() async {
+        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
+        let revision = api.libraryStore.accountWatchLaterChangeRevision
+        let identity = api.requestSnapshot(purpose: .historyRead)
         guard sessionStore.isLoggedIn else { return }
         watchLaterState = .loading
         do {
-            accountWatchLater = Self.uniqued(try await api.fetchAccountWatchLater())
+            let entries = try await api.fetchAccountWatchLater()
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .historyRead) else { return }
+            if managed { libraryManagement.setDisplayedContext(identity, purpose: .historyRead) }
+            accountWatchLater = Self.uniqued(entries)
             watchLaterState = .loaded
         } catch {
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .historyRead) else { return }
             watchLaterState = .failed(error.localizedDescription)
         }
     }
 
     func refreshFavoriteFolder(_ folder: FavoriteFolder) async {
+        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
+        let revision = api.libraryStore.accountFavoriteChangeRevision
+        let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn else { return }
         favoriteFolderEntryStates[folder.id] = .loading
         favoriteFolderLoadMoreStates[folder.id] = .idle
+        let loadedPages = managed ? max(favoriteFolderPages[folder.id] ?? 1, 1) : 1
         favoriteFolderPages[folder.id] = 1
         favoriteFolderHasMore[folder.id] = false
         do {
-            let page = try await api.fetchFavoriteFolderVideoPage(
-                folderID: folder.id,
-                page: 1,
-                pageSize: accountLibraryPageSize
-            )
-            favoriteFolderEntries[folder.id] = Self.uniqued(page.entries)
-            favoriteFolderHasMore[folder.id] = page.hasMore
+            var entries: [AccountVideoEntry] = []
+            var more = false
+            var finalPage = 1
+            for number in 1...loadedPages {
+                let page = try await api.fetchFavoriteFolderVideoPage(folderID: folder.id, page: number, pageSize: accountLibraryPageSize)
+                guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+                entries = Self.appendingUnique(page.entries, to: entries)
+                more = page.hasMore; finalPage = number
+                if !more { break }
+            }
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            if managed {
+                let folders = try await api.fetchFavoriteFolders()
+                guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+                favoriteFolders = folders
+                libraryManagement.setDisplayedContext(identity, purpose: .interaction)
+            }
+            favoriteFolderEntries[folder.id] = entries
+            favoriteFolderHasMore[folder.id] = more
+            favoriteFolderPages[folder.id] = finalPage
             favoriteFolderEntryStates[folder.id] = .loaded
         } catch {
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteFolderEntryStates[folder.id] = .failed(error.localizedDescription)
         }
     }
@@ -175,6 +212,9 @@ final class MineViewModel: ObservableObject {
     }
 
     func loadMoreFavoriteFolder(_ folder: FavoriteFolder) async {
+        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
+        let revision = api.libraryStore.accountFavoriteChangeRevision
+        let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn,
               favoriteFolderHasMore[folder.id] == true,
               !(favoriteFolderEntryStates[folder.id]?.isLoading ?? false),
@@ -188,6 +228,7 @@ final class MineViewModel: ObservableObject {
                 page: nextPage,
                 pageSize: accountLibraryPageSize
             )
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
             let previousCount = favoriteFolderEntries[folder.id]?.count ?? 0
             favoriteFolderEntries[folder.id] = Self.appendingUnique(
                 page.entries,
@@ -198,6 +239,7 @@ final class MineViewModel: ObservableObject {
                 && (favoriteFolderEntries[folder.id]?.count ?? 0) > previousCount
             favoriteFolderLoadMoreStates[folder.id] = .idle
         } catch {
+            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteFolderLoadMoreStates[folder.id] = .failed(error.localizedDescription)
         }
     }
@@ -389,6 +431,48 @@ final class MineViewModel: ObservableObject {
         default:
             return false
         }
+    }
+
+    private var managedLibraryIdentity: [BiliAccountPurpose: String] = [:]
+    private var managedLibraryRevision: [String: Int] = [:]
+
+    func synchronizeManagedLibrary(kind: AccountLibraryKind, folder: FavoriteFolder? = nil) async {
+        guard api.libraryStore.accountLibraryManagementExperimentEnabled, kind != .history else { return }
+        let purpose: BiliAccountPurpose = kind == .watchLater ? .historyRead : .interaction
+        let snapshot = api.requestSnapshot(purpose: purpose)
+        let key = "\(snapshot.currentUserMID ?? 0)-\(snapshot.playbackCredentialVersion)-\(snapshot.isLoggedIn)"
+        let changedAccount = managedLibraryIdentity[purpose] != key
+        let pageKey = "\(purpose.rawValue)-\(folder?.id ?? 0)"
+        let changedData = managedLibraryRevision[pageKey] != api.libraryStore.accountLibraryRevision(for: purpose)
+        if changedAccount {
+            libraryManagement.clearDisplayedContext(purpose: purpose)
+            if purpose == .historyRead { accountWatchLater = []; watchLaterState = .idle }
+            else {
+                favoriteFolders = []; accountFavorites = []; favoriteFolderEntries = [:]
+                favoriteFolderEntryStates = [:]; favoriteFolderLoadMoreStates = [:]
+                favoriteFolderPages = [:]; favoriteFolderHasMore = [:]; favoriteState = .idle
+            }
+        }
+        managedLibraryIdentity[purpose] = key
+        managedLibraryRevision[pageKey] = api.libraryStore.accountLibraryRevision(for: purpose)
+        guard snapshot.isLoggedIn, changedAccount || changedData else { return }
+        if let folder {
+            guard folder.canManage(accountMID: snapshot.currentUserMID) else {
+                favoriteFolderEntryStates[folder.id] = .failed("该收藏夹不属于当前收藏账号")
+                return
+            }
+            await refreshFavoriteFolder(folder)
+        }
+        else if kind == .favorites { await refreshFavorites() }
+        else if kind == .watchLater { await refreshWatchLater() }
+    }
+
+    private func libraryReadMayApply(managed: Bool, identity: BiliAPIClient.RequestSnapshot, revision: Int, purpose: BiliAccountPurpose) async -> Bool {
+        guard managed else { return true }
+        let current = api.requestSnapshot(purpose: purpose)
+        return api.libraryStore.accountLibraryRevision(for: purpose) == revision && current.isLoggedIn && current.currentUserMID == identity.currentUserMID
+            && current.playbackCredentialVersion == identity.playbackCredentialVersion
+            && current.cookieHeader == identity.cookieHeader
     }
 
     private func resetAccountLibraryState() {

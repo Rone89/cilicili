@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailSummaryCard: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let viewModel: VideoDetailViewModel
     let contentWidth: CGFloat
     let showsNetworkDiagnosticsButton: Bool
@@ -48,6 +49,10 @@ struct VideoDetailSummaryCard: View {
                 onFavorite: renderPack.actions.favorite,
                 onShareTap: renderPack.actions.share
             )
+
+            if libraryStore.accountLibraryManagementExperimentEnabled {
+                VideoDetailWatchLaterButton(aid: viewModel.detail.aid)
+            }
 
             if showsNetworkDiagnosticsButton {
                 VideoDetailNetworkDiagnosticsButton(action: onShowNetworkDiagnostics)

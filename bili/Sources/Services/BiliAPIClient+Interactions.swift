@@ -239,6 +239,9 @@ extension BiliAPIClient {
             csrf: context.csrf,
             cookieHeader: context.context.cookieHeader
         )
+        await MainActor.run {
+            if libraryStore.accountLibraryManagementExperimentEnabled { libraryStore.recordAccountLibraryChange() }
+        }
     }
 
     func fetchFavoriteFolders(for aid: Int? = nil) async throws -> [FavoriteFolder] {

@@ -3723,6 +3723,7 @@ nonisolated struct FavoriteFolderListData: Decodable, Hashable {
 
 nonisolated struct FavoriteFolder: Identifiable, Decodable, Hashable {
     let id: Int
+    let ownerMID: Int?
     let title: String?
     let favState: Int?
     let mediaCount: Int?
@@ -3735,6 +3736,7 @@ nonisolated struct FavoriteFolder: Identifiable, Decodable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, cover, intro, attr, state, ctime, mtime
+        case ownerMID = "mid"
         case mediaID = "media_id"
         case favState = "fav_state"
         case mediaCount = "media_count"
@@ -3745,6 +3747,7 @@ nonisolated struct FavoriteFolder: Identifiable, Decodable, Hashable {
         id = container.decodeLossyIntIfPresent(forKey: .id)
             ?? container.decodeLossyIntIfPresent(forKey: .mediaID)
             ?? 0
+        ownerMID = container.decodeLossyIntIfPresent(forKey: .ownerMID)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         favState = container.decodeLossyIntIfPresent(forKey: .favState)
         mediaCount = container.decodeLossyIntIfPresent(forKey: .mediaCount)
@@ -3759,6 +3762,14 @@ nonisolated struct FavoriteFolder: Identifiable, Decodable, Hashable {
     var displayTitle: String {
         let normalizedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedTitle?.isEmpty == false ? normalizedTitle! : "未命名收藏夹"
+    }
+
+    var isDefaultFolder: Bool { attr.map { ($0 & 2) == 0 } ?? false }
+    var isPrivateFolder: Bool { attr.map { ($0 & 1) != 0 } ?? false }
+    func canManage(accountMID: Int?) -> Bool {
+        guard id > 0, attr != nil, let accountMID else { return false }
+        // Missing ownership is not treated as management permission.
+        return ownerMID == accountMID
     }
 
     var isFavorited: Bool {

@@ -96,10 +96,12 @@ extension BiliAPIClient {
         return response.payload?.accountVideoEntries ?? []
     }
 
-    func fetchAccountFavorites(page: Int = 1, pageSize: Int = 20) async throws -> [AccountVideoEntry] {
+    func fetchAccountFavorites(page: Int = 1, pageSize: Int = 20, knownFolders: [FavoriteFolder]? = nil) async throws -> [AccountVideoEntry] {
         let context = await accountLibraryRequestContext(purpose: .interaction)
         guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
-        let folders = try await fetchAccountLibraryFavoriteFolders(context: context)
+        let folders: [FavoriteFolder]
+        if let knownFolders { folders = knownFolders }
+        else { folders = try await fetchAccountLibraryFavoriteFolders(context: context) }
         var entries = [AccountVideoEntry]()
         var seen = Set<String>()
         var lastError: Error?

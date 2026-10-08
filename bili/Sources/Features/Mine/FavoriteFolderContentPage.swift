@@ -6,16 +6,24 @@ struct FavoriteFolderContentPage: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var libraryStore: LibraryStore
 
+    @State private var selectedIDs = Set<String>()
+    @State private var editMode: EditMode = .inactive
+
     var body: some View {
-        List {
+        List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 content
             } header: {
-                if let count = folder.mediaCount {
+                if let count = (libraryStore.accountLibraryManagementExperimentEnabled ? viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount : nil) ?? folder.mediaCount {
                     Text("\(count) 个内容")
                 }
             }
         }
+        .modifier(AccountLibraryVideoManagementModifier(
+            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: items,
+            source: folder, folders: viewModel.favoriteFolders,
+            selection: $selectedIDs, editMode: $editMode, reload: reload
+        ))
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -29,7 +37,12 @@ struct FavoriteFolderContentPage: View {
                 .disabled(!sessionStore.isLoggedIn || state.isLoading)
             }
         }
-        .task {
+        .task(id: managedTaskID) {
+            if libraryStore.accountLibraryManagementExperimentEnabled {
+                selectedIDs = []; editMode = .inactive
+                guard !viewModel.libraryManagement.isBusy else { return }
+                await viewModel.synchronizeManagedLibrary(kind: .favorites, folder: folder)
+            }
             await loadIfNeeded()
         }
         .refreshable {
@@ -51,8 +64,13 @@ struct FavoriteFolderContentPage: View {
             LibraryEmptyRow(title: "这个收藏夹还没有视频", systemImage: "folder")
         } else {
             ForEach(items) { item in
-                VideoRouteLink(item.videoItem) {
-                    LibraryVideoRow(item: item, timestampTitle: "收藏时间")
+                AccountLibraryManagedVideoRow(item: item, timestampTitle: "收藏时间",
+                    isEditing: managementEnabled && editMode.isEditing,
+                    canManage: managementEnabled && (item.aid ?? 0) > 0) {
+                    Task {
+                        await viewModel.libraryManagement.perform(entries: [item], source: folder, action: .remove)
+                        await reload()
+                    }
                 }
                 .task {
                     await viewModel.loadMoreFavoriteFolderIfNeeded(folder, current: item)
@@ -79,6 +97,14 @@ struct FavoriteFolderContentPage: View {
         }
     }
 
+    private var managementEnabled: Bool {
+        libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn && folder.canManage(accountMID: viewModel.libraryManagement.api.requestSnapshot(purpose: .interaction).currentUserMID)
+    }
+    private var managedTaskID: String {
+        guard libraryStore.accountLibraryManagementExperimentEnabled else { return "legacy" }
+        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountFavoriteChangeRevision)-\(libraryStore.accountLibraryManagementExperimentEnabled)"
+    }
+
     private var items: [AccountVideoEntry] {
         viewModel.favoriteFolderEntries[folder.id] ?? []
     }
@@ -96,11 +122,13 @@ struct FavoriteFolderContentPage: View {
     }
 
     private func loadIfNeeded() async {
+        if libraryStore.accountLibraryManagementExperimentEnabled, state != .idle { return }
         guard sessionStore.isLoggedIn, items.isEmpty, !state.isLoading else { return }
         await reload()
     }
 
     private func reload() async {
+        guard !viewModel.libraryManagement.isBusy else { return }
         await viewModel.refreshFavoriteFolder(folder)
     }
 }

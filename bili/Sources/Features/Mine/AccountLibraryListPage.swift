@@ -6,16 +6,50 @@ struct AccountLibraryListPage: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var libraryStore: LibraryStore
 
+    @State private var selectedIDs = Set<String>()
+    @State private var editMode: EditMode = .inactive
+    @State private var confirmsClear = false
+
     var body: some View {
-        List {
+        List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 content
             }
         }
+        .modifier(AccountLibraryVideoManagementModifier(
+            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: items,
+            source: nil, folders: viewModel.favoriteFolders,
+            selection: $selectedIDs, editMode: $editMode, reload: reload
+        ))
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
+        .confirmationDialog("清空稍后再看？", isPresented: $confirmsClear, titleVisibility: .visible) {
+            Button("清空全部", role: .destructive) {
+                Task {
+                    _ = await viewModel.libraryManagement.mutate(purpose: .historyRead) { context in
+                        guard let displayed = viewModel.libraryManagement.displayedContexts[.historyRead] else { throw CancellationError() }
+                        try await viewModel.libraryManagement.api.clearWatchLater(context: displayed)
+                    }
+                    selectedIDs = []; await reload()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: { Text("将移除该账号稍后再看中的全部视频，此操作不能撤销。") }
         .toolbar {
+            if managementEnabled {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if let resume = items.first(where: { $0.resumeTime != nil }) ?? items.first {
+                            VideoRouteLink(resume.videoItem) { Label("继续播放", systemImage: "play.fill") }
+                        }
+                        Button("清空稍后再看", systemImage: "trash", role: .destructive) { confirmsClear = true }
+                            .disabled(items.isEmpty)
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityIdentifier("library.watchLater.actions")
+                    .disabled(viewModel.libraryManagement.isBusy)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task { await reload() }
@@ -25,7 +59,12 @@ struct AccountLibraryListPage: View {
                 .disabled(!sessionStore.isLoggedIn || state.isLoading)
             }
         }
-        .task {
+        .task(id: managedTaskID) {
+            if libraryStore.accountLibraryManagementExperimentEnabled {
+                selectedIDs = []; editMode = .inactive
+                guard !viewModel.libraryManagement.isBusy else { return }
+                await viewModel.synchronizeManagedLibrary(kind: kind)
+            }
             await loadIfNeeded()
         }
         .refreshable {
@@ -49,8 +88,13 @@ struct AccountLibraryListPage: View {
             LibraryEmptyRow(title: kind.emptyTitle, systemImage: kind.systemImage)
         } else {
             ForEach(items) { item in
-                VideoRouteLink(item.videoItem) {
-                    LibraryVideoRow(item: item, timestampTitle: kind.timestampTitle)
+                AccountLibraryManagedVideoRow(item: item, timestampTitle: kind.timestampTitle,
+                    isEditing: managementEnabled && editMode.isEditing,
+                    canManage: managementEnabled && (item.aid ?? 0) > 0) {
+                    Task {
+                        await viewModel.libraryManagement.perform(entries: [item], source: nil, action: .remove)
+                        await reload()
+                    }
                 }
                 .task {
                     await loadMoreIfNeeded(current: item)
@@ -79,7 +123,9 @@ struct AccountLibraryListPage: View {
 
     @ViewBuilder
     private var favoriteFolderContent: some View {
-        if favoriteFolders.isEmpty {
+        if libraryStore.accountLibraryManagementExperimentEnabled {
+            FavoriteFolderManagementContent(viewModel: viewModel, controller: viewModel.libraryManagement)
+        } else if favoriteFolders.isEmpty {
             LibraryEmptyRow(title: kind.emptyTitle, systemImage: kind.systemImage)
         } else {
             ForEach(favoriteFolders) { folder in
@@ -90,6 +136,14 @@ struct AccountLibraryListPage: View {
                 }
             }
         }
+    }
+
+    private var managementEnabled: Bool {
+        libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn && kind == .watchLater
+    }
+    private var managedTaskID: String {
+        guard libraryStore.accountLibraryManagementExperimentEnabled else { return "legacy" }
+        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountLibraryRevision(for: kind == .watchLater ? .historyRead : .interaction))-\(libraryStore.accountLibraryManagementExperimentEnabled)"
     }
 
     private var items: [AccountVideoEntry] {
@@ -137,11 +191,13 @@ struct AccountLibraryListPage: View {
     }
 
     private func loadIfNeeded() async {
+        if libraryStore.accountLibraryManagementExperimentEnabled, kind != .history, state != .idle { return }
         guard sessionStore.isLoggedIn, items.isEmpty, !state.isLoading else { return }
         await reload()
     }
 
     private func reload() async {
+        guard !viewModel.libraryManagement.isBusy else { return }
         switch kind {
         case .history:
             await viewModel.refreshHistory()

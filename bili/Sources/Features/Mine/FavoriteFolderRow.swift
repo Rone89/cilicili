@@ -2,11 +2,12 @@ import SwiftUI
 
 struct FavoriteFolderRow: View {
     let folder: FavoriteFolder
+    var showsStatus = false
 
     var body: some View {
         HStack(spacing: 10) {
             FavoriteFolderCover(folder: folder)
-            FavoriteFolderInfo(folder: folder)
+            FavoriteFolderInfo(folder: folder, showsStatus: showsStatus)
 
             Spacer(minLength: 8)
 
@@ -57,6 +58,7 @@ private struct FavoriteFolderInfo: View {
     @Environment(\.appThemeTintColor) private var appTintColor
 
     let folder: FavoriteFolder
+    var showsStatus = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -65,6 +67,14 @@ private struct FavoriteFolderInfo: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
+            if showsStatus {
+                HStack(spacing: 6) {
+                    if folder.isDefaultFolder { Text("默认") }
+                    Label(folder.attr == nil ? "状态未知" : (folder.isPrivateFolder ? "私密" : "公开"), systemImage: folder.isPrivateFolder ? "lock" : "globe")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
             HStack(spacing: 8) {
                 Label("\(folder.mediaCount ?? 0) 个内容", systemImage: "play.rectangle.stack")
                 if folder.isFavorited {
