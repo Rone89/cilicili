@@ -46,8 +46,7 @@ struct VideoDetailSummaryCard: View {
                 onFollow: renderPack.actions.follow,
                 onLike: renderPack.actions.like,
                 onCoin: showCoinPicker,
-                onFavorite: renderPack.actions.favorite,
-                onShareTap: renderPack.actions.share
+                onFavorite: renderPack.actions.favorite
             )
 
             if showsNetworkDiagnosticsButton {

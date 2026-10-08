@@ -9,13 +9,12 @@ extension VideoDetailViewModel {
             return
         }
         let bvid = detail.bvid
-        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
         let account = api.requestSnapshot(purpose: .interaction)
         guard forceRefresh || favoriteFolders.isEmpty else { return }
         favoriteFolderState = .loading
         do {
             let folders = try await api.fetchFavoriteFolders(for: aid)
-            guard !managed || (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
+            guard (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
                 && api.requestSnapshot(purpose: .interaction).playbackCredentialVersion == account.playbackCredentialVersion),
                   !isPlaybackInvalidatedForNavigation,
                   isCurrentVideoContext(aid: aid, bvid: bvid)
@@ -25,7 +24,7 @@ extension VideoDetailViewModel {
             interactionState.isFavorited = folders.contains { $0.isFavorited }
             interactionMessage = nil
         } catch BiliAPIError.missingSESSDATA {
-            guard !managed || (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
+            guard (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
                 && api.requestSnapshot(purpose: .interaction).playbackCredentialVersion == account.playbackCredentialVersion),
                   !isPlaybackInvalidatedForNavigation,
                   isCurrentVideoContext(aid: aid, bvid: bvid)
@@ -33,7 +32,7 @@ extension VideoDetailViewModel {
             favoriteFolders = []
             favoriteFolderState = .failed("请先登录后再查看收藏夹")
         } catch {
-            guard !managed || (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
+            guard (api.requestSnapshot(purpose: .interaction).currentUserMID == account.currentUserMID
                 && api.requestSnapshot(purpose: .interaction).playbackCredentialVersion == account.playbackCredentialVersion),
                   !isPlaybackInvalidatedForNavigation,
                   isCurrentVideoContext(aid: aid, bvid: bvid)

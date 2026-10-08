@@ -14,7 +14,6 @@ struct VideoDetailActionStrip: View, Equatable {
     let onLike: () -> Void
     let onCoin: () -> Void
     let onFavorite: () -> Void
-    let onShareTap: () -> Void
     @Environment(\.videoDetailActionButtonStyle) private var actionButtonStyle
 
     static func == (lhs: VideoDetailActionStrip, rhs: VideoDetailActionStrip) -> Bool {
@@ -34,7 +33,6 @@ struct VideoDetailActionStrip: View, Equatable {
                     onLike: onLike,
                     onCoin: onCoin,
                     onFavorite: onFavorite,
-                    onShareTap: onShareTap,
                     usesPlainStyle: true
                 )
             } else {
@@ -46,7 +44,6 @@ struct VideoDetailActionStrip: View, Equatable {
                         onLike: onLike,
                         onCoin: onCoin,
                         onFavorite: onFavorite,
-                        onShareTap: onShareTap,
                         usesPlainStyle: false
                     )
                 }

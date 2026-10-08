@@ -72,7 +72,7 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
     }
 
     private func actionButtons(in app: XCUIApplication) -> [XCUIElement] {
-        ["like", "coin", "favorite", "share"].map { app.buttons["video.detail.\($0)"] }
+        ["like", "coin", "favorite", "more"].map { app.buttons["video.detail.\($0)"] }
     }
 
     private func assertMatchingFrames(_ buttons: [XCUIElement], expected: [CGRect]) {
@@ -85,7 +85,7 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
     }
 
     private func assertEqualSpacing(_ app: XCUIApplication) {
-        let ids = ["ownerMenu", "like", "coin", "favorite", "share"]
+        let ids = ["ownerMenu", "like", "coin", "favorite", "more"]
         let centers = ids.map { app.buttons["video.detail.\($0)"].frame.midX }
         let expectedGap = centers[1] - centers[0]
         XCTAssertGreaterThan(expectedGap, 0)

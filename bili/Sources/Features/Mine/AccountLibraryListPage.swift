@@ -23,7 +23,7 @@ struct AccountLibraryListPage: View {
         ))
         .modifier(FavoriteFolderManagementModifier(
             viewModel: viewModel, controller: viewModel.libraryManagement,
-            enabled: kind == .favorites && libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn
+            enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
@@ -64,11 +64,9 @@ struct AccountLibraryListPage: View {
             }
         }
         .task(id: managedTaskID) {
-            if libraryStore.accountLibraryManagementExperimentEnabled {
-                selectedIDs = []; editMode = .inactive
-                guard !viewModel.libraryManagement.isBusy else { return }
-                await viewModel.synchronizeManagedLibrary(kind: kind)
-            }
+            selectedIDs = []; editMode = .inactive
+            guard !viewModel.libraryManagement.isBusy else { return }
+            await viewModel.synchronizeManagedLibrary(kind: kind)
             await loadIfNeeded()
         }
         .refreshable {
@@ -125,29 +123,15 @@ struct AccountLibraryListPage: View {
         }
     }
 
-    @ViewBuilder
     private var favoriteFolderContent: some View {
-        if libraryStore.accountLibraryManagementExperimentEnabled {
-            FavoriteFolderManagementContent(viewModel: viewModel, controller: viewModel.libraryManagement)
-        } else if favoriteFolders.isEmpty {
-            LibraryEmptyRow(title: kind.emptyTitle, systemImage: kind.systemImage)
-        } else {
-            ForEach(favoriteFolders) { folder in
-                NavigationLink {
-                    FavoriteFolderContentPage(folder: folder, viewModel: viewModel)
-                } label: {
-                    FavoriteFolderRow(folder: folder)
-                }
-            }
-        }
+        FavoriteFolderManagementContent(viewModel: viewModel, controller: viewModel.libraryManagement)
     }
 
     private var managementEnabled: Bool {
-        libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn && kind == .watchLater
+        sessionStore.isLoggedIn && kind == .watchLater
     }
     private var managedTaskID: String {
-        guard libraryStore.accountLibraryManagementExperimentEnabled else { return "legacy" }
-        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountLibraryRevision(for: kind == .watchLater ? .historyRead : .interaction))-\(libraryStore.accountLibraryManagementExperimentEnabled)"
+        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountLibraryRevision(for: kind == .watchLater ? .historyRead : .interaction))"
     }
 
     private var items: [AccountVideoEntry] {
@@ -172,10 +156,6 @@ struct AccountLibraryListPage: View {
         }
     }
 
-    private var favoriteFolders: [FavoriteFolder] {
-        viewModel.favoriteFolders
-    }
-
     private var loadMoreState: LoadingState {
         switch kind {
         case .history:
@@ -195,7 +175,7 @@ struct AccountLibraryListPage: View {
     }
 
     private func loadIfNeeded() async {
-        if libraryStore.accountLibraryManagementExperimentEnabled, kind != .history, state != .idle { return }
+        if kind != .history, state != .idle { return }
         guard sessionStore.isLoggedIn, items.isEmpty, !state.isLoading else { return }
         await reload()
     }

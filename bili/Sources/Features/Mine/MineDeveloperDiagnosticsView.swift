@@ -94,12 +94,6 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.metalDanmaku")
 
-            Toggle("收藏夹与稍后再看管理增强实验", isOn: Binding(
-                get: { libraryStore.accountLibraryManagementExperimentEnabled },
-                set: { libraryStore.setAccountLibraryManagementExperimentEnabled($0) }
-            ))
-            .accessibilityIdentifier("mine.experiments.accountLibraryManagement")
-
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

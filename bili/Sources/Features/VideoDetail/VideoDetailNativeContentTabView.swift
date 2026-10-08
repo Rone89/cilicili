@@ -16,7 +16,6 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var interactiveMinimumPlayerHeight = VideoDetailShellLayout.collapsedToolbarHeight
     var contentRevision: Int = 0
     var onOpenCommentComposer: (() -> Void)?
-    var onRefreshComments: () -> Void = {}
     var onSelectionWillChange: ((VideoDetailContentTab) -> Void)? = nil
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
     var onScrollPhaseChange: ((VideoDetailContentTab, ScrollPhase) -> Void)? = nil
@@ -50,8 +49,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     VideoDetailToolbarCommentAction(
-                        onComment: onOpenCommentComposer,
-                        onRefresh: onRefreshComments
+                        onComment: onOpenCommentComposer
                     )
                 }
                 .sharedBackgroundVisibility(.automatic)

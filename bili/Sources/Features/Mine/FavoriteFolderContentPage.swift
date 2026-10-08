@@ -14,7 +14,7 @@ struct FavoriteFolderContentPage: View {
             Section {
                 content
             } header: {
-                if let count = (libraryStore.accountLibraryManagementExperimentEnabled ? viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount : nil) ?? folder.mediaCount {
+                if let count = viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount ?? folder.mediaCount {
                     Text("\(count) 个内容")
                 }
             }
@@ -38,11 +38,9 @@ struct FavoriteFolderContentPage: View {
             }
         }
         .task(id: managedTaskID) {
-            if libraryStore.accountLibraryManagementExperimentEnabled {
-                selectedIDs = []; editMode = .inactive
-                guard !viewModel.libraryManagement.isBusy else { return }
-                await viewModel.synchronizeManagedLibrary(kind: .favorites, folder: folder)
-            }
+            selectedIDs = []; editMode = .inactive
+            guard !viewModel.libraryManagement.isBusy else { return }
+            await viewModel.synchronizeManagedLibrary(kind: .favorites, folder: folder)
             await loadIfNeeded()
         }
         .refreshable {
@@ -98,11 +96,10 @@ struct FavoriteFolderContentPage: View {
     }
 
     private var managementEnabled: Bool {
-        libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn && folder.canManage(accountMID: viewModel.libraryManagement.api.requestSnapshot(purpose: .interaction).currentUserMID)
+        sessionStore.isLoggedIn && folder.canManage(accountMID: viewModel.libraryManagement.api.requestSnapshot(purpose: .interaction).currentUserMID)
     }
     private var managedTaskID: String {
-        guard libraryStore.accountLibraryManagementExperimentEnabled else { return "legacy" }
-        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountFavoriteChangeRevision)-\(libraryStore.accountLibraryManagementExperimentEnabled)"
+        return "\(sessionStore.accountConfigurationVersion)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountFavoriteChangeRevision)"
     }
 
     private var items: [AccountVideoEntry] {
@@ -122,7 +119,7 @@ struct FavoriteFolderContentPage: View {
     }
 
     private func loadIfNeeded() async {
-        if libraryStore.accountLibraryManagementExperimentEnabled, state != .idle { return }
+        if state != .idle { return }
         guard sessionStore.isLoggedIn, items.isEmpty, !state.isLoading else { return }
         await reload()
     }

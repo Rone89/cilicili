@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct VideoDetailActionStripButtonRow: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.appThemeTintColor) private var appTintColor
 
@@ -11,7 +10,6 @@ struct VideoDetailActionStripButtonRow: View {
     let onLike: () -> Void
     let onCoin: () -> Void
     let onFavorite: () -> Void
-    let onShareTap: () -> Void
     let usesPlainStyle: Bool
 
     var body: some View {
@@ -71,24 +69,12 @@ struct VideoDetailActionStripButtonRow: View {
             .frame(width: layout.columnWidth, height: layout.rowHeight)
             .accessibilityIdentifier("video.detail.favorite")
 
-            if libraryStore.accountLibraryManagementExperimentEnabled {
-                VideoDetailMoreMenu(
-                    api: dependencies.api, aid: model.aid,
-                    shareURL: model.shareURL, shareSubject: model.shareSubject, shareMessage: model.shareMessage,
-                    usesPlainStyle: usesPlainStyle
-                )
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
-            } else {
-                VideoDetailActionStripShareButton(
-                    shareURL: model.shareURL,
-                    shareSubject: model.shareSubject,
-                    shareMessage: model.shareMessage,
-                    onShareTap: onShareTap,
-                    usesPlainStyle: usesPlainStyle
-                )
-                .frame(width: layout.columnWidth, height: layout.rowHeight)
-                .accessibilityIdentifier("video.detail.share")
-            }
+            VideoDetailMoreMenu(
+                api: dependencies.api, aid: model.aid,
+                shareURL: model.shareURL, shareSubject: model.shareSubject, shareMessage: model.shareMessage,
+                usesPlainStyle: usesPlainStyle
+            )
+            .frame(width: layout.columnWidth, height: layout.rowHeight)
         }
     }
 

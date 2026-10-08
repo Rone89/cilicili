@@ -7,20 +7,27 @@ struct UITestLibraryManagementFixtureView: View {
     @StateObject private var library: LibraryStore
     @StateObject private var model: MineViewModel
     @State private var openedTitle = ""
+    @State private var composerTarget: DynamicCommentComposerTarget?
+    @State private var draft = RichCommentDraft()
     private let favorites: Bool
     private let showsDetailMenu: Bool
+    private let showsCommentComposer: Bool
 
     init() {
         let args = ProcessInfo.processInfo.arguments
         favorites = args.contains("--library-favorites")
         showsDetailMenu = args.contains("--library-detail-menu")
+        showsCommentComposer = args.contains("--library-comment-composer")
         let name = "LibraryManagementFixture.\(UUID().uuidString)"
         let session = SessionStore(keychain: KeychainStore(service: name))
         if !args.contains("--library-logged-out") {
             try? session.saveLoginCookies(["SESSDATA":"fixture", "bili_jct":"fixture", "DedeUserID":"1001"], credentialKind: .web)
         }
-        let library = LibraryStore(userDefaults: UserDefaults(suiteName: name)!)
-        library.setAccountLibraryManagementExperimentEnabled(!args.contains("--library-off"))
+        let defaults = UserDefaults(suiteName: name)!
+        if args.contains("--library-formerly-disabled") {
+            defaults.set(false, forKey: "cc.bili.experimental.accountLibraryManagement.v1")
+        }
+        let library = LibraryStore(userDefaults: defaults)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [LibraryManagementFixtureProtocol.self]
         let api = BiliAPIClient(session: URLSession(configuration: config), sessionStore: session,
@@ -38,27 +45,29 @@ struct UITestLibraryManagementFixtureView: View {
                 .toolbar {
                     if showsDetailMenu {
                         ToolbarItem(placement: .topBarTrailing) {
-                            if library.accountLibraryManagementExperimentEnabled {
-                                VideoDetailMoreMenu(api: model.libraryManagement.api, aid: 1,
-                                    shareURL: URL(string: "https://www.bilibili.com/video/BVfixture1"),
-                                    shareSubject: "测试视频 1", shareMessage: "分享测试视频")
-                            } else {
-                                VideoDetailActionStripShareButton(
-                                    shareURL: URL(string: "https://www.bilibili.com/video/BVfixture1"),
-                                    shareSubject: "测试视频 1", shareMessage: "分享测试视频", onShareTap: {})
-                                    .accessibilityIdentifier("video.detail.share")
-                            }
+                            VideoDetailMoreMenu(api: model.libraryManagement.api, aid: 1,
+                                shareURL: URL(string: "https://www.bilibili.com/video/BVfixture1"),
+                                shareSubject: "测试视频 1", shareMessage: "分享测试视频")
                         }
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailToolbarCommentAction(
-                                onComment: { openedTitle = "发表评论" },
-                                onRefresh: { openedTitle = "刷新评论区" })
+                                onComment: {
+                                    openedTitle = "发表评论"
+                                    if showsCommentComposer { composerTarget = .dynamic }
+                                })
                         }
                     }
                     ToolbarItem(placement: .topBarLeading) {
                         Text(openedTitle.isEmpty ? "未打开视频" : openedTitle)
                             .accessibilityIdentifier("library.fixture.openedVideo")
                     }
+                }
+                .background {
+                    RichCommentComposerPresenter(
+                        target: $composerTarget, draft: { _ in $draft },
+                        api: model.libraryManagement.api, submit: { _, _, _ in }
+                    )
+                    .allowsHitTesting(false)
                 }
         }
         .environmentObject(session)

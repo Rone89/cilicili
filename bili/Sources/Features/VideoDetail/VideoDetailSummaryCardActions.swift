@@ -47,10 +47,6 @@ struct VideoDetailSummaryCardActions {
         showFavoriteFolders()
     }
 
-    func share() {
-        Haptics.light()
-    }
-
     func retryPlayURL() {
         Task { [weak viewModel = viewModelBox.viewModel] in
             guard let viewModel else { return }

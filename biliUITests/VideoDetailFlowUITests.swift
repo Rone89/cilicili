@@ -111,19 +111,17 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testVideoDetailToolbarCommentComposerIsAvailableWithoutExperimentFlag() {
-        let app = launchVideoDetail(waitForDetailMarker: false)
-        let moreButton = app.buttons["video.detail.toolbar-comment-more"]
-        XCTAssertTrue(moreButton.waitForExistence(timeout: 10))
+    func testVideoDetailToolbarCommentComposerIsAvailableByDefault() throws {
+        let app = launchVideoDetail()
+        let composeButton = app.buttons["video.detail.toolbar-comment"]
+        XCTAssertTrue(composeButton.waitForExistence(timeout: 10))
 
-        let picker = element("video.detail.toolbar-picker", in: app).firstMatch
-        let commentsButton = picker.buttons["评论"]
-        XCTAssertTrue(commentsButton.waitForExistence(timeout: 5))
-        commentsButton.tap()
-        XCTAssertTrue(moreButton.isHittable)
+        guard app.staticTexts["正在加载"].firstMatch.waitForNonExistence(timeout: 15) else {
+            throw XCTSkip("在线详情尚未加载，无法取得评论目标；隔离数据的评论输入弹窗另有回归测试。")
+        }
 
-        let composeButton = app.buttons["video.detail.toolbar-comment-compose"]
-        XCTAssertTrue(composeButton.waitForExistence(timeout: 5))
+        let hittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: composeButton)
+        wait(for: [hittable], timeout: 5)
         composeButton.tap()
 
         XCTAssertTrue(

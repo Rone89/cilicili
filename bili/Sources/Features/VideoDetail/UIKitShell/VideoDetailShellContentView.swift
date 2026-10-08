@@ -44,7 +44,6 @@ struct VideoDetailShellContentView: View {
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onOpenCommentComposer: (Comment?) -> Void
-    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
@@ -68,7 +67,6 @@ struct VideoDetailShellContentView: View {
             onShowFavoriteFolders: onShowFavoriteFolders,
             onShowCoinPicker: onShowCoinPicker,
             onOpenCommentComposer: onOpenCommentComposer,
-            onRefreshComments: onRefreshComments,
             onReply: onReply,
             openVideoOwnerRoute: openVideoOwnerRoute,
             onSelectedTabChange: onSelectedTabChange,
@@ -93,7 +91,6 @@ private struct VideoDetailShellContentBody: View {
     let onShowFavoriteFolders: () -> Void
     let onShowCoinPicker: () -> Void
     let onOpenCommentComposer: (Comment?) -> Void
-    let onRefreshComments: () -> Void
     let onReply: (Comment) -> Void
     let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     let onSelectedTabChange: (VideoDetailContentTab) -> Void
@@ -117,7 +114,6 @@ private struct VideoDetailShellContentBody: View {
             interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
             contentRevision: contentRevision,
             onOpenCommentComposer: { onOpenCommentComposer(nil) },
-            onRefreshComments: onRefreshComments,
             onSelectionWillChange: onSelectionWillChange,
             onScrollOffsetChange: onScrollOffsetChange,
             onScrollPhaseChange: onScrollPhaseChange,

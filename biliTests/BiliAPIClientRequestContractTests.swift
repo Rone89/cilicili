@@ -46,9 +46,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             recorder.record(request)
             return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in
-            library.setAccountLibraryManagementExperimentEnabled(true)
-        })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let context = try await api.libraryManagementContext(purpose: .interaction)
         try await api.changeFavoriteResources(aids: [11, 12], removeFolderID: 9, context: context)
         let request = try XCTUnwrap(recorder.request)
@@ -67,9 +65,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             let body = recorder.requests.count == 2 ? #"{"code":-400,"message":"remove failed"}"# : #"{"code":0,"data":{}}"#
             return Self.response(for: request, body: body)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in
-            library.setAccountLibraryManagementExperimentEnabled(true)
-        })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let controller = AccountLibraryManagementController(api: api)
         controller.setDisplayedContext(api.requestSnapshot(purpose: .interaction), purpose: .interaction)
         let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
@@ -91,7 +87,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             recorder.record(request)
             return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let controller = AccountLibraryManagementController(api: api)
         controller.setDisplayedContext(api.requestSnapshot(purpose: .interaction), purpose: .interaction)
         let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
@@ -114,7 +110,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             if recorder.requests.count == 2 { throw URLError(.timedOut) }
             return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let controller = AccountLibraryManagementController(api: api)
         controller.setDisplayedContext(api.requestSnapshot(purpose: .historyRead), purpose: .historyRead)
         let data = try JSONSerialization.data(withJSONObject: (1...45).map { ["aid": $0, "bvid": "BV\($0)", "title": "test"] })
@@ -126,16 +122,16 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testLibraryManagementOffAndEmptySelectionNeverMutate() async throws {
+    func testLibraryManagementEmptySelectionAndMissingContextNeverMutate() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in recorder.record(request); return Self.response(for: request, body: #"{"code":0}"#) }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
-        XCTAssertFalse(api.libraryStore.accountLibraryManagementExperimentEnabled)
         let controller = AccountLibraryManagementController(api: api)
+        await controller.perform(entries: [], source: nil, action: .remove)
+        XCTAssertNil(controller.message)
         let entries = try JSONDecoder.bili.decode(DynamicJSONValue.self, from: Data(#"[{"bvid":"BVtest","aid":11}]"#.utf8)).accountVideoEntries
         await controller.perform(entries: entries, source: nil, action: .remove)
-        api.libraryStore.setAccountLibraryManagementExperimentEnabled(true)
-        await controller.perform(entries: [], source: nil, action: .remove)
+        XCTAssertTrue(controller.message?.contains("账号已切换") == true)
         XCTAssertTrue(recorder.requests.isEmpty)
     }
 
@@ -224,7 +220,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             let data = try JSONSerialization.data(withJSONObject: ["code": 0, "data": ["medias": medias, "has_more": pn == 1]])
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let model = MineViewModel(api: api, sessionStore: api.sessionStore)
         let folder = try JSONDecoder.bili.decode(FavoriteFolder.self, from: Data(#"{"id":9,"mid":1001,"attr":2}"#.utf8))
         await model.refreshFavoriteFolder(folder)
@@ -251,7 +247,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             }
             return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"aid":22,"bvid":"BVnew","title":"new"}]}}"#)
         }
-        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf", configure: { _, library in library.setAccountLibraryManagementExperimentEnabled(true) })
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let model = MineViewModel(api: api, sessionStore: api.sessionStore)
         let pending = Task { await model.refreshWatchLater() }
         await fulfillment(of: [started], timeout: 2)
@@ -281,14 +277,15 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testLibraryManagementFlagPersistsWithoutChangingLibraryData() {
-        let defaults = UserDefaults(suiteName: "LibraryManagementFlagTests.\(UUID().uuidString)")!
+    func testLibraryManagementRevisionsDoNotDependOnFormerExperimentPreference() {
+        let defaults = UserDefaults(suiteName: "LibraryManagementPromotionTests.\(UUID().uuidString)")!
+        defaults.set(false, forKey: "cc.bili.experimental.accountLibraryManagement.v1")
         let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.accountLibraryManagementExperimentEnabled)
-        store.setAccountLibraryManagementExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).accountLibraryManagementExperimentEnabled)
-        store.setAccountLibraryManagementExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).accountLibraryManagementExperimentEnabled)
+        store.recordAccountLibraryChange()
+        store.recordAccountLibraryChange(purpose: .historyRead)
+        XCTAssertEqual(store.accountFavoriteChangeRevision, 1)
+        XCTAssertEqual(store.accountWatchLaterChangeRevision, 1)
+        XCTAssertEqual(store.accountLibraryChangeRevision, 2)
     }
 
     override func tearDown() {

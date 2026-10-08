@@ -240,7 +240,7 @@ extension BiliAPIClient {
             cookieHeader: context.context.cookieHeader
         )
         await MainActor.run {
-            if libraryStore.accountLibraryManagementExperimentEnabled { libraryStore.recordAccountLibraryChange() }
+            libraryStore.recordAccountLibraryChange()
         }
     }
 

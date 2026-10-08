@@ -707,11 +707,6 @@ struct VideoDetailSwiftUIContainer: View {
                     onShowFavoriteFolders: onShowFavoriteFolders,
                     onShowCoinPicker: onShowCoinPicker,
                     onOpenCommentComposer: onOpenCommentComposer,
-                    onRefreshComments: {
-                        Task { @MainActor in
-                            await viewModel.retryComments()
-                        }
-                    },
                     onReply: onReply,
                     openVideoOwnerRoute: openVideoOwnerRoute,
                     onSelectedTabChange: { tab in

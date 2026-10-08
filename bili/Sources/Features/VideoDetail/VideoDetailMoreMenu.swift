@@ -21,18 +21,14 @@ struct VideoDetailMoreMenu: View {
 
     var body: some View {
         Menu {
-            if libraryStore.accountLibraryManagementExperimentEnabled {
-                Section {
-                    Button(action: performWatchLaterAction) {
-                        Label(watchLaterTitle, systemImage: isAdded == true ? "clock.badge.checkmark" : "clock.badge.plus")
-                    }
-                    .disabled(isBusy || isLoading || aid == nil || !sessionStore.isLoggedIn)
-                    .accessibilityIdentifier("video.detail.watchLater")
+            Section {
+                Button(action: performWatchLaterAction) {
+                    Label(watchLaterTitle, systemImage: isAdded == true ? "clock.badge.checkmark" : "clock.badge.plus")
                 }
-                Section { linkActions }
-            } else {
-                linkActions
+                .disabled(isBusy || isLoading || aid == nil || !sessionStore.isLoggedIn)
+                .accessibilityIdentifier("video.detail.watchLater")
             }
+            Section { linkActions }
         } label: {
             VideoDetailActionStripIconLabel(
                 systemImage: completedMessage == nil ? "ellipsis" : "checkmark",
@@ -85,7 +81,7 @@ struct VideoDetailMoreMenu: View {
     }
 
     private var identity: String {
-        "\(aid ?? 0)-\(sessionStore.accountConfigurationVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)-\(libraryStore.accountLibraryManagementExperimentEnabled)"
+        "\(aid ?? 0)-\(sessionStore.accountConfigurationVersion)-\(sessionStore.historyAccountCredentialVersion)-\(sessionStore.playbackCredentialVersion)"
     }
 
     private var watchLaterTitle: String {
@@ -97,7 +93,7 @@ struct VideoDetailMoreMenu: View {
     }
 
     private func performWatchLaterAction() {
-        guard libraryStore.accountLibraryManagementExperimentEnabled, let aid, !isBusy, !isLoading else { return }
+        guard let aid, !isBusy, !isLoading else { return }
         guard loadedIdentity == identity, let context, let isAdded else {
             Task { await load(reportError: true) }
             return
@@ -121,7 +117,7 @@ struct VideoDetailMoreMenu: View {
 
     private func load(reportError: Bool) async {
         context = nil; isAdded = nil; loadedIdentity = nil
-        guard libraryStore.accountLibraryManagementExperimentEnabled, sessionStore.isLoggedIn, aid != nil, !isLoading else { return }
+        guard sessionStore.isLoggedIn, aid != nil, !isLoading else { return }
         let readIdentity = identity
         isLoading = true
         defer { isLoading = false }

@@ -26,7 +26,7 @@ struct UITestVideoOwnerMenuFixtureView: View {
                     VideoDetailActionStrip(
                         model: model(width: max(geometry.size.width - 40, 1)),
                         onFollow: { isFollowing.toggle() },
-                        onLike: {}, onCoin: {}, onFavorite: {}, onShareTap: {}
+                        onLike: {}, onCoin: {}, onFavorite: {}
                     )
                     .equatable()
                     .environment(\.videoDetailActionButtonStyle, usesGlassButtons ? .liquidGlass : .plain)

@@ -34,7 +34,7 @@ final class AccountLibraryManagementController: ObservableObject {
     func clearDisplayedContext(purpose: BiliAccountPurpose) { displayedContexts[purpose] = nil }
 
     func perform(entries: [AccountVideoEntry], source: FavoriteFolder?, action: LibraryVideoManagementAction) async {
-        guard !isBusy, api.libraryStore.accountLibraryManagementExperimentEnabled, !entries.isEmpty else { return }
+        guard !isBusy, !entries.isEmpty else { return }
         isBusy = true
         defer { isBusy = false }
         var result = LibraryBatchResult()
@@ -48,7 +48,6 @@ final class AccountLibraryManagementController: ObservableObject {
             guard aids.count == entries.count else { throw BiliAPIError.api(code: -400, message: "选择包含无法管理的视频，请重新选择") }
             for start in stride(from: 0, to: aids.count, by: 20) {
                 try Task.checkCancellation()
-                guard api.libraryStore.accountLibraryManagementExperimentEnabled else { throw CancellationError() }
                 let batch = Array(aids[start..<min(start + 20, aids.count)])
                 switch action {
                 case .remove:
@@ -63,7 +62,6 @@ final class AccountLibraryManagementController: ObservableObject {
                     if case .move = action {
                         do {
                             try Task.checkCancellation()
-                            guard api.libraryStore.accountLibraryManagementExperimentEnabled else { throw CancellationError() }
                             try await api.changeFavoriteResources(aids: batch, removeFolderID: source.id, context: context)
                         } catch {
                             result.copiedButNotRemoved += batch.count
@@ -80,7 +78,7 @@ final class AccountLibraryManagementController: ObservableObject {
     }
 
     func mutate(purpose: BiliAccountPurpose, operation: (LibraryManagementContext) async throws -> Void) async -> Bool {
-        guard !isBusy, api.libraryStore.accountLibraryManagementExperimentEnabled else { return false }
+        guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
         do {

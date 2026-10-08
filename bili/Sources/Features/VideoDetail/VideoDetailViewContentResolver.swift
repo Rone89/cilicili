@@ -59,8 +59,7 @@ struct VideoDetailViewContentResolver: View {
             )
             .allowsHitTesting(false)
         }
-        .task(id: "\(viewModel.detail.aid ?? 0)-\(libraryStore.accountLibraryManagementExperimentEnabled)-\(libraryStore.accountFavoriteChangeRevision)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.accountConfigurationVersion)") {
-            guard dependencies.libraryStore.accountLibraryManagementExperimentEnabled else { return }
+        .task(id: "\(viewModel.detail.aid ?? 0)-\(libraryStore.accountFavoriteChangeRevision)-\(sessionStore.interactionAccountCredentialVersion)-\(sessionStore.accountConfigurationVersion)") {
             await viewModel.loadFavoriteFoldersForCurrentVideo(forceRefresh: true)
         }
         .task(id: commentAnchorTaskID) {

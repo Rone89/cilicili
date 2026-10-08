@@ -150,7 +150,6 @@ final class LibraryStore: ObservableObject {
     var multiAccountExperimentEnabled: Bool { multiAccountEnabled }
     @Published private(set) var blockedHomeRecommendationUPMIDs: Set<Int64>
     @Published private(set) var blockedHomeRecommendationUPNames: [String: String]
-    @Published private(set) var accountLibraryManagementExperimentEnabled: Bool
     @Published private(set) var accountLibraryChangeRevision = 0
     @Published private(set) var accountFavoriteChangeRevision = 0
     @Published private(set) var accountWatchLaterChangeRevision = 0
@@ -235,7 +234,6 @@ final class LibraryStore: ObservableObject {
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
-    private static let accountLibraryManagementExperimentEnabledKey = "cc.bili.experimental.accountLibraryManagement.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let blockedHomeRecommendationUPNamesKey = "cc.bili.home.blockedUPNames.v1"
@@ -649,7 +647,6 @@ final class LibraryStore: ObservableObject {
         if userDefaults.object(forKey: Self.multiAccountExperimentEnabledKey) as? Bool != true {
             userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
         }
-        self.accountLibraryManagementExperimentEnabled = userDefaults.bool(forKey: Self.accountLibraryManagementExperimentEnabledKey)
         self.dynamicCommentHitAreaVisualizationExperimentEnabled =
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
@@ -1284,11 +1281,6 @@ final class LibraryStore: ObservableObject {
     func setMultiAccountExperimentEnabled(_ isEnabled: Bool) {
         guard isEnabled else { return }
         userDefaults.set(true, forKey: Self.multiAccountExperimentEnabledKey)
-    }
-
-    func setAccountLibraryManagementExperimentEnabled(_ enabled: Bool) {
-        accountLibraryManagementExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.accountLibraryManagementExperimentEnabledKey)
     }
 
     func recordAccountLibraryChange(purpose: BiliAccountPurpose = .interaction) {

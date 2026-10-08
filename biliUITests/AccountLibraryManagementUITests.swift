@@ -52,19 +52,29 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(shareSheet.waitForExistence(timeout: 5))
     }
 
-    func testDetailMoreMenuExperimentOffPreservesCommentActions() {
-        let app = launch(["--library-detail-menu", "--library-off"])
-        XCTAssertTrue(app.buttons["video.detail.share"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["video.detail.more"].exists)
-        XCTAssertFalse(app.buttons["video.detail.toolbar-comment"].exists)
-        let menu = app.buttons["video.detail.toolbar-comment-more"]
+    func testFormerlyDisabledExperimentNowHasProductionActions() {
+        let app = launch(["--library-detail-menu", "--library-formerly-disabled"])
+        let menu = app.buttons["video.detail.more"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["video.detail.share"].exists)
+        XCTAssertFalse(app.buttons["video.detail.toolbar-comment-more"].exists)
+        XCTAssertTrue(app.buttons["video.detail.toolbar-comment"].exists)
+        XCTAssertTrue(app.buttons["library.manage.select"].exists)
         menu.tap()
-        XCTAssertTrue(app.buttons["评论"].exists)
-        XCTAssertTrue(app.buttons["刷新评论区"].exists)
-        XCTAssertFalse(app.buttons["video.detail.watchLater"].exists)
-        app.buttons["刷新评论区"].tap()
-        XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "刷新评论区")
+        XCTAssertTrue(app.buttons["从稍后再看移除"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["复制链接"].exists)
+        XCTAssertTrue(app.buttons["分享"].exists)
+    }
+
+    func testProductionToolbarOpensRealCommentComposer() {
+        let app = launch(["--library-detail-menu", "--library-comment-composer"])
+        let button = app.buttons["video.detail.toolbar-comment"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("测试草稿")
+        XCTAssertEqual(editor.value as? String, "测试草稿")
     }
 
     func testWatchLaterNativeSelectionAndBatchRemoval() {
@@ -85,13 +95,8 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 3))
     }
 
-    func testExperimentOffAndLoggedOutHaveNoManagementActions() {
-        let app = launch(["--library-off"])
-        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["library.manage.select"].exists)
-        app.terminate()
-        app.launchArguments = ["--ui-test-fixture", "libraryManagement", "--library-logged-out"]
-        app.launch()
+    func testLoggedOutHasNoManagementActions() {
+        let app = launch(["--library-logged-out"])
         XCTAssertTrue(app.staticTexts["登录后同步稍后再看"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["library.manage.select"].exists)
     }

@@ -102,53 +102,49 @@ final class MineViewModel: ObservableObject {
     }
 
     func refreshFavorites() async {
-        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
         let revision = api.libraryStore.accountFavoriteChangeRevision
         let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn else { return }
         favoriteState = .loading
         do {
             let folders = try await api.fetchFavoriteFolders()
-            if !managed { favoriteFolders = folders }
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
-            let favorites = try await api.fetchAccountFavorites(knownFolders: managed ? folders : nil)
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
-            if managed { libraryManagement.setDisplayedContext(identity, purpose: .interaction) }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
+            let favorites = try await api.fetchAccountFavorites(knownFolders: folders)
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
+            libraryManagement.setDisplayedContext(identity, purpose: .interaction)
             favoriteFolders = folders
             accountFavorites = favorites
             favoriteState = .loaded
         } catch {
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteState = .failed(error.localizedDescription)
         }
     }
 
     func refreshWatchLater() async {
-        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
         let revision = api.libraryStore.accountWatchLaterChangeRevision
         let identity = api.requestSnapshot(purpose: .historyRead)
         guard sessionStore.isLoggedIn else { return }
         watchLaterState = .loading
         do {
             let entries = try await api.fetchAccountWatchLater()
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .historyRead) else { return }
-            if managed { libraryManagement.setDisplayedContext(identity, purpose: .historyRead) }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .historyRead) else { return }
+            libraryManagement.setDisplayedContext(identity, purpose: .historyRead)
             accountWatchLater = Self.uniqued(entries)
             watchLaterState = .loaded
         } catch {
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .historyRead) else { return }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .historyRead) else { return }
             watchLaterState = .failed(error.localizedDescription)
         }
     }
 
     func refreshFavoriteFolder(_ folder: FavoriteFolder) async {
-        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
         let revision = api.libraryStore.accountFavoriteChangeRevision
         let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn else { return }
         favoriteFolderEntryStates[folder.id] = .loading
         favoriteFolderLoadMoreStates[folder.id] = .idle
-        let loadedPages = managed ? max(favoriteFolderPages[folder.id] ?? 1, 1) : 1
+        let loadedPages = max(favoriteFolderPages[folder.id] ?? 1, 1)
         favoriteFolderPages[folder.id] = 1
         favoriteFolderHasMore[folder.id] = false
         do {
@@ -157,24 +153,22 @@ final class MineViewModel: ObservableObject {
             var finalPage = 1
             for number in 1...loadedPages {
                 let page = try await api.fetchFavoriteFolderVideoPage(folderID: folder.id, page: number, pageSize: accountLibraryPageSize)
-                guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+                guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
                 entries = Self.appendingUnique(page.entries, to: entries)
                 more = page.hasMore; finalPage = number
                 if !more { break }
             }
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
-            if managed {
-                let folders = try await api.fetchFavoriteFolders()
-                guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
-                favoriteFolders = folders
-                libraryManagement.setDisplayedContext(identity, purpose: .interaction)
-            }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
+            let folders = try await api.fetchFavoriteFolders()
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
+            favoriteFolders = folders
+            libraryManagement.setDisplayedContext(identity, purpose: .interaction)
             favoriteFolderEntries[folder.id] = entries
             favoriteFolderHasMore[folder.id] = more
             favoriteFolderPages[folder.id] = finalPage
             favoriteFolderEntryStates[folder.id] = .loaded
         } catch {
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteFolderEntryStates[folder.id] = .failed(error.localizedDescription)
         }
     }
@@ -212,7 +206,6 @@ final class MineViewModel: ObservableObject {
     }
 
     func loadMoreFavoriteFolder(_ folder: FavoriteFolder) async {
-        let managed = api.libraryStore.accountLibraryManagementExperimentEnabled
         let revision = api.libraryStore.accountFavoriteChangeRevision
         let identity = api.requestSnapshot(purpose: .interaction)
         guard sessionStore.isLoggedIn,
@@ -228,7 +221,7 @@ final class MineViewModel: ObservableObject {
                 page: nextPage,
                 pageSize: accountLibraryPageSize
             )
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
             let previousCount = favoriteFolderEntries[folder.id]?.count ?? 0
             favoriteFolderEntries[folder.id] = Self.appendingUnique(
                 page.entries,
@@ -239,7 +232,7 @@ final class MineViewModel: ObservableObject {
                 && (favoriteFolderEntries[folder.id]?.count ?? 0) > previousCount
             favoriteFolderLoadMoreStates[folder.id] = .idle
         } catch {
-            guard await libraryReadMayApply(managed: managed, identity: identity, revision: revision, purpose: .interaction) else { return }
+            guard await libraryReadMayApply(identity: identity, revision: revision, purpose: .interaction) else { return }
             favoriteFolderLoadMoreStates[folder.id] = .failed(error.localizedDescription)
         }
     }
@@ -437,7 +430,7 @@ final class MineViewModel: ObservableObject {
     private var managedLibraryRevision: [String: Int] = [:]
 
     func synchronizeManagedLibrary(kind: AccountLibraryKind, folder: FavoriteFolder? = nil) async {
-        guard api.libraryStore.accountLibraryManagementExperimentEnabled, kind != .history else { return }
+        guard kind != .history else { return }
         let purpose: BiliAccountPurpose = kind == .watchLater ? .historyRead : .interaction
         let snapshot = api.requestSnapshot(purpose: purpose)
         let key = "\(snapshot.currentUserMID ?? 0)-\(snapshot.playbackCredentialVersion)-\(snapshot.isLoggedIn)"
@@ -467,8 +460,7 @@ final class MineViewModel: ObservableObject {
         else if kind == .watchLater { await refreshWatchLater() }
     }
 
-    private func libraryReadMayApply(managed: Bool, identity: BiliAPIClient.RequestSnapshot, revision: Int, purpose: BiliAccountPurpose) async -> Bool {
-        guard managed else { return true }
+    private func libraryReadMayApply(identity: BiliAPIClient.RequestSnapshot, revision: Int, purpose: BiliAccountPurpose) async -> Bool {
         let current = api.requestSnapshot(purpose: purpose)
         return api.libraryStore.accountLibraryRevision(for: purpose) == revision && current.isLoggedIn && current.currentUserMID == identity.currentUserMID
             && current.playbackCredentialVersion == identity.playbackCredentialVersion
