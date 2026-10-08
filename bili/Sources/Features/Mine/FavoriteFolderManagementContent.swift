@@ -3,10 +3,7 @@ import SwiftUI
 struct FavoriteFolderManagementContent: View {
     @ObservedObject var viewModel: MineViewModel
     @ObservedObject var controller: AccountLibraryManagementController
-    @State private var editorFolder: FavoriteFolder?
-    @State private var showsEditor = false
-    @State private var showsSort = false
-    @State private var pendingDeletion: FavoriteFolder?
+    @Environment(\.favoriteFolderManagementActions) private var actions
 
     private var accountMID: Int? { controller.api.requestSnapshot(purpose: .interaction).currentUserMID }
 
@@ -18,59 +15,97 @@ struct FavoriteFolderManagementContent: View {
             ForEach(viewModel.favoriteFolders) { folder in
                 NavigationLink {
                     FavoriteFolderContentPage(folder: folder, viewModel: viewModel)
-                } label: { FavoriteFolderRow(folder: folder, showsStatus: true) }
+                } label: { FavoriteFolderRow(folder: folder, showsStatus: true, showsDisclosureIndicator: false) }
                 .contextMenu {
                     if folder.canManage(accountMID: accountMID), !folder.isDefaultFolder {
-                        Button("编辑收藏夹", systemImage: "pencil") { edit(folder) }
-                        Button("删除收藏夹", systemImage: "trash", role: .destructive) { pendingDeletion = folder }
+                        Button("编辑收藏夹", systemImage: "pencil") { actions?.edit(folder) }
+                        Button("删除收藏夹", systemImage: "trash", role: .destructive) { actions?.delete(folder) }
                     }
                 }
                 .swipeActions {
                     if folder.canManage(accountMID: accountMID), !folder.isDefaultFolder {
-                        Button("删除", role: .destructive) { pendingDeletion = folder }
-                        Button("编辑") { edit(folder) }
+                        Button("删除", role: .destructive) { actions?.delete(folder) }
+                        Button("编辑") { actions?.edit(folder) }
                     }
                 }
             }
         }
         .disabled(controller.isBusy)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("创建收藏夹", systemImage: "folder.badge.plus") { edit(nil) }
-                    Button("收藏夹排序", systemImage: "arrow.up.arrow.down") { showsSort = true }
-                        .disabled(viewModel.favoriteFolders.count < 2 || !viewModel.favoriteFolders.allSatisfy { $0.canManage(accountMID: accountMID) })
-                } label: { Image(systemName: "ellipsis.circle") }
-                .accessibilityLabel("收藏夹管理")
-            }
-        }
-        .sheet(isPresented: $showsEditor) {
-            FavoriteFolderEditor(folder: editorFolder, controller: controller) { await viewModel.refreshFavorites() }
-        }
-        .sheet(isPresented: $showsSort) {
-            FavoriteFolderSortSheet(folders: viewModel.favoriteFolders, controller: controller) { await viewModel.refreshFavorites() }
-        }
-        .confirmationDialog("删除「\(pendingDeletion?.displayTitle ?? "")」？",
-            isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible) {
-            Button("删除收藏夹", role: .destructive) {
-                guard let folder = pendingDeletion else { return }
-                pendingDeletion = nil
-                Task {
-                    _ = await controller.mutate(purpose: .interaction) { context in
-                        try await controller.api.deleteFavoriteFolder(folder, context: context)
+    }
+}
+
+private struct FavoriteFolderManagementActions {
+    let edit: (FavoriteFolder?) -> Void
+    let delete: (FavoriteFolder) -> Void
+}
+
+private extension EnvironmentValues {
+    @Entry var favoriteFolderManagementActions: FavoriteFolderManagementActions? = nil
+}
+
+struct FavoriteFolderManagementModifier: ViewModifier {
+    @ObservedObject var viewModel: MineViewModel
+    @ObservedObject var controller: AccountLibraryManagementController
+    @EnvironmentObject private var sessionStore: SessionStore
+    let enabled: Bool
+    @State private var editorFolder: FavoriteFolder?
+    @State private var showsEditor = false
+    @State private var showsSort = false
+    @State private var pendingDeletion: FavoriteFolder?
+
+    private var accountMID: Int? { controller.api.requestSnapshot(purpose: .interaction).currentUserMID }
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.favoriteFolderManagementActions, enabled ? FavoriteFolderManagementActions(
+                edit: edit, delete: { pendingDeletion = $0 }
+            ) : nil)
+            .toolbar {
+                if enabled {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button("创建收藏夹", systemImage: "folder.badge.plus") { edit(nil) }
+                            Button("收藏夹排序", systemImage: "arrow.up.arrow.down") { showsSort = true }
+                                .disabled(viewModel.favoriteFolders.count < 2 || !viewModel.favoriteFolders.allSatisfy { $0.canManage(accountMID: accountMID) })
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .accessibilityLabel("收藏夹管理")
+                        .accessibilityIdentifier("library.favorites.actions")
+                        .disabled(controller.isBusy)
                     }
-                    await viewModel.refreshFavorites()
-                    viewModel.favoriteFolderEntries[folder.id] = nil
-                    viewModel.favoriteFolderEntryStates[folder.id] = nil
                 }
             }
-            Button("取消", role: .cancel) { pendingDeletion = nil }
-        } message: { Text("该收藏夹中的收藏关系将被移除，此操作不能撤销。其他收藏夹不受影响。") }
-        .alert("管理结果", isPresented: Binding(get: { controller.message != nil }, set: { if !$0 { Task { @MainActor in controller.message = nil } } })) {
-            Button("好") { controller.message = nil }
-        } message: { Text(controller.message ?? "") }
+            .sheet(isPresented: $showsEditor) {
+                FavoriteFolderEditor(folder: editorFolder, controller: controller) { await viewModel.refreshFavorites() }
+            }
+            .sheet(isPresented: $showsSort) {
+                FavoriteFolderSortSheet(folders: viewModel.favoriteFolders, controller: controller) { await viewModel.refreshFavorites() }
+            }
+            .confirmationDialog("删除「\(pendingDeletion?.displayTitle ?? "")」？",
+                isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible) {
+                Button("删除收藏夹", role: .destructive) {
+                    guard let folder = pendingDeletion else { return }
+                    pendingDeletion = nil
+                    Task {
+                        _ = await controller.mutate(purpose: .interaction) { context in
+                            try await controller.api.deleteFavoriteFolder(folder, context: context)
+                        }
+                        await viewModel.refreshFavorites()
+                        viewModel.favoriteFolderEntries[folder.id] = nil
+                        viewModel.favoriteFolderEntryStates[folder.id] = nil
+                    }
+                }
+                Button("取消", role: .cancel) { pendingDeletion = nil }
+            } message: { Text("该收藏夹中的收藏关系将被移除，此操作不能撤销。其他收藏夹不受影响。") }
+            .alert("管理结果", isPresented: Binding(get: { enabled && controller.message != nil }, set: { if !$0 { Task { @MainActor in controller.message = nil } } })) {
+                Button("好") { controller.message = nil }
+            } message: { Text(controller.message ?? "") }
+            .onChange(of: enabled) { _, value in if !value { resetPresentation() } }
+            .onChange(of: sessionStore.interactionAccountCredentialVersion) { _, _ in resetPresentation() }
     }
 
+    private func resetPresentation() {
+        showsEditor = false; showsSort = false; editorFolder = nil; pendingDeletion = nil
+    }
     private func edit(_ folder: FavoriteFolder?) { editorFolder = folder; showsEditor = true }
 }
 

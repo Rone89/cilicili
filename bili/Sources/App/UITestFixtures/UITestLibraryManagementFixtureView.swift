@@ -37,8 +37,20 @@ struct UITestLibraryManagementFixtureView: View {
                 .environment(\.openVideoAction, { openedTitle = $0.title })
                 .toolbar {
                     if showsDetailMenu {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            if library.accountLibraryManagementExperimentEnabled {
+                                VideoDetailMoreMenu(api: model.libraryManagement.api, aid: 1,
+                                    shareURL: URL(string: "https://www.bilibili.com/video/BVfixture1"),
+                                    shareSubject: "测试视频 1", shareMessage: "分享测试视频")
+                            } else {
+                                VideoDetailActionStripShareButton(
+                                    shareURL: URL(string: "https://www.bilibili.com/video/BVfixture1"),
+                                    shareSubject: "测试视频 1", shareMessage: "分享测试视频", onShareTap: {})
+                                    .accessibilityIdentifier("video.detail.share")
+                            }
+                        }
                         ToolbarItem(placement: .bottomBar) {
-                            VideoDetailMoreMenu(api: model.libraryManagement.api, aid: 1,
+                            VideoDetailToolbarCommentAction(
                                 onComment: { openedTitle = "发表评论" },
                                 onRefresh: { openedTitle = "刷新评论区" })
                         }

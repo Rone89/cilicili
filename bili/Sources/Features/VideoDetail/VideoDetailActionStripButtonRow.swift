@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct VideoDetailActionStripButtonRow: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.appThemeTintColor) private var appTintColor
 
     let model: VideoDetailActionStripModel
@@ -69,15 +71,24 @@ struct VideoDetailActionStripButtonRow: View {
             .frame(width: layout.columnWidth, height: layout.rowHeight)
             .accessibilityIdentifier("video.detail.favorite")
 
-            VideoDetailActionStripShareButton(
-                shareURL: model.shareURL,
-                shareSubject: model.shareSubject,
-                shareMessage: model.shareMessage,
-                onShareTap: onShareTap,
-                usesPlainStyle: usesPlainStyle
-            )
-            .frame(width: layout.columnWidth, height: layout.rowHeight)
-            .accessibilityIdentifier("video.detail.share")
+            if libraryStore.accountLibraryManagementExperimentEnabled {
+                VideoDetailMoreMenu(
+                    api: dependencies.api, aid: model.aid,
+                    shareURL: model.shareURL, shareSubject: model.shareSubject, shareMessage: model.shareMessage,
+                    usesPlainStyle: usesPlainStyle
+                )
+                .frame(width: layout.columnWidth, height: layout.rowHeight)
+            } else {
+                VideoDetailActionStripShareButton(
+                    shareURL: model.shareURL,
+                    shareSubject: model.shareSubject,
+                    shareMessage: model.shareMessage,
+                    onShareTap: onShareTap,
+                    usesPlainStyle: usesPlainStyle
+                )
+                .frame(width: layout.columnWidth, height: layout.rowHeight)
+                .accessibilityIdentifier("video.detail.share")
+            }
         }
     }
 

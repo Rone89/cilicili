@@ -4,14 +4,31 @@ import XCTest
 final class AccountLibraryManagementUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    func testFavoriteFolderToolbarIsUniqueAndPrivacyUsesText() {
+        let app = launch(["--library-favorites"])
+        XCTAssertTrue(app.staticTexts["来源收藏夹"].waitForExistence(timeout: 5))
+        let menus = app.buttons.matching(identifier: "library.favorites.actions")
+        XCTAssertEqual(menus.count, 1)
+        XCTAssertTrue(app.staticTexts["公开"].firstMatch.exists)
+        XCTAssertFalse(app.images["globe"].exists)
+        XCTAssertFalse(app.images["lock"].exists)
+        menus.firstMatch.tap()
+        app.buttons["创建收藏夹"].tap()
+        XCTAssertTrue(app.textFields["名称"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertEqual(menus.count, 1)
+    }
+
     func testDetailMoreMenuWatchLaterRoundTrip() {
         let app = launch(["--library-detail-menu"])
-        let menu = app.buttons["video.detail.toolbar-comment-more"]
+        let menu = app.buttons["video.detail.more"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
         let remove = app.buttons["从稍后再看移除"]
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["评论"].exists)
+        XCTAssertTrue(app.buttons["复制链接"].exists)
+        XCTAssertTrue(app.buttons["分享"].exists)
+        XCTAssertFalse(app.buttons["刷新评论区"].exists)
         remove.tap()
         menu.tap()
         let add = app.buttons["添加到稍后再看"]
@@ -19,12 +36,27 @@ final class AccountLibraryManagementUITests: XCTestCase {
         add.tap()
         menu.tap()
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
-        app.buttons["评论"].tap()
+        app.buttons["复制链接"].tap()
+        XCTAssertEqual(menu.value as? String, "已复制链接")
+        app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
+    }
+
+    func testDetailMoreMenuPresentsSystemShareSheet() {
+        let app = launch(["--library-detail-menu"])
+        let menu = app.buttons["video.detail.more"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        app.buttons["分享"].tap()
+        let shareSheet = app.otherElements["ActivityListView"]
+        XCTAssertTrue(shareSheet.waitForExistence(timeout: 5))
     }
 
     func testDetailMoreMenuExperimentOffPreservesCommentActions() {
         let app = launch(["--library-detail-menu", "--library-off"])
+        XCTAssertTrue(app.buttons["video.detail.share"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["video.detail.more"].exists)
+        XCTAssertFalse(app.buttons["video.detail.toolbar-comment"].exists)
         let menu = app.buttons["video.detail.toolbar-comment-more"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()

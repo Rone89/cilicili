@@ -4,6 +4,7 @@ struct VideoDetailActionStripContainer: View {
     @ObservedObject var descriptionStore: VideoDetailDescriptionRenderStore
     @ObservedObject var store: VideoDetailInteractionRenderStore
     let contentWidth: CGFloat
+    var aid: Int? = nil
     let onFollow: () -> Void
     let onLike: () -> Void
     let onCoin: () -> Void
@@ -26,6 +27,7 @@ struct VideoDetailActionStripContainer: View {
         let interaction = store.interactionState
         return VideoDetailActionStripModel(
             owner: ownerForDisplay,
+            aid: aid,
             canFavorite: descriptionStore.canFavorite,
             shareURL: descriptionStore.shareURL,
             shareSubject: descriptionStore.shareSubject,

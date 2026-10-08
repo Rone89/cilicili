@@ -1,12 +1,15 @@
 import SwiftUI
+import UIKit
 
 struct VideoDetailMoreMenu: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var libraryStore: LibraryStore
     let api: BiliAPIClient
     let aid: Int?
-    let onComment: () -> Void
-    let onRefresh: () -> Void
+    let shareURL: URL?
+    let shareSubject: String
+    let shareMessage: String
+    var usesPlainStyle = false
 
     @State private var isAdded: Bool?
     @State private var isBusy = false
@@ -26,18 +29,21 @@ struct VideoDetailMoreMenu: View {
                     .disabled(isBusy || isLoading || aid == nil || !sessionStore.isLoggedIn)
                     .accessibilityIdentifier("video.detail.watchLater")
                 }
-                Section { commentActions }
+                Section { linkActions }
             } else {
-                commentActions
+                linkActions
             }
         } label: {
-            Image(systemName: completedMessage == nil ? "ellipsis" : "checkmark")
-                .frame(width: 38, height: 38)
+            VideoDetailActionStripIconLabel(
+                systemImage: completedMessage == nil ? "ellipsis" : "checkmark",
+                foregroundStyle: usesPlainStyle ? .secondary : .primary
+            )
         }
-        .tint(.primary)
-        .accessibilityLabel(libraryStore.accountLibraryManagementExperimentEnabled ? "更多视频操作" : "更多评论操作")
+        .videoDetailActionStripButtonAppearance(usesPlainStyle: usesPlainStyle, tint: usesPlainStyle ? .secondary : nil)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("更多视频操作")
         .accessibilityValue(completedMessage ?? "")
-        .accessibilityIdentifier("video.detail.toolbar-comment-more")
+        .accessibilityIdentifier("video.detail.more")
         .task(id: "\(identity)-\(libraryStore.accountWatchLaterChangeRevision)") {
             while isBusy || isLoading {
                 do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
@@ -55,10 +61,26 @@ struct VideoDetailMoreMenu: View {
         } message: { Text(error ?? "") }
     }
 
-    private var commentActions: some View {
+    private var linkActions: some View {
         Group {
-            Button(action: onComment) { Label("评论", systemImage: "square.and.pencil") }
-            Button(action: onRefresh) { Label("刷新评论区", systemImage: "arrow.clockwise") }
+            Button {
+                guard let shareURL else { return }
+                UIPasteboard.general.string = shareURL.absoluteString
+                completedMessage = "已复制链接"
+                Haptics.success()
+            } label: { Label("复制链接", systemImage: "link") }
+            .disabled(shareURL == nil)
+            .accessibilityIdentifier("video.detail.more.copyLink")
+
+            if let shareURL {
+                ShareLink(item: shareURL, subject: Text(shareSubject), message: Text(shareMessage)) {
+                    Label("分享", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("video.detail.more.share")
+            } else {
+                Button("分享", systemImage: "square.and.arrow.up") {}
+                    .disabled(true)
+            }
         }
     }
 

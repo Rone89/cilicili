@@ -21,6 +21,10 @@ struct AccountLibraryListPage: View {
             source: nil, folders: viewModel.favoriteFolders,
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
+        .modifier(FavoriteFolderManagementModifier(
+            viewModel: viewModel, controller: viewModel.libraryManagement,
+            enabled: kind == .favorites && libraryStore.accountLibraryManagementExperimentEnabled && sessionStore.isLoggedIn
+        ))
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()

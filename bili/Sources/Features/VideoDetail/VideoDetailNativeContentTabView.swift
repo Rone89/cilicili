@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
-    @EnvironmentObject private var dependencies: AppDependencies
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.navigationHistoryContext) private var navigationHistory
@@ -16,7 +15,6 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var placesTopInsetInScrollContent = false
     var interactiveMinimumPlayerHeight = VideoDetailShellLayout.collapsedToolbarHeight
     var contentRevision: Int = 0
-    var watchLaterAID: Int? = nil
     var onOpenCommentComposer: (() -> Void)?
     var onRefreshComments: () -> Void = {}
     var onSelectionWillChange: ((VideoDetailContentTab) -> Void)? = nil
@@ -51,9 +49,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    VideoDetailMoreMenu(
-                        api: dependencies.api,
-                        aid: watchLaterAID,
+                    VideoDetailToolbarCommentAction(
                         onComment: onOpenCommentComposer,
                         onRefresh: onRefreshComments
                     )

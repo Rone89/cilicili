@@ -2,6 +2,7 @@ import SwiftUI
 
 struct VideoDetailActionStripModel: Equatable {
     let owner: VideoOwner?
+    var aid: Int? = nil
     let canFavorite: Bool
     let shareURL: URL?
     let shareSubject: String

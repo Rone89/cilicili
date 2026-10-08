@@ -42,6 +42,7 @@ struct VideoDetailSummaryCard: View {
                 descriptionStore: renderPack.descriptionStore,
                 store: renderPack.interactionStore,
                 contentWidth: contentWidth,
+                aid: viewModel.detail.aid,
                 onFollow: renderPack.actions.follow,
                 onLike: renderPack.actions.like,
                 onCoin: showCoinPicker,

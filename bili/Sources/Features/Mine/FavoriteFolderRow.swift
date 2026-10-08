@@ -3,6 +3,7 @@ import SwiftUI
 struct FavoriteFolderRow: View {
     let folder: FavoriteFolder
     var showsStatus = false
+    var showsDisclosureIndicator = true
 
     var body: some View {
         HStack(spacing: 10) {
@@ -11,9 +12,11 @@ struct FavoriteFolderRow: View {
 
             Spacer(minLength: 8)
 
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
+            if showsDisclosureIndicator {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.vertical, 3)
     }
@@ -70,7 +73,7 @@ private struct FavoriteFolderInfo: View {
             if showsStatus {
                 HStack(spacing: 6) {
                     if folder.isDefaultFolder { Text("默认") }
-                    Label(folder.attr == nil ? "状态未知" : (folder.isPrivateFolder ? "私密" : "公开"), systemImage: folder.isPrivateFolder ? "lock" : "globe")
+                    Text(folder.attr == nil ? "状态未知" : (folder.isPrivateFolder ? "私密" : "公开"))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
