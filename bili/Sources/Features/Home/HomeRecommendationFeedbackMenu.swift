@@ -12,6 +12,7 @@ struct HomeRecommendationFeedbackActions {
 struct HomeRecommendationFeedbackMenu: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
     let video: VideoItem
+    let metrics: HomeFeedLayoutMetrics
     let actions: HomeRecommendationFeedbackActions?
     let onTap: () -> Void
     let onPress: () -> Void
@@ -34,8 +35,7 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
             }
             .overlay {
                 if isMenuPresented {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(.tint, lineWidth: 3)
+                    selectionOutline
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -71,6 +71,21 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
             }
         } else {
             content
+        }
+    }
+
+    @ViewBuilder
+    private var selectionOutline: some View {
+        switch metrics.mode {
+        case .borderedSingleColumn, .borderedDoubleColumn:
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(.tint, lineWidth: 3)
+        case .singleColumn, .doubleColumn:
+            GeometryReader { geometry in
+                RoundedRectangle(cornerRadius: metrics.mode == .singleColumn ? 18 : 15, style: .continuous)
+                    .strokeBorder(.tint, lineWidth: 3)
+                    .frame(width: geometry.size.width, height: geometry.size.width * 9 / 16)
+            }
         }
     }
 
