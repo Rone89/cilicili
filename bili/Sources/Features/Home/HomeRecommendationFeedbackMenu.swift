@@ -155,11 +155,28 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
             return UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: { [weak self] in
                 guard let image = self?.previewImage.image else { return nil }
                 let controller = UIViewController()
+                // Leave the system's outer rounding in transparent space, so it
+                // cannot increase the card's own 18pt continuous corner radius.
+                let inset: CGFloat = 24
+                let size = CGSize(width: image.size.width + inset * 2, height: image.size.height + inset * 2)
+                let container = UIView(frame: CGRect(origin: .zero, size: size))
+                container.backgroundColor = .clear
                 let imageView = UIImageView(image: image)
                 imageView.contentMode = .scaleAspectFit
                 imageView.backgroundColor = .clear
-                controller.view = imageView
-                controller.preferredContentSize = image.size
+                imageView.layer.cornerRadius = 18
+                imageView.layer.cornerCurve = .continuous
+                imageView.clipsToBounds = true
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                container.addSubview(imageView)
+                NSLayoutConstraint.activate([
+                    imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: inset),
+                    imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -inset),
+                    imageView.topAnchor.constraint(equalTo: container.topAnchor, constant: inset),
+                    imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -inset)
+                ])
+                controller.view = container
+                controller.preferredContentSize = size
                 return controller
             }) { [weak self] _ in
                 self?.parent.menu()
