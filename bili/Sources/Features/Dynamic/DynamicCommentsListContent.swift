@@ -71,9 +71,9 @@ private struct DynamicCommentsLoadedList: View {
                     replyToComment: replyToComment
                 )
                 .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    item.id == highlightedCommentID ? appTintColor.opacity(0.10) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    item.id == highlightedCommentID ? appTintColor.opacity(0.10) : Color.clear
                 )
                 .id(item.id)
 

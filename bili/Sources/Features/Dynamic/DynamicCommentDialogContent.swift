@@ -70,7 +70,6 @@ private struct DynamicCommentDialogLoadedList: View {
                     isFocused: item.id == focusReply.id,
                     reply: { replyToComment(item.reply) }
                 )
-                    .padding(.horizontal, 20)
 
                 Divider()
                     .padding(.leading, 66)

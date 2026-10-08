@@ -5,6 +5,7 @@ struct CommentDialogRow: View {
     private var longPressCommentActionsEnabled = false
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.videoCommentReplyComposerAction) private var replyToComment
+    @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let item: VideoDetailCommentDialogDisplayItem
     let isFocused: Bool
 
@@ -69,8 +70,9 @@ struct CommentDialogRow: View {
             }
         }
         .padding(.vertical, 10)
+        .padding(.horizontal, standardHorizontalInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .commentActionsMenu(
             longPressEnabled: longPressCommentActionsEnabled,
             text: reply.content?.message,

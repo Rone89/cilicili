@@ -35,58 +35,61 @@ struct AccountPrivateMessageSessionsView: View {
                 }
             }
 
-            ForEach(filteredSessions) { session in
-                NavigationLink {
-                    AccountPrivateMessageConversationView(
-                        session: session,
-                        viewModel: viewModel,
-                        onMarkedRead: { markRead(session.talkerID) },
-                        onConversationChanged: {
-                            Task { await load() }
+            Section {
+                ForEach(filteredSessions) { session in
+                    NavigationLink {
+                        AccountPrivateMessageConversationView(
+                            session: session,
+                            viewModel: viewModel,
+                            onMarkedRead: { markRead(session.talkerID) },
+                            onConversationChanged: {
+                                Task { await load() }
+                            }
+                        )
+                    } label: {
+                        AccountPrivateMessageSessionRow(
+                            session: session,
+                            inlineEmotes: viewModel.inlineEmotes,
+                            isMutating: mutatingTalkerIDs.contains(session.talkerID)
+                        )
+                    }
+                    .contextMenu {
+                        Button {
+                            Task { await togglePinned(session) }
+                        } label: {
+                            Label(
+                                session.isPinned ? "取消置顶" : "置顶聊天",
+                                systemImage: session.isPinned ? "pin.slash" : "pin"
+                            )
                         }
-                    )
-                } label: {
-                    AccountPrivateMessageSessionRow(
-                        session: session,
-                        inlineEmotes: viewModel.inlineEmotes,
-                        isMutating: mutatingTalkerIDs.contains(session.talkerID)
+
+                        Button {
+                            Task { await toggleMuted(session) }
+                        } label: {
+                            Label(
+                                session.isMuted ? "关闭免打扰" : "开启免打扰",
+                                systemImage: session.isMuted ? "bell" : "bell.slash"
+                            )
+                        }
+
+                        Button(role: .destructive) {
+                            pendingRemoval = session
+                        } label: {
+                            Label("删除会话", systemImage: "trash")
+                        }
+                    }
+                    .listRowInsets(
+                        EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
                     )
                 }
-                .contextMenu {
-                    Button {
-                        Task { await togglePinned(session) }
-                    } label: {
-                        Label(
-                            session.isPinned ? "取消置顶" : "置顶聊天",
-                            systemImage: session.isPinned ? "pin.slash" : "pin"
-                        )
-                    }
-
-                    Button {
-                        Task { await toggleMuted(session) }
-                    } label: {
-                        Label(
-                            session.isMuted ? "关闭免打扰" : "开启免打扰",
-                            systemImage: session.isMuted ? "bell" : "bell.slash"
-                        )
-                    }
-
-                    Button(role: .destructive) {
-                        pendingRemoval = session
-                    } label: {
-                        Label("删除会话", systemImage: "trash")
-                    }
-                }
-                .listRowInsets(
-                    EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
-                )
             }
         }
-        .listStyle(.plain)
+        .listStyle(.insetGrouped)
         .overlay {
             sessionListOverlay
         }
         .hiddenInlineNavigationTitle()
+        .toolbarVisibility(.hidden, for: .tabBar)
         .nativeTopScrollEdgeEffect()
         .searchable(text: $searchText, prompt: "搜索用户或最近消息")
         .toolbar {

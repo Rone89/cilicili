@@ -83,9 +83,9 @@ private struct DynamicCommentRepliesLoadedList: View {
                     reply: { replyToComment(replyItem.reply) }
                 )
                 .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    replyItem.id == highlightedReplyID ? appTintColor.opacity(0.10) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    replyItem.id == highlightedReplyID ? appTintColor.opacity(0.10) : Color.clear
                 )
                 .id(replyItem.id)
 

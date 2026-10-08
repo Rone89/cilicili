@@ -230,8 +230,9 @@ struct DynamicCommentDialogRow: View {
             }
         }
         .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(isFocused ? appTintColor.opacity(0.06) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .commentActionsMenu(
             longPressEnabled: longPressCommentActionsEnabled,
             text: reply.content?.message,

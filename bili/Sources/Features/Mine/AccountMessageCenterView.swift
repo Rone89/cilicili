@@ -58,6 +58,7 @@ struct AccountMessageCenterView: View {
             }
         }
         .navigationTitle("通知")
+        .toolbarVisibility(.hidden, for: .tabBar)
         .toolbarTitleDisplayMode(.inline)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .toolbarBackground(.automatic, for: .navigationBar)
@@ -756,26 +757,29 @@ private struct AccountMessageCommentThreadSheet: View {
                         Label("目标回复不可见，已显示所在评论串", systemImage: "exclamationmark.bubble")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
                     }
 
                     CommentReplyRootView(comment: thread.root)
+                        .padding(.horizontal, 16)
                         .id(thread.root.id)
 
                     Divider()
+                        .padding(.horizontal, 16)
 
                     ForEach(replyItems) { item in
                         CommentReplyDetailRow(item: item, showDialog: nil)
                             .id(item.id)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, 24)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 item.id == thread.focusedReplyID
                                     ? Color.accentColor.opacity(0.10)
-                                    : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    : Color.clear
                             )
                     }
                 }
-                .padding(16)
+                .padding(.vertical, 16)
             }
             .task(id: thread.focusedReplyID) {
                 guard let focusedReplyID = thread.focusedReplyID else { return }
