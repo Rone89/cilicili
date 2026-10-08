@@ -14,6 +14,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         enable(app)
         card(1, app).press(forDuration: 1.5)
         XCTAssertTrue(app.buttons["屏蔽该 UP"].waitForExistence(timeout: 3))
+        XCTAssertEqual(card(1, app).value as? String, "菜单已打开")
         screenshot(app, "Native feedback context menu")
         app.buttons["不感兴趣"].tap()
         let reason = app.buttons["不想看此类内容"]
@@ -73,6 +74,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
         }
         XCTAssertTrue(card(1, app).exists)
+        XCTAssertEqual(card(1, app).value as? String, "")
         card(1, app).tap()
         XCTAssertTrue(app.staticTexts["fixture.feedback.detail"].waitForExistence(timeout: 3))
     }

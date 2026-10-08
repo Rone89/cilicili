@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HomeRecommendationFeedbackActions {
     let canSubmit: Bool
@@ -14,39 +15,33 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
     let actions: HomeRecommendationFeedbackActions?
     let onTap: () -> Void
     let onPress: () -> Void
+    @State private var isMenuPresented = false
     @State private var showsBlockConfirmation = false
     @State private var showsFeedbackReasons = false
 
     func body(content: Content) -> some View {
         if libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled, let actions,
            (video.owner?.mid ?? 0) > 0 || (actions.canSubmit && video.recommendationFeedback?.hasReasons == true) {
-            content.overlay {
-                // The system lifts this transparent button, leaving the visible card in place.
-                Button(action: onTap) { Color.clear }
-                    .buttonStyle(PressPreloadButtonStyle(onPress: onPress))
-                    .contentShape(Rectangle())
-                    .contentShape(.contextMenuPreview, Path())
-                    .contextMenu {
-                        if actions.canSubmit, let feedback = video.recommendationFeedback, feedback.hasReasons {
-                            Menu {
-                                reasonMenu(feedback, actions: actions)
-                            } label: {
-                                Label("不感兴趣", systemImage: "hand.thumbsdown")
-                            }
-                            .disabled(actions.isBusy)
-                        }
-                        if let owner = video.owner, owner.mid > 0 {
-                            Button {
-                                showsBlockConfirmation = true
-                            } label: {
-                                Label("屏蔽该 UP", systemImage: "person.crop.circle.badge.xmark")
-                            }
-                            .disabled(actions.isBusy)
-                        }
-                    }
-                    .accessibilityHidden(true)
+            content
+            .overlay {
+                if isMenuPresented {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("home.recommendation.selected.\(video.id)")
+                }
+            }
+            .overlay {
+                HomeRecommendationMenuInteraction(
+                    menu: { nativeMenu(actions: actions) },
+                    onTap: onTap,
+                    onPress: onPress,
+                    onPresentationChange: { isMenuPresented = $0 }
+                )
+                .accessibilityHidden(true)
             }
             .accessibilityElement(children: .combine)
+            .accessibilityValue(isMenuPresented ? "菜单已打开" : "")
             .accessibilityActions {
                 if (video.owner?.mid ?? 0) > 0, !actions.isBusy {
                     Button("屏蔽该 UP") { showsBlockConfirmation = true }
@@ -84,18 +79,27 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
         return name.isEmpty || name == "Unknown" ? "屏蔽该 UP？" : "屏蔽「\(name)」？"
     }
 
-    @ViewBuilder
-    private func reasonMenu(_ feedback: HomeRecommendationFeedbackMetadata, actions: HomeRecommendationFeedbackActions) -> some View {
-        ForEach([RecommendationFeedbackKind.dislike, .feedback], id: \.self) { kind in
-            let reasons = feedback.reasons(for: kind)
-            if !reasons.isEmpty {
-                Section(kind == .dislike ? "不想看" : "反馈") {
-                    ForEach(reasons) { reason in
-                        Button(reason.name!) { Task { await actions.submit(video, kind, reason) } }
+    private func nativeMenu(actions: HomeRecommendationFeedbackActions) -> UIMenu {
+        var items = [UIMenuElement]()
+        let attributes: UIMenuElement.Attributes = actions.isBusy ? [.disabled] : []
+        if actions.canSubmit, let feedback = video.recommendationFeedback, feedback.hasReasons {
+            let groups = [RecommendationFeedbackKind.dislike, .feedback].compactMap { kind -> UIMenu? in
+                let reasons = feedback.reasons(for: kind).map { reason in
+                    UIAction(title: reason.name!, attributes: attributes) { _ in
+                        Task { await actions.submit(video, kind, reason) }
                     }
                 }
+                guard !reasons.isEmpty else { return nil }
+                return UIMenu(title: kind == .dislike ? "不想看" : "反馈", options: .displayInline, children: reasons)
             }
+            items.append(UIMenu(title: "不感兴趣", image: UIImage(systemName: "hand.thumbsdown"), children: groups))
         }
+        if let owner = video.owner, owner.mid > 0 {
+            items.append(UIAction(title: "屏蔽该 UP", image: UIImage(systemName: "person.crop.circle.badge.xmark"), attributes: attributes) { _ in
+                showsBlockConfirmation = true
+            })
+        }
+        return UIMenu(children: items)
     }
 
     @ViewBuilder
@@ -103,6 +107,89 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
         ForEach([RecommendationFeedbackKind.dislike, .feedback], id: \.self) { kind in
             ForEach(feedback.reasons(for: kind)) { reason in
                 Button(reason.name!) { Task { await actions.submit(video, kind, reason) } }
+            }
+        }
+    }
+}
+
+/// Public UIKit preview delegates suppress the lift backdrop throughout the transition,
+/// not just after the menu finishes appearing. No custom long-press recognizer is used.
+private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
+    let menu: () -> UIMenu
+    let onTap: () -> Void
+    let onPress: () -> Void
+    let onPresentationChange: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .custom)
+        button.backgroundColor = .clear
+        button.isAccessibilityElement = false
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.press), for: .touchDown)
+        button.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        return button
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var parent: HomeRecommendationMenuInteraction
+        private let previewAnchor: UIView = {
+            let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            view.backgroundColor = .clear
+            view.isUserInteractionEnabled = false
+            view.isAccessibilityElement = false
+            return view
+        }()
+
+        init(_ parent: HomeRecommendationMenuInteraction) { self.parent = parent }
+        @objc func tap() { parent.onTap() }
+        @objc func press() { parent.onPress() }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+            UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: nil) { [weak self] _ in
+                self?.parent.menu()
+            }
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, highlightPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
+            invisiblePreview(interaction)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, dismissalPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
+            invisiblePreview(interaction)
+        }
+
+        private func invisiblePreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
+            guard let source = interaction.view, let window = source.window else { return nil }
+            source.addSubview(previewAnchor)
+            previewAnchor.center = CGPoint(x: source.bounds.midX, y: source.bounds.midY)
+            let parameters = UIPreviewParameters()
+            parameters.backgroundColor = .clear
+            parameters.visiblePath = UIBezierPath(rect: previewAnchor.bounds)
+            parameters.shadowPath = UIBezierPath()
+            let center = source.convert(previewAnchor.center, to: window)
+            let target = UIPreviewTarget(container: window, center: center)
+            return UITargetedPreview(view: previewAnchor, parameters: parameters, target: target)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+            parent.onPresentationChange(true)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+            if let animator {
+                animator.addCompletion { [weak self] in self?.parent.onPresentationChange(false) }
+            } else {
+                parent.onPresentationChange(false)
             }
         }
     }
