@@ -32,6 +32,14 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
                 )
                 .accessibilityHidden(true)
             }
+            .overlay {
+                if isMenuPresented {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(.tint, lineWidth: 3)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             .accessibilityElement(children: .combine)
             .accessibilityValue(isMenuPresented ? "菜单已打开" : "")
             .accessibilityActions {
@@ -142,14 +150,9 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
         context.coordinator.parent = self
     }
 
-    static func dismantleUIView(_ button: UIButton, coordinator: Coordinator) {
-        coordinator.removeHighlight()
-    }
-
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var parent: HomeRecommendationMenuInteraction
         private var isPresentingMenu = false
-        private let previewImage = UIImageView()
         private let emptyPreview = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
 
         init(_ parent: HomeRecommendationMenuInteraction) { self.parent = parent }
@@ -159,21 +162,9 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
         }
         @objc func press() { parent.onPress() }
 
-        func removeHighlight() {
-            previewImage.removeFromSuperview()
-            previewImage.image = nil
-        }
-
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
             isPresentingMenu = true
-            captureCard(interaction)
-            return UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: { [weak self] in
-                guard let self else { return nil }
-                let controller = UIViewController()
-                controller.view.backgroundColor = .clear
-                controller.preferredContentSize = self.previewImage.bounds.size
-                return controller
-            }) { [weak self] _ in
+            return UIContextMenuConfiguration(identifier: "homeRecommendation" as NSString, previewProvider: nil) { [weak self] _ in
                 self?.parent.menu()
             }
         }
@@ -186,29 +177,8 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
             cardPreview(interaction)
         }
 
-        private func captureCard(_ interaction: UIContextMenuInteraction) {
-            guard let source = interaction.view, let window = source.window,
-                  source.bounds.width > 0, source.bounds.height > 0 else { return }
-            let rect = source.convert(source.bounds, to: window)
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = source.traitCollection.displayScale
-            previewImage.image = UIGraphicsImageRenderer(size: rect.size, format: format).image { context in
-                context.cgContext.translateBy(x: -rect.minX, y: -rect.minY)
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
-            }
-            emptyPreview.frame = CGRect(origin: .zero, size: rect.size)
-            previewImage.frame = rect
-            previewImage.isUserInteractionEnabled = false
-            previewImage.isAccessibilityElement = false
-            previewImage.layer.cornerRadius = 18
-            previewImage.layer.cornerCurve = .continuous
-            previewImage.clipsToBounds = true
-            previewImage.backgroundColor = .clear
-        }
-
         private func cardPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
-            guard let source = interaction.view, let window = source.window,
-                  previewImage.image != nil else { return nil }
+            guard let source = interaction.view, let window = source.window else { return nil }
             let parameters = UIPreviewParameters()
             parameters.backgroundColor = .clear
             parameters.visiblePath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -220,30 +190,15 @@ private struct HomeRecommendationMenuInteraction: UIViewRepresentable {
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
             parent.onPresentationChange(true)
-            // Keep the selected card at its original position above the system dimming.
-            // The menu has no content preview to lift, resize, or relocate.
-            let showHighlight = { [weak self, weak interaction] in
-                guard let self, let window = interaction?.view?.window else { return }
-                window.addSubview(self.previewImage)
-            }
-            if let animator {
-                animator.addCompletion(showHighlight)
-            } else {
-                showHighlight()
-            }
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+            // Remove the outline at dismissal start, without waiting for the menu animation.
+            parent.onPresentationChange(false)
             if let animator {
-                animator.addCompletion { [weak self] in
-                    self?.isPresentingMenu = false
-                    self?.parent.onPresentationChange(false)
-                    self?.removeHighlight()
-                }
+                animator.addCompletion { [weak self] in self?.isPresentingMenu = false }
             } else {
                 isPresentingMenu = false
-                parent.onPresentationChange(false)
-                removeHighlight()
             }
         }
     }
