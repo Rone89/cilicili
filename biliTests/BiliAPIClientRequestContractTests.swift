@@ -4,6 +4,40 @@ import XCTest
 @testable import bili
 
 final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
+    @MainActor
+    func testAccountBlacklistReadAndUnblockContract() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/relation/blacks" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":1,"list":[{"mid":123,"uname":"测试用户"}]}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; DedeUserID=1001; bili_jct=csrf-value")
+        let result = try await api.fetchAccountBlacklist(page: 2, expectedAccountMID: 1001)
+        XCTAssertEqual(result.total, 1)
+        XCTAssertEqual(result.list?.first?.uname, "测试用户")
+        let read = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(read.url?.path, "/x/relation/blacks")
+        let query = URLComponents(url: try XCTUnwrap(read.url), resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertTrue(query?.contains(URLQueryItem(name: "pn", value: "2")) == true)
+        XCTAssertTrue(query?.contains(URLQueryItem(name: "ps", value: "50")) == true)
+        try await api.unblockUploader(mid: 123, expectedAccountMID: 1001)
+        let mutation = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(mutation.url?.path, "/x/relation/modify")
+        XCTAssertEqual(mutation.httpMethod, "POST")
+        let body = formValues(in: mutation)
+        XCTAssertEqual(body["act"], "6")
+        XCTAssertEqual(body["fid"], "123")
+        XCTAssertEqual(body["csrf"], "csrf-value")
+        do {
+            try await api.unblockUploader(mid: 123, expectedAccountMID: 999)
+            XCTFail("Account mismatch must prevent mutation")
+        } catch BiliAPIError.missingSESSDATA {}
+    }
+
     override func tearDown() {
         RequestContractURLProtocol.reset()
         super.tearDown()

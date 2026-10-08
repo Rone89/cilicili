@@ -310,8 +310,31 @@ extension BiliAPIClient {
         try await modifyUploaderRelation(mid: mid, action: "5")
     }
 
-    private func modifyUploaderRelation(mid: Int, action: String) async throws {
+    func unblockUploader(mid: Int, expectedAccountMID: Int) async throws {
+        guard mid > 0 else { throw BiliAPIError.missingPayload }
+        try await modifyUploaderRelation(mid: mid, action: "6", expectedAccountMID: expectedAccountMID)
+    }
+
+    func fetchAccountBlacklist(page: Int, expectedAccountMID: Int) async throws -> AccountBlacklistPage {
         let context = await interactionRequestContext(purpose: .main)
+        guard context.currentUserMID == expectedAccountMID else { throw BiliAPIError.missingSESSDATA }
+        var query = ["pn": String(page), "ps": "50"]
+        if !context.isLoggedIn {
+            guard let key = context.appAccessKey, !key.isEmpty else { throw BiliAPIError.missingSESSDATA }
+            query["access_key"] = key
+        }
+        let response: BiliResponse<AccountBlacklistPage> = try await get(
+            base: baseURL, path: "/x/relation/blacks", query: query,
+            userAgent: Self.webUserAgent, cookieHeader: context.cookieHeader
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let data = response.payload else { throw BiliAPIError.missingPayload }
+        return data
+    }
+
+    private func modifyUploaderRelation(mid: Int, action: String, expectedAccountMID: Int? = nil) async throws {
+        let context = await interactionRequestContext(purpose: .main)
+        if let expectedAccountMID, context.currentUserMID != expectedAccountMID { throw BiliAPIError.missingSESSDATA }
         if let csrf = context.csrfToken, context.isLoggedIn {
             try await modifyUploaderRelationWithWeb(mid: mid, action: action, csrf: csrf, cookieHeader: context.cookieHeader)
             return
@@ -374,4 +397,15 @@ extension BiliAPIClient {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
     }
+}
+
+nonisolated struct AccountBlacklistPage: Decodable, Sendable {
+    let list: [AccountBlockedUser]?
+    let total: Int
+}
+
+nonisolated struct AccountBlockedUser: Decodable, Identifiable, Sendable {
+    let mid: Int
+    let uname: String
+    var id: Int { mid }
 }

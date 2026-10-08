@@ -154,6 +154,10 @@ extension BiliAPIClient {
         }
     }
 
+    func fetchUploaderName(mid: Int) async throws -> String? {
+        try await fetchUploaderCardProfile(mid: mid).card?.name
+    }
+
     private func fetchUploaderCardProfile(mid: Int) async throws -> UploaderProfile {
         let response: BiliResponse<UploaderProfile> = try await get(
             base: baseURL,

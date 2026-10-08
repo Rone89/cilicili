@@ -1311,6 +1311,14 @@ final class LibraryStore: ObservableObject {
         persistBlockedHomeRecommendationUPs()
     }
 
+    func updateBlockedHomeRecommendationUPName(mid: Int64, name: String) {
+        guard blockedHomeRecommendationUPMIDs.contains(mid) else { return }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != "Unknown" else { return }
+        blockedHomeRecommendationUPNames[String(mid)] = name
+        persistBlockedHomeRecommendationUPs()
+    }
+
     func unblockHomeRecommendationUP(mid: Int64) {
         guard blockedHomeRecommendationUPMIDs.contains(mid) else { return }
         blockedHomeRecommendationUPMIDs.remove(mid)

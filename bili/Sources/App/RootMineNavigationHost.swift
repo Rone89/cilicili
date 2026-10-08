@@ -59,7 +59,7 @@ struct RootMineNavigationDestination: View {
         case .developerDiagnostics:
             MineDeveloperDiagnosticsView(libraryStore: libraryStore)
         case .contentFilterSettings:
-            MineContentFilterSettingsView(libraryStore: libraryStore)
+            MineContentFilterSettingsView(libraryStore: libraryStore, sessionStore: sessionStore, api: api)
         case .privacySettings:
             MinePrivacySettingsView(libraryStore: libraryStore)
         }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MineContentFilterSettingsView: View {
     @ObservedObject var libraryStore: LibraryStore
+    @ObservedObject var sessionStore: SessionStore
+    let api: BiliAPIClient
 
     var body: some View {
         Form {
@@ -41,9 +43,15 @@ struct MineContentFilterSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                NavigationLink("黑名单管理") {
+                    AccountBlacklistSettingsView(sessionStore: sessionStore, libraryStore: libraryStore, api: api)
+                }
+            }
+
             Section("推荐过滤") {
                 NavigationLink {
-                    LocalBlockedUPSettingsView(libraryStore: libraryStore)
+                    LocalBlockedUPSettingsView(libraryStore: libraryStore, api: api)
                 } label: {
                     PlainSettingsNavigationRow(
                         title: "本地已屏蔽的 UP 主",
@@ -130,6 +138,7 @@ struct MineContentFilterSettingsView: View {
 
 private struct LocalBlockedUPSettingsView: View {
     @ObservedObject var libraryStore: LibraryStore
+    let api: BiliAPIClient
 
     var body: some View {
         List {
@@ -140,18 +149,13 @@ private struct LocalBlockedUPSettingsView: View {
                 } else {
                     ForEach(libraryStore.blockedHomeRecommendationUPMIDs.sorted(), id: \.self) { mid in
                         HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? "UP 主 · UID \(mid)")
-                                if libraryStore.blockedHomeRecommendationUPNames[String(mid)] != nil {
-                                    Text("UID \(mid)").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
+                            Text(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? "名称暂不可用")
                             Spacer(minLength: 8)
                             Button("解除屏蔽") {
                                 libraryStore.unblockHomeRecommendationUP(mid: mid)
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("解除屏蔽 \(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? String(mid))")
+                            .accessibilityLabel("解除屏蔽 \(libraryStore.blockedHomeRecommendationUPNames[String(mid)] ?? "该 UP 主")")
                         }
                     }
                     .onDelete { offsets in
@@ -169,5 +173,113 @@ private struct LocalBlockedUPSettingsView: View {
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
         .hiddenInlineNavigationTitle()
+        .task {
+            for mid in libraryStore.blockedHomeRecommendationUPMIDs.sorted() {
+                guard !Task.isCancelled else { return }
+                if libraryStore.blockedHomeRecommendationUPNames[String(mid)] == nil,
+                   let name = try? await api.fetchUploaderName(mid: Int(mid)) {
+                    libraryStore.updateBlockedHomeRecommendationUPName(mid: mid, name: name)
+                }
+            }
+        }
+    }
+}
+
+private struct AccountBlacklistSettingsView: View {
+    @ObservedObject var sessionStore: SessionStore
+    @ObservedObject var libraryStore: LibraryStore
+    let api: BiliAPIClient
+    @State private var users: [AccountBlockedUser] = []
+    @State private var nextPage = 1
+    @State private var hasMore = false
+    @State private var loading = false
+    @State private var loadID = UUID()
+    @State private var errorMessage: String?
+    @State private var pendingRemoval: AccountBlockedUser?
+    @State private var removing = false
+
+    var body: some View {
+        List {
+            Section {
+                if sessionStore.mainAccountMID == nil {
+                    Text("请先登录账户").foregroundStyle(.secondary)
+                } else {
+                    ForEach(users) { user in
+                        HStack {
+                            Text(user.uname)
+                            Spacer()
+                            Button("解除拉黑") { pendingRemoval = user }
+                                .buttonStyle(.borderless)
+                                .disabled(removing)
+                        }
+                    }
+                    if loading { ProgressView() }
+                    if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                        Button("重试") { Task { await load(reset: users.isEmpty) } }.disabled(loading)
+                    } else if users.isEmpty && !loading {
+                        Text("暂无已拉黑用户").foregroundStyle(.secondary)
+                    }
+                    if hasMore { Button("加载更多") { Task { await load(reset: false) } }.disabled(loading || removing) }
+                }
+            } header: {
+                Text("账户黑名单")
+            } footer: {
+                Text("管理当前主账户在 Bilibili 已拉黑的用户。解除账户拉黑不会解除本机推荐屏蔽。")
+            }
+        }
+        .tint(libraryStore.appTintColor)
+        .listStyle(.insetGrouped)
+        .nativeTopScrollEdgeEffect()
+        .hiddenInlineNavigationTitle()
+        .task(id: sessionStore.mainAccountMID) { await load(reset: true) }
+        .refreshable { await load(reset: true) }
+        .confirmationDialog("解除拉黑「\(pendingRemoval?.uname ?? "")」？", isPresented: Binding(
+            get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }
+        ), titleVisibility: .visible) {
+            if let user = pendingRemoval {
+                Button("解除拉黑", role: .destructive) { Task { await unblock(user) } }
+            }
+            Button("取消", role: .cancel) { pendingRemoval = nil }
+        }
+    }
+
+    @MainActor private func load(reset: Bool) async {
+        guard reset || (!loading && !removing) else { return }
+        let requestID = UUID()
+        loadID = requestID
+        if reset { users = []; nextPage = 1; hasMore = false; pendingRemoval = nil; errorMessage = nil; loading = false }
+        guard let account = sessionStore.mainAccountMID else { return }
+        loading = true
+        errorMessage = nil
+        let page = reset ? 1 : nextPage
+        do {
+            let result = try await api.fetchAccountBlacklist(page: page, expectedAccountMID: account)
+            guard !Task.isCancelled, loadID == requestID, sessionStore.mainAccountMID == account else { return }
+            let incoming = result.list ?? []
+            let known = Set(users.map(\.mid))
+            users += incoming.filter { !known.contains($0.mid) }
+            nextPage = page + 1
+            hasMore = !incoming.isEmpty && page * 50 < result.total
+        } catch {
+            if !Task.isCancelled, loadID == requestID, sessionStore.mainAccountMID == account { errorMessage = error.localizedDescription }
+        }
+        if loadID == requestID, sessionStore.mainAccountMID == account { loading = false }
+    }
+
+    @MainActor private func unblock(_ user: AccountBlockedUser) async {
+        guard let account = sessionStore.mainAccountMID, !removing else { return }
+        removing = true
+        pendingRemoval = nil
+        do {
+            try await api.unblockUploader(mid: user.mid, expectedAccountMID: account)
+            guard sessionStore.mainAccountMID == account else { removing = false; return }
+            // Reload pagination after mutation so shifted server pages cannot skip a user.
+            removing = false
+            await load(reset: true)
+        } catch {
+            if sessionStore.mainAccountMID == account { errorMessage = error.localizedDescription }
+            removing = false
+        }
     }
 }
