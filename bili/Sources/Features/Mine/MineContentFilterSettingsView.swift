@@ -166,7 +166,7 @@ private struct LocalBlockedUPSettingsView: View {
             } header: {
                 Text("本地已屏蔽的 UP 主")
             } footer: {
-                Text("仅管理本机首页推荐屏蔽，不会解除 Bilibili 服务器拉黑。解除后，该 UP 的内容可在后续推荐中再次出现。首页推荐反馈实验关闭时，本地屏蔽数据仍保留，但不参与推荐过滤。")
+                Text("仅管理本机首页推荐屏蔽，不会解除 Bilibili 服务器拉黑。解除后，该 UP 的内容可在后续推荐中再次出现。")
             }
         }
         .tint(libraryStore.appTintColor)

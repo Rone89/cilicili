@@ -80,18 +80,6 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var experimentsSection: some View {
         Section("实验开关") {
-            Toggle("首页推荐反馈菜单", isOn: Binding(
-                get: { libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled },
-                set: { libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled($0) }
-            ))
-            .accessibilityIdentifier("mine.experiments.homeRecommendationFeedbackContextMenu")
-
-            Toggle("评论正文统一行距", isOn: Binding(
-                get: { libraryStore.commentTextTypographyUnificationExperimentEnabled },
-                set: { libraryStore.setCommentTextTypographyUnificationExperimentEnabled($0) }
-            ))
-            .accessibilityIdentifier("mine.experiments.commentTextTypographyUnification")
-
             Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }

@@ -47,12 +47,12 @@ nonisolated struct HomeRecommendationFeedbackMetadata: Codable, Hashable, Sendab
 }
 
 nonisolated enum HomeRecommendationFeedbackPolicy {
-    static func isAvailable(experimentEnabled: Bool, mode: HomeFeedMode) -> Bool {
-        experimentEnabled && mode == .recommend
+    static func isAvailable(mode: HomeFeedMode) -> Bool {
+        mode == .recommend
     }
 
-    static func filtered(_ videos: [VideoItem], blockedMIDs: Set<Int64>, enabled: Bool) -> [VideoItem] {
-        guard enabled, !blockedMIDs.isEmpty else { return videos }
+    static func filtered(_ videos: [VideoItem], blockedMIDs: Set<Int64>) -> [VideoItem] {
+        guard !blockedMIDs.isEmpty else { return videos }
         return videos.filter { video in
             guard let mid = video.owner?.mid else { return true }
             return !blockedMIDs.contains(Int64(mid))

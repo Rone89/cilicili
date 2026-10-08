@@ -10,7 +10,6 @@ struct HomeRecommendationFeedbackActions {
 }
 
 struct HomeRecommendationFeedbackMenu: ViewModifier {
-    @EnvironmentObject private var libraryStore: LibraryStore
     let video: VideoItem
     let metrics: HomeFeedLayoutMetrics
     let actions: HomeRecommendationFeedbackActions?
@@ -21,7 +20,7 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
     @State private var showsFeedbackReasons = false
 
     func body(content: Content) -> some View {
-        if libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled, let actions,
+        if let actions,
            (video.owner?.mid ?? 0) > 0 || (actions.canSubmit && video.recommendationFeedback?.hasReasons == true) {
             content
             .overlay {

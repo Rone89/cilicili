@@ -67,24 +67,21 @@ final class HomeViewModel: ObservableObject {
                 guard let self else { return }
                 Task { await self.reloadForRecommendContextChange() }
             }
-        recommendationFilterCancellable = Publishers.CombineLatest(
-            libraryStore.$homeRecommendationFeedbackContextMenuExperimentEnabled,
-            libraryStore.$blockedHomeRecommendationUPMIDs
-        )
+        recommendationFilterCancellable = libraryStore.$blockedHomeRecommendationUPMIDs
         .dropFirst()
-        .sink { [weak self] enabled, blocked in
-            guard let self, enabled else { return }
+        .sink { [weak self] blocked in
+            guard let self else { return }
             self.retainedRecommendLastSeenMarkerIndex = self.retainedRecommendLastSeenMarkerIndex.map { index in
                 HomeRecommendationFeedbackPolicy.filtered(
-                    Array(self.retainedRecommendVideos.prefix(index)), blockedMIDs: blocked, enabled: enabled
+                    Array(self.retainedRecommendVideos.prefix(index)), blockedMIDs: blocked
                 ).count
             }
             self.retainedRecommendVideos = HomeRecommendationFeedbackPolicy.filtered(
-                self.retainedRecommendVideos, blockedMIDs: blocked, enabled: enabled
+                self.retainedRecommendVideos, blockedMIDs: blocked
             )
             guard self.mode == .recommend else { return }
             self.pruneRecommendationFeed {
-                HomeRecommendationFeedbackPolicy.filtered([$0], blockedMIDs: blocked, enabled: enabled).isEmpty
+                HomeRecommendationFeedbackPolicy.filtered([$0], blockedMIDs: blocked).isEmpty
             }
         }
 
@@ -96,9 +93,9 @@ final class HomeViewModel: ObservableObject {
 
     func updateFeed(_ incomingVideos: [VideoItem]) {
         let newVideos: [VideoItem]
-        if mode == .recommend, libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled {
+        if mode == .recommend {
             newVideos = HomeRecommendationFeedbackPolicy.filtered(
-                incomingVideos, blockedMIDs: libraryStore.blockedHomeRecommendationUPMIDs, enabled: true
+                incomingVideos, blockedMIDs: libraryStore.blockedHomeRecommendationUPMIDs
             ).filter { !hiddenRecommendationIDs.contains($0.id) }
         } else {
             newVideos = incomingVideos
@@ -113,7 +110,7 @@ final class HomeViewModel: ObservableObject {
     func performRecommendationFeedback(
         video: VideoItem, kind: RecommendationFeedbackKind, reason: RecommendationFeedbackReason
     ) async {
-        guard mode == .recommend, libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled,
+        guard mode == .recommend,
               !isSubmittingRecommendationFeedback, let metadata = video.recommendationFeedback
         else { return }
         isSubmittingRecommendationFeedback = true
@@ -135,7 +132,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     func blockRecommendationUP(_ owner: VideoOwner, synchronize: Bool) async {
-        guard mode == .recommend, owner.mid > 0, libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled,
+        guard mode == .recommend, owner.mid > 0,
               !isSubmittingRecommendationFeedback else { return }
         isSubmittingRecommendationFeedback = true
         defer { isSubmittingRecommendationFeedback = false }

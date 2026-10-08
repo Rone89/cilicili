@@ -48,7 +48,6 @@ struct CommentRow: View, Equatable {
                 font: .subheadline,
                 textColor: .primary,
                 emoteSize: 21,
-                legacyOuterLineSpacing: 1,
                 typographyRole: .commentBody,
                 onNonLinkTap: commentTapAction
             )

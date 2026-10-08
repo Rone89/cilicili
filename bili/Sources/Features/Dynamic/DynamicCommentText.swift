@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct DynamicCommentText: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
-    @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let content: CommentContent?
@@ -11,11 +9,8 @@ struct DynamicCommentText: View {
     let emoteSize: CGFloat
     let leadingName: String?
     let leadingNameColor: Color
-    let lineSpacing: CGFloat
     let typographyRole: AppTypography.Role?
     let onNonLinkTap: (() -> Void)?
-
-    @Environment(\.lineLimit) private var lineLimit
 
     init(
         content: CommentContent?,
@@ -24,7 +19,6 @@ struct DynamicCommentText: View {
         emoteSize: CGFloat,
         leadingName: String? = nil,
         leadingNameColor: Color = .pink,
-        lineSpacing: CGFloat = 2,
         typographyRole: AppTypography.Role? = nil,
         onNonLinkTap: (() -> Void)? = nil
     ) {
@@ -34,78 +28,25 @@ struct DynamicCommentText: View {
         self.emoteSize = emoteSize
         self.leadingName = leadingName
         self.leadingNameColor = leadingNameColor
-        self.lineSpacing = lineSpacing
         self.typographyRole = typographyRole
         self.onNonLinkTap = onNonLinkTap
     }
 
     var body: some View {
-        Group {
-            if !libraryStore.commentTextTypographyUnificationExperimentEnabled, let nativeText {
-                Text(nativeText)
-                    .lineLimit(lineLimit)
-                    .multilineTextAlignment(.leading)
-                    .lineSpacing(lineSpacing)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onNonLinkTap?() }
-            } else {
-                BiliEmoteText(
-                    content: content,
-                    font: resolvedFont,
-                    textColor: textColor,
-                    emoteSize: emoteSize,
-                    leadingName: leadingName,
-                    leadingNameColor: leadingNameColor,
-                    lineSpacing: CommentTypography.resolvedBodyLineSpacing(
-                        legacy: lineSpacing,
-                        experimentEnabled: libraryStore.commentTextTypographyUnificationExperimentEnabled
-                    ),
-                    typographyRole: typographyRole,
-                    onNonLinkTap: onNonLinkTap
-                )
-                .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        BiliEmoteText(
+            content: content,
+            font: resolvedFont,
+            textColor: textColor,
+            emoteSize: emoteSize,
+            leadingName: leadingName,
+            leadingNameColor: leadingNameColor,
+            lineSpacing: CommentTypography.bodyLineSpacing,
+            typographyRole: typographyRole,
+            onNonLinkTap: onNonLinkTap
+        )
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .layoutPriority(1)
-    }
-
-    private var nativeText: AttributedString? {
-        guard canUseNativeSwiftUIText, let message = plainMessage else { return nil }
-
-        if let leadingName, !leadingName.isEmpty {
-            return DynamicCommentTextBuilder.nameAndMessage(
-                name: leadingName,
-                message: message,
-                font: resolvedFont,
-                contentColor: textColor,
-                nameColor: leadingNameColor,
-                replyTargetColor: appTintColor
-            )
-        }
-
-        return DynamicCommentTextBuilder.replyMessage(
-            message,
-            font: resolvedFont,
-            contentColor: textColor,
-            replyTargetColor: appTintColor
-        )
-    }
-
-    private var canUseNativeSwiftUIText: Bool {
-        guard let content, plainMessage != nil else { return false }
-
-        return content.emotes.isEmpty
-            && content.mentions.isEmpty
-            && content.jumpURLs == nil
-            && BiliTextLinkExtractor.urls(in: content).isEmpty
-    }
-
-    private var plainMessage: String? {
-        let message = content?.message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return message.isEmpty ? nil : message
     }
 
     private var resolvedFont: Font {

@@ -63,7 +63,6 @@ struct DynamicCommentRow: View {
                 font: .subheadline,
                 textColor: .primary,
                 emoteSize: 21,
-                lineSpacing: 1,
                 typographyRole: .commentBody,
                 onNonLinkTap: contentReplyAction
             )

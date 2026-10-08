@@ -2,16 +2,14 @@ import XCTest
 
 @MainActor
 final class HomeRecommendationFeedbackUITests: XCTestCase {
-    func testDefaultOffAndShortTapStillOpenVideo() {
+    func testShortTapStillOpensVideo() {
         let app = launch()
-        XCTAssertEqual(app.switches["fixture.feedback.enabled"].value as? String, "0")
         card(1, app).tap()
         XCTAssertTrue(app.staticTexts["fixture.feedback.detail"].waitForExistence(timeout: 3))
     }
 
     func testNativeContextMenuReasonsRemoveOnlyCurrentCard() {
         let app = launch()
-        enable(app)
         card(1, app).press(forDuration: 1.5)
         XCTAssertTrue(app.buttons["屏蔽该 UP"].waitForExistence(timeout: 3))
         XCTAssertEqual(card(1, app).value as? String, "菜单已打开")
@@ -32,7 +30,6 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testFailedFeedbackKeepsCard() {
         let app = launch(extra: ["--feedback-failure"])
-        enable(app)
         card(1, app).press(forDuration: 1.5)
         app.buttons["不感兴趣"].tap()
         app.buttons["不想看此类内容"].tap()
@@ -44,7 +41,6 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testAnonymousLocalBlockPrunesAllSameUPCards() {
         let app = launch(extra: ["--feedback-anonymous"])
-        enable(app)
         card(1, app).press(forDuration: 1.5)
         screenshot(app, "Anonymous native menu")
         XCTAssertFalse(app.buttons["不感兴趣"].exists)
@@ -63,7 +59,6 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testCancelBlockLeavesFeedAndShortTapIntact() {
         let app = launch()
-        enable(app)
         card(1, app).press(forDuration: 1.5)
         app.buttons["屏蔽该 UP"].tap()
         XCTAssertTrue(app.buttons["拉黑并同步到 Bilibili"].waitForExistence(timeout: 3))
@@ -81,7 +76,6 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testScrollDoesNotOpenMenuAndFeedbackDoesNotResetScrollToTop() {
         let app = launch()
-        enable(app)
         let scroll = app.scrollViews["fixture.feedback.scroll"]
         scroll.swipeUp()
         XCTAssertFalse(app.buttons["屏蔽该 UP"].exists)
@@ -111,10 +105,6 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     private func card(_ number: Int, _ app: XCUIApplication) -> XCUIElement {
         app.buttons["fixture.feedback.card.fixture-\(number)"]
-    }
-
-    private func enable(_ app: XCUIApplication) {
-        app.switches["fixture.feedback.enabled"].coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {

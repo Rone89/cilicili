@@ -40,7 +40,6 @@ struct DynamicCommentReplyBody: View {
             font: .subheadline,
             textColor: .primary,
             emoteSize: 22,
-            lineSpacing: 2,
             typographyRole: .commentBody
         )
         DynamicCommentImageGrid(images: display.pictures)

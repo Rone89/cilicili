@@ -33,9 +33,6 @@ struct UITestHomeFeedbackFixtureView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack {
-                Toggle("推荐反馈实验", isOn: Binding(get: { library.homeRecommendationFeedbackContextMenuExperimentEnabled }, set: library.setHomeRecommendationFeedbackContextMenuExperimentEnabled))
-                    .accessibilityIdentifier("fixture.feedback.enabled")
-                    .padding(.horizontal)
                 GeometryReader { geometry in
                     HomeFeedScrollView(viewModel: model, viewportState: $viewport, scrollActions: scrollActions, nativeRefreshActionStore: nativeRefresh, layout: .borderedSingleColumn) {
                         LazyVStack(spacing: 12) {

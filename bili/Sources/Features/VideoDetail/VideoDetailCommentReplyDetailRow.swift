@@ -54,7 +54,6 @@ struct CommentReplyDetailRow: View {
                     font: .subheadline,
                     textColor: .primary,
                     emoteSize: 22,
-                    legacyOuterLineSpacing: 1,
                     typographyRole: .commentBody,
                     onNonLinkTap: commentTapAction
                 )

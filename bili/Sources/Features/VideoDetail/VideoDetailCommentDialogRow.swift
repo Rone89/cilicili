@@ -53,7 +53,6 @@ struct CommentDialogRow: View {
                         font: .subheadline,
                         textColor: .primary,
                         emoteSize: 22,
-                        legacyOuterLineSpacing: 2,
                         typographyRole: .commentBody,
                         onNonLinkTap: commentTapAction
                     )

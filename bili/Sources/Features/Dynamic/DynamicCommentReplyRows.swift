@@ -40,7 +40,6 @@ struct DynamicCommentReplyRootView: View {
                         font: .subheadline,
                         textColor: .primary,
                         emoteSize: 22,
-                        lineSpacing: 1,
                         typographyRole: .commentBody,
                         onNonLinkTap: commentTapAction
                     )
@@ -122,7 +121,6 @@ struct DynamicCommentReplyDetailRow: View {
                         font: .subheadline,
                         textColor: .primary,
                         emoteSize: 22,
-                        lineSpacing: 1,
                         typographyRole: .commentBody,
                         onNonLinkTap: commentTapAction
                     )
@@ -216,7 +214,6 @@ struct DynamicCommentDialogRow: View {
                         font: .subheadline,
                         textColor: .primary,
                         emoteSize: 22,
-                        lineSpacing: 2,
                         typographyRole: .commentBody,
                         onNonLinkTap: commentTapAction
                     )

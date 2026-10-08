@@ -19,12 +19,7 @@ struct UITestCommentSpacingFixtureView: View {
                 }.padding(20)
             }
             .navigationTitle("评论行距验证")
-            .toolbar {
-                Toggle("统一行距", isOn: Binding(
-                    get: { libraryStore.commentTextTypographyUnificationExperimentEnabled },
-                    set: { libraryStore.setCommentTextTypographyUnificationExperimentEnabled($0) }
-                )).accessibilityIdentifier("comment.spacing.toggle")
-            }
+
         }
         .environmentObject(libraryStore)
         .environment(\.dynamicTypeSize, ProcessInfo.processInfo.arguments.contains("--comment-spacing-accessibility") ? .accessibility3 : .large)
@@ -52,12 +47,12 @@ private struct CommentSpacingSampleRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("样例 \(id)")
-            DynamicCommentText(content: content, font: .subheadline, textColor: .primary, emoteSize: 21, lineSpacing: 1, typographyRole: .commentBody)
+            DynamicCommentText(content: content, font: .subheadline, textColor: .primary, emoteSize: 21, typographyRole: .commentBody)
                 .commentActionsMenu(longPressEnabled: true, text: content.message, copyTitle: "复制评论", replyAction: nil)
                 .accessibilityIdentifier("comment.sample.dynamic.\(id)")
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _, value in dynamicHeight = value }
             Text(String(format: "%.1f", dynamicHeight)).accessibilityIdentifier("comment.height.dynamic.\(id)")
-            CommentBodyText(content: content, emoteSize: 21, legacyOuterLineSpacing: 1)
+            CommentBodyText(content: content, emoteSize: 21)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _, value in videoHeight = value }
             Text(String(format: "%.1f", videoHeight)).accessibilityIdentifier("comment.height.video.\(id)")
         }

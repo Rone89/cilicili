@@ -3686,7 +3686,6 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     func testHomeFeedbackSuccessRemovesOnlyCurrentVideoAndRejectsInFlightReinsertion() async throws {
         RequestContractURLProtocol.install { request in Self.response(for: request, body: #"{"code":0}"#) }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: "main-access-key")
-        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
         let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
         let videos = try [HomeFeedbackTestData.video(id: 1), HomeFeedbackTestData.video(id: 2, mid: 456), HomeFeedbackTestData.video(id: 3)]
         model.updateFeed(videos)
@@ -3706,7 +3705,6 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     func testHomeFeedbackAndRemoteBlockFailureDoNotMutateFeedOrBlocks() async throws {
         RequestContractURLProtocol.install { request in Self.response(for: request, body: #"{"code":-400,"message":"操作失败"}"#) }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001; bili_jct=csrf", accessKey: "main-access-key")
-        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
         let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
         let video = try HomeFeedbackTestData.video()
         model.updateFeed([video])
@@ -3721,7 +3719,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testLocalBlockPrunesAllUPRowsRetainedFeedAndFutureResponsesOnlyWhenEnabled() async throws {
+    func testLocalBlockPrunesRecommendationRowsRetainedFeedAndFutureResponses() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -3730,15 +3728,13 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         let api = try makeAPI(cookieHeader: "")
         let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
         let videos = try [HomeFeedbackTestData.video(id: 1), HomeFeedbackTestData.video(id: 2, mid: 456), HomeFeedbackTestData.video(id: 3)]
-        api.libraryStore.blockHomeRecommendationUP(mid: 123)
         model.updateFeed(videos)
-        XCTAssertEqual(model.videos, videos) // Default OFF remains exact legacy.
         model.retainedRecommendVideos = videos
         model.retainedRecommendLastSeenMarkerIndex = 2
-        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
-        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
+        api.libraryStore.blockHomeRecommendationUP(mid: 123)
         XCTAssertEqual(model.retainedRecommendVideos.map(\.id), ["BV2"])
         XCTAssertEqual(model.retainedRecommendLastSeenMarkerIndex, 1)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
         model.updateFeed(videos)
         XCTAssertEqual(model.videos.map(\.id), ["BV2"])
         api.libraryStore.unblockHomeRecommendationUP(mid: 123)
@@ -3749,10 +3745,9 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         model.mode = .popular
         model.updateFeed(videos)
         XCTAssertEqual(model.videos, videos)
-        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(false)
         model.mode = .recommend
         model.updateFeed(videos)
-        XCTAssertEqual(model.videos, videos)
+        XCTAssertEqual(model.videos.map(\.id), ["BV2"])
         XCTAssertTrue(api.libraryStore.containsBlockedHomeRecommendationUP(mid: 123))
     }
 
@@ -3764,7 +3759,6 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             return Self.response(for: request, body: #"{"code":0}"#)
         }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001; bili_jct=csrf")
-        api.libraryStore.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
         let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
         let video = try HomeFeedbackTestData.video()
         model.updateFeed([video])

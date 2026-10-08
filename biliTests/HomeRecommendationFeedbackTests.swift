@@ -3,41 +3,35 @@ import XCTest
 
 @MainActor
 final class HomeRecommendationFeedbackTests: XCTestCase {
-    func testExperimentDefaultsOffAndPersistsWithoutClearingBlocks() {
+    func testLocalBlocksAndNamesPersist() {
         let suite = "HomeFeedbackTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.homeRecommendationFeedbackContextMenuExperimentEnabled)
         store.blockHomeRecommendationUP(mid: 123, name: "测试 UP")
         store.blockHomeRecommendationUP(mid: 123)
         store.blockHomeRecommendationUP(mid: 0)
         XCTAssertEqual(store.blockedHomeRecommendationUPMIDs, [123])
         XCTAssertTrue(store.containsBlockedHomeRecommendationUP(mid: 123))
-        store.setHomeRecommendationFeedbackContextMenuExperimentEnabled(true)
         let restored = LibraryStore(userDefaults: defaults)
-        XCTAssertTrue(restored.homeRecommendationFeedbackContextMenuExperimentEnabled)
         XCTAssertEqual(restored.blockedHomeRecommendationUPMIDs, [123])
         XCTAssertEqual(restored.blockedHomeRecommendationUPNames["123"], "测试 UP")
-        restored.setHomeRecommendationFeedbackContextMenuExperimentEnabled(false)
         XCTAssertTrue(restored.containsBlockedHomeRecommendationUP(mid: 123))
         restored.unblockHomeRecommendationUP(mid: 123)
         XCTAssertNil(LibraryStore(userDefaults: defaults).blockedHomeRecommendationUPNames["123"])
         XCTAssertFalse(LibraryStore(userDefaults: defaults).containsBlockedHomeRecommendationUP(mid: 123))
     }
 
-    func testAvailabilityIsOnlyEnabledRecommendation() {
-        XCTAssertFalse(HomeRecommendationFeedbackPolicy.isAvailable(experimentEnabled: false, mode: .recommend))
-        XCTAssertFalse(HomeRecommendationFeedbackPolicy.isAvailable(experimentEnabled: true, mode: .popular))
-        XCTAssertTrue(HomeRecommendationFeedbackPolicy.isAvailable(experimentEnabled: true, mode: .recommend))
+    func testAvailabilityIsRecommendationOnly() {
+        XCTAssertFalse(HomeRecommendationFeedbackPolicy.isAvailable(mode: .popular))
+        XCTAssertTrue(HomeRecommendationFeedbackPolicy.isAvailable(mode: .recommend))
     }
 
-    func testMIDFilterPreservesOrderUnknownOwnersAndExactLegacyOff() throws {
+    func testMIDFilterPreservesOrderAndUnknownOwners() throws {
         let videos = try [123, 456, 123, 789].enumerated().map { try HomeFeedbackTestData.video(id: $0.offset + 1, mid: $0.element) }
-        XCTAssertEqual(HomeRecommendationFeedbackPolicy.filtered(videos, blockedMIDs: [123], enabled: true).map(\.owner?.mid), [456, 789])
-        XCTAssertEqual(HomeRecommendationFeedbackPolicy.filtered(videos, blockedMIDs: [123], enabled: false), videos)
+        XCTAssertEqual(HomeRecommendationFeedbackPolicy.filtered(videos, blockedMIDs: [123]).map(\.owner?.mid), [456, 789])
         let unknown = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"unknown","title":"unknown"}"#.utf8))
-        XCTAssertEqual(HomeRecommendationFeedbackPolicy.filtered([unknown], blockedMIDs: [123], enabled: true), [unknown])
+        XCTAssertEqual(HomeRecommendationFeedbackPolicy.filtered([unknown], blockedMIDs: [123]), [unknown])
     }
 
     func testAPPReasonsParseWithoutInventingWebFeedback() throws {

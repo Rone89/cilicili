@@ -4,21 +4,9 @@ import XCTest
 
 @MainActor
 final class CommentTypographyTests: XCTestCase {
-    func testFlagDefaultsOffAndPersistsLiveChanges() {
-        let suite = "comment-spacing.\(UUID())"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.commentTextTypographyUnificationExperimentEnabled)
-        for legacy in [CGFloat(0), 1, 2] {
-            XCTAssertEqual(CommentTypography.resolvedBodyLineSpacing(legacy: legacy, experimentEnabled: false), legacy)
-            XCTAssertEqual(CommentTypography.resolvedBodyLineSpacing(legacy: legacy, experimentEnabled: true), 2)
-        }
-        store.setCommentTextTypographyUnificationExperimentEnabled(true)
-        XCTAssertTrue(store.commentTextTypographyUnificationExperimentEnabled)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).commentTextTypographyUnificationExperimentEnabled)
-        store.setCommentTextTypographyUnificationExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).commentTextTypographyUnificationExperimentEnabled)
+    func testProductionCommentBodySpacing() {
+        XCTAssertEqual(CommentTypography.bodyLineSpacing, 2)
+        XCTAssertEqual(AppTypography.Role.commentBody.pointSize, 15)
     }
 
     func testFixedLineBoxesCacheMeasurementAndAttachmentsAcrossDynamicType() throws {

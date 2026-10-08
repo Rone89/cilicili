@@ -18,7 +18,6 @@ struct HomeFeedScreenContentActionsBuilder {
             onLoadMore: loadMoreIfNeeded,
             onRefreshFromLastSeenMarker: refreshFromLastSeenMarker,
             recommendationFeedback: HomeRecommendationFeedbackPolicy.isAvailable(
-                experimentEnabled: viewModel.libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled,
                 mode: viewModel.mode
             ) ? HomeRecommendationFeedbackActions(
                 canSubmit: viewModel.canSubmitRecommendationFeedback,
