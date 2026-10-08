@@ -126,3 +126,26 @@ final class VideoDetailSwiftUISurfaceHostingView: UIView, VideoDetailPlayerSurfa
         )
     }
 }
+
+/// Select once per surface lifetime. Never migrate a playing/PiP surface merely
+/// because a settings page changed the experiment; the next detail uses it.
+@MainActor
+enum VideoDetailPlayerSurfaceHostFactory {
+    static func make(
+        viewModel: PlayerStateViewModel,
+        isPictureInPictureEnabled: Bool,
+        usesDirectUIKitSurface: Bool
+    ) -> any VideoDetailPlayerSurfaceHostingView {
+        if usesDirectUIKitSurface {
+            return DirectUIKitPlayerSurfaceHostView(
+                viewModel: viewModel,
+                isPictureInPictureEnabled: isPictureInPictureEnabled,
+                synchronizesBoundsRefresh: true
+            )
+        }
+        return VideoDetailSwiftUISurfaceHostingView(
+            viewModel: viewModel,
+            isPictureInPictureEnabled: isPictureInPictureEnabled
+        )
+    }
+}

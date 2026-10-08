@@ -5,7 +5,7 @@ import UIKit
 
 /// 详情页 UIKit 外壳：播放器宿主（surface-only + 独立控件浮层）。
 ///
-/// 对齐原型：UIKit 容器只驱动 frame，SwiftUI 根视图里直接铺 `VideoSurfaceView`，
+/// UIKit 容器只驱动 frame；视频层可绕过 surface-only SwiftUI Hosting，
 /// 控件/手势/加载态作为 overlay 叠上去，不再让完整 `BiliPlayerView` 的
 /// presentation 切换参与旋转。
 @MainActor
@@ -68,6 +68,10 @@ final class VideoDetailShellSurfaceHost: UIView {
         onShowDanmakuSettings: @escaping () -> Void,
         onNavigateBack: @escaping () -> Void
     ) {
+        let usesDirectUIKitSurface = dependencies.libraryStore.videoDetailUIKitSurfaceRotationExperimentEnabled
+#if DEBUG
+        PlayerMetricsLog.signpostEvent(usesDirectUIKitSurface ? "VideoDetailDirectSurfaceHost" : "VideoDetailHostedSurfaceHost")
+#endif
         let state = State(playerViewModel: playerViewModel)
         let experimentState = VideoDetailPerformanceExperimentState(
             directUIKitSurfaceEnabled: true,
@@ -82,10 +86,11 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
         self.rotationCoordinator = rotationCoordinator
-        self.surfaceHostView = VideoDetailSwiftUISurfaceHostingView(
+        self.surfaceHostView = VideoDetailPlayerSurfaceHostFactory.make(
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.pictureInPictureEnabled
-                && !playerViewModel.isAudioOnlyPlayback
+                && !playerViewModel.isAudioOnlyPlayback,
+            usesDirectUIKitSurface: usesDirectUIKitSurface
         )
         let overlayRoot = PlayerOverlayHostRoot(
             detailViewModel: detailViewModel,

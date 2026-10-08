@@ -28,11 +28,17 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
     private var viewModel: PlayerStateViewModel
     private var isPictureInPictureEnabled: Bool
     private let surfaceView = VideoSurfaceContainerView()
+    private let synchronizesBoundsRefresh: Bool
     private var isTornDown = false
 
     var hostedView: UIView { self }
 
-    init(viewModel: PlayerStateViewModel, isPictureInPictureEnabled: Bool) {
+    init(
+        viewModel: PlayerStateViewModel,
+        isPictureInPictureEnabled: Bool,
+        synchronizesBoundsRefresh: Bool = false
+    ) {
+        self.synchronizesBoundsRefresh = synchronizesBoundsRefresh
         self.viewModel = viewModel
         self.isPictureInPictureEnabled = isPictureInPictureEnabled
         super.init(frame: .zero)
@@ -93,7 +99,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
         UIView.performWithoutAnimation {
             setNeedsLayout()
             layoutIfNeeded()
-            surfaceView.configureBoundsRefresh(for: viewModel)
+            surfaceView.configureBoundsRefresh(for: viewModel, synchronously: synchronizesBoundsRefresh)
             surfaceView.invalidateVideoLayout()
             viewModel.refreshSurfaceLayout()
         }
@@ -107,7 +113,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
     }
 
     private func bindSurface(to playerViewModel: PlayerStateViewModel, startsPlayback: Bool) {
-        surfaceView.configureBoundsRefresh(for: playerViewModel)
+        surfaceView.configureBoundsRefresh(for: playerViewModel, synchronously: synchronizesBoundsRefresh)
         surfaceView.setPictureInPictureEnabled(isPictureInPictureEnabled)
         surfaceView.setShowsSystemPlaybackControls(false)
         surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: false)

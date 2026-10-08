@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.videoDetailUIKitSurfaceRotationExperimentEnabled },
+                set: { libraryStore.setVideoDetailUIKitSurfaceRotationExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("UIKit 视频层与旋转稳定性优化", systemImage: "play.rectangle")
+                    Text("减少视频层的 SwiftUI 桥接，保留原有布局与旋转机制。下次打开视频详情页生效。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.uikitSurfaceRotation")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

@@ -148,13 +148,26 @@ final class VideoSurfaceContainerView: UIView {
         isLayoutTransitioningForSurfaceHandoff = isLayoutTransitioning
     }
 
-    func configureBoundsRefresh(for viewModel: PlayerStateViewModel) {
+    func configureBoundsRefresh(
+        for viewModel: PlayerStateViewModel,
+        synchronously: Bool = false
+    ) {
         onBoundsChange = { [weak self, weak viewModel] in
             guard let self,
                   let viewModel,
                   self.isBound(to: viewModel)
             else { return }
-            self.scheduleDeferredBoundSurfaceLayoutRefresh(for: viewModel)
+            // layoutSubviews has already applied drawableView.bounds. The direct
+            // detail surface can update AVPlayerLayer in this same layout pass;
+            // every other caller retains the existing deferred refresh.
+            if synchronously {
+#if DEBUG
+                PlayerMetricsLog.signpostEvent("VideoDetailSynchronousBoundsRefresh")
+#endif
+                self.refreshBoundPlayerSurfaceLayout(for: viewModel)
+            } else {
+                self.scheduleDeferredBoundSurfaceLayoutRefresh(for: viewModel)
+            }
         }
     }
 
