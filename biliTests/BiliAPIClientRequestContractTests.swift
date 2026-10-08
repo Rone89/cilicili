@@ -3661,7 +3661,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         await model.performRecommendationFeedback(video: videos[0], kind: .dislike, reason: reason)
         XCTAssertEqual(model.videos.map(\.id), ["BV2", "BV3"])
         XCTAssertEqual(model.lastSeenMarkerIndex, 1)
-        XCTAssertEqual(model.recommendationFeedbackMessage, reason.toast)
+        XCTAssertEqual(model.recommendationFeedbackNotice, .success(reason.toast!))
         XCTAssertTrue(api.libraryStore.blockedHomeRecommendationUPMIDs.isEmpty)
         model.updateFeed(videos) // Response started before feedback completed.
         XCTAssertEqual(model.videos.map(\.id), ["BV2", "BV3"])
@@ -3683,7 +3683,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         await model.blockRecommendationUP(try XCTUnwrap(video.owner), synchronize: true)
         XCTAssertEqual(model.videos, [video])
         XCTAssertTrue(api.libraryStore.blockedHomeRecommendationUPMIDs.isEmpty)
-        XCTAssertTrue(model.recommendationFeedbackMessage?.contains("失败") == true)
+        XCTAssertTrue(model.recommendationFeedbackNotice?.message.contains("失败") == true)
     }
 
     @MainActor

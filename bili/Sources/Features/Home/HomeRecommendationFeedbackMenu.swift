@@ -12,30 +12,41 @@ struct HomeRecommendationFeedbackMenu: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
     let video: VideoItem
     let actions: HomeRecommendationFeedbackActions?
+    let onTap: () -> Void
+    let onPress: () -> Void
     @State private var showsBlockConfirmation = false
     @State private var showsFeedbackReasons = false
 
     func body(content: Content) -> some View {
         if libraryStore.homeRecommendationFeedbackContextMenuExperimentEnabled, let actions,
            (video.owner?.mid ?? 0) > 0 || (actions.canSubmit && video.recommendationFeedback?.hasReasons == true) {
-            content.contentShape(Rectangle()).contextMenu {
-                if actions.canSubmit, let feedback = video.recommendationFeedback, feedback.hasReasons {
-                    Menu {
-                        reasonMenu(feedback, actions: actions)
-                    } label: {
-                        Label("不感兴趣", systemImage: "hand.thumbsdown")
+            content.overlay {
+                // The system lifts this transparent button, leaving the visible card in place.
+                Button(action: onTap) { Color.clear }
+                    .buttonStyle(PressPreloadButtonStyle(onPress: onPress))
+                    .contentShape(Rectangle())
+                    .contentShape(.contextMenuPreview, Path())
+                    .contextMenu {
+                        if actions.canSubmit, let feedback = video.recommendationFeedback, feedback.hasReasons {
+                            Menu {
+                                reasonMenu(feedback, actions: actions)
+                            } label: {
+                                Label("不感兴趣", systemImage: "hand.thumbsdown")
+                            }
+                            .disabled(actions.isBusy)
+                        }
+                        if let owner = video.owner, owner.mid > 0 {
+                            Button {
+                                showsBlockConfirmation = true
+                            } label: {
+                                Label("屏蔽该 UP", systemImage: "person.crop.circle.badge.xmark")
+                            }
+                            .disabled(actions.isBusy)
+                        }
                     }
-                    .disabled(actions.isBusy)
-                }
-                if let owner = video.owner, owner.mid > 0 {
-                    Button {
-                        showsBlockConfirmation = true
-                    } label: {
-                        Label("屏蔽该 UP", systemImage: "person.crop.circle.badge.xmark")
-                    }
-                    .disabled(actions.isBusy)
-                }
+                    .accessibilityHidden(true)
             }
+            .accessibilityElement(children: .combine)
             .accessibilityActions {
                 if (video.owner?.mid ?? 0) > 0, !actions.isBusy {
                     Button("屏蔽该 UP") { showsBlockConfirmation = true }

@@ -19,9 +19,14 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         let reason = app.buttons["不想看此类内容"]
         XCTAssertTrue(reason.waitForExistence(timeout: 3))
         reason.tap()
-        XCTAssertTrue(card(1, app).waitForNonExistence(timeout: 3))
+        let completed = app.images["fixture.feedback.message"]
+        XCTAssertTrue(completed.waitForExistence(timeout: 3))
+        XCTAssertEqual(completed.label, "将减少此类推荐")
+        screenshot(app, "Glass completion icon")
+        XCTAssertTrue(completed.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(card(1, app).exists)
         XCTAssertTrue(card(3, app).exists)
-        XCTAssertEqual(app.staticTexts["fixture.feedback.message"].label, "将减少此类推荐")
+        XCTAssertFalse(app.staticTexts["将减少此类推荐"].exists)
     }
 
     func testFailedFeedbackKeepsCard() {
@@ -51,6 +56,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         XCTAssertTrue(card(1, app).waitForNonExistence(timeout: 3))
         XCTAssertFalse(card(3, app).exists)
         XCTAssertTrue(card(2, app).exists)
+        XCTAssertTrue(app.images["fixture.feedback.message"].waitForExistence(timeout: 3))
         screenshot(app, "Local block removes same UP rows")
     }
 

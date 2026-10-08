@@ -51,11 +51,16 @@ struct UITestHomeFeedbackFixtureView: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let message = model.recommendationFeedbackMessage {
-                    Text(message).padding().background(.background)
+                if let notice = model.recommendationFeedbackNotice {
+                    HomeRecommendationFeedbackNoticeView(notice: notice)
                         .accessibilityIdentifier("fixture.feedback.message")
                         .allowsHitTesting(false)
                 }
+            }
+            .task(id: model.recommendationFeedbackNotice) {
+                guard model.recommendationFeedbackNotice != nil else { return }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                model.recommendationFeedbackNotice = nil
             }
             .navigationDestination(for: String.self) { id in
                 Text("视频详情 \(id)").accessibilityIdentifier("fixture.feedback.detail")

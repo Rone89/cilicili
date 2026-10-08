@@ -45,19 +45,15 @@ struct HomeFeedScreenBody: View {
         }
         .background(layout.homeFeedBackground)
         .overlay(alignment: .top) {
-            if let message = viewModel.recommendationFeedbackMessage {
-                VideoDetailNoticeLabel(message: message, systemImage: "info.circle")
-                    .padding(12)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 12))
-                    .padding()
-                    .allowsHitTesting(false)
+            if let notice = viewModel.recommendationFeedbackNotice {
+                HomeRecommendationFeedbackNoticeView(notice: notice)
                     .accessibilityIdentifier("home.recommendation.feedbackMessage")
             }
         }
-        .task(id: viewModel.recommendationFeedbackMessage) {
-            guard viewModel.recommendationFeedbackMessage != nil else { return }
+        .task(id: viewModel.recommendationFeedbackNotice) {
+            guard viewModel.recommendationFeedbackNotice != nil else { return }
             do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            viewModel.recommendationFeedbackMessage = nil
+            viewModel.recommendationFeedbackNotice = nil
         }
         .homeFeedScreenLifecycle(
             viewModel: viewModel,
@@ -87,5 +83,41 @@ struct HomeFeedScreenBody: View {
             lifecycleActions: actionStore.lifecycle,
             detailOpenActions: actionStore.detailOpen
         )
+    }
+}
+
+/// Both outcomes reuse the existing top notice presentation. Only success is icon-only.
+enum HomeRecommendationFeedbackNotice: Equatable {
+    case success(String)
+    case failure(String)
+
+    var message: String {
+        switch self {
+        case .success(let message), .failure(let message): message
+        }
+    }
+}
+
+struct HomeRecommendationFeedbackNoticeView: View {
+    let notice: HomeRecommendationFeedbackNotice
+
+    var body: some View {
+        Group {
+            switch notice {
+            case .success:
+                Image(systemName: "checkmark")
+                    .font(.system(size: 28, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .padding(12)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel(notice.message)
+            case .failure(let message):
+                VideoDetailNoticeLabel(message: message, systemImage: "info.circle")
+                    .padding(12)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .padding()
+        .allowsHitTesting(false)
     }
 }

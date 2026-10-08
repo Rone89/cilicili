@@ -7,7 +7,12 @@ struct HomeFeedVideoCardButton: View {
     let actions: HomeFeedContentActions
 
     var body: some View {
-        cardButton.modifier(HomeRecommendationFeedbackMenu(video: video, actions: actions.recommendationFeedback))
+        cardButton.modifier(HomeRecommendationFeedbackMenu(
+            video: video,
+            actions: actions.recommendationFeedback,
+            onTap: { (actions.onVideoSelect ?? actions.onVideoTap)(video) },
+            onPress: { actions.onVideoPress(video) }
+        ))
     }
 
     @ViewBuilder

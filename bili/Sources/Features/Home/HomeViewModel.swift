@@ -10,7 +10,7 @@ final class HomeViewModel: ObservableObject {
     @Published var mode: HomeFeedMode = .recommend
     @Published var isRefreshing = false
     @Published var isUserRefreshing = false
-    @Published var recommendationFeedbackMessage: String?
+    @Published var recommendationFeedbackNotice: HomeRecommendationFeedbackNotice?
     @Published private(set) var isSubmittingRecommendationFeedback = false
     var hiddenRecommendationIDs = Set<String>()
     private var recommendationFilterCancellable: AnyCancellable?
@@ -128,9 +128,9 @@ final class HomeViewModel: ObservableObject {
             }
             retainedRecommendVideos.removeAll { $0.id == video.id }
             if mode == .recommend { pruneRecommendationFeed { $0.id == video.id } }
-            recommendationFeedbackMessage = reason.toast?.isEmpty == false ? reason.toast : "已提交推荐反馈"
+            recommendationFeedbackNotice = .success(reason.toast?.isEmpty == false ? reason.toast! : "已提交推荐反馈")
         } catch {
-            recommendationFeedbackMessage = "推荐反馈失败：\(error.localizedDescription)"
+            recommendationFeedbackNotice = .failure("推荐反馈失败：\(error.localizedDescription)")
         }
     }
 
@@ -143,9 +143,9 @@ final class HomeViewModel: ObservableObject {
             if synchronize { try await pageCoordinator.api.blockUploader(mid: owner.mid) }
             libraryStore.blockHomeRecommendationUP(mid: Int64(owner.mid))
             // The publisher prunes current/retained recommendation rows immediately.
-            recommendationFeedbackMessage = synchronize ? "已拉黑并屏蔽该 UP 的推荐" : "已在本机屏蔽该 UP 的推荐"
+            recommendationFeedbackNotice = .success(synchronize ? "已拉黑并屏蔽该 UP 的推荐" : "已在本机屏蔽该 UP 的推荐")
         } catch {
-            recommendationFeedbackMessage = "拉黑失败：\(error.localizedDescription)"
+            recommendationFeedbackNotice = .failure("拉黑失败：\(error.localizedDescription)")
         }
     }
 
