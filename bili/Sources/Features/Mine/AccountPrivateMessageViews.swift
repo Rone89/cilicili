@@ -500,6 +500,11 @@ struct AccountPrivateMessageConversationView: View {
                 }
             )
             .refreshable {
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--private-message-navigation-chain") {
+                    PrivateMessageScrollGesturePriority.refreshActionSubmissions += 1
+                }
+#endif
                 await load(reset: true)
                 scrollToLatest(using: proxy)
             }

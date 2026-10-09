@@ -6,9 +6,13 @@ struct UITestPrivateMessageFixtureView: View {
     @StateObject private var session: SessionStore
     @StateObject private var library: LibraryStore
     @StateObject private var model: AccountMessageCenterViewModel
+    @StateObject private var holder: MineViewModelHolder
+    private let api: BiliAPIClient
     private let accessibilitySize: Bool
     private let dark: Bool
     @State private var completedMessageRequests = 0
+    @State private var completedRefreshSuspensions = 0
+    @State private var completedRefreshActions = 0
 
     init() {
         let args = ProcessInfo.processInfo.arguments
@@ -27,7 +31,12 @@ struct UITestPrivateMessageFixtureView: View {
         let service = AccountMessageService(sessionStore: session, api: api, session: network)
         _session = StateObject(wrappedValue: session)
         _library = StateObject(wrappedValue: library)
-        _model = StateObject(wrappedValue: AccountMessageCenterViewModel(service: service, sessionStore: session))
+        let model = AccountMessageCenterViewModel(service: service, sessionStore: session)
+        let holder = MineViewModelHolder()
+        holder.accountMessageViewModel = model
+        self.api = api
+        _holder = StateObject(wrappedValue: holder)
+        _model = StateObject(wrappedValue: model)
     }
 
     var body: some View {
@@ -50,11 +59,26 @@ struct UITestPrivateMessageFixtureView: View {
                         }
                     )
                 }
+                NavigationLink("打开通知") {
+                    RootMineNavigationDestination(route: .accountMessages, holder: holder,
+                        libraryStore: library, sessionStore: session, api: api)
+                }
                 Text("消息请求：\(completedMessageRequests)")
                     .accessibilityIdentifier("privateMessage.fixture.requests")
                     .accessibilityValue(String(completedMessageRequests))
+                Text("返回时保护刷新容器：\(completedRefreshSuspensions)")
+                    .accessibilityIdentifier("privateMessage.fixture.refreshSuspensions")
+                    .accessibilityValue(String(completedRefreshSuspensions))
+                Text("下拉刷新提交：\(completedRefreshActions)")
+                    .accessibilityIdentifier("privateMessage.fixture.refreshActions")
+                    .accessibilityValue(String(completedRefreshActions))
             }
             .navigationTitle("私信测试")
+            .onAppear {
+                completedMessageRequests = PrivateMessageFixtureProtocol.messageRequestCount
+                completedRefreshSuspensions = PrivateMessageScrollGesturePriority.refreshPresentationSuspensions
+                completedRefreshActions = PrivateMessageScrollGesturePriority.refreshActionSubmissions
+            }
         }
         .environmentObject(session)
         .environmentObject(library)
@@ -81,6 +105,9 @@ nonisolated private final class PrivateMessageFixtureState: @unchecked Sendable 
         switch request.url!.path {
         case "/x/web-interface/nav":
             data = ["wbi_img": ["img_url": "https://fixture.test/abcdef.png", "sub_url": "https://fixture.test/ghijkl.png"]]
+        case "/session_svr/v1/session_svr/get_sessions":
+            data = ["session_list": [["talker_id": 1002, "unread_count": 0,
+                "account_info": ["name": "测试联系人"], "session_ts": 1_760_000_000_000_000]]]
         case "/svr_sync/v1/svr_sync/fetch_session_msgs":
             messageRequests += 1
             let refreshMarker = ProcessInfo.processInfo.arguments.contains("--private-message-refresh-marker") && messageRequests > 1

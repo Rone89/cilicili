@@ -36,6 +36,52 @@ final class PrivateMessageScrollGesturePriorityTests: XCTestCase {
         XCTAssertEqual(edge.isEnabled, edgeEnabled)
         XCTAssertEqual(content.isEnabled, contentEnabled)
     }
+    @MainActor
+    func testRefreshPresentationRestoresWithoutEndingAnActiveRefresh() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; previousKeyWindow?.makeKey() }
+        let scroll = UIScrollView(frame: controller.view.bounds)
+        controller.view.addSubview(scroll)
+        let control = UIRefreshControl()
+        scroll.refreshControl = control
+        controller.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        control.beginRefreshing()
+        XCTAssertTrue(control.isRefreshing, "Positive control must be refreshing before the lease")
+        let lease = PrivateMessageScrollGesturePriority.RefreshPresentationLease()
+        lease.suspend(control)
+        lease.suspend(control)
+        XCTAssertEqual(control.alpha, 0)
+        XCTAssertTrue(control.isRefreshing)
+        lease.restore()
+        XCTAssertEqual(control.alpha, 1)
+        XCTAssertTrue(control.isRefreshing)
+        lease.restore()
+        XCTAssertEqual(control.alpha, 1)
+    }
+
+    @MainActor
+    func testRefreshPresentationPreservesOpacityAndRestoresReplacedControl() {
+        let hidden = UIRefreshControl()
+        hidden.alpha = 0.35
+        let visible = UIRefreshControl()
+        let replacement = UIRefreshControl()
+        let lease = PrivateMessageScrollGesturePriority.RefreshPresentationLease()
+        lease.suspend(hidden)
+        lease.restore()
+        XCTAssertEqual(hidden.alpha, 0.35, accuracy: 0.0001)
+        lease.suspend(visible)
+        lease.suspend(replacement)
+        XCTAssertEqual(visible.alpha, 1)
+        XCTAssertEqual(replacement.alpha, 0)
+        lease.restore()
+        XCTAssertEqual(replacement.alpha, 1)
+    }
 }
 
 @MainActor

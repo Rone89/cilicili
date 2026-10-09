@@ -46,10 +46,14 @@ struct NativePrivateMessageHeader: View {
     }
 
     private var avatar: some View {
-        AvatarRemoteImage(urlString: actor.avatarURLString, pixelSize: 96) {
-            Image(systemName: "person.crop.circle.fill").foregroundStyle(.secondary)
+        AvatarRemoteImage(urlString: actor.avatarURLString, pixelSize: 128) {
+            Image(systemName: "person.crop.circle.fill")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.secondary)
         }
-        .frame(width: dynamicTypeSize.isAccessibilitySize ? 24 : 30, height: dynamicTypeSize.isAccessibilitySize ? 24 : 30)
+        .frame(width: 44, height: 44)
+        .fixedSize()
         .clipShape(Circle())
         .accessibilityHidden(true)
     }

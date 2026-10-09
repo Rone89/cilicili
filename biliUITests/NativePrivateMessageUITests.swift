@@ -109,6 +109,60 @@ final class NativePrivateMessageUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["privateMessage.fixture.requests"].value as? String, "1")
     }
 
+    func testProductionNavigationChainBackAndCancelledBack() {
+        let app = launch(["--private-message-native", "--private-message-navigation-chain"])
+        app.buttons["打开通知"].tap()
+        app.buttons["私信"].tap()
+        let contact = app.buttons.containing(.staticText, identifier: "测试联系人").firstMatch
+        XCTAssertTrue(contact.waitForExistence(timeout: 5), app.debugDescription)
+        contact.tap()
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch.waitForExistence(timeout: 5))
+        let avatar = app.navigationBars.images["person.crop.circle.fill"].firstMatch
+        XCTAssertEqual(avatar.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(avatar.frame.height, 44, accuracy: 1)
+        screenshot(app, "native-private-message-44pt-header")
+        // A slow, short interactive pop cancels and must leave the conversation usable.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.30))
+        start.press(forDuration: 0.05,
+                    thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.28, dy: 0.36)),
+                    withVelocity: .slow, thenHoldForDuration: 0.3)
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertFalse(app.activityIndicators.firstMatch.isHittable, app.debugDescription)
+        // Full-width diagonal back through the same bridge used by the root destination.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.30))
+            .press(forDuration: 0.05,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.52)))
+        XCTAssertTrue(contact.waitForExistence(timeout: 5), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["打开通知"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["privateMessage.fixture.requests"].value as? String, "1")
+        XCTAssertEqual(app.staticTexts["privateMessage.fixture.refreshActions"].value as? String, "0")
+        let suspensions = Int(app.staticTexts["privateMessage.fixture.refreshSuspensions"].value as? String ?? "")
+        XCTAssertGreaterThanOrEqual(suspensions ?? 0, 1, "The production message refresh control must be protected during pop")
+    }
+
+    func testProductionNavigationChainVerticalPullSubmitsRefresh() {
+        let app = launch(["--private-message-native", "--private-message-navigation-chain"])
+        app.buttons["打开通知"].tap()
+        app.buttons["私信"].tap()
+        let contact = app.buttons.containing(.staticText, identifier: "测试联系人").firstMatch
+        XCTAssertTrue(contact.waitForExistence(timeout: 5))
+        contact.tap()
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch.waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.23))
+            .press(forDuration: 0.05,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.75)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        // Navigating back immediately may cancel the request; the vertical gesture must still submit the refresh action.
+        XCTAssertTrue(app.buttons["privateMessage.send"].exists)
+        for _ in 0..<3 { app.navigationBars.buttons.element(boundBy: 0).tap() }
+        XCTAssertTrue(app.buttons["打开通知"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["privateMessage.fixture.refreshActions"].value as? String, "1")
+    }
+
     func testVerticalScrollingAndRefreshMenuRemainAvailable() {
         let app = launch(["--private-message-native", "--private-message-refresh-marker", "--private-message-long-history"], animations: false)
         app.buttons["打开私信"].tap()
