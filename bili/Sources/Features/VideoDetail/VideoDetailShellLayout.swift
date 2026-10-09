@@ -23,9 +23,16 @@ struct VideoDetailShellLayout: Equatable {
 
     static func supportsInteractiveCollapse(
         videoAspectRatio: CGFloat,
-        isPlaybackActive: Bool = false
+        isPlaybackActive: Bool = false,
+        fullWidthPortraitExperimentEnabled: Bool = false
     ) -> Bool {
-        videoAspectRatio > 0 && (!isPlaybackActive || videoAspectRatio < 0.9)
+        videoAspectRatio > 0 && (!isPlaybackActive || videoAspectRatio < 0.9
+            || usesFullWidthPortraitVideo(videoAspectRatio: videoAspectRatio,
+                                         experimentEnabled: fullWidthPortraitExperimentEnabled))
+    }
+
+    static func usesFullWidthPortraitVideo(videoAspectRatio: CGFloat, experimentEnabled: Bool) -> Bool {
+        experimentEnabled && videoAspectRatio.isFinite && videoAspectRatio > 0 && videoAspectRatio < 1
     }
 
     static func scrollContentMinimumHeight(
@@ -51,9 +58,14 @@ struct VideoDetailShellLayout: Equatable {
 
     static func expandedPlayerHeight(
         bounds: CGSize,
-        videoAspectRatio: CGFloat
+        videoAspectRatio: CGFloat,
+        fullWidthPortraitExperimentEnabled: Bool = false
     ) -> CGFloat {
         let standard = standardPlayerHeight(forWidth: bounds.width)
+        if usesFullWidthPortraitVideo(videoAspectRatio: videoAspectRatio,
+                                     experimentEnabled: fullWidthPortraitExperimentEnabled) {
+            return max(bounds.width, 0) / videoAspectRatio
+        }
         guard videoAspectRatio < 0.9 else { return standard }
         let proposed = max(bounds.height * 0.65, bounds.width)
         let maximum = max(standard, bounds.height * 0.72)
@@ -62,9 +74,12 @@ struct VideoDetailShellLayout: Equatable {
 
     static func minimumPlayerHeight(
         forWidth width: CGFloat,
-        isPlaybackActive: Bool
+        isPlaybackActive: Bool,
+        videoAspectRatio: CGFloat = 16.0 / 9,
+        fullWidthPortraitExperimentEnabled: Bool = false
     ) -> CGFloat {
-        isPlaybackActive
+        isPlaybackActive || usesFullWidthPortraitVideo(videoAspectRatio: videoAspectRatio,
+                                                      experimentEnabled: fullWidthPortraitExperimentEnabled)
             ? standardPlayerHeight(forWidth: width)
             : collapsedToolbarHeight
     }
@@ -73,15 +88,19 @@ struct VideoDetailShellLayout: Equatable {
         bounds: CGSize,
         videoAspectRatio: CGFloat,
         currentPlayerHeight: CGFloat?,
-        isPlaybackActive: Bool
+        isPlaybackActive: Bool,
+        fullWidthPortraitExperimentEnabled: Bool = false
     ) -> CGFloat {
         let expanded = expandedPlayerHeight(
             bounds: bounds,
-            videoAspectRatio: videoAspectRatio
+            videoAspectRatio: videoAspectRatio,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
         let minimum = minimumPlayerHeight(
             forWidth: bounds.width,
-            isPlaybackActive: isPlaybackActive
+            isPlaybackActive: isPlaybackActive,
+            videoAspectRatio: videoAspectRatio,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
         return max(minimum, min(currentPlayerHeight ?? expanded, expanded))
     }
@@ -93,12 +112,14 @@ struct VideoDetailShellLayout: Equatable {
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
         isLandscape: Bool,
-        isPortraitFullscreen: Bool
+        isPortraitFullscreen: Bool,
+        fullWidthPortraitExperimentEnabled: Bool = false
     ) -> Self {
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
         let canInteractivelyCollapse = supportsInteractiveCollapse(
             videoAspectRatio: videoAspectRatio,
-            isPlaybackActive: isPlaybackActive
+            isPlaybackActive: isPlaybackActive,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
         let playerHeight =
             usesFullscreenLayout
@@ -107,7 +128,8 @@ struct VideoDetailShellLayout: Equatable {
                 bounds: bounds.size,
                 videoAspectRatio: videoAspectRatio,
                 currentPlayerHeight: currentPlayerHeight,
-                isPlaybackActive: isPlaybackActive
+                isPlaybackActive: isPlaybackActive,
+                fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
             )
         if usesFullscreenLayout {
             return Self(
@@ -133,7 +155,8 @@ struct VideoDetailShellLayout: Equatable {
             ),
             danmakuCanvasSize: CGSize(
                 width: bounds.width,
-                height: expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: videoAspectRatio)
+                height: expandedPlayerHeight(bounds: bounds.size, videoAspectRatio: videoAspectRatio,
+                                             fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled)
             ),
             contentFrame: CGRect(
                 x: bounds.minX,
@@ -144,7 +167,8 @@ struct VideoDetailShellLayout: Equatable {
             contentTopInset: canInteractivelyCollapse
                 ? expandedPlayerHeight(
                     bounds: bounds.size,
-                    videoAspectRatio: videoAspectRatio
+                    videoAspectRatio: videoAspectRatio,
+                    fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
                 )
                 : max(playerHeight, 0),
             usesFullscreenLayout: false

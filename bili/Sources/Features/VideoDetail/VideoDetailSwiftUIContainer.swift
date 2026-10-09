@@ -9,6 +9,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     let runtimeSettings: VideoDetailRuntimeSettingsStore
     let rotationCoordinator: PlaybackRotationCoordinator
     let contentUpdateGate: VideoDetailContentUpdateGate
+    // Capture per page, like the surface experiment, to avoid changing scroll
+    // geometry underneath a currently open detail page when settings change.
+    let fullWidthPortraitExperimentEnabled: Bool
     let contentState = VideoDetailShellContentView.State()
     @Published private(set) var activePlayerViewModel: PlayerStateViewModel?
     @Published private(set) var surfacePlayerViewModel: PlayerStateViewModel?
@@ -50,11 +53,15 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         self.viewModel = viewModel
         self.runtimeSettings = runtimeSettings
         self.rotationCoordinator = rotationCoordinator
+        let fullWidthPortraitExperimentEnabled = viewModel.libraryStore.videoDetailFullWidthPortraitExperimentEnabled
+        self.fullWidthPortraitExperimentEnabled = fullWidthPortraitExperimentEnabled
         contentUpdateGate = VideoDetailContentUpdateGate()
         let initialPlayerViewModel = viewModel.playbackSession.activePlayer
         videoAspectRatio =
-            VideoDetailInitialVideoGeometry.metadataAspectRatio(for: initialVideo)
-            ?? VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail)
+            VideoDetailInitialVideoGeometry.metadataAspectRatio(
+                for: initialVideo, fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled)
+            ?? VideoDetailInitialVideoGeometry.metadataAspectRatio(
+                for: viewModel.detail, fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled)
             ?? initialPlayerViewModel?.videoAspectRatio
             ?? VideoDetailInitialVideoGeometry.defaultAspectRatio
         activePlayerViewModel = initialPlayerViewModel
@@ -74,7 +81,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     var isInteractiveScrollCollapseActive: Bool {
         VideoDetailShellLayout.supportsInteractiveCollapse(
             videoAspectRatio: videoAspectRatio,
-            isPlaybackActive: isPlaybackActiveSnapshot
+            isPlaybackActive: isPlaybackActiveSnapshot,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
     }
 
@@ -135,7 +143,8 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             currentPlayerHeight: effectivePlayerHeight,
             isPlaybackActive: isPlaybackActiveForLayout,
             isLandscape: rotationCoordinator.layoutLandscape,
-            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
+            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
     }
 
@@ -411,9 +420,11 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
                 // intrinsic-sized hosting view repeatedly relayout on entry.
                 self.contentUpdateGate.receiveUpdate()
                 let ratio =
-                    VideoDetailInitialVideoGeometry.metadataAspectRatio(for: detail)
+                    VideoDetailInitialVideoGeometry.metadataAspectRatio(
+                        for: detail, fullWidthPortraitExperimentEnabled: self.fullWidthPortraitExperimentEnabled)
                     ?? self.surfacePlayerViewModel?.videoAspectRatio
-                guard let ratio, ratio.isFinite, ratio > 0.1,
+                guard let ratio, ratio.isFinite, ratio > 0,
+                    self.fullWidthPortraitExperimentEnabled || ratio > 0.1,
                     abs(self.videoAspectRatio - ratio) > 0.001
                 else { return }
                 self.videoAspectRatio = ratio
@@ -458,10 +469,12 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     }
 
     private func applyPlayerAspectRatioIfNeeded(_ ratio: CGFloat?) {
-        guard VideoDetailInitialVideoGeometry.metadataAspectRatio(for: viewModel.detail) == nil,
+        guard VideoDetailInitialVideoGeometry.metadataAspectRatio(
+                for: viewModel.detail, fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled) == nil,
             let ratio,
             ratio.isFinite,
-            ratio > 0.1,
+            ratio > 0,
+            fullWidthPortraitExperimentEnabled || ratio > 0.1,
             abs(videoAspectRatio - ratio) > 0.001
         else { return }
         videoAspectRatio = ratio
@@ -491,14 +504,17 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private func expandedPlayerHeight(bounds: CGSize) -> CGFloat {
         VideoDetailShellLayout.expandedPlayerHeight(
             bounds: bounds,
-            videoAspectRatio: videoAspectRatio
+            videoAspectRatio: videoAspectRatio,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
     }
 
     private func minimumPlayerHeight(forWidth width: CGFloat) -> CGFloat {
         VideoDetailShellLayout.minimumPlayerHeight(
             forWidth: width,
-            isPlaybackActive: isPlaybackActiveForLayout
+            isPlaybackActive: isPlaybackActiveForLayout,
+            videoAspectRatio: videoAspectRatio,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
     }
 
@@ -507,8 +523,19 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             bounds: bounds,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: currentPlayerHeight,
-            isPlaybackActive: isPlaybackActiveForLayout
+            isPlaybackActive: isPlaybackActiveForLayout,
+            fullWidthPortraitExperimentEnabled: fullWidthPortraitExperimentEnabled
         )
+    }
+
+    func interactiveScrollContentMinimumPlayerHeight(forWidth width: CGFloat) -> CGFloat {
+        if VideoDetailShellLayout.usesFullWidthPortraitVideo(
+            videoAspectRatio: videoAspectRatio, experimentEnabled: fullWidthPortraitExperimentEnabled
+        ) {
+            return VideoDetailShellLayout.standardPlayerHeight(forWidth: width)
+        }
+        // Preserve the production scroll extent across play/pause changes.
+        return VideoDetailShellLayout.collapsedToolbarHeight
     }
 
     private func applyPlayerHeight(forOffset offset: CGFloat, bounds: CGSize) {
@@ -699,9 +726,9 @@ struct VideoDetailSwiftUIContainer: View {
                     layoutWidth: proxy.size.width,
                     placesTopInsetInScrollContent: true,
                     standardHorizontalInset: dependencies.libraryStore.standardPageHorizontalInset,
-                    // Keep the scroll host's content extent stable when playback pauses.
-                    // The layout model still determines the player's actual minimum height.
-                    interactiveMinimumPlayerHeight: VideoDetailShellLayout.collapsedToolbarHeight,
+                    // Keep scroll extent and the experimental collapse floor consistent,
+                    // without changing either when playback pauses.
+                    interactiveMinimumPlayerHeight: model.interactiveScrollContentMinimumPlayerHeight(forWidth: proxy.size.width),
                     selectedContentTab: $selectedContentTab,
                     onShowNetworkDiagnostics: onShowNetworkDiagnostics,
                     onShowFavoriteFolders: onShowFavoriteFolders,

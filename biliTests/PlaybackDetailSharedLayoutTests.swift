@@ -6,6 +6,198 @@ import XCTest
 
 final class PlaybackDetailSharedLayoutTests: XCTestCase {
     @MainActor
+    func testFullWidthPortraitExperimentDefaultsOffAndPersistsIndependently() throws {
+        let name = "FullWidthPortrait-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.videoDetailFullWidthPortraitExperimentEnabled)
+        let rotationFlag = store.videoDetailUIKitSurfaceRotationExperimentEnabled
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).videoDetailFullWidthPortraitExperimentEnabled)
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailFullWidthPortraitExperimentEnabled)
+        XCTAssertEqual(store.videoDetailUIKitSurfaceRotationExperimentEnabled, rotationFlag)
+    }
+
+    @MainActor
+    func testFullWidthPortraitExperimentUsesAspectHeightAndStableSixteenNineFloor() {
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let minimum = VideoDetailShellLayout.standardPlayerHeight(forWidth: bounds.width)
+        // Includes the old 0.9 boundary and a nearly square portrait video.
+        for ratio: CGFloat in [9.0 / 16, 3.0 / 4, 0.9, 0.99, 9.0 / 21] {
+            let expanded = bounds.width / ratio
+            for playing in [false, true] {
+                XCTAssertTrue(VideoDetailShellLayout.supportsInteractiveCollapse(
+                    videoAspectRatio: ratio, isPlaybackActive: playing, fullWidthPortraitExperimentEnabled: true))
+                for requested in [nil, expanded - 100, minimum, CGFloat(0)] as [CGFloat?] {
+                    let layout = VideoDetailShellLayout.resolve(bounds: bounds, safeAreaTop: 59,
+                        videoAspectRatio: ratio, currentPlayerHeight: requested, isPlaybackActive: playing,
+                        isLandscape: false, isPortraitFullscreen: false, fullWidthPortraitExperimentEnabled: true)
+                    XCTAssertEqual(layout.playerFrame.width, bounds.width)
+                    XCTAssertEqual(layout.playerFrame.height, max(minimum, requested ?? expanded), accuracy: 0.001)
+                    XCTAssertEqual(layout.playerFrame.minY, 59)
+                    XCTAssertEqual(layout.contentTopInset, expanded)
+                    XCTAssertEqual(layout.danmakuCanvasSize, CGSize(width: bounds.width, height: expanded))
+                }
+                let scrollHeight = VideoDetailShellLayout.scrollContentMinimumHeight(
+                    viewportHeight: 785, expandedPlayerHeight: expanded, minimumPlayerHeight: minimum)
+                XCTAssertEqual(scrollHeight - 785, expanded - minimum, accuracy: 0.001)
+            }
+        }
+    }
+
+    @MainActor
+    func testFullWidthPortraitExperimentLeavesSquareLandscapeAndFullscreenUnchanged() {
+        let portraitBounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        for ratio: CGFloat in [1, 4.0 / 3, 16.0 / 9] {
+            for playing in [true, false] {
+                let legacy = VideoDetailShellLayout.resolve(bounds: portraitBounds, safeAreaTop: 59,
+                    videoAspectRatio: ratio, currentPlayerHeight: 54, isPlaybackActive: playing,
+                    isLandscape: false, isPortraitFullscreen: false)
+                let experiment = VideoDetailShellLayout.resolve(bounds: portraitBounds, safeAreaTop: 59,
+                    videoAspectRatio: ratio, currentPlayerHeight: 54, isPlaybackActive: playing,
+                    isLandscape: false, isPortraitFullscreen: false, fullWidthPortraitExperimentEnabled: true)
+                XCTAssertEqual(experiment, legacy)
+            }
+        }
+        for landscape in [false, true] {
+            let bounds = landscape ? CGRect(x: 0, y: 0, width: 844, height: 390) : portraitBounds
+            let legacy = VideoDetailShellLayout.resolve(bounds: bounds, safeAreaTop: 59,
+                videoAspectRatio: 9.0 / 16, currentPlayerHeight: 100, isPlaybackActive: true,
+                isLandscape: landscape, isPortraitFullscreen: !landscape)
+            let experiment = VideoDetailShellLayout.resolve(bounds: bounds, safeAreaTop: 59,
+                videoAspectRatio: 9.0 / 16, currentPlayerHeight: 100, isPlaybackActive: true,
+                isLandscape: landscape, isPortraitFullscreen: !landscape, fullWidthPortraitExperimentEnabled: true)
+            XCTAssertEqual(experiment, legacy)
+        }
+        for ratio: CGFloat in [0, -1, .infinity, .nan] {
+            XCTAssertFalse(VideoDetailShellLayout.usesFullWidthPortraitVideo(videoAspectRatio: ratio, experimentEnabled: true))
+        }
+    }
+
+    @MainActor
+    func testFullWidthPortraitModelScrollsCollapsesAndPreservesContentTabPositions() throws {
+        let dependencies = AppDependencies()
+        let store = dependencies.libraryStore
+        let previous = store.videoDetailFullWidthPortraitExperimentEnabled
+        defer { store.setVideoDetailFullWidthPortraitExperimentEnabled(previous) }
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(true)
+        let model = try makePortraitContainerModel(dependencies: dependencies, width: 950, height: 1000)
+        let size = CGSize(width: 390, height: 844)
+        let coordinator = model.rotationCoordinator
+        let expanded = size.width / 0.95
+        let minimum = VideoDetailShellLayout.standardPlayerHeight(forWidth: size.width)
+        let distance = expanded - minimum
+        XCTAssertTrue(model.isInteractiveScrollCollapseActive)
+        XCTAssertEqual(model.layout(in: size, safeAreaTop: 59, rotationCoordinator: coordinator).playerFrame.height, expanded, accuracy: 0.001)
+        model.recordInteractiveScrollOffset(tab: .detail, offset: 100, selectedTab: .detail, bounds: size)
+        XCTAssertEqual(model.layout(in: size, safeAreaTop: 59, rotationCoordinator: coordinator).playerFrame.height, expanded - 100, accuracy: 0.001)
+        model.recordInteractiveScrollOffset(tab: .detail, offset: distance + 120, selectedTab: .detail, bounds: size)
+        XCTAssertEqual(model.layout(in: size, safeAreaTop: 59, rotationCoordinator: coordinator).playerFrame.height, minimum)
+        XCTAssertFalse(model.isCollapsedChromeActive)
+        XCTAssertEqual(model.interactiveScrollContentMinimumPlayerHeight(forWidth: size.width), minimum)
+        XCTAssertEqual(model.prepareInteractiveTabChange(to: .comments, bounds: size), distance, accuracy: 0.001)
+        model.recordInteractiveScrollOffset(tab: .comments, offset: distance, selectedTab: .comments, bounds: size)
+        XCTAssertEqual(model.prepareInteractiveTabChange(to: .detail, bounds: size), distance + 120, accuracy: 0.001)
+        model.recordInteractiveScrollOffset(tab: .detail, offset: distance + 120, selectedTab: .detail, bounds: size)
+        model.recordInteractiveScrollOffset(tab: .detail, offset: 0, selectedTab: .detail, bounds: size)
+        XCTAssertEqual(model.layout(in: size, safeAreaTop: 59, rotationCoordinator: coordinator).playerFrame.height, expanded, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testFullWidthPortraitModelCapturesFlagPerPageAndRestoresLegacyWhenDisabled() throws {
+        let dependencies = AppDependencies()
+        let store = dependencies.libraryStore
+        let previous = store.videoDetailFullWidthPortraitExperimentEnabled
+        defer { store.setVideoDetailFullWidthPortraitExperimentEnabled(previous) }
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(true)
+        let enabled = try makePortraitContainerModel(dependencies: dependencies, width: 1080, height: 1920)
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(false)
+        let disabled = try makePortraitContainerModel(dependencies: dependencies, width: 1080, height: 1920)
+        let size = CGSize(width: 390, height: 844)
+        XCTAssertEqual(enabled.layout(in: size, safeAreaTop: 59, rotationCoordinator: enabled.rotationCoordinator).playerFrame.height, size.width * 16 / 9, accuracy: 0.001)
+        XCTAssertEqual(disabled.layout(in: size, safeAreaTop: 59, rotationCoordinator: disabled.rotationCoordinator).playerFrame.height,
+                       VideoDetailShellLayout.expandedPlayerHeight(bounds: size, videoAspectRatio: 9.0 / 16))
+        disabled.recordInteractiveScrollOffset(tab: .detail, offset: 1000, selectedTab: .detail, bounds: size)
+        XCTAssertEqual(disabled.layout(in: size, safeAreaTop: 59, rotationCoordinator: disabled.rotationCoordinator).playerFrame.height, 54)
+        XCTAssertEqual(disabled.interactiveScrollContentMinimumPlayerHeight(forWidth: size.width), 54)
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(true)
+        let narrow = try makePortraitContainerModel(dependencies: dependencies, width: 100, height: 2000)
+        XCTAssertEqual(narrow.videoAspectRatio, 0.05, accuracy: 0.001)
+        XCTAssertEqual(narrow.layout(in: size, safeAreaTop: 59, rotationCoordinator: narrow.rotationCoordinator).playerFrame.height,
+                       size.width / 0.05, accuracy: 0.001)
+    }
+
+    @MainActor
+    private func makePortraitContainerModel(dependencies: AppDependencies, width: Int, height: Int) throws -> VideoDetailSwiftUIContainerModel {
+        let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data("""
+            {"bvid":"BVPortraitLayoutProbe","title":"Portrait layout probe","cid":1,"dimension":{"width":\(width),"height":\(height),"rotate":0}}
+            """.utf8))
+        let detail = VideoDetailViewModel(seedVideo: video, api: dependencies.api,
+            libraryStore: dependencies.libraryStore, sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        return VideoDetailSwiftUIContainerModel(viewModel: detail, initialVideo: video,
+            runtimeSettings: runtime, rotationCoordinator: PlaybackRotationCoordinator(), initialContentTab: .detail)
+    }
+
+    @MainActor
+    func testFullWidthPortraitContainerCollapsesThroughItsActualScrollHost() async throws {
+        let dependencies = AppDependencies()
+        let store = dependencies.libraryStore
+        let previous = store.videoDetailFullWidthPortraitExperimentEnabled
+        defer { store.setVideoDetailFullWidthPortraitExperimentEnabled(previous) }
+        store.setVideoDetailFullWidthPortraitExperimentEnabled(true)
+        let model = try makePortraitContainerModel(dependencies: dependencies, width: 1080, height: 1920)
+        let root = VideoDetailSwiftUIContainer(
+            viewModel: model.viewModel, model: model, runtimeSettings: model.runtimeSettings,
+            rotationCoordinator: model.rotationCoordinator, selectedContentTab: .constant(.detail),
+            dependencies: dependencies, onShowNetworkDiagnostics: {}, onShowFavoriteFolders: {},
+            onShowCoinPicker: {}, onOpenCommentComposer: { _ in }, onReply: { _ in },
+            openVideoOwnerRoute: nil, onShowMoreControls: { _ in }, onDismissMoreControls: {},
+            onRequestFullscreen: {}, onExitFullscreen: {}, onToggleDanmaku: {},
+            onShowDanmakuSettings: {}, onNavigateBack: {})
+        let controller = UIHostingController(rootView: root
+            .environmentObject(dependencies)
+            .environmentObject(store)
+            .environmentObject(dependencies.sessionStore))
+        let window = try makeWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let previousWindow = window.windowScene?.windows.first { $0.isKeyWindow }
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+        try await waitUntil { model.playerFrame.width > 0 && model.contentState.topInset > 0 }
+        let width = model.playerFrame.width
+        let expanded = width * 16 / 9
+        let minimum = VideoDetailShellLayout.standardPlayerHeight(forWidth: width)
+        XCTAssertEqual(model.playerFrame.height, expanded, accuracy: 0.001)
+        controller.view.layoutIfNeeded()
+        let scrollView = try XCTUnwrap(portraitDetailScrollViews(in: controller.view).first)
+        XCTAssertGreaterThanOrEqual(scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.bounds.height,
+                                    expanded - minimum)
+        // The production host deliberately ignores offsets until a user drag
+        // begins. Drive that public delegate lifecycle instead of bypassing it.
+        scrollView.delegate?.scrollViewWillBeginDragging?(scrollView)
+        scrollView.setContentOffset(CGPoint(x: 0, y: expanded - minimum + 50), animated: false)
+        scrollView.delegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: false)
+        try await waitUntil { abs(model.playerFrame.height - minimum) < 0.5 }
+        XCTAssertEqual(model.playerFrame.height, minimum)
+        XCTAssertEqual(model.contentState.topInset, expanded, accuracy: 0.001)
+        XCTAssertFalse(model.isCollapsedChromeActive)
+        scrollView.setContentOffset(.zero, animated: false)
+        try await waitUntil { abs(model.playerFrame.height - expanded) < 0.5 }
+        XCTAssertEqual(model.playerFrame.height, expanded, accuracy: 0.001)
+    }
+
+    @MainActor
+    private func portraitDetailScrollViews(in view: UIView) -> [UIScrollView] {
+        let own = (view as? UIScrollView).map { [$0] } ?? []
+        return own + view.subviews.flatMap { portraitDetailScrollViews(in: $0) }
+    }
+
+    @MainActor
     func testDanmakuCanvasStaysExpandedAcrossCollapseAndPauseButChangesForFullscreen() {
         let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
         let aspect: CGFloat = 9.0 / 16
