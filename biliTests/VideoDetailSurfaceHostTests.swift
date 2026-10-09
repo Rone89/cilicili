@@ -136,6 +136,33 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
         second.stop()
     }
 
+    func testSynchronousBoundsRefreshCancelsPendingDeferredRefresh() async throws {
+        let player = makePlayer()
+        let host = DirectUIKitPlayerSurfaceHostView(
+            viewModel: player,
+            isPictureInPictureEnabled: false,
+            synchronizesBoundsRefresh: true
+        )
+        defer {
+            host.tearDown()
+            player.stop()
+        }
+
+        host.frame = CGRect(x: 0, y: 0, width: 402, height: 226)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        let surface = try XCTUnwrap(findSurface(in: host))
+        let refreshCountAfterSynchronousLayout = surface.debugBoundSurfaceLayoutRefreshCount
+        XCTAssertGreaterThan(refreshCountAfterSynchronousLayout, 0)
+
+        try await Task.sleep(for: .milliseconds(25))
+        XCTAssertEqual(
+            surface.debugBoundSurfaceLayoutRefreshCount,
+            refreshCountAfterSynchronousLayout,
+            "A synchronous bounds refresh should satisfy and cancel the pending deferred refresh."
+        )
+    }
+
     func testShellKeepsOverlayIdentityAndReleasesBothHostModes() async throws {
         let dependencies = AppDependencies()
         let store = dependencies.libraryStore

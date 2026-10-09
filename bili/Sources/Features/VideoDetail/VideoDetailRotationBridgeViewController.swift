@@ -236,6 +236,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             self?.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         }, completion: { [weak self] _ in
             guard let self, self.rotationGeneration == generation else { return }
+            self.contentController.markSystemTransitionEnded()
             self.scheduleRotationCompletion(
                 generation: generation,
                 toLandscape: toLandscape,
@@ -371,7 +372,21 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                 )
             }
             self.contentController.finishSystemRotation()
-            self.contentController.markRotationFinished(toLandscape: toLandscape)
+            let actualOrientation: String?
+            switch currentOrientation {
+            case .portrait:
+                actualOrientation = "portrait"
+            case .landscapeLeft:
+                actualOrientation = "landscapeLeft"
+            case .landscapeRight:
+                actualOrientation = "landscapeRight"
+            default:
+                actualOrientation = nil
+            }
+            self.contentController.markRotationFinished(
+                toLandscape: toLandscape,
+                actualOrientation: actualOrientation
+            )
             self.rotationWatchdogTask?.cancel()
             self.rotationWatchdogTask = nil
             self.setNeedsStatusBarAppearanceUpdate()

@@ -48,11 +48,15 @@ final class VideoDetailShellSurfaceHost: UIView {
     private let rotationCoordinator: PlaybackRotationCoordinator
     private let surfaceHostView: any VideoDetailPlayerSurfaceHostingView
     private let overlayHostingController: UIHostingController<PlayerOverlayHostRoot>
+    let usesDirectUIKitSurfaceExperiment: Bool
     private var cancellables = Set<AnyCancellable>()
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
     private(set) var isRotationChromePrewarmed = false
     private(set) var isTornDown = false
+#if DEBUG
+    private var lastReportedDiagnosticOverlayBounds = CGRect.null
+#endif
 
     init(
         playerViewModel: PlayerStateViewModel,
@@ -69,6 +73,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         onNavigateBack: @escaping () -> Void
     ) {
         let usesDirectUIKitSurface = dependencies.libraryStore.videoDetailUIKitSurfaceRotationExperimentEnabled
+        self.usesDirectUIKitSurfaceExperiment = usesDirectUIKitSurface
 #if DEBUG
         PlayerMetricsLog.signpostEvent(usesDirectUIKitSurface ? "VideoDetailDirectSurfaceHost" : "VideoDetailHostedSurfaceHost")
 #endif
@@ -163,6 +168,16 @@ final class VideoDetailShellSurfaceHost: UIView {
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+#if DEBUG
+        guard bounds != lastReportedDiagnosticOverlayBounds else { return }
+        guard overlayHostingController.view.bounds.size == bounds.size else { return }
+        lastReportedDiagnosticOverlayBounds = bounds
+        state.playerViewModel.onVideoDetailPlaybackDiagnosticLayoutEvent?(.overlayGeometry)
+#endif
     }
 
     func attach(to parent: UIViewController) {
@@ -288,6 +303,9 @@ final class VideoDetailShellSurfaceHost: UIView {
     func setDanmakuCanvasSize(_ size: CGSize?) {
         guard state.danmakuCanvasSize != size else { return }
         state.danmakuCanvasSize = size
+#if DEBUG
+        state.playerViewModel.onVideoDetailPlaybackDiagnosticLayoutEvent?(.danmakuCanvasConfigured)
+#endif
     }
 
     func setVideoAspectRatio(_ aspectRatio: CGFloat) {

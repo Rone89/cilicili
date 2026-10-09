@@ -93,6 +93,8 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
         private var configuredRetainsChrome: Bool?
         private var playerCancellable: AnyCancellable?
         private var attachmentRetry: Task<Void, Never>?
+        private var prewarmWorkItem: DispatchWorkItem?
+        private var prewarmGeneration = 0
         private var isAttached = false
         private var isPrewarmScheduled = false
         private var isConfigurationUpdateScheduled = false
@@ -101,11 +103,20 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             host: VideoDetailShellSurfaceHost,
             playerViewModel: PlayerStateViewModel
         ) {
-            if self.host !== host {
+            let hostChanged = self.host !== host
+            if hostChanged {
                 isAttached = false
+                cancelScheduledPrewarm()
+                isPrewarmScheduled = false
             }
             self.host = host
-            guard observedPlayer !== playerViewModel else { return }
+            guard observedPlayer !== playerViewModel else {
+                if hostChanged, playerViewModel.hasPresentedPlayback {
+                    schedulePrewarm(for: playerViewModel, on: host)
+                }
+                return
+            }
+            cancelScheduledPrewarm()
             playerCancellable = nil
             observedPlayer = playerViewModel
             isPrewarmScheduled = false
@@ -114,13 +125,9 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
                 .filter { $0 }
                 .prefix(1)
                 .sink { [weak self] _ in
-                    guard let self, !self.isPrewarmScheduled else { return }
-                    self.isPrewarmScheduled = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                        guard let self, let host = self.host else { return }
-                        host.prewarmRotationChrome()
+                    guard let self, let host = self.host else { return }
+                    self.schedulePrewarm(for: playerViewModel, on: host)
                 }
-            }
         }
 
         func scheduleConfigurationIfNeeded(
@@ -131,6 +138,23 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             isBareSurfaceTransitionActive: Bool,
             retainsChromeDuringBareSurfaceTransition: Bool
         ) {
+            if let host, host.usesDirectUIKitSurfaceExperiment {
+                if isBareSurfaceTransitionActive,
+                   isPrewarmScheduled,
+                   !host.isRotationChromePrewarmed {
+                    cancelScheduledPrewarm()
+                    // The current rotation will lay out the retained chrome. Do not
+                    // let a delayed prewarm run inside the system transition.
+                    isPrewarmScheduled = false
+                } else if !isBareSurfaceTransitionActive,
+                          !isPrewarmScheduled,
+                          !host.isRotationChromePrewarmed,
+                          playerViewModel.hasPresentedPlayback {
+                    // If a rotation canceled the initial prewarm, schedule it again
+                    // once the direct-surface host has left its transition state.
+                    schedulePrewarm(for: playerViewModel, on: host)
+                }
+            }
             let changed = configuredPlayer !== playerViewModel
                 || configuredAspectRatio != videoAspectRatio
                 || configuredDanmakuCanvasSize != danmakuCanvasSize
@@ -197,6 +221,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
 
         func dismantle() {
             cancelAttachmentRetry()
+            cancelScheduledPrewarm()
             playerCancellable = nil
             observedPlayer = nil
             configuredPlayer = nil
@@ -208,6 +233,35 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             isConfigurationUpdateScheduled = false
             host = nil
             isAttached = false
+        }
+
+        private func schedulePrewarm(
+            for playerViewModel: PlayerStateViewModel,
+            on host: VideoDetailShellSurfaceHost
+        ) {
+            guard !isPrewarmScheduled else { return }
+            isPrewarmScheduled = true
+            prewarmGeneration &+= 1
+            let generation = prewarmGeneration
+            let workItem = DispatchWorkItem { [weak self, weak host, weak playerViewModel] in
+                guard let self,
+                      let host,
+                      let playerViewModel,
+                      self.prewarmGeneration == generation,
+                      self.host === host,
+                      self.observedPlayer === playerViewModel
+                else { return }
+                self.prewarmWorkItem = nil
+                host.prewarmRotationChrome()
+            }
+            prewarmWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        }
+
+        private func cancelScheduledPrewarm() {
+            prewarmGeneration &+= 1
+            prewarmWorkItem?.cancel()
+            prewarmWorkItem = nil
         }
 
         private func scheduleAttachmentRetry(for host: VideoDetailShellSurfaceHost) {

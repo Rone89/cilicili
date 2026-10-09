@@ -102,6 +102,9 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
             surfaceView.configureBoundsRefresh(for: viewModel, synchronously: synchronizesBoundsRefresh)
             surfaceView.invalidateVideoLayout()
             viewModel.refreshSurfaceLayout()
+#if DEBUG
+            surfaceView.reportVideoDetailGeometryIfCorrect()
+#endif
         }
     }
 

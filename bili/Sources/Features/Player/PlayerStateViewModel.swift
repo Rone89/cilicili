@@ -389,6 +389,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     var restoreUserInterfaceForPictureInPictureStop: (() async -> Bool)?
 #if DEBUG
     var onVideoDetailPlaybackDiagnosticSurfaceEvent: (@MainActor (VideoDetailPlaybackDiagnosticSurfaceEvent) -> Void)?
+    var onVideoDetailPlaybackDiagnosticLayoutEvent: (@MainActor (VideoDetailPlaybackDiagnosticLayoutEvent) -> Void)?
 
     var debugPlayerIdentity: ObjectIdentifier {
         ObjectIdentifier(self)

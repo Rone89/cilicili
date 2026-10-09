@@ -119,6 +119,9 @@ final class VideoSurfaceContainerView: UIView {
     private var coordinatedSurfaceLayoutTask: Task<Void, Never>?
     private var deferredSurfaceDetachTask: Task<Void, Never>?
     private var deferredBoundSurfaceLayoutRefreshTask: Task<Void, Never>?
+#if DEBUG
+    private(set) var debugBoundSurfaceLayoutRefreshCount = 0
+#endif
 
     var isLiveSurfaceHandoffActive: Bool {
         usesLiveSurfaceDuringLayoutTransition && isLayoutTransitioningForSurfaceHandoff
@@ -161,6 +164,7 @@ final class VideoSurfaceContainerView: UIView {
             // detail surface can update AVPlayerLayer in this same layout pass;
             // every other caller retains the existing deferred refresh.
             if synchronously {
+                self.cancelDeferredBoundSurfaceLayoutRefresh()
 #if DEBUG
                 PlayerMetricsLog.signpostEvent("VideoDetailSynchronousBoundsRefresh")
 #endif
@@ -445,7 +449,32 @@ final class VideoSurfaceContainerView: UIView {
         )
 #endif
         onBoundsChange?()
+#if DEBUG
+        reportVideoDetailGeometryIfCorrect()
+#endif
     }
+
+#if DEBUG
+    func reportVideoDetailGeometryIfCorrect() {
+        guard let playerViewModel,
+              bounds.width > 1,
+              bounds.height > 1,
+              let playerLayer = drawableView.layer.sublayers?.compactMap({ $0 as? AVPlayerLayer }).first
+        else { return }
+
+        let expectedSize = drawableView.bounds.size
+        let layerSize = playerLayer.frame.size
+        guard abs(expectedSize.width - bounds.width) < 0.5,
+              abs(expectedSize.height - bounds.height) < 0.5,
+              abs(layerSize.width - expectedSize.width) < 0.5,
+              abs(layerSize.height - expectedSize.height) < 0.5
+        else { return }
+
+        playerViewModel.onVideoDetailPlaybackDiagnosticLayoutEvent?(
+            .surfaceGeometry(surfaceID: ObjectIdentifier(self))
+        )
+    }
+#endif
 
     func invalidateVideoLayout() {
         performLayoutUpdates {
@@ -482,6 +511,9 @@ final class VideoSurfaceContainerView: UIView {
             }
 
             self.refreshBoundPlayerSurfaceLayout(for: resolvedViewModel)
+#if DEBUG
+            self.reportVideoDetailGeometryIfCorrect()
+#endif
             if self.surfaceBindingGeneration == refreshGeneration {
                 self.deferredBoundSurfaceLayoutRefreshTask = nil
             }
@@ -493,6 +525,9 @@ final class VideoSurfaceContainerView: UIView {
               bounds.width > 1,
               bounds.height > 1
         else { return }
+#if DEBUG
+        debugBoundSurfaceLayoutRefreshCount += 1
+#endif
         playerViewModel.refreshSurfaceLayout()
     }
 

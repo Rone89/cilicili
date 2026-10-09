@@ -1015,8 +1015,15 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         playbackDiagnostics.markRotationStarted(toLandscape: toLandscape)
     }
 
-    func markRotationFinished(toLandscape: Bool) {
-        playbackDiagnostics.markRotationFinished(toLandscape: toLandscape)
+    func markSystemTransitionEnded() {
+        playbackDiagnostics.markSystemTransitionEnded()
+    }
+
+    func markRotationFinished(toLandscape: Bool, actualOrientation: String?) {
+        playbackDiagnostics.markRotationFinished(
+            toLandscape: toLandscape,
+            actualOrientation: actualOrientation
+        )
         publishLatestRotationDiagnostic()
     }
 
