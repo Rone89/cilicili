@@ -127,8 +127,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recommendMinimumLikeRatioPercent: Int
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
-    @Published private(set) var videoDetailUIKitSurfaceRotationExperimentEnabled: Bool
-    @Published private(set) var videoDetailFullWidthAspectRatioExperimentEnabled: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
@@ -208,11 +206,6 @@ final class LibraryStore: ObservableObject {
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
-    nonisolated static let videoDetailUIKitSurfaceRotationExperimentEnabledKey =
-        "cc.bili.videoDetail.uikitSurfaceRotationExperimentEnabled.v1"
-    nonisolated static let videoDetailFullWidthAspectRatioExperimentEnabledKey =
-        // Preserve the saved toggle from the initial portrait-only experiment.
-        "cc.bili.videoDetail.fullWidthPortraitExperimentEnabled.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
@@ -610,12 +603,6 @@ final class LibraryStore: ObservableObject {
         } else {
             self.danmakuSettings = .default
         }
-        self.videoDetailUIKitSurfaceRotationExperimentEnabled = userDefaults.object(
-            forKey: Self.videoDetailUIKitSurfaceRotationExperimentEnabledKey
-        ) as? Bool ?? false
-        self.videoDetailFullWidthAspectRatioExperimentEnabled = userDefaults.object(
-            forKey: Self.videoDetailFullWidthAspectRatioExperimentEnabledKey
-        ) as? Bool ?? false
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
@@ -1212,18 +1199,6 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
-    }
-
-    func setVideoDetailUIKitSurfaceRotationExperimentEnabled(_ enabled: Bool) {
-        guard videoDetailUIKitSurfaceRotationExperimentEnabled != enabled else { return }
-        videoDetailUIKitSurfaceRotationExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.videoDetailUIKitSurfaceRotationExperimentEnabledKey)
-    }
-
-    func setVideoDetailFullWidthAspectRatioExperimentEnabled(_ enabled: Bool) {
-        guard videoDetailFullWidthAspectRatioExperimentEnabled != enabled else { return }
-        videoDetailFullWidthAspectRatioExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.videoDetailFullWidthAspectRatioExperimentEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

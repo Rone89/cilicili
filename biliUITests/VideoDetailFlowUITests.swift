@@ -378,6 +378,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             surface.tap()
         }
         XCTAssertTrue(fullscreen.isHittable)
+        XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
         portraitAttachment.name = "Geometry portrait before fullscreen"
         portraitAttachment.lifetime = .keepAlways
@@ -406,15 +407,16 @@ final class VideoDetailFlowUITests: XCTestCase {
         landscapeAttachment.name = "Geometry landscape after fullscreen"
         landscapeAttachment.lifetime = .keepAlways
         add(landscapeAttachment)
-        let landscapeBack = app.buttons["ui.player.back"]
-        if !landscapeBack.waitForExistence(timeout: 2) || !landscapeBack.isHittable {
+        XCTAssertFalse(app.buttons["ui.player.back"].exists)
+        let landscapeExit = app.buttons["ui.player.fullscreen.toggle"]
+        if !landscapeExit.waitForExistence(timeout: 2) || !landscapeExit.isHittable {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.tap()
         }
-        XCTAssertTrue(landscapeBack.waitForExistence(timeout: 5))
-        XCTAssertTrue(landscapeBack.isHittable)
-        landscapeBack.tap()
+        XCTAssertTrue(landscapeExit.waitForExistence(timeout: 5))
+        XCTAssertTrue(landscapeExit.isHittable)
+        landscapeExit.tap()
         XCUIDevice.shared.orientation = .portrait
 
         let portraitWindow = XCTNSPredicateExpectation(

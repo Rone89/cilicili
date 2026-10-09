@@ -1,44 +1,19 @@
 import AVFoundation
 import UIKit
 
-@MainActor
-protocol VideoDetailPlayerSurfaceHostingView: AnyObject {
-    var hostedView: UIView { get }
-
-    func attach(to parent: UIViewController)
-    func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel)
-    func setPictureInPictureEnabled(_ isEnabled: Bool)
-    func setVideoGravity(_ gravity: AVLayerVideoGravity)
-    func refreshLayoutImmediately()
-    func tearDown()
-}
-
-extension VideoDetailPlayerSurfaceHostingView {
-    func tearDown() {}
-}
-
-extension UIKitPlayerSurfaceHostView: VideoDetailPlayerSurfaceHostingView {
-    var hostedView: UIView { self }
-}
-
 /// Keeps the video surface entirely in UIKit.
 /// SwiftUI continues to own playback controls and danmaku in the overlay host.
 @MainActor
-final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHostingView {
+final class DirectUIKitPlayerSurfaceHostView: UIView {
     private var viewModel: PlayerStateViewModel
     private var isPictureInPictureEnabled: Bool
     private let surfaceView = VideoSurfaceContainerView()
-    private let synchronizesBoundsRefresh: Bool
     private var isTornDown = false
-
-    var hostedView: UIView { self }
 
     init(
         viewModel: PlayerStateViewModel,
-        isPictureInPictureEnabled: Bool,
-        synchronizesBoundsRefresh: Bool = false
+        isPictureInPictureEnabled: Bool
     ) {
-        self.synchronizesBoundsRefresh = synchronizesBoundsRefresh
         self.viewModel = viewModel
         self.isPictureInPictureEnabled = isPictureInPictureEnabled
         super.init(frame: .zero)
@@ -65,10 +40,6 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    func attach(to _: UIViewController) {
-        // The direct surface has no child hosting controller to attach.
     }
 
     func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel) {
@@ -99,7 +70,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
         UIView.performWithoutAnimation {
             setNeedsLayout()
             layoutIfNeeded()
-            surfaceView.configureBoundsRefresh(for: viewModel, synchronously: synchronizesBoundsRefresh)
+            surfaceView.configureBoundsRefresh(for: viewModel, synchronously: true)
             surfaceView.invalidateVideoLayout()
             viewModel.refreshSurfaceLayout()
 #if DEBUG
@@ -116,7 +87,7 @@ final class DirectUIKitPlayerSurfaceHostView: UIView, VideoDetailPlayerSurfaceHo
     }
 
     private func bindSurface(to playerViewModel: PlayerStateViewModel, startsPlayback: Bool) {
-        surfaceView.configureBoundsRefresh(for: playerViewModel, synchronously: synchronizesBoundsRefresh)
+        surfaceView.configureBoundsRefresh(for: playerViewModel, synchronously: true)
         surfaceView.setPictureInPictureEnabled(isPictureInPictureEnabled)
         surfaceView.setShowsSystemPlaybackControls(false)
         surfaceView.setPlayerViewModel(playerViewModel, prefersNativePlaybackControls: false)

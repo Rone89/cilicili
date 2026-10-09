@@ -39,7 +39,6 @@ struct VideoDetailViewContent: View {
                 seedVideo: seedVideo,
                 selectedContentTab: $selectedContentTab,
                 runtimeSettings: runtimeSettings.snapshot,
-                onNavigateBack: onNavigateBack,
                 lifecycleActions: lifecycleActions
             )
         }

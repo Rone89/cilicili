@@ -7,7 +7,6 @@ struct VideoDetailInitialPlaybackStage: View {
     let containerHeight: CGFloat
     @Binding var selectedContentTab: VideoDetailContentTab
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
-    let onNavigateBack: () -> Void
 
     var body: some View {
         PlaybackDetailPlayerStage(
@@ -33,8 +32,7 @@ struct VideoDetailInitialPlaybackStage: View {
             VideoDetailInitialPlayerPlaceholder(
                 width: layout.width,
                 height: layout.playerHeight,
-                showsPinnedProgressBar: runtimeSettings.showsPinnedProgressBar,
-                onNavigateBack: onNavigateBack
+                showsPinnedProgressBar: runtimeSettings.showsPinnedProgressBar
             )
         }
         .overlay(alignment: .top) {

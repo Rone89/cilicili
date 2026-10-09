@@ -9,9 +9,6 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     let runtimeSettings: VideoDetailRuntimeSettingsStore
     let rotationCoordinator: PlaybackRotationCoordinator
     let contentUpdateGate: VideoDetailContentUpdateGate
-    // Capture per page, like the surface experiment, to avoid changing scroll
-    // geometry underneath a currently open detail page when settings change.
-    let fullWidthAspectRatioExperimentEnabled: Bool
     let contentState = VideoDetailShellContentView.State()
     @Published private(set) var activePlayerViewModel: PlayerStateViewModel?
     @Published private(set) var surfacePlayerViewModel: PlayerStateViewModel?
@@ -53,7 +50,6 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         self.viewModel = viewModel
         self.runtimeSettings = runtimeSettings
         self.rotationCoordinator = rotationCoordinator
-        fullWidthAspectRatioExperimentEnabled = viewModel.libraryStore.videoDetailFullWidthAspectRatioExperimentEnabled
         contentUpdateGate = VideoDetailContentUpdateGate()
         let initialPlayerViewModel = viewModel.playbackSession.activePlayer
         videoAspectRatio =
@@ -78,8 +74,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     var isInteractiveScrollCollapseActive: Bool {
         VideoDetailShellLayout.supportsInteractiveCollapse(
             videoAspectRatio: videoAspectRatio,
-            isPlaybackActive: isPlaybackActiveSnapshot,
-            fullWidthAspectRatioExperimentEnabled: fullWidthAspectRatioExperimentEnabled
+            isPlaybackActive: isPlaybackActiveSnapshot
         )
     }
 
@@ -140,8 +135,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             currentPlayerHeight: effectivePlayerHeight,
             isPlaybackActive: isPlaybackActiveForLayout,
             isLandscape: rotationCoordinator.layoutLandscape,
-            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen,
-            fullWidthAspectRatioExperimentEnabled: fullWidthAspectRatioExperimentEnabled
+            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
     }
 
@@ -497,8 +491,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private func expandedPlayerHeight(bounds: CGSize) -> CGFloat {
         VideoDetailShellLayout.expandedPlayerHeight(
             bounds: bounds,
-            videoAspectRatio: videoAspectRatio,
-            fullWidthAspectRatioExperimentEnabled: fullWidthAspectRatioExperimentEnabled
+            videoAspectRatio: videoAspectRatio
         )
     }
 
@@ -506,8 +499,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
         VideoDetailShellLayout.minimumPlayerHeight(
             forWidth: width,
             isPlaybackActive: isPlaybackActiveForLayout,
-            videoAspectRatio: videoAspectRatio,
-            fullWidthAspectRatioExperimentEnabled: fullWidthAspectRatioExperimentEnabled
+            videoAspectRatio: videoAspectRatio
         )
     }
 
@@ -516,14 +508,13 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             bounds: bounds,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: currentPlayerHeight,
-            isPlaybackActive: isPlaybackActiveForLayout,
-            fullWidthAspectRatioExperimentEnabled: fullWidthAspectRatioExperimentEnabled
+            isPlaybackActive: isPlaybackActiveForLayout
         )
     }
 
     func interactiveScrollContentMinimumPlayerHeight(forWidth width: CGFloat) -> CGFloat {
         if VideoDetailShellLayout.usesFullWidthAspectRatioVideo(
-            videoAspectRatio: videoAspectRatio, experimentEnabled: fullWidthAspectRatioExperimentEnabled
+            videoAspectRatio: videoAspectRatio
         ) {
             return VideoDetailShellLayout.standardPlayerHeight(forWidth: width)
         }
@@ -631,8 +622,7 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     onRequestFullscreen: onRequestFullscreen,
                     onExitFullscreen: onExitFullscreen,
                     onToggleDanmaku: onToggleDanmaku,
-                    onShowDanmakuSettings: onShowDanmakuSettings,
-                    onNavigateBack: onNavigateBack
+                    onShowDanmakuSettings: onShowDanmakuSettings
                 )
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
@@ -660,15 +650,6 @@ private struct VideoDetailInteractivePlayerLayer: View {
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
                 .allowsHitTesting(false)
                 .zIndex(2)
-
-                VideoDetailInitialPlayerPlaceholderBackButtonLayer(action: onNavigateBack)
-                    .frame(
-                        width: layout.playerFrame.width,
-                        height: layout.playerFrame.height,
-                        alignment: .topLeading
-                    )
-                    .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
-                    .zIndex(3)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)

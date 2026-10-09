@@ -46,12 +46,11 @@ final class VideoDetailShellSurfaceHost: UIView {
     private let experimentState: VideoDetailPerformanceExperimentState
     private let libraryStore: LibraryStore
     private let rotationCoordinator: PlaybackRotationCoordinator
-    private let surfaceHostView: any VideoDetailPlayerSurfaceHostingView
+    private let surfaceHostView: DirectUIKitPlayerSurfaceHostView
     private let playbackTransitionImageView = UIImageView()
     private var playbackTransitionIsVideoFrame = true
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
     private let overlayHostingController: UIHostingController<PlayerOverlayHostRoot>
-    let usesDirectUIKitSurfaceExperiment: Bool
     private var cancellables = Set<AnyCancellable>()
     private var rotationChromePrewarmGeneration = 0
     private var isRotationChromePrewarming = false
@@ -72,13 +71,10 @@ final class VideoDetailShellSurfaceHost: UIView {
         onRequestFullscreen: @escaping () -> Void,
         onExitFullscreen: @escaping () -> Void,
         onToggleDanmaku: @escaping () -> Void,
-        onShowDanmakuSettings: @escaping () -> Void,
-        onNavigateBack: @escaping () -> Void
+        onShowDanmakuSettings: @escaping () -> Void
     ) {
-        let usesDirectUIKitSurface = dependencies.libraryStore.videoDetailUIKitSurfaceRotationExperimentEnabled
-        self.usesDirectUIKitSurfaceExperiment = usesDirectUIKitSurface
 #if DEBUG
-        PlayerMetricsLog.signpostEvent(usesDirectUIKitSurface ? "VideoDetailDirectSurfaceHost" : "VideoDetailHostedSurfaceHost")
+        PlayerMetricsLog.signpostEvent("VideoDetailDirectSurfaceHost")
 #endif
         let state = State(playerViewModel: playerViewModel)
         let experimentState = VideoDetailPerformanceExperimentState(
@@ -94,11 +90,10 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
         self.rotationCoordinator = rotationCoordinator
-        self.surfaceHostView = VideoDetailPlayerSurfaceHostFactory.make(
+        self.surfaceHostView = DirectUIKitPlayerSurfaceHostView(
             viewModel: playerViewModel,
             isPictureInPictureEnabled: dependencies.libraryStore.pictureInPictureEnabled
-                && !playerViewModel.isAudioOnlyPlayback,
-            usesDirectUIKitSurface: usesDirectUIKitSurface
+                && !playerViewModel.isAudioOnlyPlayback
         )
         let overlayRoot = PlayerOverlayHostRoot(
             detailViewModel: detailViewModel,
@@ -114,8 +109,7 @@ final class VideoDetailShellSurfaceHost: UIView {
             onRequestFullscreen: onRequestFullscreen,
             onExitFullscreen: onExitFullscreen,
             onToggleDanmaku: onToggleDanmaku,
-            onShowDanmakuSettings: onShowDanmakuSettings,
-            onNavigateBack: onNavigateBack
+            onShowDanmakuSettings: onShowDanmakuSettings
         )
         self.overlayHostingController = UIHostingController(rootView: overlayRoot)
         super.init(frame: .zero)
@@ -127,7 +121,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         if #available(iOS 16.4, *) {
             overlayHostingController.safeAreaRegions = []
         }
-        let hostedSurfaceView = surfaceHostView.hostedView
+        let hostedSurfaceView = surfaceHostView
         hostedSurfaceView.translatesAutoresizingMaskIntoConstraints = false
         hostedSurfaceView.isUserInteractionEnabled = false
         playbackTransitionImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -207,7 +201,6 @@ final class VideoDetailShellSurfaceHost: UIView {
 
     func attach(to parent: UIViewController) {
         guard !isTornDown else { return }
-        surfaceHostView.attach(to: parent)
         guard overlayHostingController.parent == nil else { return }
         parent.addChild(overlayHostingController)
         overlayHostingController.didMove(toParent: parent)
@@ -222,7 +215,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         playbackTransitionImageView.isHidden = true
         playbackTransitionImageView.removeFromSuperview()
         surfaceHostView.tearDown()
-        surfaceHostView.hostedView.removeFromSuperview()
+        surfaceHostView.removeFromSuperview()
         overlayHostingController.willMove(toParent: nil)
         overlayHostingController.view.removeFromSuperview()
         overlayHostingController.removeFromParent()
@@ -249,7 +242,7 @@ final class VideoDetailShellSurfaceHost: UIView {
         UIView.performWithoutAnimation {
             overlayHostingController.view.isHidden = false
             overlayHostingController.view.isUserInteractionEnabled = !active
-            surfaceHostView.hostedView.isUserInteractionEnabled = false
+            surfaceHostView.isUserInteractionEnabled = false
         }
     }
 
@@ -558,7 +551,6 @@ private struct PlayerOverlayHostRoot: View {
     let onExitFullscreen: () -> Void
     let onToggleDanmaku: () -> Void
     let onShowDanmakuSettings: () -> Void
-    let onNavigateBack: () -> Void
 
     var body: some View {
         let overlaySnapshot = overlayState.snapshot
@@ -581,7 +573,6 @@ private struct PlayerOverlayHostRoot: View {
             onDismissMoreControls: onDismissMoreControls,
             onToggleDanmaku: onToggleDanmaku,
             onShowDanmakuSettings: onShowDanmakuSettings,
-            onNavigateBack: onNavigateBack,
             onRequestFullscreen: onRequestFullscreen,
             onExitFullscreen: onExitFullscreen
         )
@@ -620,7 +611,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     let onDismissMoreControls: () -> Void
     let onToggleDanmaku: () -> Void
     let onShowDanmakuSettings: () -> Void
-    let onNavigateBack: () -> Void
     let onRequestFullscreen: () -> Void
     let onExitFullscreen: () -> Void
 
@@ -667,7 +657,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         onDismissMoreControls: @escaping () -> Void,
         onToggleDanmaku: @escaping () -> Void,
         onShowDanmakuSettings: @escaping () -> Void,
-        onNavigateBack: @escaping () -> Void,
         onRequestFullscreen: @escaping () -> Void,
         onExitFullscreen: @escaping () -> Void
     ) {
@@ -690,7 +679,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         self.onDismissMoreControls = onDismissMoreControls
         self.onToggleDanmaku = onToggleDanmaku
         self.onShowDanmakuSettings = onShowDanmakuSettings
-        self.onNavigateBack = onNavigateBack
         self.onRequestFullscreen = onRequestFullscreen
         self.onExitFullscreen = onExitFullscreen
         _surfaceState = StateObject(wrappedValue: PlayerSurfaceStateModel(viewModel: viewModel))
@@ -938,20 +926,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         }
     }
 
-    private var backButton: some View {
-        VideoDetailPlayerSurfaceBackButtonHost(action: handleBackButton)
-            .environment(\.playerNativeControlMetrics, controlMetrics)
-            .accessibilityIdentifier("ui.player.back")
-    }
-
-    private func handleBackButton() {
-        if fullscreenMode != nil || isPortraitFullscreen {
-            onExitFullscreen()
-        } else {
-            onNavigateBack()
-        }
-    }
-
     private var fullscreenMode: PlayerFullscreenMode? {
         guard !isAudioOnlyPlayback else { return nil }
         return isLandscape ? .landscape(.landscapeRight) : nil
@@ -1019,7 +993,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 : usesFullscreenStatusChrome
                     ? AnyView(moreControlsButton)
                     : nil,
-            topLeadingControlsAccessory: keepsChromeMounted ? AnyView(backButton) : nil,
             isDanmakuEnabled: keepsChromeMounted && overlaySnapshot.isDanmakuEnabled && !isAudioOnlyPlayback,
             onToggleDanmaku: isAudioOnlyPlayback ? nil : onToggleDanmaku,
             onShowDanmakuSettings: isAudioOnlyPlayback ? nil : onShowDanmakuSettings,

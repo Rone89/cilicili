@@ -4,7 +4,6 @@ struct VideoDetailInitialPlayerPlaceholder: View {
     let width: CGFloat
     let height: CGFloat
     let showsPinnedProgressBar: Bool
-    let onNavigateBack: () -> Void
 
     var body: some View {
         PlaybackDetailPlayerSurface(width: width, height: height) {
@@ -15,9 +14,6 @@ struct VideoDetailInitialPlayerPlaceholder: View {
                 showsChromeSkeleton: true,
                 showsProgress: false
             )
-            .overlay(alignment: .topLeading) {
-                VideoDetailInitialPlayerPlaceholderBackButtonLayer(action: onNavigateBack)
-            }
             .overlay(alignment: .bottom) {
                 if showsPinnedProgressBar {
                     VideoDetailInitialPlayerPlaceholderProgressLayer(width: width)

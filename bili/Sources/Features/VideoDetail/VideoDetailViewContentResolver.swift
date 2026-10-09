@@ -152,15 +152,13 @@ struct VideoDetailInitialContentResolver: View {
     let seedVideo: VideoItem
     @Binding var selectedContentTab: VideoDetailContentTab
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
-    let onNavigateBack: () -> Void
     let lifecycleActions: VideoDetailViewContentLifecycleActions
 
     var body: some View {
         VideoDetailInitialContent(
             seedVideo: seedVideo,
             selectedContentTab: $selectedContentTab,
-            runtimeSettings: runtimeSettings,
-            onNavigateBack: onNavigateBack
+            runtimeSettings: runtimeSettings
         )
         .environment(
             \.videoDetailStandardHorizontalInset,

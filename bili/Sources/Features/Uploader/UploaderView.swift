@@ -20,6 +20,7 @@ struct UploaderView: View {
 
     var body: some View {
         content
+            .toolbar(.hidden, for: .tabBar)
     }
 
     private var content: some View {

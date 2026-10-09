@@ -24,7 +24,6 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
     let onExitFullscreen: () -> Void
     let onToggleDanmaku: () -> Void
     let onShowDanmakuSettings: () -> Void
-    let onNavigateBack: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -76,8 +75,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             onRequestFullscreen: onRequestFullscreen,
             onExitFullscreen: onExitFullscreen,
             onToggleDanmaku: onToggleDanmaku,
-            onShowDanmakuSettings: onShowDanmakuSettings,
-            onNavigateBack: onNavigateBack
+            onShowDanmakuSettings: onShowDanmakuSettings
         )
     }
 
@@ -138,7 +136,7 @@ struct VideoDetailShellSurfaceRepresentable: UIViewRepresentable {
             isBareSurfaceTransitionActive: Bool,
             retainsChromeDuringBareSurfaceTransition: Bool
         ) {
-            if let host, host.usesDirectUIKitSurfaceExperiment {
+            if let host {
                 if isBareSurfaceTransitionActive,
                    isPrewarmScheduled,
                    !host.isRotationChromePrewarmed {
