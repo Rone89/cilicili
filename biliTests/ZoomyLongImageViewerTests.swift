@@ -75,6 +75,28 @@ final class ZoomyLongImageViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testEnhancedViewerRetainsSelectedPageAndImmediateNeighbors() {
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.retainedPageIndices(pageCount: 5, selectedIndex: 2),
+            Set([1, 2, 3])
+        )
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.retainedPageIndices(pageCount: 5, selectedIndex: 0),
+            Set([0, 1])
+        )
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.retainedPageIndices(pageCount: 5, selectedIndex: 4),
+            Set([3, 4])
+        )
+    }
+
+    @MainActor
+    func testEnhancedViewerUsesNumericIndicatorOnlyForLargeGalleries() {
+        XCTAssertFalse(ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: 10))
+        XCTAssertTrue(ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: 11))
+    }
+
+    @MainActor
     func testLongImageDismissRequiresExperimentAndTopEdge() {
         XCTAssertFalse(
             ZoomyViewerInteractionPolicy.canBeginDismiss(
@@ -128,6 +150,27 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         group.setImage(thumbnailImage, for: "item", quality: .thumbnail)
 
         XCTAssertTrue(group.image(for: "item") === viewerImage)
+    }
+
+    @MainActor
+    func testViewerImageRetentionCanKeepNeighborTrio() {
+        let group = ZoomyImagePreviewGroup()
+        let previousImage = makeImage(size: CGSize(width: 400, height: 300))
+        let currentImage = makeImage(size: CGSize(width: 500, height: 300))
+        let nextImage = makeImage(size: CGSize(width: 600, height: 300))
+        let distantImage = makeImage(size: CGSize(width: 700, height: 300))
+
+        group.setImage(previousImage, for: "previous", quality: .viewer)
+        group.setImage(currentImage, for: "current", quality: .viewer)
+        group.setImage(nextImage, for: "next", quality: .viewer)
+        group.setImage(distantImage, for: "distant", quality: .viewer)
+
+        group.releaseViewerImages(except: Set(["previous", "current", "next"]))
+
+        XCTAssertTrue(group.image(for: "previous") === previousImage)
+        XCTAssertTrue(group.image(for: "current") === currentImage)
+        XCTAssertTrue(group.image(for: "next") === nextImage)
+        XCTAssertNil(group.image(for: "distant"))
     }
 
     @MainActor

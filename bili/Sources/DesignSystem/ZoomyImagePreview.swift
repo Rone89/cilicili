@@ -163,8 +163,12 @@ final class ZoomyImagePreviewGroup: ObservableObject {
     }
 
     func releaseViewerImages(except retainedItemID: String? = nil) {
+        releaseViewerImages(except: Set(retainedItemID.map { [$0] } ?? []))
+    }
+
+    func releaseViewerImages(except retainedItemIDs: Set<String>) {
         images = images.filter { itemID, entry in
-            entry.quality != .viewer || itemID == retainedItemID
+            entry.quality != .viewer || retainedItemIDs.contains(itemID)
         }
     }
 
@@ -176,8 +180,7 @@ final class ZoomyImagePreviewGroup: ObservableObject {
     }
 }
 
-/// Minimal in-app image viewer:
-/// tap thumbnail to view, tap the full-screen image to exit, pinch only after entering.
+/// Minimal in-app image viewer with optional enhanced full-screen interactions.
 struct ZoomyRemoteImage<Placeholder: View>: View {
     let url: URL?
     let fallbackURL: URL?

@@ -47,9 +47,22 @@ nonisolated enum ZoomyViewerDismissGesturePolicy {
 }
 
 nonisolated enum ZoomyViewerInteractionPolicy {
+    static let maximumDotPageCount = 10
+
     static func dismissScale(translationY: CGFloat) -> CGFloat {
         let progress = min(max(translationY, 0) / 260, 1)
         return 1 - progress * 0.12
+    }
+
+    static func retainedPageIndices(pageCount: Int, selectedIndex: Int) -> Set<Int> {
+        guard pageCount > 0 else { return [] }
+        return Set([selectedIndex - 1, selectedIndex, selectedIndex + 1].filter { index in
+            (0..<pageCount).contains(index)
+        })
+    }
+
+    static func usesNumericPageIndicator(pageCount: Int) -> Bool {
+        pageCount > maximumDotPageCount
     }
 
     static func canBeginDismiss(
@@ -144,6 +157,7 @@ struct ZoomyFullScreenImageViewer: View {
     @State private var sharePayload: ZoomySharePayload?
     @State private var toastMessage: String?
     @State private var toastTask: Task<Void, Never>?
+    @State private var areActionControlsVisible = true
 
     init(
         initialImage: UIImage?,
@@ -239,7 +253,9 @@ struct ZoomyFullScreenImageViewer: View {
             Spacer()
             viewerActionBar
                 .padding(.bottom, 22)
-                .opacity(pageIndicatorOpacity)
+                .opacity(viewerActionBarOpacity)
+                .allowsHitTesting(!interactionExperimentEnabled || areActionControlsVisible)
+                .accessibilityHidden(interactionExperimentEnabled && !areActionControlsVisible)
 
             if let toastMessage {
                 Text(toastMessage)
@@ -263,10 +279,20 @@ struct ZoomyFullScreenImageViewer: View {
             .disabled(!canExportSelectedMedia || isSavingImage || isPreparingShare)
 
             if items.count > 1 {
-                ZoomyViewerPageControl(numberOfPages: items.count, currentPage: selectedIndex)
-                    .frame(width: min(CGFloat(items.count) * 18 + 24, 180), height: 22)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                if interactionExperimentEnabled,
+                   ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: items.count) {
+                    Text("\(selectedIndex + 1) / \(items.count)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .frame(minWidth: 48)
+                        .frame(height: 22)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("第 \(selectedIndex + 1) 张，共 \(items.count) 张")
+                } else {
+                    ZoomyViewerPageControl(numberOfPages: items.count, currentPage: selectedIndex)
+                        .frame(width: min(CGFloat(items.count) * 18 + 24, 180), height: 22)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
 
             viewerActionButton(systemImage: "square.and.arrow.up", accessibilityLabel: "分享图片") {
@@ -304,6 +330,11 @@ struct ZoomyFullScreenImageViewer: View {
         return 1 - progress
     }
 
+    private var viewerActionBarOpacity: Double {
+        guard !interactionExperimentEnabled || areActionControlsVisible else { return 0 }
+        return pageIndicatorOpacity
+    }
+
     @ViewBuilder
     private func imagePage(for item: ZoomyImagePreviewItem?) -> some View {
         if let item {
@@ -314,6 +345,7 @@ struct ZoomyFullScreenImageViewer: View {
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: item.id == selectedItemID,
                 isPresented: $isPresented,
+                onSingleTap: handleViewerSingleTap,
                 onDismissDragChanged: updateDismissDrag,
                 onDismissDragEnded: finishDismissDrag,
                 onMediaUpdated: { itemID, snapshot in
@@ -333,6 +365,7 @@ struct ZoomyFullScreenImageViewer: View {
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: true,
                 isPresented: $isPresented,
+                onSingleTap: handleViewerSingleTap,
                 onDismissDragChanged: updateDismissDrag,
                 onDismissDragEnded: finishDismissDrag,
                 onMediaUpdated: { _, snapshot in
@@ -447,7 +480,16 @@ struct ZoomyFullScreenImageViewer: View {
 
     private func syncSelectedItemContext() {
         guard let item = items.first(where: { $0.id == selectedItemID }) else { return }
-        viewerGroup?.releaseViewerImages(except: item.id)
+        if interactionExperimentEnabled {
+            let retainedItemIDs = Set(
+                ZoomyViewerInteractionPolicy
+                    .retainedPageIndices(pageCount: items.count, selectedIndex: selectedIndex)
+                    .map { items[$0].id }
+            )
+            viewerGroup?.releaseViewerImages(except: retainedItemIDs)
+        } else {
+            viewerGroup?.releaseViewerImages(except: item.id)
+        }
         let cachedImage = viewerGroup?.image(for: item.id)
         onSelectedItemChanged(item, cachedImage)
         selectedSnapshot = item.needsOriginalMedia
@@ -487,6 +529,16 @@ struct ZoomyFullScreenImageViewer: View {
                     }
                 }
             }
+        }
+    }
+
+    private func handleViewerSingleTap() {
+        guard interactionExperimentEnabled else {
+            isPresented = false
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.16)) {
+            areActionControlsVisible.toggle()
         }
     }
 
@@ -585,6 +637,7 @@ private struct ZoomyViewerImagePage: View {
     let interactionExperimentEnabled: Bool
     let isSelected: Bool
     @Binding var isPresented: Bool
+    let onSingleTap: () -> Void
     let onDismissDragChanged: (String, CGFloat) -> Void
     let onDismissDragEnded: (String, CGFloat, CGFloat, Bool) -> Void
     let onMediaUpdated: (String, ZoomyViewerMediaSnapshot) -> Void
@@ -598,6 +651,7 @@ private struct ZoomyViewerImagePage: View {
         interactionExperimentEnabled: Bool,
         isSelected: Bool,
         isPresented: Binding<Bool>,
+        onSingleTap: @escaping () -> Void,
         onDismissDragChanged: @escaping (String, CGFloat) -> Void,
         onDismissDragEnded: @escaping (String, CGFloat, CGFloat, Bool) -> Void,
         onMediaUpdated: @escaping (String, ZoomyViewerMediaSnapshot) -> Void
@@ -608,6 +662,7 @@ private struct ZoomyViewerImagePage: View {
         self.interactionExperimentEnabled = interactionExperimentEnabled
         self.isSelected = isSelected
         _isPresented = isPresented
+        self.onSingleTap = onSingleTap
         self.onDismissDragChanged = onDismissDragChanged
         self.onDismissDragEnded = onDismissDragEnded
         self.onMediaUpdated = onMediaUpdated
@@ -623,7 +678,7 @@ private struct ZoomyViewerImagePage: View {
                     placeholderImage: image,
                     isDismissGestureEnabled: isSelected
                 ) {
-                    isPresented = false
+                    onSingleTap()
                 } onDismissDragChanged: { translationY in
                     onDismissDragChanged(item.id, translationY)
                 } onDismissDragEnded: { translationY, velocityY, cancelled in
@@ -640,7 +695,7 @@ private struct ZoomyViewerImagePage: View {
                     placeholderImage: image,
                     isDismissGestureEnabled: isSelected
                 ) {
-                    isPresented = false
+                    onSingleTap()
                 } onDismissDragChanged: { translationY in
                     onDismissDragChanged(item.id, translationY)
                 } onDismissDragEnded: { translationY, velocityY, cancelled in
@@ -656,7 +711,7 @@ private struct ZoomyViewerImagePage: View {
                     interactionExperimentEnabled: interactionExperimentEnabled,
                     isDismissGestureEnabled: isSelected
                 ) {
-                    isPresented = false
+                    onSingleTap()
                 } onDismissDragChanged: { translationY in
                     onDismissDragChanged(item.id, translationY)
                 } onDismissDragEnded: { translationY, velocityY, cancelled in
