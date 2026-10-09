@@ -767,7 +767,10 @@ struct AccountPrivateMessageConversationView: View {
         guard let id = messages.last?.id else { return }
         Task { @MainActor in
             await Task.yield()
-            proxy.scrollTo(id, anchor: .bottom)
+            // With no explicit anchor SwiftUI performs the minimum scroll needed
+            // to reveal the latest message. A short conversation therefore stays
+            // top-aligned instead of being pushed to the bottom of the viewport.
+            proxy.scrollTo(id)
         }
     }
 

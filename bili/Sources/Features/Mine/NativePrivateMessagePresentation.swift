@@ -30,17 +30,14 @@ nonisolated enum NativePrivateMessageTimeline {
 
 struct NativePrivateMessageHeader: View {
     let actor: AccountMessageActor
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                HStack(spacing: 6) { avatar; name }
-            } else {
-                VStack(spacing: 2) { avatar; name }
-            }
+        HStack(spacing: 6) {
+            avatar
+            name
         }
-        .frame(maxWidth: 200)
+        .frame(maxWidth: 200, minHeight: 44, maxHeight: 44)
+        .accessibilityIdentifier("privateMessage.header")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("与\(actor.name)的私信")
     }

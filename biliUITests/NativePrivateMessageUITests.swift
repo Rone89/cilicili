@@ -78,6 +78,20 @@ final class NativePrivateMessageUITests: XCTestCase {
         XCTAssertFalse(retry.exists)
     }
 
+    func testNativeShortConversationStaysTopAligned() {
+        let app = launch(["--private-message-native"])
+        app.buttons["打开私信"].tap()
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
+        let messageArea = app.scrollViews["privateMessage.messages"]
+        let firstMessage = app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch
+        XCTAssertTrue(messageArea.exists)
+        XCTAssertTrue(firstMessage.waitForExistence(timeout: 5))
+        XCTAssertLessThan(
+            firstMessage.frame.minY - messageArea.frame.minY,
+            messageArea.frame.height * 0.3
+        )
+    }
+
     func testNativeDarkAccessibilityLayout() {
         let app = launch(["--private-message-native", "--private-message-dark", "--private-message-accessibility"])
         app.buttons["打开私信"].tap()
@@ -118,9 +132,9 @@ final class NativePrivateMessageUITests: XCTestCase {
         contact.tap()
         XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch.waitForExistence(timeout: 5))
-        let avatar = app.navigationBars.images["person.crop.circle.fill"].firstMatch
-        XCTAssertEqual(avatar.frame.width, 44, accuracy: 1)
-        XCTAssertEqual(avatar.frame.height, 44, accuracy: 1)
+        let header = app.descendants(matching: .any)["privateMessage.header"].firstMatch
+        XCTAssertTrue(header.exists, app.debugDescription)
+        XCTAssertEqual(header.frame.height, 44, accuracy: 1)
         screenshot(app, "native-private-message-44pt-header")
         // A slow, short interactive pop cancels and must leave the conversation usable.
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.30))
