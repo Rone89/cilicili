@@ -95,18 +95,18 @@ struct MineDeveloperDiagnosticsView: View {
             .accessibilityIdentifier("mine.experiments.uikitSurfaceRotation")
 
             Toggle(isOn: Binding(
-                get: { libraryStore.videoDetailFullWidthPortraitExperimentEnabled },
-                set: { libraryStore.setVideoDetailFullWidthPortraitExperimentEnabled($0) }
+                get: { libraryStore.videoDetailFullWidthAspectRatioExperimentEnabled },
+                set: { libraryStore.setVideoDetailFullWidthAspectRatioExperimentEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("竖屏视频全宽与收缩", systemImage: "rectangle.portrait")
-                    Text("宽小于高的视频按屏幕宽度展开，上滑最小收缩到 16:9 窗口。下次打开视频详情页生效。")
+                    MineSettingsLabel("视频原比例全宽与收缩", systemImage: "aspectratio")
+                    Text("竖屏时，1:1 ≤ 宽高比 < 16:9 的视频（如 4:3、3:2）按屏幕宽度展开，上滑最小收缩到 16:9 窗口。下次打开视频详情页生效。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .accessibilityIdentifier("mine.experiments.fullWidthPortraitVideo")
+            .accessibilityIdentifier("mine.experiments.fullWidthAspectRatioVideo")
 
             Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
