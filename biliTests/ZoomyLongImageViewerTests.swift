@@ -56,6 +56,69 @@ final class ZoomyLongImageViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testEnhancedDismissScaleIsSubtleAndBounded() {
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.dismissScale(translationY: 0),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.dismissScale(translationY: 260),
+            0.88,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            ZoomyViewerInteractionPolicy.dismissScale(translationY: 520),
+            0.88,
+            accuracy: 0.001
+        )
+    }
+
+    @MainActor
+    func testLongImageDismissRequiresExperimentAndTopEdge() {
+        XCTAssertFalse(
+            ZoomyViewerInteractionPolicy.canBeginDismiss(
+                usesLongImageScrolling: true,
+                zoomScale: 1,
+                minimumZoomScale: 1,
+                contentOffsetY: 0,
+                topContentInset: 0,
+                enhancedInteractionEnabled: false
+            )
+        )
+        XCTAssertTrue(
+            ZoomyViewerInteractionPolicy.canBeginDismiss(
+                usesLongImageScrolling: true,
+                zoomScale: 1,
+                minimumZoomScale: 1,
+                contentOffsetY: 0,
+                topContentInset: 0,
+                enhancedInteractionEnabled: true
+            )
+        )
+        XCTAssertFalse(
+            ZoomyViewerInteractionPolicy.canBeginDismiss(
+                usesLongImageScrolling: true,
+                zoomScale: 1,
+                minimumZoomScale: 1,
+                contentOffsetY: 80,
+                topContentInset: 0,
+                enhancedInteractionEnabled: true
+            )
+        )
+        XCTAssertFalse(
+            ZoomyViewerInteractionPolicy.canBeginDismiss(
+                usesLongImageScrolling: true,
+                zoomScale: 2,
+                minimumZoomScale: 1,
+                contentOffsetY: 0,
+                topContentInset: 0,
+                enhancedInteractionEnabled: true
+            )
+        )
+    }
+
+    @MainActor
     func testViewerImageIsNotReplacedByLateThumbnail() {
         let group = ZoomyImagePreviewGroup()
         let viewerImage = makeImage(size: CGSize(width: 400, height: 300))

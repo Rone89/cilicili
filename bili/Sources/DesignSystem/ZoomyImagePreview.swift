@@ -306,6 +306,7 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 initialItemID: resolvedViewerItemID,
                 viewerGroup: viewerGroup,
                 targetPixelSize: viewerTargetPixelSize,
+                interactionExperimentEnabled: imageViewerInteractionExperimentEnabled,
                 sourceAnchor: sourceAnchor,
                 sourceCornerRadius: cornerRadius,
                 sourceContentMode: contentMode.uiViewContentMode,
@@ -357,6 +358,10 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
 
     private var shouldHideSourceContent: Bool {
         isSourceContentHidden || (viewerGroup?.isPresented == true)
+    }
+
+    private var imageViewerInteractionExperimentEnabled: Bool {
+        UserDefaults.standard.bool(forKey: LibraryStore.imageViewerInteractionExperimentEnabledKey)
     }
 
     private var cacheIdentity: String {
@@ -453,6 +458,7 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
     let initialItemID: String
     let viewerGroup: ZoomyImagePreviewGroup?
     let targetPixelSize: Int
+    let interactionExperimentEnabled: Bool
     let sourceAnchor: ZoomySourceAnchor
     let sourceCornerRadius: CGFloat
     let sourceContentMode: UIView.ContentMode
@@ -473,6 +479,7 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
             initialItemID: initialItemID,
             viewerGroup: viewerGroup,
             targetPixelSize: targetPixelSize,
+            interactionExperimentEnabled: interactionExperimentEnabled,
             sourceAnchor: sourceAnchor,
             sourceCornerRadius: sourceCornerRadius,
             sourceContentMode: sourceContentMode,
@@ -503,6 +510,7 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
             initialItemID: String,
             viewerGroup: ZoomyImagePreviewGroup?,
             targetPixelSize: Int,
+            interactionExperimentEnabled: Bool,
             sourceAnchor: ZoomySourceAnchor,
             sourceCornerRadius: CGFloat,
             sourceContentMode: UIView.ContentMode,
@@ -539,6 +547,7 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
                     initialItemID: resolvedInitialItemID,
                     viewerGroup: viewerGroup,
                     targetPixelSize: targetPixelSize,
+                    interactionExperimentEnabled: interactionExperimentEnabled,
                     isPresented: binding,
                     onSelectedItemChanged: { [weak transitionDelegate] item, image in
                         transitionDelegate?.currentItemID = item.id

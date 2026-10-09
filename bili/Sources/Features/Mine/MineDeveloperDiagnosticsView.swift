@@ -95,6 +95,20 @@ struct MineDeveloperDiagnosticsView: View {
             .accessibilityIdentifier("mine.experiments.nativePrivateMessage")
 
             Toggle(isOn: Binding(
+                get: { libraryStore.imageViewerInteractionExperimentEnabled },
+                set: { libraryStore.setImageViewerInteractionExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("大图查看交互优化", systemImage: "photo.on.rectangle.angled")
+                    Text("旋转时保持缩放位置，优化下拉关闭衔接，并允许长图在顶部下拉退出。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.imageViewerInteraction")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {
