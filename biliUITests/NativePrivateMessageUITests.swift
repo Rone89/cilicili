@@ -32,6 +32,11 @@ final class NativePrivateMessageUITests: XCTestCase {
         let send = app.buttons["privateMessage.send"]
         XCTAssertTrue(send.waitForExistence(timeout: 5))
         XCTAssertFalse(send.isEnabled)
+        let attachments = app.buttons["privateMessage.attachments"]
+        XCTAssertEqual(attachments.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(attachments.frame.width, 44, accuracy: 1)
+        // The plain send button exposes its 30pt symbol, whereas the glass menu exposes its full control.
+        XCTAssertEqual(attachments.frame.midY, send.frame.midY, accuracy: 1)
         screenshot(app, "native-private-message-light")
         app.buttons["privateMessage.actions"].tap()
         XCTAssertTrue(app.buttons["个人空间"].waitForExistence(timeout: 3))

@@ -85,10 +85,11 @@ struct NativePrivateMessageComposer: View {
                     if isSendingImage { ProgressView().controlSize(.small) }
                     else { Image(systemName: "plus").font(.title3.weight(.medium)) }
                 }
-                .frame(width: 44, height: 44)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
+            .frame(width: 44, height: 44)
             .disabled(isBusy)
             .accessibilityLabel("添加附件")
             .accessibilityIdentifier("privateMessage.attachments")
