@@ -36,6 +36,27 @@ final class MetalDanmakuStageTransitionTests: XCTestCase {
         XCTAssertEqual(DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: 0), bounds)
     }
 
+    func testScrollingCanvasIncludesBothPillarboxesAndPreservesBoundsOrigin() {
+        let bounds = CGRect(x: 12, y: 24, width: 900, height: 400)
+        for aspect: CGFloat in [9.0 / 16, 1, 4.0 / 3, 16.0 / 9] {
+            let picture = DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: aspect)
+            XCTAssertGreaterThan(picture.minX, bounds.minX)
+            XCTAssertLessThan(picture.maxX, bounds.maxX)
+            XCTAssertEqual(DanmakuVideoViewport.scrollingCanvas(in: bounds, aspectRatio: aspect), bounds)
+        }
+    }
+
+    func testScrollingCanvasPreservesVerticalLetterboxingAndInvalidAspectFallback() {
+        let bounds = CGRect(x: 12, y: 24, width: 390, height: 844)
+        for aspect: CGFloat in [1, 4.0 / 3, 3.0 / 2, 16.0 / 9, 21.0 / 9] {
+            XCTAssertEqual(DanmakuVideoViewport.scrollingCanvas(in: bounds, aspectRatio: aspect),
+                           DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: aspect))
+        }
+        for aspect in [nil, CGFloat.nan, 0, -1] as [CGFloat?] {
+            XCTAssertEqual(DanmakuVideoViewport.scrollingCanvas(in: bounds, aspectRatio: aspect), bounds)
+        }
+    }
+
     func testFontNormalizationConvergesInBothOrientationDirectionsWithoutResettingMotion() throws {
         let settings = DanmakuSettings(hidesInPortrait: false,
             danmakuKit: DanmakuKitRenderSettings(displayArea: .full, allowsDanmakuOverlap: true))

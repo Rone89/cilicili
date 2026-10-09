@@ -30,7 +30,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private var stageTransitionActive = false
     private var stageSourceViewport = CGSize.zero
     private var stageTransform = DanmakuStageTransform.identity
-    private var videoViewport = CGRect.zero
+    private var canvasViewport = CGRect.zero
     private var suspended = false
     private var stopped = false
     var isLoadSheddingValue: Bool { configuration?.isLoadShedding ?? false }
@@ -49,6 +49,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     var debugStageTransitionActive: Bool { stageTransitionActive }
     var debugTimelineViewport: CGSize { timeline.viewport }
     var debugStageTransform: DanmakuStageTransform { stageTransform }
+    var debugRenderStage: MetalDanmakuRenderStage { currentRenderStage }
     func debugFrames(at time: TimeInterval) -> [String: CGRect] {
         Dictionary(uniqueKeysWithValues: timeline.active.map { ($0.item.id, $0.frame(at: time)) })
     }
@@ -66,8 +67,8 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
                                width: (layout?.size.width ?? entry.size.width) * scale,
                                height: (layout?.size.height ?? entry.size.height) * scale)
             if stageTransitionActive { frame = stageTransform.map(frame) }
-            frame.origin.x += videoViewport.minX
-            frame.origin.y += videoViewport.minY
+            frame.origin.x += canvasViewport.minX
+            frame.origin.y += canvasViewport.minY
             return (entry.item.id, frame)
         })
     }
@@ -129,9 +130,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         let scale = window?.screen.scale ?? traitCollection.displayScale
         let sizeChanged = bounds.size != lastSize
         let scaleChanged = scale != lastScale
-        let nextVideoViewport = resolvedVideoViewport()
-        let viewportChanged = nextVideoViewport != videoViewport
-        videoViewport = nextVideoViewport
+        let nextCanvasViewport = resolvedCanvasViewport()
+        let viewportChanged = nextCanvasViewport != canvasViewport
+        canvasViewport = nextCanvasViewport
         if stageTransitionActive {
             updateStageTransform(logViewportChange: viewportChanged)
         }
@@ -165,9 +166,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         lastRawTime = raw
         configuration = next
         stopped = false
-        let nextVideoViewport = resolvedVideoViewport()
-        let viewportChanged = nextVideoViewport != videoViewport
-        videoViewport = nextVideoViewport
+        let nextCanvasViewport = resolvedCanvasViewport()
+        let viewportChanged = nextCanvasViewport != canvasViewport
+        canvasViewport = nextCanvasViewport
         if stageTransitionActive {
             updateStageTransform(logViewportChange: viewportChanged)
         } else {
@@ -202,7 +203,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         } else if !stageTransitionActive, viewportChanged {
             layouts.removeAll(keepingCapacity: true)
             configureTimeline()
-            rebuild(reason: "video-viewport")
+            rebuild(reason: "canvas-viewport")
         } else if abs(raw - previousTime) > max(1.25, 0.7 * next.playbackRate) {
             rebuild(reason: "configuration-time-jump")
         }
@@ -274,10 +275,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         // Admission and shader lifetime must use the same accepted clock sample.
         // Tiny player-clock corrections must not hide newly admitted glyphs.
         let presentationTime = timeline.presentationTime ?? sampledTime
-        let renderStage = MetalDanmakuRenderStage(
-            transform: stageTransitionActive ? stageTransform : .identity,
-            videoViewport: videoViewport
-        )
+        let renderStage = currentRenderStage
         #if DEBUG
         renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
                         isManualRefresh: isManualRefresh, stage: renderStage)
@@ -290,12 +288,12 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private var shouldRender: Bool {
         guard let c = configuration else { return false }
         return c.isEnabled && c.hasPresentedPlayback && !c.items.isEmpty
-            && videoViewport.width > 20 && videoViewport.height > 20
+            && canvasViewport.width > 20 && canvasViewport.height > 20
     }
     private func configureTimeline() {
         guard let c = configuration else { return }
         guard !stageTransitionActive else { return }
-        timeline.viewport = videoViewport.size
+        timeline.viewport = canvasViewport.size
         timeline.settings = c.settings.normalized
         timeline.topInset = c.topInset
         timeline.bottomInset = c.bottomInset
@@ -333,8 +331,13 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         lastRevision = timeline.revision
     }
 
-    private func resolvedVideoViewport() -> CGRect {
-        DanmakuVideoViewport.aspectFit(in: bounds, aspectRatio: configuration?.videoAspectRatio)
+    private var currentRenderStage: MetalDanmakuRenderStage {
+        MetalDanmakuRenderStage(transform: stageTransitionActive ? stageTransform : .identity,
+                               canvasViewport: canvasViewport)
+    }
+
+    private func resolvedCanvasViewport() -> CGRect {
+        DanmakuVideoViewport.scrollingCanvas(in: bounds, aspectRatio: configuration?.videoAspectRatio)
     }
 
     private func beginStageTransitionIfNeeded() {
@@ -342,14 +345,14 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         materializeFontScaleSettle(at: CACurrentMediaTime())
         stageTransitionActive = true
         stageSourceViewport = timeline.viewport.width > 0 && timeline.viewport.height > 0
-            ? timeline.viewport : videoViewport.size
+            ? timeline.viewport : canvasViewport.size
         updateStageTransform(logViewportChange: true)
         traceStage("transition-begin", transform: stageTransform)
     }
 
     private func updateStageTransform(logViewportChange: Bool) {
         guard stageTransitionActive else { return }
-        let next = DanmakuStageTransform.aspectFit(from: stageSourceViewport, into: videoViewport.size)
+        let next = DanmakuStageTransform.aspectFit(from: stageSourceViewport, into: canvasViewport.size)
         guard next != stageTransform || logViewportChange else { return }
         stageTransform = next
         if logViewportChange { traceStage("viewport-change", transform: next) }
@@ -357,7 +360,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
 
     private func finishStageTransitionIfNeeded() {
         guard stageTransitionActive else { return }
-        let transform = DanmakuStageTransform.aspectFit(from: stageSourceViewport, into: videoViewport.size)
+        let transform = DanmakuStageTransform.aspectFit(from: stageSourceViewport, into: canvasViewport.size)
         let before = timeline.active.count
         timeline.rebaseActive(using: transform, at: effectiveTime())
         traceStage("transition-end", transform: transform)
@@ -379,7 +382,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
                                           before: timeline.active.count, after: timeline.active.count)
         print("[DanmakuStage] event=\(event) "
             + "source=\(Int(stageSourceViewport.width))x\(Int(stageSourceViewport.height)) "
-            + "video=\(Int(videoViewport.width))x\(Int(videoViewport.height)) "
+            + "canvas=\(Int(canvasViewport.width))x\(Int(canvasViewport.height)) "
             + "scale=\(transform.scale) "
             + "offset=\(Int(transform.translation.x)),\(Int(transform.translation.y)) "
             + "active=\(timeline.active.count) atlasPages=\(renderer.atlas.textures.count) "

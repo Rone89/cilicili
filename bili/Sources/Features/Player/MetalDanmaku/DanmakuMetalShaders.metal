@@ -22,7 +22,7 @@ struct DanmakuVertex {
 };
 struct DanmakuStageUniforms {
     float4 transform; // scale, translation x/y
-    float4 videoViewport; // origin x/y, width/height in points
+    float4 canvasViewport; // origin x/y, width/height in points
 };
 
 vertex DanmakuVertex danmakuGlyphVertex(uint vertexID [[vertex_id]],
@@ -61,7 +61,7 @@ vertex DanmakuVertex danmakuGlyphStageVertex(uint vertexID [[vertex_id]],
     float2 logicalPoint = float2(i.motion.x - age * i.motion.w, i.motion.y)
         + i.fontTransition.xy * (scale - i.geometry.w)
         + corner * i.geometry.xy * (scale / max(i.geometry.w, 0.0001f));
-    float2 point = logicalPoint * stage.transform.x + stage.transform.yz + stage.videoViewport.xy;
+    float2 point = logicalPoint * stage.transform.x + stage.transform.yz + stage.canvasViewport.xy;
     DanmakuVertex out;
     out.position = float4(point.x / frame.x * 2 - 1, 1 - point.y / frame.y * 2, 0, 1);
     out.uv = i.uv.xy + corner * i.uv.zw;

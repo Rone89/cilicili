@@ -37,6 +37,15 @@ struct DanmakuStageTransform: Equatable {
 }
 
 enum DanmakuVideoViewport {
+    /// Scrolling crosses the whole player window, including pillarboxes. Keep
+    /// vertical track placement tied to the picture so letterbox/control insets
+    /// and collapsed logical canvases retain their existing behavior.
+    static func scrollingCanvas(in bounds: CGRect, aspectRatio: CGFloat?) -> CGRect {
+        let picture = aspectFit(in: bounds, aspectRatio: aspectRatio)
+        return CGRect(x: bounds.minX, y: picture.minY,
+                      width: bounds.width, height: picture.height)
+    }
+
     static func aspectFit(in bounds: CGRect, aspectRatio: CGFloat?) -> CGRect {
         guard bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0,
@@ -57,6 +66,6 @@ enum DanmakuVideoViewport {
 
 struct MetalDanmakuRenderStage {
     let transform: DanmakuStageTransform
-    /// The actual aspect-fit video rectangle in the MTKView's point coordinates.
-    let videoViewport: CGRect
+    /// Full horizontal scrolling canvas in the MTKView's point coordinates.
+    let canvasViewport: CGRect
 }

@@ -49,7 +49,7 @@ final class MetalDanmakuRenderer {
 
     private struct StageUniforms {
         var transform: SIMD4<Float>
-        var videoViewport: SIMD4<Float>
+        var canvasViewport: SIMD4<Float>
     }
 
     init?() {
@@ -332,17 +332,17 @@ final class MetalDanmakuRenderer {
             var uniforms = StageUniforms(
                 transform: SIMD4(Float(stage.transform.scale), Float(stage.transform.translation.x),
                                  Float(stage.transform.translation.y), 0),
-                videoViewport: SIMD4(Float(stage.videoViewport.minX), Float(stage.videoViewport.minY),
-                                     Float(stage.videoViewport.width), Float(stage.videoViewport.height))
+                canvasViewport: SIMD4(Float(stage.canvasViewport.minX), Float(stage.canvasViewport.minY),
+                                     Float(stage.canvasViewport.width), Float(stage.canvasViewport.height))
             )
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<StageUniforms>.stride, index: 2)
             if let drawableSize {
                 let scaleX = drawableSize.width / max(size.width, 1)
                 let scaleY = drawableSize.height / max(size.height, 1)
-                let minX = max(0, Int(floor(stage.videoViewport.minX * scaleX)))
-                let minY = max(0, Int(floor(stage.videoViewport.minY * scaleY)))
-                let maxX = min(Int(drawableSize.width), Int(ceil(stage.videoViewport.maxX * scaleX)))
-                let maxY = min(Int(drawableSize.height), Int(ceil(stage.videoViewport.maxY * scaleY)))
+                let minX = max(0, Int(floor(stage.canvasViewport.minX * scaleX)))
+                let minY = max(0, Int(floor(stage.canvasViewport.minY * scaleY)))
+                let maxX = min(Int(drawableSize.width), Int(ceil(stage.canvasViewport.maxX * scaleX)))
+                let maxY = min(Int(drawableSize.height), Int(ceil(stage.canvasViewport.maxY * scaleY)))
                 if maxX > minX, maxY > minY {
                     encoder.setScissorRect(MTLScissorRect(x: minX, y: minY,
                                                           width: maxX - minX, height: maxY - minY))
@@ -360,9 +360,11 @@ final class MetalDanmakuRenderer {
 
     #if DEBUG
     /// Offscreen shader validation only; not used by the playback draw loop.
-    func debugRenderOffscreen(size: CGSize, time: TimeInterval) -> MTLTexture? {
+    func debugRenderOffscreen(size: CGSize, time: TimeInterval,
+                              stage: MetalDanmakuRenderStage? = nil) -> MTLTexture? {
         guard size.width > 0, size.height > 0, size.width <= 2048, size.height <= 2048,
               !instances.isEmpty else { return nil }
+        if stage != nil, !prepareStageTransitionPipeline() { return nil }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
             width: Int(size.width), height: Int(size.height), mipmapped: false)
         descriptor.storageMode = .shared
@@ -375,13 +377,17 @@ final class MetalDanmakuRenderer {
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return nil }
-        let buffer = instances.withUnsafeBytes { data -> MTLBuffer? in
+        func makeBuffer(_ data: UnsafeRawBufferPointer) -> MTLBuffer? {
             guard let base = data.baseAddress else { return nil }
             return device.makeBuffer(bytes: base, length: data.count, options: .storageModeShared)
         }
+        let buffer = stage == nil
+            ? instances.withUnsafeBytes(makeBuffer)
+            : stageInstances.withUnsafeBytes(makeBuffer)
         guard let buffer else { encoder.endEncoding(); return nil }
         drawCalls = 0
-        encodeGlyphs(encoder: encoder, buffer: buffer, size: size, time: time)
+        encodeGlyphs(encoder: encoder, buffer: buffer, size: size, time: time,
+                     drawableSize: size, stage: stage)
         encoder.endEncoding()
         command.commit()
         command.waitUntilCompleted()

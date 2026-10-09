@@ -46,6 +46,39 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
                                     color: 0xFFFFFF, text: "测试 ABC \($0)") }
     }
 
+    func testMetalScrollingUsesWindowEdgesAndShaderDrawsAcrossBothPillarboxes() throws {
+        guard let view = MetalDanmakuView.make() else { throw XCTSkip("Metal unavailable") }
+        defer { view.stop() }
+        let size = CGSize(width: 900, height: 400)
+        view.frame = CGRect(origin: .zero, size: size)
+        view.layoutIfNeeded()
+        let item = DanmakuItem(id: "window-edges", time: 0, mode: 1, fontSize: 25,
+                               color: 0xFFFFFF, text: "MMMMMMMM")
+        view.apply(configuration: configuration(items: [item], time: 0, videoAspectRatio: 4.0 / 3))
+        XCTAssertEqual(view.debugTimelineViewport, size)
+        XCTAssertEqual(view.debugRenderStage.canvasViewport, view.bounds)
+        let start = try XCTUnwrap(view.debugPresentedFrames(at: 0)[item.id])
+        XCTAssertEqual(start.minX, size.width, accuracy: 0.001)
+        let duration = DanmakuRenderPolicy.duration(for: item, viewportWidth: size.width)
+        let end = try XCTUnwrap(view.debugPresentedFrames(at: duration)[item.id])
+        XCTAssertEqual(end.maxX, 0, accuracy: 0.001)
+
+        let picture = DanmakuVideoViewport.aspectFit(in: view.bounds, aspectRatio: 4.0 / 3)
+        let velocity = (size.width + start.width) / duration
+        for (targetX, side) in [(size.width - 80, "right"), (CGFloat(20), "left")] {
+            let time = (size.width - targetX) / velocity
+            let texture = try XCTUnwrap(view.debugRenderer.debugRenderOffscreen(
+                size: size, time: time, stage: view.debugRenderStage))
+            let pixels = read(texture)
+            let range = side == "right" ? Int(picture.maxX)..<Int(size.width) : 0..<Int(picture.minX)
+            let hasVisibleGlyphs = (0..<Int(size.height)).contains { y in
+                range.contains { x in pixels[(y * Int(size.width) + x) * 4 + 3] > 0 }
+            }
+            XCTAssertTrue(hasVisibleGlyphs, "The production stage shader must draw in the \(side) pillarbox")
+            XCTAssertLessThanOrEqual(view.debugRenderer.drawCalls, 4)
+        }
+    }
+
     func testCollapsedHostPreservesDanmakuKitTracksWithoutViewportRebuild() throws {
         let diagnostics = DanmakuRendererDiagnostics.shared
         diagnostics.start()
