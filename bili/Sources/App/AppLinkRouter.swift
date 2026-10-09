@@ -253,7 +253,8 @@ nonisolated enum AppLinkRouter {
         )
     }
 
-    private static func userOwner(from url: URL) -> VideoOwner? {
+    static func userOwner(from url: URL) -> VideoOwner? {
+        let url = normalizedHTTPURL(url) ?? url
         guard isBiliHost(url.host),
               url.host?.lowercased() == "space.bilibili.com"
         else { return nil }

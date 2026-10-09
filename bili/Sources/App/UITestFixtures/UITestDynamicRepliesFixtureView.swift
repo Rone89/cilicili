@@ -39,7 +39,7 @@ nonisolated private final class DynamicRepliesFixtureURLProtocol: URLProtocol {
             let data: [String: Any]
             switch url.path {
             case "/x/v2/reply/main":
-                data = ["replies": [Self.comment(id: 100, text: "根评论", replyCount: 14)],
+                data = ["replies": [Self.comment(id: 100, text: "@提及用户", replyCount: 14)],
                         "cursor": ["is_end": true]]
             case "/x/v2/reply/reply":
                 let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
@@ -62,8 +62,10 @@ nonisolated private final class DynamicRepliesFixtureURLProtocol: URLProtocol {
     override func stopLoading() {}
 
     private static func comment(id: Int, text: String, replyCount: Int = 0) -> [String: Any] {
-        ["rpid": id, "rcount": replyCount, "content": ["message": text],
-         "member": ["mid": "1001", "uname": "分页用户\(id)"]]
+        var content: [String: Any] = ["message": text]
+        if id == 100 { content["at_name_to_mid"] = ["提及用户": 1002] }
+        return ["rpid": id, "rcount": replyCount, "content": content,
+                "member": ["mid": "1001", "uname": "分页用户\(id)"]]
     }
 }
 #endif

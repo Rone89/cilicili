@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct CommentOwnerProfileRoute: Identifiable, Hashable {
+private struct CommentOwnerProfileRoute: Identifiable {
     let owner: VideoOwner
 
     var id: Int { owner.mid }
@@ -8,6 +8,7 @@ private struct CommentOwnerProfileRoute: Identifiable, Hashable {
 
 struct CommentOwnerProfileNavigationContainer<Content: View>: View {
     @Environment(\.commentSheetToolbarConfiguration) private var toolbarConfiguration
+    @Environment(\.openAppURLAction) private var openAppURL
     @State private var profileRoute: CommentOwnerProfileRoute?
     @ViewBuilder let content: () -> Content
 
@@ -19,18 +20,10 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
         NavigationStack {
             content()
                 .environment(\.openVideoOwnerRouteAction, openProfile)
+                .environment(\.openAppURLAction, openCommentURL)
                 .environment(\.openVideoAction, nil)
                 .environment(\.openLiveRoomAction, nil)
                 .environment(\.openPgcSeasonRouteAction, nil)
-                .navigationDestination(item: $profileRoute) { route in
-                    UploaderView(
-                        owner: route.owner
-                    )
-                        .environment(\.openVideoAction, nil)
-                        .environment(\.openLiveRoomAction, nil)
-                        .environment(\.openPgcSeasonRouteAction, nil)
-                        .videoDestinations()
-                }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("返回", systemImage: "chevron.left", action: toolbarConfiguration.onDismiss)
@@ -43,13 +36,43 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                             .accessibilityLabel("刷新评论")
                     }
                 }
-            }
-            .toolbar(.visible, for: .navigationBar)
         }
+        .toolbar(.visible, for: .navigationBar)
+        .sheet(item: $profileRoute) { route in
+            NavigationStack {
+                UploaderView(owner: route.owner)
+                    .environment(\.openVideoOwnerRouteAction, nil)
+                    .environment(\.openVideoAction, nil)
+                    .environment(\.openLiveRoomAction, nil)
+                    .environment(\.openPgcSeasonRouteAction, nil)
+                    .videoDestinations()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭", systemImage: "xmark") {
+                                profileRoute = nil
+                            }
+                            .tint(.primary)
+                            .accessibilityIdentifier("comment.profile.close")
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .accessibilityIdentifier("comment.profile.sheet")
+        }
+    }
 
     private func openProfile(_ owner: VideoOwner) {
         guard owner.mid > 0 else { return }
 
         profileRoute = CommentOwnerProfileRoute(owner: owner)
+    }
+
+    private func openCommentURL(_ url: URL) {
+        if let owner = AppLinkRouter.userOwner(from: url) {
+            openProfile(owner)
+        } else {
+            openAppURL?(url)
+        }
     }
 }
