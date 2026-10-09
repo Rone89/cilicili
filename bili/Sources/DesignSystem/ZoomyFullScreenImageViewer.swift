@@ -1846,6 +1846,7 @@ private final class ZoomyLivePhotoHostView: UIView, UIScrollViewDelegate, UIGest
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.topEdgeEffect.isHidden = true
         addSubview(scrollView)
 
         livePhotoView.backgroundColor = .clear
@@ -2055,6 +2056,7 @@ private final class ZoomyZoomableImageHostView: UIView, UIScrollViewDelegate, UI
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.topEdgeEffect.isHidden = true
         scrollView.isDirectionalLockEnabled = true
         addSubview(scrollView)
 
