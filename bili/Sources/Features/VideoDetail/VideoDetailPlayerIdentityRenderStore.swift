@@ -9,6 +9,9 @@ final class VideoDetailPlayerIdentityRenderStore: ObservableObject {
     var transitionSnapshot: PlaybackTransitionSnapshot? { snapshot.transitionSnapshot }
     var transitionFallbackCoverURL: URL? { snapshot.transitionFallbackCoverURL }
     var transitionPlayerOpacity: Double { snapshot.transitionPlayerOpacity }
+    var snapshotPublisher: AnyPublisher<VideoDetailPlayerIdentityRenderSnapshot, Never> {
+        $snapshot.eraseToAnyPublisher()
+    }
     private(set) var revision = 0
 
     func update(_ next: VideoDetailPlayerIdentityRenderSnapshot) {

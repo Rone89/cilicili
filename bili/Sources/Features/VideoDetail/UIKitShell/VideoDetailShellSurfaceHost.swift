@@ -47,6 +47,9 @@ final class VideoDetailShellSurfaceHost: UIView {
     private let libraryStore: LibraryStore
     private let rotationCoordinator: PlaybackRotationCoordinator
     private let surfaceHostView: any VideoDetailPlayerSurfaceHostingView
+    private let playbackTransitionImageView = UIImageView()
+    private var playbackTransitionIsVideoFrame = true
+    private var videoGravity: AVLayerVideoGravity = .resizeAspect
     private let overlayHostingController: UIHostingController<PlayerOverlayHostRoot>
     let usesDirectUIKitSurfaceExperiment: Bool
     private var cancellables = Set<AnyCancellable>()
@@ -127,19 +130,41 @@ final class VideoDetailShellSurfaceHost: UIView {
         let hostedSurfaceView = surfaceHostView.hostedView
         hostedSurfaceView.translatesAutoresizingMaskIntoConstraints = false
         hostedSurfaceView.isUserInteractionEnabled = false
+        playbackTransitionImageView.translatesAutoresizingMaskIntoConstraints = false
+        playbackTransitionImageView.backgroundColor = .black
+        playbackTransitionImageView.clipsToBounds = true
+        playbackTransitionImageView.isUserInteractionEnabled = false
+        playbackTransitionImageView.accessibilityElementsHidden = true
+        playbackTransitionImageView.isHidden = true
         overlayHostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hostedSurfaceView)
+        // Keep the outgoing frame above the drawable, below controls and danmaku.
+        // The identity store publishes synchronously before the surface is rebound.
+        addSubview(playbackTransitionImageView)
         addSubview(overlayHostingController.view)
         NSLayoutConstraint.activate([
             hostedSurfaceView.leadingAnchor.constraint(equalTo: leadingAnchor),
             hostedSurfaceView.trailingAnchor.constraint(equalTo: trailingAnchor),
             hostedSurfaceView.topAnchor.constraint(equalTo: topAnchor),
             hostedSurfaceView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            playbackTransitionImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            playbackTransitionImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            playbackTransitionImageView.topAnchor.constraint(equalTo: topAnchor),
+            playbackTransitionImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
             overlayHostingController.view.leadingAnchor.constraint(equalTo: leadingAnchor),
             overlayHostingController.view.trailingAnchor.constraint(equalTo: trailingAnchor),
             overlayHostingController.view.topAnchor.constraint(equalTo: topAnchor),
             overlayHostingController.view.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        detailViewModel.playerIdentityRenderStore.snapshotPublisher
+            .sink { [weak self] snapshot in
+                self?.updatePlaybackTransition(
+                    snapshot: snapshot.transitionSnapshot,
+                    opacity: snapshot.transitionPlayerOpacity
+                )
+            }
+            .store(in: &cancellables)
 
         dependencies.libraryStore.$pictureInPictureEnabled
             .removeDuplicates()
@@ -193,6 +218,9 @@ final class VideoDetailShellSurfaceHost: UIView {
         isTornDown = true
         cancelRotationChromePrewarm()
         cancellables.removeAll()
+        playbackTransitionImageView.image = nil
+        playbackTransitionImageView.isHidden = true
+        playbackTransitionImageView.removeFromSuperview()
         surfaceHostView.tearDown()
         surfaceHostView.hostedView.removeFromSuperview()
         overlayHostingController.willMove(toParent: nil)
@@ -297,7 +325,37 @@ final class VideoDetailShellSurfaceHost: UIView {
     }
 
     func setVideoGravity(_ gravity: AVLayerVideoGravity) {
+        videoGravity = gravity
+        updatePlaybackTransitionContentMode()
         surfaceHostView.setVideoGravity(gravity)
+    }
+
+    private func updatePlaybackTransition(snapshot: PlaybackTransitionSnapshot?, opacity: Double) {
+        guard !isTornDown else { return }
+        // No independent timer or animation: first-frame/timeout/navigation cleanup
+        // remains owned by VideoDetailViewModel's existing transition lifecycle.
+        UIView.performWithoutAnimation {
+            guard let snapshot, opacity > 0 else {
+                playbackTransitionImageView.isHidden = true
+                playbackTransitionImageView.image = nil
+                return
+            }
+            playbackTransitionImageView.image = snapshot.image
+            playbackTransitionIsVideoFrame = snapshot.isVideoFrame
+            updatePlaybackTransitionContentMode()
+            playbackTransitionImageView.alpha = CGFloat(min(opacity, 1))
+            playbackTransitionImageView.isHidden = false
+        }
+    }
+
+    private func updatePlaybackTransitionContentMode() {
+        if !playbackTransitionIsVideoFrame || videoGravity == .resizeAspect {
+            playbackTransitionImageView.contentMode = .scaleAspectFit
+        } else if videoGravity == .resizeAspectFill {
+            playbackTransitionImageView.contentMode = .scaleAspectFill
+        } else {
+            playbackTransitionImageView.contentMode = .scaleToFill
+        }
     }
 
     func setDanmakuCanvasSize(_ size: CGSize?) {

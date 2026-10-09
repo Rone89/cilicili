@@ -212,6 +212,179 @@ final class VideoDetailSurfaceHostTests: XCTestCase {
         }
     }
 
+    func testQualityTransitionFrameCoversRebindAndTracksGeometryInBothHostModes() async throws {
+        let dependencies = AppDependencies()
+        let store = dependencies.libraryStore
+        let previous = store.videoDetailUIKitSurfaceRotationExperimentEnabled
+        defer { store.setVideoDetailUIKitSurfaceRotationExperimentEnabled(previous) }
+        let detail = try makeDetail(dependencies: dependencies)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(store)
+        for direct in [false, true] {
+            store.setVideoDetailUIKitSurfaceRotationExperimentEnabled(direct)
+            let first = makePlayer()
+            let second = makePlayer()
+            first.setPlaybackIntent(false)
+            second.setPlaybackIntent(false)
+            let host = makeShellHost(player: first, detail: detail, dependencies: dependencies, runtime: runtime)
+            let parent = UIViewController()
+            parent.loadViewIfNeeded()
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let previousWindow = scene.windows.first { $0.isKeyWindow }
+            let window = UIWindow(windowScene: scene)
+            window.rootViewController = parent
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+            parent.view.addSubview(host)
+            host.attach(to: parent)
+            defer {
+                host.tearDown()
+                host.removeFromSuperview()
+                first.stop()
+                second.stop()
+            }
+            host.frame.size = CGSize(width: 402, height: 226)
+            host.refreshLayoutImmediately()
+            let surfaceDeadline = ContinuousClock.now + .seconds(2)
+            while findSurface(in: host)?.isBound(to: first) != true, ContinuousClock.now < surfaceDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let surface = try XCTUnwrap(findSurface(in: host))
+            XCTAssertTrue(surface.isBound(to: first))
+            let imageView = try XCTUnwrap(host.subviews.compactMap { $0 as? UIImageView }.first)
+            XCTAssertTrue(imageView.isHidden)
+            let snapshot = makeTransitionSnapshot(color: .red)
+            detail.playerIdentityRenderStore.update(.init(
+                playerViewModel: second,
+                transitionSnapshot: snapshot,
+                transitionPlayerOpacity: 1
+            ))
+            // A synchronous publication must cover the old drawable BEFORE rebind.
+            XCTAssertFalse(imageView.isHidden)
+            XCTAssertTrue(imageView.image === snapshot.image)
+            XCTAssertTrue(surface.isBound(to: first))
+            XCTAssertTrue(host.subviews[1] === imageView)
+            XCTAssertFalse(imageView.isUserInteractionEnabled)
+            XCTAssertTrue(imageView.accessibilityElementsHidden)
+            host.setPlayerViewModel(second)
+            for size in [CGSize(width: 874, height: 402), CGSize(width: 402, height: 54)] {
+                host.frame.size = size
+                host.refreshLayoutImmediately()
+                XCTAssertEqual(imageView.frame, host.bounds)
+                XCTAssertFalse(imageView.isHidden)
+                XCTAssertTrue(imageView.image === snapshot.image)
+            }
+            host.setVideoGravity(.resizeAspectFill)
+            XCTAssertEqual(imageView.contentMode, .scaleAspectFill)
+            host.setVideoGravity(.resizeAspect)
+            XCTAssertEqual(imageView.contentMode, .scaleAspectFit)
+            let nextSnapshot = makeTransitionSnapshot(color: .blue)
+            detail.playerIdentityRenderStore.update(.init(
+                playerViewModel: second, transitionSnapshot: nextSnapshot, transitionPlayerOpacity: 1
+            ))
+            XCTAssertTrue(imageView.image === nextSnapshot.image)
+            detail.playerIdentityRenderStore.update(.init(playerViewModel: second))
+            XCTAssertTrue(imageView.isHidden)
+            XCTAssertNil(imageView.image)
+            // An unavailable image must never introduce an opaque black mask.
+            detail.playerIdentityRenderStore.update(.init(
+                playerViewModel: second, transitionPlayerOpacity: 1
+            ))
+            XCTAssertTrue(imageView.isHidden)
+            host.tearDown()
+            detail.playerIdentityRenderStore.update(.init(
+                playerViewModel: second, transitionSnapshot: nextSnapshot, transitionPlayerOpacity: 1
+            ))
+            XCTAssertNil(imageView.image)
+            XCTAssertNil(imageView.superview)
+            detail.playerIdentityRenderStore.update(.init())
+        }
+    }
+
+    func testQualityTransitionReleaseIgnoresStaleFirstFrameDuringRapidReplacement() async throws {
+        let dependencies = AppDependencies()
+        let detail = try makeDetail(dependencies: dependencies)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        let first = makePlayer()
+        let second = makePlayer()
+        let third = makePlayer()
+        for player in [first, second, third] {
+            player.setPlaybackIntent(false)
+            detail.configureStablePlayerStartupCallbacks(player)
+        }
+        let host = makeShellHost(player: first, detail: detail, dependencies: dependencies, runtime: runtime)
+        defer {
+            host.tearDown()
+            detail.clearPlaybackTransitionPlayer()
+            first.stop()
+            second.stop()
+            third.stop()
+        }
+        let imageView = try XCTUnwrap(host.subviews.compactMap { $0 as? UIImageView }.first)
+        // Inject the captured-frame stage without mutating the player's private
+        // decoder readiness. This test covers release callbacks and cancellation.
+        detail.playbackTransitionPlayerViewModel = first
+        detail.playbackTransitionSnapshot = makeTransitionSnapshot(color: .red)
+        detail.playbackTransitionOpacity = 1
+        detail.stablePlayerViewModel = second
+        detail.syncPlayerIdentityRenderStore()
+        detail.releasePlaybackTransitionPlayer(after: VideoDetailViewModel.playbackTransitionMaximumRetainNanoseconds)
+        host.setPlayerViewModel(second)
+        first.onFirstFramePresented?()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(imageView.isHidden, "The outgoing player's callback must not release the new transition.")
+        second.onFirstFramePresented?()
+        // Replace again while that first-frame release is still pending.
+        detail.clearPlaybackTransitionPlayer()
+        detail.playbackTransitionPlayerViewModel = second
+        let blueSnapshot = makeTransitionSnapshot(color: .blue)
+        detail.playbackTransitionSnapshot = blueSnapshot
+        detail.playbackTransitionOpacity = 1
+        detail.stablePlayerViewModel = third
+        detail.syncPlayerIdentityRenderStore()
+        detail.releasePlaybackTransitionPlayer(after: VideoDetailViewModel.playbackTransitionMaximumRetainNanoseconds)
+        host.setPlayerViewModel(third)
+        second.onFirstFramePresented?()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(imageView.isHidden)
+        XCTAssertTrue(imageView.image === blueSnapshot.image)
+        third.onFirstFramePresented?()
+        let releaseDeadline = ContinuousClock.now + .seconds(2)
+        while detail.playbackTransitionPlayerViewModel != nil, ContinuousClock.now < releaseDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNil(detail.playbackTransitionPlayerViewModel)
+        XCTAssertTrue(imageView.isHidden)
+        XCTAssertNil(imageView.image)
+        XCTAssertTrue(second.isTerminated)
+        XCTAssertFalse(third.isTerminated)
+    }
+
+    private func makeDetail(dependencies: AppDependencies) throws -> VideoDetailViewModel {
+        let video = try JSONDecoder.bili.decode(VideoItem.self,
+            from: Data(#"{"bvid":"BVQualityTransitionProbe","title":"Quality transition probe","cid":1}"#.utf8))
+        return VideoDetailViewModel(seedVideo: video, api: dependencies.api,
+            libraryStore: dependencies.libraryStore, sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService)
+    }
+
+    private func makeShellHost(player: PlayerStateViewModel, detail: VideoDetailViewModel,
+                               dependencies: AppDependencies, runtime: VideoDetailRuntimeSettingsStore) -> VideoDetailShellSurfaceHost {
+        VideoDetailShellSurfaceHost(playerViewModel: player, detailViewModel: detail,
+            dependencies: dependencies, runtimeSettings: runtime, rotationCoordinator: PlaybackRotationCoordinator(),
+            onShowMoreControls: { _ in }, onDismissMoreControls: {}, onRequestFullscreen: {}, onExitFullscreen: {},
+            onToggleDanmaku: {}, onShowDanmakuSettings: {}, onNavigateBack: {})
+    }
+
+    private func makeTransitionSnapshot(color: UIColor) -> PlaybackTransitionSnapshot {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 18)).image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 18))
+        }
+        return PlaybackTransitionSnapshot(image: image)
+    }
+
     private func makeLocalVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
