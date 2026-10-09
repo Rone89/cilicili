@@ -97,6 +97,39 @@ final class NativePrivateMessageUITests: XCTestCase {
         screenshot(app, "native-private-message-accessibility-dark")
     }
 
+    func testDiagonalBackSwipeDoesNotRefreshMessages() {
+        let app = launch(["--private-message-native"])
+        app.buttons["打开私信"].tap()
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch.waitForExistence(timeout: 5))
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.30))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.52))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        XCTAssertTrue(app.buttons["打开私信"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(app.staticTexts["privateMessage.fixture.requests"].value as? String, "1")
+    }
+
+    func testVerticalScrollingAndRefreshMenuRemainAvailable() {
+        let app = launch(["--private-message-native", "--private-message-refresh-marker", "--private-message-long-history"], animations: false)
+        app.buttons["打开私信"].tap()
+        XCTAssertTrue(app.buttons["privateMessage.send"].waitForExistence(timeout: 5))
+        let firstMessage = app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch
+        XCTAssertTrue(firstMessage.waitForExistence(timeout: 5))
+        let initialY = firstMessage.frame.minY
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.22))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.65))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+        XCTAssertGreaterThan(firstMessage.frame.minY, initialY)
+        XCTAssertTrue(app.buttons["privateMessage.send"].exists)
+        app.buttons["privateMessage.actions"].tap()
+        app.buttons["刷新消息"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["消息刷新已完成"].firstMatch.waitForExistence(timeout: 3), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["打开私信"].waitForExistence(timeout: 3))
+        let requests = Int(app.staticTexts["privateMessage.fixture.requests"].value as? String ?? "")
+        XCTAssertGreaterThanOrEqual(requests ?? 0, 2)
+    }
+
     private func waitForKeyboard(_ app: XCUIApplication) {
         let visible = NSPredicate { _, _ in
             let keyboard = app.keyboards.firstMatch
@@ -117,9 +150,10 @@ final class NativePrivateMessageUITests: XCTestCase {
         keyboard.keys["i"].tap()
     }
 
-    private func launch(_ arguments: [String]) -> XCUIApplication {
+    private func launch(_ arguments: [String], animations: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-test-fixture", "privateMessage", "--ui-test-enable-animations"] + arguments
+        app.launchArguments = ["--ui-test-fixture", "privateMessage"]
+            + (animations ? ["--ui-test-enable-animations"] : []) + arguments
         app.launch()
         XCTAssertTrue(app.buttons["打开私信"].waitForExistence(timeout: 5))
         return app

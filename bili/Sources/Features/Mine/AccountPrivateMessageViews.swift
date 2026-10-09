@@ -488,6 +488,7 @@ struct AccountPrivateMessageConversationView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
+                .background(PrivateMessageScrollGesturePriority())
             }
             .defaultScrollAnchor(.top)
             .accessibilityIdentifier("privateMessage.messages")

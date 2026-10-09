@@ -8,6 +8,7 @@ struct UITestPrivateMessageFixtureView: View {
     @StateObject private var model: AccountMessageCenterViewModel
     private let accessibilitySize: Bool
     private let dark: Bool
+    @State private var completedMessageRequests = 0
 
     init() {
         let args = ProcessInfo.processInfo.arguments
@@ -43,9 +44,15 @@ struct UITestPrivateMessageFixtureView: View {
                             actor: AccountMessageActor(mid: 1002, name: "测试联系人", avatarURLString: nil),
                             preview: "你好", timestamp: nil, unreadCount: 0, lastMessageSequence: nil,
                             isPinned: false, isMuted: false),
-                        viewModel: model, onMarkedRead: {}, onConversationChanged: {}
+                        viewModel: model, onMarkedRead: {},
+                        onConversationChanged: {
+                            completedMessageRequests = PrivateMessageFixtureProtocol.messageRequestCount
+                        }
                     )
                 }
+                Text("消息请求：\(completedMessageRequests)")
+                    .accessibilityIdentifier("privateMessage.fixture.requests")
+                    .accessibilityValue(String(completedMessageRequests))
             }
             .navigationTitle("私信测试")
         }
@@ -60,7 +67,13 @@ nonisolated private final class PrivateMessageFixtureState: @unchecked Sendable 
     static let senderID = Int.random(in: 900_000_000 ... 999_999_999)
     private let lock = NSLock()
     private var sent = [String]()
+    private var messageRequests = 0
     private var shouldFail = ProcessInfo.processInfo.arguments.contains("--private-message-fail-once")
+
+    var messageRequestCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return messageRequests
+    }
 
     func response(_ request: URLRequest) -> Data {
         lock.lock(); defer { lock.unlock() }
@@ -69,7 +82,12 @@ nonisolated private final class PrivateMessageFixtureState: @unchecked Sendable 
         case "/x/web-interface/nav":
             data = ["wbi_img": ["img_url": "https://fixture.test/abcdef.png", "sub_url": "https://fixture.test/ghijkl.png"]]
         case "/svr_sync/v1/svr_sync/fetch_session_msgs":
-            let texts = ["你好，这是第一条消息。", "同一组消息，中英文 Hello 😀", "收到，谢谢！", "这是一段较长的私信正文，用于检查气泡宽度和大字体布局。支持原有图片、链接、表情和失败重试功能。"] + sent
+            messageRequests += 1
+            let refreshMarker = ProcessInfo.processInfo.arguments.contains("--private-message-refresh-marker") && messageRequests > 1
+                ? ["消息刷新已完成"] : []
+            let history = ProcessInfo.processInfo.arguments.contains("--private-message-long-history")
+                ? (1...10).map { "历史消息 \($0)：用于验证滚动和下拉刷新。" } : []
+            let texts = ["你好，这是第一条消息。", "同一组消息，中英文 Hello 😀", "收到，谢谢！", "这是一段较长的私信正文，用于检查气泡宽度和大字体布局。支持原有图片、链接、表情和失败重试功能。"] + history + sent + refreshMarker
             data = ["has_more": 0, "messages": texts.enumerated().map { index, text in
                 ["sender_uid": index == 2 || index >= 4 ? Self.senderID : 1002, "receiver_id": Self.senderID,
                  "msg_type": 1, "msg_seqno": index + 1, "msg_key": index + 1,
@@ -108,6 +126,7 @@ nonisolated private final class PrivateMessageFixtureState: @unchecked Sendable 
 
 nonisolated private final class PrivateMessageFixtureProtocol: URLProtocol {
     private static let state = PrivateMessageFixtureState()
+    static var messageRequestCount: Int { state.messageRequestCount }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
