@@ -75,6 +75,12 @@ struct NativePrivateMessageComposer: View {
     private var isBusy: Bool { isSending || isSendingImage }
 
     var body: some View {
+        GlassEffectContainer(spacing: 10) {
+            inputBar
+        }
+    }
+
+    private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
             Menu {
                 Button("照片", systemImage: "photo", action: showPhotos)
@@ -120,12 +126,7 @@ struct NativePrivateMessageComposer: View {
                 .accessibilityLabel("发送私信")
                 .accessibilityIdentifier("privateMessage.send")
             }
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 24))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24)
-                    .stroke(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5)
-                    .allowsHitTesting(false)
-            }
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 24))
         }
     }
 }

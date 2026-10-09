@@ -54,6 +54,18 @@ final class NativePrivateMessageUITests: XCTestCase {
         XCTAssertTrue(send.isEnabled)
         XCTAssertLessThanOrEqual(send.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
         screenshot(app, "native-private-message-keyboard")
+        // Empty space in the message area dismisses the keyboard without discarding the draft.
+        let messageArea = app.scrollViews["privateMessage.messages"]
+        XCTAssertTrue(messageArea.exists, app.debugDescription)
+        messageArea.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        let dismissed = NSPredicate { _, _ in
+            !app.keyboards.firstMatch.exists || app.keyboards.firstMatch.frame.minY >= app.frame.maxY - 150
+        }
+        let hiddenKeyboard = XCTNSPredicateExpectation(predicate: dismissed, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [hiddenKeyboard], timeout: 5), .completed, app.debugDescription)
+        XCTAssertEqual(input.value as? String, "Hi")
+        input.tap()
+        waitForKeyboard(app)
         send.tap()
         let retry = app.buttons["重试"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))

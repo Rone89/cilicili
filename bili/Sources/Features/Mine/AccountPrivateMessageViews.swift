@@ -490,11 +490,13 @@ struct AccountPrivateMessageConversationView: View {
                 .padding(.vertical, 12)
             }
             .defaultScrollAnchor(.top)
+            .accessibilityIdentifier("privateMessage.messages")
             .scrollDismissesKeyboard(.interactively)
+            .contentShape(Rectangle())
             .simultaneousGesture(
                 TapGesture().onEnded {
                     isComposerFocused = false
-                }, isEnabled: !usesNativePresentation
+                }
             )
             .refreshable {
                 await load(reset: true)
