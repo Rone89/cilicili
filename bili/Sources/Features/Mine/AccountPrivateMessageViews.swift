@@ -422,7 +422,11 @@ private struct AccountPrivateMessageSessionRow: View {
     }
 }
 
-private struct AccountPrivateMessageConversationView: View {
+struct AccountPrivateMessageConversationView: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @State private var conversationWidth: CGFloat = 0
+
+    private var usesNativePresentation: Bool { libraryStore.nativePrivateMessageConversationExperimentEnabled }
     let session: AccountPrivateMessageSession
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let onMarkedRead: () -> Void
@@ -455,21 +459,31 @@ private struct AccountPrivateMessageConversationView: View {
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
+        let nativePresentation = usesNativePresentation
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: usesNativePresentation ? 0 : 12) {
                     historyControl
 
-                    ForEach(messages) { message in
-                        AccountPrivateMessageBubble(
-                            message: message,
-                            inlineEmotes: viewModel.inlineEmotes,
-                            isMutating: mutatingMessageIDs.contains(message.id)
-                        )
-                            .id(message.id)
-                            .contextMenu {
-                                messageContextMenu(for: message)
+                    if usesNativePresentation {
+                        ForEach(NativePrivateMessageTimeline.entries(messages)) { entry in
+                            VStack(spacing: 8) {
+                                if entry.showsTimestamp, let timestamp = entry.message.timestamp {
+                                    Text(timestamp.formatted(.dateTime.month().day().hour().minute()))
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity)
+                                        .accessibilityIdentifier("privateMessage.timestamp.\(entry.id)")
+                                }
+                                messageBubble(entry.message)
                             }
+                            .padding(.top, entry.startsSenderGroup ? 12 : 3)
+                            .id(entry.id)
+                        }
+                    } else {
+                        ForEach(messages) { message in
+                            messageBubble(message).id(message.id)
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
@@ -480,7 +494,7 @@ private struct AccountPrivateMessageConversationView: View {
             .simultaneousGesture(
                 TapGesture().onEnded {
                     isComposerFocused = false
-                }
+                }, isEnabled: !usesNativePresentation
             )
             .refreshable {
                 await load(reset: true)
@@ -519,13 +533,39 @@ private struct AccountPrivateMessageConversationView: View {
             }
         }
         .background(Color(uiColor: .systemBackground))
-        .navigationTitle("")
+        .onGeometryChange(for: CGFloat.self) { nativePresentation ? $0.size.width : 0 } action: { _, width in
+            conversationWidth = width
+        }
+        .navigationTitle(usesNativePresentation ? session.actor.name : "")
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(.automatic, for: .navigationBar)
         .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItem(placement: .principal) {
-                AccountPrivateMessageConversationHeader(actor: session.actor)
+                if usesNativePresentation {
+                    NativePrivateMessageHeader(actor: session.actor)
+                } else {
+                    AccountPrivateMessageConversationHeader(actor: session.actor)
+                }
+            }
+            if usesNativePresentation {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if let owner = session.actor.owner {
+                            VideoOwnerRouteLink(owner: owner) {
+                                Label("个人空间", systemImage: "person.crop.circle")
+                            }
+                        }
+                        Button("刷新消息", systemImage: "arrow.clockwise") {
+                            Task { await load(reset: true) }
+                        }
+                        .disabled(state.isLoading || isSending || isSendingImage)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("会话操作")
+                    .accessibilityIdentifier("privateMessage.actions")
+                }
             }
         }
         .sheet(isPresented: $showsEmotePicker) {
@@ -584,6 +624,17 @@ private struct AccountPrivateMessageConversationView: View {
             viewModel.savePrivateMessageDraft(draft, talkerID: session.talkerID)
             onConversationChanged()
         }
+    }
+
+    private func messageBubble(_ message: AccountPrivateMessage) -> some View {
+        AccountPrivateMessageBubble(
+            message: message,
+            inlineEmotes: viewModel.inlineEmotes,
+            isMutating: mutatingMessageIDs.contains(message.id),
+            usesNativePresentation: usesNativePresentation,
+            availableWidth: usesNativePresentation && conversationWidth > 0 ? conversationWidth - 28 : nil
+        )
+        .contextMenu { messageContextMenu(for: message) }
     }
 
     @ViewBuilder
@@ -862,67 +913,87 @@ private struct AccountPrivateMessageConversationView: View {
                 )
             }
 
-            GlassEffectContainer(spacing: 10) {
-                HStack(spacing: 10) {
-                    Menu {
-                        Button {
-                            showsPhotoPicker = true
-                        } label: {
-                            Label("照片", systemImage: "photo")
-                        }
-
-                        Button {
-                            showsEmotePicker = true
-                        } label: {
-                            Label("B站表情", systemImage: "face.smiling")
-                        }
-                        .disabled(viewModel.inlineEmotes.isEmpty)
-                    } label: {
-                        Group {
-                            if isSendingImage {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 17, weight: .semibold))
+            if usesNativePresentation {
+                NativePrivateMessageComposer(
+                    text: $draft,
+                    focus: $isComposerFocused,
+                    isSending: isSending,
+                    isSendingImage: isSendingImage,
+                    hasEmotes: !viewModel.inlineEmotes.isEmpty,
+                    showPhotos: { isComposerFocused = false; showsPhotoPicker = true },
+                    showEmotes: { isComposerFocused = false; showsEmotePicker = true },
+                    send: { Task { await send(using: proxy) } }
+                )
+            } else {
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 10) {
+                        Menu {
+                            Button {
+                                showsPhotoPicker = true
+                            } label: {
+                                Label("照片", systemImage: "photo")
                             }
-                        }
-                        .frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .disabled(isSending || isSendingImage)
-                    .accessibilityLabel("添加附件")
 
-                    TextField("发私信", text: $draft, axis: .vertical)
-                        .lineLimit(1 ... 4)
-                        .focused($isComposerFocused)
-                        .textFieldStyle(.plain)
-                        .submitLabel(.send)
-                        .onSubmit {
-                            Task { await send(using: proxy) }
+                            Button {
+                                showsEmotePicker = true
+                            } label: {
+                                Label("B站表情", systemImage: "face.smiling")
+                            }
+                            .disabled(viewModel.inlineEmotes.isEmpty)
+                        } label: {
+                            Group {
+                                if isSendingImage {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 17, weight: .semibold))
+                                }
+                            }
+                            .frame(width: 36, height: 36)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .frame(minHeight: 40, alignment: .center)
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
                         .disabled(isSending || isSendingImage)
-                        .overlay(alignment: .trailing) {
-                            if isSending {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .padding(.trailing, 12)
+                        .accessibilityLabel("添加附件")
+
+                        TextField("发私信", text: $draft, axis: .vertical)
+                            .lineLimit(1 ... 4)
+                            .focused($isComposerFocused)
+                            .textFieldStyle(.plain)
+                            .submitLabel(.send)
+                            .onSubmit {
+                                Task { await send(using: proxy) }
                             }
-                        }
-                    .biliRegularGlassEffect(
-                        interactive: true,
-                        in: Capsule(style: .continuous)
-                    )
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .frame(minHeight: 40, alignment: .center)
+                            .disabled(isSending || isSendingImage)
+                            .overlay(alignment: .trailing) {
+                                if isSending {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .padding(.trailing, 12)
+                                }
+                            }
+                        .biliRegularGlassEffect(
+                            interactive: true,
+                            in: Capsule(style: .continuous)
+                        )
+                    }
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 6)
+        .background {
+            if usesNativePresentation {
+                Rectangle()
+                    .fill(.bar)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
+        }
     }
 
     private var trimmedDraft: String {
@@ -1356,6 +1427,8 @@ private struct AccountPrivateMessageBubble: View {
     let message: AccountPrivateMessage
     let inlineEmotes: [String: BiliInlineEmote]
     let isMutating: Bool
+    var usesNativePresentation = false
+    var availableWidth: CGFloat? = nil
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1369,16 +1442,18 @@ private struct AccountPrivateMessageBubble: View {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 destination
 
-                HStack(spacing: 5) {
-                    if isMutating {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
+                if !usesNativePresentation || isMutating {
+                    HStack(spacing: 5) {
+                        if isMutating {
+                            ProgressView()
+                                .controlSize(.mini)
+                        }
 
-                    if let displayTime = message.displayTime {
-                        Text(displayTime)
-                            .appTypography(.tertiaryMetadata, fallback: .caption2)
-                            .foregroundStyle(.secondary)
+                        if !usesNativePresentation, let displayTime = message.displayTime {
+                            Text(displayTime)
+                                .appTypography(.tertiaryMetadata, fallback: .caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -1496,7 +1571,8 @@ private struct AccountPrivateMessageBubble: View {
     }
 
     private var messageTextWidth: CGFloat {
-        let maximumWidth: CGFloat = horizontalSizeClass == .regular ? 420 : 300
+        let preferredWidth: CGFloat = horizontalSizeClass == .regular ? 420 : 300
+        let maximumWidth = availableWidth.map { min(preferredWidth, max(44, $0 - 54 - 24 - 8)) } ?? preferredWidth
         var measuredText = message.text
         for token in inlineEmotes.keys where measuredText.contains(token) {
             measuredText = measuredText.replacingOccurrences(of: token, with: "口")

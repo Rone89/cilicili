@@ -7,6 +7,7 @@ enum UITestFixtureScenario: String {
     case danmakuBenchmark
     case searchScroll
     case rootTabScroll
+    case privateMessage
     case libraryManagement
     case commentSpacing
     case dynamicReplies

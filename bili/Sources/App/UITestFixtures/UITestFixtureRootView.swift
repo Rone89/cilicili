@@ -18,6 +18,8 @@ struct UITestFixtureRootView: View {
                 UITestSearchScrollFixtureView(api: dependencies.api)
             case .rootTabScroll:
                 UITestRootTabScrollFixtureView(dependencies: dependencies)
+            case .privateMessage:
+                UITestPrivateMessageFixtureView()
             case .libraryManagement:
                 UITestLibraryManagementFixtureView()
             case .commentSpacing:
