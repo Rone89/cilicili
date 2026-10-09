@@ -515,7 +515,19 @@ struct AccountPrivateMessageConversationView: View {
                 await synchronizeLoop(using: proxy)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                composer(using: proxy)
+                if !usesNativePresentation {
+                    composer(using: proxy)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
+                }
+            }
+            .safeAreaBar(edge: .bottom, spacing: 0) {
+                if usesNativePresentation {
+                    composer(using: proxy)
+                        .scenePadding(.horizontal)
+                        .padding(.vertical, 8)
+                }
             }
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
@@ -982,16 +994,6 @@ struct AccountPrivateMessageConversationView: View {
                         )
                     }
                 }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .background {
-            if usesNativePresentation {
-                Rectangle()
-                    .fill(.bar)
-                    .ignoresSafeArea(.container, edges: .bottom)
             }
         }
     }
