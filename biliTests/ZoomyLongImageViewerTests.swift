@@ -295,6 +295,26 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testOriginalViewerTargetUsesSourceLikeResolutionWithinMemoryBudget() {
+        XCTAssertEqual(
+            ZoomyViewerImageSizing.originalTargetPixelSize(widthToHeightAspectRatio: 4.0 / 3.0),
+            5_656
+        )
+        XCTAssertEqual(
+            ZoomyViewerImageSizing.originalTargetPixelSize(widthToHeightAspectRatio: 3.0 / 4.0),
+            5_656
+        )
+        XCTAssertEqual(
+            ZoomyViewerImageSizing.originalTargetPixelSize(widthToHeightAspectRatio: 0.1),
+            15_491
+        )
+        XCTAssertEqual(
+            ZoomyViewerImageSizing.originalTargetPixelSize(widthToHeightAspectRatio: nil),
+            RemoteImageDecodeSizing.highQualityViewerMaximumPixelSize
+        )
+    }
+
     private func makeImage(size: CGSize) -> UIImage {
         UIGraphicsImageRenderer(size: size).image { context in
             UIColor.white.setFill()

@@ -83,6 +83,7 @@ nonisolated enum ZoomyViewerInteractionPolicy {
 nonisolated enum ZoomyViewerImageSizing {
     static let longImageHeightToWidthThreshold: CGFloat = 2.6
     private static let maximumDecodedPixelCount: CGFloat = 12_000_000
+    private static let originalMaximumDecodedPixelCount: CGFloat = 24_000_000
     private static let preferredDecodedWidth: CGFloat = 1_200
     private static let maximumDecodedDimension: CGFloat = 16_000
 
@@ -132,6 +133,29 @@ nonisolated enum ZoomyViewerImageSizing {
         let decodedHeight = min(maximumDecodedDimension, decodedWidth * heightToWidthRatio)
         return max(baseTargetPixelSize, Int(decodedHeight.rounded(.up)))
     }
+
+    static func originalTargetPixelSize(widthToHeightAspectRatio: CGFloat?) -> Int {
+        guard let widthToHeightAspectRatio,
+              widthToHeightAspectRatio > 0
+        else {
+            return Int(maximumDecodedDimension)
+        }
+
+        let longestSideUnderPixelBudget: CGFloat
+        if widthToHeightAspectRatio >= 1 {
+            longestSideUnderPixelBudget = sqrt(
+                originalMaximumDecodedPixelCount * widthToHeightAspectRatio
+            )
+        } else {
+            longestSideUnderPixelBudget = sqrt(
+                originalMaximumDecodedPixelCount / widthToHeightAspectRatio
+            )
+        }
+        return max(
+            1,
+            Int(min(maximumDecodedDimension, longestSideUnderPixelBudget).rounded(.down))
+        )
+    }
 }
 
 struct ZoomyFullScreenImageViewer: View {
@@ -158,6 +182,7 @@ struct ZoomyFullScreenImageViewer: View {
     @State private var toastMessage: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var areActionControlsVisible = true
+    @State private var originalRequestedItemIDs = Set<String>()
 
     init(
         initialImage: UIImage?,
@@ -278,6 +303,16 @@ struct ZoomyFullScreenImageViewer: View {
             }
             .disabled(!canExportSelectedMedia || isSavingImage || isPreparingShare)
 
+            if canRequestOriginalSelectedMedia {
+                Button("查看原图") {
+                    requestOriginalSelectedMedia()
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .accessibilityLabel("查看原图")
+            }
+
             if items.count > 1 {
                 if interactionExperimentEnabled,
                    ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: items.count) {
@@ -342,6 +377,7 @@ struct ZoomyFullScreenImageViewer: View {
                 item: item,
                 initialImage: initialImage(for: item),
                 targetPixelSize: targetPixelSize,
+                loadsOriginalImage: originalRequestedItemIDs.contains(item.id),
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: item.id == selectedItemID,
                 isPresented: $isPresented,
@@ -362,6 +398,7 @@ struct ZoomyFullScreenImageViewer: View {
                 item: ZoomyImagePreviewItem(id: url.absoluteString, viewerURL: url),
                 initialImage: initialImage,
                 targetPixelSize: targetPixelSize,
+                loadsOriginalImage: originalRequestedItemIDs.contains(url.absoluteString),
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: true,
                 isPresented: $isPresented,
@@ -398,6 +435,20 @@ struct ZoomyFullScreenImageViewer: View {
             return selectedSnapshot?.isFinal == true
         }
         return selectedItem.displayURL != nil || selectedSnapshot?.isFinal == true
+    }
+
+    private var canRequestOriginalSelectedMedia: Bool {
+        interactionExperimentEnabled
+            && !selectedItem.needsOriginalMedia
+            && selectedItem.displayURL != nil
+            && selectedSnapshot?.isOriginalQuality != true
+            && !originalRequestedItemIDs.contains(selectedItem.id)
+    }
+
+    private func requestOriginalSelectedMedia() {
+        guard canRequestOriginalSelectedMedia else { return }
+        originalRequestedItemIDs.insert(selectedItem.id)
+        showToast("正在加载原图")
     }
 
     private func item(withID id: String) -> ZoomyImagePreviewItem? {
@@ -634,6 +685,7 @@ private struct ZoomyViewerImagePage: View {
     let item: ZoomyImagePreviewItem
     let initialImage: UIImage?
     let targetPixelSize: Int
+    let loadsOriginalImage: Bool
     let interactionExperimentEnabled: Bool
     let isSelected: Bool
     @Binding var isPresented: Bool
@@ -648,6 +700,7 @@ private struct ZoomyViewerImagePage: View {
         item: ZoomyImagePreviewItem,
         initialImage: UIImage?,
         targetPixelSize: Int,
+        loadsOriginalImage: Bool,
         interactionExperimentEnabled: Bool,
         isSelected: Bool,
         isPresented: Binding<Bool>,
@@ -659,6 +712,7 @@ private struct ZoomyViewerImagePage: View {
         self.item = item
         self.initialImage = initialImage
         self.targetPixelSize = targetPixelSize
+        self.loadsOriginalImage = loadsOriginalImage
         self.interactionExperimentEnabled = interactionExperimentEnabled
         self.isSelected = isSelected
         _isPresented = isPresented
@@ -734,14 +788,15 @@ private struct ZoomyViewerImagePage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: "\(item.displayURL?.absoluteString ?? item.id)|\(isSelected)|\(retryRequestID)") {
+        .task(id: "\(item.displayURL?.absoluteString ?? item.id)|\(isSelected)|\(loadsOriginalImage)|\(retryRequestID)") {
             guard isSelected, isPresented else {
                 loader.cancel()
                 return
             }
             await loader.load(
                 item: item,
-                targetPixelSize: effectiveTargetPixelSize
+                targetPixelSize: effectiveTargetPixelSize,
+                marksOriginalQuality: loadsOriginalImage && !item.needsOriginalMedia
             )
         }
         .onAppear {
@@ -765,9 +820,15 @@ private struct ZoomyViewerImagePage: View {
             guard image.size.width > 0, image.size.height > 0 else { return nil }
             return image.size.width / image.size.height
         }
+        let resolvedAspectRatio = item.resolvedAspectRatio ?? initialAspectRatio
+        if loadsOriginalImage, !item.needsOriginalMedia {
+            return ZoomyViewerImageSizing.originalTargetPixelSize(
+                widthToHeightAspectRatio: resolvedAspectRatio
+            )
+        }
         return ZoomyViewerImageSizing.targetPixelSize(
             baseTargetPixelSize: targetPixelSize,
-            widthToHeightAspectRatio: item.resolvedAspectRatio ?? initialAspectRatio
+            widthToHeightAspectRatio: resolvedAspectRatio
         )
     }
 
@@ -876,7 +937,8 @@ private final class ZoomyViewerImageLoader: ObservableObject {
 
     func load(
         item: ZoomyImagePreviewItem,
-        targetPixelSize: Int
+        targetPixelSize: Int,
+        marksOriginalQuality: Bool = false
     ) async {
         cancel()
         loadGeneration &+= 1
@@ -887,7 +949,7 @@ private final class ZoomyViewerImageLoader: ObservableObject {
             loadFailed = true
             return
         }
-        let loadIdentity = "\(url.absoluteString)|\(targetPixelSize)"
+        let loadIdentity = "\(url.absoluteString)|\(targetPixelSize)|\(marksOriginalQuality)"
         if finalLoadIdentity == loadIdentity, snapshot?.isFinal == true {
             isLoadingFinalMedia = false
             loadFailed = false
@@ -913,7 +975,7 @@ private final class ZoomyViewerImageLoader: ObservableObject {
                     url: url,
                     targetPixelSize: targetPixelSize,
                     decodePolicy: .highQualityViewer
-                )
+                )?.markingOriginalQuality(marksOriginalQuality)
             }
 
             guard !Task.isCancelled else { return }
@@ -943,7 +1005,11 @@ private final class ZoomyViewerImageLoader: ObservableObject {
             await MainActor.run {
                 guard self?.loadGeneration == generation else { return }
                 self?.setSnapshot(
-                    ZoomyViewerMediaSnapshot(image: fallbackImage, isFinal: true),
+                    ZoomyViewerMediaSnapshot(
+                        image: fallbackImage,
+                        isFinal: true,
+                        isOriginalQuality: marksOriginalQuality
+                    ),
                     loadIdentity: loadIdentity
                 )
             }
@@ -982,6 +1048,7 @@ private struct ZoomyViewerMediaSnapshot {
     let isAnimatedGIF: Bool
     let isLivePhoto: Bool
     let isFinal: Bool
+    let isOriginalQuality: Bool
 
     init(
         image: UIImage?,
@@ -990,7 +1057,8 @@ private struct ZoomyViewerMediaSnapshot {
         livePhoto: PHLivePhoto? = nil,
         isAnimatedGIF: Bool = false,
         isLivePhoto: Bool = false,
-        isFinal: Bool = true
+        isFinal: Bool = true,
+        isOriginalQuality: Bool = false
     ) {
         self.image = image
         self.imageFileURL = imageFileURL
@@ -999,6 +1067,7 @@ private struct ZoomyViewerMediaSnapshot {
         self.isAnimatedGIF = isAnimatedGIF
         self.isLivePhoto = isLivePhoto || liveVideoFileURL != nil
         self.isFinal = isFinal
+        self.isOriginalQuality = isOriginalQuality
     }
 
     func replacingImageFileURL(_ imageFileURL: URL) -> Self {
@@ -1009,7 +1078,22 @@ private struct ZoomyViewerMediaSnapshot {
             livePhoto: livePhoto,
             isAnimatedGIF: isAnimatedGIF,
             isLivePhoto: isLivePhoto,
-            isFinal: true
+            isFinal: true,
+            isOriginalQuality: isOriginalQuality
+        )
+    }
+
+    func markingOriginalQuality(_ isOriginalQuality: Bool) -> Self {
+        guard self.isOriginalQuality != isOriginalQuality else { return self }
+        return Self(
+            image: image,
+            imageFileURL: imageFileURL,
+            liveVideoFileURL: liveVideoFileURL,
+            livePhoto: livePhoto,
+            isAnimatedGIF: isAnimatedGIF,
+            isLivePhoto: isLivePhoto,
+            isFinal: isFinal,
+            isOriginalQuality: isOriginalQuality
         )
     }
 
@@ -1031,7 +1115,8 @@ private struct ZoomyViewerMediaSnapshot {
             livePhoto: livePhoto,
             isAnimatedGIF: isAnimatedGIF,
             isLivePhoto: isLivePhoto,
-            isFinal: isFinal
+            isFinal: isFinal,
+            isOriginalQuality: isOriginalQuality
         )
     }
 }
