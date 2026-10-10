@@ -152,15 +152,23 @@ struct RootTabView: View {
     }
 
     private var rootTabBar: some View {
-        TabView(selection: tabSelection) {
-            ForEach(displayedRootTabs) { tab in
-                Tab(value: tab, role: tab == .search ? .search : nil) {
-                    rootTabNavigationStack(
-                        for: tab,
-                        detailPath: rootNavigationPathBinding(for: tab)
-                    )
-                } label: {
-                    Label(tab.title, systemImage: tab.systemImage)
+        Group {
+            if displayedRootTabs == [.home] {
+                // There is no tab switcher in the one-page configuration. A plain
+                // navigation stack cannot resurrect a tab bar during a pop.
+                rootTabNavigationStack(for: .home, detailPath: $homeNavigationPath)
+            } else {
+                TabView(selection: tabSelection) {
+                    ForEach(displayedRootTabs) { tab in
+                        Tab(value: tab, role: tab == .search ? .search : nil) {
+                            rootTabNavigationStack(
+                                for: tab,
+                                detailPath: rootNavigationPathBinding(for: tab)
+                            )
+                        } label: {
+                            Label(tab.title, systemImage: tab.systemImage)
+                        }
+                    }
                 }
             }
         }

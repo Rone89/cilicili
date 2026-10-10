@@ -4,6 +4,25 @@ import XCTest
 final class RootTabScrollUITests: XCTestCase {
     private let tabs = ["首页", "动态", "直播", "搜索", "我的"]
 
+    func testSingleHomeHasNoTabBarAfterReturningFromMine() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+            "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES"
+        ]
+        app.launch()
+        let more = app.buttons["更多页面"]
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        XCTAssertEqual(app.tabBars.count, 0)
+        more.tap()
+        app.buttons["我的"].tap()
+        let back = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.tabBars.count, 0)
+    }
+
     func testRootTabReselectionScrollsToTopWithoutRefresh() {
         verifyReselection(arguments: [])
     }
