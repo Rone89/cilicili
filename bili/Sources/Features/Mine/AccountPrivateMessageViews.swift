@@ -1555,7 +1555,6 @@ private struct AccountPrivateMessageBubble: View {
             fallbackURL: originalURL,
             viewerURL: originalURL,
             targetPixelSize: 480,
-            viewerTargetPixelSize: 2_400,
             cornerRadius: 10,
             contentMode: .fill,
             phasePlaceholder: { phase in
