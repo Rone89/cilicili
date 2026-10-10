@@ -39,7 +39,7 @@ private struct NavigationToolbarSearch: ViewModifier {
 
     private var availableWidth: CGFloat {
         let buttonCount = (hasBackButton ? 1 : 0) + max(0, trailingButtonCount)
-        let horizontalMargins: CGFloat = 32
+        let horizontalMargins: CGFloat = 20 * 2
         let buttonWidthAndSpacing: CGFloat = 56
         return max(120, (pageWidth > 0 ? pageWidth : 360)
                    - horizontalMargins - CGFloat(buttonCount) * buttonWidthAndSpacing)
