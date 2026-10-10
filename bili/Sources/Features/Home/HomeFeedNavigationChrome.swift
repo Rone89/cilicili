@@ -208,9 +208,8 @@ private struct HomeProfileButtonContent: View {
                     .resizable()
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 32, height: 32)
+            .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
             .clipShape(Circle())
-            .padding(3)
             .overlay {
                 if sessionStore.isLoggedIn && hasUnread {
                     Circle().strokeBorder(appTintColor, lineWidth: 2)
