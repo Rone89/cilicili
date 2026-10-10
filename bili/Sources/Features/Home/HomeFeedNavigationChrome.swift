@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HomeFeedNavigationChrome: ViewModifier {
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
@@ -18,16 +19,8 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 ToolbarItem(placement: .principal) {
                     Group {
                         if usesAvatarToolbar {
-                            Picker("首页内容", selection: Binding(
-                                get: { viewModel.mode },
-                                set: { switchMode($0) }
-                            )) {
-                                ForEach(HomeFeedMode.allCases, id: \.self) { mode in
-                                    Text(mode.title).tag(mode)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 156)
+                            HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
+                                .frame(width: 156, height: HomeToolbarLayout.controlHeight)
                             .accessibilityIdentifier("home.feed.modePicker")
                         } else {
                             navigationTitle
@@ -53,7 +46,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
                     .accessibilityHidden(hidesNavigationChrome)
                     .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+                .sharedBackgroundVisibility(usesAvatarToolbar ? .hidden : toolbarItemBackgroundVisibility)
                 ToolbarItem(placement: .topBarTrailing) {
                     accountMessageButton
                         .opacity(navigationChromeOpacity)
@@ -225,8 +218,56 @@ private struct HomeProfileButtonContent: View {
             }
             .accessibilityHidden(true)
         }
+        .buttonStyle(.plain)
+        .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+        .glassEffect(.regular.interactive(), in: Circle())
         .accessibilityLabel("个人空间")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
+    }
+}
+
+private enum HomeToolbarLayout {
+    static let controlHeight: CGFloat = 44
+}
+
+/// Give the native segmented control the same actual bounds as a standard toolbar button.
+private struct HomeToolbarModePicker: UIViewRepresentable {
+    let mode: HomeFeedMode
+    let onSelectMode: (HomeFeedMode) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelectMode: onSelectMode)
+    }
+
+    func makeUIView(context: Context) -> UISegmentedControl {
+        let control = UISegmentedControl(items: HomeFeedMode.allCases.map(\.title))
+        control.addTarget(context.coordinator, action: #selector(Coordinator.selectionChanged(_:)), for: .valueChanged)
+        control.accessibilityLabel = "首页内容"
+        control.accessibilityIdentifier = "home.feed.modePicker"
+        return control
+    }
+
+    func updateUIView(_ control: UISegmentedControl, context: Context) {
+        context.coordinator.onSelectMode = onSelectMode
+        control.selectedSegmentIndex = HomeFeedMode.allCases.firstIndex(of: mode) ?? 0
+        control.isEnabled = context.environment.isEnabled
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UISegmentedControl, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: HomeToolbarLayout.controlHeight)
+    }
+
+    final class Coordinator: NSObject {
+        var onSelectMode: (HomeFeedMode) -> Void
+
+        init(onSelectMode: @escaping (HomeFeedMode) -> Void) {
+            self.onSelectMode = onSelectMode
+        }
+
+        @objc func selectionChanged(_ control: UISegmentedControl) {
+            guard HomeFeedMode.allCases.indices.contains(control.selectedSegmentIndex) else { return }
+            onSelectMode(HomeFeedMode.allCases[control.selectedSegmentIndex])
+        }
     }
 }
