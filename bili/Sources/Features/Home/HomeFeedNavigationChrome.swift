@@ -266,7 +266,7 @@ private struct HomeProfileButtonContent: View {
         AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
             Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
         }
-        .frame(width: HomeToolbarLayout.controlHeight - 2, height: HomeToolbarLayout.controlHeight - 2)
+        .frame(width: HomeToolbarLayout.controlHeight - 4, height: HomeToolbarLayout.controlHeight - 4)
         .clipShape(Circle())
         .accessibilityHidden(true)
     }

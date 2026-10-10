@@ -63,6 +63,7 @@ struct VideoDetailView: View {
                 holder.viewModel?.markRelatedVideoNavigation()
             }
         }
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationHistoryTitle(seedVideo.title)
         .environment(\.navigationHistoryBackAction, historyBackAction)
     }
