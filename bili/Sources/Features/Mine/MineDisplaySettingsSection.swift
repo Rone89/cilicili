@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MineDisplaySettingsSection: View {
     @ObservedObject var libraryStore: LibraryStore
-    @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
+    @AppStorage(MediaContentShadowSettings.storageKey) private var imageShadowEnabled = true
     @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
     private var commentLongPressActionsEnabled = false
 
@@ -119,9 +119,9 @@ struct MineDisplaySettingsSection: View {
 
             Toggle(isOn: $imageShadowEnabled) {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("动态与评论图片阴影", systemImage: "square.on.square")
+                    MineSettingsLabel("图片与视频封面阴影", systemImage: "square.on.square")
 
-                    Text("控制动态和评论图片的投影；关闭后仍保留图片边缘描边。自适应多图本身没有投影。")
+                    Text("控制动态、评论图片和视频封面卡片的投影；关闭后仍保留边缘描边。自适应多图本身没有投影。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

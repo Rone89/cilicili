@@ -180,7 +180,7 @@ private struct UploaderSeasonSeriesCover: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .mediaShadow(.subtle)
+        .mediaContentShadow(.subtle)
     }
 }
 

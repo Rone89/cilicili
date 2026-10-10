@@ -1,6 +1,7 @@
 import SwiftUI
 
-enum DynamicImageShadowSettings {
+enum MediaContentShadowSettings {
+    // Keep the original key so existing image shadow preferences also apply to video covers.
     static let storageKey = "cc.bili.dynamicImageShadowEnabled.v1"
 }
 
@@ -76,7 +77,21 @@ private struct MediaShadowModifier: ViewModifier {
     }
 }
 
+private struct MediaContentShadowModifier: ViewModifier {
+    @AppStorage(MediaContentShadowSettings.storageKey) private var shadowEnabled = true
+    let level: MediaShadowLevel
+    let opacityScale: Double
+
+    func body(content: Content) -> some View {
+        content.mediaShadow(level, opacityScale: shadowEnabled ? opacityScale : 0)
+    }
+}
+
 extension View {
+    func mediaContentShadow(_ level: MediaShadowLevel = .regular, opacityScale: Double = 1) -> some View {
+        modifier(MediaContentShadowModifier(level: level, opacityScale: opacityScale))
+    }
+
     func mediaShadow(_ level: MediaShadowLevel = .regular) -> some View {
         modifier(MediaShadowModifier(level: level, opacityScale: 1))
     }
@@ -176,7 +191,7 @@ private struct VideoCoverSurfaceModifier<CoverShape: InsettableShape>: ViewModif
     @ViewBuilder
     private func styledSurface<Surface: View>(_ surface: Surface) -> some View {
         if let shadowLevel {
-            surface.mediaShadow(shadowLevel, opacityScale: shadowOpacityScale)
+            surface.mediaContentShadow(shadowLevel, opacityScale: shadowOpacityScale)
         } else {
             surface
         }

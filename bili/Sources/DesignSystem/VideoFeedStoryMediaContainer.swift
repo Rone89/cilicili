@@ -20,7 +20,7 @@ struct VideoFeedStoryMediaContainer: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color(.separator).opacity(0.10), lineWidth: 0.6)
         }
-        .mediaShadow(.regular)
+        .mediaContentShadow(.regular)
     }
 
     private var cover: some View {

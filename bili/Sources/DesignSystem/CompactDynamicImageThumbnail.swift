@@ -7,7 +7,7 @@ struct CompactDynamicImageThumbnail: View {
     let previewGroup: ZoomyImagePreviewGroup
     let imageCount: Int
     let placeholderFill: Color
-    @AppStorage(DynamicImageShadowSettings.storageKey) private var imageShadowEnabled = true
+    @AppStorage(MediaContentShadowSettings.storageKey) private var imageShadowEnabled = true
     @State private var thumbnailShadowOpacityScale = 1.0
     private let normalizedURLString: String?
     private let thumbnailSize: CGSize

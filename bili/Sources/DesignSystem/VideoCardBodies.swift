@@ -27,7 +27,7 @@ struct VideoCardElevatedBody<Cover: View>: View {
                 .stroke(Color(.separator).opacity(0.10), lineWidth: 0.5)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .mediaShadow(.subtle)
+        .mediaContentShadow(.subtle)
     }
 }
 
@@ -277,6 +277,7 @@ private struct CompactVideoResultSurfaceModifier: ViewModifier {
 
 private struct VideoCardBorderedSurfaceModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(MediaContentShadowSettings.storageKey) private var shadowEnabled = true
     let cornerRadius: CGFloat
     let showsShadow: Bool
 
@@ -292,8 +293,8 @@ private struct VideoCardBorderedSurfaceModifier: ViewModifier {
             .overlay {
                 shape.strokeBorder(borderColor, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(showsShadow ? shadowOpacity : 0), radius: 18, x: 0, y: 10)
-            .shadow(color: .black.opacity(showsShadow ? 0.06 : 0), radius: 6, x: 0, y: 2)
+            .shadow(color: .black.opacity(showsShadow && shadowEnabled ? shadowOpacity : 0), radius: 18, x: 0, y: 10)
+            .shadow(color: .black.opacity(showsShadow && shadowEnabled ? 0.06 : 0), radius: 6, x: 0, y: 2)
     }
 
     private var borderColor: Color {
