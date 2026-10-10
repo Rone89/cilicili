@@ -34,7 +34,7 @@ struct MineView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .searchable(text: $searchText, isPresented: $isSearchPresented,
-                    placement: .toolbarPrincipal,
+                    placement: .toolbar,
                     prompt: "搜索我的页功能")
         .integratedNavigationSearch()
         .searchFocused(isSearchFocused)

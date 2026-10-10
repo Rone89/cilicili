@@ -40,17 +40,6 @@ struct UITestSearchScrollFixtureView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory(
-            isEnabled: selectedTab == .search && path.isEmpty && !accessoryStore.usesKeyboardControls
-        ) {
-            SearchTabBottomAccessory(store: accessoryStore)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if selectedTab == .search && path.isEmpty && isSearchFocused {
-                SearchTabBottomAccessory(store: accessoryStore)
-                    .padding(.vertical, 8)
-            }
-        }
         .onChange(of: selectedTab) { _, tab in
             if tab != .search {
                 preservesSearchResultsOnDismissal = true
@@ -63,12 +52,14 @@ struct UITestSearchScrollFixtureView: View {
         NavigationStack(path: $path) {
             SearchContentView(viewModel: viewModel, showsHotSearches: true, accessoryStore: accessoryStore)
                 .toolbarTitleDisplayMode(.inline)
-                .navigationTitle("搜索")
+                .navigationTitle("")
                 .searchable(
                     text: searchTextBinding,
                     isPresented: $isSearchPresented,
+                    placement: .toolbar,
                     prompt: "搜索"
                 )
+                .integratedNavigationSearch()
                 .searchFocused($isSearchFocused)
                 .onChange(of: viewModel.query) { _, query in
                     searchText = query

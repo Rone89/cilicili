@@ -39,33 +39,15 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["搜索类型"].isHittable)
-        XCTAssertTrue(app.buttons["排序方式"].isHittable)
-        XCTAssertEqual(app.buttons.matching(identifier: "搜索类型").count, 1)
-        XCTAssertEqual(app.buttons.matching(identifier: "排序方式").count, 1)
-        let keyboard = app.keyboards.firstMatch
-        let filtersAboveKeyboard = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                let bottom = min(keyboard.frame.minY, app.frame.maxY)
-                return app.buttons["搜索类型"].frame.maxY <= bottom
-                    && app.buttons["排序方式"].frame.maxY <= bottom
-                    && app.buttons["搜索类型"].frame.maxX < app.buttons["排序方式"].frame.minX
-            },
-            object: nil
-        )
-        let keyboardLayoutResult = XCTWaiter.wait(for: [filtersAboveKeyboard], timeout: 5)
         let activeScreenshot = XCTAttachment(screenshot: app.screenshot())
         activeScreenshot.name = "Native search presentation"
         activeScreenshot.lifetime = .keepAlways
         add(activeScreenshot)
-        XCTAssertEqual(keyboardLayoutResult, .completed,
-                       "keyboard: \(keyboard.frame), app: \(app.frame), scope: \(app.buttons["搜索类型"].frame)")
         search.typeText(" native\n")
         XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertEqual(app.searchFields.count, 1)
-        XCTAssertTrue(app.buttons["搜索类型"].isHittable)
-        XCTAssertTrue(app.buttons["排序方式"].isHittable)
+        assertIntegratedSearchRow(in: app)
 
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
@@ -96,8 +78,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
         app.buttons["fixture.search.back"].tap()
         XCTAssertTrue(app.staticTexts["结果 1"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["搜索类型"].isHittable)
-        XCTAssertTrue(app.buttons["排序方式"].isHittable)
+        assertIntegratedSearchRow(in: app)
         // The restored scroll offset can minimize the native search toolbar.
         if !search.exists { app.scrollViews.firstMatch.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout: 3))
@@ -115,8 +96,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         app.scrollViews.firstMatch.swipeUp()
-        XCTAssertTrue(app.buttons["搜索类型"].isHittable)
-        XCTAssertTrue(app.buttons["排序方式"].isHittable)
+        assertIntegratedSearchRow(in: app)
 
         app.scrollViews.firstMatch.swipeDown()
 
@@ -163,6 +143,49 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let first = app.staticTexts["新结果 1"]
         XCTAssertTrue(first.waitForExistence(timeout: 3))
         XCTAssertTrue(first.isHittable)
+    }
+
+    func testIntegratedSearchRemainsInToolbarAfterPresentationAndResultUpdates() {
+        let app = launchFixture()
+        assertIntegratedSearchRow(in: app)
+        let search = app.searchFields.firstMatch
+        for index in 1...3 {
+            search.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            search.typeText(" row\(index)\n")
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            assertIntegratedSearchRow(in: app)
+            search.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch
+            XCTAssertTrue(close.waitForExistence(timeout: 3))
+            close.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            assertIntegratedSearchRow(in: app)
+        }
+        app.buttons["search.filters.menu"].tap()
+        app.buttons["排序方式"].tap()
+        app.buttons["最新发布"].tap()
+        assertIntegratedSearchRow(in: app)
+        app.tabBars.buttons["首页"].tap()
+        app.tabBars.buttons["搜索"].tap()
+        assertIntegratedSearchRow(in: app)
+    }
+
+    private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let search = app.searchFields.firstMatch
+        let filters = app.buttons["search.filters.menu"]
+        XCTAssertTrue(search.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertTrue(filters.waitForExistence(timeout: 3), file: file, line: line)
+        let rowAligned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            abs(search.frame.midY - filters.frame.midY) < 8
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [rowAligned], timeout: 5), .completed,
+                       "search: \(search.frame), filters: \(filters.frame)", file: file, line: line)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Integrated search resting row"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     private func launchFixture() -> XCUIApplication {
