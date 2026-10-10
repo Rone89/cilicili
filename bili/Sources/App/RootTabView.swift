@@ -219,7 +219,7 @@ struct RootTabView: View {
                 }
                 .navigationDestination(for: AppTab.self) { destination in
                     rootTabContent(for: destination, detailPath: detailPath)
-                        .navigationTitle(destination.title)
+                        .navigationTitle(destination == .search || destination == .mine ? "" : destination.title)
                         .toolbarTitleDisplayMode(.inline)
                         .toolbarVisibility(.hidden, for: .tabBar)
 
@@ -305,7 +305,7 @@ struct RootTabView: View {
             .searchable(
                 text: rootSearchQueryBinding,
                 isPresented: $isRootSearchPresented,
-                placement: .navigationBarDrawer(displayMode: .always),
+                placement: .toolbarPrincipal,
                 prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
             )
             .searchFocused($isRootSearchFocused)
@@ -316,7 +316,7 @@ struct RootTabView: View {
     }
 
     private func rootNavigationTitle(for tab: AppTab) -> String {
-        if tab == .home { return "" }
+        if tab == .home || tab == .search || tab == .mine { return "" }
         return rootNavigationTitleHiddenByTab[tab] == true ? "" : tab.title
     }
 
