@@ -5003,8 +5003,9 @@ actor RemoteImageCache {
     static let shared = RemoteImageCache()
 
     private let cache = NSCache<NSURL, UIImage>()
+    private let sourcePixelSizes = NSCache<NSString, NSValue>()
     private enum ImageTaskResult {
-        case image(UIImage)
+        case image(UIImage, sourcePixelSize: CGSize?)
         case failed
         case cancelled
     }
@@ -5036,6 +5037,7 @@ actor RemoteImageCache {
         session = BiliURLSessionFactory.makeImageSession()
         let initialBudget = RemoteImageAdaptiveBudget.current
         appliedBudget = initialBudget
+        sourcePixelSizes.countLimit = 2_048
         cache.countLimit = initialBudget.memoryEntryLimit
         cache.totalCostLimit = initialBudget.memoryCostLimit
         BiliURLSessionFactory.imageURLCache.memoryCapacity = initialBudget.urlCacheMemoryCapacity
@@ -5097,6 +5099,12 @@ actor RemoteImageCache {
             misses += 1
         }
         return nil
+    }
+
+    func sourcePixelSize(for url: URL) -> CGSize? {
+        sourcePixelSizes.object(
+            forKey: url.absoluteString.biliImageCacheIdentityURLString() as NSString
+        )?.cgSizeValue
     }
 
     func clearDiskCache() {
@@ -5287,7 +5295,7 @@ actor RemoteImageCache {
             }
             if Task.isCancelled { return nil }
             switch result {
-            case .image(let image):
+            case .image(let image, _):
                 return image
             case .failed:
                 continue
@@ -5324,7 +5332,7 @@ actor RemoteImageCache {
             if RemoteImageDiagnosticsSettings.isRecordingEnabled {
                 hits += 1
             }
-            return .image(cached)
+            return .image(cached, sourcePixelSize: sourcePixelSize(for: url))
         }
         guard !isTemporarilyFailed(key) else {
             if RemoteImageDiagnosticsSettings.isRecordingEnabled {
@@ -5373,7 +5381,10 @@ actor RemoteImageCache {
     ) {
         guard inFlight[key]?.id == loadID else { return }
         inFlight[key] = nil
-        if case .image(let image) = result {
+        if case .image(let image, let sourcePixelSize) = result {
+            if let sourcePixelSize {
+                sourcePixelSizes.setObject(NSValue(cgSize: sourcePixelSize), forKey: key.identity as NSString)
+            }
             failedLoads[key] = nil
             cache.setObject(image, forKey: key.nsKey, cost: image.memoryCost)
             storedKeys.insert(key)
@@ -5490,8 +5501,11 @@ actor RemoteImageCache {
                     RemoteImageCDNHealthMemory.shared.recordDecodeFailure(for: url)
                     return .failed
                 }
-                guard !decoded.hasAlphaChannel else { return .image(decoded) }
-                return .image(decoded.preparingForDisplay() ?? decoded)
+                let sourcePixelSize = UIImage.sourcePixelSize(data: data)
+                guard !decoded.hasAlphaChannel else {
+                    return .image(decoded, sourcePixelSize: sourcePixelSize)
+                }
+                return .image(decoded.preparingForDisplay() ?? decoded, sourcePixelSize: sourcePixelSize)
             } catch {
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled {
                     RemoteImageCDNHealthMemory.shared.recordCancellation(for: url)
@@ -5739,6 +5753,16 @@ private struct DiskRequestEntry {
 }
 
 extension UIImage {
+    nonisolated static func sourcePixelSize(data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.doubleValue > 0, height.doubleValue > 0
+        else { return nil }
+        return CGSize(width: width.doubleValue, height: height.doubleValue)
+    }
+
     nonisolated static func downsampledImage(data: Data, scale: CGFloat, targetPixelSize: Int?) -> UIImage? {
         let options: [CFString: Any] = [
             kCGImageSourceShouldCache: false,

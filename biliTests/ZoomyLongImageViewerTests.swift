@@ -4,6 +4,37 @@ import UIKit
 
 final class ZoomyLongImageViewerTests: XCTestCase {
     @MainActor
+    func testOriginalUpgradeUsesSourceLongestSide() {
+        for size in [CGSize(width: 2400, height: 1600), CGSize(width: 1080, height: 1920),
+                     CGSize(width: 1600, height: 2400)] {
+            XCTAssertFalse(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
+                sourcePixelSize: size, baseTargetPixelSize: 2400))
+        }
+        XCTAssertTrue(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
+            sourcePixelSize: CGSize(width: 1600, height: 2401), baseTargetPixelSize: 2400))
+        XCTAssertTrue(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
+            sourcePixelSize: nil, baseTargetPixelSize: 2400))
+    }
+
+    @MainActor
+    func testSourceDimensionsSurviveDownsampling() throws {
+        let original = UIGraphicsImageRenderer(size: CGSize(width: 3000, height: 1500),
+            format: {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                return format
+            }()).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 3000, height: 1500))
+            }
+        let data = try XCTUnwrap(original.pngData())
+        XCTAssertEqual(UIImage.sourcePixelSize(data: data), CGSize(width: 3000, height: 1500))
+        let decoded = try XCTUnwrap(UIImage.downsampledImage(data: data, scale: 1, targetPixelSize: 2400))
+        XCTAssertLessThanOrEqual(try XCTUnwrap(decoded.cgImage).width, 2400)
+        XCTAssertNil(UIImage.sourcePixelSize(data: Data()))
+    }
+
+    @MainActor
     func testSharperCurrentImageIsNotReplacedBySmallerSameAspectImage() {
         XCTAssertTrue(
             ZoomyViewerImageQuality.shouldKeepCurrent(
