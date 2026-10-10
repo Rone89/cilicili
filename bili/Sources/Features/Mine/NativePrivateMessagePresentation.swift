@@ -94,9 +94,10 @@ struct NativePrivateMessageComposer: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+            .buttonStyle(.plain)
             .frame(width: 44, height: 44)
+            .foregroundStyle(tint)
+            .glassEffect(.regular.interactive(), in: Circle())
             .disabled(isBusy)
             .accessibilityLabel("添加附件")
             .accessibilityIdentifier("privateMessage.attachments")
@@ -109,8 +110,7 @@ struct NativePrivateMessageComposer: View {
                     .focused(focus)
                     .submitLabel(.return)
                     .padding(.leading, 14)
-                    .padding(.vertical, 6)
-                    .frame(minHeight: 44)
+                    .padding(.vertical, 11)
                     .disabled(isBusy)
                     .accessibilityLabel("私信内容")
                     .accessibilityIdentifier("privateMessage.composer")

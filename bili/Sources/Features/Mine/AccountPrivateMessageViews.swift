@@ -530,11 +530,15 @@ struct AccountPrivateMessageConversationView: View {
                         .padding(.bottom, 6)
                 }
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) {
+            .toolbar {
                 if usesNativePresentation {
-                    composer(using: proxy)
-                        .scenePadding(.horizontal)
-                        .padding(.vertical, 6)
+                    ToolbarItem(placement: .bottomBar) {
+                        composer(using: proxy)
+                            .frame(width: max(conversationWidth - 32, 44))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, isComposerFocused ? 12 : 0)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
                 }
             }
             .onChange(of: selectedPhoto) { _, item in

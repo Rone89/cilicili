@@ -78,6 +78,29 @@ final class NativePrivateMessageUITests: XCTestCase {
         XCTAssertFalse(retry.exists)
     }
 
+    func testNativeToolbarComposerFollowsKeyboardAndGrows() {
+        let app = launch(["--private-message-native"])
+        app.buttons["打开私信"].tap()
+        let send = app.buttons["privateMessage.send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5))
+        let input = app.descendants(matching: .any)["privateMessage.composer"].firstMatch
+        let attachments = app.buttons["privateMessage.attachments"]
+        XCTAssertEqual(attachments.frame.midY, send.frame.midY, accuracy: 1)
+        input.tap()
+        waitForKeyboard(app)
+        let singleLineHeight = input.frame.height
+        input.typeText("one\ntwo\nthree")
+        input.tap()
+        waitForKeyboard(app)
+        XCTAssertEqual(input.value as? String, "one\ntwo\nthree")
+        XCTAssertGreaterThan(input.frame.height, singleLineHeight)
+        XCTAssertTrue(send.isHittable)
+        XCTAssertLessThanOrEqual(send.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
+        XCTAssertEqual(attachments.frame.midY, send.frame.midY, accuracy: 1)
+        XCTAssertLessThanOrEqual(attachments.frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
+        screenshot(app, "native-private-message-toolbar-multiline")
+    }
+
     func testNativeShortConversationStaysTopAligned() {
         let app = launch(["--private-message-native"])
         app.buttons["打开私信"].tap()
