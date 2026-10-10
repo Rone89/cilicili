@@ -275,18 +275,34 @@ struct ZoomyFullScreenImageViewer: View {
     @ViewBuilder
     private var viewerPages: some View {
         if items.count > 1 {
-            TabView(selection: $selectedItemID) {
-                ForEach(items) { item in
-                    imagePage(for: item)
-                        .tag(item.id)
+            if interactionExperimentEnabled {
+                GeometryReader { geometry in
+                    // Extra paging width creates a gap without narrowing the visible image.
+                    pagedImages(horizontalInset: 8)
+                        .frame(width: geometry.size.width + 16, height: geometry.size.height)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
                 }
+                .ignoresSafeArea()
+                .clipped()
+            } else {
+                pagedImages(horizontalInset: 0)
+                    .ignoresSafeArea()
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea()
         } else {
             imagePage(for: items.first)
                 .ignoresSafeArea()
         }
+    }
+
+    private func pagedImages(horizontalInset: CGFloat) -> some View {
+        TabView(selection: $selectedItemID) {
+            ForEach(items) { item in
+                imagePage(for: item)
+                    .padding(.horizontal, horizontalInset)
+                    .tag(item.id)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
     }
 
     private var backgroundOpacity: Double {
