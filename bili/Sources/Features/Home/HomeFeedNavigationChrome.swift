@@ -61,7 +61,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
                                 } else {
                                     Menu {
                                         ForEach(hiddenTabs) { tab in
-                                            Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
+                                            Button(tab.title, systemImage: tab == .mine ? "slider.horizontal.3" : tab.systemImage) {
                                                 onOpenRootPage(tab)
                                             }
                                         }
