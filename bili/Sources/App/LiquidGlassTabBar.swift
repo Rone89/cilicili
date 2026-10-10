@@ -265,7 +265,7 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
     }
 }
 
-/// Shared by pages with a system TabBar or bottom toolbar.
+/// Shared by vertical scrolling pages, including independently presented sheets.
 /// The system owns the blur, accessibility adaptation and overlap detection.
 private struct BottomScrollEdgeBlurExperiment: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
@@ -321,6 +321,7 @@ struct TopScrollEdgeEffect: ViewModifier {
     @ViewBuilder
     private func nativeStyledContent(_ content: Content) -> some View {
         content.scrollEdgeEffectStyle(.soft, for: .top)
+            .nativeBottomScrollEdgeBlurExperiment()
     }
 }
 
