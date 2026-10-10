@@ -81,7 +81,7 @@ nonisolated enum ZoomyViewerInteractionPolicy {
 }
 
 nonisolated enum ZoomyViewerImageSizing {
-    static let defaultPreviewPixelSize = 1920
+    static let defaultPreviewPixelSize = 1600
     static let longImageHeightToWidthThreshold: CGFloat = 2.6
     private static let maximumDecodedPixelCount: CGFloat = 12_000_000
     private static let originalMaximumDecodedPixelCount: CGFloat = 24_000_000
