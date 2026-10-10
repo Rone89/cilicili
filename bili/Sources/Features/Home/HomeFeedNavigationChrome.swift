@@ -50,27 +50,31 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 .sharedBackgroundVisibility(usesAvatarToolbar ? .hidden : toolbarItemBackgroundVisibility)
                 ToolbarItem(placement: .topBarTrailing) {
                     Group {
-                        if let onOpenRootPage, !hiddenTabs.isEmpty {
-                            if hiddenTabs.count == 1, let tab = hiddenTabs.first {
-                                Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
-                                    onOpenRootPage(tab)
+                        if !hidesNavigationChrome {
+                            if let onOpenRootPage, !hiddenTabs.isEmpty {
+                                if hiddenTabs.count == 1, let tab = hiddenTabs.first {
+                                    Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
+                                        onOpenRootPage(tab)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .tint(.primary)
+                                } else {
+                                    Menu {
+                                        ForEach(hiddenTabs) { tab in
+                                            Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
+                                                onOpenRootPage(tab)
+                                            }
+                                        }
+                                    } label: {
+                                        Image(systemName: "circle.grid.2x2")
+                                            .foregroundStyle(.primary)
+                                    }
+                                    .tint(.primary)
+                                    .accessibilityLabel("更多页面")
                                 }
                             } else {
-                                Menu {
-                                    ForEach(hiddenTabs) { tab in
-                                        Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
-                                            onOpenRootPage(tab)
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "circle.grid.2x2")
-                                        .foregroundStyle(.primary)
-                                }
-                                .tint(.primary)
-                                .accessibilityLabel("更多页面")
+                                accountMessageButton
                             }
-                        } else {
-                            accountMessageButton
                         }
                     }
                     .opacity(navigationChromeOpacity)

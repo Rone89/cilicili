@@ -247,7 +247,8 @@ struct RootTabView: View {
                         .toolbarVisibility(.hidden, for: .tabBar)
                         .safeAreaInset(edge: .bottom) {
                             if destination == .search {
-                                SearchTabBottomAccessory(store: searchBottomAccessoryStore)
+                                SearchTabBottomAccessory(store: searchBottomAccessoryStore, providesOwnBackground: true)
+                                    .padding(.vertical, 8)
                             }
                         }
                 }

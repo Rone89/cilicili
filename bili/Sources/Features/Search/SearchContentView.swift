@@ -34,11 +34,12 @@ struct SearchContentView: View {
 struct SearchTabBottomAccessory: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var store: SearchBottomAccessoryStore
+    var providesOwnBackground = false
 
     @ViewBuilder
     var body: some View {
         if let viewModel = store.viewModel {
-            SearchFilterCapsule(viewModel: viewModel, usesKeyboardControls: store.usesKeyboardControls)
+            SearchFilterCapsule(viewModel: viewModel, usesKeyboardControls: store.usesKeyboardControls, providesOwnBackground: providesOwnBackground)
                 .frame(maxWidth: .infinity, minHeight: 40)
                 .padding(.horizontal, libraryStore.standardPageHorizontalInset)
         }
@@ -48,12 +49,13 @@ struct SearchTabBottomAccessory: View {
 private struct SearchFilterCapsule: View {
     @ObservedObject var viewModel: SearchViewModel
     let usesKeyboardControls: Bool
+    let providesOwnBackground: Bool
 
     var body: some View {
         HStack(spacing: usesKeyboardControls ? 12 : 0) {
             if usesKeyboardControls {
-                scopeMenu.buttonStyle(.glass)
-                orderMenu.buttonStyle(.glass)
+                scopeMenu.buttonStyle(.plain).frame(height: 44).biliGlassEffect(in: Capsule())
+                orderMenu.buttonStyle(.plain).frame(height: 44).biliGlassEffect(in: Capsule())
             } else {
                 scopeMenu.buttonStyle(.plain)
                 orderMenu.buttonStyle(.plain)
@@ -64,6 +66,11 @@ private struct SearchFilterCapsule: View {
         .lineLimit(1)
         .frame(maxWidth: .infinity, minHeight: 40)
         .foregroundStyle(.primary)
+        .background {
+            if providesOwnBackground && !usesKeyboardControls {
+                Capsule().fill(.clear).biliGlassEffect(in: Capsule())
+            }
+        }
     }
 
     private var scopeMenu: some View {
