@@ -142,6 +142,7 @@ struct AccountMessageDiagnosticsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
+            .bottomScrollEdgeBlurFallback()
             .hiddenInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

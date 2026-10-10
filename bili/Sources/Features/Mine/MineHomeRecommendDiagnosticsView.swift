@@ -185,6 +185,7 @@ struct MineHomeRecommendDiagnosticsView: View {
         .tint(libraryStore.appTintColor)
         .formStyle(.grouped)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
     }
 

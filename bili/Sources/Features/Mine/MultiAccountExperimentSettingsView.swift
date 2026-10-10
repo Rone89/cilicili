@@ -19,6 +19,7 @@ struct MineAccountManagementView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .sheet(isPresented: $isShowingWebLogin) {
             BiliWebLoginView(usesIsolatedSession: true) { cookies in

@@ -63,6 +63,7 @@ struct AccountMessageCenterView: View {
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .toolbarBackground(.automatic, for: .navigationBar)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -136,6 +137,7 @@ private struct AccountMessageInboxView: View {
         }
         .hiddenInlineNavigationTitle()
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .searchable(text: $searchText, prompt: "搜索已加载消息")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -296,6 +298,7 @@ struct AccountMessageFeedView: View {
         }
         .hiddenInlineNavigationTitle()
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -924,6 +927,7 @@ private struct AccountMessageLikeDetailView: View {
         }
         .hiddenInlineNavigationTitle()
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .task {
             guard state == .idle else { return }
             await load(reset: true)
@@ -1108,6 +1112,7 @@ private struct AccountMessageFollowersView: View {
         }
         .hiddenInlineNavigationTitle()
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .task {
             guard state == .idle else { return }
             await load(reset: true)

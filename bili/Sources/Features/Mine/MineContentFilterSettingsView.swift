@@ -120,6 +120,7 @@ struct MineContentFilterSettingsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
     }
 
@@ -172,6 +173,7 @@ private struct LocalBlockedUPSettingsView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .task {
             for mid in libraryStore.blockedHomeRecommendationUPMIDs.sorted() {
@@ -231,6 +233,7 @@ private struct AccountBlacklistSettingsView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .task(id: sessionStore.mainAccountMID) { await load(reset: true) }
         .refreshable { await load(reset: true) }

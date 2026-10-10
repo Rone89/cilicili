@@ -31,6 +31,7 @@ struct RemoteImageDiagnosticsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .navigationTitle("图片加载诊断")
         .toolbarTitleDisplayMode(.inline)
         .toolbar {

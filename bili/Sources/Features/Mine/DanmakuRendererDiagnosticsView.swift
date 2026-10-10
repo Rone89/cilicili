@@ -101,6 +101,7 @@ struct DanmakuRendererDiagnosticsView: View {
                 Text("刷新频率根据覆盖层 Display Link 回调估算；计时数据只反映当前埋点范围。")
             }
         }
+        .bottomScrollEdgeBlurFallback()
         .navigationTitle("弹幕诊断")
         .navigationBarTitleDisplayMode(.inline)
         .task {

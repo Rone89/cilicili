@@ -20,6 +20,7 @@ struct MineDeveloperDiagnosticsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
     }
 

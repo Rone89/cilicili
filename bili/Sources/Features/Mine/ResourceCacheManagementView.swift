@@ -37,6 +37,7 @@ struct ResourceCacheManagementView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
+        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .disabled(isWorking)
         .task {
