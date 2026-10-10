@@ -17,7 +17,6 @@ struct FavoriteFolderSelectionSheet: View {
                     retry: viewActions.retryLoadingAction
                 )
             }
-            .nativeBottomScrollEdgeBlurExperiment()
             .navigationTitle("选择收藏夹")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

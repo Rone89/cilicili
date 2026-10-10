@@ -64,7 +64,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
             }
         }
         .toolbarBackground(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .automatic : .hidden, for: .bottomBar)
-        .nativeBottomScrollEdgeBlurExperiment()
+        .nativeBottomScrollEdgeBlurExperiment(isEnabled: !hidesBottomToolbar)
         .toolbarVisibility(hidesBottomToolbar ? .hidden : .visible, for: .bottomBar)
         .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)

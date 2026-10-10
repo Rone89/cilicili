@@ -47,6 +47,7 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.editMode, $editMode)
+            .nativeBottomScrollEdgeBlurExperiment(isEnabled: enabled && editMode.isEditing)
             .toolbar {
                 if enabled {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -101,7 +102,6 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .nativeBottomScrollEdgeBlurExperiment()
                     .navigationTitle("选择目标收藏夹")
                     .toolbar { Button("取消") { transferAction = nil } }
                 }

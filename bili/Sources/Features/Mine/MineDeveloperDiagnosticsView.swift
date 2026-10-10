@@ -86,7 +86,7 @@ struct MineDeveloperDiagnosticsView: View {
             )) {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("底部渐进模糊实验", systemImage: "square.bottomhalf.filled")
-                    Text("一级页面、详情、管理页面及评论弹窗使用系统柔和底部滚动边缘效果；具体范围由系统底栏和安全区决定，全屏媒体保持原样。")
+                    Text("仅有底部 TabBar 或工具栏的页面使用系统柔和滚动边缘效果。没有底栏的页面与弹窗、全屏媒体保持原样。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

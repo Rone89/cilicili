@@ -85,8 +85,8 @@ extension View {
         )
     }
 
-    func nativeBottomScrollEdgeBlurExperiment() -> some View {
-        modifier(BottomScrollEdgeBlurExperiment())
+    func nativeBottomScrollEdgeBlurExperiment(isEnabled: Bool = true) -> some View {
+        modifier(BottomScrollEdgeBlurExperiment(isEnabled: isEnabled))
     }
 
     @ViewBuilder
@@ -265,14 +265,15 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
     }
 }
 
-/// Shared by navigation pages and independently presented scrolling sheets.
+/// Shared by pages with a system TabBar or bottom toolbar.
 /// The system owns the blur, accessibility adaptation and overlap detection.
 private struct BottomScrollEdgeBlurExperiment: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
+    let isEnabled: Bool
 
     func body(content: Content) -> some View {
         content.scrollEdgeEffectStyle(
-            libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .soft : nil,
+            libraryStore.bottomScrollEdgeBlurExperimentEnabled && isEnabled ? .soft : nil,
             for: .bottom
         )
     }
@@ -320,7 +321,6 @@ struct TopScrollEdgeEffect: ViewModifier {
     @ViewBuilder
     private func nativeStyledContent(_ content: Content) -> some View {
         content.scrollEdgeEffectStyle(.soft, for: .top)
-            .nativeBottomScrollEdgeBlurExperiment()
     }
 }
 
