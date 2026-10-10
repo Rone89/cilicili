@@ -22,8 +22,6 @@ struct RootTabView: View {
     @State var liveNavigationPath = NavigationPath()
     @State var mineNavigationPath = NavigationPath()
     @State var rootSearchQueryBuffer = ""
-    @State private var isRootSearchPresented = false
-    @State private var preservesSearchResultsOnDismissal = false
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
     @FocusState var isMineSearchFocused: Bool
@@ -114,8 +112,7 @@ struct RootTabView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             if tab != .search {
-                preservesSearchResultsOnDismissal = true
-                isRootSearchPresented = false
+                isRootSearchFocused = false
             }
             if tab != .mine {
                 isMineSearchFocused = false
@@ -123,12 +120,8 @@ struct RootTabView: View {
         }
         .onChange(of: searchNavigationPath.count) { _, count in
             if count > 0 {
-                preservesSearchResultsOnDismissal = true
-                isRootSearchPresented = false
+                isRootSearchFocused = false
             }
-        }
-        .onChange(of: isRootSearchPresented) { _, isPresented in
-            if isPresented { preservesSearchResultsOnDismissal = false }
         }
         .onChange(of: isRootSearchFocused) { _, isFocused in
             searchBottomAccessoryStore.isSearchFocused = isFocused
@@ -302,17 +295,12 @@ struct RootTabView: View {
                 holder: searchViewModelHolder,
                 accessoryStore: searchBottomAccessoryStore
             )
-            .searchable(
+            .navigationToolbarSearch(
                 text: rootSearchQueryBinding,
-                isPresented: $isRootSearchPresented,
-                placement: .toolbarPrincipal,
-                prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
+                isFocused: $isRootSearchFocused,
+                prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
+                onSubmit: submitRootSearch
             )
-            .integratedNavigationSearch(isPresented: isRootSearchPresented)
-            .searchFocused($isRootSearchFocused)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .onSubmit(of: .search, submitRootSearch)
         }
     }
 
@@ -383,23 +371,9 @@ struct RootTabView: View {
         Binding(
             get: { rootSearchQueryBuffer },
             set: { query in
-                // Preserve results only when the app closes search to submit or navigate.
-                // The system's Cancel and clear actions must restore discovery.
-                if query.isEmpty && !isRootSearchPresented && preservesSearchResultsOnDismissal {
-                    let retainedQuery = searchViewModelHolder.viewModel?.query ?? rootSearchQueryBuffer
-                    rootSearchQueryBuffer = ""
-                    if !retainedQuery.isEmpty {
-                        DispatchQueue.main.async {
-                            guard !isRootSearchPresented, preservesSearchResultsOnDismissal,
-                                  rootSearchQueryBuffer.isEmpty else { return }
-                            rootSearchQueryBuffer = searchViewModelHolder.viewModel?.query ?? retainedQuery
-                        }
-                    }
-                    return
-                }
                 rootSearchQueryBuffer = query
-                guard let viewModel = searchViewModelHolder.viewModel else { return }
-                guard viewModel.query != query else { return }
+                guard let viewModel = searchViewModelHolder.viewModel,
+                      viewModel.query != query else { return }
                 viewModel.query = query
                 viewModel.queryChanged()
             }
@@ -421,8 +395,7 @@ struct RootTabView: View {
         guard let viewModel = searchViewModelHolder.viewModel else { return }
         let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return }
-        preservesSearchResultsOnDismissal = true
-        isRootSearchPresented = false
+        isRootSearchFocused = false
         Task { await viewModel.search(keyword) }
     }
 

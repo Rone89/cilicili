@@ -4,7 +4,7 @@ import XCTest
 final class SearchScrollRetentionUITests: XCTestCase {
     func testCancelAfterSubmittedSearchRestoresHotSearches() {
         let app = launchFixture()
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         search.tap()
         search.typeText(" native\n")
         XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
@@ -12,12 +12,12 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-        app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch.tap()
+        app.buttons["navigation.search.cancel"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["大家都在搜"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
         XCTAssertFalse(app.staticTexts["滚动位置测试 native 1"].exists)
-        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
 
         app.tabBars.buttons["首页"].tap()
@@ -26,63 +26,61 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
     }
 
-    func testNativeSearchPresentationSubmitCancelAndClear() {
+    func testToolbarSearchSubmitCancelAndClear() {
         let app = launchFixture()
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         XCTAssertTrue(search.waitForExistence(timeout: 3))
-        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         XCTAssertFalse(app.keyboards.firstMatch.exists)
         let normalScreenshot = XCTAttachment(screenshot: app.screenshot())
-        normalScreenshot.name = "Native search resting state"
+        normalScreenshot.name = "Toolbar search resting state"
         normalScreenshot.lifetime = .keepAlways
         add(normalScreenshot)
 
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         let activeScreenshot = XCTAttachment(screenshot: app.screenshot())
-        activeScreenshot.name = "Native search presentation"
+        activeScreenshot.name = "Toolbar search editing state"
         activeScreenshot.lifetime = .keepAlways
         add(activeScreenshot)
         search.typeText(" native\n")
         XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
-        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         assertIntegratedSearchRow(in: app)
 
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-        let clear = search.buttons.firstMatch
+        let clear = app.buttons["navigation.search.clear"]
         XCTAssertTrue(clear.waitForExistence(timeout: 3))
         clear.tap()
         XCTAssertEqual(search.value as? String, "搜索")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
 
-        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch
+        let cancel = app.buttons["navigation.search.cancel"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
         cancel.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
-        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
     }
 
     func testOpeningResultDuringActiveSearchRestoresQueryAndFilters() {
         let app = launchFixture()
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         XCTAssertEqual(search.value as? String, "滚动位置测试")
         app.staticTexts["结果 1"].tap()
         XCTAssertTrue(app.staticTexts["fixture.search.detail"].waitForExistence(timeout: 3))
-        XCTAssertEqual(app.searchFields.count, 0)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 0)
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
 
         app.buttons["fixture.search.back"].tap()
         XCTAssertTrue(app.staticTexts["结果 1"].waitForExistence(timeout: 3))
         assertIntegratedSearchRow(in: app)
-        // The restored scroll offset can minimize the native search toolbar.
-        if !search.exists { app.scrollViews.firstMatch.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout: 3))
-        XCTAssertEqual(app.searchFields.count, 1)
+        XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         XCTAssertFalse(app.keyboards.firstMatch.exists)
         search.tap()
         XCTAssertEqual(search.value as? String, "滚动位置测试")
@@ -90,23 +88,23 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
     func testLeavingActiveSearchRestoresRootTabsAndFilters() {
         let app = launchFixture()
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-        app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch.tap()
+        app.buttons["navigation.search.cancel"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         app.scrollViews.firstMatch.swipeUp()
         assertIntegratedSearchRow(in: app)
 
         app.scrollViews.firstMatch.swipeDown()
 
-        for tab in ["首页", "动态", "直播", "我的"] {
+        for tab in ["首页", "动态", "直播"] {
             app.tabBars.buttons[tab].tap()
             XCTAssertTrue(search.waitForNonExistence(timeout: 3))
             XCTAssertFalse(app.keyboards.firstMatch.exists)
             app.tabBars.buttons["搜索"].tap()
             XCTAssertTrue(search.waitForExistence(timeout: 3))
-            XCTAssertEqual(app.searchFields.count, 1)
+            XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
             XCTAssertFalse(app.keyboards.firstMatch.exists)
         }
     }
@@ -148,7 +146,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
     func testIntegratedSearchRemainsInToolbarAfterPresentationAndResultUpdates() {
         let app = launchFixture()
         assertIntegratedSearchRow(in: app)
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         for index in 1...3 {
             search.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
@@ -157,7 +155,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
             assertIntegratedSearchRow(in: app)
             search.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
-            let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close", "取消", "Cancel"])).firstMatch
+            let close = app.buttons["navigation.search.cancel"]
             XCTAssertTrue(close.waitForExistence(timeout: 3))
             close.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
@@ -175,7 +173,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
     func testIntegratedSearchStaysVisibleDuringRepeatedScrolling() {
         let app = launchFixture()
         let scroll = app.scrollViews.firstMatch
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         let query = search.value as? String
         for _ in 0..<5 {
             scroll.swipeUp()
@@ -189,11 +187,33 @@ final class SearchScrollRetentionUITests: XCTestCase {
         }
     }
 
+    func testMineSearchStaysInNavigationBarAndRetainsTextAfterSubmit() {
+        let app = launchFixture()
+        app.tabBars.buttons["我的"].tap()
+        let field = app.textFields["navigation.search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars.firstMatch.frame.contains(field.frame))
+        field.tap()
+        field.typeText("设置\n")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(field.value as? String, "设置")
+        XCTAssertTrue(app.navigationBars.firstMatch.frame.contains(field.frame))
+        field.tap()
+        app.buttons["navigation.search.cancel"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(field.value as? String, "搜索我的页功能")
+    }
+
     private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["navigation.search.field"]
         let filters = app.buttons["search.filters.menu"]
         XCTAssertTrue(search.waitForExistence(timeout: 3), file: file, line: line)
         XCTAssertTrue(filters.waitForExistence(timeout: 3), file: file, line: line)
+        let navigationBar = app.navigationBars.firstMatch
+        XCTAssertTrue(navigationBar.exists, file: file, line: line)
+        XCTAssertTrue(navigationBar.frame.contains(search.frame),
+                      "Search must be inside the navigation bar: \(search.frame), bar: \(navigationBar.frame)",
+                      file: file, line: line)
         let rowAligned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             abs(search.frame.midY - filters.frame.midY) < 8
         }, object: nil)

@@ -7,10 +7,10 @@ struct UITestSearchScrollFixtureView: View {
     @StateObject private var accessoryStore = SearchBottomAccessoryStore()
     @State private var path: [String] = []
     @State private var selectedTab: AppTab = .search
-    @State private var isSearchPresented = false
-    @State private var preservesSearchResultsOnDismissal = false
     @State private var searchText = "滚动位置测试"
     @FocusState private var isSearchFocused: Bool
+    @State private var mineSearchText = ""
+    @FocusState private var isMineSearchFocused: Bool
 
     init(api: BiliAPIClient) {
         let viewModel = SearchViewModel(api: api)
@@ -29,6 +29,17 @@ struct UITestSearchScrollFixtureView: View {
                 Tab(value: tab, role: tab == .search ? .search : nil) {
                     if tab == .search {
                         searchNavigationStack
+                    } else if tab == .mine {
+                        NavigationStack {
+                            Color.clear
+                                .navigationTitle("")
+                                .navigationToolbarSearch(
+                                    text: $mineSearchText,
+                                    isFocused: $isMineSearchFocused,
+                                    prompt: "搜索我的页功能",
+                                    onSubmit: { isMineSearchFocused = false }
+                                )
+                        }
                     } else {
                         NavigationStack {
                             Color.clear.navigationTitle(tab.title)
@@ -42,9 +53,9 @@ struct UITestSearchScrollFixtureView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: selectedTab) { _, tab in
             if tab != .search {
-                preservesSearchResultsOnDismissal = true
-                isSearchPresented = false
+                isSearchFocused = false
             }
+            if tab != .mine { isMineSearchFocused = false }
         }
     }
 
@@ -53,35 +64,27 @@ struct UITestSearchScrollFixtureView: View {
             SearchContentView(viewModel: viewModel, showsHotSearches: true, accessoryStore: accessoryStore)
                 .toolbarTitleDisplayMode(.inline)
                 .navigationTitle("")
-                .searchable(
+                .navigationToolbarSearch(
                     text: searchTextBinding,
-                    isPresented: $isSearchPresented,
-                    placement: .toolbarPrincipal,
-                    prompt: "搜索"
+                    isFocused: $isSearchFocused,
+                    prompt: "搜索",
+                    onSubmit: {
+                        let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !keyword.isEmpty else { return }
+                        isSearchFocused = false
+                        viewModel.results = Self.videos(prefix: keyword)
+                        viewModel.state = .loaded
+                    }
                 )
-                .integratedNavigationSearch(isPresented: isSearchPresented)
-                .searchFocused($isSearchFocused)
                 .onChange(of: viewModel.query) { _, query in
                     searchText = query
-                }
-                .onChange(of: isSearchPresented) { _, isPresented in
-                    if isPresented { preservesSearchResultsOnDismissal = false }
-                }
-                .onSubmit(of: .search) {
-                    let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !keyword.isEmpty else { return }
-                    preservesSearchResultsOnDismissal = true
-                    isSearchPresented = false
-                    viewModel.results = Self.videos(prefix: keyword)
-                    viewModel.state = .loaded
                 }
                 .onChange(of: isSearchFocused) { _, isFocused in
                     accessoryStore.isSearchFocused = isFocused
                 }
                 .onChange(of: path.count) { _, count in
                     if count > 0 {
-                        preservesSearchResultsOnDismissal = true
-                        isSearchPresented = false
+                        isSearchFocused = false
                     }
                 }
                 .environment(\.openVideoAction, { video in path.append(video.bvid) })
@@ -111,16 +114,6 @@ struct UITestSearchScrollFixtureView: View {
         Binding(
             get: { searchText },
             set: { query in
-                if query.isEmpty && !isSearchPresented && preservesSearchResultsOnDismissal {
-                    let retainedQuery = viewModel.query
-                    searchText = ""
-                    DispatchQueue.main.async {
-                        guard !isSearchPresented, preservesSearchResultsOnDismissal,
-                              searchText.isEmpty else { return }
-                        searchText = viewModel.query.isEmpty ? retainedQuery : viewModel.query
-                    }
-                    return
-                }
                 searchText = query
                 guard viewModel.query != query else { return }
                 viewModel.query = query
