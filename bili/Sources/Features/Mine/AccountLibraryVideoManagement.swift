@@ -101,6 +101,7 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .nativeBottomScrollEdgeBlurExperiment()
                     .navigationTitle("选择目标收藏夹")
                     .toolbar { Button("取消") { transferAction = nil } }
                 }

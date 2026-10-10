@@ -85,6 +85,10 @@ extension View {
         )
     }
 
+    func nativeBottomScrollEdgeBlurExperiment() -> some View {
+        modifier(BottomScrollEdgeBlurExperiment())
+    }
+
     @ViewBuilder
     func liquidGlassTabBarBackground(isDark: Bool = false) -> some View {
         self
@@ -261,6 +265,19 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
     }
 }
 
+/// Shared by navigation pages and independently presented scrolling sheets.
+/// The system owns the blur, accessibility adaptation and overlap detection.
+private struct BottomScrollEdgeBlurExperiment: ViewModifier {
+    @EnvironmentObject private var libraryStore: LibraryStore
+
+    func body(content: Content) -> some View {
+        content.scrollEdgeEffectStyle(
+            libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .soft : nil,
+            for: .bottom
+        )
+    }
+}
+
 struct TopScrollEdgeEffect: ViewModifier {
     static let defaultNavigationTitleHideDistance: CGFloat = 18
 
@@ -303,6 +320,7 @@ struct TopScrollEdgeEffect: ViewModifier {
     @ViewBuilder
     private func nativeStyledContent(_ content: Content) -> some View {
         content.scrollEdgeEffectStyle(.soft, for: .top)
+            .nativeBottomScrollEdgeBlurExperiment()
     }
 }
 
