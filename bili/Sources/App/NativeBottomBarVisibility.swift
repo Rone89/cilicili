@@ -6,12 +6,13 @@ extension View {
     func coordinatesRootTabBarTransitions(
         isDetailPresented: Bool,
         isEnabled: Bool = true,
+        hidesRootTabBar: Bool = false,
         onRootTabTap: (() -> Void)? = nil,
         capturesSearchReselection: Bool = false
     ) -> some View {
         if isEnabled {
             background(
-                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
+                NativeRootTabBarTransitionSource(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
             )
         } else {
             self
@@ -21,18 +22,19 @@ extension View {
 
 private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
     let isDetailPresented: Bool
+    let hidesRootTabBar: Bool
     let onRootTabTap: (() -> Void)?
     let capturesSearchReselection: Bool
 
     func makeUIViewController(context _: Context) -> Controller {
-        Controller(isDetailPresented: isDetailPresented, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
+        Controller(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar, onRootTabTap: onRootTabTap, capturesSearchReselection: capturesSearchReselection)
     }
 
     func updateUIViewController(_ controller: Controller, context _: Context) {
         controller.onRootTabTap = onRootTabTap
         controller.capturesSearchReselection = capturesSearchReselection
         controller.installRootTabTap()
-        controller.update(isDetailPresented: isDetailPresented)
+        controller.update(isDetailPresented: isDetailPresented, hidesRootTabBar: hidesRootTabBar)
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
@@ -50,11 +52,13 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             recognizer.delegate = self
             return recognizer
         }()
+        private var hidesRootTabBar: Bool
         private var isDetailPresented: Bool
         private var reconcileTask: Task<Void, Never>?
 
-        init(isDetailPresented: Bool, onRootTabTap: (() -> Void)?, capturesSearchReselection: Bool) {
+        init(isDetailPresented: Bool, hidesRootTabBar: Bool, onRootTabTap: (() -> Void)?, capturesSearchReselection: Bool) {
             self.isDetailPresented = isDetailPresented
+            self.hidesRootTabBar = hidesRootTabBar
             self.onRootTabTap = onRootTabTap
             self.capturesSearchReselection = capturesSearchReselection
             super.init(nibName: nil, bundle: nil)
@@ -84,9 +88,10 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
             }
         }
 
-        func update(isDetailPresented: Bool) {
-            guard self.isDetailPresented != isDetailPresented else { return }
+        func update(isDetailPresented: Bool, hidesRootTabBar: Bool) {
+            guard self.isDetailPresented != isDetailPresented || self.hidesRootTabBar != hidesRootTabBar else { return }
             self.isDetailPresented = isDetailPresented
+            self.hidesRootTabBar = hidesRootTabBar
             reconcileSoon()
         }
 
@@ -140,14 +145,14 @@ private struct NativeRootTabBarTransitionSource: UIViewControllerRepresentable {
                       self.viewIfLoaded?.window != nil,
                       let navigationController = self.selectedNavigationController() else { return }
                 let animated = navigationController.transitionCoordinator != nil
-                self.setRootTabBarHidden(self.isDetailPresented, animated: animated)
+                self.setRootTabBarHidden(self.isDetailPresented || self.hidesRootTabBar, animated: animated)
             }
         }
 
         private func reconcile(animated: Bool) {
             guard viewIfLoaded?.window != nil,
                   selectedNavigationController() != nil else { return }
-            setRootTabBarHidden(isDetailPresented, animated: animated)
+            setRootTabBarHidden(isDetailPresented || hidesRootTabBar, animated: animated)
         }
 
         private func setRootTabBarHidden(_ hidden: Bool, animated: Bool) {

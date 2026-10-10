@@ -231,6 +231,7 @@ struct RootTabView: View {
         }
         .coordinatesRootTabBarTransitions(
             isDetailPresented: !detailPath.wrappedValue.isEmpty,
+            hidesRootTabBar: visibleRootTabs.count == 1,
             onRootTabTap: selectedTab == tab ? { tabSelection.wrappedValue = tab } : nil,
             capturesSearchReselection: tab == .search
         )
