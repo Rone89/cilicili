@@ -425,6 +425,7 @@ private struct AccountPrivateMessageSessionRow: View {
 struct AccountPrivateMessageConversationView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     @State private var conversationWidth: CGFloat = 0
+    @State private var showsMessageComposer = false
 
     private var usesNativePresentation: Bool { libraryStore.nativePrivateMessageConversationExperimentEnabled }
     let session: AccountPrivateMessageSession
@@ -531,23 +532,57 @@ struct AccountPrivateMessageConversationView: View {
                 }
             }
             .toolbar {
-                if usesNativePresentation {
+                if usesNativePresentation && !showsMessageComposer {
+                    ToolbarSpacer(.flexible, placement: .bottomBar)
                     ToolbarItem(placement: .bottomBar) {
-                        composer(using: proxy)
-                            .frame(width: max(conversationWidth - 32, 44))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, isComposerFocused ? 12 : 0)
+                        Button {
+                            showsMessageComposer = true
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Image(systemName: "square.and.pencil")
+                                Text("点击发送电波")
+                            }
+                            .font(.body)
+                            .padding(.horizontal, 6)
+                        }
+                        .controlSize(.small)
+                        .imageScale(.medium)
+                        .foregroundStyle(.primary)
+                        .buttonBorderShape(.capsule)
+                        .accessibilityLabel("发私信")
+                        .accessibilityIdentifier("privateMessage.openComposer")
                     }
-                    .sharedBackgroundVisibility(.hidden)
+                    ToolbarSpacer(.flexible, placement: .bottomBar)
                 }
             }
-            .toolbarBackground(usesNativePresentation ? .hidden : .automatic, for: .bottomBar)
+            .toolbar(showsMessageComposer ? .hidden : .automatic, for: .bottomBar)
+            .fullScreenCover(isPresented: $showsMessageComposer, onDismiss: {
+                isComposerFocused = false
+            }) {
+                NativePrivateMessageComposerPresentation(onDismiss: {
+                    showsMessageComposer = false
+                }) { focus in
+                    composer(using: proxy, focus: focus)
+                        .sheet(isPresented: $showsEmotePicker) {
+                            emotePicker(focus: focus)
+                        }
+                }
+                .presentationBackground(.clear)
+                .photosPicker(
+                    isPresented: $showsPhotoPicker,
+                    selection: $selectedPhoto,
+                    matching: .images
+                )
+            }
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
                 Task { await sendSelectedPhoto(item, using: proxy) }
             }
             .photosPicker(
-                isPresented: $showsPhotoPicker,
+                isPresented: Binding(
+                    get: { !usesNativePresentation && showsPhotoPicker },
+                    set: { showsPhotoPicker = $0 }
+                ),
                 selection: $selectedPhoto,
                 matching: .images
             )
@@ -593,15 +628,11 @@ struct AccountPrivateMessageConversationView: View {
                 }
             }
         }
-        .sheet(isPresented: $showsEmotePicker) {
-            AccountPrivateMessageEmotePicker(
-                emotes: Array(viewModel.inlineEmotes.values),
-                onSelect: { token in
-                    draft.append(token)
-                    isComposerFocused = true
-                }
-            )
-            .presentationDetents([.medium, .large])
+        .sheet(isPresented: Binding(
+            get: { !usesNativePresentation && showsEmotePicker },
+            set: { showsEmotePicker = $0 }
+        )) {
+            emotePicker()
         }
         .sheet(item: $reportingMessage) { message in
             AccountPrivateMessageReportSheet(
@@ -640,6 +671,10 @@ struct AccountPrivateMessageConversationView: View {
             Button("好") { messageActionErrorMessage = nil }
         } message: {
             Text(messageActionErrorMessage ?? "请稍后重试")
+        }
+        .onChange(of: usesNativePresentation) { _, _ in
+            showsMessageComposer = false
+            isComposerFocused = false
         }
         .onChange(of: draft) { _, _ in
             scheduleDraftSave()
@@ -914,7 +949,21 @@ struct AccountPrivateMessageConversationView: View {
         }
     }
 
-    private func composer(using proxy: ScrollViewProxy) -> some View {
+    private func emotePicker(focus: FocusState<Bool>.Binding? = nil) -> some View {
+        AccountPrivateMessageEmotePicker(
+            emotes: Array(viewModel.inlineEmotes.values),
+            onSelect: { token in
+                draft.append(token)
+                (focus ?? $isComposerFocused).wrappedValue = true
+            }
+        )
+        .presentationDetents([.medium, .large])
+    }
+
+    private func composer(
+        using proxy: ScrollViewProxy,
+        focus: FocusState<Bool>.Binding? = nil
+    ) -> some View {
         VStack(spacing: 8) {
             if let sendErrorMessage {
                 HStack(spacing: 8) {
@@ -944,12 +993,12 @@ struct AccountPrivateMessageConversationView: View {
             if usesNativePresentation {
                 NativePrivateMessageComposer(
                     text: $draft,
-                    focus: $isComposerFocused,
+                    focus: focus ?? $isComposerFocused,
                     isSending: isSending,
                     isSendingImage: isSendingImage,
                     hasEmotes: !viewModel.inlineEmotes.isEmpty,
-                    showPhotos: { isComposerFocused = false; showsPhotoPicker = true },
-                    showEmotes: { isComposerFocused = false; showsEmotePicker = true },
+                    showPhotos: { (focus ?? $isComposerFocused).wrappedValue = false; showsPhotoPicker = true },
+                    showEmotes: { (focus ?? $isComposerFocused).wrappedValue = false; showsEmotePicker = true },
                     send: { Task { await send(using: proxy) } }
                 )
             } else {
@@ -1034,6 +1083,7 @@ struct AccountPrivateMessageConversationView: View {
             try await viewModel.sendPrivateTextMessage(talkerID: session.talkerID, text: text)
             guard !Task.isCancelled else { return }
             draft = ""
+            showsMessageComposer = false
             viewModel.savePrivateMessageDraft("", talkerID: session.talkerID)
             await load(reset: true)
             scrollToLatest(using: proxy)
@@ -1104,6 +1154,7 @@ struct AccountPrivateMessageConversationView: View {
         guard !Task.isCancelled else { throw CancellationError() }
         failedImageData = nil
         lastFailureWasImage = false
+        showsMessageComposer = false
         await load(reset: true)
         scrollToLatest(using: proxy)
         onConversationChanged()

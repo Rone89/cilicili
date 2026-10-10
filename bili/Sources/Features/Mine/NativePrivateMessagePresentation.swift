@@ -138,3 +138,23 @@ struct NativePrivateMessageComposer: View {
         }
     }
 }
+
+/// Own focus inside the modal presentation rather than the underlying conversation.
+struct NativePrivateMessageComposerPresentation<Content: View>: View {
+    let onDismiss: () -> Void
+    @ViewBuilder let content: (FocusState<Bool>.Binding) -> Content
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onDismiss)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            content($isFocused)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+        }
+        .task { isFocused = true }
+    }
+}
