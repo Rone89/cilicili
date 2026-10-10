@@ -40,7 +40,7 @@ enum AppTab: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 
     var canHideFromRootTabBar: Bool {
-        true
+        self != .home
     }
 
     var participatesInRootTabVisibilitySettings: Bool {
@@ -51,7 +51,7 @@ enum AppTab: String, CaseIterable, Codable, Identifiable, Hashable {
 
     static func normalizedVisibleTabs(_ tabs: [AppTab]) -> [AppTab] {
         let visible = Set(tabs)
-        let normalized = defaultVisibleTabs.filter { visible.contains($0) }
-        return normalized.isEmpty ? defaultVisibleTabs : normalized
+        let normalized = defaultVisibleTabs.filter { $0 == .home || visible.contains($0) }
+        return tabs.isEmpty ? defaultVisibleTabs : normalized
     }
 }

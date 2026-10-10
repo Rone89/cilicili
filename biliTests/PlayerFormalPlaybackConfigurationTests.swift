@@ -629,7 +629,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
 
-        for tab in AppTab.defaultVisibleTabs {
+        for tab in AppTab.defaultVisibleTabs where tab != .home {
             XCTAssertTrue(tab.canHideFromRootTabBar)
             store.setRootTab(tab, isVisible: false)
             let expected = AppTab.defaultVisibleTabs.filter { $0 != tab }
@@ -644,13 +644,14 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     func testLibraryStoreCannotHideLastRootTabAndCanRestoreAll() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
-        for tab in AppTab.defaultVisibleTabs where tab != .search {
+        for tab in AppTab.defaultVisibleTabs where tab != .home {
             store.setRootTab(tab, isVisible: false)
         }
-        XCTAssertEqual(store.visibleRootTabs, [.search])
-        store.setRootTab(.search, isVisible: false)
-        XCTAssertEqual(store.visibleRootTabs, [.search])
-        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.search])
+        XCTAssertEqual(store.visibleRootTabs, [.home])
+        store.setRootTab(.home, isVisible: false)
+        XCTAssertFalse(AppTab.home.canHideFromRootTabBar)
+        XCTAssertEqual(store.visibleRootTabs, [.home])
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.home])
         store.resetVisibleRootTabs()
         XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, AppTab.defaultVisibleTabs)
     }
@@ -661,7 +662,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertEqual(AppTab.normalizedVisibleTabs([]), AppTab.defaultVisibleTabs)
         let defaults = makeUserDefaults()
         defaults.set(["search", "unknown", "search", "live"], forKey: "cc.bili.display.visibleRootTabs.v1")
-        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.live, .search])
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, [.home, .live, .search])
         defaults.set(["unknown"], forKey: "cc.bili.display.visibleRootTabs.v1")
         XCTAssertEqual(LibraryStore(userDefaults: defaults).visibleRootTabs, AppTab.defaultVisibleTabs)
     }

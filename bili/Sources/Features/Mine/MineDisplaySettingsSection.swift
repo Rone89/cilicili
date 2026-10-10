@@ -144,7 +144,7 @@ struct MineDisplaySettingsSection: View {
                         get: { libraryStore.visibleRootTabs.contains(tab) },
                         set: { libraryStore.setRootTab(tab, isVisible: $0) }
                     ))
-                    .disabled(libraryStore.visibleRootTabs == [tab])
+                    .disabled(!tab.canHideFromRootTabBar)
                     .accessibilityIdentifier("settings.rootTabs.\(tab.rawValue)")
                 }
 
@@ -152,7 +152,7 @@ struct MineDisplaySettingsSection: View {
                     libraryStore.resetVisibleRootTabs()
                 }
 
-                Text("至少保留一个页面。隐藏“我的”后，可通过一级页面顶部的设置按钮恢复。")
+                Text("首页始终显示。隐藏的页面可从首页顶部入口打开。")
                     .appTypography(.settingsSubtitle, fallback: .caption)
                     .foregroundStyle(.secondary)
             } label: {

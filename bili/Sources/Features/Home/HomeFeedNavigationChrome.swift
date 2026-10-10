@@ -12,6 +12,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
     let isDetailPresented: Bool
     let onOpenAccountMessages: () -> Void
     let onOpenProfile: (() -> Void)?
+    let onOpenRootPage: ((AppTab) -> Void)?
 
     func body(content: Content) -> some View {
         content
@@ -35,7 +36,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 ToolbarItem(placement: .topBarLeading) {
                     Group {
                         if usesAvatarToolbar, let onOpenProfile {
-                            HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile)
+                            HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile, onOpenMessages: onOpenAccountMessages)
                                 .buttonBorderShape(.circle)
                         } else {
                             HomeFeedModeMenu(currentMode: viewModel.mode, onSelectMode: switchMode)
@@ -48,15 +49,45 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 }
                 .sharedBackgroundVisibility(usesAvatarToolbar ? .hidden : toolbarItemBackgroundVisibility)
                 ToolbarItem(placement: .topBarTrailing) {
-                    accountMessageButton
+                    Group {
+                        if !libraryStore.visibleRootTabs.contains(.mine), let onOpenRootPage {
+                            Button("我的", systemImage: "gearshape") { onOpenRootPage(.mine) }
+                        } else {
+                            accountMessageButton
+                        }
+                    }
                         .opacity(navigationChromeOpacity)
                         .disabled(hidesNavigationChrome)
                         .accessibilityHidden(hidesNavigationChrome)
                         .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
                 .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+                if !hiddenContentTabs.isEmpty, let onOpenRootPage {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Group {
+                            if hiddenContentTabs.count == 1, let tab = hiddenContentTabs.first {
+                                Button(tab.title, systemImage: tab.systemImage) { onOpenRootPage(tab) }
+                            } else {
+                                Menu {
+                                    ForEach(hiddenContentTabs) { tab in
+                                        Button(tab.title, systemImage: tab.systemImage) { onOpenRootPage(tab) }
+                                    }
+                                } label: { Image(systemName: "ellipsis") }
+                                .accessibilityLabel("更多页面")
+                            }
+                        }
+                        .opacity(navigationChromeOpacity)
+                        .disabled(hidesNavigationChrome)
+                        .accessibilityHidden(hidesNavigationChrome)
+                    }
+                    .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
+                }
             }
             .nativeTopNavigationChrome()
+    }
+
+    private var hiddenContentTabs: [AppTab] {
+        [.dynamic, .live, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
     }
 
     private var usesAvatarToolbar: Bool {
@@ -129,6 +160,7 @@ extension View {
         accountMessageViewModel: AccountMessageCenterViewModel?,
         isDetailPresented: Bool = false,
         onOpenAccountMessages: @escaping () -> Void,
+        onOpenRootPage: ((AppTab) -> Void)? = nil,
         onOpenProfile: (() -> Void)? = nil
     ) -> some View {
         modifier(
@@ -140,7 +172,8 @@ extension View {
                 accountMessageViewModel: accountMessageViewModel,
                 isDetailPresented: isDetailPresented,
                 onOpenAccountMessages: onOpenAccountMessages,
-                onOpenProfile: onOpenProfile
+                onOpenProfile: onOpenProfile,
+                onOpenRootPage: onOpenRootPage
             )
         )
     }
@@ -176,12 +209,13 @@ private struct HomeAccountMessageButtonContent: View {
 private struct HomeProfileButton: View {
     let viewModel: AccountMessageCenterViewModel?
     let action: () -> Void
+    let onOpenMessages: () -> Void
 
     var body: some View {
         if let viewModel {
-            HomeProfileButtonWithUnread(viewModel: viewModel, action: action)
+            HomeProfileButtonWithUnread(viewModel: viewModel, action: action, onOpenMessages: onOpenMessages)
         } else {
-            HomeProfileButtonContent(hasUnread: false, action: action)
+            HomeProfileButtonContent(hasUnread: false, action: action, onOpenMessages: onOpenMessages)
         }
     }
 }
@@ -189,40 +223,54 @@ private struct HomeProfileButton: View {
 private struct HomeProfileButtonWithUnread: View {
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let action: () -> Void
+    let onOpenMessages: () -> Void
 
     var body: some View {
-        HomeProfileButtonContent(hasUnread: viewModel.hasUnreadMessages, action: action)
+        HomeProfileButtonContent(hasUnread: viewModel.hasUnreadMessages, action: action, onOpenMessages: onOpenMessages)
     }
 }
 
 private struct HomeProfileButtonContent: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var libraryStore: LibraryStore
     let hasUnread: Bool
     let action: () -> Void
+    let onOpenMessages: () -> Void
+
+    private var mineIsHidden: Bool { !libraryStore.visibleRootTabs.contains(.mine) }
 
     var body: some View {
-        Button(action: action) {
-            AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .foregroundStyle(.secondary)
+        Group {
+            if mineIsHidden {
+                Menu {
+                    Button("个人空间", systemImage: "person.crop.circle", action: action)
+                    Button("账户消息", systemImage: "bell", action: onOpenMessages)
+                } label: { avatar }
+            } else {
+                Button(action: action) { avatar }
             }
-            .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
-            .clipShape(Circle())
-            .overlay {
-                if sessionStore.isLoggedIn && hasUnread {
-                    Circle().strokeBorder(appTintColor, lineWidth: 2)
-                }
-            }
-            .accessibilityHidden(true)
         }
         .buttonStyle(.plain)
         .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
         .glassEffect(.regular.interactive(), in: Circle())
-        .accessibilityLabel("个人空间")
+        .accessibilityLabel(mineIsHidden ? "个人空间与账户消息" : "个人空间")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
+    }
+
+    private var avatar: some View {
+        AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
+            Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
+        }
+        .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+        .clipShape(Circle())
+        .overlay {
+            if mineIsHidden && sessionStore.isLoggedIn && hasUnread {
+                Circle().strokeBorder(appTintColor, lineWidth: 2)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

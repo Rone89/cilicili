@@ -192,16 +192,6 @@ struct RootTabView: View {
                 .navigationTitle(rootNavigationTitle(for: tab))
                 .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
-                .toolbar {
-                    if !visibleRootTabs.contains(.mine), detailPath.wrappedValue.isEmpty {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("界面设置", systemImage: "gearshape") {
-                                openMineOverlayRoute(.interfaceSettings)
-                            }
-                            .accessibilityIdentifier("root.hiddenMine.settings")
-                        }
-                    }
-                }
                 .environment(
                     \.rootNavigationTitleHidden,
                     rootNavigationTitleBinding(for: tab, detailPath: detailPath)
@@ -215,6 +205,17 @@ struct RootTabView: View {
                         api: dependencies.api
                     )
                     .navigationHistoryTitle(route.navigationDisplayTitle)
+                }
+                .navigationDestination(for: AppTab.self) { destination in
+                    rootTabContent(for: destination, detailPath: detailPath)
+                        .navigationTitle(destination.title)
+                        .toolbarTitleDisplayMode(.inline)
+                        .toolbarVisibility(.hidden, for: .tabBar)
+                        .safeAreaInset(edge: .bottom) {
+                            if destination == .search {
+                                SearchTabBottomAccessory(store: searchBottomAccessoryStore)
+                            }
+                        }
                 }
                 .videoDestinations()
                 .dynamicDetailDestinations(
@@ -249,6 +250,9 @@ struct RootTabView: View {
                         isDetailPresented: !detailPath.wrappedValue.isEmpty,
                         onOpenAccountMessages: {
                             openMineOverlayRoute(.accountMessages)
+                        },
+                        onOpenRootPage: { page in
+                            appendActiveRootRoute(page)
                         },
                         onOpenProfile: {
                             if dependencies.sessionStore.isLoggedIn,
