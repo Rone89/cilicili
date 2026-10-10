@@ -50,44 +50,39 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 .sharedBackgroundVisibility(usesAvatarToolbar ? .hidden : toolbarItemBackgroundVisibility)
                 ToolbarItem(placement: .topBarTrailing) {
                     Group {
-                        if !libraryStore.visibleRootTabs.contains(.mine), let onOpenRootPage {
-                            Button("我的", systemImage: "gearshape") { onOpenRootPage(.mine) }
+                        if let onOpenRootPage, !hiddenTabs.isEmpty {
+                            if hiddenTabs.count == 1, let tab = hiddenTabs.first {
+                                Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
+                                    onOpenRootPage(tab)
+                                }
+                            } else {
+                                Menu {
+                                    ForEach(hiddenTabs) { tab in
+                                        Button(tab.title, systemImage: tab == .mine ? "gearshape" : tab.systemImage) {
+                                            onOpenRootPage(tab)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                }
+                                .accessibilityLabel("更多页面")
+                            }
                         } else {
                             accountMessageButton
                         }
                     }
-                        .opacity(navigationChromeOpacity)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                    .opacity(navigationChromeOpacity)
+                    .disabled(hidesNavigationChrome)
+                    .accessibilityHidden(hidesNavigationChrome)
+                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
                 .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
-                if !hiddenContentTabs.isEmpty, let onOpenRootPage {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Group {
-                            if hiddenContentTabs.count == 1, let tab = hiddenContentTabs.first {
-                                Button(tab.title, systemImage: tab.systemImage) { onOpenRootPage(tab) }
-                            } else {
-                                Menu {
-                                    ForEach(hiddenContentTabs) { tab in
-                                        Button(tab.title, systemImage: tab.systemImage) { onOpenRootPage(tab) }
-                                    }
-                                } label: { Image(systemName: "ellipsis") }
-                                .accessibilityLabel("更多页面")
-                            }
-                        }
-                        .opacity(navigationChromeOpacity)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                    }
-                    .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
-                }
             }
             .nativeTopNavigationChrome()
     }
 
-    private var hiddenContentTabs: [AppTab] {
-        [.dynamic, .live, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
+    private var hiddenTabs: [AppTab] {
+        [.dynamic, .live, .mine, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
     }
 
     private var usesAvatarToolbar: Bool {
