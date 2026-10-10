@@ -10,6 +10,11 @@ struct SearchContentView: View {
             viewModel: viewModel,
             showsHotSearches: showsHotSearches
         )
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                SearchFilterToolbarMenu(viewModel: viewModel)
+            }
+        }
         .overlay {
             if case .failed(let message) = viewModel.state, viewModel.results.isEmpty {
                 ErrorStateView(title: "搜索失败", message: message) {
@@ -132,5 +137,38 @@ private struct SearchFilterCapsule: View {
         .fixedSize(horizontal: true, vertical: false)
         .frame(maxWidth: .infinity, minHeight: 40)
         .contentShape(Rectangle())
+    }
+}
+
+private struct SearchFilterToolbarMenu: View {
+    @ObservedObject var viewModel: SearchViewModel
+
+    var body: some View {
+        Menu {
+            Menu("搜索内容") {
+                ForEach(SearchScope.allCases) { scope in
+                    Button {
+                        Task { await viewModel.selectScope(scope, animation: .smooth(duration: 0.28)) }
+                    } label: {
+                        Label(scope.title, systemImage: scope == viewModel.selectedScope ? "checkmark" : scope.systemImage)
+                    }
+                }
+            }
+            Menu("排序方式") {
+                ForEach(SearchSortOrder.allCases) { order in
+                    Button {
+                        Task { await viewModel.selectOrder(order) }
+                    } label: {
+                        Label(order.title, systemImage: order == viewModel.selectedOrder ? "checkmark" : "arrow.up.arrow.down")
+                    }
+                }
+            }
+            .disabled(!viewModel.selectedScope.supportsOrder)
+        } label: {
+            Image(systemName: "slider.horizontal.3").foregroundStyle(.primary)
+        }
+        .tint(.primary)
+        .accessibilityLabel("搜索内容与排序")
+        .accessibilityIdentifier("search.filters.menu")
     }
 }

@@ -26,7 +26,6 @@ struct RootTabView: View {
     @State private var preservesSearchResultsOnDismissal = false
     @FocusState private var isRootSearchFocused: Bool
     @State var mineSearchQuery = ""
-    @State var isMineSearchEditing = false
     @FocusState var isMineSearchFocused: Bool
     @State var rootNavigationTitleHiddenByTab: [AppTab: Bool] = [:]
     @State var homeActionStore = HomeFeedScreenActionStore()
@@ -120,7 +119,6 @@ struct RootTabView: View {
             }
             if tab != .mine {
                 isMineSearchFocused = false
-                isMineSearchEditing = false
             }
         }
         .onChange(of: searchNavigationPath.count) { _, count in
@@ -137,11 +135,6 @@ struct RootTabView: View {
         }
         .onChange(of: searchViewModelHolder.viewModel?.query) { _, query in
             rootSearchQueryBuffer = query ?? ""
-        }
-        .onChange(of: isMineSearchFocused) { wasFocused, isFocused in
-            if wasFocused && !isFocused {
-                isMineSearchEditing = false
-            }
         }
         .onChange(of: libraryStore.appIconPreference) { _, preference in
             AppIconController.apply(preference)
@@ -194,23 +187,7 @@ struct RootTabView: View {
         }
         .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
         .tint(libraryStore.appTintColor)
-        .tabViewBottomAccessory(isEnabled: showsTabBottomAccessory) {
-            rootTabBottomAccessory
-        }
         .tabBarMinimizeBehavior(rootTabBarMinimizeBehavior)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showsSearchKeyboardFilters {
-                SearchTabBottomAccessory(store: searchBottomAccessoryStore)
-                    .padding(.vertical, 8)
-            } else if showsMineKeyboardSearch {
-                MineKeyboardSearchAccessory(
-                    text: $mineSearchQuery,
-                    isFocused: $isMineSearchFocused
-                )
-                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
-                .padding(.vertical, 8)
-            }
-        }
     }
 
     @ViewBuilder
@@ -245,12 +222,7 @@ struct RootTabView: View {
                         .navigationTitle(destination.title)
                         .toolbarTitleDisplayMode(.inline)
                         .toolbarVisibility(.hidden, for: .tabBar)
-                        .safeAreaInset(edge: .bottom) {
-                            if destination == .search {
-                                SearchTabBottomAccessory(store: searchBottomAccessoryStore, providesOwnBackground: true)
-                                    .padding(.vertical, 8)
-                            }
-                        }
+
                 }
                 .videoDestinations()
                 .dynamicDetailDestinations(
@@ -333,6 +305,7 @@ struct RootTabView: View {
             .searchable(
                 text: rootSearchQueryBinding,
                 isPresented: $isRootSearchPresented,
+                placement: .navigationBarDrawer(displayMode: .always),
                 prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
             )
             .searchFocused($isRootSearchFocused)
@@ -362,47 +335,6 @@ struct RootTabView: View {
 
     private var rootTabBarMinimizeBehavior: TabBarMinimizeBehavior {
         return runtimeSettings.minimizesTabBarOnScroll ? .onScrollDown : .never
-    }
-
-    private var showsSearchBottomAccessory: Bool {
-        guard visibleRootTabs.contains(.search),
-              selectedTab == .search,
-              searchNavigationPath.isEmpty,
-              searchBottomAccessoryStore.viewModel != nil else {
-            return false
-        }
-        return !searchBottomAccessoryStore.usesKeyboardControls
-    }
-
-    private var showsMineBottomAccessory: Bool {
-        selectedTab == .mine && mineNavigationPath.isEmpty && !isMineSearchEditing
-    }
-
-    private var showsSearchKeyboardFilters: Bool {
-        selectedTab == .search && searchNavigationPath.isEmpty && isRootSearchFocused
-    }
-
-    private var showsMineKeyboardSearch: Bool {
-        selectedTab == .mine && mineNavigationPath.isEmpty && isMineSearchEditing
-    }
-
-    private var showsTabBottomAccessory: Bool {
-        showsSearchBottomAccessory || showsMineBottomAccessory
-    }
-
-    @ViewBuilder
-    private var rootTabBottomAccessory: some View {
-        if showsSearchBottomAccessory {
-            SearchTabBottomAccessory(store: searchBottomAccessoryStore)
-        } else {
-            MineTabBottomSearchAccessory(
-                text: $mineSearchQuery,
-                onActivate: {
-                    isMineSearchEditing = true
-                }
-            )
-            .padding(.horizontal, libraryStore.standardPageHorizontalInset)
-        }
     }
 
     private func cancelMediaWarmupsIfEnvironmentConstrained() {

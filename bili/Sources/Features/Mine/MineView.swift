@@ -10,6 +10,7 @@ struct MineView: View {
     var isSearchFocused: FocusState<Bool>.Binding
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
+    @State private var isSearchPresented = false
     @State private var loadedMainAccountCredentialVersion: Int?
     @State private var loadedHistoryAccountCredentialVersion: Int?
     @State private var loadedInteractionAccountCredentialVersion: Int?
@@ -32,6 +33,12 @@ struct MineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
+        .searchable(text: $searchText, isPresented: $isSearchPresented,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "搜索我的页功能")
+        .searchFocused(isSearchFocused)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
         .sheet(item: $loginSheet) { sheet in
             if let viewModel = holder.viewModel {
                 switch sheet {
