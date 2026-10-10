@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ "${CILICILI_CACHE_LOCK_HELD:-}" != "${CILICILI_DERIVED_DATA_PATH:-}" || -z "${CILICILI_DERIVED_DATA_PATH:-}" ]]; then
+  exec python3 "$ROOT_DIR/Scripts/build-cache.py" run -- zsh "$0" "$@"
+fi
+DERIVED_DATA_PATH="$CILICILI_DERIVED_DATA_PATH"
 SIGNING_ENV_PATH="${SIGNING_ENV_PATH:-$ROOT_DIR/Config/Signing.local.env}"
 if [[ -f "$SIGNING_ENV_PATH" ]]; then
   source "$SIGNING_ENV_PATH"
@@ -10,7 +14,6 @@ CERT_DIR="${CERT_DIR:-$ROOT_DIR/Signing}"
 PROFILE_PATH="$CERT_DIR/cert.mobileprovision"
 PROFILE_PLIST="${TMPDIR:-/tmp}/cilicili_distribution_profile.plist"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-DERIVED_DATA_PATH="$ROOT_DIR/build/DistributionSignedDerivedData"
 ARCHIVE_PATH="$ROOT_DIR/build/archives/cilicili-distribution-$TIMESTAMP.xcarchive"
 EXPORT_PATH="$ROOT_DIR/build/distribution-ipa/$TIMESTAMP"
 EXPORT_OPTIONS_PLIST="${TMPDIR:-/tmp}/cilicili_distribution_export_options_$TIMESTAMP.plist"

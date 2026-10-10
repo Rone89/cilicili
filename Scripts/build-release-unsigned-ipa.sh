@@ -5,7 +5,10 @@ set -euo pipefail
 # intended for a third-party sideloader that applies its own signature.
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DERIVED_DATA_PATH="$ROOT_DIR/build/ReleaseUnsignedDerivedData"
+if [[ "${CILICILI_CACHE_LOCK_HELD:-}" != "${CILICILI_DERIVED_DATA_PATH:-}" || -z "${CILICILI_DERIVED_DATA_PATH:-}" ]]; then
+  exec python3 "$ROOT_DIR/Scripts/build-cache.py" run -- zsh "$0" "$@"
+fi
+DERIVED_DATA_PATH="$CILICILI_DERIVED_DATA_PATH"
 EXPORT_DIR="$ROOT_DIR/build/release-unsigned-ipa"
 LOG_DIR="$ROOT_DIR/build/logs"
 LOG_PATH="$LOG_DIR/release-unsigned-ipa.log"

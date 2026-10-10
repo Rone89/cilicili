@@ -68,9 +68,9 @@ Known baseline failures in `PlayerFormalPlaybackConfigurationTests`:
 All commands use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, project `bili.xcodeproj`, scheme `bili`, `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`.
 
 ```sh
-xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug -destination 'id=68843E67-096A-45DF-BF4E-F39DA74E6FC4' -parallel-testing-enabled NO -only-testing:biliTests test
-xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug -destination 'id=68843E67-096A-45DF-BF4E-F39DA74E6FC4' -parallel-testing-enabled NO -only-testing:biliUITests/VideoDetailFlowUITests test
-xcodebuild -project bili.xcodeproj -scheme bili -configuration Release -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
+python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug -destination 'id=68843E67-096A-45DF-BF4E-F39DA74E6FC4' -parallel-testing-enabled NO -only-testing:biliTests test
+python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug -destination 'id=68843E67-096A-45DF-BF4E-F39DA74E6FC4' -parallel-testing-enabled NO -only-testing:biliUITests/VideoDetailFlowUITests test
+python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme bili -configuration Release -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
 ```
 
 ## Remaining Boundaries

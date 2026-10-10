@@ -109,7 +109,7 @@ jobs:
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             -destination-timeout 120 \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData/Xcode-$XCODE_VERSION_MAJOR" \
             -resultBundlePath "$result_bundle_path" \
             -enableCodeCoverage YES \
             -skipPackagePluginValidation \

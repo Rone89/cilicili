@@ -26,7 +26,7 @@ cilicili 是一个使用 SwiftUI 开发的第三方 iOS 客户端实验项目，
 ## 本地运行
 
 ```bash
-xcodebuild \
+python3 Scripts/build-cache.py run -- xcodebuild \
   -project bili.xcodeproj \
   -scheme bili \
   -configuration Debug \
@@ -36,6 +36,8 @@ xcodebuild \
 ```
 
 也可以直接用 Xcode 打开 `bili.xcodeproj`，选择 `bili` scheme 后运行。
+
+命令行构建和 IPA 脚本共用按 Xcode 主版本隔离的增量缓存。并行或冲突构建、缓存占用查看及安全清理方式见 [构建缓存说明](docs/build-cache.md)。
 
 ## 构建未签名 IPA
 

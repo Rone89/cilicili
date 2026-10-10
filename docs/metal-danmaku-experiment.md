@@ -95,9 +95,8 @@ shader 使用 Xcode 的官方 Metal Toolchain 编译。
 
 ```sh
 DEVELOPER_DIR=/Users/rayc/Desktop/Xcode-beta.app/Contents/Developer \
-xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug \
+python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme bili -configuration Debug \
   -destination 'platform=iOS Simulator,id=6B297CE5-604E-48E4-893D-1B203ECB6679' \
-  -derivedDataPath /tmp/cilicili-metal-danmaku-derived \
   -parallel-testing-enabled NO -collect-test-diagnostics never \
   -only-testing:biliTests/DanmakuGlyphAtlasTests \
   -only-testing:biliTests/MetalDanmakuTimelineTests \
@@ -108,10 +107,8 @@ Release 真机目标的未签名构建也通过（Xcode 27.0；没有安装到 i
 
 ```sh
 DEVELOPER_DIR=/Users/rayc/Desktop/Xcode-beta.app/Contents/Developer \
-xcodebuild -project bili.xcodeproj -scheme bili -configuration Release \
+python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme bili -configuration Release \
   -destination 'generic/platform=iOS' \
-  -derivedDataPath /tmp/cilicili-metal-release-derived \
-  -clonedSourcePackagesDirPath /tmp/cilicili-metal-danmaku-derived/SourcePackages \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
