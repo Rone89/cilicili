@@ -94,19 +94,6 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.homeAvatarNavigation")
 
-            Toggle(isOn: Binding(
-                get: { libraryStore.videoDetailFixedBottomBarExperimentEnabled },
-                set: { libraryStore.setVideoDetailFixedBottomBarExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("视频详情页固定底部栏实验", systemImage: "rectangle.bottomthird.inset.filled")
-                    Text("底部控件随视频详情页面一起进入和返回，保留横屏隐藏与导航历史菜单。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.videoDetailFixedBottomBar")
 
             Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },

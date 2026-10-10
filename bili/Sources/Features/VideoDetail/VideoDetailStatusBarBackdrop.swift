@@ -6,7 +6,7 @@ struct VideoDetailStatusBarBackdrop: View {
     var body: some View {
         GeometryReader { proxy in
             if !isHidden {
-                Color.black
+                Color(uiColor: .systemBackground)
                     .frame(height: proxy.safeAreaInsets.top)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(.container, edges: .top)

@@ -46,7 +46,6 @@ struct VideoDetailViewContent: View {
         }
         .environment(\.videoDetailHasOuterBottomBar, true)
         .modifier(VideoDetailBottomToolbarModifier(
-            supportsFixedBar: true,
             isHidden: hidesSystemChrome,
             selection: $selectedContentTab,
             onOpenCommentComposer: { commentComposerRequestID += 1 }

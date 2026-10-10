@@ -1,4 +1,3 @@
-import SwiftUI
 import UIKit
 
 /// Own only our interaction; leave the system toolbar and scroll geometry intact.
@@ -46,9 +45,6 @@ final class VideoDetailBottomEdgeEffectBinding {
 @MainActor
 final class VideoDetailEdgeEffectScrollView: UIScrollView {
     private let edgeBinding = VideoDetailBottomEdgeEffectBinding()
-    weak var pageBottomEdgeContainer: UIView? {
-        didSet { updateBottomEdgeBinding() }
-    }
     var bottomEdgeBlurEnabled = false {
         didSet { updateBottomEdgeBinding() }
     }
@@ -68,10 +64,6 @@ final class VideoDetailEdgeEffectScrollView: UIScrollView {
             edgeBinding.detach()
             return
         }
-        if let pageBottomEdgeContainer, pageBottomEdgeContainer.window === window {
-            edgeBinding.update(scrollView: self, container: pageBottomEdgeContainer, enabled: true)
-            return
-        }
         var responder: UIResponder? = self
         while let current = responder {
             if let controller = current as? UIViewController,
@@ -84,71 +76,5 @@ final class VideoDetailEdgeEffectScrollView: UIScrollView {
             responder = current.next
         }
         edgeBinding.detach()
-    }
-}
-
-/// Register the page-owned bottom controls with Apple's scroll edge interaction.
-/// This transparent view draws no blur or background itself.
-struct VideoDetailFixedBottomEdgeContainer: UIViewRepresentable {
-    func makeUIView(context: Context) -> VideoDetailFixedBottomEdgeContainerView {
-        VideoDetailFixedBottomEdgeContainerView()
-    }
-
-    func updateUIView(_ view: VideoDetailFixedBottomEdgeContainerView, context: Context) {
-        view.scheduleBinding()
-    }
-
-    static func dismantleUIView(_ view: VideoDetailFixedBottomEdgeContainerView, coordinator: ()) {
-        view.detach()
-    }
-}
-
-final class VideoDetailFixedBottomEdgeContainerView: UIView {
-    private let boundScrollViews = NSHashTable<VideoDetailEdgeEffectScrollView>.weakObjects()
-    private var bindingScheduled = false
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window == nil { detach() } else { scheduleBinding() }
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        scheduleBinding()
-    }
-
-    func scheduleBinding() {
-        guard !bindingScheduled, window != nil else { return }
-        bindingScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.bindingScheduled = false
-            guard self.window != nil else { return }
-            var responder: UIResponder? = self
-            while let current = responder {
-                if let controller = current as? UIViewController {
-                    self.bind(in: controller.view)
-                    return
-                }
-                responder = current.next
-            }
-        }
-    }
-
-    private func bind(in view: UIView) {
-        if let scroll = view as? VideoDetailEdgeEffectScrollView {
-            if scroll.pageBottomEdgeContainer !== self {
-                scroll.pageBottomEdgeContainer = self
-            }
-            boundScrollViews.add(scroll)
-        }
-        for child in view.subviews { bind(in: child) }
-    }
-
-    func detach() {
-        for scroll in boundScrollViews.allObjects where scroll.pageBottomEdgeContainer === self {
-            scroll.pageBottomEdgeContainer = nil
-        }
-        boundScrollViews.removeAllObjects()
     }
 }

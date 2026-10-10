@@ -23,6 +23,41 @@ final class RootTabScrollUITests: XCTestCase {
         XCTAssertEqual(app.tabBars.count, 0)
     }
 
+    func testEnablingTabFromStandaloneHomePreservesSettingsScroll() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-cc.bili.display.visibleRootTabs.v1", "(home)",
+            "-cc.bili.home.avatarNavigationExperimentEnabled.v1", "YES"
+        ]
+        app.launch()
+        let more = app.buttons["更多页面"]
+        XCTAssertTrue(more.waitForExistence(timeout: 15))
+        more.tap()
+        app.buttons["我的"].tap()
+        let interface = app.buttons["mine.settings.interface"]
+        for _ in 0..<6 where !interface.isHittable { app.swipeUp() }
+        XCTAssertTrue(interface.isHittable)
+        interface.tap()
+        XCTAssertEqual(app.tabBars.count, 0)
+        let disclosure = app.buttons["底部 Tab 显示"]
+        for _ in 0..<8 where !disclosure.isHittable { app.swipeUp() }
+        XCTAssertTrue(disclosure.isHittable)
+        disclosure.tap()
+        let toggle = app.switches["settings.rootTabs.dynamic"]
+        for _ in 0..<4 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertTrue(toggle.isHittable)
+        let previousY = toggle.frame.minY
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        XCTAssertEqual(toggle.value as? String, "1", app.debugDescription)
+        XCTAssertEqual(toggle.frame.minY, previousY, accuracy: 3)
+        XCTAssertEqual(app.tabBars.count, 0)
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testRootTabReselectionScrollsToTopWithoutRefresh() {
         verifyReselection(arguments: [])
     }

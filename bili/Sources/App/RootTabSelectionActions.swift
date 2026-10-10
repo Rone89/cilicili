@@ -27,9 +27,10 @@ extension RootTabView {
         runtimeSettings.visibleRootTabs
     }
 
-    // Keep the active navigation hierarchy alive while its settings page is
-    // changing visibility. Remove it once the user leaves the pushed pages.
+    // The mounted tabs remain unchanged during pushed settings edits, including
+    // transitions between a standalone home stack and a multi-tab container.
     var displayedRootTabs: [AppTab] {
+        if let hostedRootTabs { return hostedRootTabs }
         guard !visibleRootTabs.contains(selectedTab), !activeRootNavigationPathIsEmpty else {
             return visibleRootTabs
         }

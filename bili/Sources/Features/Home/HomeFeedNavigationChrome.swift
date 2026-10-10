@@ -63,8 +63,10 @@ struct HomeFeedNavigationChrome: ViewModifier {
                                         }
                                     }
                                 } label: {
-                                    Image(systemName: "ellipsis")
+                                    Image(systemName: "circle.grid.hex.fill")
+                                        .foregroundStyle(.primary)
                                 }
+                                .tint(.primary)
                                 .accessibilityLabel("更多页面")
                             }
                         } else {

@@ -10,6 +10,7 @@ struct RootTabView: View {
     @StateObject var mineViewModelHolder = MineViewModelHolder()
     @StateObject var searchViewModelHolder = SearchViewModelHolder()
     @StateObject var searchBottomAccessoryStore = SearchBottomAccessoryStore()
+    @State var hostedRootTabs: [AppTab]?
     @State var selectedTab = Self.initialTab.appTab
     @State var rootTabScrollRequests: [AppTab: RootTabScrollRequest] = [:]
     @State var homeNavigationPath = NavigationPath()
@@ -70,6 +71,7 @@ struct RootTabView: View {
                 await restoreVideoPlaybackUIForPictureInPicture(video)
             }
             runtimeSettings.bind(dependencies.libraryStore)
+            hostedRootTabs = runtimeSettings.visibleRootTabs
             mineViewModelHolder.configure(
                 api: dependencies.api,
                 sessionStore: dependencies.sessionStore,
@@ -86,11 +88,16 @@ struct RootTabView: View {
             await refreshHomeMessageUnreadIfNeeded()
         }
         .onChange(of: runtimeSettings.visibleRootTabs) { _, tabs in
+            // Keep the mounted navigation hierarchy stable throughout settings
+            // edits; apply its new tab configuration after returning to a root.
+            guard activeRootNavigationPathIsEmpty else { return }
             repairSelectedTabIfNeeded(visibleTabs: tabs)
+            hostedRootTabs = tabs
         }
         .onChange(of: activeRootNavigationPathCount) { _, count in
             if count == 0 {
                 repairSelectedTabIfNeeded(visibleTabs: visibleRootTabs)
+                hostedRootTabs = visibleRootTabs
             }
         }
         .onChange(of: selectedTab) { _, tab in

@@ -503,22 +503,13 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.navigationHistoryContext) private var navigationHistory
     var isEnabled = true
-    var supportsFixedBar = false
     let isHidden: Bool
     @Binding var selection: VideoDetailContentTab
     let onOpenCommentComposer: (() -> Void)?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if isEnabled && supportsFixedBar && libraryStore.videoDetailFixedBottomBarExperimentEnabled {
-            content
-                .toolbarVisibility(.hidden, for: .bottomBar)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !isHidden {
-                        fixedBottomBar
-                    }
-                }
-        } else if isEnabled {
+        if isEnabled {
             content
                 .toolbar {
                     if let navigationHistory {
@@ -562,36 +553,5 @@ extension EnvironmentValues {
     var videoDetailHasOuterBottomBar: Bool {
         get { self[VideoDetailHasOuterBottomBarKey.self] }
         set { self[VideoDetailHasOuterBottomBarKey.self] = newValue }
-    }
-}
-
-private extension VideoDetailBottomToolbarModifier {
-    var fixedBottomBar: some View {
-        HStack(spacing: 0) {
-            if let navigationHistory {
-                VideoDetailHistoryBackMenu(history: navigationHistory)
-                    .frame(width: 44, height: 44)
-                    .biliGlassEffect(in: Circle())
-            }
-            Spacer(minLength: 8)
-            VideoDetailToolbarSegmentedPickerView(selection: $selection)
-                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth, height: 44)
-                .biliGlassEffect(in: Capsule())
-            Spacer(minLength: 8)
-            if let onOpenCommentComposer {
-                VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
-                    .frame(width: 44, height: 44)
-                    .biliGlassEffect(in: Circle())
-            }
-        }
-        .buttonStyle(.plain)
-        .tint(.primary)
-        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
-        .padding(.vertical, 8)
-        .background {
-            VideoDetailFixedBottomEdgeContainer()
-                .allowsHitTesting(false)
-        }
-
     }
 }

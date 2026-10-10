@@ -16,6 +16,7 @@ struct RootMineNavigationDestination: View {
                 destinationContent
             }
         }
+        .toolbarVisibility(.hidden, for: .tabBar)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())

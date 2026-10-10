@@ -12,26 +12,6 @@ final class VideoHistoryBackUITests: XCTestCase {
     }
 
     @MainActor
-    func testFixedBottomBarSupportsSelectionComposeAndReturn() {
-        let app = launch(extra: [
-            "--history-fixed-bottom-bar",
-            "-cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1", "YES",
-        ])
-        app.buttons["history.fixture.open"].tap()
-        XCTAssertTrue(app.buttons["video.detail.toolbar-comment"].waitForExistence(timeout: 5))
-        let fixedBack = app.descendants(matching: .any)["video.detail.history-back"].firstMatch
-        XCTAssertTrue(fixedBack.waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertEqual(app.buttons.matching(identifier: "video.detail.toolbar-comment").count, 1)
-        app.buttons["评论"].firstMatch.tap()
-        XCTAssertEqual(app.staticTexts["history.fixture.selection"].label, "comments")
-        app.buttons["video.detail.toolbar-comment"].tap()
-        XCTAssertTrue(app.staticTexts["history.fixture.composed"].exists)
-        fixedBack.tap()
-        XCTAssertTrue(app.buttons["history.fixture.open"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["video.detail.toolbar-comment"].exists)
-    }
-
-    @MainActor
     func testHistoryPopPreservesInstanceAndCommentSelection() {
         let app = launch()
         app.buttons["history.fixture.open"].tap()

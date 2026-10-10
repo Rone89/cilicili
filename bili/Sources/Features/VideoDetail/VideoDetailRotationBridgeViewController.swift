@@ -88,7 +88,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        .lightContent
+        isImmersivePlayback ? .lightContent : .default
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
@@ -101,7 +101,7 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = .systemBackground
         addChild(contentController)
         contentController.view.backgroundColor = .clear
         contentController.view.translatesAutoresizingMaskIntoConstraints = false

@@ -82,15 +82,12 @@ final class FormalStartupFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testFixedVideoBottomBarExperimentDefaultsOffAndPersistsIndependently() {
+    func testRetiredFixedVideoBottomBarPreferenceIsRemoved() {
         let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.videoDetailFixedBottomBarExperimentEnabled)
-        store.setVideoDetailFixedBottomBarExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).videoDetailFixedBottomBarExperimentEnabled)
-        store.setVideoDetailFixedBottomBarExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailFixedBottomBarExperimentEnabled)
-        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
+        let key = "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1"
+        defaults.set(true, forKey: key)
+        _ = LibraryStore(userDefaults: defaults)
+        XCTAssertNil(defaults.object(forKey: key))
     }
 
     @MainActor
