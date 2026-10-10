@@ -245,7 +245,7 @@ struct RootTabView: View {
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
         // Configure the native scrolling boundary without adding an overlay or changing safe areas.
-        .nativeBottomScrollEdgeBlurExperiment()
+        .nativeBottomScrollEdgeBlur()
     }
 
     @ViewBuilder

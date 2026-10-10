@@ -57,12 +57,17 @@ struct UITestHistoryBackFixtureView: View {
         let onNext: () -> Void
         @State private var instanceID = UUID()
         @State private var selection = VideoDetailContentTab.detail
+        @State private var didCompose = false
+        private var usesFixedBottomBar: Bool {
+            ProcessInfo.processInfo.arguments.contains("--history-fixed-bottom-bar")
+        }
 
         var body: some View {
             VStack {
                 Text(title).accessibilityIdentifier("history.fixture.title")
                 Text(instanceID.uuidString).accessibilityIdentifier("history.fixture.instance")
                 Text(selection.rawValue).accessibilityIdentifier("history.fixture.selection")
+                if didCompose { Text("已打开输入").accessibilityIdentifier("history.fixture.composed") }
                 Button("下一个视频", action: onNext).accessibilityIdentifier("history.fixture.next")
                 VideoDetailNativeContentTabView(
                     selection: $selection, layoutWidth: 390, topInset: 0,
@@ -70,6 +75,14 @@ struct UITestHistoryBackFixtureView: View {
                     content: { tab, _ in Text(tab.title) }
                 )
             }
+            .environment(\.videoDetailHasOuterBottomBar, usesFixedBottomBar)
+            .modifier(VideoDetailBottomToolbarModifier(
+                isEnabled: usesFixedBottomBar,
+                supportsFixedBar: true,
+                isHidden: false,
+                selection: $selection,
+                onOpenCommentComposer: { didCompose = true }
+            ))
             // Match video pages whose navigation bar doesn't supply a title.
         }
     }

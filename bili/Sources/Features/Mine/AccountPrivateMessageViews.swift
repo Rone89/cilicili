@@ -532,7 +532,7 @@ struct AccountPrivateMessageConversationView: View {
                     ToolbarSpacer(.flexible, placement: .bottomBar)
                 }
             }
-            .nativeBottomScrollEdgeBlurExperiment()
+            .nativeBottomScrollEdgeBlur()
             .nativeBottomScrollEdgeBlurVisibility(isHidden: showsMessageComposer)
             .toolbar(showsMessageComposer ? .hidden : .automatic, for: .bottomBar)
             .fullScreenCover(isPresented: $showsMessageComposer) {

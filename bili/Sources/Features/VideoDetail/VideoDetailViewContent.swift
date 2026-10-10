@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailViewContent: View {
+    @State private var commentComposerRequestID = 0
     let seedVideo: VideoItem
     @ObservedObject var holder: VideoDetailViewModelHolder
     @ObservedObject var runtimeSettings: VideoDetailRuntimeSettingsStore
@@ -32,6 +33,7 @@ struct VideoDetailViewContent: View {
                 isShowingFavoriteFolders: $isShowingFavoriteFolders,
                 isShowingCoinPicker: $isShowingCoinPicker,
                 isShowingNetworkDiagnostics: $isShowingNetworkDiagnostics,
+                commentComposerRequestID: commentComposerRequestID,
                 onNavigateBack: onNavigateBack
             )
         } initialContent: {
@@ -42,5 +44,13 @@ struct VideoDetailViewContent: View {
                 lifecycleActions: lifecycleActions
             )
         }
+        .environment(\.videoDetailHasOuterBottomBar, true)
+        .modifier(VideoDetailBottomToolbarModifier(
+            supportsFixedBar: true,
+            isHidden: hidesSystemChrome,
+            selection: $selectedContentTab,
+            onOpenCommentComposer: { commentComposerRequestID += 1 }
+        ))
+        .environment(\.navigationHistoryBackAction, onNavigateBack)
     }
 }

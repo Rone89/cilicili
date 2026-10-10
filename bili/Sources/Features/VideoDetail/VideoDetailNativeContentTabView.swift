@@ -4,7 +4,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
-    @Environment(\.navigationHistoryContext) private var navigationHistory
+    @Environment(\.videoDetailHasOuterBottomBar) private var hasOuterBottomBar
     @Binding var selection: VideoDetailContentTab
     let layoutWidth: CGFloat
     let topInset: CGFloat
@@ -37,12 +37,12 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .modifier(VideoDetailBottomToolbarModifier(
-            isEnabled: managesBottomToolbar,
+            isEnabled: managesBottomToolbar && !hasOuterBottomBar,
             isHidden: hidesBottomToolbar,
             selection: toolbarSelection,
             onOpenCommentComposer: onOpenCommentComposer
         ))
-        .nativeBottomScrollEdgeBlurExperiment(isEnabled: !hidesBottomToolbar)
+        .nativeBottomScrollEdgeBlur(isEnabled: !hidesBottomToolbar)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: hidesBottomToolbar)
         .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
@@ -92,7 +92,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 summary: tab == .detail ? summary : nil,
                 topInset: topInset,
                 minimumPlayerHeight: interactiveMinimumPlayerHeight,
-                bottomEdgeBlurEnabled: libraryStore.bottomScrollEdgeBlurExperimentEnabled && !hidesBottomToolbar && selection == tab,
+                bottomEdgeBlurEnabled: libraryStore.bottomScrollEdgeBlurEnabled && !hidesBottomToolbar && selection == tab,
                 contentRevision: contentRevision,
                 contentMountsSecondaryContent: mountsSecondaryContent
                     || (tab == .comments && selection == .comments),
@@ -503,13 +503,22 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
     @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.navigationHistoryContext) private var navigationHistory
     var isEnabled = true
+    var supportsFixedBar = false
     let isHidden: Bool
     @Binding var selection: VideoDetailContentTab
     let onOpenCommentComposer: (() -> Void)?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if isEnabled {
+        if isEnabled && supportsFixedBar && libraryStore.videoDetailFixedBottomBarExperimentEnabled {
+            content
+                .toolbarVisibility(.hidden, for: .bottomBar)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !isHidden {
+                        fixedBottomBar
+                    }
+                }
+        } else if isEnabled {
             content
                 .toolbar {
                     if let navigationHistory {
@@ -537,10 +546,52 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                         }
                     }
                 }
-                .toolbarBackground(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .automatic : .hidden, for: .bottomBar)
+                .toolbarBackground(libraryStore.bottomScrollEdgeBlurEnabled ? .automatic : .hidden, for: .bottomBar)
                 .toolbarVisibility(isHidden ? .hidden : .automatic, for: .bottomBar)
         } else {
             content
         }
+    }
+}
+
+private struct VideoDetailHasOuterBottomBarKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var videoDetailHasOuterBottomBar: Bool {
+        get { self[VideoDetailHasOuterBottomBarKey.self] }
+        set { self[VideoDetailHasOuterBottomBarKey.self] = newValue }
+    }
+}
+
+private extension VideoDetailBottomToolbarModifier {
+    var fixedBottomBar: some View {
+        HStack(spacing: 0) {
+            if let navigationHistory {
+                VideoDetailHistoryBackMenu(history: navigationHistory)
+                    .frame(width: 44, height: 44)
+                    .biliGlassEffect(in: Circle())
+            }
+            Spacer(minLength: 8)
+            VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth, height: 44)
+                .biliGlassEffect(in: Capsule())
+            Spacer(minLength: 8)
+            if let onOpenCommentComposer {
+                VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
+                    .frame(width: 44, height: 44)
+                    .biliGlassEffect(in: Circle())
+            }
+        }
+        .buttonStyle(.plain)
+        .tint(.primary)
+        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+        .padding(.vertical, 8)
+        .background {
+            VideoDetailFixedBottomEdgeContainer()
+                .allowsHitTesting(false)
+        }
+
     }
 }

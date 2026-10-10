@@ -234,7 +234,7 @@ struct LiveRoomShellContentView: View {
             state: state,
             onNavigateBack: onNavigateBack
         )
-        .scrollEdgeEffectStyle(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .soft : nil, for: .bottom)
+        .scrollEdgeEffectStyle(libraryStore.bottomScrollEdgeBlurEnabled ? .soft : nil, for: .bottom)
         .frame(width: state.layoutWidth, height: state.layoutHeight, alignment: .top)
         .clipped()
         .ignoresSafeArea()

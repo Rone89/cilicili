@@ -15,6 +15,7 @@ struct VideoDetailViewContentResolver: View {
     @Binding var isShowingFavoriteFolders: Bool
     @Binding var isShowingCoinPicker: Bool
     @Binding var isShowingNetworkDiagnostics: Bool
+    let commentComposerRequestID: Int
     let onNavigateBack: () -> Void
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
     @State private var commentComposerDrafts = [String: RichCommentDraft]()
@@ -35,12 +36,9 @@ struct VideoDetailViewContentResolver: View {
             onNavigateBack: onNavigateBack
         )
         .ignoresSafeArea()
-        .environment(\.navigationHistoryBackAction, onNavigateBack)
-        .modifier(VideoDetailBottomToolbarModifier(
-            isHidden: hidesSystemChrome,
-            selection: $selectedContentTab,
-            onOpenCommentComposer: { openCommentComposer(for: nil) }
-        ))
+        .onChange(of: commentComposerRequestID) { _, _ in
+            openCommentComposer(for: nil)
+        }
         .videoDetailSheets(
             viewModel: viewModel,
             libraryStore: dependencies.libraryStore,

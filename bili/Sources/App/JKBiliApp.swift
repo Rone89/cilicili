@@ -63,7 +63,7 @@ private struct ProductionMainInterfaceHost: View {
 
     var body: some View {
         RootTabView()
-            .nativeBottomScrollEdgeBlurExperiment()
+            .nativeBottomScrollEdgeBlur()
             .scrollIndicators(.hidden, axes: .vertical)
             .environmentObject(dependencies)
             .environmentObject(dependencies.sessionStore)

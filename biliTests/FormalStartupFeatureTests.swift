@@ -18,7 +18,7 @@ final class FormalStartupFeatureTests: XCTestCase {
         XCTAssertTrue(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
         XCTAssertEqual(store.visibleRootTabs, tabs)
         XCTAssertEqual(store.appTintColorHex, tint)
-        XCTAssertFalse(store.bottomScrollEdgeBlurExperimentEnabled)
+        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
 
         store.setHomeAvatarNavigationExperimentEnabled(false)
         XCTAssertFalse(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
@@ -66,17 +66,38 @@ final class FormalStartupFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testBottomScrollEdgeBlurExperimentDefaultsOffAndPersistsWithoutChangingOtherPreferences() {
+    func testBottomScrollEdgeBlurDefaultsOnAndPersistsWithoutChangingOtherPreferences() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
         let tint = store.appTintColorHex
-        XCTAssertFalse(store.bottomScrollEdgeBlurExperimentEnabled)
-        store.setBottomScrollEdgeBlurExperimentEnabled(true)
-        XCTAssertTrue(store.bottomScrollEdgeBlurExperimentEnabled)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurExperimentEnabled)
-        store.setBottomScrollEdgeBlurExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurExperimentEnabled)
+        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
+        store.setBottomScrollEdgeBlurEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
+        store.setBottomScrollEdgeBlurEnabled(true)
+        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
+        store.setBottomScrollEdgeBlurEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
         XCTAssertEqual(store.appTintColorHex, tint)
+    }
+
+    @MainActor
+    func testFixedVideoBottomBarExperimentDefaultsOffAndPersistsIndependently() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.videoDetailFixedBottomBarExperimentEnabled)
+        store.setVideoDetailFixedBottomBarExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).videoDetailFixedBottomBarExperimentEnabled)
+        store.setVideoDetailFixedBottomBarExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailFixedBottomBarExperimentEnabled)
+        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
+    }
+
+    @MainActor
+    func testPromotedBottomBlurPreservesExistingExplicitOffChoice() {
+        let defaults = makeUserDefaults()
+        defaults.set(false, forKey: "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1")
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
     }
 
     @MainActor
