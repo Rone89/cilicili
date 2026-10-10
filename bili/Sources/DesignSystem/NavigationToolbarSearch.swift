@@ -71,13 +71,7 @@ private struct NavigationToolbarSearch: ViewModifier {
         .font(.body)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 44)
-        .background {
-            if isFocused.wrappedValue {
-                Color.clear.biliRegularGlassEffect(interactive: true, in: Capsule())
-            } else {
-                Capsule().fill(Color(.secondarySystemBackground))
-            }
-        }
+        .biliRegularGlassEffect(interactive: true, in: Capsule())
     }
 }
 
