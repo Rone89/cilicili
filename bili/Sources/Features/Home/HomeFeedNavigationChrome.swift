@@ -254,6 +254,12 @@ private struct HomeProfileButtonContent: View {
         .buttonStyle(.plain)
         .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
         .glassEffect(.regular.interactive(), in: Circle())
+        .overlay {
+            if mineIsHidden && sessionStore.isLoggedIn && hasUnread {
+                Circle().strokeBorder(appTintColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .accessibilityLabel(mineIsHidden ? "个人空间与账户消息" : "个人空间")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
@@ -265,11 +271,6 @@ private struct HomeProfileButtonContent: View {
         }
         .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
         .clipShape(Circle())
-        .overlay {
-            if mineIsHidden && sessionStore.isLoggedIn && hasUnread {
-                Circle().strokeBorder(appTintColor, lineWidth: 2)
-            }
-        }
         .accessibilityHidden(true)
     }
 }
