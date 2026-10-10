@@ -534,7 +534,7 @@ struct AccountPrivateMessageConversationView: View {
                 if usesNativePresentation {
                     composer(using: proxy)
                         .scenePadding(.horizontal)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
                 }
             }
             .onChange(of: selectedPhoto) { _, item in
