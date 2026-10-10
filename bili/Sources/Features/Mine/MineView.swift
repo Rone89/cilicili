@@ -8,6 +8,7 @@ struct MineView: View {
     @ObservedObject var holder: MineViewModelHolder
     @Binding var searchText: String
     var isSearchFocused: FocusState<Bool>.Binding
+    let hasBackButton: Bool
     let onOpenRoute: (MineOverlayRoute) -> Void
     @State private var loginSheet: LoginSheet?
     @State private var loadedMainAccountCredentialVersion: Int?
@@ -36,6 +37,7 @@ struct MineView: View {
             text: $searchText,
             isFocused: isSearchFocused,
             prompt: "搜索我的页功能",
+            hasBackButton: hasBackButton,
             onSubmit: { isSearchFocused.wrappedValue = false }
         )
         .sheet(item: $loginSheet) { sheet in

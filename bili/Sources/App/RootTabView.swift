@@ -288,6 +288,7 @@ struct RootTabView: View {
                 holder: mineViewModelHolder,
                 searchText: $mineSearchQuery,
                 isSearchFocused: $isMineSearchFocused,
+                hasBackButton: !detailPath.wrappedValue.isEmpty,
                 onOpenRoute: openMineOverlayRoute
             )
         case .search:
@@ -299,6 +300,8 @@ struct RootTabView: View {
                 text: rootSearchQueryBinding,
                 isFocused: $isRootSearchFocused,
                 prompt: searchViewModelHolder.viewModel?.searchPrompt ?? "搜索",
+                hasBackButton: !detailPath.wrappedValue.isEmpty,
+                trailingButtonCount: 1,
                 onSubmit: submitRootSearch
             )
         }

@@ -68,6 +68,7 @@ struct UITestSearchScrollFixtureView: View {
                     text: searchTextBinding,
                     isFocused: $isSearchFocused,
                     prompt: "搜索",
+                    trailingButtonCount: 2,
                     onSubmit: {
                         let keyword = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !keyword.isEmpty else { return }

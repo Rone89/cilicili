@@ -204,6 +204,18 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "搜索我的页功能")
     }
 
+    func testToolbarSearchUsesSpaceFreedByAbsentButtons() {
+        let app = launchFixture()
+        let field = app.textFields["navigation.search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        let searchWidth = field.frame.width
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars.firstMatch.frame.contains(field.frame))
+        XCTAssertGreaterThan(field.frame.width, searchWidth + 60,
+                             "Without trailing actions the search input should use the freed space")
+    }
+
     private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let search = app.textFields["navigation.search.field"]
         let filters = app.buttons["search.filters.menu"]

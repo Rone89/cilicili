@@ -5,6 +5,8 @@ private struct NavigationToolbarSearch: ViewModifier {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
     let prompt: String
+    let hasBackButton: Bool
+    let trailingButtonCount: Int
     let onSubmit: () -> Void
     @State private var pageWidth: CGFloat = 0
 
@@ -23,15 +25,24 @@ private struct NavigationToolbarSearch: ViewModifier {
                                 isFocused.wrappedValue = false
                             }
                             .foregroundStyle(.primary)
+                            .fixedSize()
                             .accessibilityIdentifier("navigation.search.cancel")
                         }
                     }
-                    // Reserve room for the native back button and trailing actions.
-                    .frame(width: max(120, (pageWidth > 0 ? pageWidth : 360) - 144))
+                    // Keep the input in this row; reserve space only for existing actions.
+                    .frame(width: availableWidth)
                 }
                 .sharedBackgroundVisibility(.hidden)
             }
             .onDisappear { isFocused.wrappedValue = false }
+    }
+
+    private var availableWidth: CGFloat {
+        let buttonCount = (hasBackButton ? 1 : 0) + max(0, trailingButtonCount)
+        let horizontalMargins: CGFloat = 32
+        let buttonWidthAndSpacing: CGFloat = 56
+        return max(120, (pageWidth > 0 ? pageWidth : 360)
+                   - horizontalMargins - CGFloat(buttonCount) * buttonWidthAndSpacing)
     }
 
     private var inputField: some View {
@@ -59,14 +70,8 @@ private struct NavigationToolbarSearch: ViewModifier {
         }
         .font(.body)
         .padding(.horizontal, 12)
-        .frame(minHeight: 44)
-        .background {
-            if isFocused.wrappedValue {
-                Capsule().fill(.clear).biliGlassEffect(in: Capsule())
-            } else {
-                Capsule().fill(Color(.secondarySystemBackground))
-            }
-        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .biliRegularGlassEffect(interactive: true, in: Capsule())
     }
 }
 
@@ -75,8 +80,14 @@ extension View {
         text: Binding<String>,
         isFocused: FocusState<Bool>.Binding,
         prompt: String,
+        hasBackButton: Bool = false,
+        trailingButtonCount: Int = 0,
         onSubmit: @escaping () -> Void = {}
     ) -> some View {
-        modifier(NavigationToolbarSearch(text: text, isFocused: isFocused, prompt: prompt, onSubmit: onSubmit))
+        modifier(NavigationToolbarSearch(
+            text: text, isFocused: isFocused, prompt: prompt,
+            hasBackButton: hasBackButton, trailingButtonCount: trailingButtonCount,
+            onSubmit: onSubmit
+        ))
     }
 }
