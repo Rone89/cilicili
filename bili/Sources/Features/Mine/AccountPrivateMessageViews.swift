@@ -541,6 +541,7 @@ struct AccountPrivateMessageConversationView: View {
                     .sharedBackgroundVisibility(.hidden)
                 }
             }
+            .toolbarBackground(usesNativePresentation ? .hidden : .automatic, for: .bottomBar)
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
                 Task { await sendSelectedPhoto(item, using: proxy) }
