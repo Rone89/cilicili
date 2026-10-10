@@ -29,6 +29,8 @@ Opening the project directly in Xcode remains supported and keeps using Xcode's 
 
 For XcodeBuildMCP, first resolve the same path with `python3 Scripts/build-cache.py path`, then set the session's `derivedDataPath` default to that value. XcodeBuildMCP adds `-derivedDataPath` itself; adding it again in `extraArgs` makes `xcodebuild` fail with a duplicate-option error. Do not overlap two XcodeBuildMCP builds that use the shared path; use a temporary managed command-line build when parallel compilation is necessary.
 
+For simulator development and validation, use the existing local **iPhone 18 Pro Max, iOS 27.0** simulator. Do not create, clone, boot, or switch to another simulator unless the user explicitly asks for it.
+
 GitHub Actions runners are disposable. CI jobs use runner-local DerivedData rather than adding a persistent cache to the repository or sharing one between concurrent jobs.
 
 ## Parallel or incompatible builds
