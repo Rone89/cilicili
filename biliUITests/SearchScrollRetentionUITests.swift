@@ -172,6 +172,23 @@ final class SearchScrollRetentionUITests: XCTestCase {
         assertIntegratedSearchRow(in: app)
     }
 
+    func testIntegratedSearchStaysVisibleDuringRepeatedScrolling() {
+        let app = launchFixture()
+        let scroll = app.scrollViews.firstMatch
+        let search = app.searchFields.firstMatch
+        let query = search.value as? String
+        for _ in 0..<5 {
+            scroll.swipeUp()
+            assertIntegratedSearchRow(in: app)
+            XCTAssertTrue(search.isHittable)
+            XCTAssertEqual(search.value as? String, query)
+            scroll.swipeDown()
+            assertIntegratedSearchRow(in: app)
+            XCTAssertTrue(search.isHittable)
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+        }
+    }
+
     private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let search = app.searchFields.firstMatch
         let filters = app.buttons["search.filters.menu"]

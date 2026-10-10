@@ -36,7 +36,7 @@ struct MineView: View {
         .searchable(text: $searchText, isPresented: $isSearchPresented,
                     placement: .toolbar,
                     prompt: "搜索我的页功能")
-        .integratedNavigationSearch()
+        .integratedNavigationSearch(isPresented: isSearchPresented)
         .searchFocused(isSearchFocused)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()

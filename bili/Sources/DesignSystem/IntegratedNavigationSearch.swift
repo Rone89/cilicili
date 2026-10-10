@@ -3,12 +3,12 @@ import UIKit
 
 /// Keeps SwiftUI's search controller in the top navigation row on iPhone.
 struct IntegratedNavigationSearch: UIViewControllerRepresentable {
+    let isPresented: Bool
+
     func makeUIViewController(context: Context) -> Controller { Controller() }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
-        controller.applyPlacement()
-        // SwiftUI may install its search controller after this representable updates.
-        DispatchQueue.main.async { [weak controller] in controller?.applyPlacement() }
+        controller.updateSearchPresentation(isPresented)
     }
 
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
@@ -19,8 +19,10 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
         private weak var configuredItem: UINavigationItem?
         private var previousPlacement: UINavigationItem.SearchBarPlacement = .automatic
         private var previouslyAllowedToolbarIntegration = true
-        private var placementObservation: NSKeyValueObservation?
-        private var integrationObservation: NSKeyValueObservation?
+        private var previouslyHidSearchBarWhenScrolling = true
+        private weak var configuredSearchController: UISearchController?
+        private var isSearchPresented: Bool?
+        private var needsPlacementUpdate = true
         private var searchControllerObservation: NSKeyValueObservation?
         private var correctionScheduled = false
 
@@ -31,11 +33,20 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            needsPlacementUpdate = true
             applyPlacement()
         }
 
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews()
+            applyPlacement()
+        }
+
+        func updateSearchPresentation(_ isPresented: Bool) {
+            if isSearchPresented != isPresented {
+                isSearchPresented = isPresented
+                scheduleCorrection()
+            }
             applyPlacement()
         }
 
@@ -52,23 +63,29 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
                         configuredItem = item
                         previousPlacement = item.preferredSearchBarPlacement
                         previouslyAllowedToolbarIntegration = item.searchBarPlacementAllowsToolbarIntegration
-                        // Search presentation and SwiftUI updates can rewrite the same
-                        // navigation item without laying out this zero-sized bridge.
-                        placementObservation = item.observe(\.preferredSearchBarPlacement, options: [.new]) { [weak self] _, _ in
-                            Task { @MainActor [weak self] in self?.scheduleCorrection() }
-                        }
-                        integrationObservation = item.observe(\.searchBarPlacementAllowsToolbarIntegration, options: [.new]) { [weak self] _, _ in
-                            Task { @MainActor [weak self] in self?.scheduleCorrection() }
-                        }
-                        searchControllerObservation = item.observe(\.searchController, options: [.new]) { [weak self] _, _ in
-                            Task { @MainActor [weak self] in self?.scheduleCorrection() }
+                        previouslyHidSearchBarWhenScrolling = item.hidesSearchBarWhenScrolling
+                        // Observe controller replacement only. Observing placement and
+                        // correcting it on every layout competes with UIKit's scroll chrome.
+                        searchControllerObservation = item.observe(\.searchController, options: [.new]) { [weak self] observedItem, _ in
+                            Task { @MainActor [weak self, weak observedItem] in
+                                guard let self, let item = observedItem,
+                                      self.configuredItem === item,
+                                      self.configuredSearchController !== item.searchController else { return }
+                                self.scheduleCorrection()
+                            }
                         }
                     }
+                    guard needsPlacementUpdate || configuredSearchController !== item.searchController else { return }
+                    needsPlacementUpdate = false
+                    configuredSearchController = item.searchController
                     if item.preferredSearchBarPlacement != .integrated {
                         item.preferredSearchBarPlacement = .integrated
                     }
                     if item.searchBarPlacementAllowsToolbarIntegration {
                         item.searchBarPlacementAllowsToolbarIntegration = false
+                    }
+                    if item.hidesSearchBarWhenScrolling {
+                        item.hidesSearchBarWhenScrolling = false
                     }
                     return
                 }
@@ -77,32 +94,35 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
         }
 
         private func scheduleCorrection() {
+            needsPlacementUpdate = true
             guard !correctionScheduled else { return }
             correctionScheduled = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.correctionScheduled = false
                 guard self.configuredItem != nil else { return }
+                self.needsPlacementUpdate = true
                 self.applyPlacement()
             }
         }
 
         func restorePlacement() {
-            placementObservation = nil
-            integrationObservation = nil
             searchControllerObservation = nil
+            configuredSearchController = nil
+            needsPlacementUpdate = true
             guard let item = configuredItem else { return }
             configuredItem = nil
             item.preferredSearchBarPlacement = previousPlacement
             item.searchBarPlacementAllowsToolbarIntegration = previouslyAllowedToolbarIntegration
+            item.hidesSearchBarWhenScrolling = previouslyHidSearchBarWhenScrolling
         }
     }
 }
 
 extension View {
-    func integratedNavigationSearch() -> some View {
+    func integratedNavigationSearch(isPresented: Bool) -> some View {
         background {
-            IntegratedNavigationSearch()
+            IntegratedNavigationSearch(isPresented: isPresented)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
         }

@@ -59,7 +59,7 @@ struct UITestSearchScrollFixtureView: View {
                     placement: .toolbar,
                     prompt: "搜索"
                 )
-                .integratedNavigationSearch()
+                .integratedNavigationSearch(isPresented: isSearchPresented)
                 .searchFocused($isSearchFocused)
                 .onChange(of: viewModel.query) { _, query in
                     searchText = query

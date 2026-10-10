@@ -308,7 +308,7 @@ struct RootTabView: View {
                 placement: .toolbar,
                 prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
             )
-            .integratedNavigationSearch()
+            .integratedNavigationSearch(isPresented: isRootSearchPresented)
             .searchFocused($isRootSearchFocused)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()

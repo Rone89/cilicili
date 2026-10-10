@@ -9,12 +9,13 @@ final class IntegratedNavigationSearchTests: XCTestCase {
         defer { bridge.restorePlacement(); window.isHidden = true }
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .integrated)
         XCTAssertFalse(owner.navigationItem.searchBarPlacementAllowsToolbarIntegration)
+        XCTAssertFalse(owner.navigationItem.hidesSearchBarWhenScrolling)
 
         bridge.viewWillDisappear(false)
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .integrated)
     }
 
-    func testNavigationItemChangesAreCorrectedWithoutAnotherBridgeLayout() {
+    func testSearchControllerReplacementReappliesPlacementWithoutAnotherBridgeLayout() {
         let (window, owner, bridge) = makeFixture()
         defer { bridge.restorePlacement(); window.isHidden = true }
         let item = owner.navigationItem
@@ -29,12 +30,52 @@ final class IntegratedNavigationSearchTests: XCTestCase {
         wait(for: [corrected], timeout: 2)
     }
 
+    func testRepeatedScrollLayoutsDoNotFightNavigationPlacementChanges() async {
+        let (window, owner, bridge) = makeFixture()
+        defer { bridge.restorePlacement(); window.isHidden = true }
+        let item = owner.navigationItem
+        // Simulate UIKit/SwiftUI updating navigation chrome during scrolling.
+        item.preferredSearchBarPlacement = .stacked
+        item.searchBarPlacementAllowsToolbarIntegration = true
+        let searchController = item.searchController
+        for _ in 0..<40 {
+            item.searchController = searchController
+            bridge.viewDidLayoutSubviews()
+        }
+        let drained = expectation(description: "Drain asynchronous navigation callbacks")
+        DispatchQueue.main.async {
+            DispatchQueue.main.async { drained.fulfill() }
+        }
+        await fulfillment(of: [drained], timeout: 2)
+        XCTAssertEqual(item.preferredSearchBarPlacement, .stacked)
+        XCTAssertTrue(item.searchBarPlacementAllowsToolbarIntegration)
+    }
+
+    func testOnlySearchPresentationChangesReapplyPlacement() async {
+        let (window, owner, bridge) = makeFixture()
+        defer { bridge.restorePlacement(); window.isHidden = true }
+        bridge.updateSearchPresentation(false)
+        let drained = expectation(description: "Initial presentation settled")
+        DispatchQueue.main.async { drained.fulfill() }
+        await fulfillment(of: [drained], timeout: 2)
+        let item = owner.navigationItem
+        item.preferredSearchBarPlacement = .stacked
+        for _ in 0..<40 { bridge.updateSearchPresentation(false) }
+        XCTAssertEqual(item.preferredSearchBarPlacement, .stacked)
+        bridge.updateSearchPresentation(true)
+        XCTAssertEqual(item.preferredSearchBarPlacement, .integrated)
+        item.preferredSearchBarPlacement = .stacked
+        bridge.updateSearchPresentation(false)
+        XCTAssertEqual(item.preferredSearchBarPlacement, .integrated)
+    }
+
     func testDismantlingRestoresPreferencesAndStopsCorrections() {
         let (window, owner, bridge) = makeFixture()
         defer { window.isHidden = true }
         bridge.restorePlacement()
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .stacked)
         XCTAssertTrue(owner.navigationItem.searchBarPlacementAllowsToolbarIntegration)
+        XCTAssertTrue(owner.navigationItem.hidesSearchBarWhenScrolling)
         owner.navigationItem.preferredSearchBarPlacement = .automatic
         bridge.applyPlacement()
         bridge.restorePlacement()
