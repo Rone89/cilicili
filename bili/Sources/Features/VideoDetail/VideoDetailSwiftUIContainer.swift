@@ -79,6 +79,7 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     }
 
     func setSecondaryContentMounted(_ mounted: Bool) {
+        guard contentState.mountsSecondaryContent != mounted else { return }
         contentState.mountsSecondaryContent = mounted
     }
 
@@ -950,9 +951,13 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         let insets = view.safeAreaInsets
         if contentModel.rootSafeAreaInsets != insets {
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.view.safeAreaInsets == insets else { return }
+                guard let self,
+                      self.view.safeAreaInsets == insets,
+                      self.contentModel.rootSafeAreaInsets != insets else { return }
                 self.contentModel.rootSafeAreaInsets = insets
-                self.contentModel.contentState.bottomInset = insets.bottom
+                if self.contentModel.contentState.bottomInset != insets.bottom {
+                    self.contentModel.contentState.bottomInset = insets.bottom
+                }
             }
         }
     }
