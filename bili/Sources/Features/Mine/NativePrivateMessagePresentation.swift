@@ -74,6 +74,9 @@ struct NativePrivateMessageComposer: View {
     @Environment(\.appThemeTintColor) private var tint
 
     private var isBusy: Bool { isSending || isSendingImage }
+    // Match the 48pt visible system toolbar capsule while the keyboard is closed.
+    // This is a minimum: multiline text and larger fonts can still grow the field.
+    private var baseControlHeight: CGFloat { focus.wrappedValue ? 44 : 48 }
 
     var body: some View {
         GlassEffectContainer(spacing: 10) {
@@ -95,7 +98,7 @@ struct NativePrivateMessageComposer: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(.plain)
-            .frame(width: 44, height: 44)
+            .frame(width: baseControlHeight, height: baseControlHeight)
             .foregroundStyle(tint)
             .glassEffect(.regular.interactive(), in: Circle())
             .disabled(isBusy)
@@ -111,6 +114,7 @@ struct NativePrivateMessageComposer: View {
                     .submitLabel(.return)
                     .padding(.leading, 14)
                     .padding(.vertical, 11)
+                    .frame(minHeight: baseControlHeight)
                     .disabled(isBusy)
                     .accessibilityLabel("私信内容")
                     .accessibilityIdentifier("privateMessage.composer")
@@ -120,7 +124,7 @@ struct NativePrivateMessageComposer: View {
                         if isSending { ProgressView().controlSize(.small) }
                         else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)) }
                     }
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: baseControlHeight)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(tint)
@@ -129,6 +133,8 @@ struct NativePrivateMessageComposer: View {
                 .accessibilityIdentifier("privateMessage.send")
             }
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 24))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("privateMessage.inputContainer")
         }
     }
 }

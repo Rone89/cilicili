@@ -33,8 +33,8 @@ final class NativePrivateMessageUITests: XCTestCase {
         XCTAssertTrue(send.waitForExistence(timeout: 5))
         XCTAssertFalse(send.isEnabled)
         let attachments = app.buttons["privateMessage.attachments"]
-        XCTAssertEqual(attachments.frame.height, 44, accuracy: 1)
-        XCTAssertEqual(attachments.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(attachments.frame.height, 48, accuracy: 1)
+        XCTAssertEqual(attachments.frame.width, 48, accuracy: 1)
         // The plain send button exposes its 30pt symbol, whereas the glass menu exposes its full control.
         XCTAssertEqual(attachments.frame.midY, send.frame.midY, accuracy: 1)
         screenshot(app, "native-private-message-light")
@@ -86,6 +86,11 @@ final class NativePrivateMessageUITests: XCTestCase {
         let input = app.descendants(matching: .any)["privateMessage.composer"].firstMatch
         let attachments = app.buttons["privateMessage.attachments"]
         XCTAssertEqual(attachments.frame.midY, send.frame.midY, accuracy: 1)
+        let container = app.descendants(matching: .any)["privateMessage.inputContainer"].firstMatch
+        XCTAssertTrue(container.exists)
+        XCTAssertEqual(container.frame.height, 48, accuracy: 1)
+        XCTAssertEqual(attachments.frame.height, container.frame.height, accuracy: 1)
+        screenshot(app, "native-private-message-toolbar-keyboard-closed")
         input.tap()
         waitForKeyboard(app)
         let singleLineHeight = input.frame.height
