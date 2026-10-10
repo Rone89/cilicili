@@ -88,6 +88,11 @@ struct RootTabView: View {
         .onChange(of: runtimeSettings.visibleRootTabs) { _, tabs in
             repairSelectedTabIfNeeded(visibleTabs: tabs)
         }
+        .onChange(of: activeRootNavigationPathCount) { _, count in
+            if count == 0 {
+                repairSelectedTabIfNeeded(visibleTabs: visibleRootTabs)
+            }
+        }
         .onChange(of: selectedTab) { _, tab in
             if tab != .search {
                 preservesSearchResultsOnDismissal = true
@@ -148,7 +153,7 @@ struct RootTabView: View {
 
     private var rootTabBar: some View {
         TabView(selection: tabSelection) {
-            ForEach(visibleRootTabs) { tab in
+            ForEach(displayedRootTabs) { tab in
                 Tab(value: tab, role: tab == .search ? .search : nil) {
                     rootTabNavigationStack(
                         for: tab,
@@ -159,6 +164,7 @@ struct RootTabView: View {
                 }
             }
         }
+        .toolbarVisibility(visibleRootTabs.count == 1 ? .hidden : .automatic, for: .tabBar)
         .tint(libraryStore.appTintColor)
         .tabViewBottomAccessory(isEnabled: showsTabBottomAccessory) {
             rootTabBottomAccessory

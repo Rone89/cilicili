@@ -27,8 +27,18 @@ extension RootTabView {
         runtimeSettings.visibleRootTabs
     }
 
+    // Keep the active navigation hierarchy alive while its settings page is
+    // changing visibility. Remove it once the user leaves the pushed pages.
+    var displayedRootTabs: [AppTab] {
+        guard !visibleRootTabs.contains(selectedTab), !activeRootNavigationPathIsEmpty else {
+            return visibleRootTabs
+        }
+        return AppTab.normalizedVisibleTabs(visibleRootTabs + [selectedTab])
+    }
+
     func repairSelectedTabIfNeeded(visibleTabs: [AppTab]) {
         guard !visibleTabs.contains(selectedTab) else { return }
+        guard activeRootNavigationPathIsEmpty else { return }
         selectedTab = fallbackRootTab(for: selectedTab, visibleTabs: visibleTabs)
     }
 
