@@ -56,7 +56,7 @@ struct UITestSearchScrollFixtureView: View {
                 .searchable(
                     text: searchTextBinding,
                     isPresented: $isSearchPresented,
-                    placement: .toolbar,
+                    placement: .toolbarPrincipal,
                     prompt: "搜索"
                 )
                 .integratedNavigationSearch(isPresented: isSearchPresented)

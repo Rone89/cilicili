@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Keeps SwiftUI's search controller in the top navigation row on iPhone.
+/// iOS 26 fallback for keeping SwiftUI's search controller in the navigation row.
 struct IntegratedNavigationSearch: UIViewControllerRepresentable {
     let isPresented: Bool
 
@@ -19,7 +19,6 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
         private weak var configuredItem: UINavigationItem?
         private var previousPlacement: UINavigationItem.SearchBarPlacement = .automatic
         private var previouslyAllowedToolbarIntegration = true
-        private var previouslyHidSearchBarWhenScrolling = true
         private weak var configuredSearchController: UISearchController?
         private var isSearchPresented: Bool?
         private var needsPlacementUpdate = true
@@ -63,7 +62,6 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
                         configuredItem = item
                         previousPlacement = item.preferredSearchBarPlacement
                         previouslyAllowedToolbarIntegration = item.searchBarPlacementAllowsToolbarIntegration
-                        previouslyHidSearchBarWhenScrolling = item.hidesSearchBarWhenScrolling
                         // Observe controller replacement only. Observing placement and
                         // correcting it on every layout competes with UIKit's scroll chrome.
                         searchControllerObservation = item.observe(\.searchController, options: [.new]) { [weak self] observedItem, _ in
@@ -83,9 +81,6 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
                     }
                     if item.searchBarPlacementAllowsToolbarIntegration {
                         item.searchBarPlacementAllowsToolbarIntegration = false
-                    }
-                    if item.hidesSearchBarWhenScrolling {
-                        item.hidesSearchBarWhenScrolling = false
                     }
                     return
                 }
@@ -114,17 +109,23 @@ struct IntegratedNavigationSearch: UIViewControllerRepresentable {
             configuredItem = nil
             item.preferredSearchBarPlacement = previousPlacement
             item.searchBarPlacementAllowsToolbarIntegration = previouslyAllowedToolbarIntegration
-            item.hidesSearchBarWhenScrolling = previouslyHidSearchBarWhenScrolling
         }
     }
 }
 
 extension View {
+    @ViewBuilder
     func integratedNavigationSearch(isPresented: Bool) -> some View {
-        background {
-            IntegratedNavigationSearch(isPresented: isPresented)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+        if #available(iOS 27.0, *) {
+            // Let SwiftUI own placement. Its default principal-search behavior
+            // minimizes the navigation bar on scroll unless explicitly disabled.
+            toolbarMinimizationBehavior(.never, for: .navigationBar)
+        } else {
+            background {
+                IntegratedNavigationSearch(isPresented: isPresented)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

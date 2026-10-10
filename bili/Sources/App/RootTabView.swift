@@ -305,7 +305,7 @@ struct RootTabView: View {
             .searchable(
                 text: rootSearchQueryBinding,
                 isPresented: $isRootSearchPresented,
-                placement: .toolbar,
+                placement: .toolbarPrincipal,
                 prompt: Text(searchViewModelHolder.viewModel?.searchPrompt ?? "搜索")
             )
             .integratedNavigationSearch(isPresented: isRootSearchPresented)

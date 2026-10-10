@@ -9,7 +9,6 @@ final class IntegratedNavigationSearchTests: XCTestCase {
         defer { bridge.restorePlacement(); window.isHidden = true }
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .integrated)
         XCTAssertFalse(owner.navigationItem.searchBarPlacementAllowsToolbarIntegration)
-        XCTAssertFalse(owner.navigationItem.hidesSearchBarWhenScrolling)
 
         bridge.viewWillDisappear(false)
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .integrated)
@@ -75,7 +74,6 @@ final class IntegratedNavigationSearchTests: XCTestCase {
         bridge.restorePlacement()
         XCTAssertEqual(owner.navigationItem.preferredSearchBarPlacement, .stacked)
         XCTAssertTrue(owner.navigationItem.searchBarPlacementAllowsToolbarIntegration)
-        XCTAssertTrue(owner.navigationItem.hidesSearchBarWhenScrolling)
         owner.navigationItem.preferredSearchBarPlacement = .automatic
         bridge.applyPlacement()
         bridge.restorePlacement()
