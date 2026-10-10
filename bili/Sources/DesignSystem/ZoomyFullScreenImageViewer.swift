@@ -166,6 +166,18 @@ nonisolated enum ZoomyViewerImageSizing {
     }
 }
 
+nonisolated enum ZoomyOriginalLoadState: Equatable {
+    case idle, loading, failed
+
+    var buttonTitle: String {
+        switch self {
+        case .idle: "查看原图"
+        case .loading: "加载原图"
+        case .failed: "重试原图"
+        }
+    }
+}
+
 struct ZoomyFullScreenImageViewer: View {
     @Environment(\.colorScheme) private var colorScheme
     let initialImage: UIImage?
@@ -191,6 +203,8 @@ struct ZoomyFullScreenImageViewer: View {
     @State private var toastTask: Task<Void, Never>?
     @State private var areActionControlsVisible = true
     @State private var originalRequestedItemIDs = Set<String>()
+    @State private var originalLoadStates: [String: ZoomyOriginalLoadState] = [:]
+    @State private var originalRetryRequests: [String: Int] = [:]
 
     init(
         initialImage: UIImage?,
@@ -343,7 +357,15 @@ struct ZoomyFullScreenImageViewer: View {
                 .biliGlassEffect(interactive: true, in: Capsule())
 
             if canRequestOriginalSelectedMedia {
-                Button("查看原图", action: requestOriginalSelectedMedia)
+                Button(action: requestOriginalSelectedMedia) {
+                    HStack(spacing: 6) {
+                        if selectedOriginalLoadState == .loading {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(selectedOriginalLoadState.buttonTitle)
+                    }
+                }
+                    .disabled(selectedOriginalLoadState == .loading)
                     .font(.caption.weight(.semibold))
                     .buttonStyle(.plain)
                     .foregroundStyle(.primary)
@@ -351,7 +373,7 @@ struct ZoomyFullScreenImageViewer: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .biliGlassEffect(interactive: true, in: Capsule())
-                    .accessibilityLabel("查看原图")
+                    .accessibilityLabel(selectedOriginalLoadState.buttonTitle)
             }
         }
     }
@@ -390,6 +412,8 @@ struct ZoomyFullScreenImageViewer: View {
                 initialImage: initialImage(for: item),
                 targetPixelSize: targetPixelSize,
                 loadsOriginalImage: originalRequestedItemIDs.contains(item.id),
+                originalRetryRequestID: originalRetryRequests[item.id, default: 0],
+                onOriginalLoadStateChanged: { originalLoadStates[item.id] = $0 },
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: item.id == selectedItemID,
                 isPresented: $isPresented,
@@ -411,6 +435,8 @@ struct ZoomyFullScreenImageViewer: View {
                 initialImage: initialImage,
                 targetPixelSize: targetPixelSize,
                 loadsOriginalImage: originalRequestedItemIDs.contains(url.absoluteString),
+                originalRetryRequestID: originalRetryRequests[url.absoluteString, default: 0],
+                onOriginalLoadStateChanged: { originalLoadStates[url.absoluteString] = $0 },
                 interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: true,
                 isPresented: $isPresented,
@@ -449,6 +475,10 @@ struct ZoomyFullScreenImageViewer: View {
         return selectedItem.displayURL != nil || selectedSnapshot?.isFinal == true
     }
 
+    private var selectedOriginalLoadState: ZoomyOriginalLoadState {
+        originalLoadStates[selectedItem.id, default: .idle]
+    }
+
     private var canRequestOriginalSelectedMedia: Bool {
         interactionExperimentEnabled
             && !selectedItem.needsOriginalMedia
@@ -459,13 +489,16 @@ struct ZoomyFullScreenImageViewer: View {
                 baseTargetPixelSize: targetPixelSize
             )
             && selectedSnapshot?.isOriginalQuality != true
-            && !originalRequestedItemIDs.contains(selectedItem.id)
     }
 
     private func requestOriginalSelectedMedia() {
-        guard canRequestOriginalSelectedMedia else { return }
-        originalRequestedItemIDs.insert(selectedItem.id)
-        showToast("正在加载原图")
+        guard canRequestOriginalSelectedMedia, selectedOriginalLoadState != .loading else { return }
+        originalLoadStates[selectedItem.id] = .loading
+        if originalRequestedItemIDs.contains(selectedItem.id) {
+            originalRetryRequests[selectedItem.id, default: 0] &+= 1
+        } else {
+            originalRequestedItemIDs.insert(selectedItem.id)
+        }
     }
 
     private func item(withID id: String) -> ZoomyImagePreviewItem? {
@@ -707,6 +740,8 @@ private struct ZoomyViewerImagePage: View {
     let initialImage: UIImage?
     let targetPixelSize: Int
     let loadsOriginalImage: Bool
+    let originalRetryRequestID: Int
+    let onOriginalLoadStateChanged: (ZoomyOriginalLoadState) -> Void
     let interactionExperimentEnabled: Bool
     let isSelected: Bool
     @Binding var isPresented: Bool
@@ -722,6 +757,8 @@ private struct ZoomyViewerImagePage: View {
         initialImage: UIImage?,
         targetPixelSize: Int,
         loadsOriginalImage: Bool,
+        originalRetryRequestID: Int,
+        onOriginalLoadStateChanged: @escaping (ZoomyOriginalLoadState) -> Void,
         interactionExperimentEnabled: Bool,
         isSelected: Bool,
         isPresented: Binding<Bool>,
@@ -733,6 +770,8 @@ private struct ZoomyViewerImagePage: View {
         self.item = item
         self.initialImage = initialImage
         self.targetPixelSize = targetPixelSize
+        self.originalRetryRequestID = originalRetryRequestID
+        self.onOriginalLoadStateChanged = onOriginalLoadStateChanged
         self.loadsOriginalImage = loadsOriginalImage
         self.interactionExperimentEnabled = interactionExperimentEnabled
         self.isSelected = isSelected
@@ -802,18 +841,21 @@ private struct ZoomyViewerImagePage: View {
                 loadingIndicator
             }
 
-            if loader.isLoadingFinalMedia, loader.snapshot?.image != nil {
+            if loader.isLoadingFinalMedia, loader.snapshot?.image != nil,
+               !(interactionExperimentEnabled && loadsOriginalImage) {
                 compactLoadingIndicator
-            } else if loader.loadFailed, loader.snapshot?.image != nil {
+            } else if loader.loadFailed, loader.snapshot?.image != nil,
+                      !(interactionExperimentEnabled && loadsOriginalImage) {
                 compactRetryButton
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: "\(item.displayURL?.absoluteString ?? item.id)|\(isSelected)|\(loadsOriginalImage)|\(retryRequestID)") {
+        .task(id: "\(item.displayURL?.absoluteString ?? item.id)|\(isSelected)|\(loadsOriginalImage)|\(retryRequestID)|\(originalRetryRequestID)") {
             guard isSelected, isPresented else {
                 loader.cancel()
                 return
             }
+            if loadsOriginalImage { onOriginalLoadStateChanged(.loading) }
             await loader.load(
                 item: item,
                 targetPixelSize: effectiveTargetPixelSize,
@@ -821,6 +863,10 @@ private struct ZoomyViewerImagePage: View {
                 enhancedLoadingEnabled: interactionExperimentEnabled,
                 marksOriginalQuality: loadsOriginalImage && !item.needsOriginalMedia
             )
+            guard !Task.isCancelled else { return }
+            if loadsOriginalImage {
+                onOriginalLoadStateChanged(loader.loadFailed ? .failed : .idle)
+            }
         }
         .onAppear {
             reportSnapshotIfNeeded()
