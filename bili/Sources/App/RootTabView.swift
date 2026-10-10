@@ -3,6 +3,9 @@ import SwiftUI
 
 struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var systemColorScheme
+    @State private var usesVideoStatusBarContrast = false
+    @State private var videoContentColorScheme: ColorScheme?
     @EnvironmentObject var dependencies: AppDependencies
     @EnvironmentObject var libraryStore: LibraryStore
     @StateObject var runtimeSettings = RootRuntimeSettingsStore()
@@ -53,7 +56,17 @@ struct RootTabView: View {
             openAppURL(url)
             return .handled
         })
-        .preferredColorScheme(runtimeSettings.appearanceMode.preferredColorScheme)
+        .environment(
+            \.colorScheme,
+            runtimeSettings.appearanceMode.preferredColorScheme
+                ?? videoContentColorScheme ?? systemColorScheme
+        )
+        .preferredColorScheme(usesVideoStatusBarContrast ? .dark : runtimeSettings.appearanceMode.preferredColorScheme)
+        .onPreferenceChange(VideoDetailStatusBarContrastPreferenceKey.self) { active in
+            guard usesVideoStatusBarContrast != active else { return }
+            videoContentColorScheme = active ? systemColorScheme : nil
+            usesVideoStatusBarContrast = active
+        }
         .sheet(item: $inAppBrowserItem) { item in
             InAppBrowserView(url: item.url)
                 .ignoresSafeArea()

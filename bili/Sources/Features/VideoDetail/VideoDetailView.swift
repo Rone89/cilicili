@@ -2,7 +2,6 @@ import SwiftUI
 
 struct VideoDetailView: View {
     @EnvironmentObject private var dependencies: AppDependencies
-    @Environment(\.colorScheme) private var incomingColorScheme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.navigationHistoryContext) private var navigationHistory
     let seedVideo: VideoItem
@@ -15,7 +14,7 @@ struct VideoDetailView: View {
     @State private var presentationState = VideoDetailViewPresentationState()
     @State private var pendingCommentAnchor: VideoCommentAnchor?
     @State private var hidesSystemChrome = false
-    @State private var contentColorScheme: ColorScheme?
+    @State private var isStatusBarContrastActive = false
 
     init(
         seedVideo: VideoItem,
@@ -65,14 +64,9 @@ struct VideoDetailView: View {
                 holder.viewModel?.markRelatedVideoNavigation()
             }
         }
-        // The presentation controls status-bar contrast; the content keeps its
-        // incoming appearance instead of inheriting the black player chrome.
-        .environment(\.colorScheme, contentColorScheme ?? incomingColorScheme)
-        .preferredColorScheme(contentColorScheme == nil ? nil : .dark)
-        .onAppear {
-            if contentColorScheme == nil { contentColorScheme = incomingColorScheme }
-        }
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .preference(key: VideoDetailStatusBarContrastPreferenceKey.self, value: isStatusBarContrastActive)
+        .onAppear { isStatusBarContrastActive = true }
+        .onDisappear { isStatusBarContrastActive = false }
         .navigationHistoryTitle(seedVideo.title)
         .environment(\.navigationHistoryBackAction, historyBackAction)
     }
