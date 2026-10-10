@@ -174,17 +174,6 @@ struct MineDisplaySettingsSection: View {
                 MineSettingsLabel("底部 Tab 显示", systemImage: "rectangle.bottomthird.inset.filled")
             }
 
-            Picker("首页推荐/热门切换样式", selection: Binding(
-                get: { libraryStore.homeToolbarPickerStyle },
-                set: { libraryStore.setHomeToolbarPickerStyle($0) }
-            )) {
-                ForEach(HomeToolbarPickerStyle.allCases) { style in
-                    Text(style.title).tag(style)
-                }
-            }
-            .pickerStyle(.menu)
-            .accessibilityIdentifier("mine.display.homeToolbarPickerStyle")
-
             Picker(
                 selection: Binding(
                     get: { libraryStore.videoDetailActionButtonStyle },

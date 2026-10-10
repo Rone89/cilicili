@@ -19,11 +19,6 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 ToolbarItem(placement: .principal) {
                     HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
                         .frame(width: 140, height: HomeToolbarLayout.pickerHeight)
-                        .background {
-                            if libraryStore.homeToolbarPickerStyle == .liquidGlass {
-                                Color.clear.biliRegularGlassEffect(interactive: true, in: Capsule())
-                            }
-                        }
                         .accessibilityIdentifier("home.feed.modePicker")
                         .font(.headline)
                         .opacity(navigationChromeOpacity)
