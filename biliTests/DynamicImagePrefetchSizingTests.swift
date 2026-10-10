@@ -4,6 +4,18 @@ import XCTest
 final class DynamicImagePrefetchSizingTests: XCTestCase {
     @MainActor
     func testSingleImagePrefetchMatchesExpandedThumbnailRequest() {
+        // This test checks the requested size; automatic quality also depends on device state.
+        let defaults = UserDefaults.standard
+        let key = RemoteImageQualityPreference.storageKey
+        let previous = defaults.object(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        defaults.set(RemoteImageQualityPreference.high.rawValue, forKey: key)
         let request = DynamicImageThumbnailSizing.prefetchRequest(
             for: image(),
             imageCount: 1,

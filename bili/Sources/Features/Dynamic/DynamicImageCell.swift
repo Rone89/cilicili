@@ -162,7 +162,8 @@ struct DynamicImageCell: View {
                 viewerURL: image.normalizedAnimatedImageURL.flatMap { URL(string: $0) } ?? url,
                 mediaBadgeText: image.mediaBadgeText,
                 liveVideoURL: image.normalizedLiveVideoURL.flatMap { URL(string: $0) },
-                aspectRatio: imageAspectRatio
+                aspectRatio: imageAspectRatio,
+                originalPixelSize: image.originalPixelSize
             )
         ]
     }

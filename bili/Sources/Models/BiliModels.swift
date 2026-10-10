@@ -6607,6 +6607,11 @@ nonisolated struct DynamicDraw: Decodable, Hashable {
 }
 
 nonisolated struct DynamicImageItem: Decodable, Hashable, Sendable {
+    var originalPixelSize: CGSize? {
+        guard let width, let height, width > 0, height > 0 else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
     let url: String
     let width: Int?
     let height: Int?
@@ -7215,6 +7220,11 @@ nonisolated extension String {
         }
 
         let base = normalized.biliImageBaseURL()
+        // Keep bounded viewer previews separate from the original at the same decode size.
+        if normalized.hasSuffix("_0e.webp"),
+           let suffix = normalized.range(of: #"@\d+w_\d+h_0e\.webp$"#, options: .regularExpression) {
+            return "\(base)#fit\(normalized[suffix])"
+        }
         guard normalized.contains("imageView2") else {
             return base
         }

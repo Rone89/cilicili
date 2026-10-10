@@ -10,6 +10,7 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
     let mediaBadgeText: String?
     let liveVideoURL: URL?
     let aspectRatio: CGFloat?
+    let originalPixelSize: CGSize?
 
     init(
         id: String,
@@ -18,7 +19,8 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
         viewerURL: URL? = nil,
         mediaBadgeText: String? = nil,
         liveVideoURL: URL? = nil,
-        aspectRatio: CGFloat? = nil
+        aspectRatio: CGFloat? = nil,
+        originalPixelSize: CGSize? = nil
     ) {
         self.id = id
         self.thumbnailURL = thumbnailURL
@@ -27,6 +29,9 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
         self.mediaBadgeText = mediaBadgeText
         self.liveVideoURL = liveVideoURL
         self.aspectRatio = aspectRatio
+        self.originalPixelSize = originalPixelSize.flatMap {
+            $0.width > 0 && $0.height > 0 ? $0 : nil
+        }
     }
 
     private var preferredURL: URL? {
@@ -36,6 +41,22 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
     var displayURL: URL? {
         guard let preferredURL else { return nil }
         return URL(string: preferredURL.absoluteString.biliImageOriginalURL()) ?? preferredURL
+    }
+
+    /// CDN previews and originals use different URLs and cache identities.
+    func loadingURL(
+        targetPixelSize: Int,
+        enhancedLoadingEnabled: Bool,
+        requestsOriginal: Bool = false
+    ) -> URL? {
+        guard let originalURL = displayURL else { return nil }
+        guard enhancedLoadingEnabled, !requestsOriginal, !needsOriginalMedia,
+              originalPixelSize.map({ max($0.width, $0.height) > CGFloat(targetPixelSize) }) != false,
+              let host = originalURL.host?.lowercased(),
+              host == "hdslb.com" || host.hasSuffix(".hdslb.com")
+        else { return originalURL }
+        let limit = max(targetPixelSize, 1)
+        return URL(string: originalURL.absoluteString + "@\(limit)w_\(limit)h_0e.webp") ?? originalURL
     }
 
     var resolvedAspectRatio: CGFloat? {
@@ -431,15 +452,19 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
     }
 
     private func startViewerImageLoad() {
-        guard let viewerURL = viewerURL ?? fallbackURL ?? url else { return }
-        let viewerItem = resolvedViewerItems.first(where: { $0.id == resolvedViewerItemID })
-        guard viewerItem?.needsOriginalMedia != true else {
+        let viewerItem = resolvedViewerItem
+        guard let viewerURL = viewerItem.loadingURL(
+            targetPixelSize: viewerTargetPixelSize,
+            enhancedLoadingEnabled: imageViewerInteractionExperimentEnabled
+        ) else { return }
+        guard viewerItem.needsOriginalMedia != true else {
             return
         }
-        let targetPixelSize = ZoomyViewerImageSizing.targetPixelSize(
-            baseTargetPixelSize: viewerTargetPixelSize,
-            widthToHeightAspectRatio: viewerItem?.resolvedAspectRatio
-        )
+        let targetPixelSize = imageViewerInteractionExperimentEnabled ? viewerTargetPixelSize
+            : ZoomyViewerImageSizing.targetPixelSize(
+                baseTargetPixelSize: viewerTargetPixelSize,
+                widthToHeightAspectRatio: viewerItem.resolvedAspectRatio
+            )
         viewerLoadTask?.cancel()
         viewerLoadTask = Task(priority: .userInitiated) {
             _ = await RemoteImageCache.shared.load(

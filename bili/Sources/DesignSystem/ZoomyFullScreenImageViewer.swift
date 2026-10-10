@@ -454,7 +454,7 @@ struct ZoomyFullScreenImageViewer: View {
             && selectedItem.displayURL != nil
             && selectedSnapshot?.isFinal == true
             && ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
-                sourcePixelSize: selectedSnapshot?.sourcePixelSize,
+                sourcePixelSize: selectedItem.originalPixelSize ?? selectedSnapshot?.sourcePixelSize,
                 baseTargetPixelSize: targetPixelSize
             )
             && selectedSnapshot?.isOriginalQuality != true
@@ -581,11 +581,15 @@ struct ZoomyFullScreenImageViewer: View {
         Task(priority: .utility) {
             await withTaskGroup(of: Void.self) { group in
                 for item in neighborItems {
-                    guard let url = item.displayURL else { continue }
-                    let prewarmTargetPixelSize = ZoomyViewerImageSizing.targetPixelSize(
-                        baseTargetPixelSize: targetPixelSize,
-                        widthToHeightAspectRatio: item.resolvedAspectRatio
-                    )
+                    guard let url = item.loadingURL(
+                        targetPixelSize: targetPixelSize,
+                        enhancedLoadingEnabled: interactionExperimentEnabled
+                    ) else { continue }
+                    let prewarmTargetPixelSize = interactionExperimentEnabled ? targetPixelSize
+                        : ZoomyViewerImageSizing.targetPixelSize(
+                            baseTargetPixelSize: targetPixelSize,
+                            widthToHeightAspectRatio: item.resolvedAspectRatio
+                        )
                     group.addTask {
                         await RemoteImageCache.shared.prefetch(
                             [RemoteImageSource(url: url)],
@@ -812,6 +816,8 @@ private struct ZoomyViewerImagePage: View {
             await loader.load(
                 item: item,
                 targetPixelSize: effectiveTargetPixelSize,
+                previewTargetPixelSize: targetPixelSize,
+                enhancedLoadingEnabled: interactionExperimentEnabled,
                 marksOriginalQuality: loadsOriginalImage && !item.needsOriginalMedia
             )
         }
@@ -842,6 +848,9 @@ private struct ZoomyViewerImagePage: View {
                 widthToHeightAspectRatio: resolvedAspectRatio
             )
         }
+        if interactionExperimentEnabled, !item.needsOriginalMedia {
+            return targetPixelSize
+        }
         return ZoomyViewerImageSizing.targetPixelSize(
             baseTargetPixelSize: targetPixelSize,
             widthToHeightAspectRatio: resolvedAspectRatio
@@ -866,7 +875,7 @@ private struct ZoomyViewerImagePage: View {
                 .videoCoverBadgeForeground(opacity: 0)
                 .videoCoverBadgeBackground(style: .clear, in: Circle())
                 .allowsHitTesting(false)
-                .accessibilityLabel("正在加载原图")
+                .accessibilityLabel(loadsOriginalImage ? "正在加载原图" : "正在加载图片")
         }
     }
 
@@ -881,7 +890,7 @@ private struct ZoomyViewerImagePage: View {
                     .videoCoverBadgeForeground(opacity: 0)
                     .videoCoverBadgeBackground(style: .clear, in: Circle())
                     .allowsHitTesting(false)
-                    .accessibilityLabel("正在加载原图")
+                    .accessibilityLabel(loadsOriginalImage ? "正在加载原图" : "正在加载图片")
             }
             Spacer()
         }
@@ -901,7 +910,7 @@ private struct ZoomyViewerImagePage: View {
                 .buttonStyle(.plain)
                 .biliLiquidGlassForeground(shadowOpacity: 0.34)
                 .biliGlassEffect(tint: .black.opacity(0.24), interactive: true, in: Circle())
-                .accessibilityLabel("重新加载原图")
+                .accessibilityLabel(loadsOriginalImage ? "重新加载原图" : "重新加载图片")
             }
             Spacer()
         }
@@ -954,12 +963,18 @@ private final class ZoomyViewerImageLoader: ObservableObject {
     func load(
         item: ZoomyImagePreviewItem,
         targetPixelSize: Int,
+        previewTargetPixelSize: Int,
+        enhancedLoadingEnabled: Bool,
         marksOriginalQuality: Bool = false
     ) async {
         cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
-        let url = item.displayURL
+        let url = item.loadingURL(
+            targetPixelSize: previewTargetPixelSize,
+            enhancedLoadingEnabled: enhancedLoadingEnabled,
+            requestsOriginal: marksOriginalQuality
+        )
         guard let url else {
             isLoadingFinalMedia = false
             loadFailed = true
@@ -974,7 +989,7 @@ private final class ZoomyViewerImageLoader: ObservableObject {
         isLoadingFinalMedia = true
         loadFailed = false
         task = Task(priority: .userInitiated) { [weak self] in
-            let snapshot: ZoomyViewerMediaSnapshot?
+            var snapshot: ZoomyViewerMediaSnapshot?
             if item.isLiveImage, let liveVideoURL = item.liveVideoURL {
                 snapshot = await ZoomyViewerMediaLoader.loadLivePhoto(
                     imageURL: url,
@@ -990,8 +1005,13 @@ private final class ZoomyViewerImageLoader: ObservableObject {
                 snapshot = await ZoomyViewerMediaLoader.loadStaticImage(
                     url: url,
                     targetPixelSize: targetPixelSize,
-                    decodePolicy: .highQualityViewer
+                    decodePolicy: .highQualityViewer,
+                    refinesLongImages: !enhancedLoadingEnabled || marksOriginalQuality
                 )?.markingOriginalQuality(marksOriginalQuality)
+                if url != item.displayURL {
+                    // CDN response dimensions describe the preview, not the original.
+                    snapshot = snapshot?.replacingSourcePixelSize(item.originalPixelSize)
+                }
             }
 
             guard !Task.isCancelled else { return }
@@ -1018,7 +1038,8 @@ private final class ZoomyViewerImageLoader: ObservableObject {
                 }
                 return
             }
-            let sourcePixelSize = await RemoteImageCache.shared.sourcePixelSize(for: url)
+            let downloadedPixelSize = await RemoteImageCache.shared.sourcePixelSize(for: url)
+            let sourcePixelSize = url == item.displayURL ? downloadedPixelSize : item.originalPixelSize
             await MainActor.run {
                 guard self?.loadGeneration == generation else { return }
                 self?.setSnapshot(
@@ -1100,6 +1121,20 @@ private struct ZoomyViewerMediaSnapshot {
             isAnimatedGIF: isAnimatedGIF,
             isLivePhoto: isLivePhoto,
             isFinal: true,
+            isOriginalQuality: isOriginalQuality,
+            sourcePixelSize: sourcePixelSize
+        )
+    }
+
+    func replacingSourcePixelSize(_ sourcePixelSize: CGSize?) -> Self {
+        Self(
+            image: image,
+            imageFileURL: imageFileURL,
+            liveVideoFileURL: liveVideoFileURL,
+            livePhoto: livePhoto,
+            isAnimatedGIF: isAnimatedGIF,
+            isLivePhoto: isLivePhoto,
+            isFinal: isFinal,
             isOriginalQuality: isOriginalQuality,
             sourcePixelSize: sourcePixelSize
         )
@@ -1373,7 +1408,8 @@ private enum ZoomyViewerMediaLoader {
     static func loadStaticImage(
         url: URL,
         targetPixelSize: Int,
-        decodePolicy: RemoteImageDecodePolicy = .standard
+        decodePolicy: RemoteImageDecodePolicy = .standard,
+        refinesLongImages: Bool = true
     ) async -> ZoomyViewerMediaSnapshot? {
         let initialImage: UIImage
         if let cachedImage = await RemoteImageCache.shared.image(
@@ -1405,7 +1441,7 @@ private enum ZoomyViewerMediaLoader {
             baseTargetPixelSize: targetPixelSize,
             widthToHeightAspectRatio: aspectRatio
         )
-        guard refinedTargetPixelSize > targetPixelSize,
+        guard refinesLongImages, refinedTargetPixelSize > targetPixelSize,
               !Task.isCancelled,
               let refinedImage = await RemoteImageCache.shared.load(
                   url: url,

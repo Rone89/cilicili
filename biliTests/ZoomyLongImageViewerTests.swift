@@ -4,6 +4,68 @@ import UIKit
 
 final class ZoomyLongImageViewerTests: XCTestCase {
     @MainActor
+    func testEnhancedPreviewRequestsBoundedCDNImageAndOriginalHasSeparateCacheKey() throws {
+        let original = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"))
+        let item = ZoomyImagePreviewItem(id: "large", viewerURL: original,
+                                        originalPixelSize: CGSize(width: 4032, height: 3024))
+        let preview = try XCTUnwrap(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: true))
+        XCTAssertEqual(preview.absoluteString,
+                       original.absoluteString + "@2400w_2400h_0e.webp")
+        XCTAssertEqual(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: true,
+                                       requestsOriginal: true), original)
+        XCTAssertEqual(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: false), original)
+        XCTAssertNotEqual(preview.absoluteString.biliImageCacheIdentityURLString(),
+                          original.absoluteString.biliImageCacheIdentityURLString())
+    }
+
+    @MainActor
+    func testSmallOriginalBypassesCDNResize() throws {
+        let original = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"))
+        for size in [CGSize(width: 2400, height: 1600), CGSize(width: 1080, height: 1920)] {
+            let item = ZoomyImagePreviewItem(id: "small", viewerURL: original, originalPixelSize: size)
+            XCTAssertEqual(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: true), original)
+            XCTAssertFalse(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
+                sourcePixelSize: item.originalPixelSize, baseTargetPixelSize: 2400))
+        }
+    }
+
+    @MainActor
+    func testUnknownDimensionsStillAllowOriginalUpgrade() throws {
+        let item = ZoomyImagePreviewItem(id: "unknown",
+            viewerURL: URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"),
+            originalPixelSize: CGSize(width: 0, height: 0))
+        XCTAssertNil(item.originalPixelSize)
+        XCTAssertNotEqual(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: true), item.displayURL)
+        XCTAssertTrue(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
+            sourcePixelSize: item.originalPixelSize, baseTargetPixelSize: 2400))
+    }
+
+    @MainActor
+    func testAnimatedAndExternalImagesKeepTheirOriginalURL() throws {
+        let gif = ZoomyImagePreviewItem(id: "gif",
+            viewerURL: URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.gif"))
+        let live = ZoomyImagePreviewItem(id: "live",
+            viewerURL: URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"),
+            liveVideoURL: URL(string: "https://example.com/live.mov"))
+        let external = ZoomyImagePreviewItem(id: "external",
+            viewerURL: URL(string: "https://example.com/hdslb.com/photo.jpg?token=value"))
+        for item in [gif, live, external] {
+            XCTAssertEqual(item.loadingURL(targetPixelSize: 2400, enhancedLoadingEnabled: true), item.displayURL)
+        }
+    }
+
+    @MainActor
+    func testDynamicImageMetadataReachesBothPreviewLayouts() throws {
+        let image = try JSONDecoder().decode(DynamicImageItem.self,
+            from: Data(#"{"src":"https://i0.hdslb.com/bfs/new_dyn/example.jpg","width":4032,"height":3024}"#.utf8))
+        let expected = CGSize(width: 4032, height: 3024)
+        XCTAssertEqual(DynamicImageDisplayItems.previewItems(
+            from: DynamicImageDisplayItems.make(from: [image])).first?.originalPixelSize, expected)
+        XCTAssertEqual(CompactDynamicImageDisplayItems.previewItems(
+            from: CompactDynamicImageDisplayItems.make(from: [image])).first?.originalPixelSize, expected)
+    }
+
+    @MainActor
     func testOriginalUpgradeUsesSourceLongestSide() {
         for size in [CGSize(width: 2400, height: 1600), CGSize(width: 1080, height: 1920),
                      CGSize(width: 1600, height: 2400)] {
