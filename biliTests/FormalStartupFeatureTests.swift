@@ -5,6 +5,20 @@ import XCTest
 
 final class FormalStartupFeatureTests: XCTestCase {
     @MainActor
+    func testBottomScrollEdgeBlurExperimentDefaultsOffAndPersistsWithoutChangingOtherPreferences() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+        let tint = store.appTintColorHex
+        XCTAssertFalse(store.bottomScrollEdgeBlurExperimentEnabled)
+        store.setBottomScrollEdgeBlurExperimentEnabled(true)
+        XCTAssertTrue(store.bottomScrollEdgeBlurExperimentEnabled)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurExperimentEnabled)
+        store.setBottomScrollEdgeBlurExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurExperimentEnabled)
+        XCTAssertEqual(store.appTintColorHex, tint)
+    }
+
+    @MainActor
     func testLibraryStoreRemovesRetiredWarmupAndNetworkExperimentKeys() {
         let defaults = makeUserDefaults()
         let retiredKeys = [

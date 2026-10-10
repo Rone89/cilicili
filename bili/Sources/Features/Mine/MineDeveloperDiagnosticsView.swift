@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.bottomScrollEdgeBlurExperimentEnabled },
+                set: { libraryStore.setBottomScrollEdgeBlurExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("底部渐进模糊实验", systemImage: "square.bottomhalf.filled")
+                    Text("使用系统柔和滚动边缘效果，让内容在 TabBar 和底部工具栏后逐渐模糊。全屏媒体不添加遮罩。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.bottomScrollEdgeBlur")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

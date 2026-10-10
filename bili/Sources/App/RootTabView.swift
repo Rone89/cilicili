@@ -218,6 +218,8 @@ struct RootTabView: View {
             capturesSearchReselection: tab == .search
         )
         .navigationHistoryStack(path: detailPath, rootTitle: tab.title)
+        // Configure the native scrolling boundary without adding an overlay or changing safe areas.
+        .scrollEdgeEffectStyle(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .soft : nil, for: .bottom)
     }
 
     @ViewBuilder
