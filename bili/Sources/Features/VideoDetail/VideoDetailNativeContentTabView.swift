@@ -13,6 +13,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     var scrollAdjustment: VideoDetailScrollAdjustment?
     let mountsSecondaryContent: Bool
     var hidesBottomToolbar = false
+    var managesBottomToolbar = true
     var placesTopInsetInScrollContent = false
     var interactiveMinimumPlayerHeight = VideoDetailShellLayout.collapsedToolbarHeight
     var contentRevision: Int = 0
@@ -35,38 +36,14 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .toolbar {
-            if let navigationHistory {
-                ToolbarItem(placement: .bottomBar) {
-                    VideoDetailHistoryBackMenu(history: navigationHistory)
-                }
-            }
-            if let onOpenCommentComposer {
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    VideoDetailToolbarSegmentedPickerView(selection: toolbarSelection)
-                        .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
-                }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    VideoDetailToolbarCommentAction(
-                        onComment: onOpenCommentComposer
-                    )
-                }
-                .sharedBackgroundVisibility(.automatic)
-            } else {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Spacer(minLength: 0)
-                    VideoDetailToolbarSegmentedPickerView(selection: toolbarSelection)
-                        .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
-                    Spacer(minLength: 0)
-                }
-            }
-        }
-        .toolbarBackground(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .automatic : .hidden, for: .bottomBar)
+        .modifier(VideoDetailBottomToolbarModifier(
+            isEnabled: managesBottomToolbar,
+            isHidden: hidesBottomToolbar,
+            selection: toolbarSelection,
+            onOpenCommentComposer: onOpenCommentComposer
+        ))
         .nativeBottomScrollEdgeBlurExperiment(isEnabled: !hidesBottomToolbar)
         .nativeBottomScrollEdgeBlurVisibility(isHidden: hidesBottomToolbar)
-        .toolbarVisibility(hidesBottomToolbar ? .hidden : .visible, for: .bottomBar)
         .toolbarVisibility(.hidden, for: .tabBar)
         .tint(appTintColor)
         .environment(\.videoDetailStandardHorizontalInset, standardHorizontalInset)
@@ -517,6 +494,53 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
                 summary
                 content(tab)
             }
+        }
+    }
+}
+
+/// Declared by the navigation page for the UIKit shell, rather than its child host.
+struct VideoDetailBottomToolbarModifier: ViewModifier {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.navigationHistoryContext) private var navigationHistory
+    var isEnabled = true
+    let isHidden: Bool
+    @Binding var selection: VideoDetailContentTab
+    let onOpenCommentComposer: (() -> Void)?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .toolbar {
+                    if let navigationHistory {
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailHistoryBackMenu(history: navigationHistory)
+                        }
+                    }
+                    if let onOpenCommentComposer {
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
+                        }
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
+                        ToolbarItem(placement: .bottomBar) {
+                            VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
+                        }
+                        .sharedBackgroundVisibility(.automatic)
+                    } else {
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            Spacer(minLength: 0)
+                            VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                                .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .toolbarBackground(libraryStore.bottomScrollEdgeBlurExperimentEnabled ? .automatic : .hidden, for: .bottomBar)
+                .toolbarVisibility(isHidden ? .hidden : .automatic, for: .bottomBar)
+        } else {
+            content
         }
     }
 }

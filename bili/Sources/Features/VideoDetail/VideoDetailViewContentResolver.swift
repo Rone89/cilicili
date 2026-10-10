@@ -35,6 +35,12 @@ struct VideoDetailViewContentResolver: View {
             onNavigateBack: onNavigateBack
         )
         .ignoresSafeArea()
+        .environment(\.navigationHistoryBackAction, onNavigateBack)
+        .modifier(VideoDetailBottomToolbarModifier(
+            isHidden: hidesSystemChrome,
+            selection: $selectedContentTab,
+            onOpenCommentComposer: { openCommentComposer(for: nil) }
+        ))
         .videoDetailSheets(
             viewModel: viewModel,
             libraryStore: dependencies.libraryStore,

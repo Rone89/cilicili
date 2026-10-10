@@ -110,6 +110,7 @@ private struct VideoDetailShellContentBody: View {
             mountsSecondaryContent: !runtimeSettings.defersVideoDetailSecondaryContent
             || state.mountsSecondaryContent,
             hidesBottomToolbar: state.hidesBottomToolbar,
+            managesBottomToolbar: false,
             placesTopInsetInScrollContent: placesTopInsetInScrollContent,
             interactiveMinimumPlayerHeight: interactiveMinimumPlayerHeight,
             contentRevision: contentRevision,
