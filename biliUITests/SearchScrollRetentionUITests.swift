@@ -162,7 +162,6 @@ final class SearchScrollRetentionUITests: XCTestCase {
             assertIntegratedSearchRow(in: app)
         }
         app.buttons["search.filters.menu"].tap()
-        app.buttons["排序方式"].tap()
         app.buttons["最新发布"].tap()
         assertIntegratedSearchRow(in: app)
         app.tabBars.buttons["首页"].tap()
@@ -214,6 +213,25 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.firstMatch.frame.contains(field.frame))
         XCTAssertGreaterThan(field.frame.width, searchWidth + 60,
                              "Without trailing actions the search input should use the freed space")
+    }
+
+    func testSearchFiltersShowBothGroupsAndCurrentSelectionsInOneMenu() {
+        let app = launchFixture()
+        let filters = app.buttons["search.filters.menu"]
+        XCTAssertEqual(filters.value as? String, "视频，综合排序")
+        filters.tap()
+        for title in ["综合内容", "视频", "番剧", "影视", "专栏", "UP主",
+                      "综合排序", "最多播放", "最新发布", "最多收藏"] {
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), title)
+        }
+        app.buttons["最新发布"].tap()
+        XCTAssertEqual(filters.value as? String, "视频，最新发布")
+        filters.tap()
+        app.buttons["专栏"].tap()
+        XCTAssertEqual(filters.value as? String, "专栏，当前类型不支持排序")
+        filters.tap()
+        XCTAssertFalse(app.buttons["最多播放"].isEnabled)
+        XCTAssertFalse(app.buttons["最新发布"].isEnabled)
     }
 
     private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {

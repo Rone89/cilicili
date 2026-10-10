@@ -145,30 +145,46 @@ private struct SearchFilterToolbarMenu: View {
 
     var body: some View {
         Menu {
-            Menu("搜索内容") {
-                ForEach(SearchScope.allCases) { scope in
-                    Button {
-                        Task { await viewModel.selectScope(scope, animation: .smooth(duration: 0.28)) }
-                    } label: {
-                        Label(scope.title, systemImage: scope == viewModel.selectedScope ? "checkmark" : scope.systemImage)
-                    }
-                }
+            Section("搜索内容") {
+                scopeOptions
             }
-            Menu("排序方式") {
-                ForEach(SearchSortOrder.allCases) { order in
-                    Button {
-                        Task { await viewModel.selectOrder(order) }
-                    } label: {
-                        Label(order.title, systemImage: order == viewModel.selectedOrder ? "checkmark" : "arrow.up.arrow.down")
-                    }
-                }
+            Section("排序方式") {
+                orderOptions
             }
-            .disabled(!viewModel.selectedScope.supportsOrder)
         } label: {
             Image(systemName: "slider.horizontal.3").foregroundStyle(.primary)
         }
         .tint(.primary)
         .accessibilityLabel("搜索内容与排序")
+        .accessibilityValue(selectionDescription)
         .accessibilityIdentifier("search.filters.menu")
+    }
+
+    private var scopeOptions: some View {
+        ForEach(SearchScope.allCases) { scope in
+            Button {
+                Task { await viewModel.selectScope(scope, animation: .smooth(duration: 0.28)) }
+            } label: {
+                Label(scope.title, systemImage: scope == viewModel.selectedScope ? "checkmark" : scope.systemImage)
+            }
+            .accessibilityValue(scope == viewModel.selectedScope ? "已选中" : "")
+        }
+    }
+
+    private var orderOptions: some View {
+        ForEach(SearchSortOrder.allCases) { order in
+            Button {
+                Task { await viewModel.selectOrder(order) }
+            } label: {
+                Label(order.title, systemImage: order == viewModel.selectedOrder ? "checkmark" : "arrow.up.arrow.down")
+            }
+            .accessibilityValue(order == viewModel.selectedOrder ? "已选中" : "")
+            .disabled(!viewModel.selectedScope.supportsOrder)
+        }
+    }
+
+    private var selectionDescription: String {
+        let order = viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "当前类型不支持排序"
+        return viewModel.selectedScope.title + "，" + order
     }
 }
