@@ -9,6 +9,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
     let accountMessageViewModel: AccountMessageCenterViewModel?
     let isDetailPresented: Bool
     let onOpenAccountMessages: () -> Void
+    let onOpenMine: (() -> Void)?
 
     func body(content: Content) -> some View {
         content
@@ -77,12 +78,14 @@ struct HomeFeedNavigationChrome: ViewModifier {
         if let accountMessageViewModel {
             HomeAccountMessageButton(
                 viewModel: accountMessageViewModel,
-                action: onOpenAccountMessages
+                action: onOpenAccountMessages,
+                onOpenMine: onOpenMine
             )
         } else {
             HomeAccountMessageButtonContent(
                 hasUnread: false,
-                action: onOpenAccountMessages
+                action: onOpenAccountMessages,
+                onOpenMine: onOpenMine
             )
         }
     }
@@ -105,7 +108,8 @@ extension View {
         nativeRefreshActionStore: HomeNativeRefreshActionStore,
         accountMessageViewModel: AccountMessageCenterViewModel?,
         isDetailPresented: Bool = false,
-        onOpenAccountMessages: @escaping () -> Void
+        onOpenAccountMessages: @escaping () -> Void,
+        onOpenMine: (() -> Void)? = nil
     ) -> some View {
         modifier(
             HomeFeedNavigationChrome(
@@ -115,7 +119,8 @@ extension View {
                 nativeRefreshActionStore: nativeRefreshActionStore,
                 accountMessageViewModel: accountMessageViewModel,
                 isDetailPresented: isDetailPresented,
-                onOpenAccountMessages: onOpenAccountMessages
+                onOpenAccountMessages: onOpenAccountMessages,
+                onOpenMine: onOpenMine
             )
         )
     }
@@ -124,28 +129,59 @@ extension View {
 private struct HomeAccountMessageButton: View {
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let action: () -> Void
+    let onOpenMine: (() -> Void)?
 
     var body: some View {
         HomeAccountMessageButtonContent(
             hasUnread: viewModel.hasUnreadMessages,
-            action: action
+            action: action,
+            onOpenMine: onOpenMine
         )
     }
 }
 
 private struct HomeAccountMessageButtonContent: View {
     @Environment(\.appThemeTintColor) private var appTintColor
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var sessionStore: SessionStore
     let hasUnread: Bool
     let action: () -> Void
+    let onOpenMine: (() -> Void)?
+
+    private var showsAvatar: Bool {
+        libraryStore.homeAvatarNavigationExperimentEnabled && onOpenMine != nil
+    }
+
+    private var showsUnreadOutline: Bool {
+        sessionStore.isLoggedIn && hasUnread
+    }
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "bell.fill")
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(hasUnread ? appTintColor : Color.primary)
+        Button(action: showsAvatar ? (onOpenMine ?? action) : action) {
+            if showsAvatar {
+                AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 32, height: 32)
+                .clipShape(Circle())
+                .padding(3)
+                .overlay {
+                    if showsUnreadOutline {
+                        Circle().strokeBorder(appTintColor, lineWidth: 2)
+                    }
+                }
+                .accessibilityHidden(true)
+            } else {
+                Image(systemName: "bell.fill")
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(hasUnread ? appTintColor : Color.primary)
+            }
         }
-        .accessibilityLabel("账号消息")
-        .accessibilityValue(hasUnread ? "有未读消息" : "全部已读")
+        .accessibilityLabel(showsAvatar ? "我的" : "账号消息")
+        .accessibilityValue(showsAvatar && !sessionStore.isLoggedIn ? "未登录" : (hasUnread ? "有未读消息" : "全部已读"))
+        .accessibilityIdentifier(showsAvatar ? "home.account.avatar" : "home.account.messages")
     }
 }

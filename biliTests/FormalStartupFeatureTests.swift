@@ -6,6 +6,25 @@ import UIKit
 
 final class FormalStartupFeatureTests: XCTestCase {
     @MainActor
+    func testHomeAvatarNavigationExperimentDefaultsOffAndPersistsIndependently() {
+        let defaults = makeUserDefaults()
+        let store = LibraryStore(userDefaults: defaults)
+        let tabs = store.visibleRootTabs
+        let tint = store.appTintColorHex
+        XCTAssertFalse(store.homeAvatarNavigationExperimentEnabled)
+
+        store.setHomeAvatarNavigationExperimentEnabled(true)
+        XCTAssertTrue(store.homeAvatarNavigationExperimentEnabled)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
+        XCTAssertEqual(store.visibleRootTabs, tabs)
+        XCTAssertEqual(store.appTintColorHex, tint)
+        XCTAssertFalse(store.bottomScrollEdgeBlurExperimentEnabled)
+
+        store.setHomeAvatarNavigationExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
+    }
+
+    @MainActor
     func testVideoBottomEdgeBindingIsIdempotentAndRestoresScrollConfiguration() {
         let scroll = UIScrollView()
         scroll.contentInset = UIEdgeInsets(top: 100, left: 0, bottom: 80, right: 0)

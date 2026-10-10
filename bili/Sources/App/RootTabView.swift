@@ -239,6 +239,9 @@ struct RootTabView: View {
                         isDetailPresented: !detailPath.wrappedValue.isEmpty,
                         onOpenAccountMessages: {
                             openMineOverlayRoute(.accountMessages)
+                        },
+                        onOpenMine: {
+                            selectAvailableRootTab(.mine)
                         }
                     )
             } else {

@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.homeAvatarNavigationExperimentEnabled },
+                set: { libraryStore.setHomeAvatarNavigationExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("首页头像入口实验", systemImage: "person.crop.circle")
+                    Text("首页右上角显示账号头像，点击前往我的页；有未读消息时显示主题色外描边。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.homeAvatarNavigation")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.bottomScrollEdgeBlurExperimentEnabled },
                 set: { libraryStore.setBottomScrollEdgeBlurExperimentEnabled($0) }
             )) {
