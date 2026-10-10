@@ -174,6 +174,17 @@ struct MineDisplaySettingsSection: View {
                 MineSettingsLabel("底部 Tab 显示", systemImage: "rectangle.bottomthird.inset.filled")
             }
 
+            Picker("首页推荐/热门切换样式", selection: Binding(
+                get: { libraryStore.homeToolbarPickerStyle },
+                set: { libraryStore.setHomeToolbarPickerStyle($0) }
+            )) {
+                ForEach(HomeToolbarPickerStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("mine.display.homeToolbarPickerStyle")
+
             Picker(
                 selection: Binding(
                     get: { libraryStore.videoDetailActionButtonStyle },
@@ -187,7 +198,7 @@ struct MineDisplaySettingsSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MineSettingsLabel("操作按钮样式", systemImage: "hand.tap")
 
-                    Text("影响详情页与动态中的操作按钮，以及首页左侧“刷新”按钮的样式，可选择普通或液态玻璃。")
+                    Text("影响详情页与动态中的操作按钮，可选择普通或液态玻璃。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -248,7 +248,6 @@ struct RootTabView: View {
                         scrollActions: homeActionStore.scroll,
                         nativeRefreshActionStore: homeActionStore.nativeRefresh,
                         accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
-                        isDetailPresented: !detailPath.wrappedValue.isEmpty,
                         onOpenAccountMessages: {
                             openMineOverlayRoute(.accountMessages)
                         },
@@ -344,16 +343,11 @@ struct RootTabView: View {
                 viewModel: viewModel,
                 detailPath: detailPath,
                 actionStore: homeActionStore,
-                showsNavigationChrome: false,
                 launchConfiguration: HomeFeedLaunchConfiguration(
                     autoOpenDetail: shouldAutoOpenDetail,
                     startVideo: startBVID.map(Self.seedVideo),
                     onVideoSelect: openVideo
-                ),
-                accountMessageViewModel: mineViewModelHolder.accountMessageViewModel,
-                onOpenAccountMessages: {
-                    openMineOverlayRoute(.accountMessages)
-                }
+                )
             )
         } else {
             ProgressView()

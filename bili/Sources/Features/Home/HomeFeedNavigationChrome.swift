@@ -9,45 +9,38 @@ struct HomeFeedNavigationChrome: ViewModifier {
     let scrollActions: HomeFeedScrollActions
     let nativeRefreshActionStore: HomeNativeRefreshActionStore
     let accountMessageViewModel: AccountMessageCenterViewModel?
-    let isDetailPresented: Bool
     let onOpenAccountMessages: () -> Void
-    let onOpenProfile: (() -> Void)?
+    let onOpenProfile: () -> Void
     let onOpenRootPage: ((AppTab) -> Void)?
 
     func body(content: Content) -> some View {
         content
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Group {
-                        if usesAvatarToolbar {
-                            HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
-                                .frame(width: 140, height: HomeToolbarLayout.pickerHeight)
-                            .accessibilityIdentifier("home.feed.modePicker")
-                        } else {
-                            navigationTitle
+                    HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
+                        .frame(width: 140, height: HomeToolbarLayout.pickerHeight)
+                        .background {
+                            if libraryStore.homeToolbarPickerStyle == .liquidGlass {
+                                Color.clear.biliRegularGlassEffect(interactive: true, in: Capsule())
+                            }
                         }
-                    }
-                    .font(.headline)
-                    .opacity(navigationChromeOpacity)
-                    .disabled(hidesNavigationChrome)
-                    .accessibilityHidden(hidesNavigationChrome)
-                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                        .accessibilityIdentifier("home.feed.modePicker")
+                        .font(.headline)
+                        .opacity(navigationChromeOpacity)
+                        .disabled(hidesNavigationChrome)
+                        .accessibilityHidden(hidesNavigationChrome)
+                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarLeading) {
-                    Group {
-                        if usesAvatarToolbar, let onOpenProfile {
-                            HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile, onOpenMessages: onOpenAccountMessages)
-                                .buttonBorderShape(.circle)
-                        } else {
-                            HomeFeedModeMenu(currentMode: viewModel.mode, onSelectMode: switchMode)
-                        }
-                    }
-                    .opacity(navigationChromeOpacity)
-                    .disabled(hidesNavigationChrome)
-                    .accessibilityHidden(hidesNavigationChrome)
-                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                    HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile, onOpenMessages: onOpenAccountMessages)
+                        .buttonBorderShape(.circle)
+                        .opacity(navigationChromeOpacity)
+                        .disabled(hidesNavigationChrome)
+                        .accessibilityHidden(hidesNavigationChrome)
+                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .sharedBackgroundVisibility(usesAvatarToolbar ? .hidden : toolbarItemBackgroundVisibility)
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
                     Group {
                         if !hidesNavigationChrome {
@@ -89,30 +82,6 @@ struct HomeFeedNavigationChrome: ViewModifier {
 
     private var hiddenTabs: [AppTab] {
         [.dynamic, .live, .mine, .search].filter { !libraryStore.visibleRootTabs.contains($0) }
-    }
-
-    private var usesAvatarToolbar: Bool {
-        libraryStore.homeAvatarNavigationExperimentEnabled && onOpenProfile != nil
-    }
-
-    @ViewBuilder
-    private var navigationTitle: some View {
-        ZStack {
-            if viewModel.mode == .recommend {
-                modeTitle(.recommend, transitionEdge: .leading)
-            } else {
-                modeTitle(.popular, transitionEdge: .trailing)
-            }
-        }
-        .frame(width: 64, height: 24)
-        .clipped()
-        .animation(.smooth(duration: 0.28), value: viewModel.mode)
-    }
-
-    private func modeTitle(_ mode: HomeFeedMode, transitionEdge: Edge) -> some View {
-        Text(mode.title)
-            .frame(width: 64, height: 24)
-            .transition(.move(edge: transitionEdge))
     }
 
     private var hidesNavigationChrome: Bool {
@@ -159,10 +128,9 @@ extension View {
         scrollActions: HomeFeedScrollActions,
         nativeRefreshActionStore: HomeNativeRefreshActionStore,
         accountMessageViewModel: AccountMessageCenterViewModel?,
-        isDetailPresented: Bool = false,
         onOpenAccountMessages: @escaping () -> Void,
         onOpenRootPage: ((AppTab) -> Void)? = nil,
-        onOpenProfile: (() -> Void)? = nil
+        onOpenProfile: @escaping () -> Void
     ) -> some View {
         modifier(
             HomeFeedNavigationChrome(
@@ -171,7 +139,6 @@ extension View {
                 scrollActions: scrollActions,
                 nativeRefreshActionStore: nativeRefreshActionStore,
                 accountMessageViewModel: accountMessageViewModel,
-                isDetailPresented: isDetailPresented,
                 onOpenAccountMessages: onOpenAccountMessages,
                 onOpenProfile: onOpenProfile,
                 onOpenRootPage: onOpenRootPage

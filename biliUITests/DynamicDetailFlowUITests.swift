@@ -294,7 +294,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         ]
         app.launch()
 
-        let modeButton = app.buttons["首页内容"]
+        let modeButton = app.segmentedControls["home.feed.modePicker"]
         let messageButton = app.buttons["账号消息"]
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(modeButton.waitForExistence(timeout: 5))

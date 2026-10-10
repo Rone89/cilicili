@@ -128,7 +128,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var bottomScrollEdgeBlurEnabled: Bool
-    @Published private(set) var homeAvatarNavigationExperimentEnabled: Bool
+    @Published private(set) var homeToolbarPickerStyle: HomeToolbarPickerStyle
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
@@ -209,7 +209,7 @@ final class LibraryStore: ObservableObject {
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let bottomScrollEdgeBlurEnabledKey = "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1"
-    private static let homeAvatarNavigationExperimentEnabledKey = "cc.bili.home.avatarNavigationExperimentEnabled.v1"
+    private static let homeToolbarPickerStyleKey = "cc.bili.home.toolbarPickerStyle.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
@@ -251,6 +251,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.home.avatarNavigationExperimentEnabled.v1",
         "cc.bili.experimental.videoDetailSponsoredBadge.v1",
         "cc.bili.experimental.videoDetailOwnerMenu.v1",
         "cc.bili.playback.danmakuStageTransitionExperimentEnabled.v1",
@@ -609,7 +610,8 @@ final class LibraryStore: ObservableObject {
         }
         self.bottomScrollEdgeBlurEnabled = userDefaults.object(forKey: Self.bottomScrollEdgeBlurEnabledKey) as? Bool ?? true
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1")
-        self.homeAvatarNavigationExperimentEnabled = userDefaults.object(forKey: Self.homeAvatarNavigationExperimentEnabledKey) as? Bool ?? false
+        self.homeToolbarPickerStyle = userDefaults.string(forKey: Self.homeToolbarPickerStyleKey)
+            .flatMap(HomeToolbarPickerStyle.init(rawValue:)) ?? .plain
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
@@ -1214,10 +1216,10 @@ final class LibraryStore: ObservableObject {
         userDefaults.set(enabled, forKey: Self.bottomScrollEdgeBlurEnabledKey)
     }
 
-    func setHomeAvatarNavigationExperimentEnabled(_ enabled: Bool) {
-        guard homeAvatarNavigationExperimentEnabled != enabled else { return }
-        homeAvatarNavigationExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.homeAvatarNavigationExperimentEnabledKey)
+    func setHomeToolbarPickerStyle(_ style: HomeToolbarPickerStyle) {
+        guard homeToolbarPickerStyle != style else { return }
+        homeToolbarPickerStyle = style
+        userDefaults.set(style.rawValue, forKey: Self.homeToolbarPickerStyleKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
@@ -1605,6 +1607,20 @@ enum AppAppearanceMode: String, CaseIterable, Identifiable {
             return .light
         case .dark:
             return .dark
+        }
+    }
+}
+
+enum HomeToolbarPickerStyle: String, CaseIterable, Identifiable {
+    case plain
+    case liquidGlass
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .plain: return "普通"
+        case .liquidGlass: return "液态玻璃"
         }
     }
 }

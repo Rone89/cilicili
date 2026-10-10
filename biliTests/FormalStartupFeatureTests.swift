@@ -6,22 +6,35 @@ import UIKit
 
 final class FormalStartupFeatureTests: XCTestCase {
     @MainActor
-    func testHomeAvatarNavigationExperimentDefaultsOffAndPersistsIndependently() {
+    func testHomeToolbarPickerStyleDefaultsPlainAndPersistsIndependently() {
         let defaults = makeUserDefaults()
         let store = LibraryStore(userDefaults: defaults)
         let tabs = store.visibleRootTabs
         let tint = store.appTintColorHex
-        XCTAssertFalse(store.homeAvatarNavigationExperimentEnabled)
+        XCTAssertEqual(store.homeToolbarPickerStyle, .plain)
 
-        store.setHomeAvatarNavigationExperimentEnabled(true)
-        XCTAssertTrue(store.homeAvatarNavigationExperimentEnabled)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
+        store.setHomeToolbarPickerStyle(.liquidGlass)
+        XCTAssertEqual(store.homeToolbarPickerStyle, .liquidGlass)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).homeToolbarPickerStyle, .liquidGlass)
         XCTAssertEqual(store.visibleRootTabs, tabs)
         XCTAssertEqual(store.appTintColorHex, tint)
         XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
 
-        store.setHomeAvatarNavigationExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).homeAvatarNavigationExperimentEnabled)
+        store.setHomeToolbarPickerStyle(.plain)
+        XCTAssertEqual(LibraryStore(userDefaults: defaults).homeToolbarPickerStyle, .plain)
+    }
+
+    @MainActor
+    func testHomeAvatarPromotionRemovesLegacyFlagAndInvalidPickerStyleFallsBack() {
+        for enabled in [false, true] {
+            let defaults = makeUserDefaults()
+            let key = "cc.bili.home.avatarNavigationExperimentEnabled.v1"
+            defaults.set(enabled, forKey: key)
+            defaults.set("invalid", forKey: "cc.bili.home.toolbarPickerStyle.v1")
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: key))
+            XCTAssertEqual(store.homeToolbarPickerStyle, .plain)
+        }
     }
 
     @MainActor

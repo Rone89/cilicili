@@ -81,21 +81,6 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
-                get: { libraryStore.homeAvatarNavigationExperimentEnabled },
-                set: { libraryStore.setHomeAvatarNavigationExperimentEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("首页头像入口实验", systemImage: "person.crop.circle")
-                    Text("首页左侧头像打开个人空间，中间切换推荐与热门。隐藏“我的”后，头像菜单提供账户消息，右侧设置入口打开我的页。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.experiments.homeAvatarNavigation")
-
-
-            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {
