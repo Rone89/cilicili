@@ -158,3 +158,25 @@ struct NativePrivateMessageComposerPresentation<Content: View>: View {
         .task { isFocused = true }
     }
 }
+
+/// Measure the same attachments, styled runs and line boxes used by BiliEmoteText.
+@MainActor
+enum PrivateMessageTextLayout {
+    static func attributedText(text: String, inlineEmotes: [String: BiliInlineEmote], font: UIFont) -> NSAttributedString {
+        BiliEmoteRenderInput(
+            content: nil, inlineEmotes: inlineEmotes, plainText: text,
+            baseFont: font, textColor: .label, accentColor: .systemBlue,
+            leadingName: nil, leadingNameColor: .label, leadingNameFont: nil,
+            emoteSize: 21 * font.pointSize / AppTypography.Role.messageBody.pointSize,
+            lineLimit: nil, lineSpacing: 0
+        ).render().attributedString
+    }
+
+    static func width(text: String, inlineEmotes: [String: BiliInlineEmote], font: UIFont, maximumWidth: CGFloat) -> CGFloat {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.attributedText = attributedText(text: text, inlineEmotes: inlineEmotes, font: font)
+        let size = label.sizeThatFits(CGSize(width: maximumWidth, height: .greatestFiniteMagnitude))
+        return min(max(ceil(size.width), 12), maximumWidth)
+    }
+}

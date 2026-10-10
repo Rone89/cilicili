@@ -1494,19 +1494,12 @@ private struct AccountPrivateMessageBubble: View {
     private var messageTextWidth: CGFloat {
         let preferredWidth: CGFloat = horizontalSizeClass == .regular ? 420 : 300
         let maximumWidth = availableWidth.map { min(preferredWidth, max(44, $0 - 54 - 24 - 8)) } ?? preferredWidth
-        var measuredText = message.text
-        for token in inlineEmotes.keys where measuredText.contains(token) {
-            measuredText = measuredText.replacingOccurrences(of: token, with: "口")
-        }
         let font = AppTypography.Role.messageBody.uiFont(
             contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
         )
-        let bounds = (measuredText as NSString).boundingRect(
-            with: CGSize(width: maximumWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
-            context: nil
+        return PrivateMessageTextLayout.width(
+            text: message.text, inlineEmotes: inlineEmotes,
+            font: font, maximumWidth: maximumWidth
         )
-        return min(max(ceil(bounds.width), 12), maximumWidth)
     }
 }
