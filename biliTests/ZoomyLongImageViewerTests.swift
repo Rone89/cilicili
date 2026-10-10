@@ -8,12 +8,11 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         let original = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"))
         let item = ZoomyImagePreviewItem(id: "large", viewerURL: original,
                                         originalPixelSize: CGSize(width: 4032, height: 3024))
-        let preview = try XCTUnwrap(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: true))
+        let preview = try XCTUnwrap(item.loadingURL(targetPixelSize: 1600))
         XCTAssertEqual(preview.absoluteString,
                        original.absoluteString + "@1600w_1600h_0e.webp")
-        XCTAssertEqual(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: true,
+        XCTAssertEqual(item.loadingURL(targetPixelSize: 1600,
                                        requestsOriginal: true), original)
-        XCTAssertEqual(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: false), original)
         XCTAssertNotEqual(preview.absoluteString.biliImageCacheIdentityURLString(),
                           original.absoluteString.biliImageCacheIdentityURLString())
     }
@@ -23,7 +22,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         let original = try XCTUnwrap(URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"))
         for size in [CGSize(width: 1600, height: 1200), CGSize(width: 1080, height: 1600)] {
             let item = ZoomyImagePreviewItem(id: "small", viewerURL: original, originalPixelSize: size)
-            XCTAssertEqual(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: true), original)
+            XCTAssertEqual(item.loadingURL(targetPixelSize: 1600), original)
             XCTAssertFalse(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
                 sourcePixelSize: item.originalPixelSize, baseTargetPixelSize: 1600))
         }
@@ -35,7 +34,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
             viewerURL: URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"),
             originalPixelSize: CGSize(width: 0, height: 0))
         XCTAssertNil(item.originalPixelSize)
-        XCTAssertNotEqual(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: true), item.displayURL)
+        XCTAssertNotEqual(item.loadingURL(targetPixelSize: 1600), item.displayURL)
         XCTAssertTrue(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
             sourcePixelSize: item.originalPixelSize, baseTargetPixelSize: 1600))
     }
@@ -50,7 +49,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
         let external = ZoomyImagePreviewItem(id: "external",
             viewerURL: URL(string: "https://example.com/hdslb.com/photo.jpg?token=value"))
         for item in [gif, live, external] {
-            XCTAssertEqual(item.loadingURL(targetPixelSize: 1600, enhancedLoadingEnabled: true), item.displayURL)
+            XCTAssertEqual(item.loadingURL(targetPixelSize: 1600), item.displayURL)
         }
     }
 
@@ -79,8 +78,8 @@ final class ZoomyLongImageViewerTests: XCTestCase {
             let item = ZoomyImagePreviewItem(id: "upgrade",
                 viewerURL: URL(string: "https://i0.hdslb.com/bfs/new_dyn/example.jpg"),
                 originalPixelSize: size)
-            XCTAssertNotEqual(item.loadingURL(targetPixelSize: ZoomyViewerImageSizing.defaultPreviewPixelSize,
-                                             enhancedLoadingEnabled: true), item.displayURL)
+            XCTAssertNotEqual(item.loadingURL(targetPixelSize: ZoomyViewerImageSizing.defaultPreviewPixelSize
+            ), item.displayURL)
         }
         XCTAssertTrue(ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
             sourcePixelSize: nil, baseTargetPixelSize: 1600))
@@ -198,25 +197,14 @@ final class ZoomyLongImageViewerTests: XCTestCase {
     }
 
     @MainActor
-    func testLongImageDismissRequiresExperimentAndTopEdge() {
-        XCTAssertFalse(
-            ZoomyViewerInteractionPolicy.canBeginDismiss(
-                usesLongImageScrolling: true,
-                zoomScale: 1,
-                minimumZoomScale: 1,
-                contentOffsetY: 0,
-                topContentInset: 0,
-                enhancedInteractionEnabled: false
-            )
-        )
+    func testLongImageDismissRequiresTopEdge() {
         XCTAssertTrue(
             ZoomyViewerInteractionPolicy.canBeginDismiss(
                 usesLongImageScrolling: true,
                 zoomScale: 1,
                 minimumZoomScale: 1,
                 contentOffsetY: 0,
-                topContentInset: 0,
-                enhancedInteractionEnabled: true
+                topContentInset: 0
             )
         )
         XCTAssertFalse(
@@ -225,8 +213,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
                 zoomScale: 1,
                 minimumZoomScale: 1,
                 contentOffsetY: 80,
-                topContentInset: 0,
-                enhancedInteractionEnabled: true
+                topContentInset: 0
             )
         )
         XCTAssertFalse(
@@ -235,8 +222,7 @@ final class ZoomyLongImageViewerTests: XCTestCase {
                 zoomScale: 2,
                 minimumZoomScale: 1,
                 contentOffsetY: 0,
-                topContentInset: 0,
-                enhancedInteractionEnabled: true
+                topContentInset: 0
             )
         )
     }

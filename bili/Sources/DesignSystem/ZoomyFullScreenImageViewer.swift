@@ -70,12 +70,10 @@ nonisolated enum ZoomyViewerInteractionPolicy {
         zoomScale: CGFloat,
         minimumZoomScale: CGFloat,
         contentOffsetY: CGFloat,
-        topContentInset: CGFloat,
-        enhancedInteractionEnabled: Bool
+        topContentInset: CGFloat
     ) -> Bool {
         guard zoomScale <= minimumZoomScale + 0.01 else { return false }
         guard usesLongImageScrolling else { return true }
-        guard enhancedInteractionEnabled else { return false }
         return contentOffsetY <= -topContentInset + 1
     }
 }
@@ -186,7 +184,6 @@ struct ZoomyFullScreenImageViewer: View {
     let initialItemID: String
     let viewerGroup: ZoomyImagePreviewGroup?
     let targetPixelSize: Int
-    let interactionExperimentEnabled: Bool
     let onSelectedItemChanged: (ZoomyImagePreviewItem, UIImage?) -> Void
     let onDismissDragChanged: (CGFloat, CGFloat) -> Void
     let onImageUpdated: (UIImage) -> Void
@@ -213,7 +210,6 @@ struct ZoomyFullScreenImageViewer: View {
         initialItemID: String,
         viewerGroup: ZoomyImagePreviewGroup?,
         targetPixelSize: Int,
-        interactionExperimentEnabled: Bool,
         isPresented: Binding<Bool>,
         onSelectedItemChanged: @escaping (ZoomyImagePreviewItem, UIImage?) -> Void,
         onDismissDragChanged: @escaping (CGFloat, CGFloat) -> Void,
@@ -225,7 +221,6 @@ struct ZoomyFullScreenImageViewer: View {
         self.initialItemID = initialItemID
         self.viewerGroup = viewerGroup
         self.targetPixelSize = targetPixelSize
-        self.interactionExperimentEnabled = interactionExperimentEnabled
         self.onSelectedItemChanged = onSelectedItemChanged
         self.onDismissDragChanged = onDismissDragChanged
         self.onImageUpdated = onImageUpdated
@@ -264,30 +259,24 @@ struct ZoomyFullScreenImageViewer: View {
                 .ignoresSafeArea()
 
             viewerPages
-                .scaleEffect(interactionExperimentEnabled ? dismissDragScale : 1)
+                .scaleEffect(dismissDragScale)
                 .offset(y: dismissDragOffset)
 
             pageIndicator
-                .offset(y: interactionExperimentEnabled ? 0 : dismissDragOffset)
         }
     }
 
     @ViewBuilder
     private var viewerPages: some View {
         if items.count > 1 {
-            if interactionExperimentEnabled {
-                GeometryReader { geometry in
-                    // Extra paging width creates a gap without narrowing the visible image.
-                    pagedImages(horizontalInset: 8)
-                        .frame(width: geometry.size.width + 16, height: geometry.size.height)
-                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                }
-                .ignoresSafeArea()
-                .clipped()
-            } else {
-                pagedImages(horizontalInset: 0)
-                    .ignoresSafeArea()
+            GeometryReader { geometry in
+                // Extra paging width creates a gap without narrowing the visible image.
+                pagedImages(horizontalInset: 8)
+                    .frame(width: geometry.size.width + 16, height: geometry.size.height)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
+            .ignoresSafeArea()
+            .clipped()
         } else {
             imagePage(for: items.first)
                 .ignoresSafeArea()
@@ -317,8 +306,8 @@ struct ZoomyFullScreenImageViewer: View {
             viewerActionBar
                 .padding(.bottom, 22)
                 .opacity(viewerActionBarOpacity)
-                .allowsHitTesting(!interactionExperimentEnabled || areActionControlsVisible)
-                .accessibilityHidden(interactionExperimentEnabled && !areActionControlsVisible)
+                .allowsHitTesting(areActionControlsVisible)
+                .accessibilityHidden(!areActionControlsVisible)
 
             if let toastMessage {
                 Text(toastMessage)
@@ -342,8 +331,7 @@ struct ZoomyFullScreenImageViewer: View {
             .disabled(!canExportSelectedMedia || isSavingImage || isPreparingShare)
 
             if items.count > 1 {
-                if interactionExperimentEnabled,
-                   ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: items.count) {
+                if ZoomyViewerInteractionPolicy.usesNumericPageIndicator(pageCount: items.count) {
                     Text("\(selectedIndex + 1) / \(items.count)")
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .frame(minWidth: 48)
@@ -416,7 +404,7 @@ struct ZoomyFullScreenImageViewer: View {
     }
 
     private var viewerActionBarOpacity: Double {
-        guard !interactionExperimentEnabled || areActionControlsVisible else { return 0 }
+        guard areActionControlsVisible else { return 0 }
         return pageIndicatorOpacity
     }
 
@@ -430,7 +418,6 @@ struct ZoomyFullScreenImageViewer: View {
                 loadsOriginalImage: originalRequestedItemIDs.contains(item.id),
                 originalRetryRequestID: originalRetryRequests[item.id, default: 0],
                 onOriginalLoadStateChanged: { originalLoadStates[item.id] = $0 },
-                interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: item.id == selectedItemID,
                 isPresented: $isPresented,
                 onSingleTap: handleViewerSingleTap,
@@ -453,7 +440,6 @@ struct ZoomyFullScreenImageViewer: View {
                 loadsOriginalImage: originalRequestedItemIDs.contains(url.absoluteString),
                 originalRetryRequestID: originalRetryRequests[url.absoluteString, default: 0],
                 onOriginalLoadStateChanged: { originalLoadStates[url.absoluteString] = $0 },
-                interactionExperimentEnabled: interactionExperimentEnabled,
                 isSelected: true,
                 isPresented: $isPresented,
                 onSingleTap: handleViewerSingleTap,
@@ -496,8 +482,7 @@ struct ZoomyFullScreenImageViewer: View {
     }
 
     private var canRequestOriginalSelectedMedia: Bool {
-        interactionExperimentEnabled
-            && !selectedItem.needsOriginalMedia
+        !selectedItem.needsOriginalMedia
             && selectedItem.displayURL != nil
             && selectedSnapshot?.isFinal == true
             && ZoomyViewerImageSizing.shouldOfferOriginalUpgrade(
@@ -536,7 +521,7 @@ struct ZoomyFullScreenImageViewer: View {
         guard dismissGestureItemID == itemID else { return }
         let translationY = max(translationY, 0)
         dismissDragOffset = translationY
-        let scale = interactionExperimentEnabled && !selectedUsesLongImageScrolling
+        let scale = !selectedUsesLongImageScrolling
             ? ZoomyViewerInteractionPolicy.dismissScale(translationY: translationY)
             : 1
         dismissDragScale = scale
@@ -560,7 +545,7 @@ struct ZoomyFullScreenImageViewer: View {
                translationY: translationY,
                velocityY: velocityY
            ) {
-            let scale = interactionExperimentEnabled && !selectedUsesLongImageScrolling
+            let scale = !selectedUsesLongImageScrolling
                 ? ZoomyViewerInteractionPolicy.dismissScale(translationY: translationY)
                 : 1
             dismissDragScale = scale
@@ -597,16 +582,13 @@ struct ZoomyFullScreenImageViewer: View {
 
     private func syncSelectedItemContext() {
         guard let item = items.first(where: { $0.id == selectedItemID }) else { return }
-        if interactionExperimentEnabled {
-            let retainedItemIDs = Set(
-                ZoomyViewerInteractionPolicy
-                    .retainedPageIndices(pageCount: items.count, selectedIndex: selectedIndex)
-                    .map { items[$0].id }
-            )
-            viewerGroup?.releaseViewerImages(except: retainedItemIDs)
-        } else {
-            viewerGroup?.releaseViewerImages(except: item.id)
-        }
+        let retainedItemIDs = Set(
+            ZoomyViewerInteractionPolicy
+                .retainedPageIndices(pageCount: items.count, selectedIndex: selectedIndex)
+                .map { items[$0].id }
+        )
+        viewerGroup?.releaseViewerImages(except: retainedItemIDs)
+
         let cachedImage = viewerGroup?.image(for: item.id)
         onSelectedItemChanged(item, cachedImage)
         selectedSnapshot = item.needsOriginalMedia
@@ -632,14 +614,9 @@ struct ZoomyFullScreenImageViewer: View {
             await withTaskGroup(of: Void.self) { group in
                 for item in neighborItems {
                     guard let url = item.loadingURL(
-                        targetPixelSize: targetPixelSize,
-                        enhancedLoadingEnabled: interactionExperimentEnabled
+                        targetPixelSize: targetPixelSize
                     ) else { continue }
-                    let prewarmTargetPixelSize = interactionExperimentEnabled ? targetPixelSize
-                        : ZoomyViewerImageSizing.targetPixelSize(
-                            baseTargetPixelSize: targetPixelSize,
-                            widthToHeightAspectRatio: item.resolvedAspectRatio
-                        )
+                    let prewarmTargetPixelSize = targetPixelSize
                     group.addTask {
                         await RemoteImageCache.shared.prefetch(
                             [RemoteImageSource(url: url)],
@@ -654,16 +631,9 @@ struct ZoomyFullScreenImageViewer: View {
     }
 
     private func handleViewerSingleTap() {
-        guard interactionExperimentEnabled else {
-            isPresented = false
-            return
-        }
         withAnimation(.easeInOut(duration: 0.16)) {
             areActionControlsVisible.toggle()
         }
-    }
-
-    func cancelLoading() {
     }
 
     private func updateSelectedMedia(itemID: String, snapshot: ZoomyViewerMediaSnapshot) {
@@ -758,7 +728,6 @@ private struct ZoomyViewerImagePage: View {
     let loadsOriginalImage: Bool
     let originalRetryRequestID: Int
     let onOriginalLoadStateChanged: (ZoomyOriginalLoadState) -> Void
-    let interactionExperimentEnabled: Bool
     let isSelected: Bool
     @Binding var isPresented: Bool
     let onSingleTap: () -> Void
@@ -775,7 +744,6 @@ private struct ZoomyViewerImagePage: View {
         loadsOriginalImage: Bool,
         originalRetryRequestID: Int,
         onOriginalLoadStateChanged: @escaping (ZoomyOriginalLoadState) -> Void,
-        interactionExperimentEnabled: Bool,
         isSelected: Bool,
         isPresented: Binding<Bool>,
         onSingleTap: @escaping () -> Void,
@@ -789,7 +757,6 @@ private struct ZoomyViewerImagePage: View {
         self.originalRetryRequestID = originalRetryRequestID
         self.onOriginalLoadStateChanged = onOriginalLoadStateChanged
         self.loadsOriginalImage = loadsOriginalImage
-        self.interactionExperimentEnabled = interactionExperimentEnabled
         self.isSelected = isSelected
         _isPresented = isPresented
         self.onSingleTap = onSingleTap
@@ -838,7 +805,6 @@ private struct ZoomyViewerImagePage: View {
             } else if let image = loader.snapshot?.image {
                 ZoomyZoomableImageView(
                     image: image,
-                    interactionExperimentEnabled: interactionExperimentEnabled,
                     isDismissGestureEnabled: isSelected
                 ) {
                     onSingleTap()
@@ -858,10 +824,10 @@ private struct ZoomyViewerImagePage: View {
             }
 
             if loader.isLoadingFinalMedia, loader.snapshot?.image != nil,
-               !(interactionExperimentEnabled && loadsOriginalImage) {
+               !loadsOriginalImage {
                 compactLoadingIndicator
             } else if loader.loadFailed, loader.snapshot?.image != nil,
-                      !(interactionExperimentEnabled && loadsOriginalImage) {
+                      !loadsOriginalImage {
                 compactRetryButton
             }
         }
@@ -876,7 +842,6 @@ private struct ZoomyViewerImagePage: View {
                 item: item,
                 targetPixelSize: effectiveTargetPixelSize,
                 previewTargetPixelSize: targetPixelSize,
-                enhancedLoadingEnabled: interactionExperimentEnabled,
                 marksOriginalQuality: loadsOriginalImage && !item.needsOriginalMedia
             )
             guard !Task.isCancelled else { return }
@@ -911,7 +876,7 @@ private struct ZoomyViewerImagePage: View {
                 widthToHeightAspectRatio: resolvedAspectRatio
             )
         }
-        if interactionExperimentEnabled, !item.needsOriginalMedia {
+        if !item.needsOriginalMedia {
             return targetPixelSize
         }
         return ZoomyViewerImageSizing.targetPixelSize(
@@ -1027,7 +992,6 @@ private final class ZoomyViewerImageLoader: ObservableObject {
         item: ZoomyImagePreviewItem,
         targetPixelSize: Int,
         previewTargetPixelSize: Int,
-        enhancedLoadingEnabled: Bool,
         marksOriginalQuality: Bool = false
     ) async {
         cancel()
@@ -1035,7 +999,6 @@ private final class ZoomyViewerImageLoader: ObservableObject {
         let generation = loadGeneration
         let url = item.loadingURL(
             targetPixelSize: previewTargetPixelSize,
-            enhancedLoadingEnabled: enhancedLoadingEnabled,
             requestsOriginal: marksOriginalQuality
         )
         guard let url else {
@@ -1069,7 +1032,7 @@ private final class ZoomyViewerImageLoader: ObservableObject {
                     url: url,
                     targetPixelSize: targetPixelSize,
                     decodePolicy: .highQualityViewer,
-                    refinesLongImages: !enhancedLoadingEnabled || marksOriginalQuality
+                    refinesLongImages: marksOriginalQuality
                 )?.markingOriginalQuality(marksOriginalQuality)
                 if url != item.displayURL {
                     // CDN response dimensions describe the preview, not the original.
@@ -2240,12 +2203,10 @@ private final class ZoomyLivePhotoHostView: UIView, UIScrollViewDelegate, UIGest
             height: height
         )
     }
-
 }
 
 private struct ZoomyZoomableImageView: UIViewRepresentable {
     let image: UIImage
-    let interactionExperimentEnabled: Bool
     let isDismissGestureEnabled: Bool
     let onTapExit: () -> Void
     let onDismissDragChanged: (CGFloat) -> Void
@@ -2253,7 +2214,7 @@ private struct ZoomyZoomableImageView: UIViewRepresentable {
 
     func makeUIView(context _: Context) -> ZoomyZoomableImageHostView {
         let view = ZoomyZoomableImageHostView()
-        view.interactionExperimentEnabled = interactionExperimentEnabled
+
         view.isDismissGestureEnabled = isDismissGestureEnabled
         view.onTapExit = onTapExit
         view.onDismissDragChanged = onDismissDragChanged
@@ -2262,7 +2223,6 @@ private struct ZoomyZoomableImageView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: ZoomyZoomableImageHostView, context _: Context) {
-        view.interactionExperimentEnabled = interactionExperimentEnabled
         view.isDismissGestureEnabled = isDismissGestureEnabled
         view.onTapExit = onTapExit
         view.onDismissDragChanged = onDismissDragChanged
@@ -2272,7 +2232,6 @@ private struct ZoomyZoomableImageView: UIViewRepresentable {
 }
 
 private final class ZoomyZoomableImageHostView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-    var interactionExperimentEnabled = false
     var isDismissGestureEnabled = false
     var onTapExit: (() -> Void)?
     var onDismissDragChanged: ((CGFloat) -> Void)?
@@ -2293,8 +2252,7 @@ private final class ZoomyZoomableImageHostView: UIView, UIScrollViewDelegate, UI
                     zoomScale: self.scrollView.zoomScale,
                     minimumZoomScale: self.scrollView.minimumZoomScale,
                     contentOffsetY: self.scrollView.contentOffset.y,
-                    topContentInset: self.scrollView.contentInset.top,
-                    enhancedInteractionEnabled: self.interactionExperimentEnabled
+                    topContentInset: self.scrollView.contentInset.top
                 )
         }
         controller.onChanged = { [weak self] translationY in
@@ -2369,8 +2327,7 @@ private final class ZoomyZoomableImageHostView: UIView, UIScrollViewDelegate, UI
         super.layoutSubviews()
         dismissPanController.prioritizeAncestorPanGestures(from: self)
         let previousLayoutSize = lastLayoutSize
-        let viewport = interactionExperimentEnabled
-            && previousLayoutSize != .zero
+        let viewport = previousLayoutSize != .zero
             && bounds.size != previousLayoutSize
             ? captureViewport(viewportSize: previousLayoutSize)
             : nil

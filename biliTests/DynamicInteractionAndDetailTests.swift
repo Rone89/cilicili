@@ -74,24 +74,6 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         )
     }
 
-    func testImageViewerInteractionExperimentDefaultsOffAndPersists() {
-        let suiteName = "cc.bili.tests.image-viewer-interaction.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let initialStore = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(initialStore.imageViewerInteractionExperimentEnabled)
-
-        initialStore.setImageViewerInteractionExperimentEnabled(true)
-        XCTAssertTrue(
-            LibraryStore(userDefaults: defaults).imageViewerInteractionExperimentEnabled
-        )
-
-        initialStore.setImageViewerInteractionExperimentEnabled(false)
-        XCTAssertFalse(
-            LibraryStore(userDefaults: defaults).imageViewerInteractionExperimentEnabled
-        )
-    }
 
     func testStandardPageInsetIsAlwaysTwentyPoints() {
         let suiteName = "cc.bili.tests.unified-page-inset-metrics.\(UUID().uuidString)"

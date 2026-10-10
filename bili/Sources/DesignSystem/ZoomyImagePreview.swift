@@ -46,11 +46,10 @@ struct ZoomyImagePreviewItem: Identifiable, Equatable {
     /// CDN previews and originals use different URLs and cache identities.
     func loadingURL(
         targetPixelSize: Int,
-        enhancedLoadingEnabled: Bool,
         requestsOriginal: Bool = false
     ) -> URL? {
         guard let originalURL = displayURL else { return nil }
-        guard enhancedLoadingEnabled, !requestsOriginal, !needsOriginalMedia,
+        guard !requestsOriginal, !needsOriginalMedia,
               originalPixelSize.map({ max($0.width, $0.height) > CGFloat(targetPixelSize) }) != false,
               let host = originalURL.host?.lowercased(),
               host == "hdslb.com" || host.hasSuffix(".hdslb.com")
@@ -330,7 +329,6 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
                 initialItemID: resolvedViewerItemID,
                 viewerGroup: viewerGroup,
                 targetPixelSize: viewerTargetPixelSize,
-                interactionExperimentEnabled: imageViewerInteractionExperimentEnabled,
                 sourceAnchor: sourceAnchor,
                 sourceCornerRadius: cornerRadius,
                 sourceContentMode: contentMode.uiViewContentMode,
@@ -382,10 +380,6 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
 
     private var shouldHideSourceContent: Bool {
         isSourceContentHidden || (viewerGroup?.isPresented == true)
-    }
-
-    private var imageViewerInteractionExperimentEnabled: Bool {
-        UserDefaults.standard.bool(forKey: LibraryStore.imageViewerInteractionExperimentEnabledKey)
     }
 
     private var cacheIdentity: String {
@@ -454,17 +448,12 @@ struct ZoomyRemoteImage<Placeholder: View>: View {
     private func startViewerImageLoad() {
         let viewerItem = resolvedViewerItem
         guard let viewerURL = viewerItem.loadingURL(
-            targetPixelSize: viewerTargetPixelSize,
-            enhancedLoadingEnabled: imageViewerInteractionExperimentEnabled
+            targetPixelSize: viewerTargetPixelSize
         ) else { return }
         guard viewerItem.needsOriginalMedia != true else {
             return
         }
-        let targetPixelSize = imageViewerInteractionExperimentEnabled ? viewerTargetPixelSize
-            : ZoomyViewerImageSizing.targetPixelSize(
-                baseTargetPixelSize: viewerTargetPixelSize,
-                widthToHeightAspectRatio: viewerItem.resolvedAspectRatio
-            )
+        let targetPixelSize = viewerTargetPixelSize
         viewerLoadTask?.cancel()
         viewerLoadTask = Task(priority: .userInitiated) {
             _ = await RemoteImageCache.shared.load(
@@ -486,7 +475,6 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
     let initialItemID: String
     let viewerGroup: ZoomyImagePreviewGroup?
     let targetPixelSize: Int
-    let interactionExperimentEnabled: Bool
     let sourceAnchor: ZoomySourceAnchor
     let sourceCornerRadius: CGFloat
     let sourceContentMode: UIView.ContentMode
@@ -507,7 +495,6 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
             initialItemID: initialItemID,
             viewerGroup: viewerGroup,
             targetPixelSize: targetPixelSize,
-            interactionExperimentEnabled: interactionExperimentEnabled,
             sourceAnchor: sourceAnchor,
             sourceCornerRadius: sourceCornerRadius,
             sourceContentMode: sourceContentMode,
@@ -538,7 +525,6 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
             initialItemID: String,
             viewerGroup: ZoomyImagePreviewGroup?,
             targetPixelSize: Int,
-            interactionExperimentEnabled: Bool,
             sourceAnchor: ZoomySourceAnchor,
             sourceCornerRadius: CGFloat,
             sourceContentMode: UIView.ContentMode,
@@ -575,7 +561,6 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
                     initialItemID: resolvedInitialItemID,
                     viewerGroup: viewerGroup,
                     targetPixelSize: targetPixelSize,
-                    interactionExperimentEnabled: interactionExperimentEnabled,
                     isPresented: binding,
                     onSelectedItemChanged: { [weak transitionDelegate] item, image in
                         transitionDelegate?.currentItemID = item.id
@@ -604,7 +589,6 @@ private struct ZoomyImageViewerPresenter: UIViewControllerRepresentable {
                 self.presentedController = nil
                 presentedURL = nil
                 currentItemID = nil
-                (presentedController as? UIHostingController<ZoomyFullScreenImageViewer>)?.rootView.cancelLoading()
                 presentedController.dismiss(animated: !UIAccessibility.isReduceMotionEnabled) { [weak self] in
                     viewerGroup?.releaseViewerImages()
                     self?.transitionDelegate = nil

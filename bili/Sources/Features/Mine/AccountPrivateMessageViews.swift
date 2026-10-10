@@ -423,11 +423,9 @@ private struct AccountPrivateMessageSessionRow: View {
 }
 
 struct AccountPrivateMessageConversationView: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @State private var conversationWidth: CGFloat = 0
     @State private var showsMessageComposer = false
 
-    private var usesNativePresentation: Bool { libraryStore.nativePrivateMessageConversationExperimentEnabled }
     let session: AccountPrivateMessageSession
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let onMarkedRead: () -> Void
@@ -457,34 +455,26 @@ struct AccountPrivateMessageConversationView: View {
     @State private var reportingMessage: AccountPrivateMessage?
     @State private var mutatingMessageIDs = Set<Int>()
     @State private var messageActionErrorMessage: String?
-    @FocusState private var isComposerFocused: Bool
 
     var body: some View {
-        let nativePresentation = usesNativePresentation
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: usesNativePresentation ? 0 : 12) {
+                LazyVStack(spacing: 0) {
                     historyControl
 
-                    if usesNativePresentation {
-                        ForEach(NativePrivateMessageTimeline.entries(messages)) { entry in
-                            VStack(spacing: 8) {
-                                if entry.showsTimestamp, let timestamp = entry.message.timestamp {
-                                    Text(timestamp.formatted(.dateTime.month().day().hour().minute()))
-                                        .font(.caption2.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity)
-                                        .accessibilityIdentifier("privateMessage.timestamp.\(entry.id)")
-                                }
-                                messageBubble(entry.message)
+                    ForEach(NativePrivateMessageTimeline.entries(messages)) { entry in
+                        VStack(spacing: 8) {
+                            if entry.showsTimestamp, let timestamp = entry.message.timestamp {
+                                Text(timestamp.formatted(.dateTime.month().day().hour().minute()))
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityIdentifier("privateMessage.timestamp.\(entry.id)")
                             }
-                            .padding(.top, entry.startsSenderGroup ? 12 : 3)
-                            .id(entry.id)
+                            messageBubble(entry.message)
                         }
-                    } else {
-                        ForEach(messages) { message in
-                            messageBubble(message).id(message.id)
-                        }
+                        .padding(.top, entry.startsSenderGroup ? 12 : 3)
+                        .id(entry.id)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -495,11 +485,6 @@ struct AccountPrivateMessageConversationView: View {
             .accessibilityIdentifier("privateMessage.messages")
             .scrollDismissesKeyboard(.interactively)
             .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    isComposerFocused = false
-                }
-            )
             .refreshable {
 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--private-message-navigation-chain") {
@@ -523,16 +508,8 @@ struct AccountPrivateMessageConversationView: View {
                 _ = await readAcknowledgement
                 await synchronizeLoop(using: proxy)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !usesNativePresentation {
-                    composer(using: proxy)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                        .padding(.bottom, 6)
-                }
-            }
             .toolbar {
-                if usesNativePresentation && !showsMessageComposer {
+                if !showsMessageComposer {
                     ToolbarSpacer(.flexible, placement: .bottomBar)
                     ToolbarItem(placement: .bottomBar) {
                         Button {
@@ -556,9 +533,7 @@ struct AccountPrivateMessageConversationView: View {
                 }
             }
             .toolbar(showsMessageComposer ? .hidden : .automatic, for: .bottomBar)
-            .fullScreenCover(isPresented: $showsMessageComposer, onDismiss: {
-                isComposerFocused = false
-            }) {
+            .fullScreenCover(isPresented: $showsMessageComposer) {
                 NativePrivateMessageComposerPresentation(onDismiss: {
                     showsMessageComposer = false
                 }) { focus in
@@ -578,14 +553,6 @@ struct AccountPrivateMessageConversationView: View {
                 guard let item else { return }
                 Task { await sendSelectedPhoto(item, using: proxy) }
             }
-            .photosPicker(
-                isPresented: Binding(
-                    get: { !usesNativePresentation && showsPhotoPicker },
-                    set: { showsPhotoPicker = $0 }
-                ),
-                selection: $selectedPhoto,
-                matching: .images
-            )
         }
         .overlay {
             if messages.isEmpty {
@@ -593,47 +560,36 @@ struct AccountPrivateMessageConversationView: View {
             }
         }
         .background(Color(uiColor: .systemBackground))
-        .onGeometryChange(for: CGFloat.self) { nativePresentation ? $0.size.width : 0 } action: { _, width in
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
             conversationWidth = width
         }
-        .navigationTitle(usesNativePresentation ? session.actor.name : "")
+        .navigationTitle(session.actor.name)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(.automatic, for: .navigationBar)
         .nativeTopScrollEdgeEffect()
         .toolbar {
             ToolbarItem(placement: .principal) {
-                if usesNativePresentation {
-                    NativePrivateMessageHeader(actor: session.actor)
-                } else {
-                    AccountPrivateMessageConversationHeader(actor: session.actor)
-                }
+                NativePrivateMessageHeader(actor: session.actor)
             }
-            if usesNativePresentation {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if let owner = session.actor.owner {
-                            VideoOwnerRouteLink(owner: owner) {
-                                Label("个人空间", systemImage: "person.crop.circle")
-                            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if let owner = session.actor.owner {
+                        VideoOwnerRouteLink(owner: owner) {
+                            Label("个人空间", systemImage: "person.crop.circle")
                         }
-                        Button("刷新消息", systemImage: "arrow.clockwise") {
-                            Task { await load(reset: true) }
-                        }
-                        .disabled(state.isLoading || isSending || isSendingImage)
-                    } label: {
-                        Image(systemName: "ellipsis")
                     }
-                    .accessibilityLabel("会话操作")
-                    .accessibilityIdentifier("privateMessage.actions")
+                    Button("刷新消息", systemImage: "arrow.clockwise") {
+                        Task { await load(reset: true) }
+                    }
+                    .disabled(state.isLoading || isSending || isSendingImage)
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
+                .accessibilityLabel("会话操作")
+                .accessibilityIdentifier("privateMessage.actions")
             }
         }
-        .sheet(isPresented: Binding(
-            get: { !usesNativePresentation && showsEmotePicker },
-            set: { showsEmotePicker = $0 }
-        )) {
-            emotePicker()
-        }
+
         .sheet(item: $reportingMessage) { message in
             AccountPrivateMessageReportSheet(
                 message: message,
@@ -672,10 +628,6 @@ struct AccountPrivateMessageConversationView: View {
         } message: {
             Text(messageActionErrorMessage ?? "请稍后重试")
         }
-        .onChange(of: usesNativePresentation) { _, _ in
-            showsMessageComposer = false
-            isComposerFocused = false
-        }
         .onChange(of: draft) { _, _ in
             scheduleDraftSave()
         }
@@ -691,8 +643,7 @@ struct AccountPrivateMessageConversationView: View {
             message: message,
             inlineEmotes: viewModel.inlineEmotes,
             isMutating: mutatingMessageIDs.contains(message.id),
-            usesNativePresentation: usesNativePresentation,
-            availableWidth: usesNativePresentation && conversationWidth > 0 ? conversationWidth - 28 : nil
+            availableWidth: conversationWidth > 0 ? conversationWidth - 28 : nil
         )
         .contextMenu { messageContextMenu(for: message) }
     }
@@ -949,12 +900,12 @@ struct AccountPrivateMessageConversationView: View {
         }
     }
 
-    private func emotePicker(focus: FocusState<Bool>.Binding? = nil) -> some View {
+    private func emotePicker(focus: FocusState<Bool>.Binding) -> some View {
         AccountPrivateMessageEmotePicker(
             emotes: Array(viewModel.inlineEmotes.values),
             onSelect: { token in
                 draft.append(token)
-                (focus ?? $isComposerFocused).wrappedValue = true
+                focus.wrappedValue = true
             }
         )
         .presentationDetents([.medium, .large])
@@ -962,7 +913,7 @@ struct AccountPrivateMessageConversationView: View {
 
     private func composer(
         using proxy: ScrollViewProxy,
-        focus: FocusState<Bool>.Binding? = nil
+        focus: FocusState<Bool>.Binding
     ) -> some View {
         VStack(spacing: 8) {
             if let sendErrorMessage {
@@ -990,76 +941,16 @@ struct AccountPrivateMessageConversationView: View {
                 )
             }
 
-            if usesNativePresentation {
-                NativePrivateMessageComposer(
-                    text: $draft,
-                    focus: focus ?? $isComposerFocused,
-                    isSending: isSending,
-                    isSendingImage: isSendingImage,
-                    hasEmotes: !viewModel.inlineEmotes.isEmpty,
-                    showPhotos: { (focus ?? $isComposerFocused).wrappedValue = false; showsPhotoPicker = true },
-                    showEmotes: { (focus ?? $isComposerFocused).wrappedValue = false; showsEmotePicker = true },
-                    send: { Task { await send(using: proxy) } }
-                )
-            } else {
-                GlassEffectContainer(spacing: 10) {
-                    HStack(spacing: 10) {
-                        Menu {
-                            Button {
-                                showsPhotoPicker = true
-                            } label: {
-                                Label("照片", systemImage: "photo")
-                            }
-
-                            Button {
-                                showsEmotePicker = true
-                            } label: {
-                                Label("B站表情", systemImage: "face.smiling")
-                            }
-                            .disabled(viewModel.inlineEmotes.isEmpty)
-                        } label: {
-                            Group {
-                                if isSendingImage {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 17, weight: .semibold))
-                                }
-                            }
-                            .frame(width: 36, height: 36)
-                        }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                        .disabled(isSending || isSendingImage)
-                        .accessibilityLabel("添加附件")
-
-                        TextField("发私信", text: $draft, axis: .vertical)
-                            .lineLimit(1 ... 4)
-                            .focused($isComposerFocused)
-                            .textFieldStyle(.plain)
-                            .submitLabel(.send)
-                            .onSubmit {
-                                Task { await send(using: proxy) }
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .frame(minHeight: 40, alignment: .center)
-                            .disabled(isSending || isSendingImage)
-                            .overlay(alignment: .trailing) {
-                                if isSending {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .padding(.trailing, 12)
-                                }
-                            }
-                        .biliRegularGlassEffect(
-                            interactive: true,
-                            in: Capsule(style: .continuous)
-                        )
-                    }
-                }
-            }
+            NativePrivateMessageComposer(
+                text: $draft,
+                focus: focus,
+                isSending: isSending,
+                isSendingImage: isSendingImage,
+                hasEmotes: !viewModel.inlineEmotes.isEmpty,
+                showPhotos: { focus.wrappedValue = false; showsPhotoPicker = true },
+                showEmotes: { focus.wrappedValue = false; showsEmotePicker = true },
+                send: { Task { await send(using: proxy) } }
+            )
         }
     }
 
@@ -1201,33 +1092,6 @@ struct AccountPrivateMessageConversationView: View {
         } catch {
             // Keep the unread state so a later refresh can retry the acknowledgement.
         }
-    }
-}
-
-private struct AccountPrivateMessageConversationHeader: View {
-    let actor: AccountMessageActor
-
-    var body: some View {
-        HStack(spacing: 7) {
-            AvatarRemoteImage(urlString: actor.avatarURLString, pixelSize: 72) {
-                Image(systemName: "person.crop.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 26, height: 26)
-            .clipShape(Circle())
-
-            Text(actor.name)
-                .appTypography(.navigationTitle, fallback: .subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .frame(maxWidth: 220)
-        .padding(.leading, 4)
-        .padding(.trailing, 10)
-        .padding(.vertical, 4)
-        .biliRegularGlassEffect(in: Capsule(style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("与\(actor.name)的私信")
     }
 }
 
@@ -1496,7 +1360,6 @@ private struct AccountPrivateMessageBubble: View {
     let message: AccountPrivateMessage
     let inlineEmotes: [String: BiliInlineEmote]
     let isMutating: Bool
-    var usesNativePresentation = false
     var availableWidth: CGFloat? = nil
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -1511,19 +1374,9 @@ private struct AccountPrivateMessageBubble: View {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 destination
 
-                if !usesNativePresentation || isMutating {
-                    HStack(spacing: 5) {
-                        if isMutating {
-                            ProgressView()
-                                .controlSize(.mini)
-                        }
-
-                        if !usesNativePresentation, let displayTime = message.displayTime {
-                            Text(displayTime)
-                                .appTypography(.tertiaryMetadata, fallback: .caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                if isMutating {
+                    ProgressView()
+                        .controlSize(.mini)
                 }
             }
 

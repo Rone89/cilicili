@@ -22,7 +22,6 @@ struct UITestPrivateMessageFixtureView: View {
         let session = SessionStore(keychain: KeychainStore(service: name))
         try? session.saveLoginCookies(["SESSDATA": "fixture", "bili_jct": "fixture", "DedeUserID": String(PrivateMessageFixtureState.senderID)], credentialKind: .web)
         let library = LibraryStore(userDefaults: UserDefaults(suiteName: name)!)
-        library.setNativePrivateMessageConversationExperimentEnabled(args.contains("--private-message-native"))
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [PrivateMessageFixtureProtocol.self]
         let network = URLSession(configuration: config)
@@ -42,11 +41,6 @@ struct UITestPrivateMessageFixtureView: View {
     var body: some View {
         NavigationStack {
             List {
-                Toggle("原生私信会话界面", isOn: Binding(
-                    get: { library.nativePrivateMessageConversationExperimentEnabled },
-                    set: { library.setNativePrivateMessageConversationExperimentEnabled($0) }
-                ))
-                .accessibilityIdentifier("privateMessage.fixture.toggle")
                 NavigationLink("打开私信") {
                     AccountPrivateMessageConversationView(
                         session: AccountPrivateMessageSession(talkerID: 1002,

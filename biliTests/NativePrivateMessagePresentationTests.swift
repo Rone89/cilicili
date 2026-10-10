@@ -2,22 +2,6 @@ import XCTest
 @testable import bili
 
 final class NativePrivateMessagePresentationTests: XCTestCase {
-    @MainActor
-    func testExperimentDefaultsOffAndPersistsWithoutClearingLibraryData() {
-        let name = "NativePrivateMessageTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defer { defaults.removePersistentDomain(forName: name) }
-        defaults.set("existing", forKey: "unrelated.library.data")
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.nativePrivateMessageConversationExperimentEnabled)
-        store.setNativePrivateMessageConversationExperimentEnabled(true)
-        XCTAssertTrue(store.nativePrivateMessageConversationExperimentEnabled)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).nativePrivateMessageConversationExperimentEnabled)
-        store.setNativePrivateMessageConversationExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).nativePrivateMessageConversationExperimentEnabled)
-        XCTAssertEqual(defaults.string(forKey: "unrelated.library.data"), "existing")
-    }
-
     func testTimelineSeparatesFiveMinuteGapsAndSenderChanges() {
         let entries = NativePrivateMessageTimeline.entries([
             message(1, sender: 2, time: 0), message(2, sender: 2, time: 20),

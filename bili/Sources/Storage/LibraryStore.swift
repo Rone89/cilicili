@@ -154,8 +154,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var accountFavoriteChangeRevision = 0
     @Published private(set) var accountWatchLaterChangeRevision = 0
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
-    @Published private(set) var nativePrivateMessageConversationExperimentEnabled: Bool
-    @Published private(set) var imageViewerInteractionExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -238,10 +236,6 @@ final class LibraryStore: ObservableObject {
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
-    private static let nativePrivateMessageConversationExperimentEnabledKey =
-        "cc.bili.experimental.nativePrivateMessageConversation.v1"
-    nonisolated static let imageViewerInteractionExperimentEnabledKey =
-        "cc.bili.experimental.imageViewerInteraction.v1"
     private static let blockedHomeRecommendationUPNamesKey = "cc.bili.home.blockedUPNames.v1"
     private static let blockedHomeRecommendationUPMIDsKey = "cc.bili.home.blockedUPMIDs.v1"
     private static let videoDetailActionButtonStyleKey =
@@ -657,10 +651,6 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(
                 forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
             ) as? Bool ?? false
-        self.nativePrivateMessageConversationExperimentEnabled =
-            userDefaults.bool(forKey: Self.nativePrivateMessageConversationExperimentEnabledKey)
-        self.imageViewerInteractionExperimentEnabled =
-            userDefaults.bool(forKey: Self.imageViewerInteractionExperimentEnabledKey)
         self.blockedHomeRecommendationUPNames = userDefaults.dictionary(forKey: Self.blockedHomeRecommendationUPNamesKey) as? [String: String] ?? [:]
         self.blockedHomeRecommendationUPMIDs = Set((userDefaults.stringArray(forKey: Self.blockedHomeRecommendationUPMIDsKey) ?? []).compactMap(Int64.init).filter { $0 > 0 })
         self.videoDetailActionButtonStyle =
@@ -1309,16 +1299,6 @@ final class LibraryStore: ObservableObject {
             isEnabled,
             forKey: Self.dynamicCommentHitAreaVisualizationExperimentEnabledKey
         )
-    }
-
-    func setNativePrivateMessageConversationExperimentEnabled(_ isEnabled: Bool) {
-        nativePrivateMessageConversationExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.nativePrivateMessageConversationExperimentEnabledKey)
-    }
-
-    func setImageViewerInteractionExperimentEnabled(_ isEnabled: Bool) {
-        imageViewerInteractionExperimentEnabled = isEnabled
-        userDefaults.set(isEnabled, forKey: Self.imageViewerInteractionExperimentEnabledKey)
     }
 
     func blockHomeRecommendationUP(mid: Int64, name: String? = nil) {

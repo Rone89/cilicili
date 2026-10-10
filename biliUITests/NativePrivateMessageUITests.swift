@@ -5,31 +5,9 @@ import XCTest
 final class NativePrivateMessageUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    func testExperimentCanReturnToLegacyWithoutLosingDraft() {
-        let app = launch([])
-        app.buttons["打开私信"].tap()
-        let legacy = app.textFields.firstMatch
-        XCTAssertTrue(legacy.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["privateMessage.send"].exists)
-        legacy.tap(); legacy.typeText("保留草稿")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.switches["privateMessage.fixture.toggle"].coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        app.buttons["打开私信"].tap()
-        app.buttons["privateMessage.openComposer"].tap()
-        let input = app.descendants(matching: .any)["privateMessage.composer"].firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(input.value as? String, "保留草稿")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.4)).tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.switches["privateMessage.fixture.toggle"].coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        app.buttons["打开私信"].tap()
-        XCTAssertTrue(legacy.waitForExistence(timeout: 5))
-        XCTAssertEqual(legacy.value as? String, "保留草稿")
-        XCTAssertFalse(app.buttons["privateMessage.actions"].exists)
-    }
 
     func testNativeMenusKeyboardAndFailedSendRetry() {
-        let app = launch(["--private-message-native", "--private-message-fail-once"])
+        let app = launch(["--private-message-fail-once"])
         app.buttons["打开私信"].tap()
         let open = app.buttons["privateMessage.openComposer"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
@@ -61,7 +39,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testNativeToolbarOpensComposerAndPreservesDraftOnDismiss() {
-        let app = launch(["--private-message-native"])
+        let app = launch([])
         app.buttons["打开私信"].tap()
         let open = app.buttons["privateMessage.openComposer"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
@@ -90,7 +68,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testNativeShortConversationStaysTopAligned() {
-        let app = launch(["--private-message-native"])
+        let app = launch([])
         app.buttons["打开私信"].tap()
         XCTAssertTrue(app.buttons["privateMessage.openComposer"].waitForExistence(timeout: 5))
         let messageArea = app.scrollViews["privateMessage.messages"]
@@ -104,7 +82,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testNativeDarkAccessibilityLayout() {
-        let app = launch(["--private-message-native", "--private-message-dark", "--private-message-accessibility"])
+        let app = launch(["--private-message-dark", "--private-message-accessibility"])
         app.buttons["打开私信"].tap()
         app.buttons["privateMessage.openComposer"].tap()
         let input = app.descendants(matching: .any)["privateMessage.composer"].firstMatch
@@ -122,7 +100,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testDiagonalBackSwipeDoesNotRefreshMessages() {
-        let app = launch(["--private-message-native"])
+        let app = launch([])
         app.buttons["打开私信"].tap()
         XCTAssertTrue(app.buttons["privateMessage.openComposer"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch.waitForExistence(timeout: 5))
@@ -134,7 +112,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testProductionNavigationChainBackAndCancelledBack() {
-        let app = launch(["--private-message-native", "--private-message-navigation-chain"])
+        let app = launch(["--private-message-navigation-chain"])
         app.buttons["打开通知"].tap()
         app.buttons["私信"].tap()
         let contact = app.buttons.containing(.staticText, identifier: "测试联系人").firstMatch
@@ -168,7 +146,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testProductionNavigationChainVerticalPullSubmitsRefresh() {
-        let app = launch(["--private-message-native", "--private-message-navigation-chain"])
+        let app = launch(["--private-message-navigation-chain"])
         app.buttons["打开通知"].tap()
         app.buttons["私信"].tap()
         let contact = app.buttons.containing(.staticText, identifier: "测试联系人").firstMatch
@@ -188,7 +166,7 @@ final class NativePrivateMessageUITests: XCTestCase {
     }
 
     func testVerticalScrollingAndRefreshMenuRemainAvailable() {
-        let app = launch(["--private-message-native", "--private-message-refresh-marker", "--private-message-long-history"], animations: false)
+        let app = launch(["--private-message-refresh-marker", "--private-message-long-history"], animations: false)
         app.buttons["打开私信"].tap()
         XCTAssertTrue(app.buttons["privateMessage.openComposer"].waitForExistence(timeout: 5))
         let firstMessage = app.descendants(matching: .any)["你好，这是第一条消息。"].firstMatch
