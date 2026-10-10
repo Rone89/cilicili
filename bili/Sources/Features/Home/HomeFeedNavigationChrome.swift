@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeFeedNavigationChrome: ViewModifier {
     @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var viewModel: HomeViewModel
     let modeActions: HomeFeedModeActions
     let scrollActions: HomeFeedScrollActions
@@ -9,24 +10,48 @@ struct HomeFeedNavigationChrome: ViewModifier {
     let accountMessageViewModel: AccountMessageCenterViewModel?
     let isDetailPresented: Bool
     let onOpenAccountMessages: () -> Void
-    let onOpenMine: (() -> Void)?
+    let onOpenProfile: (() -> Void)?
 
     func body(content: Content) -> some View {
         content
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    navigationTitle
-                        .font(.headline)
-                        .opacity(navigationChromeOpacity)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                    Group {
+                        if usesAvatarToolbar {
+                            Picker("首页内容", selection: Binding(
+                                get: { viewModel.mode },
+                                set: { switchMode($0) }
+                            )) {
+                                ForEach(HomeFeedMode.allCases, id: \.self) { mode in
+                                    Text(mode.title).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 156)
+                            .accessibilityIdentifier("home.feed.modePicker")
+                        } else {
+                            navigationTitle
+                        }
+                    }
+                    .font(.headline)
+                    .opacity(navigationChromeOpacity)
+                    .disabled(hidesNavigationChrome)
+                    .accessibilityHidden(hidesNavigationChrome)
+                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    HomeFeedModeMenu(currentMode: viewModel.mode, onSelectMode: switchMode)
-                        .opacity(navigationChromeOpacity)
-                        .disabled(hidesNavigationChrome)
-                        .accessibilityHidden(hidesNavigationChrome)
-                        .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
+                    Group {
+                        if usesAvatarToolbar, let onOpenProfile {
+                            HomeProfileButton(viewModel: accountMessageViewModel, action: onOpenProfile)
+                                .buttonBorderShape(.circle)
+                        } else {
+                            HomeFeedModeMenu(currentMode: viewModel.mode, onSelectMode: switchMode)
+                        }
+                    }
+                    .opacity(navigationChromeOpacity)
+                    .disabled(hidesNavigationChrome)
+                    .accessibilityHidden(hidesNavigationChrome)
+                    .animation(.smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
                 .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -39,6 +64,10 @@ struct HomeFeedNavigationChrome: ViewModifier {
                 .sharedBackgroundVisibility(toolbarItemBackgroundVisibility)
             }
             .nativeTopNavigationChrome()
+    }
+
+    private var usesAvatarToolbar: Bool {
+        libraryStore.homeAvatarNavigationExperimentEnabled && onOpenProfile != nil
     }
 
     @ViewBuilder
@@ -78,14 +107,12 @@ struct HomeFeedNavigationChrome: ViewModifier {
         if let accountMessageViewModel {
             HomeAccountMessageButton(
                 viewModel: accountMessageViewModel,
-                action: onOpenAccountMessages,
-                onOpenMine: onOpenMine
+                action: onOpenAccountMessages
             )
         } else {
             HomeAccountMessageButtonContent(
                 hasUnread: false,
-                action: onOpenAccountMessages,
-                onOpenMine: onOpenMine
+                action: onOpenAccountMessages
             )
         }
     }
@@ -109,7 +136,7 @@ extension View {
         accountMessageViewModel: AccountMessageCenterViewModel?,
         isDetailPresented: Bool = false,
         onOpenAccountMessages: @escaping () -> Void,
-        onOpenMine: (() -> Void)? = nil
+        onOpenProfile: (() -> Void)? = nil
     ) -> some View {
         modifier(
             HomeFeedNavigationChrome(
@@ -120,7 +147,7 @@ extension View {
                 accountMessageViewModel: accountMessageViewModel,
                 isDetailPresented: isDetailPresented,
                 onOpenAccountMessages: onOpenAccountMessages,
-                onOpenMine: onOpenMine
+                onOpenProfile: onOpenProfile
             )
         )
     }
@@ -129,59 +156,77 @@ extension View {
 private struct HomeAccountMessageButton: View {
     @ObservedObject var viewModel: AccountMessageCenterViewModel
     let action: () -> Void
-    let onOpenMine: (() -> Void)?
 
     var body: some View {
-        HomeAccountMessageButtonContent(
-            hasUnread: viewModel.hasUnreadMessages,
-            action: action,
-            onOpenMine: onOpenMine
-        )
+        HomeAccountMessageButtonContent(hasUnread: viewModel.hasUnreadMessages, action: action)
     }
 }
 
 private struct HomeAccountMessageButtonContent: View {
     @Environment(\.appThemeTintColor) private var appTintColor
-    @EnvironmentObject private var libraryStore: LibraryStore
+    let hasUnread: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "bell.fill")
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(hasUnread ? appTintColor : Color.primary)
+        }
+        .accessibilityLabel("账号消息")
+        .accessibilityValue(hasUnread ? "有未读消息" : "全部已读")
+        .accessibilityIdentifier("home.account.messages")
+    }
+}
+
+private struct HomeProfileButton: View {
+    let viewModel: AccountMessageCenterViewModel?
+    let action: () -> Void
+
+    var body: some View {
+        if let viewModel {
+            HomeProfileButtonWithUnread(viewModel: viewModel, action: action)
+        } else {
+            HomeProfileButtonContent(hasUnread: false, action: action)
+        }
+    }
+}
+
+private struct HomeProfileButtonWithUnread: View {
+    @ObservedObject var viewModel: AccountMessageCenterViewModel
+    let action: () -> Void
+
+    var body: some View {
+        HomeProfileButtonContent(hasUnread: viewModel.hasUnreadMessages, action: action)
+    }
+}
+
+private struct HomeProfileButtonContent: View {
+    @Environment(\.appThemeTintColor) private var appTintColor
     @EnvironmentObject private var sessionStore: SessionStore
     let hasUnread: Bool
     let action: () -> Void
-    let onOpenMine: (() -> Void)?
-
-    private var showsAvatar: Bool {
-        libraryStore.homeAvatarNavigationExperimentEnabled && onOpenMine != nil
-    }
-
-    private var showsUnreadOutline: Bool {
-        sessionStore.isLoggedIn && hasUnread
-    }
 
     var body: some View {
-        Button(action: showsAvatar ? (onOpenMine ?? action) : action) {
-            if showsAvatar {
-                AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .resizable()
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: 32, height: 32)
-                .clipShape(Circle())
-                .padding(3)
-                .overlay {
-                    if showsUnreadOutline {
-                        Circle().strokeBorder(appTintColor, lineWidth: 2)
-                    }
-                }
-                .accessibilityHidden(true)
-            } else {
-                Image(systemName: "bell.fill")
-                    .symbolRenderingMode(.monochrome)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(hasUnread ? appTintColor : Color.primary)
+        Button(action: action) {
+            AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .foregroundStyle(.secondary)
             }
+            .frame(width: 32, height: 32)
+            .clipShape(Circle())
+            .padding(3)
+            .overlay {
+                if sessionStore.isLoggedIn && hasUnread {
+                    Circle().strokeBorder(appTintColor, lineWidth: 2)
+                }
+            }
+            .accessibilityHidden(true)
         }
-        .accessibilityLabel(showsAvatar ? "我的" : "账号消息")
-        .accessibilityValue(showsAvatar && !sessionStore.isLoggedIn ? "未登录" : (hasUnread ? "有未读消息" : "全部已读"))
-        .accessibilityIdentifier(showsAvatar ? "home.account.avatar" : "home.account.messages")
+        .accessibilityLabel("个人空间")
+        .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
+        .accessibilityIdentifier("home.account.avatar")
     }
 }

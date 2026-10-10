@@ -216,17 +216,6 @@ struct RootTabView: View {
                     )
                     .navigationHistoryTitle(route.navigationDisplayTitle)
                 }
-                .navigationDestination(for: AppTab.self) { destination in
-                    if destination == .mine {
-                        MineView(
-                            holder: mineViewModelHolder,
-                            searchText: $mineSearchQuery,
-                            isSearchFocused: $isMineSearchFocused,
-                            onOpenRoute: openMineOverlayRoute
-                        )
-                        .navigationTitle(AppTab.mine.title)
-                    }
-                }
                 .videoDestinations()
                 .dynamicDetailDestinations(
                     path: detailPath,
@@ -261,11 +250,13 @@ struct RootTabView: View {
                         onOpenAccountMessages: {
                             openMineOverlayRoute(.accountMessages)
                         },
-                        onOpenMine: {
-                            if isAvailableRootTab(.mine) {
-                                selectAvailableRootTab(.mine)
+                        onOpenProfile: {
+                            if dependencies.sessionStore.isLoggedIn,
+                               let user = dependencies.sessionStore.user,
+                               let mid = user.mid, mid > 0 {
+                                openVideoOwnerRoute(VideoOwner(mid: mid, name: user.uname ?? "", face: user.face))
                             } else {
-                                appendActiveRootRoute(AppTab.mine)
+                                openMineOverlayRoute(.accountManagement)
                             }
                         }
                     )
