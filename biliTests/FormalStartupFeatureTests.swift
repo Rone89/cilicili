@@ -1,9 +1,51 @@
 import Foundation
 import XCTest
+import UIKit
 
 @testable import bili
 
 final class FormalStartupFeatureTests: XCTestCase {
+    @MainActor
+    func testVideoBottomEdgeBindingIsIdempotentAndRestoresScrollConfiguration() {
+        let scroll = UIScrollView()
+        scroll.contentInset = UIEdgeInsets(top: 100, left: 0, bottom: 80, right: 0)
+        scroll.contentOffset = CGPoint(x: 0, y: 40)
+        scroll.bottomEdgeEffect.style = .hard
+        scroll.bottomEdgeEffect.isHidden = true
+        let toolbar = UIToolbar()
+        let binding = VideoDetailBottomEdgeEffectBinding()
+        binding.update(scrollView: scroll, container: toolbar, enabled: false)
+        XCTAssertTrue(toolbar.interactions.isEmpty)
+        binding.update(scrollView: scroll, container: toolbar, enabled: true)
+        binding.update(scrollView: scroll, container: toolbar, enabled: true)
+        let interactions = toolbar.interactions.compactMap { $0 as? UIScrollEdgeElementContainerInteraction }
+        XCTAssertEqual(interactions.count, 1)
+        XCTAssertTrue(interactions.first?.scrollView === scroll)
+        XCTAssertEqual(interactions.first?.edge, .bottom)
+        XCTAssertEqual(scroll.bottomEdgeEffect.style, .soft)
+        XCTAssertFalse(scroll.bottomEdgeEffect.isHidden)
+        XCTAssertEqual(scroll.contentInset.bottom, 80)
+        XCTAssertEqual(scroll.contentOffset.y, 40)
+        binding.update(scrollView: scroll, container: toolbar, enabled: false)
+        XCTAssertFalse(toolbar.interactions.contains { $0 is UIScrollEdgeElementContainerInteraction })
+        XCTAssertEqual(scroll.bottomEdgeEffect.style, .hard)
+        XCTAssertTrue(scroll.bottomEdgeEffect.isHidden)
+    }
+
+    @MainActor
+    func testVideoBottomEdgeBindingMovesBetweenContainersAndReleasesOnDetach() {
+        let scroll = UIScrollView()
+        let first = UIView()
+        let second = UIView()
+        let binding = VideoDetailBottomEdgeEffectBinding()
+        binding.update(scrollView: scroll, container: first, enabled: true)
+        binding.update(scrollView: scroll, container: second, enabled: true)
+        XCTAssertTrue(first.interactions.isEmpty)
+        XCTAssertEqual(second.interactions.compactMap { $0 as? UIScrollEdgeElementContainerInteraction }.filter { $0.scrollView === scroll }.count, 1)
+        binding.update(scrollView: scroll, container: nil, enabled: true)
+        XCTAssertTrue(second.interactions.isEmpty)
+    }
+
     @MainActor
     func testBottomScrollEdgeBlurExperimentDefaultsOffAndPersistsWithoutChangingOtherPreferences() {
         let defaults = makeUserDefaults()

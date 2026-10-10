@@ -114,6 +114,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 summary: tab == .detail ? summary : nil,
                 topInset: topInset,
                 minimumPlayerHeight: interactiveMinimumPlayerHeight,
+                bottomEdgeBlurEnabled: libraryStore.bottomScrollEdgeBlurExperimentEnabled && !hidesBottomToolbar && selection == tab,
                 contentRevision: contentRevision,
                 contentMountsSecondaryContent: mountsSecondaryContent
                     || (tab == .comments && selection == .comments),
@@ -147,6 +148,7 @@ private struct VideoDetailInteractiveScrollingTabPage<Content: View>: View {
     let summary: AnyView?
     let topInset: CGFloat
     let minimumPlayerHeight: CGFloat
+    let bottomEdgeBlurEnabled: Bool
     let contentRevision: Int
     let contentMountsSecondaryContent: Bool
     let bottomInset: CGFloat
@@ -164,6 +166,7 @@ private struct VideoDetailInteractiveScrollingTabPage<Content: View>: View {
                 summary: summary,
                 topInset: topInset,
                 minimumPlayerHeight: minimumPlayerHeight,
+                bottomEdgeBlurEnabled: bottomEdgeBlurEnabled,
                 contentRevision: contentRevision,
                 contentMountsSecondaryContent: contentMountsSecondaryContent,
                 bottomInset: bottomInset,
@@ -184,6 +187,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     let summary: AnyView?
     let topInset: CGFloat
     let minimumPlayerHeight: CGFloat
+    let bottomEdgeBlurEnabled: Bool
     let contentRevision: Int
     let contentMountsSecondaryContent: Bool
     let bottomInset: CGFloat
@@ -195,12 +199,13 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     }
 
     func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+        let scrollView = VideoDetailEdgeEffectScrollView()
         scrollView.alwaysBounceVertical = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.delegate = context.coordinator
+        scrollView.bottomEdgeBlurEnabled = bottomEdgeBlurEnabled
 
         let hostingController = UIHostingController(rootView: scrollContent)
         hostingController.sizingOptions = .intrinsicContentSize
@@ -229,6 +234,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     }
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        (scrollView as? VideoDetailEdgeEffectScrollView)?.bottomEdgeBlurEnabled = bottomEdgeBlurEnabled
         let contentChanged = context.coordinator.contentConfiguration != contentConfiguration
         if contentChanged {
             context.coordinator.hostingController?.rootView = scrollContent
@@ -246,6 +252,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     }
 
     static func dismantleUIView(_ scrollView: UIScrollView, coordinator: Coordinator) {
+        (scrollView as? VideoDetailEdgeEffectScrollView)?.bottomEdgeBlurEnabled = false
         scrollView.delegate = nil
         coordinator.hostingController?.view.removeFromSuperview()
         coordinator.hostingController = nil
