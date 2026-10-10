@@ -112,7 +112,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
     }
 
     private var hidesNavigationChrome: Bool {
-        isDetailPresented || rootNavigationTitleHidden.wrappedValue
+        rootNavigationTitleHidden.wrappedValue
     }
 
     private var navigationChromeOpacity: Double {
