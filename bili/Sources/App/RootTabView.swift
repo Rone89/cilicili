@@ -192,6 +192,16 @@ struct RootTabView: View {
                 .navigationTitle(rootNavigationTitle(for: tab))
                 .navigationHistoryTitle(tab.title)
                 .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    if !visibleRootTabs.contains(.mine), detailPath.wrappedValue.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("界面设置", systemImage: "gearshape") {
+                                openMineOverlayRoute(.interfaceSettings)
+                            }
+                            .accessibilityIdentifier("root.hiddenMine.settings")
+                        }
+                    }
+                }
                 .environment(
                     \.rootNavigationTitleHidden,
                     rootNavigationTitleBinding(for: tab, detailPath: detailPath)
@@ -205,6 +215,17 @@ struct RootTabView: View {
                         api: dependencies.api
                     )
                     .navigationHistoryTitle(route.navigationDisplayTitle)
+                }
+                .navigationDestination(for: AppTab.self) { destination in
+                    if destination == .mine {
+                        MineView(
+                            holder: mineViewModelHolder,
+                            searchText: $mineSearchQuery,
+                            isSearchFocused: $isMineSearchFocused,
+                            onOpenRoute: openMineOverlayRoute
+                        )
+                        .navigationTitle(AppTab.mine.title)
+                    }
                 }
                 .videoDestinations()
                 .dynamicDetailDestinations(
@@ -241,7 +262,11 @@ struct RootTabView: View {
                             openMineOverlayRoute(.accountMessages)
                         },
                         onOpenMine: {
-                            selectAvailableRootTab(.mine)
+                            if isAvailableRootTab(.mine) {
+                                selectAvailableRootTab(.mine)
+                            } else {
+                                appendActiveRootRoute(AppTab.mine)
+                            }
                         }
                     )
             } else {

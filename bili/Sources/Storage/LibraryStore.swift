@@ -1422,6 +1422,8 @@ final class LibraryStore: ObservableObject {
 
     func setRootTab(_ tab: AppTab, isVisible: Bool) {
         guard tab.canHideFromRootTabBar else { return }
+        // A native TabView always needs a selectable root page.
+        guard isVisible || !visibleRootTabs.contains(tab) || visibleRootTabs.count > 1 else { return }
         var tabs = visibleRootTabs
         if isVisible {
             if !tabs.contains(tab) {

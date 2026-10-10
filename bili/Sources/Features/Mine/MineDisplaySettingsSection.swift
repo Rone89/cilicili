@@ -138,6 +138,27 @@ struct MineDisplaySettingsSection: View {
                 }
             }
 
+            DisclosureGroup {
+                ForEach(AppTab.defaultVisibleTabs) { tab in
+                    Toggle(tab.title, isOn: Binding(
+                        get: { libraryStore.visibleRootTabs.contains(tab) },
+                        set: { libraryStore.setRootTab(tab, isVisible: $0) }
+                    ))
+                    .disabled(libraryStore.visibleRootTabs == [tab])
+                    .accessibilityIdentifier("settings.rootTabs.\(tab.rawValue)")
+                }
+
+                Button("恢复全部显示") {
+                    libraryStore.resetVisibleRootTabs()
+                }
+
+                Text("至少保留一个页面。隐藏“我的”后，可通过一级页面顶部的设置按钮恢复。")
+                    .appTypography(.settingsSubtitle, fallback: .caption)
+                    .foregroundStyle(.secondary)
+            } label: {
+                MineSettingsLabel("底部 Tab 显示", systemImage: "rectangle.bottomthird.inset.filled")
+            }
+
             Picker(
                 selection: Binding(
                     get: { libraryStore.videoDetailActionButtonStyle },
