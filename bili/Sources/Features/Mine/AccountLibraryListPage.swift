@@ -26,7 +26,6 @@ struct AccountLibraryListPage: View {
             enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback(isEnabled: !editMode.isEditing)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
         .confirmationDialog("清空稍后再看？", isPresented: $confirmsClear, titleVisibility: .visible) {

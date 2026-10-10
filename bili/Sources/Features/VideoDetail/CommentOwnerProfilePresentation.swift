@@ -37,7 +37,6 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                     }
                 }
         }
-        .bottomScrollEdgeBlurFallback()
         .toolbar(.visible, for: .navigationBar)
         .sheet(item: $profileRoute) { route in
             NavigationStack {

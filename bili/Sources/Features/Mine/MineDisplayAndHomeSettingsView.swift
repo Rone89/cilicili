@@ -12,7 +12,6 @@ struct MineInterfaceSettingsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
     }
 }
@@ -29,7 +28,6 @@ struct MineHomeAndSearchSettingsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
     }
 }

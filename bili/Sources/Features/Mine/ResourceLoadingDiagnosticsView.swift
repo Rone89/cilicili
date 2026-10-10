@@ -21,7 +21,6 @@ struct ResourceLoadingDiagnosticsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

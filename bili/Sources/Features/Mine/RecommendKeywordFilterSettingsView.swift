@@ -63,7 +63,6 @@ struct RecommendKeywordFilterSettingsView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

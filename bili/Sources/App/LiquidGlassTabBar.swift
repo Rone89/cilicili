@@ -85,10 +85,6 @@ extension View {
         )
     }
 
-    func bottomScrollEdgeBlurFallback(isEnabled: Bool = true) -> some View {
-        modifier(BottomScrollEdgeBlurFallback(isEnabled: isEnabled))
-    }
-
     func nativeBottomScrollEdgeBlurExperiment(isEnabled: Bool = true) -> some View {
         modifier(BottomScrollEdgeBlurExperiment(isEnabled: isEnabled))
     }
@@ -280,41 +276,6 @@ private struct BottomScrollEdgeBlurExperiment: ViewModifier {
             libraryStore.bottomScrollEdgeBlurExperimentEnabled && isEnabled ? .soft : nil,
             for: .bottom
         )
-    }
-}
-
-/// A public Material fallback for scrolling pages without a system bottom bar.
-/// An opacity mask fades the effect; it does not change the material's blur radius.
-private struct BottomScrollEdgeBlurFallback: ViewModifier {
-    @EnvironmentObject private var libraryStore: LibraryStore
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    let isEnabled: Bool
-
-    func body(content: Content) -> some View {
-        let enabled = libraryStore.bottomScrollEdgeBlurExperimentEnabled && isEnabled
-        content
-            .scrollEdgeEffectHidden(enabled, for: .bottom)
-            .overlay(alignment: .bottom) {
-                if enabled {
-                    Rectangle()
-                        .fill(reduceTransparency ? AnyShapeStyle(.background) : AnyShapeStyle(.regularMaterial))
-                        .mask {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .black.opacity(0.3), location: 0.4),
-                                    .init(color: .black, location: 1)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        }
-                        .frame(height: 80)
-                        .ignoresSafeArea(edges: .bottom)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
     }
 }
 

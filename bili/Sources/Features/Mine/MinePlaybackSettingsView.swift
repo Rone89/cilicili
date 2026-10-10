@@ -48,7 +48,6 @@ struct MinePlaybackSettingsView: View {
         .formStyle(.grouped)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .task {
             guard mode == .developer else { return }

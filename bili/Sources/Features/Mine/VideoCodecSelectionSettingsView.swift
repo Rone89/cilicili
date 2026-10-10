@@ -44,7 +44,6 @@ struct VideoCodecSelectionSettingsView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .onChange(of: libraryStore.videoCodecPreference) { _, preference in
             if preference.codecOrder != codecOrder {

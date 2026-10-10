@@ -91,7 +91,6 @@ struct AccountPrivateMessageSessionsView: View {
         .hiddenInlineNavigationTitle()
         .toolbarVisibility(.hidden, for: .tabBar)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .searchable(text: $searchText, prompt: "搜索用户或最近消息")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

@@ -81,7 +81,6 @@ struct PlayerPerformanceLogView: View {
         .tint(libraryStore.appTintColor)
         .listStyle(.insetGrouped)
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback()
         .hiddenInlineNavigationTitle()
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

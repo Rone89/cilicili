@@ -67,7 +67,6 @@ struct SMSLoginView: View {
                     .disabled(!canLogin)
                 }
             }
-            .bottomScrollEdgeBlurFallback()
             .navigationTitle("短信验证码登录")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

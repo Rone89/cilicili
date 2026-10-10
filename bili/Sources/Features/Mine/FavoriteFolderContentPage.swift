@@ -25,7 +25,6 @@ struct FavoriteFolderContentPage: View {
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
         .nativeTopScrollEdgeEffect()
-        .bottomScrollEdgeBlurFallback(isEnabled: !editMode.isEditing)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
         .toolbar {
