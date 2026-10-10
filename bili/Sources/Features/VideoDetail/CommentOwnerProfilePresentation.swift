@@ -7,6 +7,8 @@ private struct CommentOwnerProfileRoute: Identifiable {
 }
 
 struct CommentOwnerProfileNavigationContainer<Content: View>: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.commentSheetToolbarConfiguration) private var toolbarConfiguration
     @Environment(\.openAppURLAction) private var openAppURL
     @State private var profileRoute: CommentOwnerProfileRoute?
@@ -36,6 +38,29 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                             .accessibilityLabel("刷新评论")
                     }
                 }
+        }
+        .overlay(alignment: .bottom) {
+            if libraryStore.bottomScrollEdgeBlurExperimentEnabled {
+                // Sheets have no bottom bar to trigger a native scroll edge effect.
+                // Keep this visual overlay outside the scroll layout and hit testing.
+                Rectangle()
+                    .fill(reduceTransparency ? AnyShapeStyle(.background) : AnyShapeStyle(.regularMaterial))
+                    .mask {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: .black.opacity(0.3), location: 0.4),
+                                .init(color: .black, location: 1)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                    .frame(height: 80)
+                    .ignoresSafeArea(edges: .bottom)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
         .toolbar(.visible, for: .navigationBar)
         .sheet(item: $profileRoute) { route in
