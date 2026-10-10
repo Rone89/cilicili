@@ -793,8 +793,7 @@ struct VideoDetailSwiftUIContainer: View {
                 }
             }
         }
-        .background(rotationCoordinator.layoutLandscape || rotationCoordinator.isPortraitFullscreen
-            ? Color.black : Color(uiColor: .systemBackground))
+        .background(Color.black)
         .environment(\.navigationHistoryContext, model.navigationHistory)
         .environment(\.navigationHistoryBackAction, model.navigationHistory != nil ? onNavigateBack : nil)
         .environment(
@@ -901,7 +900,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .black
         addChild(hostingController)
         hostingController.safeAreaRegions = []
         hostingController.view.backgroundColor = .clear

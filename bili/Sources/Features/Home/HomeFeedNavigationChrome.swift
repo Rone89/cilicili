@@ -63,7 +63,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
                                         }
                                     }
                                 } label: {
-                                    Image(systemName: "circle.grid.hex.fill")
+                                    Image(systemName: "circle.grid.2x2")
                                         .foregroundStyle(.primary)
                                 }
                                 .tint(.primary)
@@ -266,7 +266,7 @@ private struct HomeProfileButtonContent: View {
         AvatarRemoteImage(urlString: sessionStore.isLoggedIn ? sessionStore.user?.face : nil, pixelSize: 96) {
             Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
         }
-        .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+        .frame(width: HomeToolbarLayout.controlHeight - 2, height: HomeToolbarLayout.controlHeight - 2)
         .clipShape(Circle())
         .accessibilityHidden(true)
     }

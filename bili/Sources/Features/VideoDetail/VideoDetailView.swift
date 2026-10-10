@@ -32,10 +32,10 @@ struct VideoDetailView: View {
     var body: some View {
         PlaybackDetailPageHost(
             hidesSystemChrome: $hidesSystemChrome,
-            background: hidesSystemChrome ? .black : Color(uiColor: .systemBackground),
+            background: .black,
             navigationBarVisibility: .hidden,
             hidesBackButton: true,
-            statusBarStyle: hidesSystemChrome ? .lightContent : .default,
+            statusBarStyle: .lightContent,
             performanceContext: .video(seedVideo),
             lifecycleActions: pageLifecycleActions
         ) {
