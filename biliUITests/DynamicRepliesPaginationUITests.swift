@@ -3,9 +3,18 @@ import XCTest
 @MainActor
 final class DynamicRepliesPaginationUITests: XCTestCase {
     func testAvatarAndMentionPresentProfileSheetAndReturnToReplies() {
+        exerciseAvatarAndMentionNavigation(bottomBlurEnabled: false)
+    }
+
+    func testAvatarAndMentionNavigationWithNativeBottomBlurEnabled() {
+        exerciseAvatarAndMentionNavigation(bottomBlurEnabled: true)
+    }
+
+    private func exerciseAvatarAndMentionNavigation(bottomBlurEnabled: Bool) {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-fixture", "dynamicReplies", "--ui-test-reset-state", "--ui-test-enable-animations"]
+        app.launchArguments += ["-cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1", bottomBlurEnabled ? "YES" : "NO"]
         app.launch()
         defer { app.terminate() }
 

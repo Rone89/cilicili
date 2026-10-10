@@ -312,6 +312,7 @@ private struct DynamicDetailView: View {
         .scrollIndicators(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .nativeBottomScrollEdgeBlurExperiment()
+        .nativeBottomScrollEdgeBlurVisibility(isHidden: richCommentComposerTarget != nil)
         .onGeometryChange(for: CGFloat.self) { geometry in
             max(floor(geometry.size.width - detailInset * 2), 0)
         } action: { _, width in

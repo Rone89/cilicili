@@ -48,6 +48,7 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
         content
             .environment(\.editMode, $editMode)
             .nativeBottomScrollEdgeBlurExperiment()
+            .nativeBottomScrollEdgeBlurVisibility(isHidden: !enabled || !editMode.isEditing)
             .toolbar {
                 if enabled {
                     ToolbarItem(placement: .topBarTrailing) {

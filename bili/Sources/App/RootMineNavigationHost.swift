@@ -17,6 +17,7 @@ struct RootMineNavigationDestination: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .background(
             VideoDetailSystemBackGestureBridge(

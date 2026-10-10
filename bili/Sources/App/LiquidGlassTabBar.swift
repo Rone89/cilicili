@@ -89,6 +89,10 @@ extension View {
         modifier(BottomScrollEdgeBlurExperiment(isEnabled: isEnabled))
     }
 
+    func nativeBottomScrollEdgeBlurVisibility(isHidden: Bool) -> some View {
+        modifier(BottomScrollEdgeBlurVisibility(isHidden: isHidden))
+    }
+
     @ViewBuilder
     func liquidGlassTabBarBackground(isDark: Bool = false) -> some View {
         self
@@ -276,6 +280,22 @@ private struct BottomScrollEdgeBlurExperiment: ViewModifier {
             libraryStore.bottomScrollEdgeBlurExperimentEnabled && isEnabled ? .soft : nil,
             for: .bottom
         )
+    }
+}
+
+/// Declare the destination's edge visibility before navigation begins, instead of
+/// waiting for the system to infer it from the bottom bar after the transition.
+private struct BottomScrollEdgeBlurVisibility: ViewModifier {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    let isHidden: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if libraryStore.bottomScrollEdgeBlurExperimentEnabled {
+            content.scrollEdgeEffectHidden(isHidden, for: .bottom)
+        } else {
+            content
+        }
     }
 }
 

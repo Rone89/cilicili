@@ -533,6 +533,7 @@ struct AccountPrivateMessageConversationView: View {
                 }
             }
             .nativeBottomScrollEdgeBlurExperiment()
+            .nativeBottomScrollEdgeBlurVisibility(isHidden: showsMessageComposer)
             .toolbar(showsMessageComposer ? .hidden : .automatic, for: .bottomBar)
             .fullScreenCover(isPresented: $showsMessageComposer) {
                 NativePrivateMessageComposerPresentation(onDismiss: {

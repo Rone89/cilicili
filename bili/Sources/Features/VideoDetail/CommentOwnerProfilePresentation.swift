@@ -38,6 +38,7 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
                 }
         }
         .toolbar(.visible, for: .navigationBar)
+        .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
         .sheet(item: $profileRoute) { route in
             NavigationStack {
                 UploaderView(owner: route.owner)
