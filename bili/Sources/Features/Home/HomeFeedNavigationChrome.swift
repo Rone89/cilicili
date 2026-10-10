@@ -20,7 +20,7 @@ struct HomeFeedNavigationChrome: ViewModifier {
                     Group {
                         if usesAvatarToolbar {
                             HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
-                                .frame(width: 156, height: HomeToolbarLayout.controlHeight)
+                                .frame(width: 140, height: HomeToolbarLayout.pickerHeight)
                             .accessibilityIdentifier("home.feed.modePicker")
                         } else {
                             navigationTitle
@@ -229,9 +229,10 @@ private struct HomeProfileButtonContent: View {
 
 private enum HomeToolbarLayout {
     static let controlHeight: CGFloat = 44
+    static let pickerHeight: CGFloat = 36
 }
 
-/// Give the native segmented control the same actual bounds as a standard toolbar button.
+/// Keep the native segmented control compact within the navigation toolbar.
 private struct HomeToolbarModePicker: UIViewRepresentable {
     let mode: HomeFeedMode
     let onSelectMode: (HomeFeedMode) -> Void
@@ -255,7 +256,7 @@ private struct HomeToolbarModePicker: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UISegmentedControl, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: HomeToolbarLayout.controlHeight)
+        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: HomeToolbarLayout.pickerHeight)
     }
 
     final class Coordinator: NSObject {
