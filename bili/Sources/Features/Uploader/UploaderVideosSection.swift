@@ -12,24 +12,19 @@ struct UploaderVideosSection: View {
         }
     }
 
-    @ViewBuilder
     private var sortControl: some View {
-        if viewModel.enhancementEnabled {
-            Picker("投稿排序", selection: Binding(
-                get: { viewModel.videoOrder },
-                set: { order in Task { await viewModel.changeVideoOrder(order) } }
-            )) {
-                ForEach(UploaderVideoOrder.allCases) { order in
-                    Text(order.title).tag(order)
-                }
+        Picker("投稿排序", selection: Binding(
+            get: { viewModel.videoOrder },
+            set: { order in Task { await viewModel.changeVideoOrder(order) } }
+        )) {
+            ForEach(UploaderVideoOrder.allCases) { order in
+                Text(order.title).tag(order)
             }
-            .pickerStyle(.segmented)
-            .disabled(viewModel.state.isLoading)
-            .accessibilityIdentifier("uploader.videos.sort")
-            .padding(.horizontal, metrics.feedHorizontalPadding)
-        } else {
-            sortMenu
         }
+        .pickerStyle(.segmented)
+        .disabled(viewModel.state.isLoading)
+        .accessibilityIdentifier("uploader.videos.sort")
+        .padding(.horizontal, metrics.feedHorizontalPadding)
     }
 
     @ViewBuilder
@@ -39,29 +34,6 @@ struct UploaderVideosSection: View {
         } else {
             videoGrid
         }
-    }
-
-    private var sortMenu: some View {
-        HStack {
-            Menu {
-                ForEach(UploaderVideoOrder.allCases) { order in
-                    Button {
-                        Task { await viewModel.changeVideoOrder(order) }
-                    } label: {
-                        Label(order.title, systemImage: order == viewModel.videoOrder ? "checkmark" : "circle")
-                    }
-                }
-            } label: {
-                Label(viewModel.videoOrder.title, systemImage: "arrow.up.arrow.down.circle")
-                    .font(.subheadline.weight(.semibold))
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, metrics.feedHorizontalPadding)
     }
 
     @ViewBuilder

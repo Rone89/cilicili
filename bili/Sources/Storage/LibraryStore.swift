@@ -129,7 +129,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var bottomScrollEdgeBlurEnabled: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
-    @Published private(set) var personalSpaceEnhancementExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -210,7 +209,6 @@ final class LibraryStore: ObservableObject {
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let bottomScrollEdgeBlurEnabledKey = "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
-    private static let personalSpaceEnhancementExperimentEnabledKey = "cc.bili.experimental.personalSpaceEnhancement.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -611,8 +609,8 @@ final class LibraryStore: ObservableObject {
         }
         self.bottomScrollEdgeBlurEnabled = userDefaults.object(forKey: Self.bottomScrollEdgeBlurEnabledKey) as? Bool ?? true
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1")
+        userDefaults.removeObject(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
-        self.personalSpaceEnhancementExperimentEnabled = userDefaults.bool(forKey: Self.personalSpaceEnhancementExperimentEnabledKey)
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
@@ -1219,12 +1217,6 @@ final class LibraryStore: ObservableObject {
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
         metalDanmakuRendererExperimentEnabled = enabled
         userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
-    }
-
-    func setPersonalSpaceEnhancementExperimentEnabled(_ enabled: Bool) {
-        guard personalSpaceEnhancementExperimentEnabled != enabled else { return }
-        personalSpaceEnhancementExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.personalSpaceEnhancementExperimentEnabledKey)
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

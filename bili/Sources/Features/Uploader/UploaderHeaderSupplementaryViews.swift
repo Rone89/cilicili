@@ -41,18 +41,17 @@ struct UploaderProfileStatusMessage: View {
 struct UploaderStatsRow: View {
     @ObservedObject var viewModel: UploaderViewModel
     let card: UploaderCard?
-    var usesEqualColumns = false
 
     var body: some View {
-        HStack(spacing: usesEqualColumns ? 0 : 14) {
+        HStack(spacing: 0) {
             UploaderStatItem(title: "粉丝", value: viewModel.followerCount ?? card?.fans,
-                             alignment: usesEqualColumns ? .center : .leading)
+                             alignment: .center)
             UploaderStatItem(title: "关注", value: viewModel.followingCount ?? card?.attention,
-                             alignment: usesEqualColumns ? .center : .leading)
+                             alignment: .center)
             UploaderStatItem(title: "获赞", value: viewModel.likeCount,
-                             alignment: usesEqualColumns ? .center : .leading)
+                             alignment: .center)
             UploaderStatItem(title: "投稿", value: viewModel.archiveCount ?? loadedVideoCount,
-                             alignment: usesEqualColumns ? .center : .leading)
+                             alignment: .center)
         }
     }
 

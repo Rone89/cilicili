@@ -6,7 +6,6 @@ struct UploaderView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     let owner: VideoOwner
     let allowsPullToRefresh: Bool
-    let showsToolbarRefreshButton: Bool
     let horizontalInset: CGFloat?
 
     @StateObject private var holder = UploaderViewModelHolder()
@@ -14,59 +13,44 @@ struct UploaderView: View {
     init(
         owner: VideoOwner,
         allowsPullToRefresh: Bool = true,
-        showsToolbarRefreshButton: Bool = false,
         horizontalInset: CGFloat? = nil
     ) {
         self.owner = owner
         self.allowsPullToRefresh = allowsPullToRefresh
-        self.showsToolbarRefreshButton = showsToolbarRefreshButton
         self.horizontalInset = horizontalInset
     }
 
     var body: some View {
         content
-            .nativeBottomScrollEdgeBlurVisibility(isHidden: !libraryStore.personalSpaceEnhancementExperimentEnabled)
+            .nativeBottomScrollEdgeBlurVisibility(isHidden: false)
             .toolbar(.hidden, for: .tabBar)
     }
 
     private var content: some View {
         Group {
-            if let viewModel = holder.viewModel,
-               viewModel.enhancementEnabled == libraryStore.personalSpaceEnhancementExperimentEnabled,
-               viewModel.isCurrentViewerContext {
-                if viewModel.enhancementEnabled {
-                    UploaderEnhancedContentView(
-                        owner: owner, viewModel: viewModel,
-                        allowsPullToRefresh: allowsPullToRefresh,
-                        horizontalInset: horizontalInset ?? libraryStore.standardPageHorizontalInset
-                    )
-                } else {
-                    UploaderContentView(
-                        owner: owner,
-                        viewModel: viewModel,
-                        allowsPullToRefresh: allowsPullToRefresh,
-                        showsToolbarRefreshButton: showsToolbarRefreshButton
-                    )
-                }
+            if let viewModel = holder.viewModel, viewModel.isCurrentViewerContext {
+                UploaderSpaceContentView(
+                    owner: owner, viewModel: viewModel,
+                    allowsPullToRefresh: allowsPullToRefresh,
+                    horizontalInset: horizontalInset ?? libraryStore.standardPageHorizontalInset
+                )
             } else {
                 UploaderInitialLoadingView()
             }
         }
         .id(configurationID)
         .task(id: configurationID) {
-            holder.configure(owner: owner, api: dependencies.api,
-                             enhancementEnabled: libraryStore.personalSpaceEnhancementExperimentEnabled)
+            holder.configure(owner: owner, api: dependencies.api)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var configurationID: String {
-        guard libraryStore.personalSpaceEnhancementExperimentEnabled else { return "legacy-\(owner.mid)" }
         // Observe session changes even though the authoritative request context is owned by the API.
         _ = sessionStore.accountConfigurationVersion
         let identity = UploaderSpaceRequestIdentity(dependencies.api.requestSnapshot())
-        return "enhanced-\(owner.mid)-\(identity.accountMID ?? 0)-\(identity.credentialVersion)-\(identity.isLoggedIn)-\(identity.isPurposeEnabled)-\(identity.guestModeEnabled)"
+        return "space-\(owner.mid)-\(identity.accountMID ?? 0)-\(identity.credentialVersion)-\(identity.isLoggedIn)-\(identity.isPurposeEnabled)-\(identity.guestModeEnabled)"
     }
 }
 

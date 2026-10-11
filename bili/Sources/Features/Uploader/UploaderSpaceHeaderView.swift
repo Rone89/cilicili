@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct UploaderEnhancedHeaderView: View {
+struct UploaderSpaceHeaderView: View {
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
     var horizontalInset: CGFloat = 20
@@ -48,7 +48,7 @@ struct UploaderEnhancedHeaderView: View {
                 }
             }
             .padding(.horizontal, horizontalInset)
-            UploaderStatsRow(viewModel: viewModel, card: card, usesEqualColumns: true)
+            UploaderStatsRow(viewModel: viewModel, card: card)
                 .padding(.horizontal, 20)
             Divider()
                 .padding(.horizontal, 20)

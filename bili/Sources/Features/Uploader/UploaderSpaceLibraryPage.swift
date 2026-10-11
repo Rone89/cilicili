@@ -110,7 +110,7 @@ final class UploaderSpaceLibraryViewModel: ObservableObject {
         self.kind = kind
         self.api = api
         snapshot = api.requestSnapshot()
-        previewModel = UploaderViewModel(seedOwner: owner, api: api, enhancementEnabled: true)
+        previewModel = UploaderViewModel(seedOwner: owner, api: api)
     }
 
     private var mayApply: Bool {

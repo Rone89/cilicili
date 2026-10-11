@@ -1576,6 +1576,23 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testUploaderNameLookupKeepsPublicCardRequestForContentFilters() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"内容过滤用户"}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let name = try await api.fetchUploaderName(mid: 123)
+        XCTAssertEqual(name, "内容过滤用户")
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/card")
+        XCTAssertEqual(Self.queryValues(for: request), ["mid":"123", "photo":"false"])
+        XCTAssertNil(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"])
+    }
+
+    @MainActor
     func testUploaderProfileRejectsInvalidMIDWithoutRequest() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -1817,167 +1834,6 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertNotNil(query["appkey"])
         XCTAssertNotNil(query["ts"])
         XCTAssertNotNil(query["sign"])
-    }
-
-    @MainActor
-    func testUploaderSeasonSeriesBuildsRequestAndDecodesItems() async throws {
-        await BiliAPIResponseMemoryCache.shared.clear()
-
-        let recorder = RequestContractRecorder()
-        RequestContractURLProtocol.install { request in
-            recorder.record(request)
-            return Self.response(
-                for: request,
-                body: """
-                    {"code":0,"data":{"items_lists":{"page":{"page_num":2,"page_size":5,"total":9},"seasons_list":[{"meta":{"season_id":11,"name":"测试合集"}}],"series_list":[{"meta":{"series_id":12,"name":"测试列表"}}]}}}
-                    """
-            )
-        }
-        defer { RequestContractURLProtocol.reset() }
-
-        let api = try makeAPI(cookieHeader: "")
-        let result = try await api.fetchUploaderSeasonSeries(mid: 321, page: 2, pageSize: 5)
-
-        XCTAssertEqual(result.page?.total, 9)
-        XCTAssertEqual(result.items.map(\.title), ["测试合集", "测试列表"])
-        let request = try XCTUnwrap(recorder.request)
-        XCTAssertEqual(request.url?.path, "/x/polymer/web-space/seasons_series_list")
-        XCTAssertEqual(
-            Self.queryValues(for: request),
-            ["mid": "321", "page_num": "2", "page_size": "5"]
-        )
-    }
-
-    @MainActor
-    func testUploaderSeasonAndSeriesArchivePagesPreservePathsSortAndPagination() async throws {
-        await BiliAPIResponseMemoryCache.shared.clear()
-
-        let recorder = RequestContractRecorder()
-        RequestContractURLProtocol.install { request in
-            recorder.record(request)
-            switch request.url?.path {
-            case "/x/polymer/web-space/seasons_archives_list":
-                return Self.response(
-                    for: request,
-                    body: """
-                        {"code":0,"data":{"archives":[{"aid":101,"bvid":"BV1season","title":"合集投稿"}],"page":{"page_num":2,"page_size":30,"total":61}}}
-                        """
-                )
-            case "/x/series/archives":
-                return Self.response(
-                    for: request,
-                    body: """
-                        {"code":0,"data":{"archives":[{"aid":102,"bvid":"BV1series","title":"列表投稿"}],"page":{"page_num":2,"page_size":20,"total":40}}}
-                        """
-                )
-            default:
-                throw URLError(.badServerResponse)
-            }
-        }
-        defer { RequestContractURLProtocol.reset() }
-
-        let api = try makeAPI(cookieHeader: "")
-        let owner = VideoOwner(mid: 321, name: "测试UP", face: nil)
-        let season = try await api.fetchUploaderSeasonSeriesArchivePage(
-            mid: 321,
-            owner: owner,
-            kind: .season(11),
-            page: 2,
-            pageSize: 30,
-            sort: .asc
-        )
-        let series = try await api.fetchUploaderSeasonSeriesArchivePage(
-            mid: 321,
-            owner: owner,
-            kind: .series(12),
-            page: 2,
-            pageSize: 20,
-            sort: .desc
-        )
-
-        XCTAssertEqual(season.videos.map(\.bvid), ["BV1season"])
-        XCTAssertEqual(season.totalCount, 61)
-        XCTAssertTrue(season.hasMore)
-        XCTAssertEqual(series.videos.map(\.bvid), ["BV1series"])
-        XCTAssertEqual(series.totalCount, 40)
-        XCTAssertFalse(series.hasMore)
-
-        let seasonRequest = try XCTUnwrap(
-            recorder.requests.first { $0.url?.path == "/x/polymer/web-space/seasons_archives_list" }
-        )
-        XCTAssertEqual(
-            Self.queryValues(for: seasonRequest),
-            [
-                "mid": "321",
-                "season_id": "11",
-                "sort_reverse": "true",
-                "page_size": "30",
-                "page_num": "2",
-                "web_location": "333.1387",
-            ]
-        )
-        let seriesRequest = try XCTUnwrap(
-            recorder.requests.first { $0.url?.path == "/x/series/archives" }
-        )
-        XCTAssertEqual(
-            Self.queryValues(for: seriesRequest),
-            [
-                "mid": "321",
-                "series_id": "12",
-                "sort": "desc",
-                "ps": "20",
-                "pn": "2",
-                "web_location": "333.1387",
-            ]
-        )
-    }
-
-    @MainActor
-    func testUploaderSeasonSeriesRejectsInvalidMIDAndMissingPayload() async throws {
-        let recorder = RequestContractRecorder()
-        RequestContractURLProtocol.install { request in
-            recorder.record(request)
-            return Self.response(for: request, body: "{\"code\":0,\"data\":null}")
-        }
-        defer { RequestContractURLProtocol.reset() }
-
-        let api = try makeAPI(cookieHeader: "")
-        let owner = VideoOwner(mid: 321, name: "测试UP", face: nil)
-        do {
-            _ = try await api.fetchUploaderSeasonSeries(mid: 0)
-            XCTFail("Expected invalid uploader UID to fail")
-        } catch let error as BiliAPIError {
-            guard case .api(let code, let message) = error else {
-                return XCTFail("Unexpected API error: \(error)")
-            }
-            XCTAssertEqual(code, -1)
-            XCTAssertEqual(message, "UP 主 UID 无效")
-        }
-        do {
-            _ = try await api.fetchUploaderSeasonSeriesArchivePage(
-                mid: -1,
-                owner: owner,
-                kind: .season(11)
-            )
-            XCTFail("Expected invalid uploader UID to fail")
-        } catch let error as BiliAPIError {
-            guard case .api(let code, let message) = error else {
-                return XCTFail("Unexpected API error: \(error)")
-            }
-            XCTAssertEqual(code, -1)
-            XCTAssertEqual(message, "UP 主 UID 无效")
-        }
-        XCTAssertTrue(recorder.requests.isEmpty)
-
-        do {
-            _ = try await api.fetchUploaderSeasonSeries(mid: 321)
-            XCTFail("Expected missing payload to fail")
-        } catch let error as BiliAPIError {
-            guard case .missingPayload = error else {
-                return XCTFail("Unexpected API error: \(error)")
-            }
-        }
-        XCTAssertEqual(recorder.request?.url?.path, "/x/polymer/web-space/seasons_series_list")
     }
 
     @MainActor
@@ -4044,7 +3900,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceLoadsOnceWithoutEagerArchiveRequests() async throws {
+    func testSpaceLoadsOnceWithoutEagerArchiveRequests() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -4052,7 +3908,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-access-key")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadInitial()
         await model.loadInitial()
         await model.loadSpaceOverview()
@@ -4069,7 +3925,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceGuestDoesNotSendAccountCredentials() async throws {
+    func testSpaceGuestDoesNotSendAccountCredentials() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -4077,7 +3933,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-key", guestModeEnabled: true)
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "用户", face: nil), api: api)
         await model.loadInitial()
         let request = try XCTUnwrap(recorder.request)
         XCTAssertNil(Self.queryValues(for: request)["access_key"])
@@ -4087,7 +3943,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceFailureUsesOnlyPublicCardFallback() async throws {
+    func testSpaceFailureUsesOnlyPublicCardFallback() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -4098,7 +3954,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-key")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadInitial()
         XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/web-interface/card"])
         XCTAssertEqual(model.profile?.card?.name, "公开资料")
@@ -4109,7 +3965,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceEmptyLoadedListsAreNotRepeated() async throws {
+    func testSpaceEmptyLoadedListsAreNotRepeated() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -4117,7 +3973,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadDynamicsIfNeeded()
         await model.loadDynamicsIfNeeded()
         XCTAssertEqual(model.dynamicState, .loaded)
@@ -4125,7 +3981,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceAccountSwitchReplacesModelAndRejectsOldActions() async throws {
+    func testSpaceAccountSwitchReplacesModelAndRejectsOldActions() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -4135,24 +3991,26 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
         let owner = VideoOwner(mid: 123, name: "用户", face: nil)
         let holder = UploaderViewModelHolder()
-        holder.configure(owner: owner, api: api, enhancementEnabled: true)
+        holder.configure(owner: owner, api: api)
         let old = try XCTUnwrap(holder.viewModel)
         try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002", "bili_jct":"newcsrf"], credentialKind: .web)
-        holder.configure(owner: owner, api: api, enhancementEnabled: true)
+        holder.configure(owner: owner, api: api)
         XCTAssertFalse(holder.viewModel === old)
         XCTAssertFalse(old.isCurrentViewerContext)
         await old.loadSpaceOverview(force: true)
         await old.refreshDynamics()
-        await old.refreshSeasonSeries()
+        await old.refresh()
         let success = await old.toggleFollow()
         XCTAssertFalse(success)
         XCTAssertTrue(recorder.requests.isEmpty)
-        holder.configure(owner: owner, api: api, enhancementEnabled: false)
-        XCTAssertFalse(try XCTUnwrap(holder.viewModel).enhancementEnabled)
+        let current = try XCTUnwrap(holder.viewModel)
+        holder.configure(owner: owner, api: api)
+        XCTAssertTrue(holder.viewModel === current)
+        XCTAssertTrue(current.isCurrentViewerContext)
     }
 
     @MainActor
-    func testEnhancedSpaceDiscardsResponseAfterAccountSwitchWhileLoading() async throws {
+    func testSpaceDiscardsResponseAfterAccountSwitchWhileLoading() async throws {
         let entered = expectation(description: "Space request started")
         let release = DispatchSemaphore(value: 0)
         RequestContractURLProtocol.install { request in
@@ -4162,7 +4020,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         let load = Task { await model.loadInitial() }
         await fulfillment(of: [entered], timeout: 3)
         try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
@@ -4174,7 +4032,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testEnhancedSpaceSingleFlightAndCancellationAllowRetry() async throws {
+    func testSpaceSingleFlightAndCancellationAllowRetry() async throws {
         let recorder = RequestContractRecorder()
         let entered = expectation(description: "Space request started")
         let release = DispatchSemaphore(value: 0)
@@ -4186,7 +4044,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         let load = Task { await model.loadInitial() }
         await fulfillment(of: [entered], timeout: 3)
         await model.loadSpaceOverview(force: true)
@@ -4228,7 +4086,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             ])
             try session.selectInteractionAccount(mid: 2002)
         })
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         await model.loadInitial()
         XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/v3/fav/folder/created/list-all", "/x/space/bangumi/follow/list"])
@@ -4254,7 +4112,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         XCTAssertEqual(recorder.requests.count, 1)
         XCTAssertEqual(model.favoritePreview?.items.first?.folder.id, 9)
@@ -4277,7 +4135,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         XCTAssertEqual(model.spaceOverviewState, .loaded)
         XCTAssertTrue(model.spaceOverview?.favoritesDecodingFailed == true)
@@ -4312,7 +4170,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         let load = Task { await model.loadInitial() }
         await fulfillment(of: [entered], timeout: 3)
         try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
@@ -4342,7 +4200,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         guard case .failed = model.spaceOverviewState else { return XCTFail("Overview error must stay visible") }
         XCTAssertEqual(model.profileState, .loaded)
@@ -4365,7 +4223,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         RequestContractURLProtocol.install { request in
             Self.response(for: request, body: #"{"code":0,"data":{"total":5,"list":[{"title":"没有 season_id"}]}}"#)
@@ -4417,7 +4275,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             _ = try session.saveAdditionalAccount([Self.makeCookie(name: "DedeUserID", value: "2002"), Self.makeCookie(name: "SESSDATA", value: "other")])
             try session.selectInteractionAccount(mid: 2002)
         })
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadInitial()
         XCTAssertFalse(model.isFollowing)
         XCTAssertEqual(model.profile?.following, false)
@@ -4441,7 +4299,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadInitial()
         XCTAssertTrue(model.isFollowing)
         await model.loadSpaceOverview(force: true)
@@ -4463,7 +4321,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api)
         await model.loadInitial()
         XCTAssertTrue(model.isFollowing)
         await model.loadSpaceOverview(force: true)
@@ -4565,7 +4423,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             try session.selectInteractionAccount(mid: 2002)
         })
         func model(_ mid: Int, api: BiliAPIClient) -> UploaderViewModel {
-            UploaderViewModel(seedOwner: VideoOwner(mid: mid, name: "用户", face: nil), api: api, enhancementEnabled: true)
+            UploaderViewModel(seedOwner: VideoOwner(mid: mid, name: "用户", face: nil), api: api)
         }
         XCTAssertEqual(model(1001, api: api).spaceSections, [.home, .dynamics, .videos, .favorites, .bangumi])
         XCTAssertEqual(model(2002, api: api).spaceSections, [.home, .dynamics, .videos])
@@ -4588,7 +4446,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadInitial()
         XCTAssertEqual(recorder.requests.count, 1)
         await model.loadOwnSpaceFavorites(requiresCompleteList: true)
@@ -4620,7 +4478,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             ])
             try session.selectInteractionAccount(mid: 2002)
         })
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadOwnBangumiList()
         await model.loadOwnBangumiList()
         XCTAssertTrue(model.ownBangumiHasMore)
@@ -4649,7 +4507,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         defer { RequestContractURLProtocol.reset() }
         for guest in [false, true] {
             let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: guest)
-            let model = UploaderViewModel(seedOwner: VideoOwner(mid: guest ? 1001 : 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+            let model = UploaderViewModel(seedOwner: VideoOwner(mid: guest ? 1001 : 123, name: "用户", face: nil), api: api)
             await model.loadOwnSpaceFavorites(requiresCompleteList: true)
             await model.loadOwnBangumiList()
             await model.loadMoreOwnBangumi()
@@ -4675,7 +4533,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "他人", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "他人", face: nil), api: api)
         await model.loadFavoriteFolderPreviews(folderIDs: [9, 9, 0, 10, 11])
         await model.loadFavoriteFolderPreviews(folderIDs: [9, 10, 11])
         XCTAssertEqual(model.favoriteFolderPreviews[9]?.compactMap(\.aid), [3, 2, 1])
@@ -4703,7 +4561,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         await model.loadFavoriteFolderPreviews(folderIDs: [9])
         await model.loadFavoriteFolderPreviews(folderIDs: [9], force: true)
         await model.loadFavoriteFolderPreviews(folderIDs: [9])
@@ -4728,7 +4586,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
-        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api)
         let load = Task { await model.loadFavoriteFolderPreviews(folderIDs: [9, 10]) }
         await fulfillment(of: [entered], timeout: 3)
         await model.loadFavoriteFolderPreviews(folderIDs: [9])

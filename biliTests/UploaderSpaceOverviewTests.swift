@@ -118,16 +118,21 @@ final class UploaderSpaceOverviewTests: XCTestCase {
     }
 
     @MainActor
-    func testExperimentDefaultsOffAndPersistsWithoutTouchingOtherSettings() throws {
+    func testRetiredExperimentPreferenceIsRemovedWithoutChangingUserSettings() throws {
         let suite = "UploaderSpaceOverviewTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.personalSpaceEnhancementExperimentEnabled)
-        store.setPersonalSpaceEnhancementExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).personalSpaceEnhancementExperimentEnabled)
-        store.setPersonalSpaceEnhancementExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).personalSpaceEnhancementExperimentEnabled)
+        for oldValue in [false, true] {
+            defaults.set(oldValue, forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
+            defaults.set(true, forKey: "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1")
+            defaults.set(false, forKey: "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1")
+            defaults.set("preserved", forKey: "unrelated.user.data")
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1"))
+            XCTAssertTrue(store.metalDanmakuRendererExperimentEnabled)
+            XCTAssertFalse(store.bottomScrollEdgeBlurEnabled)
+            XCTAssertEqual(defaults.string(forKey: "unrelated.user.data"), "preserved")
+        }
     }
 
     private func decode(_ json: String) throws -> UploaderSpaceOverview {

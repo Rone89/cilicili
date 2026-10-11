@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct UploaderEnhancedContentView: View {
+struct UploaderSpaceContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var dependencies: AppDependencies
     let owner: VideoOwner
@@ -96,7 +96,7 @@ struct UploaderEnhancedContentView: View {
                         .accessibilityHidden(true)
                 }
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel, horizontalInset: horizontalInset)
+                    UploaderSpaceHeaderView(owner: owner, viewModel: viewModel, horizontalInset: horizontalInset)
                         .padding(.top, backgroundURL == nil ? 12 : 14)
                     selectedContent
                 }
