@@ -520,9 +520,13 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                     if let onOpenCommentComposer {
                         ToolbarSpacer(.flexible, placement: .bottomBar)
                         ToolbarItem(placement: .bottomBar) {
-                            VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                            VideoDetailToolbarSegmentedPickerView(
+                                selection: $selection,
+                                usesNativePicker: libraryStore.videoDetailNativeToolbarPickerExperimentEnabled
+                            )
                                 .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                         }
+                        .sharedBackgroundVisibility(pickerBackgroundVisibility)
                         ToolbarSpacer(.flexible, placement: .bottomBar)
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
@@ -531,10 +535,14 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                     } else {
                         ToolbarItemGroup(placement: .bottomBar) {
                             Spacer(minLength: 0)
-                            VideoDetailToolbarSegmentedPickerView(selection: $selection)
+                            VideoDetailToolbarSegmentedPickerView(
+                                selection: $selection,
+                                usesNativePicker: libraryStore.videoDetailNativeToolbarPickerExperimentEnabled
+                            )
                                 .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                             Spacer(minLength: 0)
                         }
+                        .sharedBackgroundVisibility(pickerBackgroundVisibility)
                     }
                 }
                 .toolbarBackground(libraryStore.bottomScrollEdgeBlurEnabled ? .automatic : .hidden, for: .bottomBar)
@@ -542,6 +550,10 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
         } else {
             content
         }
+    }
+
+    private var pickerBackgroundVisibility: Visibility {
+        libraryStore.videoDetailNativeToolbarPickerExperimentEnabled ? .hidden : .automatic
     }
 }
 

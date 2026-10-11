@@ -5,9 +5,25 @@ struct VideoDetailToolbarSegmentedPickerView: View {
     private static let height: CGFloat = 38
 
     @Binding var selection: VideoDetailContentTab
+    var usesNativePicker = false
     @Namespace private var selectionNamespace
 
+    @ViewBuilder
     var body: some View {
+        if usesNativePicker {
+            Picker("内容", selection: $selection) {
+                Text("简介").tag(VideoDetailContentTab.detail)
+                Text("评论").tag(VideoDetailContentTab.comments)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: Self.toolbarWidth)
+            .accessibilityIdentifier("video.detail.toolbar-picker")
+        } else {
+            customPicker
+        }
+    }
+
+    private var customPicker: some View {
         HStack(spacing: 0) {
             segment(title: "简介", tab: .detail)
             segment(title: "评论", tab: .comments)
