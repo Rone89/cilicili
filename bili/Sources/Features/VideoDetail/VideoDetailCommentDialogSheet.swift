@@ -62,7 +62,7 @@ struct CommentDialogSheet: View {
                 .defersRemoteImageLoadsDuringFastScroll()
                 .hiddenInlineNavigationTitle()
                 .nativeTopScrollEdgeEffect()
-                .commentSheetLoadLifecycle(load: actions.load)
+                .commentSheetLoadLifecycle(revision: store.contentRevision, load: actions.load)
                 .onAppear {
                     scrollToFocusedReply(using: proxy)
                 }

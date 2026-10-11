@@ -9,6 +9,8 @@ struct VideoDetailCommentListState {
     var cursor = ""
     var end = false
     var pageLoadGeneration = 0
+    var usesLoadingRecovery = false
+    var needsThreadRecoveryReload = false
 }
 
 extension VideoDetailViewModel {

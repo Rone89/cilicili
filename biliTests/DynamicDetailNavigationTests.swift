@@ -226,6 +226,199 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(responses.requestedPages, [1, 2, 2])
     }
 
+    @MainActor
+    func testRecoveryExperimentIsOffByDefaultAndPersists() {
+        let suite = "CommentRecoverySettingsTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.commentLoadingRecoveryExperimentEnabled)
+        store.setCommentLoadingRecoveryExperimentEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).commentLoadingRecoveryExperimentEnabled)
+        store.setCommentLoadingRecoveryExperimentEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).commentLoadingRecoveryExperimentEnabled)
+    }
+
+    @MainActor
+    func testRecoveryRootPaginationUsesOpaqueOffsetAndRetriesFailedPage() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next":2,"pagination_reply":{"next_offset":"CAEiAggC"},"is_end":false}}}"#),
+            .success(#"{"code":-400,"message":"暂时失败"}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":102},{"rpid":102}],"cursor":{"is_end":true}}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let api = try makeCommentsAPI(recoveryEnabled: true)
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: api)
+        await model.loadInitial()
+        await model.loadMore()
+        XCTAssertEqual(model.comments.map(\.id), [101])
+        XCTAssertTrue(model.hasMoreComments)
+        guard case .failed = model.loadMoreState else { return XCTFail("Expected retry footer") }
+        await model.loadMore()
+        XCTAssertEqual(model.comments.map(\.id), [101, 102])
+        XCTAssertFalse(model.hasMoreComments)
+        XCTAssertEqual(responses.requestedOffsets, ["", "CAEiAggC", "CAEiAggC"])
+    }
+
+    @MainActor
+    func testRecoveryDuplicateAndEmptyPagesPauseWithoutEndingAndContinueFromLatestCursor() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next_offset":"a","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next_offset":"b","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[],"cursor":{"next_offset":"c","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[],"cursor":{"next_offset":"d","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":102}],"cursor":{"is_end":true}}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: try makeCommentsAPI(recoveryEnabled: true))
+        await model.loadInitial()
+        await model.loadMore()
+        XCTAssertTrue(model.hasMoreComments)
+        guard case .failed = model.loadMoreState else { return XCTFail("Automatic skips must stop with a manual continuation") }
+        XCTAssertEqual(responses.requestedOffsets, ["", "a", "b", "c"])
+        await model.loadMore()
+        XCTAssertEqual(model.comments.map(\.id), [101, 102])
+        XCTAssertEqual(responses.requestedOffsets.last, "d")
+    }
+
+    @MainActor
+    func testRecoveryStagnantCursorDoesNotLoopOrEndComments() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next_offset":"a","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next_offset":"a","is_end":false}}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: try makeCommentsAPI(recoveryEnabled: true))
+        await model.loadInitial()
+        await model.loadMore()
+        XCTAssertTrue(model.hasMoreComments)
+        guard case .failed = model.loadMoreState else { return XCTFail("Stagnant cursor must pause") }
+        XCTAssertEqual(responses.requestedOffsets, ["", "a"])
+    }
+
+    @MainActor
+    func testLegacyExperimentOffKeepsNumericCursorAndExistingEndBehavior() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next":2,"next_offset":"opaque","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next":2,"next_offset":"opaque","is_end":false}}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: try makeCommentsAPI())
+        await model.loadInitial()
+        await model.loadMore()
+        XCTAssertFalse(model.hasMoreComments)
+        XCTAssertEqual(model.loadMoreState, .idle)
+        XCTAssertEqual(responses.requestedOffsets, ["", "2"])
+    }
+
+    @MainActor
+    func testRecoveryFilterOffReloadsEvenWhenEveryCommentWasFiltered() async throws {
+        let body = #"{"code":0,"data":{"replies":[{"rpid":101,"content":{"message":"商品","has_goods":true}}],"cursor":{"is_end":true}}}"#
+        let responses = DynamicCommentsResponseSequence([.success(body), .success(body)])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: try makeCommentsAPI(recoveryEnabled: true))
+        await model.loadInitial()
+        XCTAssertTrue(model.comments.isEmpty)
+        model.setBlocksGoodsComments(false)
+        for _ in 0..<200 where model.comments.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.comments.map(\.id), [101])
+        XCTAssertEqual(responses.requestedOffsets, ["", ""])
+    }
+
+    @MainActor
+    func testRecoveryReplyFilterOffInvalidatesCachedStateAndReloadsFirstPage() async throws {
+        let body = #"{"code":0,"data":{"replies":[{"rpid":201,"content":{"message":"商品","has_goods":true}}],"page":{"num":1,"size":20,"count":1}}}"#
+        let responses = DynamicCommentsResponseSequence([.success(body), .success(body)])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":1}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(recoveryEnabled: true), blocksGoodsComments: true)
+        await store.loadReplies(for: root)
+        XCTAssertTrue(store.replies(for: root).isEmpty)
+        let revision = store.contentRevision
+        store.setBlocksGoodsComments(false)
+        XCTAssertGreaterThan(store.contentRevision, revision)
+        XCTAssertEqual(store.replyState(for: root), .idle)
+        await store.loadReplies(for: root)
+        XCTAssertEqual(store.replies(for: root).map(\.id), [201])
+        XCTAssertEqual(responses.requestedPages, [1, 1])
+    }
+
+    @MainActor
+    func testVideoRecoveryPaginationRetryCancellationAndFilterPublication() async throws {
+        let api = try makeCommentsAPI(recoveryEnabled: true)
+        let model = makeVideoCommentsModel(api: api)
+        defer { model.stopPlaybackForNavigation() }
+        let page = try JSONDecoder.bili.decode(CommentPage.self, from: Data(#"{"replies":[{"rpid":101}],"cursor":{"next":2,"next_offset":"opaque","is_end":false}}"#.utf8))
+        model.applyLoadedCommentPage(page, previousCount: 0, isInitialPage: true)
+        XCTAssertEqual(model.commentCursor, "opaque")
+        model.failCommentPageLoad(URLError(.notConnectedToInternet), presentsErrors: false)
+        XCTAssertFalse(model.commentsEnd)
+        guard case .failed = model.commentLoadMoreState else { return XCTFail("Video pagination must remain retryable") }
+        model.resetCommentStateAfterCancellation(isInitialPage: false, wasLoadingMore: true)
+        XCTAssertFalse(model.commentsEnd)
+        model.finishCommentPageLoadWithoutSkip(isLoadingMore: true, previousCount: 1, previousCursor: "opaque")
+        XCTAssertFalse(model.commentsEnd)
+
+        let goodsBody = #"{"code":0,"data":{"replies":[{"rpid":201,"content":{"message":"商品","has_goods":true}}],"cursor":{"is_end":true}}}"#
+        let responses = DynamicCommentsResponseSequence([.success(goodsBody), .success(goodsBody)])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        await model.loadInitialComments()
+        XCTAssertTrue(model.comments.isEmpty)
+        api.libraryStore.setBlocksGoodsComments(false)
+        for task in Array(model.backgroundTasks.values) { await task.value }
+        XCTAssertEqual(model.comments.map(\.id), [201], "Use the emitted filter value, not @Published's old stored value")
+        XCTAssertGreaterThan(model.commentThreadRenderStore.contentRevision, 0)
+    }
+
+    @MainActor
+    func testRecoveryModeToggleRestartsAtFirstPageWithoutMixingOffsets() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":101}],"cursor":{"next":2,"next_offset":"a","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":102}],"cursor":{"next":2,"next_offset":"b","is_end":false}}}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":103}],"cursor":{"is_end":true}}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let api = try makeCommentsAPI()
+        let model = DynamicCommentsViewModel(item: try makeCommentableItem(), api: api)
+        await model.loadInitial()
+        api.libraryStore.setCommentLoadingRecoveryExperimentEnabled(true)
+        for _ in 0..<200 where model.comments.first?.id != 102 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.comments.map(\.id), [102])
+        api.libraryStore.setCommentLoadingRecoveryExperimentEnabled(false)
+        for _ in 0..<200 where model.comments.first?.id != 103 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.comments.map(\.id), [103])
+        XCTAssertEqual(responses.requestedOffsets, ["", "", ""])
+    }
+
+    @MainActor
+    func testVideoLegacyFailureAndCursorRemainUnchangedWhenExperimentIsOff() throws {
+        let model = makeVideoCommentsModel(api: try makeCommentsAPI())
+        defer { model.stopPlaybackForNavigation() }
+        let page = try JSONDecoder.bili.decode(CommentPage.self, from: Data(#"{"replies":[{"rpid":101}],"cursor":{"next":2,"next_offset":"opaque","is_end":false}}"#.utf8))
+        model.applyLoadedCommentPage(page, previousCount: 0, isInitialPage: true)
+        XCTAssertEqual(model.commentCursor, "2")
+        model.failCommentPageLoad(URLError(.notConnectedToInternet), presentsErrors: false)
+        XCTAssertTrue(model.commentsEnd)
+        XCTAssertEqual(model.commentLoadMoreState, .idle)
+    }
+
+    @MainActor
+    private func makeVideoCommentsModel(api: BiliAPIClient) -> VideoDetailViewModel {
+        VideoDetailViewModel(
+            seedVideo: VideoItem(bvid: "BV-recovery", aid: 456, title: "Comments", pic: nil, desc: nil, duration: 60, pubdate: nil, owner: nil, stat: nil, cid: 11, pages: nil, dimension: nil),
+            api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore,
+            sponsorBlockService: SponsorBlockService(session: URLSession(configuration: .ephemeral))
+        )
+    }
+
     private func decodeOriginal(_ json: String) throws -> DynamicOriginalItem {
         try JSONDecoder.bili.decode(DynamicOriginalItem.self, from: Data(json.utf8))
     }
@@ -261,11 +454,12 @@ final class DynamicDetailNavigationTests: XCTestCase {
     }
 
     @MainActor
-    private func makeCommentsAPI() throws -> BiliAPIClient {
+    private func makeCommentsAPI(recoveryEnabled: Bool = false) throws -> BiliAPIClient {
         let service = "DynamicCommentsViewModelTests.\(UUID().uuidString)"
         let keychain = KeychainStore(service: service)
         let sessionStore = SessionStore(keychain: keychain)
         let libraryStore = LibraryStore(userDefaults: UserDefaults(suiteName: service)!)
+        libraryStore.setCommentLoadingRecoveryExperimentEnabled(recoveryEnabled)
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DynamicCommentsURLProtocol.self]
@@ -389,6 +583,13 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
     private let lock = NSLock()
     private var responses: [Response]
     private var pages: [Int] = []
+    private var offsets: [String] = []
+
+    var requestedOffsets: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return offsets
+    }
 
     var requestedPages: [Int] {
         lock.lock()
@@ -405,6 +606,12 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
         if let url = request.url,
            let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pn" })?.value.flatMap(Int.init) {
             pages.append(page)
+        }
+        if let url = request.url,
+           let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pagination_str" })?.value,
+           let data = raw.data(using: .utf8),
+           let pagination = try? JSONDecoder().decode([String: String].self, from: data) {
+            offsets.append(pagination["offset"] ?? "")
         }
         let response = responses.isEmpty ? nil : responses.removeFirst()
         lock.unlock()

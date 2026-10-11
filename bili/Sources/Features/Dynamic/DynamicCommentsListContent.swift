@@ -35,6 +35,8 @@ struct DynamicCommentsListContent: View {
                 Task { await viewModel.reload() }
             }
             .padding(14)
+        } else if viewModel.comments.isEmpty, viewModel.loadMoreState != .idle {
+            DynamicCommentsFooter(viewModel: viewModel)
         } else if viewModel.comments.isEmpty {
             DynamicCommentPlainEmptyStateView(
                 title: "暂无评论",

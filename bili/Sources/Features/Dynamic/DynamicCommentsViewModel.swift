@@ -28,6 +28,8 @@ final class DynamicCommentsViewModel: ObservableObject {
     private var commentsEnd = false
     private var commentItemsSignature = DynamicCommentListSignature([])
     private var loadGeneration = 0
+    private var usesLoadingRecovery: Bool
+    private var recoveryCancellable: AnyCancellable?
 
     var canLoadComments: Bool {
         commentOID != nil && commentType != nil
@@ -40,15 +42,41 @@ final class DynamicCommentsViewModel: ObservableObject {
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
         self.api = api
+        self.usesLoadingRecovery = api.libraryStore.commentLoadingRecoveryExperimentEnabled
+        if usesLoadingRecovery { self.blocksGoodsComments = api.libraryStore.blocksGoodsComments }
         self.displayedReplyCount = item.replyCount
         self.replyStore = DynamicCommentReplyStore(item: item, api: api, blocksGoodsComments: blocksGoodsComments)
+        recoveryCancellable = api.libraryStore.$commentLoadingRecoveryExperimentEnabled
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                self.usesLoadingRecovery = enabled
+                self.cursor = ""
+                self.commentsEnd = false
+                self.scheduleRecoveryReload()
+            }
     }
 
     func setBlocksGoodsComments(_ isEnabled: Bool) {
         guard blocksGoodsComments != isEnabled else { return }
         blocksGoodsComments = isEnabled
         replyStore.setBlocksGoodsComments(isEnabled)
+        if usesLoadingRecovery {
+            if isEnabled { comments = filteredComments(comments) }
+            scheduleRecoveryReload()
+            return
+        }
         refilterLoadedComments()
+    }
+
+    private func scheduleRecoveryReload() {
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        Task { @MainActor [weak self] in
+            guard let self, self.loadGeneration == generation else { return }
+            await self.reload()
+        }
     }
 
     func loadInitial() async {
@@ -142,6 +170,7 @@ final class DynamicCommentsViewModel: ObservableObject {
                     cookieHeader: cookieHeader
                 )
                 guard generation == loadGeneration else { return .superseded }
+                if usesLoadingRecovery { try Task.checkCancellation() }
                 let pageComments = isInitialPage
                     ? (page.topReplies ?? []) + (page.replies ?? [])
                     : (page.replies ?? [])
@@ -153,8 +182,10 @@ final class DynamicCommentsViewModel: ObservableObject {
                 } else {
                     appendUniqueComments(filteredPageComments)
                 }
-                cursor = page.cursor?.effectiveNext ?? ""
-                commentsEnd = page.cursor?.isEnd ?? (comments.count == previousCount && cursor.isEmpty)
+                cursor = page.cursor?.nextCursor(usesRecovery: usesLoadingRecovery) ?? ""
+                commentsEnd = page.cursor?.isEnd ?? (usesLoadingRecovery
+                    ? (page.replies ?? []).isEmpty && cursor.isEmpty
+                    : comments.count == previousCount && cursor.isEmpty)
                 state = .loaded
                 loadMoreState = .idle
 
@@ -167,7 +198,11 @@ final class DynamicCommentsViewModel: ObservableObject {
                     && !cursor.isEmpty
                     && cursor != previousCursor
                 guard canSkipEmptyPage else {
-                    if !isInitialPage, !didAppendComments {
+                    if usesLoadingRecovery, !commentsEnd,
+                       cursor.isEmpty || cursor == previousCursor || !didAppendComments {
+                        if cursor.isEmpty { cursor = previousCursor }
+                        loadMoreState = .failed("评论分页暂未推进，点击继续加载")
+                    } else if !usesLoadingRecovery, !isInitialPage, !didAppendComments {
                         commentsEnd = true
                     }
                     return .refreshed
@@ -184,13 +219,17 @@ final class DynamicCommentsViewModel: ObservableObject {
                     state = .idle
                 } else {
                     state = .loaded
-                    commentsEnd = true
+                    if !usesLoadingRecovery { commentsEnd = true }
                 }
-                loadMoreState = .idle
+                loadMoreState = usesLoadingRecovery && !isInitialPage
+                    ? .failed("评论加载已中断，点击重试") : .idle
                 return .failed
             } catch {
                 guard generation == loadGeneration else { return .superseded }
-                if comments.isEmpty {
+                if usesLoadingRecovery, !isInitialPage || !comments.isEmpty {
+                    state = .loaded
+                    loadMoreState = .failed(error.localizedDescription)
+                } else if comments.isEmpty {
                     state = .failed(error.localizedDescription)
                     loadMoreState = .idle
                 } else {
@@ -204,6 +243,11 @@ final class DynamicCommentsViewModel: ObservableObject {
     }
 
     private func appendUniqueComments(_ more: [Comment]) {
+        if usesLoadingRecovery {
+            var seen = Set(comments.map(\.id))
+            comments.append(contentsOf: more.filter { seen.insert($0.id).inserted })
+            return
+        }
         let existing = Set(comments.map(\.id))
         comments.append(contentsOf: more.filter { !existing.contains($0.id) })
     }

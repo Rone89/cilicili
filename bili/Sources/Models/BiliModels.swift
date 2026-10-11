@@ -2792,6 +2792,10 @@ nonisolated struct CommentCursor: Decodable, Sendable {
         Self.nonEmpty(next) ?? Self.nonEmpty(nextOffset)
     }
 
+    func nextCursor(usesRecovery: Bool) -> String? {
+        usesRecovery ? Self.nonEmpty(nextOffset) ?? Self.nonEmpty(next) : effectiveNext
+    }
+
     enum CodingKeys: String, CodingKey {
         case next
         case nextOffset = "next_offset"

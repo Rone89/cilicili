@@ -41,7 +41,7 @@ struct DynamicCommentRepliesSheet: View {
             .defersRemoteImageLoadsDuringFastScroll()
             .hiddenInlineNavigationTitle()
             .nativeTopScrollEdgeEffect()
-            .task {
+            .task(id: replyStore.contentRevision) {
                 await replyStore.loadReplies(for: rootComment)
             }
         }
@@ -84,7 +84,7 @@ private struct DynamicCommentDialogSheet: View {
     @Environment(\.dismiss) private var dismiss
     let rootComment: Comment
     let focusReply: Comment
-    let replyStore: DynamicCommentReplyStore
+    @ObservedObject var replyStore: DynamicCommentReplyStore
     let api: BiliAPIClient
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var composerTarget: DynamicCommentComposerTarget?
@@ -118,7 +118,7 @@ private struct DynamicCommentDialogSheet: View {
             .defersRemoteImageLoadsDuringFastScroll()
             .hiddenInlineNavigationTitle()
             .nativeTopScrollEdgeEffect()
-            .task {
+            .task(id: replyStore.contentRevision) {
                 await replyStore.loadDialog(for: rootComment, reply: focusReply)
             }
         }

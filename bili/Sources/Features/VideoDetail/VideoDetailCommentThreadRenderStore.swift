@@ -4,8 +4,15 @@ import Foundation
 @MainActor
 final class VideoDetailCommentThreadRenderStore: ObservableObject {
     @Published var snapshot = VideoDetailCommentThreadRenderSnapshot()
+    @Published private(set) var contentRevision = 0
     var replyDisplayCache: [Int: VideoDetailCommentReplyDisplayCacheEntry] = [:]
     var dialogDisplayCache: [String: VideoDetailCommentDialogDisplayCacheEntry] = [:]
+
+    func invalidateRecoveryContent() {
+        replyDisplayCache.removeAll()
+        dialogDisplayCache.removeAll()
+        contentRevision &+= 1
+    }
 
     func update(
         replyThreads: [Int: [Comment]],

@@ -14,8 +14,15 @@ extension VideoDetailViewModel {
             && commentCursor != previousCursor
     }
 
-    func finishCommentPageLoadWithoutSkip(isLoadingMore: Bool, previousCount: Int) {
+    func finishCommentPageLoadWithoutSkip(isLoadingMore: Bool, previousCount: Int, previousCursor: String) {
         let didAppendComments = comments.count > previousCount
+        if commentListState.usesLoadingRecovery, !commentsEnd,
+           commentCursor.isEmpty || commentCursor == previousCursor || !didAppendComments {
+            if commentCursor.isEmpty { commentCursor = previousCursor }
+            commentLoadMoreState = .failed("评论分页暂未推进，点击继续加载")
+            return
+        }
+        if commentListState.usesLoadingRecovery { return }
         if isLoadingMore, !didAppendComments {
             commentsEnd = true
         }

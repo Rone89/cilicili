@@ -15,8 +15,10 @@ extension VideoDetailViewModel {
             ? (page.topReplies ?? []) + (page.replies ?? [])
             : (page.replies ?? [])
         appendUniqueComments(filteredComments(pageComments))
-        commentCursor = page.cursor?.effectiveNext ?? ""
-        commentsEnd = page.cursor?.isEnd ?? (comments.count == previousCount && commentCursor.isEmpty)
+        commentCursor = page.cursor?.nextCursor(usesRecovery: commentListState.usesLoadingRecovery) ?? ""
+        commentsEnd = page.cursor?.isEnd ?? (commentListState.usesLoadingRecovery
+            ? (page.replies ?? []).isEmpty && commentCursor.isEmpty
+            : comments.count == previousCount && commentCursor.isEmpty)
         if isInitialPage {
             didCompleteInitialCommentLoad = true
         }

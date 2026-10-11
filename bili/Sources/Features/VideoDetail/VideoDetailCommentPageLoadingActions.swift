@@ -46,7 +46,8 @@ extension VideoDetailViewModel {
                 ) else {
                     finishCommentPageLoadWithoutSkip(
                         isLoadingMore: isLoadingMore,
-                        previousCount: previousCount
+                        previousCount: previousCount,
+                        previousCursor: previousCursor
                     )
                     didResolveLoadingState = true
                     return

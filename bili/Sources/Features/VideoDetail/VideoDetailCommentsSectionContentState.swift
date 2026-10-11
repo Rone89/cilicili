@@ -16,6 +16,10 @@ enum CommentsSectionContentState {
             self = .loading
         } else if store.comments.isEmpty, case .failed(let message) = store.state {
             self = .failed(message)
+        } else if store.loadMoreState.isLoading {
+            self = .loaded
+        } else if case .failed = store.loadMoreState {
+            self = .loaded
         } else if store.shouldShowEmptyCommentsState {
             self = .empty
         } else if store.shouldShowCommentReloadPrompt {

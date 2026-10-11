@@ -6,10 +6,11 @@ extension VideoDetailViewModel {
             commentState = .idle
         } else {
             commentState = .loaded
-            if wasLoadingMore {
+            if wasLoadingMore, !commentListState.usesLoadingRecovery {
                 commentsEnd = true
             }
         }
-        commentLoadMoreState = .idle
+        commentLoadMoreState = commentListState.usesLoadingRecovery && wasLoadingMore
+            ? .failed("评论加载已中断，点击重试") : .idle
     }
 }

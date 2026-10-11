@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.commentLoadingRecoveryExperimentEnabled },
+                set: { libraryStore.setCommentLoadingRecoveryExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("评论加载完整性与恢复实验", systemImage: "text.bubble")
+                    Text("改善视频和动态评论的分页、失败重试及关闭过滤后的恢复。切换时重新加载评论。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.commentLoadingRecovery")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

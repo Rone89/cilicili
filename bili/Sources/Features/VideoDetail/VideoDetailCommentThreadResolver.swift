@@ -11,11 +11,12 @@ nonisolated enum VideoDetailCommentThreadResolver {
         return "reply-\(root.id)-\(reply.id)"
     }
 
-    static func localDialogReplies(_ reply: Comment, siblings: [Comment]) -> [Comment] {
+    static func localDialogReplies(_ reply: Comment, siblings: [Comment], includesParent: Bool = false) -> [Comment] {
         let dialogID = reply.dialogID
         let parentID = reply.parentID
         let relatedReplies = siblings.filter { sibling in
             if sibling.id == reply.id { return true }
+            if includesParent, sibling.id == parentID || sibling.id == dialogID { return true }
             if let dialogID, dialogID > 0, sibling.dialogID == dialogID {
                 return true
             }

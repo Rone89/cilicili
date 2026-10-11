@@ -3,7 +3,7 @@ import SwiftUI
 struct CommentRepliesSheetContentHost: View {
     @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let rootComment: Comment
-    let store: VideoDetailCommentThreadRenderStore
+    @ObservedObject var store: VideoDetailCommentThreadRenderStore
     let reloadReplies: (Comment) async -> Void
     let loadMoreReplies: (Comment) async -> Void
     let showDialog: (Comment) -> Void
@@ -52,6 +52,6 @@ struct CommentRepliesSheetContentHost: View {
         .defersRemoteImageLoadsDuringFastScroll()
         .hiddenInlineNavigationTitle()
         .nativeTopScrollEdgeEffect()
-        .commentSheetLoadLifecycle(load: actions.load)
+        .commentSheetLoadLifecycle(revision: store.contentRevision, load: actions.load)
     }
 }

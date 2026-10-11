@@ -121,6 +121,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blocksAdDynamics: Bool
     @Published private(set) var blocksGoodsDynamics: Bool
     @Published private(set) var blocksGoodsComments: Bool
+    @Published private(set) var commentLoadingRecoveryExperimentEnabled: Bool
     @Published private(set) var blockedDynamicKeywords: [String]
     @Published private(set) var recommendMinimumDurationSeconds: Int
     @Published private(set) var recommendMinimumViewCount: Int
@@ -199,6 +200,7 @@ final class LibraryStore: ObservableObject {
     private static let blocksAdDynamicsKey = "cc.bili.content.blocksAdDynamics.v1"
     private static let blocksGoodsDynamicsKey = "cc.bili.content.blocksGoodsDynamics.v1"
     private static let blocksGoodsCommentsKey = "cc.bili.content.blocksGoodsComments.v1"
+    private static let commentLoadingRecoveryExperimentEnabledKey = "cc.bili.content.commentLoadingRecoveryExperimentEnabled.v1"
     private static let blockedDynamicKeywordsKey = "cc.bili.content.blockedDynamicKeywords.v1"
     private static let recommendMinimumDurationSecondsKey = "cc.bili.content.recommendMinimumDurationSeconds.v1"
     private static let recommendMinimumViewCountKey = "cc.bili.content.recommendMinimumViewCount.v1"
@@ -580,6 +582,7 @@ final class LibraryStore: ObservableObject {
         self.blocksAdDynamics = userDefaults.object(forKey: Self.blocksAdDynamicsKey) as? Bool ?? true
         self.blocksGoodsDynamics = userDefaults.object(forKey: Self.blocksGoodsDynamicsKey) as? Bool ?? true
         self.blocksGoodsComments = userDefaults.object(forKey: Self.blocksGoodsCommentsKey) as? Bool ?? true
+        self.commentLoadingRecoveryExperimentEnabled = userDefaults.object(forKey: Self.commentLoadingRecoveryExperimentEnabledKey) as? Bool ?? false
         self.blockedDynamicKeywords = Self.normalizedBlockedDynamicKeywords(
             userDefaults.stringArray(forKey: Self.blockedDynamicKeywordsKey) ?? []
         )
@@ -1078,6 +1081,12 @@ final class LibraryStore: ObservableObject {
     func setBlocksGoodsComments(_ isEnabled: Bool) {
         blocksGoodsComments = isEnabled
         userDefaults.set(isEnabled, forKey: Self.blocksGoodsCommentsKey)
+    }
+
+    func setCommentLoadingRecoveryExperimentEnabled(_ isEnabled: Bool) {
+        guard commentLoadingRecoveryExperimentEnabled != isEnabled else { return }
+        commentLoadingRecoveryExperimentEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.commentLoadingRecoveryExperimentEnabledKey)
     }
 
     func setBlockedDynamicKeywords(_ keywords: [String]) {
