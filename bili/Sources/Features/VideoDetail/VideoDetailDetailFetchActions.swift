@@ -36,7 +36,10 @@ extension VideoDetailViewModel {
         case .aid(let aid):
             return try await api.fetchVideoDetail(aid: aid)
         case .pgcEpisode(let episodeID, let seasonID):
-            var season = try await api.fetchPgcSeasonInfo(seasonID: seasonID, epID: episodeID)
+            var season = try await api.fetchPgcSeasonInfo(
+                seasonID: seasonID, epID: episodeID,
+                priority: priority == .userInitiated ? URLSessionTask.highPriority : URLSessionTask.defaultPriority
+            )
             try Task.checkCancellation()
             if let seasonID {
                 season = season.withFallbackSeasonID(seasonID)

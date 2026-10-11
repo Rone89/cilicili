@@ -12,7 +12,7 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
     @State private var isEpisodeSheetPresented = false
 
     private var loadID: String {
-        "\(detail.pgcSeasonID ?? 0)-\(resolvedEpisodeID ?? 0)"
+        "\(detail.pgcSeasonID ?? 0)-\(resolvedEpisodeID ?? 0)-\(detail.cid ?? 0)"
     }
 
     private var resolvedEpisodeID: Int? {
@@ -64,6 +64,9 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
 
     private func load(force: Bool) async {
         guard force || season == nil else { return }
+        // Let the foreground detail request resolve CID first. Its response
+        // cache can then supply this section without a competing cold request.
+        guard detail.cid != nil else { return }
         let epID = resolvedEpisodeID
         guard detail.pgcSeasonID != nil || epID != nil else {
             state = .failed("暂无分集信息")

@@ -14,7 +14,10 @@ nonisolated struct PlaybackAPIRequestContext: Sendable {
 }
 
 extension BiliAPIClient {
-    nonisolated func fetchPgcSeasonInfo(seasonID: Int?, epID: Int? = nil) async throws -> PgcSeasonInfo {
+    nonisolated func fetchPgcSeasonInfo(
+        seasonID: Int?, epID: Int? = nil,
+        priority: Float = URLSessionTask.defaultPriority
+    ) async throws -> PgcSeasonInfo {
         var candidates = [(query: [String: String], referer: String)]()
         if let epID, epID > 0 {
             candidates.append(
@@ -40,7 +43,8 @@ extension BiliAPIClient {
                     path: "/pgc/view/web/season",
                     query: candidate.query,
                     referer: candidate.referer,
-                    responseCachePolicy: .detail
+                    responseCachePolicy: .detail,
+                    priority: priority
                 )
                 guard response.code == 0 else {
                     throw BiliAPIError.api(code: response.code, message: response.displayMessage)

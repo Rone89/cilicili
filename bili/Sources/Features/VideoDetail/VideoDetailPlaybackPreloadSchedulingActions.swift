@@ -1,6 +1,17 @@
 import Foundation
 
 extension VideoDetailViewModel {
+    func schedulePgcPlaybackSigningKeyWarmup() {
+        guard detail.isPGCEpisode, playbackOptions.usesStartupCaches,
+              !isPlaybackInvalidatedForNavigation else { return }
+        // Signing does not need CID. Overlap it with season resolution without
+        // waiting for it before displaying the selected episode's information.
+        trackBackgroundTask(Task(priority: .userInitiated) { [api] in
+            guard !Task.isCancelled else { return }
+            await api.prewarmPlaybackSigningKeys(priority: URLSessionTask.highPriority)
+        })
+    }
+
     func scheduleDetailAndPlaybackPreloadIfMissingCID(priority: TaskPriority = .utility) {
         guard playbackOptions.usesStartupCaches,
               !detail.isPGCEpisode,

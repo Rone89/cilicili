@@ -35,7 +35,9 @@ nonisolated struct PgcSeasonRoute: Hashable, Identifiable {
     func playbackEpisode(in season: PgcSeasonInfo) -> PgcEpisode? {
         guard let episodeID else { return season.preferredPlaybackEpisode }
         // An unavailable requested episode must never silently play another episode.
-        return season.allPlayableEpisodes.first { ($0.epID ?? $0.idValue) == episodeID }
+        return ([season.episodes] + season.sections.map(\.episodes)).joined().first {
+            ($0.epID ?? $0.idValue) == episodeID && $0.videoItem(in: season) != nil
+        }
     }
 
     init?(media: SearchMediaItem) {

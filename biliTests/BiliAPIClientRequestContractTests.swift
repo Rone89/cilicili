@@ -6,6 +6,7 @@ import XCTest
 final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     @MainActor
     func testDynamicPgcPlayerSeedResolvesExactEpisodeInsideDetailPipeline() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -26,13 +27,17 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(seed.mergingFilledValues(from: video).cid, 1001)
         XCTAssertEqual(recorder.requests.count, 1)
         XCTAssertEqual(recorder.request?.url?.path, "/pgc/view/web/season")
+        XCTAssertEqual(recorder.request?.networkServiceType, .responsiveData)
         XCTAssertEqual(Self.queryValue(named: "ep_id", in: try XCTUnwrap(recorder.request)), "101")
+        _ = try await api.fetchPgcSeasonInfo(seasonID: 100, epID: 101)
+        XCTAssertEqual(recorder.requests.count, 1, "The episode section must reuse the foreground response despite its lower request priority")
         model.stopPlaybackForNavigation()
         XCTAssertTrue(model.isPlaybackInvalidatedForNavigation)
     }
 
     @MainActor
     func testDynamicPgcResolutionFailureNeverUsesAnotherEpisodeAndCanRetry() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -55,13 +60,83 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(model.state, .failed("该分集不可播放或已失效"))
         XCTAssertEqual(model.detail, seed)
         XCTAssertNil(model.selectedCID)
-        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertEqual(recorder.requests.count, BiliNetworkRetryPolicy.api.attempts + 1)
         XCTAssertTrue(recorder.requests.allSatisfy { $0.url?.path == "/pgc/view/web/season" })
         let ugc = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"BVordinary","title":"普通视频"}"#.utf8))
         let ugcModel = VideoDetailViewModel(seedVideo: ugc, api: api, libraryStore: api.libraryStore,
             sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
         XCTAssertEqual(ugcModel.detailLoadIdentity, .bvid("BVordinary"))
         ugcModel.stopPlaybackForNavigation()
+    }
+
+    @MainActor
+    func testPgcSigningWarmupReusesKeysWithoutChangingSelectedEpisode() async throws {
+        let defaults = UserDefaults.standard
+        let persistedKeysKey = "cc.bili.persisted-wbi-keys.v1"
+        let previousKeys = defaults.object(forKey: persistedKeysKey)
+        defer {
+            if let previousKeys { defaults.set(previousKeys, forKey: persistedKeysKey) }
+            else { defaults.removeObject(forKey: persistedKeysKey) }
+            RequestContractURLProtocol.reset()
+        }
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "")
+        await api.state.clearWBIKeys()
+        let seed = try XCTUnwrap(PgcSeasonRoute(episodeID: 101, seasonID: nil, title: "番剧", cover: nil).episodeSeedVideo)
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        defer { model.stopPlaybackForNavigation() }
+        model.schedulePgcPlaybackSigningKeyWarmup()
+        for task in Array(model.backgroundTasks.values) { await task.value }
+        XCTAssertEqual(model.detail, seed)
+        XCTAssertNil(model.selectedCID)
+        XCTAssertEqual(model.state, .idle)
+        let keys = try await api.fetchWBIKeys(priority: URLSessionTask.highPriority)
+        XCTAssertEqual(keys.imgKey, "abc")
+        XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
+        XCTAssertEqual(recorder.request?.networkServiceType, .responsiveData)
+        model.stopPlaybackForNavigation()
+        model.schedulePgcPlaybackSigningKeyWarmup()
+        XCTAssertTrue(model.backgroundTasks.isEmpty, "An exited page must not schedule another warmup")
+    }
+
+    @MainActor
+    func testPgcSigningWarmupFailureDoesNotBlockEpisodeResolution() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let defaults = UserDefaults.standard
+        let persistedKeysKey = "cc.bili.persisted-wbi-keys.v1"
+        let previousKeys = defaults.object(forKey: persistedKeysKey)
+        defer {
+            if let previousKeys { defaults.set(previousKeys, forKey: persistedKeysKey) }
+            else { defaults.removeObject(forKey: persistedKeysKey) }
+            RequestContractURLProtocol.reset()
+        }
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(for: request, body: #"{"code":-400,"data":null}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"result":{"episodes":[{"ep_id":777,"cid":7771}]}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "")
+        await api.state.clearWBIKeys()
+        let seed = try XCTUnwrap(PgcSeasonRoute(episodeID: 777, seasonID: nil, title: "番剧", cover: nil).episodeSeedVideo)
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        defer { model.stopPlaybackForNavigation() }
+        model.schedulePgcPlaybackSigningKeyWarmup()
+        let video = try await model.fetchFullDetail(identity: model.detailLoadIdentity, priority: .userInitiated)
+        for task in Array(model.backgroundTasks.values) { await task.value }
+        XCTAssertEqual(video.cid, 7771)
+        XCTAssertEqual(video.pgcEpisodeID, 777)
+        XCTAssertEqual(model.state, .idle, "Warmup failure must not publish a detail failure")
+        XCTAssertEqual(recorder.requests.filter { $0.url?.path == "/pgc/view/web/season" }.count, 1)
+        XCTAssertEqual(recorder.requests.filter { $0.url?.path == "/x/web-interface/nav" }.count, 1)
     }
 
     @MainActor

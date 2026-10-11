@@ -12,6 +12,7 @@ extension VideoDetailViewModel {
             return
         }
         beginDetailLoadTracking()
+        schedulePgcPlaybackSigningKeyWarmup()
 
         if activateCurrentDetailForFastStart(source: "seed") {
             await startPlaybackAfterFastStartActivation()

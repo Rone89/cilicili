@@ -5,8 +5,8 @@ extension BiliAPIClient {
         await state.clearWBIKeys()
     }
 
-    func prewarmPlaybackSigningKeys() async {
-        _ = try? await fetchWBIKeys(priority: URLSessionTask.defaultPriority)
+    func prewarmPlaybackSigningKeys(priority: Float = URLSessionTask.defaultPriority) async {
+        _ = try? await fetchWBIKeys(priority: priority)
     }
 
     func refreshPlaybackSigningKeys() async throws -> WBIKeys {

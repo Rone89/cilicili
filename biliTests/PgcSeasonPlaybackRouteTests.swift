@@ -88,6 +88,14 @@ final class PgcSeasonPlaybackRouteTests: XCTestCase {
         )
     }
 
+    func testExactLookupSkipsUnplayableDuplicatesAndChecksExtraSections() throws {
+        let season = try decodeSeason(
+            #"{"episodes":[{"ep_id":101},{"ep_id":102,"cid":1002}],"section":[{"episodes":[{"ep_id":101,"cid":1001}]}]}"#
+        )
+        let route = PgcSeasonRoute(episodeID: 101, seasonID: nil, title: "番剧", cover: nil)
+        XCTAssertEqual(route.playbackEpisode(in: season)?.cid, 1001)
+    }
+
     private func decodeSeason(_ json: String) throws -> PgcSeasonInfo {
         try JSONDecoder().decode(PgcSeasonInfo.self, from: Data(json.utf8))
     }
