@@ -202,28 +202,37 @@ private struct HomeProfileButtonContent: View {
     let onOpenMessages: () -> Void
 
     private var mineIsHidden: Bool { !libraryStore.visibleRootTabs.contains(.mine) }
+    private var hasHiddenTabs: Bool {
+        AppTab.allCases.contains { !libraryStore.visibleRootTabs.contains($0) }
+    }
 
     var body: some View {
-        Group {
-            if mineIsHidden {
-                Menu {
-                    Button("个人空间", systemImage: "person.crop.circle", action: action)
-                    Button("账户消息", systemImage: "bell", action: onOpenMessages)
-                } label: { avatar }
-            } else {
-                Button(action: action) { avatar }
+        ZStack {
+            Group {
+                if hasHiddenTabs {
+                    Menu {
+                        Button("个人空间", systemImage: "person.crop.circle", action: action)
+                        Button("账户消息", systemImage: "bell", action: onOpenMessages)
+                    } label: { avatar }
+                } else {
+                    Button(action: action) { avatar }
+                }
             }
-        }
-        .buttonStyle(.plain)
-        .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .overlay {
+            .buttonStyle(.plain)
+            .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+            .glassEffect(.regular.interactive(), in: Circle())
+
+            // Keep unread status outside the menu's animated source control.
+            // Dismissing the menu must not fade the ring back in with its label.
             if mineIsHidden && sessionStore.isLoggedIn && hasUnread {
                 Circle().strokeBorder(appTintColor, lineWidth: 2)
+                    .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .transaction { $0.animation = nil }
             }
         }
-        .accessibilityLabel(mineIsHidden ? "个人空间与账户消息" : "个人空间")
+        .accessibilityLabel(hasHiddenTabs ? "个人空间与账户消息" : "个人空间")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
         .accessibilityIdentifier("home.account.avatar")
     }
