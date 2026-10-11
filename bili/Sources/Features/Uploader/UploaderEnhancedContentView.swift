@@ -67,6 +67,7 @@ struct UploaderEnhancedContentView: View {
                 .frame(width: contentWidth > 0 ? min(320, max(contentWidth - 40, 1)) : 280)
                 .accessibilityIdentifier("uploader.space.sections")
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
