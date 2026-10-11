@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UploaderEnhancedContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
@@ -15,34 +16,63 @@ struct UploaderEnhancedContentView: View {
                               standardHorizontalInset: libraryStore.standardPageHorizontalInset)
     }
 
+    private let visibleBannerHeight: CGFloat = 120
+
+    private var backgroundURL: URL? {
+        let overview = viewModel.spaceOverview
+        let source = colorScheme == .dark
+            ? overview?.nightBackgroundURL ?? overview?.backgroundURL : overview?.backgroundURL
+        return source.flatMap { URL(string: $0.biliImageThumbnailURL(maxSide: 960)) }
+    }
+
     var body: some View {
-        scrollContent
-            .task { await viewModel.loadInitial() }
-            .task(id: selectedSection) {
-                switch selectedSection {
-                case .home: break
-                case .videos: await viewModel.loadVideosIfNeeded()
-                case .dynamics: await viewModel.loadDynamicsIfNeeded()
-                case .collections: await viewModel.loadSeasonSeriesIfNeeded()
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
-                            Label("分享个人空间", systemImage: "square.and.arrow.up")
+        GeometryReader { geometry in
+            scrollContent
+                .background(alignment: .top) {
+                    if let backgroundURL {
+                        // Outside the ScrollView: pull-to-refresh moves content, never the banner.
+                        CachedRemoteImage(url: backgroundURL, targetPixelSize: 960) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Rectangle().fill(.quaternary)
                         }
-                        if showsToolbarRefreshButton {
-                            Button { Task { await refreshSelectedSection() } } label: {
-                                Label("刷新", systemImage: "arrow.clockwise")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
+                        .frame(width: geometry.size.width,
+                               height: visibleBannerHeight + geometry.safeAreaInsets.top)
+                        .clipped()
+                        .offset(y: -geometry.safeAreaInsets.top)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
-                    .accessibilityLabel("个人空间操作")
                 }
+        }
+        .background(.background)
+        .toolbarBackground(backgroundURL == nil ? .automatic : .hidden, for: .navigationBar)
+        .task { await viewModel.loadInitial() }
+        .task(id: selectedSection) {
+            switch selectedSection {
+            case .home: break
+            case .videos: await viewModel.loadVideosIfNeeded()
+            case .dynamics: await viewModel.loadDynamicsIfNeeded()
+            case .collections: await viewModel.loadSeasonSeriesIfNeeded()
             }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
+                        Label("分享个人空间", systemImage: "square.and.arrow.up")
+                    }
+                    if showsToolbarRefreshButton {
+                        Button { Task { await refreshSelectedSection() } } label: {
+                            Label("刷新", systemImage: "arrow.clockwise")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel("个人空间操作")
+            }
+        }
     }
 
     @ViewBuilder private var scrollContent: some View {
@@ -53,25 +83,33 @@ struct UploaderEnhancedContentView: View {
 
     private var baseScrollContent: some View {
         ScrollView {
-            UploaderContentWidthReader()
-            LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
-                UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel)
-                Section {
-                    selectedContent
-                } header: {
-                    Picker("空间内容", selection: $selectedSection) {
-                        ForEach(SpaceSection.allCases) { section in
-                            Text(section.title).tag(section)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, libraryStore.standardPageHorizontalInset)
-                    .padding(.vertical, 8)
-                    .background(.background)
-                    .accessibilityIdentifier("uploader.space.sections")
+            VStack(spacing: 0) {
+                UploaderContentWidthReader()
+                if backgroundURL != nil {
+                    Color.clear.frame(height: visibleBannerHeight)
+                        .accessibilityHidden(true)
                 }
+                LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
+                    UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel)
+                        .padding(.top, backgroundURL == nil ? 12 : 14)
+                    Section {
+                        selectedContent
+                    } header: {
+                        Picker("空间内容", selection: $selectedSection) {
+                            ForEach(SpaceSection.allCases) { section in
+                                Text(section.title).tag(section)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+                        .padding(.vertical, 8)
+                        .background(.background)
+                        .accessibilityIdentifier("uploader.space.sections")
+                    }
+                }
+                .padding(.bottom, 24)
+                .background(.background)
             }
-            .padding(.bottom, 24)
         }
         .onPreferenceChange(UploaderContentWidthPreferenceKey.self) { width in
             let rounded = width.rounded(.down)

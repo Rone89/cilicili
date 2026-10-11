@@ -1,65 +1,47 @@
 import SwiftUI
 
 struct UploaderEnhancedHeaderView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
 
     private var card: UploaderCard? { viewModel.profile?.card }
     private var overview: UploaderSpaceOverview? { viewModel.spaceOverview }
-    private var background: String? {
-        if colorScheme == .dark { return overview?.nightBackgroundURL ?? overview?.backgroundURL }
-        return overview?.backgroundURL
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if let background, let url = URL(string: background.biliImageThumbnailURL(maxSide: 960)) {
-                CachedRemoteImage(url: url, targetPixelSize: 960) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Rectangle().fill(.quaternary)
+            HStack(spacing: 16) {
+                AvatarRemoteImage(urlString: card?.face ?? owner.face, pixelSize: 240) {
+                    Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
                 }
-                .frame(height: 120)
-                .clipped()
-                .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 16) {
-                    AvatarRemoteImage(urlString: card?.face ?? owner.face, pixelSize: 240) {
-                        Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary)
+                .frame(width: 80, height: 80).clipShape(Circle())
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(card?.name ?? owner.name).font(.title2.weight(.bold))
+                    if viewModel.isOwnSpace {
+                        Text("我的个人空间").font(.subheadline).foregroundStyle(.secondary)
+                    } else {
+                        UploaderFollowButton(owner: owner, viewModel: viewModel)
+                            .disabled(!viewModel.canChangeRelation || viewModel.profile?.following == nil || viewModel.profileState.isLoading)
                     }
-                    .frame(width: 80, height: 80).clipShape(Circle())
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(card?.name ?? owner.name).font(.title2.weight(.bold))
-                        if viewModel.isOwnSpace {
-                            Text("我的个人空间").font(.subheadline).foregroundStyle(.secondary)
-                        } else {
-                            UploaderFollowButton(owner: owner, viewModel: viewModel)
-                                .disabled(!viewModel.canChangeRelation || viewModel.profile?.following == nil || viewModel.profileState.isLoading)
-                        }
-                    }
-                    Spacer(minLength: 0)
                 }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { badges }
-                    VStack(alignment: .leading, spacing: 6) { badges }
-                }
-                Text("UID: \(owner.mid)")
-                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                UploaderSignatureText(sign: card?.sign)
-                if let verification = overview?.verification, !verification.isEmpty {
-                    Label(verification, systemImage: "checkmark.seal")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                UploaderStatsRow(viewModel: viewModel, card: card)
-                UploaderFollowMessage(message: viewModel.followMessage, isFollowing: viewModel.isFollowing)
-                UploaderProfileStatusMessage(state: viewModel.profileState)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { badges }
+                VStack(alignment: .leading, spacing: 6) { badges }
+            }
+            Text("UID: \(owner.mid)")
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            UploaderSignatureText(sign: card?.sign)
+            if let verification = overview?.verification, !verification.isEmpty {
+                Label(verification, systemImage: "checkmark.seal")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            UploaderStatsRow(viewModel: viewModel, card: card)
+            UploaderFollowMessage(message: viewModel.followMessage, isFollowing: viewModel.isFollowing)
+            UploaderProfileStatusMessage(state: viewModel.profileState)
         }
-        .padding(.top, background == nil ? 12 : 0)
+        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
     }
 
     @ViewBuilder private var badges: some View {
