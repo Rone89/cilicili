@@ -8,18 +8,31 @@ final class VideoDetailBottomEdgeEffectBinding {
     private var originalStyle: UIScrollEdgeEffect.Style?
     private var originalHidden = false
 
-    func update(scrollView: UIScrollView, container: UIView?, enabled: Bool) {
+    func update(scrollView: UIScrollView, container: UIView?, enabled: Bool, isActiveContent: Bool = true) {
         guard enabled, let container else {
             detach()
             return
         }
-        if self.scrollView === scrollView, interaction?.view === container { return }
-        detach()
-        self.scrollView = scrollView
-        originalStyle = scrollView.bottomEdgeEffect.style
-        originalHidden = scrollView.bottomEdgeEffect.isHidden
-        scrollView.bottomEdgeEffect.style = .soft
-        scrollView.bottomEdgeEffect.isHidden = false
+        if self.scrollView !== scrollView {
+            detach()
+            self.scrollView = scrollView
+            originalStyle = scrollView.bottomEdgeEffect.style
+            originalHidden = scrollView.bottomEdgeEffect.isHidden
+        }
+        // Both pages remain visible during the crossfade. Keep their setting-driven
+        // style until blur is disabled; only transfer the toolbar interaction.
+        if scrollView.bottomEdgeEffect.style != .soft {
+            scrollView.bottomEdgeEffect.style = .soft
+        }
+        if scrollView.bottomEdgeEffect.isHidden {
+            scrollView.bottomEdgeEffect.isHidden = false
+        }
+        guard isActiveContent else {
+            detachInteraction()
+            return
+        }
+        if interaction?.view === container { return }
+        detachInteraction()
         let interaction = UIScrollEdgeElementContainerInteraction()
         interaction.scrollView = scrollView
         interaction.edge = .bottom
@@ -28,11 +41,7 @@ final class VideoDetailBottomEdgeEffectBinding {
     }
 
     func detach() {
-        if let interaction {
-            interaction.view?.removeInteraction(interaction)
-            interaction.scrollView = nil
-        }
-        interaction = nil
+        detachInteraction()
         if let scrollView, let originalStyle {
             scrollView.bottomEdgeEffect.style = originalStyle
             scrollView.bottomEdgeEffect.isHidden = originalHidden
@@ -40,13 +49,26 @@ final class VideoDetailBottomEdgeEffectBinding {
         scrollView = nil
         originalStyle = nil
     }
+
+    private func detachInteraction() {
+        if let interaction {
+            interaction.view?.removeInteraction(interaction)
+            interaction.scrollView = nil
+        }
+        interaction = nil
+    }
 }
 
 @MainActor
 final class VideoDetailEdgeEffectScrollView: UIScrollView {
     private let edgeBinding = VideoDetailBottomEdgeEffectBinding()
-    var bottomEdgeBlurEnabled = false {
-        didSet { updateBottomEdgeBinding() }
+    private var bottomEdgeBlurEnabled = false
+    private var isActiveContent = false
+
+    func configureBottomEdgeEffect(enabled: Bool, isActiveContent: Bool) {
+        bottomEdgeBlurEnabled = enabled
+        self.isActiveContent = isActiveContent
+        updateBottomEdgeBinding()
     }
 
     override func didMoveToWindow() {
@@ -70,7 +92,8 @@ final class VideoDetailEdgeEffectScrollView: UIScrollView {
                let navigation = controller.navigationController {
                 let toolbar = navigation.toolbar
                 edgeBinding.update(scrollView: self, container: toolbar,
-                                   enabled: !navigation.isToolbarHidden && toolbar?.isHidden == false)
+                                   enabled: !navigation.isToolbarHidden && toolbar?.isHidden == false,
+                                   isActiveContent: isActiveContent)
                 return
             }
             responder = current.next

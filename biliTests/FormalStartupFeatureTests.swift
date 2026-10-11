@@ -48,6 +48,46 @@ final class FormalStartupFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testVideoBottomEdgeStyleSurvivesTabCrossfadeAndRespectsBlurDisable() {
+        // Exercise either representable update order and rapid switches.
+        for updatesIncomingFirst in [false, true] {
+            let pages = [UIScrollView(), UIScrollView()]
+            let bindings = [VideoDetailBottomEdgeEffectBinding(), VideoDetailBottomEdgeEffectBinding()]
+            let toolbar = UIToolbar()
+            for page in pages {
+                page.bottomEdgeEffect.style = .hard
+                page.bottomEdgeEffect.isHidden = true
+            }
+            for index in pages.indices {
+                bindings[index].update(scrollView: pages[index], container: toolbar,
+                                       enabled: true, isActiveContent: index == 0)
+            }
+            var outgoing = 0
+            for _ in 0..<20 {
+                let incoming = 1 - outgoing
+                let order = updatesIncomingFirst ? [incoming, outgoing] : [outgoing, incoming]
+                for index in order {
+                    bindings[index].update(scrollView: pages[index], container: toolbar,
+                                           enabled: true, isActiveContent: index == incoming)
+                    // The outgoing page is still visible until its opacity animation ends.
+                    XCTAssertEqual(pages[outgoing].bottomEdgeEffect.style, .soft)
+                    XCTAssertEqual(pages[incoming].bottomEdgeEffect.style, .soft)
+                }
+                let interactions = toolbar.interactions.compactMap { $0 as? UIScrollEdgeElementContainerInteraction }
+                XCTAssertEqual(interactions.count, 1)
+                XCTAssertTrue(interactions.first?.scrollView === pages[incoming])
+                outgoing = incoming
+            }
+            for index in pages.indices {
+                bindings[index].update(scrollView: pages[index], container: toolbar, enabled: false)
+                XCTAssertEqual(pages[index].bottomEdgeEffect.style, .hard)
+                XCTAssertTrue(pages[index].bottomEdgeEffect.isHidden)
+            }
+            XCTAssertFalse(toolbar.interactions.contains { $0 is UIScrollEdgeElementContainerInteraction })
+        }
+    }
+
+    @MainActor
     func testVideoBottomEdgeBindingMovesBetweenContainersAndReleasesOnDetach() {
         let scroll = UIScrollView()
         let first = UIView()
