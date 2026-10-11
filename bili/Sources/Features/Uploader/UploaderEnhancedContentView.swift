@@ -57,6 +57,18 @@ struct UploaderEnhancedContentView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("空间内容", selection: $selectedSection) {
+                    ForEach(SpaceSection.allCases) { section in
+                        Text(section.title).tag(section)
+                    }
+                }
+                .pickerStyle(.segmented)
+                // Leave room for the native back and more buttons on compact screens.
+                .frame(width: contentWidth > 0 ? min(240, max(contentWidth - 128, 1)) : 240)
+                .accessibilityIdentifier("uploader.space.sections")
+            }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
@@ -89,23 +101,10 @@ struct UploaderEnhancedContentView: View {
                     Color.clear.frame(height: visibleBannerHeight)
                         .accessibilityHidden(true)
                 }
-                LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel)
                         .padding(.top, backgroundURL == nil ? 12 : 14)
-                    Section {
-                        selectedContent
-                    } header: {
-                        Picker("空间内容", selection: $selectedSection) {
-                            ForEach(SpaceSection.allCases) { section in
-                                Text(section.title).tag(section)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .padding(.horizontal, libraryStore.standardPageHorizontalInset)
-                        .padding(.vertical, 8)
-                        .background(.background)
-                        .accessibilityIdentifier("uploader.space.sections")
-                    }
+                    selectedContent
                 }
                 .padding(.bottom, 24)
                 .background(.background)
