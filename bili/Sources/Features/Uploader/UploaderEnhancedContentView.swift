@@ -56,18 +56,18 @@ struct UploaderEnhancedContentView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
                 Picker("空间内容", selection: $selectedSection) {
                     ForEach(SpaceSection.allCases) { section in
                         Text(section.title).tag(section)
                     }
                 }
                 .pickerStyle(.segmented)
-                // Leave room for the native back and more buttons on compact screens.
-                .frame(width: contentWidth > 0 ? min(240, max(contentWidth - 128, 1)) : 240)
+                .frame(width: contentWidth > 0 ? min(320, max(contentWidth - 40, 1)) : 280)
                 .accessibilityIdentifier("uploader.space.sections")
             }
-            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
                     Label("分享个人空间", systemImage: "square.and.arrow.up")
@@ -103,6 +103,7 @@ struct UploaderEnhancedContentView: View {
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .nativeBottomScrollEdgeBlur()
         .onPreferenceChange(UploaderContentWidthPreferenceKey.self) { width in
             let rounded = width.rounded(.down)
             if abs(rounded - contentWidth) > 0.5 { contentWidth = rounded }
