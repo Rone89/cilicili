@@ -29,11 +29,24 @@ extension BiliAPIClient {
 
     func fetchOwnSpaceFavoritePreview(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderSpaceFavoriteGroup {
         try await validateOwnSpaceRequest(mid: mid, snapshot: snapshot)
+        return try await fetchSpaceFavoriteFolders(mid: mid, snapshot: snapshot)
+    }
+
+    private func spaceLibraryCookie(mid: Int, snapshot: RequestSnapshot) async throws -> String {
+        try Task.checkCancellation()
+        let current = await MainActor.run { UploaderSpaceRequestIdentity(self.requestSnapshot()) }
+        guard mid > 0, UploaderSpaceRequestIdentity(snapshot) == current else { throw BiliAPIError.missingPayload }
+        return snapshot.isLoggedIn && snapshot.isAccountPurposeEnabled && !snapshot.guestModeEnabled
+            ? snapshot.cookieHeader : snapshot.anonymousCookieHeader
+    }
+
+    func fetchSpaceFavoriteFolders(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderSpaceFavoriteGroup {
+        let cookie = try await spaceLibraryCookie(mid: mid, snapshot: snapshot)
         let response: BiliResponse<UploaderSpaceFavoriteList> = try await get(
             base: baseURL, path: "/x/v3/fav/folder/created/list-all",
             query: ["up_mid": String(mid), "type": "2"],
             referer: "https://space.bilibili.com/\(mid)/favlist", userAgent: Self.webUserAgent,
-            cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
+            cookieHeader: cookie, cachePolicy: .reloadIgnoringLocalCacheData
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         guard let folders = response.payload?.list, folders.allSatisfy({ $0.id > 0 }) else {
@@ -51,12 +64,19 @@ extension BiliAPIClient {
         mid: Int, snapshot: RequestSnapshot, page: Int, pageSize: Int = 20
     ) async throws -> UploaderSpaceBangumiList {
         try await validateOwnSpaceRequest(mid: mid, snapshot: snapshot)
+        return try await fetchSpaceBangumiPage(mid: mid, snapshot: snapshot, page: page, pageSize: pageSize)
+    }
+
+    func fetchSpaceBangumiPage(
+        mid: Int, snapshot: RequestSnapshot, page: Int, pageSize: Int = 20
+    ) async throws -> UploaderSpaceBangumiList {
+        let cookie = try await spaceLibraryCookie(mid: mid, snapshot: snapshot)
         let page = max(page, 1)
         let response: BiliResponse<UploaderSpaceBangumiList> = try await get(
             base: baseURL, path: "/x/space/bangumi/follow/list",
             query: ["vmid": String(mid), "type": "1", "pn": String(page), "ps": String(min(max(pageSize, 1), 30))],
             referer: "https://space.bilibili.com/\(mid)/bangumi", userAgent: Self.webUserAgent,
-            cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
+            cookieHeader: cookie, cachePolicy: .reloadIgnoringLocalCacheData
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         guard let payload = response.payload,

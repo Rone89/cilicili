@@ -115,7 +115,7 @@ struct UploaderEnhancedContentView: View {
     @ViewBuilder private var selectedContent: some View {
         switch selectedSection {
         case .home:
-            UploaderSpaceOverviewContent(viewModel: viewModel, metrics: metrics) { selectedSection = .videos }
+            UploaderSpaceOverviewContent(viewModel: viewModel, metrics: metrics) { selectedSection = $0 }
         case .videos:
             UploaderVideosSection(viewModel: viewModel, metrics: metrics)
         case .dynamics:
@@ -161,10 +161,9 @@ struct UploaderEnhancedContentView: View {
 
     private var ownBangumiContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), alignment: .top)], alignment: .leading, spacing: 16) {
-                ForEach(viewModel.ownBangumiItems, id: \.seasonID) { item in
-                    SpaceSeasonPreview(item: item)
-                        .task { await viewModel.loadMoreOwnBangumiIfNeeded(seasonID: item.seasonID) }
+            if !viewModel.ownBangumiItems.isEmpty {
+                UploaderSpaceBangumiGrid(items: viewModel.ownBangumiItems) { seasonID in
+                    await viewModel.loadMoreOwnBangumiIfNeeded(seasonID: seasonID)
                 }
             }
             ownLibraryStatus("追番", state: viewModel.ownBangumiListState,
@@ -203,7 +202,7 @@ struct UploaderEnhancedContentView: View {
 private struct UploaderSpaceOverviewContent: View {
     @ObservedObject var viewModel: UploaderViewModel
     let metrics: HomeFeedLayoutMetrics
-    let showVideos: () -> Void
+    let showSection: (UploaderSpaceSection) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -244,7 +243,7 @@ private struct UploaderSpaceOverviewContent: View {
         let videos = group?.items.compactMap { $0.video(defaultMID: defaultMID) } ?? []
         if !videos.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                heading(title, count: group?.count, isPublic: isPublic, showMore: showMore)
+                heading(title, count: group?.count, isPublic: isPublic, moreSection: showMore ? .videos : nil)
                 LazyVGrid(columns: metrics.feedColumns, spacing: metrics.feedSpacing) {
                     ForEach(Array(videos.prefix(limit).enumerated()), id: \.offset) { _, video in
                         VideoRouteLink(video) {
@@ -258,7 +257,7 @@ private struct UploaderSpaceOverviewContent: View {
         }
     }
 
-    private func heading(_ title: String, count: Int?, isPublic: Bool? = nil, showMore: Bool = false) -> some View {
+    private func heading(_ title: String, count: Int?, isPublic: Bool? = nil, moreSection: UploaderSpaceSection? = nil) -> some View {
         HStack {
             Text(title).font(.headline)
             if let count { Text(BiliFormatters.compactCount(count)).foregroundStyle(.secondary) }
@@ -266,9 +265,17 @@ private struct UploaderSpaceOverviewContent: View {
                 Image(systemName: "eye.slash").foregroundStyle(.secondary).accessibilityLabel("仅自己可见")
             }
             Spacer(minLength: 0)
-            if showMore {
-                Button(action: showVideos) { Label("查看更多", systemImage: "chevron.right") }
+            if let section = moreSection {
+                if viewModel.spaceSections.contains(section) {
+                    Button { showSection(section) } label: { Label("查看更多", systemImage: "chevron.right") }
+                        .font(.subheadline)
+                } else if section == .favorites || section == .bangumi {
+                    NavigationLink {
+                        UploaderSpaceLibraryPage(owner: viewModel.seedOwner,
+                                                 kind: section == .favorites ? .favorites : .bangumi)
+                    } label: { Label("查看更多", systemImage: "chevron.right") }
                     .font(.subheadline)
+                }
             }
         }
     }
@@ -277,7 +284,8 @@ private struct UploaderSpaceOverviewContent: View {
         let favorites = viewModel.favoritePreview
         if let favorites, favorites.items.contains(where: { $0.folder.id > 0 }) {
             VStack(alignment: .leading, spacing: 12) {
-                heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible)
+                heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible,
+                        moreSection: .favorites)
                 ForEach(Array(favorites.items.prefix(2).enumerated()), id: \.offset) { _, item in
                     if item.folder.id > 0 {
                         UploaderFavoriteFolderPreviewCard(item: item, viewModel: viewModel)
@@ -300,15 +308,9 @@ private struct UploaderSpaceOverviewContent: View {
         let items = viewModel.bangumiPreview?.items.filter { $0.seasonID != nil } ?? []
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                heading("追番", count: viewModel.bangumiPreview?.count, isPublic: viewModel.spaceOverview?.privacy?.bangumiVisible)
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(Array(items.prefix(3).enumerated()), id: \.offset) { _, item in
-                            SpaceSeasonPreview(item: item)
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
+                heading("追番", count: viewModel.bangumiPreview?.count, isPublic: viewModel.spaceOverview?.privacy?.bangumiVisible,
+                        moreSection: .bangumi)
+                UploaderSpaceBangumiGrid(items: Array(items.prefix(3)))
             }
             .padding(.horizontal, metrics.feedHorizontalPadding)
         }
@@ -339,45 +341,6 @@ private struct UploaderSpaceOverviewContent: View {
             Text("\(title)数据暂时无法解析，请刷新重试。")
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(.horizontal, metrics.feedHorizontalPadding)
-        }
-    }
-}
-
-private struct SpaceSeasonPreview: View {
-    @Environment(\.openPgcSeasonRouteAction) private var openSeason
-    let item: UploaderSpaceVideoPreview
-    var body: some View {
-        if let id = item.seasonID {
-            let route = PgcSeasonRoute(seasonID: id, title: item.archive.title, cover: item.archive.cover)
-            Group {
-                if let openSeason {
-                    Button { openSeason(route) } label: { label }
-                } else { NavigationLink(value: route) { label } }
-            }
-            .buttonStyle(.plain)
-        }
-    }
-    private var label: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SpacePreviewCover(urlString: item.archive.cover).frame(width: 112, height: 150)
-            Text(item.archive.title).font(.subheadline).lineLimit(2)
-        }
-        .frame(width: 112, alignment: .leading)
-    }
-}
-
-private struct SpacePreviewCover: View {
-    let urlString: String?
-    var body: some View {
-        GeometryReader { geometry in
-            CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliImageThumbnailURL(maxSide: 480)) }, targetPixelSize: 480) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Rectangle().fill(.quaternary)
-                    .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 }

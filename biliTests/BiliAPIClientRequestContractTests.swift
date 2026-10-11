@@ -4740,6 +4740,114 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testPublicSpaceLibrariesUseAnonymousGuestContextAndRequestedOwner() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v3/fav/folder/created/list-all" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"count":1,"list":[{"id":9,"title":"公开收藏","attr":0,"media_count":3}]}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"total":1,"list":[{"season_id":7,"title":"公开追番"}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
+        let snapshot = api.requestSnapshot()
+        let favorites = try await api.fetchSpaceFavoriteFolders(mid: 123, snapshot: snapshot)
+        let bangumi = try await api.fetchSpaceBangumiPage(mid: 123, snapshot: snapshot, page: 1)
+        XCTAssertEqual(favorites.items.map { $0.folder.id }, [9])
+        XCTAssertEqual(bangumi.list.compactMap(\.seasonID), [7])
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[0])["up_mid"], "123")
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[1])["vmid"], "123")
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[1])["ps"], "20")
+        for request in recorder.requests {
+            XCTAssertNil(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"])
+        }
+    }
+
+    @MainActor
+    func testSpaceLibraryBangumiPaginationRetriesSamePageAndUsesMainAccount() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if Self.queryValues(for: request)["pn"] == "1" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":3,"list":[{"season_id":1,"title":"一"},{"season_id":2,"title":"二"}]}}"#)
+            }
+            if recorder.requests.count == 2 {
+                return Self.response(for: request, body: #"{"code":-500,"message":"分页失败"}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"total":3,"list":[{"season_id":2,"title":"二"},{"season_id":3,"title":"三"}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "other")
+            ])
+            try session.selectInteractionAccount(mid: 2002)
+        })
+        let model = UploaderSpaceLibraryViewModel(owner: VideoOwner(mid: 123, name: "他人", face: nil), kind: .bangumi, api: api)
+        await model.refresh()
+        await model.loadMore()
+        guard case .failed = model.loadMoreState else { return XCTFail("失败不能推进分页游标") }
+        XCTAssertEqual(model.bangumi.compactMap(\.seasonID), [1, 2])
+        await model.loadMore()
+        await model.loadMore()
+        XCTAssertEqual(model.bangumi.compactMap(\.seasonID), [1, 2, 3])
+        XCTAssertFalse(model.hasMore)
+        XCTAssertEqual(recorder.requests.map { Self.queryValues(for: $0)["pn"] }, ["1", "2", "2"])
+        for request in recorder.requests {
+            XCTAssertEqual(Self.queryValues(for: request)["vmid"], "123")
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "main")
+        }
+    }
+
+    @MainActor
+    func testSpaceLibraryPrivateFailurePreservesLoadedFolders() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if recorder.requests.count == 1 {
+                return Self.response(for: request, body: #"{"code":0,"data":{"count":1,"list":[{"id":9,"title":"公开","attr":0,"media_count":3}]}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":53013,"message":"用户隐私设置未公开"}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let model = UploaderSpaceLibraryViewModel(owner: VideoOwner(mid: 123, name: "他人", face: nil), kind: .favorites, api: api)
+        await model.refresh()
+        await model.refresh()
+        XCTAssertEqual(model.folders.map { $0.folder.id }, [9])
+        guard case .failed(let message) = model.state else { return XCTFail("隐私拒绝不能显示为空列表成功") }
+        XCTAssertTrue(message.contains("用户隐私设置未公开"))
+    }
+
+    @MainActor
+    func testSpaceLibraryAccountSwitchDiscardsInFlightResponseAndBlocksFurtherRequests() async throws {
+        let recorder = RequestContractRecorder()
+        let entered = expectation(description: "Public library request started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"total":1,"list":[{"season_id":7,"title":"旧身份内容"}]}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let model = UploaderSpaceLibraryViewModel(owner: VideoOwner(mid: 123, name: "他人", face: nil), kind: .bangumi, api: api)
+        let load = Task { await model.refresh() }
+        await fulfillment(of: [entered], timeout: 3)
+        await model.refresh()
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
+        release.signal()
+        await load.value
+        await model.refresh()
+        await model.loadMore()
+        XCTAssertTrue(model.bangumi.isEmpty)
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,
