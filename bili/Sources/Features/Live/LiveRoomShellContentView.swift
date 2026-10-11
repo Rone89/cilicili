@@ -211,19 +211,16 @@ struct LiveRoomShellContentView: View {
         }
     }
 
-    @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var viewModel: LiveRoomViewModel
     @ObservedObject var state: State
     let onNavigateBack: () -> Void
 
     init(
         viewModel: LiveRoomViewModel,
-        libraryStore: LibraryStore,
         state: State,
         onNavigateBack: @escaping () -> Void
     ) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
-        _libraryStore = ObservedObject(wrappedValue: libraryStore)
         _state = ObservedObject(wrappedValue: state)
         self.onNavigateBack = onNavigateBack
     }
@@ -234,7 +231,7 @@ struct LiveRoomShellContentView: View {
             state: state,
             onNavigateBack: onNavigateBack
         )
-        .scrollEdgeEffectStyle(libraryStore.bottomScrollEdgeBlurEnabled ? .soft : nil, for: .bottom)
+        .nativeBottomScrollEdgeBlur()
         .frame(width: state.layoutWidth, height: state.layoutHeight, alignment: .top)
         .clipped()
         .ignoresSafeArea()

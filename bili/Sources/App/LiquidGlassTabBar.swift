@@ -272,12 +272,11 @@ private struct BiliGlassButtonStyleModifier: ViewModifier {
 /// Shared by vertical scrolling pages, including independently presented sheets.
 /// The system owns the blur, accessibility adaptation and overlap detection.
 private struct BottomScrollEdgeBlur: ViewModifier {
-    @EnvironmentObject private var libraryStore: LibraryStore
     let isEnabled: Bool
 
     func body(content: Content) -> some View {
         content.scrollEdgeEffectStyle(
-            libraryStore.bottomScrollEdgeBlurEnabled && isEnabled ? .soft : nil,
+            isEnabled ? .soft : nil,
             for: .bottom
         )
     }
@@ -286,16 +285,10 @@ private struct BottomScrollEdgeBlur: ViewModifier {
 /// Declare the destination's edge visibility before navigation begins, instead of
 /// waiting for the system to infer it from the bottom bar after the transition.
 private struct BottomScrollEdgeBlurVisibility: ViewModifier {
-    @EnvironmentObject private var libraryStore: LibraryStore
     let isHidden: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if libraryStore.bottomScrollEdgeBlurEnabled {
-            content.scrollEdgeEffectHidden(isHidden, for: .bottom)
-        } else {
-            content
-        }
+        content.scrollEdgeEffectHidden(isHidden, for: .bottom)
     }
 }
 

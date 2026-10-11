@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct VideoDetailNativeContentTabView<Content: View>: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     private let segmentedPickerHeight: CGFloat = 40
     @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.videoDetailHasOuterBottomBar) private var hasOuterBottomBar
@@ -92,7 +91,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 summary: tab == .detail ? summary : nil,
                 topInset: topInset,
                 minimumPlayerHeight: interactiveMinimumPlayerHeight,
-                bottomEdgeBlurEnabled: libraryStore.bottomScrollEdgeBlurEnabled && !hidesBottomToolbar,
+                bottomEdgeBlurEnabled: !hidesBottomToolbar,
                 isActiveContent: selection == tab,
                 contentRevision: contentRevision,
                 contentMountsSecondaryContent: mountsSecondaryContent
@@ -551,7 +550,7 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                         .sharedBackgroundVisibility(pickerBackgroundVisibility)
                     }
                 }
-                .toolbarBackground(libraryStore.bottomScrollEdgeBlurEnabled ? .automatic : .hidden, for: .bottomBar)
+                .toolbarBackground(.automatic, for: .bottomBar)
                 .toolbarVisibility(isHidden ? .hidden : .automatic, for: .bottomBar)
         } else {
             content

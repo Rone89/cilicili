@@ -39,21 +39,6 @@ struct MineDisplaySettingsSection: View {
 
             MineThemeColorControl(libraryStore: libraryStore)
 
-            Toggle(isOn: Binding(
-                get: { libraryStore.bottomScrollEdgeBlurEnabled },
-                set: { libraryStore.setBottomScrollEdgeBlurEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("底部渐近模糊", systemImage: "square.bottomhalf.filled")
-                    Text("所有竖向滚动页面与列表弹窗接入系统柔和底部边缘效果。是否显示及范围由系统决定，全屏媒体保持原样。")
-                        .appTypography(.settingsSubtitle, fallback: .caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityIdentifier("mine.display.bottomScrollEdgeBlur")
-
-
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.followsSystemFontSize },

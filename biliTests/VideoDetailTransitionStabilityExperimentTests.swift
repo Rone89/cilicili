@@ -12,11 +12,11 @@ final class VideoDetailFormalPerformancePolicyTests: XCTestCase {
         defaults.set(true, forKey: "cc.bili.experimental.videoDetailToolbarSegmentedPicker.v1")
         let store = LibraryStore(userDefaults: defaults)
         XCTAssertFalse(store.videoDetailNativeToolbarPickerExperimentEnabled)
-        store.setBottomScrollEdgeBlurEnabled(false)
+        store.setFollowsSystemFontSize(false)
         store.setVideoDetailNativeToolbarPickerExperimentEnabled(true)
         let restored = LibraryStore(userDefaults: defaults)
         XCTAssertTrue(restored.videoDetailNativeToolbarPickerExperimentEnabled)
-        XCTAssertFalse(restored.bottomScrollEdgeBlurEnabled)
+        XCTAssertFalse(restored.followsSystemFontSize)
         restored.setVideoDetailNativeToolbarPickerExperimentEnabled(false)
         XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailNativeToolbarPickerExperimentEnabled)
     }

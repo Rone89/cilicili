@@ -102,19 +102,18 @@ final class FormalStartupFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testBottomScrollEdgeBlurDefaultsOnAndPersistsWithoutChangingOtherPreferences() {
-        let defaults = makeUserDefaults()
-        let store = LibraryStore(userDefaults: defaults)
-        let tint = store.appTintColorHex
-        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
-        store.setBottomScrollEdgeBlurEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
-        store.setBottomScrollEdgeBlurEnabled(true)
-        XCTAssertTrue(store.bottomScrollEdgeBlurEnabled)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
-        store.setBottomScrollEdgeBlurEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
-        XCTAssertEqual(store.appTintColorHex, tint)
+    func testRetiredBottomBlurPreferenceIsRemovedWithoutChangingOtherSettings() {
+        for oldValue in [false, true] {
+            let defaults = makeUserDefaults()
+            let key = "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1"
+            defaults.set(oldValue, forKey: key)
+            defaults.set(false, forKey: "cc.bili.appearance.followsSystemFontSize.v1")
+            defaults.set("preserved", forKey: "unrelated.user.data")
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: key))
+            XCTAssertFalse(store.followsSystemFontSize)
+            XCTAssertEqual(defaults.string(forKey: "unrelated.user.data"), "preserved")
+        }
     }
 
     @MainActor
@@ -124,13 +123,6 @@ final class FormalStartupFeatureTests: XCTestCase {
         defaults.set(true, forKey: key)
         _ = LibraryStore(userDefaults: defaults)
         XCTAssertNil(defaults.object(forKey: key))
-    }
-
-    @MainActor
-    func testPromotedBottomBlurPreservesExistingExplicitOffChoice() {
-        let defaults = makeUserDefaults()
-        defaults.set(false, forKey: "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1")
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).bottomScrollEdgeBlurEnabled)
     }
 
     @MainActor

@@ -127,7 +127,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recommendMinimumLikeRatioPercent: Int
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
-    @Published private(set) var bottomScrollEdgeBlurEnabled: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
     @Published private(set) var videoDetailNativeToolbarPickerExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
@@ -208,7 +207,6 @@ final class LibraryStore: ObservableObject {
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
-    private static let bottomScrollEdgeBlurEnabledKey = "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
     private static let videoDetailNativeToolbarPickerExperimentEnabledKey =
         "cc.bili.videoDetail.nativeToolbarPickerExperimentEnabled.v1"
@@ -252,6 +250,7 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1",
         "cc.bili.home.avatarNavigationExperimentEnabled.v1",
         "cc.bili.home.toolbarPickerStyle.v1",
         "cc.bili.experimental.videoDetailSponsoredBadge.v1",
@@ -610,7 +609,6 @@ final class LibraryStore: ObservableObject {
         } else {
             self.danmakuSettings = .default
         }
-        self.bottomScrollEdgeBlurEnabled = userDefaults.object(forKey: Self.bottomScrollEdgeBlurEnabledKey) as? Bool ?? true
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1")
         userDefaults.removeObject(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
@@ -1211,12 +1209,6 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
-    }
-
-    func setBottomScrollEdgeBlurEnabled(_ enabled: Bool) {
-        guard bottomScrollEdgeBlurEnabled != enabled else { return }
-        bottomScrollEdgeBlurEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.bottomScrollEdgeBlurEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

@@ -86,7 +86,6 @@ final class LiveRoomShellViewController: UIViewController {
         self.contentHost = UIHostingController(
             rootView: LiveRoomShellContentView(
                 viewModel: viewModel,
-                libraryStore: dependencies.libraryStore,
                 state: contentState,
                 onNavigateBack: onNavigateBack
             )
