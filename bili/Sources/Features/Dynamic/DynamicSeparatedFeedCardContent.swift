@@ -46,7 +46,9 @@ struct DynamicSeparatedFeedCardContent: View {
                     isTextExpanded: $isTextExpanded
                 )
 
-                if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
+                if let pgc = display.pgc {
+                    DynamicPGCRouteLink(pgc: pgc, compact: true)
+                } else if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
                     DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: display.paidChargeURL) {
                         DynamicPaidArticleTextPreview(content: paidContent)
                     }

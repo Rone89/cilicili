@@ -26,6 +26,8 @@ struct UITestFixtureRootView: View {
                 UITestCommentSpacingFixtureView()
             case .dynamicReplies:
                 UITestDynamicRepliesFixtureView(dependencies: dependencies)
+            case .dynamicPGC:
+                UITestDynamicPGCFixtureView(api: dependencies.api)
             case .dynamicSpacing:
                 UITestDynamicSpacingFixtureView()
             case .homeFeedback:

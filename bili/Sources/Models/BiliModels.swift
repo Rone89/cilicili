@@ -4949,6 +4949,11 @@ nonisolated struct DynamicFeedItem: Identifiable, Decodable, Hashable {
         ])
     }
 
+    var pgc: DynamicPGC? {
+        guard type == "DYNAMIC_TYPE_PGC" || type == "DYNAMIC_TYPE_PGC_UNION" else { return nil }
+        return modules?.moduleDynamic?.major?.pgc
+    }
+
     var archive: DynamicArchive? {
         modules?.moduleDynamic?.major?.resolvedArchive
     }
@@ -5083,6 +5088,11 @@ nonisolated struct DynamicOriginalItem: Identifiable, Decodable, Hashable {
             modules?.moduleDynamic?.desc?.segments ?? [],
             modules?.moduleDynamic?.major?.segments ?? []
         ])
+    }
+
+    var pgc: DynamicPGC? {
+        guard type == "DYNAMIC_TYPE_PGC" || type == "DYNAMIC_TYPE_PGC_UNION" else { return nil }
+        return modules?.moduleDynamic?.major?.pgc
     }
 
     var archive: DynamicArchive? {
@@ -5365,6 +5375,7 @@ nonisolated struct DynamicRichTextEmoji: Decodable, Hashable {
 }
 
 nonisolated struct DynamicMajor: Decodable, Hashable {
+    let pgc: DynamicPGC?
     let archive: DynamicArchive?
     let opus: DynamicOpus?
     let draw: DynamicDraw?
@@ -5420,7 +5431,7 @@ nonisolated struct DynamicMajor: Decodable, Hashable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case archive, opus, draw, live
+        case archive, opus, draw, live, pgc
         case liveRcmd = "live_rcmd"
         case common
     }
@@ -5428,6 +5439,7 @@ nonisolated struct DynamicMajor: Decodable, Hashable {
     init(from decoder: Decoder) throws {
         let raw = try DynamicJSONValue(from: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        pgc = try? container.decodeIfPresent(DynamicPGC.self, forKey: .pgc)
         archive = try? container.decodeIfPresent(DynamicArchive.self, forKey: .archive)
         opus = try? container.decodeIfPresent(DynamicOpus.self, forKey: .opus)
         draw = try? container.decodeIfPresent(DynamicDraw.self, forKey: .draw)

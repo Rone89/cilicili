@@ -1,21 +1,37 @@
 import Foundation
 
 nonisolated struct PgcSeasonRoute: Hashable, Identifiable {
-    let seasonID: Int
+    let seasonID: Int?
+    let episodeID: Int?
     let title: String
     let cover: String?
 
-    var id: Int { seasonID }
+    var id: String { "season:\(seasonID ?? 0):episode:\(episodeID ?? 0)" }
 
     init(seasonID: Int, title: String, cover: String?) {
+        self.seasonID = seasonID
+        self.episodeID = nil
+        self.title = title
+        self.cover = cover?.normalizedBiliURL()
+    }
+
+    init(episodeID: Int, seasonID: Int?, title: String, cover: String?) {
+        self.episodeID = episodeID
         self.seasonID = seasonID
         self.title = title
         self.cover = cover?.normalizedBiliURL()
     }
 
+    func playbackEpisode(in season: PgcSeasonInfo) -> PgcEpisode? {
+        guard let episodeID else { return season.preferredPlaybackEpisode }
+        // An unavailable requested episode must never silently play another episode.
+        return season.allPlayableEpisodes.first { ($0.epID ?? $0.idValue) == episodeID }
+    }
+
     init?(media: SearchMediaItem) {
         guard let seasonID = media.seasonID else { return nil }
         self.seasonID = seasonID
+        self.episodeID = nil
         self.title = media.title
         self.cover = media.cover?.normalizedBiliURL()
     }

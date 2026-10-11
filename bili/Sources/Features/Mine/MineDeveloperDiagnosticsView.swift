@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.dynamicPGCCardExperimentEnabled },
+                set: { libraryStore.setDynamicPGCCardExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态番剧卡片与播放增强实验", systemImage: "play.rectangle")
+                    Text("番剧更新显示为视频卡片，点击打开对应分集。关闭后恢复原有图文展示。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.dynamicPGCCard")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

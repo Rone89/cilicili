@@ -7,6 +7,7 @@ struct PgcSeasonPlaybackRouteView: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @State private var selectedVideo: VideoItem?
+    @State private var reloadRevision = 0
     @State private var state: LoadingState = .idle
 
     init(
@@ -39,26 +40,28 @@ struct PgcSeasonPlaybackRouteView: View {
         .navigationTitle("")
         .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: route.id) {
+        .task(id: "\(route.id):\(reloadRevision)") {
             await load()
         }
     }
 
     private func reload() {
-        Task { await load(force: true) }
+        reloadRevision &+= 1
     }
 
-    private func load(force: Bool = false) async {
-        guard force || selectedVideo == nil else { return }
+    private func load() async {
+        guard selectedVideo == nil else { return }
 
         state = .loading
         do {
-            let season = try await dependencies.api.fetchPgcSeasonInfo(seasonID: route.seasonID)
-                .withFallbackSeasonID(route.seasonID)
+            var season = try await dependencies.api.fetchPgcSeasonInfo(seasonID: route.seasonID, epID: route.episodeID)
+            if let seasonID = route.seasonID {
+                season = season.withFallbackSeasonID(seasonID)
+            }
             guard !Task.isCancelled else { return }
-            guard let episode = season.preferredPlaybackEpisode,
+            guard let episode = route.playbackEpisode(in: season),
                   let video = episode.videoItem(in: season) else {
-                state = .failed("暂无可播放分集")
+                state = .failed(route.episodeID == nil ? "暂无可播放分集" : "该分集不可播放或已失效")
                 return
             }
 
@@ -67,6 +70,7 @@ struct PgcSeasonPlaybackRouteView: View {
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -76,6 +80,7 @@ private struct PgcSeasonPlaybackRouteLoadingView: View {
     let route: PgcSeasonRoute
     let state: LoadingState
     let retry: () -> Void
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 12) {
@@ -89,12 +94,20 @@ private struct PgcSeasonPlaybackRouteLoadingView: View {
                     .multilineTextAlignment(.center)
                 Button("重试", action: retry)
                     .buttonStyle(.borderedProminent)
+                if let episodeID = route.episodeID,
+                   let url = URL(string: "https://www.bilibili.com/bangumi/play/ep\(episodeID)") {
+                    AppLinkButton(url: url) { Text("网页查看") }
+                }
             } else {
                 ProgressView()
                 Text(route.title)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+            if route.episodeID != nil {
+                Button("返回") { dismiss() }
+                    .accessibilityIdentifier("pgc.route.cancel")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

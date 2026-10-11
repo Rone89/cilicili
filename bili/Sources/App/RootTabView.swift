@@ -48,6 +48,7 @@ struct RootTabView: View {
         .environment(\.appThemeTintColor, libraryStore.appTintColor)
         .environment(\.videoDetailActionButtonStyle, libraryStore.videoDetailActionButtonStyle)
         .environment(\.showsVideoCoverDurationBadges, libraryStore.showsVideoCoverDurationBadges)
+        .environment(\.dynamicPGCCardEnabled, libraryStore.dynamicPGCCardExperimentEnabled)
         .environment(\.openURL, OpenURLAction { url in
             guard AppLinkRouter.canHandle(url) else { return .systemAction }
             openAppURL(url)

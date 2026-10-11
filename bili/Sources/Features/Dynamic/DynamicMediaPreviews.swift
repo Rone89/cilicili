@@ -3,6 +3,9 @@ import SwiftUI
 struct DynamicOriginalPreview: View {
     @Environment(\.appThemeTintColor) private var appTintColor
 
+    @Environment(\.dynamicPGCCardEnabled) private var pgcEnabled
+    private let maxTextLines: Int?
+
     let item: DynamicOriginalItem
     let parentID: String
     let contentWidth: CGFloat?
@@ -27,6 +30,7 @@ struct DynamicOriginalPreview: View {
         maxTextLines: Int? = 5,
         onOpenDetail: (() -> Void)? = nil
     ) {
+        self.maxTextLines = maxTextLines
         self.item = item
         self.parentID = parentID
         self.contentWidth = contentWidth
@@ -76,7 +80,12 @@ struct DynamicOriginalPreview: View {
 
     @ViewBuilder
     private var originalContent: some View {
-        if item.visible == false || !item.hasDisplayableContent {
+        let pgc = pgcEnabled ? item.pgc : nil
+        let segments = pgc != nil ? (item.modules?.moduleDynamic?.desc?.segments ?? []) : textSegments
+        let bodyText = pgc != nil ? DynamicTextSegment.displayText(from: segments) : topLevelDisplayText
+        let bodyInput = pgc != nil ? DynamicAttributedTextInput.dynamicFeedBody(segments: segments, emoteSize: 20, maxLines: maxTextLines) : textInput
+        let bodyImages = pgc?.bodyImages(from: imageItems) ?? imageItems
+        if item.visible == false || (!item.hasDisplayableContent && pgc == nil) {
             DynamicForwardUnavailableView()
         } else {
             VStack(alignment: .leading, spacing: 10) {
@@ -90,17 +99,19 @@ struct DynamicOriginalPreview: View {
                     }
                 }
 
-                if topLevelDisplayText?.isEmpty == false {
+                if bodyText?.isEmpty == false {
                     DynamicRichTextView(
-                        input: textInput,
+                        input: bodyInput,
                         preferredWidth: originalContentWidth,
                         onNonLinkTap: onOpenDetail
                     )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .dynamicCopyableText(topLevelDisplayText)
+                        .dynamicCopyableText(bodyText)
                 }
 
-                if let paidContent, paidContentRendersAsTextOnly {
+                if let pgc {
+                    DynamicPGCRouteLink(pgc: pgc, compact: true)
+                } else if let paidContent, paidContentRendersAsTextOnly {
                     DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: paidChargeURL) {
                         DynamicPaidArticleTextPreview(content: paidContent)
                     }
@@ -124,9 +135,9 @@ struct DynamicOriginalPreview: View {
                     }
                 }
 
-                if !imageItems.isEmpty {
+                if !bodyImages.isEmpty {
                     DynamicImageThumbnailStrip(
-                        images: imageItems,
+                        images: bodyImages,
                         availableWidth: originalContentWidth
                     )
                 }

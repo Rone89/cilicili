@@ -35,6 +35,43 @@ final class PgcSeasonPlaybackRouteTests: XCTestCase {
         XCTAssertEqual(season.preferredPlaybackEpisode?.epID, 102)
     }
 
+    func testRequestedEpisodeOverridesCloudResumeAndSupportsSectionEpisodes() throws {
+        let season = try decodeSeason(
+            """
+            {
+              "season_id":100,
+              "episodes":[{"id":1,"ep_id":101,"cid":1001},{"id":2,"ep_id":102,"cid":1002}],
+              "section":[{"episodes":[{"id":3,"ep_id":103,"cid":1003}]}],
+              "user_status":{"progress":{"last_ep_id":102}}
+            }
+            """
+        )
+        for epID in [101, 103] {
+            let route = PgcSeasonRoute(episodeID: epID, seasonID: 100, title: "番剧", cover: nil)
+            let video = try XCTUnwrap(route.playbackEpisode(in: season)?.videoItem(in: season))
+            XCTAssertEqual(video.pgcEpisodeID, epID)
+            XCTAssertEqual(video.pgcSeasonID, 100)
+        }
+        let seasonRoute = PgcSeasonRoute(seasonID: 100, title: "番剧", cover: nil)
+        XCTAssertEqual(seasonRoute.playbackEpisode(in: season)?.epID, 102)
+    }
+
+    func testMissingOrUnplayableRequestedEpisodeNeverFallsBack() throws {
+        let season = try decodeSeason(
+            """
+            {"episodes":[{"ep_id":101},{"ep_id":102,"cid":1002}],"user_status":{"progress":{"last_ep_id":102}}}
+            """
+        )
+        for epID in [101, 999] {
+            let route = PgcSeasonRoute(episodeID: epID, seasonID: nil, title: "番剧", cover: nil)
+            XCTAssertNil(route.playbackEpisode(in: season))
+        }
+        XCTAssertNotEqual(
+            PgcSeasonRoute(episodeID: 101, seasonID: 100, title: "番剧", cover: nil).id,
+            PgcSeasonRoute(episodeID: 102, seasonID: 100, title: "番剧", cover: nil).id
+        )
+    }
+
     private func decodeSeason(_ json: String) throws -> PgcSeasonInfo {
         try JSONDecoder().decode(PgcSeasonInfo.self, from: Data(json.utf8))
     }

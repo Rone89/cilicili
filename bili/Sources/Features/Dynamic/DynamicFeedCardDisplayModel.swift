@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DynamicFeedCardDisplayModel {
     let dynamicID: String
+    let pgc: DynamicPGC?
     let video: VideoItem?
     let videoDisplay: VideoCardDisplayModel?
     let live: DynamicLive?
@@ -29,17 +30,19 @@ struct DynamicFeedCardDisplayModel {
     let shareTitle: String
     let shareMessage: String
 
-    init(item: DynamicFeedItem) {
-        let video = item.archive?.asVideoItem(author: item.author)
+    init(item: DynamicFeedItem, pgcEnabled: Bool = false) {
+        let pgc = pgcEnabled ? item.pgc : nil
+        let video = pgc == nil ? item.archive?.asVideoItem(author: item.author) : nil
         let live = item.live
         let paidContent = item.paidContent
         let paidVideo = paidContent?.asVideoItem(author: item.author)
         let paidContentRendersAsTextOnly = paidContent?.isChargeArticleLike == true
-        let imageItems = item.imageItems.filter { $0.normalizedURL != nil }
-        let textSegments = item.textSegments
+        let imageItems = pgc?.bodyImages(from: item.imageItems) ?? item.imageItems.filter { $0.normalizedURL != nil }
+        let textSegments = pgc != nil ? (item.modules?.moduleDynamic?.desc?.segments ?? []) : item.textSegments
         let topLevelDisplayText = DynamicTextSegment.displayText(from: textSegments)
         let authorName = item.author?.name ?? "Unknown"
-        let isPureTextDynamic = video == nil
+        let isPureTextDynamic = pgc == nil
+            && video == nil
             && live == nil
             && paidContent == nil
             && imageItems.isEmpty
@@ -48,6 +51,7 @@ struct DynamicFeedCardDisplayModel {
             && !(topLevelDisplayText?.isEmpty ?? true)
 
         self.dynamicID = item.idStr
+        self.pgc = pgc
         self.video = video
         self.videoDisplay = video.map(VideoCardDisplayModel.init(video:))
         self.live = live
@@ -71,21 +75,21 @@ struct DynamicFeedCardDisplayModel {
             && !item.isForward
         self.usesSeparatedDynamicLayout = item.original != nil
             || item.isForward
-            || (!imageItems.isEmpty && video == nil)
+            || (!imageItems.isEmpty && video == nil && pgc == nil)
             || isPureTextDynamic
         self.supportsDetailNavigation = Self.supportsDetailNavigation(
             hasTopLevelText: !(topLevelDisplayText?.isEmpty ?? true),
             imageCount: imageItems.count,
             isForward: item.isForward || item.original != nil,
-            hasVideo: video != nil,
+            hasVideo: video != nil || pgc != nil,
             hasLive: live != nil,
             hasPaidContent: paidContent != nil
         )
         self.initialLikeCount = item.likeCount ?? 0
         self.commentTitle = Self.statTitle(count: item.replyCount, fallback: "评论")
         self.repostTitle = Self.statTitle(count: item.repostCount, fallback: "转发")
-        self.shareURL = Self.shareURL(item: item, video: video, live: live, paidContent: paidContent)
-        self.shareTitle = Self.shareTitle(authorName: authorName, text: topLevelDisplayText, video: video, live: live, paidContent: paidContent)
+        self.shareURL = Self.shareURL(item: item, video: video, live: live, paidContent: paidContent) ?? pgc?.jumpURL
+        self.shareTitle = Self.shareTitle(authorName: authorName, text: topLevelDisplayText ?? pgc?.title, video: video, live: live, paidContent: paidContent)
         self.shareMessage = "\(authorName)：\(self.shareTitle)"
     }
 

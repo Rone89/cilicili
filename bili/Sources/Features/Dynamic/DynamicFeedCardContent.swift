@@ -27,7 +27,10 @@ struct DynamicStandardFeedCardContent: View {
                 )
                 .padding(.horizontal, horizontalContentInset)
 
-                if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
+                if let pgc = display.pgc {
+                    DynamicPGCRouteLink(pgc: pgc)
+                        .padding(.horizontal, horizontalContentInset)
+                } else if let paidContent = display.paidContent, display.paidContentRendersAsTextOnly {
                     DynamicPaidArticleTextRouteLink(content: paidContent, chargeURL: display.paidChargeURL) {
                         DynamicPaidArticleTextPreview(content: paidContent)
                     }

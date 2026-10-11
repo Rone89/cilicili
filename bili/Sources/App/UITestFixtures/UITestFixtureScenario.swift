@@ -11,6 +11,7 @@ enum UITestFixtureScenario: String {
     case libraryManagement
     case commentSpacing
     case dynamicReplies
+    case dynamicPGC
     case dynamicSpacing
     case homeFeedback
     case videoOwnerMenu
