@@ -7,6 +7,7 @@ final class DynamicFeedLifecycleCoordinator {
     private let libraryStore: LibraryStore
     private let contentFilter: DynamicFeedContentFilter
     private let resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator
+    private let feedKind: DynamicFeedKind
     private var rawItems: [DynamicFeedItem] = []
     private var offset = ""
     private var hasMore = true
@@ -25,13 +26,15 @@ final class DynamicFeedLifecycleCoordinator {
         sessionStore: SessionStore,
         libraryStore: LibraryStore,
         contentFilter: DynamicFeedContentFilter,
-        resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator
+        resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator,
+        feedKind: DynamicFeedKind = .all
     ) {
         self.api = api
         self.sessionStore = sessionStore
         self.libraryStore = libraryStore
         self.contentFilter = contentFilter
         self.resourcePrefetchCoordinator = resourcePrefetchCoordinator
+        self.feedKind = feedKind
     }
 
     deinit {
@@ -48,14 +51,18 @@ final class DynamicFeedLifecycleCoordinator {
 
     func loadInitialPage() async throws -> [DynamicFeedItem] {
         resetPagination()
-        let page = try await DynamicFeedWarmCache.shared.page(
-            api: api,
-            identityKey: cacheIdentityKey
-        )
+        let page: DynamicFeedData
+        if feedKind == .all {
+            page = try await DynamicFeedWarmCache.shared.page(api: api, identityKey: cacheIdentityKey)
+        } else {
+            page = try await api.fetchDynamicFeed(kind: feedKind)
+        }
+        try Task.checkCancellation()
         return apply(page: page, prefetchDelay: 0.08)
     }
 
     func cachedInitialPage() async -> [DynamicFeedItem]? {
+        guard feedKind == .all else { return nil }
         resetPagination()
         guard let page = await DynamicFeedWarmCache.shared.cachedPage(identityKey: cacheIdentityKey) else {
             return nil
@@ -64,26 +71,31 @@ final class DynamicFeedLifecycleCoordinator {
     }
 
     func refreshPage() async throws -> [DynamicFeedItem] {
-        resetPagination()
         let identityKey = cacheIdentityKey
-        let page = try await api.fetchDynamicFeed()
-        await DynamicFeedWarmCache.shared.store(page, identityKey: identityKey)
+        let page = try await api.fetchDynamicFeed(kind: feedKind)
+        try Task.checkCancellation()
+        if feedKind == .all {
+            await DynamicFeedWarmCache.shared.store(page, identityKey: identityKey)
+        }
         return apply(page: page, prefetchDelay: 0.08)
     }
 
     func loadMorePage() async throws -> [DynamicFeedItem] {
-        let page = try await api.fetchDynamicFeed(offset: offset)
+        let page = try await api.fetchDynamicFeed(offset: offset, kind: feedKind)
+        try Task.checkCancellation()
         let moreItems = contentFilter.displayable(page.items)
         rawItems = contentFilter.uniqueAppendItems(moreItems, to: rawItems)
         let filteredItems = filteredCurrentItems()
-        resourcePrefetchCoordinator.scheduleResourcePrefetch(for: moreItems, initialDelay: 0.75)
+        resourcePrefetchCoordinator.scheduleResourcePrefetch(
+            for: moreItems.filter { feedKind.includes($0) }, initialDelay: 0.75
+        )
         offset = page.offset ?? offset
         hasMore = page.hasMore ?? false
         return filteredItems
     }
 
     func filteredCurrentItems() -> [DynamicFeedItem] {
-        contentFilter.filtered(rawItems)
+        contentFilter.filtered(rawItems.filter { feedKind.includes($0) })
     }
 
     func refreshTopUploaderStripItems(setItems: @escaping ([DynamicTopUploaderStripItem]) -> Void) {

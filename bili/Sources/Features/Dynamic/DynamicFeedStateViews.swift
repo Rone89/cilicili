@@ -61,11 +61,13 @@ struct DynamicLoginEmptyState: View {
 }
 
 struct DynamicFeedEmptyState: View {
+    var isVideoFeed = false
+
     var body: some View {
         EmptyStateView(
-            title: "暂无动态",
+            title: isVideoFeed ? "暂无投稿视频" : "暂无动态",
             systemImage: "sparkles",
-            message: "登录后会显示你关注 UP 的动态。"
+            message: isVideoFeed ? "关注用户的投稿视频会显示在这里。" : "登录后会显示你关注 UP 的动态。"
         )
     }
 }

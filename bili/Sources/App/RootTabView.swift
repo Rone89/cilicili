@@ -212,7 +212,11 @@ struct RootTabView: View {
                 }
                 .navigationDestination(for: AppTab.self) { destination in
                     rootTabContent(for: destination, detailPath: detailPath)
-                        .navigationTitle(destination == .search || destination == .mine ? "" : destination.title)
+                        .navigationTitle(
+                            destination == .search || destination == .mine
+                                || (destination == .dynamic && libraryStore.dynamicVideoFilterExperimentEnabled)
+                                ? "" : destination.title
+                        )
                         .toolbarTitleDisplayMode(.inline)
                         .toolbarVisibility(.hidden, for: .tabBar)
 
@@ -308,6 +312,7 @@ struct RootTabView: View {
 
     private func rootNavigationTitle(for tab: AppTab) -> String {
         if tab == .home || tab == .search || tab == .mine { return "" }
+        if tab == .dynamic && libraryStore.dynamicVideoFilterExperimentEnabled { return "" }
         return rootNavigationTitleHiddenByTab[tab] == true ? "" : tab.title
     }
 

@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 final class DynamicViewModel: ObservableObject {
+    let feedKind: DynamicFeedKind
     @Published var items: [DynamicFeedItem] = [] {
         didSet {
             itemsRevision &+= 1
@@ -28,7 +29,8 @@ final class DynamicViewModel: ObservableObject {
         lifecycleCoordinator.hasMoreItems
     }
 
-    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
+    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore, feedKind: DynamicFeedKind = .all) {
+        self.feedKind = feedKind
         let contentFilter = DynamicFeedContentFilter(libraryStore: libraryStore)
         let resourcePrefetchCoordinator = DynamicFeedResourcePrefetchCoordinator(
             api: api,
@@ -39,7 +41,8 @@ final class DynamicViewModel: ObservableObject {
             sessionStore: sessionStore,
             libraryStore: libraryStore,
             contentFilter: contentFilter,
-            resourcePrefetchCoordinator: resourcePrefetchCoordinator
+            resourcePrefetchCoordinator: resourcePrefetchCoordinator,
+            feedKind: feedKind
         )
         filterCancellable = libraryStore.$blocksAdDynamics
             .combineLatest(libraryStore.$blocksGoodsDynamics)
@@ -61,6 +64,7 @@ final class DynamicViewModel: ObservableObject {
 
     func loadInitial() async {
         guard items.isEmpty else { return }
+        guard !state.isLoading, state != .loaded else { return }
         guard lifecycleCoordinator.isLoggedIn else {
             prepareLoggedOutState()
             return
@@ -68,22 +72,26 @@ final class DynamicViewModel: ObservableObject {
         loadRequestRevision &+= 1
         let requestRevision = loadRequestRevision
         if let cachedItems = await lifecycleCoordinator.cachedInitialPage() {
-            guard requestRevision == loadRequestRevision else { return }
+            guard !Task.isCancelled, requestRevision == loadRequestRevision else { return }
             items = cachedItems
             state = .loaded
             refreshTopUploaderStrip()
             refreshCachedInitialPage(requestRevision: requestRevision)
             return
         }
+        guard !Task.isCancelled, requestRevision == loadRequestRevision else { return }
         state = .loading
         refreshTopUploaderStrip()
         do {
-            items = try await lifecycleCoordinator.loadInitialPage()
+            let loadedItems = try await lifecycleCoordinator.loadInitialPage()
+            guard requestRevision == loadRequestRevision else { return }
+            items = loadedItems
             state = .loaded
         } catch is CancellationError {
             guard requestRevision == loadRequestRevision else { return }
             state = .idle
         } catch {
+            guard requestRevision == loadRequestRevision else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -95,7 +103,9 @@ final class DynamicViewModel: ObservableObject {
             }
             return
         }
+        guard !state.isLoading else { return }
         loadRequestRevision &+= 1
+        let requestRevision = loadRequestRevision
         cachedInitialRefreshTask?.cancel()
         cachedInitialRefreshTask = nil
         isRefreshing = true
@@ -105,9 +115,12 @@ final class DynamicViewModel: ObservableObject {
         state = .loading
         refreshTopUploaderStrip()
         do {
-            items = try await lifecycleCoordinator.refreshPage()
+            let refreshedItems = try await lifecycleCoordinator.refreshPage()
+            guard requestRevision == loadRequestRevision else { return }
+            items = refreshedItems
             state = .loaded
         } catch {
+            guard requestRevision == loadRequestRevision else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -126,11 +139,15 @@ final class DynamicViewModel: ObservableObject {
               !state.isLoading,
               cachedInitialRefreshTask == nil
         else { return }
+        let requestRevision = loadRequestRevision
         state = .loading
         do {
-            items = try await lifecycleCoordinator.loadMorePage()
+            let loadedItems = try await lifecycleCoordinator.loadMorePage()
+            guard requestRevision == loadRequestRevision else { return }
+            items = loadedItems
             state = .loaded
         } catch {
+            guard requestRevision == loadRequestRevision else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -144,6 +161,10 @@ final class DynamicViewModel: ObservableObject {
         topUploaderStripItems = []
         isTopUploaderStripLoading = false
         state = .idle
+    }
+
+    func invalidateAccount() {
+        prepareLoggedOutState()
     }
 
     private func refreshCachedInitialPage(requestRevision: Int) {
@@ -170,6 +191,7 @@ final class DynamicViewModel: ObservableObject {
     }
 
     private func refreshTopUploaderStrip() {
+        guard feedKind == .all else { return }
         isTopUploaderStripLoading = true
         lifecycleCoordinator.refreshTopUploaderStripItems { [weak self] items in
             self?.topUploaderStripItems = items

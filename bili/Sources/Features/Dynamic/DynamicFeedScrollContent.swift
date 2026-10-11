@@ -29,7 +29,7 @@ struct DynamicFeedScrollContent: View {
         .background(Color(.systemBackground))
         .scrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
-        .task(id: isLoggedIn) {
+        .task(id: DynamicFeedLoadIdentity(model: ObjectIdentifier(viewModel), isLoggedIn: isLoggedIn)) {
             await viewModel.loadInitial()
         }
         .refreshable(action: refreshFromNativePull)
@@ -59,10 +59,12 @@ private struct DynamicFeedBodyContent: View {
 
     var body: some View {
         LazyVStack(spacing: 0) {
-            FollowedLiveStrip(
-                items: viewModel.topUploaderStripItems,
-                isLoading: isLoggedIn && viewModel.isTopUploaderStripLoading
-            )
+            if viewModel.feedKind == .all {
+                FollowedLiveStrip(
+                    items: viewModel.topUploaderStripItems,
+                    isLoading: isLoggedIn && viewModel.isTopUploaderStripLoading
+                )
+            }
 
             if !isLoggedIn {
                 DynamicLoginEmptyState()
@@ -71,9 +73,12 @@ private struct DynamicFeedBodyContent: View {
             } else if viewModel.items.isEmpty && viewModel.state != .loaded {
                 DynamicFeedSkeletonList()
             } else if viewModel.items.isEmpty {
-                DynamicFeedEmptyState()
+                DynamicFeedEmptyState(isVideoFeed: viewModel.feedKind == .video)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
+                if viewModel.hasMoreItems {
+                    DynamicFeedFooter(viewModel: viewModel)
+                }
             } else {
                 DynamicFeedItemsList(
                     api: api,
@@ -87,4 +92,9 @@ private struct DynamicFeedBodyContent: View {
             }
         }
     }
+}
+
+private struct DynamicFeedLoadIdentity: Hashable {
+    let model: ObjectIdentifier
+    let isLoggedIn: Bool
 }

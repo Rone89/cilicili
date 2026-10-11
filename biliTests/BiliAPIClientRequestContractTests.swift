@@ -757,6 +757,100 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testVideoDynamicFeedUsesVideoTypeForInitialAndPaginationWithoutAllSnapshot() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let snapshotIdentity = try XCTUnwrap(DynamicFeedDiskSnapshotStore.accountIdentity(for: 900123))
+        await DynamicFeedDiskSnapshotStore.shared.store(
+            Data(#"{"code":0,"data":{"items":[],"offset":"all-cache","has_more":true}}"#.utf8),
+            for: snapshotIdentity
+        )
+        defer {
+            RequestContractURLProtocol.reset()
+        }
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"offset":"video-next","has_more":false}}"#)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=video-session; DedeUserID=900123")
+        let first = try await api.fetchDynamicFeed(kind: .video)
+        _ = try await api.fetchDynamicFeed(offset: "video-next", kind: .video)
+        XCTAssertEqual(first.offset, "video-next")
+        XCTAssertEqual(recorder.requests.count, 2)
+        for request in recorder.requests {
+            XCTAssertEqual(request.url?.path, "/x/polymer/web-dynamic/v1/feed/all")
+            let query = Self.queryValues(in: try XCTUnwrap(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)))
+            XCTAssertEqual(query["type"], "video")
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["DedeUserID"], "900123")
+        }
+        let next = try XCTUnwrap(recorder.requests.last?.url)
+        XCTAssertEqual(Self.queryValues(in: try XCTUnwrap(URLComponents(url: next, resolvingAgainstBaseURL: false)))["offset"], "video-next")
+        let retained = await DynamicFeedDiskSnapshotStore.shared.freshData(for: snapshotIdentity)
+        XCTAssertTrue(String(data: try XCTUnwrap(retained), encoding: .utf8)?.contains("all-cache") == true)
+        await DynamicFeedDiskSnapshotStore.shared.removeData(for: snapshotIdentity)
+    }
+
+    @MainActor
+    func testVideoDynamicFeedPaginationKeepsCursorOnRefreshFailure() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        var sessionStore: SessionStore!
+        var libraryStore: LibraryStore!
+        let recorder = RequestContractRecorder()
+        let api = try makeAPI(cookieHeader: "SESSDATA=video-session", configure: { session, store in
+            sessionStore = session
+            libraryStore = store
+        })
+        let model = DynamicViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore, feedKind: .video)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"offset":"retry-cursor","has_more":true}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        await model.loadInitial()
+        XCTAssertTrue(model.hasMoreItems)
+        await BiliAPIResponseMemoryCache.shared.clear()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            throw URLError(.timedOut)
+        }
+        await model.refresh()
+        XCTAssertFalse(model.state.isLoading)
+        XCTAssertTrue(model.hasMoreItems)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"has_more":false}}"#)
+        }
+        await model.loadMore()
+        let request = try XCTUnwrap(recorder.requests.last)
+        XCTAssertEqual(Self.queryValues(in: try XCTUnwrap(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)))["offset"], "retry-cursor")
+        XCTAssertEqual(model.state, .loaded)
+        XCTAssertFalse(model.hasMoreItems)
+    }
+
+    @MainActor
+    func testVideoDynamicFeedUsesSelectedDynamicAccount() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"has_more":false}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main-session; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "dynamic-session"),
+            ])
+            try session.selectDynamicFeedAccount(mid: 2002)
+        })
+        _ = try await api.fetchDynamicFeed(kind: .video)
+        let request = try XCTUnwrap(recorder.request)
+        let cookies = cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertEqual(cookies["DedeUserID"], "2002")
+        XCTAssertEqual(cookies["SESSDATA"], "dynamic-session")
+    }
+
+    @MainActor
     func testDynamicPortalBuildsRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 

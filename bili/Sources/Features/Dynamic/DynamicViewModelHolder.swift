@@ -6,6 +6,7 @@ final class DynamicViewModelHolder: ObservableObject {
     private var cancellable: AnyCancellable?
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshot: DynamicRenderSnapshot?
+    private var viewModels: [DynamicFeedKind: DynamicViewModel] = [:]
 
     init(
         api: BiliAPIClient? = nil,
@@ -27,7 +28,20 @@ final class DynamicViewModelHolder: ObservableObject {
         cancellable = nil
         viewModel = nil
         lastSnapshot = nil
+        viewModels.values.forEach { $0.invalidateAccount() }
+        viewModels.removeAll()
         installViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
+    }
+
+    func selectFeed(_ kind: DynamicFeedKind, api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
+        guard viewModel?.feedKind != kind else { return }
+        snapshotRefreshTask?.cancel()
+        snapshotRefreshTask = nil
+        cancellable = nil
+        let model = viewModels[kind] ?? DynamicViewModel(
+            api: api, libraryStore: libraryStore, sessionStore: sessionStore, feedKind: kind
+        )
+        observe(model)
     }
 
     private func installViewModel(
@@ -36,6 +50,11 @@ final class DynamicViewModelHolder: ObservableObject {
         sessionStore: SessionStore
     ) {
         let viewModel = DynamicViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
+        observe(viewModel)
+    }
+
+    private func observe(_ viewModel: DynamicViewModel) {
+        viewModels[viewModel.feedKind] = viewModel
         self.viewModel = viewModel
         lastSnapshot = DynamicRenderSnapshot(viewModel)
         cancellable = viewModel.objectWillChange.sink { [weak self] _ in

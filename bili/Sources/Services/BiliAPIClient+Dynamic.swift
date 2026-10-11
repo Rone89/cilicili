@@ -5,6 +5,17 @@ private let dynamicUploaderWebUserAgent =
 private let dynamicWebFeatures =
     "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete"
 
+nonisolated enum DynamicFeedKind: String, CaseIterable, Hashable, Sendable {
+    case all
+    case video
+
+    var title: String { self == .all ? "全部" : "视频" }
+
+    func includes(_ item: DynamicFeedItem) -> Bool {
+        self == .all || (item.type == "DYNAMIC_TYPE_AV" && item.archive != nil && item.original == nil)
+    }
+}
+
 extension BiliAPIClient {
     nonisolated static func uploaderDynamicCookieHeader(
         isLoggedIn: Bool,
@@ -14,11 +25,11 @@ extension BiliAPIClient {
         isLoggedIn ? authenticatedCookieHeader : anonymousCookieHeader
     }
 
-    func fetchDynamicFeed(offset: String? = nil) async throws -> DynamicFeedData {
+    func fetchDynamicFeed(offset: String? = nil, kind: DynamicFeedKind = .all) async throws -> DynamicFeedData {
         let context = await dynamicFeedRequestContext()
         guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
         var query = [
-            "type": "all",
+            "type": kind.rawValue,
             "platform": "web",
             "features": dynamicWebFeatures,
             "web_location": "333.1365",
@@ -29,7 +40,7 @@ extension BiliAPIClient {
 
         let isInitialRequest = offset?.isEmpty != false
         let diskSnapshotIdentity =
-            isInitialRequest
+            isInitialRequest && kind == .all
             ? DynamicFeedDiskSnapshotStore.accountIdentity(for: context.currentUserMID)
             : nil
         if let diskSnapshotIdentity,

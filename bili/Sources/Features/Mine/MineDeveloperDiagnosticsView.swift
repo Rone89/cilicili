@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.dynamicVideoFilterExperimentEnabled },
+                set: { libraryStore.setDynamicVideoFilterExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态页全部/视频切换实验", systemImage: "rectangle.split.2x1")
+                    Text("顶部标题改为全部/视频选择器，视频仅展示关注用户的投稿。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.dynamicVideoFilter")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.videoDetailNativeToolbarPickerExperimentEnabled },
                 set: { libraryStore.setVideoDetailNativeToolbarPickerExperimentEnabled($0) }
             )) {
