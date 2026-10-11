@@ -13,30 +13,18 @@ final class VideoDetailBottomEdgeEffectBinding {
             detach()
             return
         }
-        if self.scrollView === scrollView, interaction?.view === container {
-            applySoftEffect(to: scrollView)
-            return
-        }
+        if self.scrollView === scrollView, interaction?.view === container { return }
         detach()
         self.scrollView = scrollView
         originalStyle = scrollView.bottomEdgeEffect.style
         originalHidden = scrollView.bottomEdgeEffect.isHidden
+        scrollView.bottomEdgeEffect.style = .soft
+        scrollView.bottomEdgeEffect.isHidden = false
         let interaction = UIScrollEdgeElementContainerInteraction()
         interaction.scrollView = scrollView
         interaction.edge = .bottom
         container.addInteraction(interaction)
         self.interaction = interaction
-        applySoftEffect(to: scrollView)
-    }
-
-    private func applySoftEffect(to scrollView: UIScrollView) {
-        // Toolbar updates can restore the system default after the interaction is attached.
-        if scrollView.bottomEdgeEffect.style != .soft {
-            scrollView.bottomEdgeEffect.style = .soft
-        }
-        if scrollView.bottomEdgeEffect.isHidden {
-            scrollView.bottomEdgeEffect.isHidden = false
-        }
     }
 
     func detach() {
