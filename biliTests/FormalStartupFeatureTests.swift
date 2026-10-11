@@ -41,6 +41,13 @@ final class FormalStartupFeatureTests: XCTestCase {
         XCTAssertFalse(scroll.bottomEdgeEffect.isHidden)
         XCTAssertEqual(scroll.contentInset.bottom, 80)
         XCTAssertEqual(scroll.contentOffset.y, 40)
+        // Simulate a system toolbar update resetting the edge configuration.
+        scroll.bottomEdgeEffect.style = .hard
+        scroll.bottomEdgeEffect.isHidden = true
+        binding.update(scrollView: scroll, container: toolbar, enabled: true)
+        XCTAssertEqual(scroll.bottomEdgeEffect.style, .soft)
+        XCTAssertFalse(scroll.bottomEdgeEffect.isHidden)
+        XCTAssertEqual(toolbar.interactions.compactMap { $0 as? UIScrollEdgeElementContainerInteraction }.count, 1)
         binding.update(scrollView: scroll, container: toolbar, enabled: false)
         XCTAssertFalse(toolbar.interactions.contains { $0 is UIScrollEdgeElementContainerInteraction })
         XCTAssertEqual(scroll.bottomEdgeEffect.style, .hard)

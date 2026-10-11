@@ -547,6 +547,8 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                 }
                 .toolbarBackground(libraryStore.bottomScrollEdgeBlurEnabled ? .automatic : .hidden, for: .bottomBar)
                 .toolbarVisibility(isHidden ? .hidden : .automatic, for: .bottomBar)
+                .nativeBottomScrollEdgeBlur(isEnabled: !isHidden)
+                .nativeBottomScrollEdgeBlurVisibility(isHidden: isHidden)
         } else {
             content
         }
