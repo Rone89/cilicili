@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.personalSpaceEnhancementExperimentEnabled },
+                set: { libraryStore.setPersonalSpaceEnhancementExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("个人空间增强实验", systemImage: "person.crop.rectangle")
+                    Text("展示空间背景、身份资料和主页内容概览。关闭后恢复原有投稿、动态与合集页面。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.personalSpace")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

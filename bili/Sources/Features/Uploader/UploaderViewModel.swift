@@ -50,9 +50,15 @@ final class UploaderViewModel: ObservableObject {
     @Published private(set) var seasonSeriesRevision = 0
 
     let seedOwner: VideoOwner
+    let enhancementEnabled: Bool
+    let viewerIdentity: UploaderSpaceRequestIdentity
+    @Published private(set) var spaceOverview: UploaderSpaceOverview?
+    @Published private(set) var spaceOverviewState: LoadingState = .idle
 
     private let api: BiliAPIClient
+    private let viewerSnapshot: BiliAPIClient.RequestSnapshot
     private let uploaderVideosTimeoutNanoseconds: UInt64 = 8_000_000_000
+    private var isLoadingSpaceOverview = false
     private var page = 1
     private var videoCursor: UploaderVideoPageCursor?
     private var dynamicOffset: String?
@@ -60,12 +66,78 @@ final class UploaderViewModel: ObservableObject {
     private var seasonSeriesPage = 1
     private var seasonSeriesHasMore = true
 
-    init(seedOwner: VideoOwner, api: BiliAPIClient) {
+    init(seedOwner: VideoOwner, api: BiliAPIClient, enhancementEnabled: Bool = false) {
         self.seedOwner = seedOwner
         self.api = api
+        self.enhancementEnabled = enhancementEnabled
+        viewerSnapshot = api.requestSnapshot()
+        viewerIdentity = UploaderSpaceRequestIdentity(viewerSnapshot)
+    }
+
+    var isCurrentViewerContext: Bool {
+        !enhancementEnabled || viewerIdentity == UploaderSpaceRequestIdentity(api.requestSnapshot())
+    }
+
+    private var canApplyResponse: Bool {
+        isCurrentViewerContext && (!enhancementEnabled || !Task.isCancelled)
+    }
+
+    var canChangeRelation: Bool {
+        isCurrentViewerContext && viewerIdentity.isLoggedIn && viewerIdentity.isPurposeEnabled
+            && !viewerIdentity.guestModeEnabled && !isOwnSpace
+    }
+
+    var isOwnSpace: Bool { viewerIdentity.ownsSpace(mid: seedOwner.mid) }
+
+    func loadSpaceOverview(force: Bool = false) async {
+        guard enhancementEnabled, isCurrentViewerContext, !isLoadingSpaceOverview else { return }
+        guard force || spaceOverviewState == .idle else { return }
+        isLoadingSpaceOverview = true
+        spaceOverviewState = .loading
+        profileState = .loading
+        defer {
+            isLoadingSpaceOverview = false
+            if Task.isCancelled && isCurrentViewerContext {
+                spaceOverviewState = .idle
+                profileState = profile == nil ? .idle : .loaded
+            }
+        }
+        do {
+            let overview = try await api.fetchUploaderSpaceOverview(mid: seedOwner.mid, snapshot: viewerSnapshot)
+            guard isCurrentViewerContext, !Task.isCancelled else { return }
+            spaceOverview = overview
+            applyProfile(overview.profile)
+            spaceOverviewState = .loaded
+            profileState = .loaded
+        } catch {
+            guard isCurrentViewerContext, !Task.isCancelled else { return }
+            let overviewError = error.localizedDescription
+            // Keep the existing content tabs usable when the APP aggregation route fails.
+            do {
+                let fallback = try await api.fetchUploaderSpaceProfileFallback(mid: seedOwner.mid, snapshot: viewerSnapshot)
+                guard isCurrentViewerContext, !Task.isCancelled else { return }
+                applyProfile(fallback)
+                profileState = .loaded
+            } catch {
+                guard isCurrentViewerContext, !Task.isCancelled else { return }
+                profileState = .failed(error.localizedDescription)
+            }
+            if isCurrentViewerContext, !Task.isCancelled {
+                spaceOverviewState = .failed(overviewError)
+            }
+        }
+    }
+
+    func loadVideosIfNeeded() async {
+        guard isCurrentViewerContext, state != .loaded, !state.isLoading else { return }
+        await refresh()
     }
 
     func loadInitial() async {
+        if enhancementEnabled {
+            await loadSpaceOverview()
+            return
+        }
         if profile == nil, !profileState.isLoading {
             Task { await loadProfile() }
         }
@@ -74,20 +146,33 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func refresh() async {
+        guard isCurrentViewerContext, !enhancementEnabled || !state.isLoading else { return }
         state = .loading
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext {
+                state = .idle
+            }
+        }
         page = 1
         videoCursor = nil
         hasMoreVideos = true
-        Task { await loadProfile(force: true) }
+        if !enhancementEnabled { Task { await loadProfile(force: true) } }
         do {
-            applyVideoPage(try await fetchUploaderVideosWithTimeout(page: page), appending: false)
+            let result = try await fetchUploaderVideosWithTimeout(page: page)
+            guard canApplyResponse else { return }
+            applyVideoPage(result, appending: false)
             state = .loaded
         } catch {
+            guard canApplyResponse else { return }
             state = .failed(error.localizedDescription)
         }
     }
 
     func loadProfile(force: Bool = false) async {
+        if enhancementEnabled {
+            await loadSpaceOverview(force: force)
+            return
+        }
         guard force || !profileState.isLoading else { return }
         profileState = .loading
         var didLoadStats = false
@@ -107,24 +192,35 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadMoreIfNeeded(current video: VideoItem?) async {
-        guard let video,
+        guard isCurrentViewerContext, let video,
               videos.last?.id == video.id,
               hasMoreVideos,
               !state.isLoading
         else { return }
         state = .loading
+        var didApplyResponse = false
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext, !didApplyResponse {
+                page = max(1, page - 1)
+                state = .idle
+            }
+        }
         page += 1
         do {
-            applyVideoPage(try await fetchUploaderVideosWithTimeout(page: page), appending: true)
+            let result = try await fetchUploaderVideosWithTimeout(page: page)
+            guard canApplyResponse else { return }
+            applyVideoPage(result, appending: true)
+            didApplyResponse = true
             state = .loaded
         } catch {
+            guard canApplyResponse else { return }
             page = max(1, page - 1)
             state = .failed(error.localizedDescription)
         }
     }
 
     func changeVideoOrder(_ order: UploaderVideoOrder) async {
-        guard order != videoOrder, !state.isLoading else { return }
+        guard isCurrentViewerContext, order != videoOrder, !state.isLoading else { return }
         videoOrder = order
         videos = []
         await refresh()
@@ -135,19 +231,28 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadDynamicsIfNeeded() async {
+        if enhancementEnabled, dynamicState == .loaded { return }
         guard dynamicItems.isEmpty, !dynamicState.isLoading else { return }
         await refreshDynamics()
     }
 
     func refreshDynamics() async {
+        guard isCurrentViewerContext, !enhancementEnabled || !dynamicState.isLoading else { return }
         dynamicState = .loading
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext {
+                dynamicState = .idle
+            }
+        }
         dynamicOffset = nil
         dynamicHasMore = true
         do {
             let page = try await api.fetchUploaderDynamicFeed(mid: seedOwner.mid)
+            guard canApplyResponse else { return }
             applyDynamicPage(page, appending: false)
             dynamicState = .loaded
         } catch {
+            guard canApplyResponse else { return }
             dynamicState = .failed(error.localizedDescription)
         }
     }
@@ -158,13 +263,20 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadMoreDynamics() async {
-        guard dynamicHasMore, !dynamicState.isLoading else { return }
+        guard isCurrentViewerContext, dynamicHasMore, !dynamicState.isLoading else { return }
         dynamicState = .loading
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext {
+                dynamicState = .idle
+            }
+        }
         do {
             let page = try await api.fetchUploaderDynamicFeed(mid: seedOwner.mid, offset: dynamicOffset)
+            guard canApplyResponse else { return }
             applyDynamicPage(page, appending: true)
             dynamicState = .loaded
         } catch {
+            guard canApplyResponse else { return }
             dynamicState = .failed(error.localizedDescription)
         }
     }
@@ -174,19 +286,28 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadSeasonSeriesIfNeeded() async {
+        if enhancementEnabled, seasonSeriesState == .loaded { return }
         guard seasonSeriesItems.isEmpty, !seasonSeriesState.isLoading else { return }
         await refreshSeasonSeries()
     }
 
     func refreshSeasonSeries() async {
+        guard isCurrentViewerContext, !enhancementEnabled || !seasonSeriesState.isLoading else { return }
         seasonSeriesState = .loading
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext {
+                seasonSeriesState = .idle
+            }
+        }
         seasonSeriesPage = 1
         seasonSeriesHasMore = true
         do {
             let page = try await api.fetchUploaderSeasonSeries(mid: seedOwner.mid, page: seasonSeriesPage)
+            guard canApplyResponse else { return }
             applySeasonSeriesPage(page, appending: false)
             seasonSeriesState = .loaded
         } catch {
+            guard canApplyResponse else { return }
             seasonSeriesState = .failed(error.localizedDescription)
         }
     }
@@ -197,14 +318,24 @@ final class UploaderViewModel: ObservableObject {
     }
 
     func loadMoreSeasonSeries() async {
-        guard seasonSeriesHasMore, !seasonSeriesState.isLoading else { return }
+        guard isCurrentViewerContext, seasonSeriesHasMore, !seasonSeriesState.isLoading else { return }
         seasonSeriesState = .loading
+        var didApplyResponse = false
+        defer {
+            if enhancementEnabled, Task.isCancelled, isCurrentViewerContext, !didApplyResponse {
+                seasonSeriesPage = max(1, seasonSeriesPage - 1)
+                seasonSeriesState = .idle
+            }
+        }
         seasonSeriesPage += 1
         do {
             let page = try await api.fetchUploaderSeasonSeries(mid: seedOwner.mid, page: seasonSeriesPage)
+            guard canApplyResponse else { return }
             applySeasonSeriesPage(page, appending: true)
+            didApplyResponse = true
             seasonSeriesState = .loaded
         } catch {
+            guard canApplyResponse else { return }
             seasonSeriesPage = max(1, seasonSeriesPage - 1)
             seasonSeriesState = .failed(error.localizedDescription)
         }
@@ -236,6 +367,7 @@ final class UploaderViewModel: ObservableObject {
 
     @discardableResult
     func toggleFollow() async -> Bool {
+        guard isCurrentViewerContext, !enhancementEnabled || canChangeRelation else { return false }
         guard !isMutatingFollow else { return false }
         guard seedOwner.mid > 0 else {
             followMessage = "没有找到 UP 主 UID，无法关注"
@@ -253,12 +385,17 @@ final class UploaderViewModel: ObservableObject {
         followMessage = targetState ? "正在关注" : "正在取消关注"
 
         do {
-            try await api.setUploaderFollowing(mid: seedOwner.mid, following: targetState)
+            try await api.setUploaderFollowing(
+                mid: seedOwner.mid, following: targetState,
+                expectedAccountMID: enhancementEnabled ? viewerIdentity.accountMID : nil
+            )
+            guard isCurrentViewerContext else { return false }
             followMessage = targetState ? "已关注" : "已取消关注"
             isMutatingFollow = false
             Task { await loadProfile(force: true) }
             return true
         } catch {
+            guard isCurrentViewerContext else { return false }
             isFollowing = previousState
             followerCount = previousFollowerCount
             followMessage = followFailureMessage(error)

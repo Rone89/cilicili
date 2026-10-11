@@ -6,13 +6,17 @@ final class UploaderViewModelHolder: ObservableObject {
     @Published var viewModel: UploaderViewModel?
     private var cancellable: AnyCancellable?
     private var lastSnapshot: UploaderRenderSnapshot?
+    private var spaceIdentity: UploaderSpaceRequestIdentity?
 
-    func configure(owner: VideoOwner, api: BiliAPIClient) {
-        guard viewModel?.seedOwner.mid != owner.mid else { return }
-        let viewModel = UploaderViewModel(seedOwner: owner, api: api)
+    func configure(owner: VideoOwner, api: BiliAPIClient, enhancementEnabled: Bool = false) {
+        let identity = enhancementEnabled ? UploaderSpaceRequestIdentity(api.requestSnapshot()) : nil
+        guard viewModel?.seedOwner.mid != owner.mid
+                || viewModel?.enhancementEnabled != enhancementEnabled || spaceIdentity != identity else { return }
+        spaceIdentity = identity
+        let viewModel = UploaderViewModel(seedOwner: owner, api: api, enhancementEnabled: enhancementEnabled)
         self.viewModel = viewModel
         lastSnapshot = UploaderRenderSnapshot(viewModel)
-        cancellable = viewModel.objectWillChange.sink { [weak self] _ in
+        cancellable = viewModel.objectWillChange.sink { [weak self, weak viewModel] _ in
             Task { @MainActor [weak self, weak viewModel] in
                 guard let self, let viewModel else { return }
                 let snapshot = UploaderRenderSnapshot(viewModel)

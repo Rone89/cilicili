@@ -4044,6 +4044,169 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testEnhancedSpaceLoadsOnceWithoutEagerArchiveRequests() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"用户","relation":{"is_follow":0}},"archive":{"count":0,"item":[]}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-access-key")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        await model.loadInitial()
+        await model.loadSpaceOverview()
+        XCTAssertEqual(recorder.requests.count, 1)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/v2/space")
+        let query = Self.queryValues(for: request)
+        XCTAssertEqual(query["vmid"], "123")
+        XCTAssertEqual(query["access_key"], "test-access-key")
+        XCTAssertNotNil(query["sign"])
+        XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA=test") == true)
+        XCTAssertEqual(model.spaceOverviewState, .loaded)
+        XCTAssertEqual(model.state, .idle)
+    }
+
+    @MainActor
+    func testEnhancedSpaceGuestDoesNotSendAccountCredentials() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001,"name":"用户"}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-key", guestModeEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertNil(Self.queryValues(for: request)["access_key"])
+        XCTAssertFalse(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA") == true)
+        XCTAssertFalse(model.isOwnSpace)
+        XCTAssertFalse(model.canChangeRelation)
+    }
+
+    @MainActor
+    func testEnhancedSpaceFailureUsesOnlyPublicCardFallback() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v2/space" {
+                return Self.response(for: request, body: #"{"code":-400,"message":"空间暂不可用"}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"公开资料"}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", accessKey: "test-key")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/web-interface/card"])
+        XCTAssertEqual(model.profile?.card?.name, "公开资料")
+        XCTAssertEqual(model.profileState, .loaded)
+        guard case .failed = model.spaceOverviewState else { return XCTFail("Missing overview cannot be reported as success") }
+        XCTAssertFalse(recorder.requests[1].value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA") == true)
+        XCTAssertNil(model.spaceOverview)
+    }
+
+    @MainActor
+    func testEnhancedSpaceEmptyLoadedListsAreNotRepeated() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"has_more":false}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadDynamicsIfNeeded()
+        await model.loadDynamicsIfNeeded()
+        XCTAssertEqual(model.dynamicState, .loaded)
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
+    func testEnhancedSpaceAccountSwitchReplacesModelAndRejectsOldActions() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"用户"}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001; bili_jct=csrf")
+        let owner = VideoOwner(mid: 123, name: "用户", face: nil)
+        let holder = UploaderViewModelHolder()
+        holder.configure(owner: owner, api: api, enhancementEnabled: true)
+        let old = try XCTUnwrap(holder.viewModel)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002", "bili_jct":"newcsrf"], credentialKind: .web)
+        holder.configure(owner: owner, api: api, enhancementEnabled: true)
+        XCTAssertFalse(holder.viewModel === old)
+        XCTAssertFalse(old.isCurrentViewerContext)
+        await old.loadSpaceOverview(force: true)
+        await old.refreshDynamics()
+        await old.refreshSeasonSeries()
+        let success = await old.toggleFollow()
+        XCTAssertFalse(success)
+        XCTAssertTrue(recorder.requests.isEmpty)
+        holder.configure(owner: owner, api: api, enhancementEnabled: false)
+        XCTAssertFalse(try XCTUnwrap(holder.viewModel).enhancementEnabled)
+    }
+
+    @MainActor
+    func testEnhancedSpaceDiscardsResponseAfterAccountSwitchWhileLoading() async throws {
+        let entered = expectation(description: "Space request started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"旧账号结果"}}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let load = Task { await model.loadInitial() }
+        await fulfillment(of: [entered], timeout: 3)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
+        release.signal()
+        await load.value
+        XCTAssertNil(model.profile)
+        XCTAssertNil(model.spaceOverview)
+        XCTAssertFalse(model.isCurrentViewerContext)
+    }
+
+    @MainActor
+    func testEnhancedSpaceSingleFlightAndCancellationAllowRetry() async throws {
+        let recorder = RequestContractRecorder()
+        let entered = expectation(description: "Space request started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"用户"}}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        let load = Task { await model.loadInitial() }
+        await fulfillment(of: [entered], timeout: 3)
+        await model.loadSpaceOverview(force: true)
+        XCTAssertEqual(recorder.requests.count, 1)
+        load.cancel()
+        release.signal()
+        await load.value
+        XCTAssertNil(model.spaceOverview)
+        XCTAssertEqual(model.spaceOverviewState, .idle)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"name":"重试成功"}}}"#)
+        }
+        await model.loadInitial()
+        XCTAssertEqual(model.spaceOverviewState, .loaded)
+        XCTAssertEqual(model.profile?.card?.name, "重试成功")
+        XCTAssertEqual(recorder.requests.count, 2)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

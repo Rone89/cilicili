@@ -2,6 +2,8 @@ import SwiftUI
 
 struct UploaderView: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @EnvironmentObject private var sessionStore: SessionStore
     let owner: VideoOwner
     let allowsPullToRefresh: Bool
     let showsToolbarRefreshButton: Bool
@@ -26,22 +28,42 @@ struct UploaderView: View {
 
     private var content: some View {
         Group {
-            if let viewModel = holder.viewModel {
-                UploaderContentView(
-                    owner: owner,
-                    viewModel: viewModel,
-                    allowsPullToRefresh: allowsPullToRefresh,
-                    showsToolbarRefreshButton: showsToolbarRefreshButton
-                )
+            if let viewModel = holder.viewModel,
+               viewModel.enhancementEnabled == libraryStore.personalSpaceEnhancementExperimentEnabled,
+               viewModel.isCurrentViewerContext {
+                if viewModel.enhancementEnabled {
+                    UploaderEnhancedContentView(
+                        owner: owner, viewModel: viewModel,
+                        allowsPullToRefresh: allowsPullToRefresh,
+                        showsToolbarRefreshButton: showsToolbarRefreshButton
+                    )
+                } else {
+                    UploaderContentView(
+                        owner: owner,
+                        viewModel: viewModel,
+                        allowsPullToRefresh: allowsPullToRefresh,
+                        showsToolbarRefreshButton: showsToolbarRefreshButton
+                    )
+                }
             } else {
                 UploaderInitialLoadingView()
             }
         }
-        .task(id: owner.mid) {
-            holder.configure(owner: owner, api: dependencies.api)
+        .id(configurationID)
+        .task(id: configurationID) {
+            holder.configure(owner: owner, api: dependencies.api,
+                             enhancementEnabled: libraryStore.personalSpaceEnhancementExperimentEnabled)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var configurationID: String {
+        guard libraryStore.personalSpaceEnhancementExperimentEnabled else { return "legacy-\(owner.mid)" }
+        // Observe session changes even though the authoritative request context is owned by the API.
+        _ = sessionStore.accountConfigurationVersion
+        let identity = UploaderSpaceRequestIdentity(dependencies.api.requestSnapshot())
+        return "enhanced-\(owner.mid)-\(identity.accountMID ?? 0)-\(identity.credentialVersion)-\(identity.isLoggedIn)-\(identity.isPurposeEnabled)-\(identity.guestModeEnabled)"
     }
 }
 

@@ -7,6 +7,12 @@ nonisolated struct PgcSeasonRoute: Hashable, Identifiable {
 
     var id: Int { seasonID }
 
+    init(seasonID: Int, title: String, cover: String?) {
+        self.seasonID = seasonID
+        self.title = title
+        self.cover = cover?.normalizedBiliURL()
+    }
+
     init?(media: SearchMediaItem) {
         guard let seasonID = media.seasonID else { return nil }
         self.seasonID = seasonID

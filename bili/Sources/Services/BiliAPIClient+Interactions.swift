@@ -304,8 +304,8 @@ extension BiliAPIClient {
         }
     }
 
-    func setUploaderFollowing(mid: Int, following: Bool) async throws {
-        try await modifyUploaderRelation(mid: mid, action: following ? "1" : "2")
+    func setUploaderFollowing(mid: Int, following: Bool, expectedAccountMID: Int? = nil) async throws {
+        try await modifyUploaderRelation(mid: mid, action: following ? "1" : "2", expectedAccountMID: expectedAccountMID)
     }
 
     func blockUploader(mid: Int) async throws {
