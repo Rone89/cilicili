@@ -14,11 +14,14 @@ struct DynamicView: View {
 }
 
 private struct DynamicContentRoot: View {
+    @Environment(\.rootNavigationTitleHidden) private var rootNavigationTitleHidden
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let api: BiliAPIClient
     @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var sessionStore: SessionStore
     @StateObject private var holder: DynamicViewModelHolder
     @State private var selectedFeed: DynamicFeedKind = .all
+    @State private var hidesNavigationChrome = false
 
     init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
         self.api = api
@@ -45,6 +48,7 @@ private struct DynamicContentRoot: View {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
         }
+        .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
             if libraryStore.dynamicVideoFilterExperimentEnabled {
                 ToolbarItem(placement: .principal) {
@@ -56,7 +60,12 @@ private struct DynamicContentRoot: View {
                     .pickerStyle(.segmented)
                     .frame(width: 180)
                     .accessibilityIdentifier("dynamic.feedPicker")
+                    .opacity(hidesNavigationChrome ? 0 : 1)
+                    .disabled(hidesNavigationChrome)
+                    .accessibilityHidden(hidesNavigationChrome)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
+                .sharedBackgroundVisibility(hidesNavigationChrome ? .hidden : .automatic)
             }
         }
         .onChange(of: selectedFeed) { _, kind in
@@ -77,6 +86,21 @@ private struct DynamicContentRoot: View {
                 sessionStore: sessionStore
             )
         }
+    }
+
+    private var navigationChromeVisibility: Binding<Bool> {
+        Binding(
+            get: {
+                libraryStore.dynamicVideoFilterExperimentEnabled
+                    ? hidesNavigationChrome : rootNavigationTitleHidden.wrappedValue
+            },
+            set: { isHidden in
+                // Keep a local signal for dynamic pages pushed from Home, where
+                // the root title binding intentionally ignores destination scrolls.
+                hidesNavigationChrome = isHidden
+                rootNavigationTitleHidden.wrappedValue = isHidden
+            }
+        )
     }
 }
 
