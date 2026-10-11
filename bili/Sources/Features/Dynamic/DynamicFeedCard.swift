@@ -3,7 +3,6 @@ import SwiftUI
 struct DynamicFeedCard: View {
     @Environment(\.dynamicDetailNavigationPath) private var detailNavigationPath
     @Environment(\.preloadedOriginalDynamicDetails) private var preloadedOriginalDynamicDetails
-    @Environment(\.dynamicPGCCardEnabled) private var pgcEnabled
     let item: DynamicFeedItem
     let api: BiliAPIClient
     let contentWidth: CGFloat?
@@ -37,9 +36,6 @@ struct DynamicFeedCard: View {
     }
 
     var body: some View {
-        let display = pgcEnabled && item.pgc != nil
-            ? DynamicFeedCardDisplayModel(item: item, pgcEnabled: true)
-            : self.display
         Group {
             if let video = display.video, display.usesHomeVideoCardStyle {
                 DynamicHomeVideoFeedCard(

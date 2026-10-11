@@ -3,19 +3,20 @@ import XCTest
 
 @MainActor
 final class DynamicPGCCardTests: XCTestCase {
-    func testExperimentDefaultsOffAndPersistsWithoutChangingOtherSettings() {
+    func testRetiredExperimentPreferenceIsRemovedWithoutChangingOtherSettings() throws {
         let suite = "DynamicPGCCardTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicPGCCardExperimentEnabled)
         store.setFollowsSystemFontSize(false)
-        store.setDynamicPGCCardExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicPGCCardExperimentEnabled)
-        store.setDynamicPGCCardExperimentEnabled(false)
-        let restored = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(restored.dynamicPGCCardExperimentEnabled)
-        XCTAssertFalse(restored.followsSystemFontSize)
+        let item = try decode(pgc: #"{"title":"第1集","epid":101}"#)
+        for legacyValue in [false, true] {
+            defaults.set(legacyValue, forKey: "cc.bili.dynamic.pgcCardExperimentEnabled.v1")
+            let restored = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: "cc.bili.dynamic.pgcCardExperimentEnabled.v1"))
+            XCTAssertFalse(restored.followsSystemFontSize)
+            XCTAssertEqual(DynamicFeedCardDisplayModel(item: item).pgc?.episodeID, 101)
+        }
     }
 
     func testBothPGCTypesDecodeLossyIDsAndPreserveRealMetadata() throws {
@@ -33,31 +34,27 @@ final class DynamicPGCCardTests: XCTestCase {
         }
     }
 
-    func testDisabledPresentationRetainsFallbackWhileEnabledAvoidsDuplicateCoverAndTitle() throws {
+    func testDefaultPresentationAvoidsDuplicateCoverAndTitle() throws {
         let item = try decode(pgc: #"{"title":"第1集","cover":"https://i0.hdslb.com/test.jpg","epid":101}"#)
-        let old = DynamicFeedCardDisplayModel(item: item)
-        let enabled = DynamicFeedCardDisplayModel(item: item, pgcEnabled: true)
-        XCTAssertNil(old.pgc)
-        XCTAssertEqual(old.topLevelDisplayText, "第1集")
-        XCTAssertEqual(old.imageItems.count, 1)
-        XCTAssertNotNil(enabled.pgc)
-        XCTAssertTrue(enabled.imageItems.isEmpty)
-        XCTAssertNil(enabled.topLevelDisplayText)
-        XCTAssertFalse(enabled.usesSeparatedDynamicLayout)
-        XCTAssertFalse(enabled.usesHomeVideoCardStyle)
-        XCTAssertFalse(enabled.supportsDetailNavigation)
+        let display = DynamicFeedCardDisplayModel(item: item)
+        XCTAssertNotNil(display.pgc)
+        XCTAssertTrue(display.imageItems.isEmpty)
+        XCTAssertNil(display.topLevelDisplayText)
+        XCTAssertFalse(display.usesSeparatedDynamicLayout)
+        XCTAssertFalse(display.usesHomeVideoCardStyle)
+        XCTAssertFalse(display.supportsDetailNavigation)
         XCTAssertEqual(item.commentOID, "777")
         XCTAssertEqual(item.commentType, 17)
-        XCTAssertEqual(enabled.commentTitle, old.commentTitle)
-        XCTAssertEqual(enabled.shareURL, old.shareURL)
+        XCTAssertEqual(display.commentTitle, "评论")
+        XCTAssertEqual(display.shareURL, URL(string: "https://t.bilibili.com/123456789"))
         XCTAssertFalse(DynamicFeedKind.video.includes(item))
         XCTAssertTrue(DynamicFeedKind.all.includes(item))
     }
 
     func testBodyDescriptionIsKeptAndCoverRemovalRetainsOtherPictures() throws {
         let item = try decode(pgc: #"{"title":"第1集","epid":101,"cover":"https://i0.hdslb.com/test.jpg"}"#, desc: #"{"text":"更新啦"}"#)
-        let enabled = DynamicFeedCardDisplayModel(item: item, pgcEnabled: true)
-        XCTAssertEqual(enabled.topLevelDisplayText, "更新啦")
+        let display = DynamicFeedCardDisplayModel(item: item)
+        XCTAssertEqual(display.topLevelDisplayText, "更新啦")
         let images = try JSONDecoder.bili.decode([DynamicImageItem].self, from: Data(#"[{"src":"https://i0.hdslb.com/test.jpg@200w.webp"},{"src":"https://i0.hdslb.com/other.jpg"}]"#.utf8))
         XCTAssertEqual(item.pgc?.bodyImages(from: images).map(\.url), ["https://i0.hdslb.com/other.jpg"])
     }
@@ -93,14 +90,14 @@ final class DynamicPGCCardTests: XCTestCase {
         for payload in ["null", "[]", "{}", "{\"unknown\":true}"] {
             let item = try decode(pgc: payload, desc: #"{"text":"正文"}"#)
             XCTAssertNil(item.pgc, payload)
-            XCTAssertEqual(DynamicFeedCardDisplayModel(item: item, pgcEnabled: true).topLevelDisplayText, "正文")
+            XCTAssertEqual(DynamicFeedCardDisplayModel(item: item).topLevelDisplayText, "正文")
         }
     }
 
     func testWordMentioningBangumiDoesNotBecomePGCCard() throws {
         let item = try decode(type: "DYNAMIC_TYPE_WORD", pgc: #"{"epid":101,"title":"追番"}"#, desc: #"{"text":"今天追番"}"#)
         XCTAssertNil(item.pgc)
-        XCTAssertNil(DynamicFeedCardDisplayModel(item: item, pgcEnabled: true).pgc)
+        XCTAssertNil(DynamicFeedCardDisplayModel(item: item).pgc)
     }
 
     func testForwardOriginalUsesSamePGCIdentity() throws {
@@ -110,7 +107,7 @@ final class DynamicPGCCardTests: XCTestCase {
         let forward = try JSONDecoder.bili.decode(DynamicFeedItem.self, from: Data(json.utf8))
         XCTAssertNil(forward.pgc)
         XCTAssertEqual(forward.original?.pgc, item.pgc)
-        XCTAssertTrue(DynamicFeedCardDisplayModel(item: forward, pgcEnabled: true).usesSeparatedDynamicLayout)
+        XCTAssertTrue(DynamicFeedCardDisplayModel(item: forward).usesSeparatedDynamicLayout)
     }
 
     private func decode(type: String = "DYNAMIC_TYPE_PGC_UNION", pgc: String, desc: String = "null") throws -> DynamicFeedItem {

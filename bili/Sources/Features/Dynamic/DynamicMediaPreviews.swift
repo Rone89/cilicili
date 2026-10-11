@@ -3,7 +3,6 @@ import SwiftUI
 struct DynamicOriginalPreview: View {
     @Environment(\.appThemeTintColor) private var appTintColor
 
-    @Environment(\.dynamicPGCCardEnabled) private var pgcEnabled
     private let maxTextLines: Int?
 
     let item: DynamicOriginalItem
@@ -80,7 +79,7 @@ struct DynamicOriginalPreview: View {
 
     @ViewBuilder
     private var originalContent: some View {
-        let pgc = pgcEnabled ? item.pgc : nil
+        let pgc = item.pgc
         let segments = pgc != nil ? (item.modules?.moduleDynamic?.desc?.segments ?? []) : textSegments
         let bodyText = pgc != nil ? DynamicTextSegment.displayText(from: segments) : topLevelDisplayText
         let bodyInput = pgc != nil ? DynamicAttributedTextInput.dynamicFeedBody(segments: segments, emoteSize: 20, maxLines: maxTextLines) : textInput

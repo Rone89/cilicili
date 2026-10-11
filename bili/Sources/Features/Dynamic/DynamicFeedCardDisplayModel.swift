@@ -30,8 +30,8 @@ struct DynamicFeedCardDisplayModel {
     let shareTitle: String
     let shareMessage: String
 
-    init(item: DynamicFeedItem, pgcEnabled: Bool = false) {
-        let pgc = pgcEnabled ? item.pgc : nil
+    init(item: DynamicFeedItem) {
+        let pgc = item.pgc
         let video = pgc == nil ? item.archive?.asVideoItem(author: item.author) : nil
         let live = item.live
         let paidContent = item.paidContent

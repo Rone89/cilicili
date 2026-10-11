@@ -4,25 +4,12 @@ import SwiftUI
 /// No cookies or playback requests: capture the production card's selected route.
 struct UITestDynamicPGCFixtureView: View {
     let api: BiliAPIClient
-    @StateObject private var library: LibraryStore
     @State private var selectedEpisodeID: Int?
-
-    init(api: BiliAPIClient) {
-        self.api = api
-        let defaults = UserDefaults(suiteName: "DynamicPGCFixture")!
-        defaults.removePersistentDomain(forName: "DynamicPGCFixture")
-        _library = StateObject(wrappedValue: LibraryStore(userDefaults: defaults))
-    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    Toggle("番剧实验", isOn: Binding(
-                        get: { library.dynamicPGCCardExperimentEnabled },
-                        set: { library.setDynamicPGCCardExperimentEnabled($0) }
-                    ))
-                    .accessibilityIdentifier("pgc.fixture.toggle")
                     Text(selectedEpisodeID.map(String.init) ?? "未选择")
                         .accessibilityIdentifier("pgc.fixture.episode")
                     ForEach(Self.items) { item in
@@ -33,8 +20,6 @@ struct UITestDynamicPGCFixtureView: View {
                 .padding(20)
             }
         }
-        .environmentObject(library)
-        .environment(\.dynamicPGCCardEnabled, library.dynamicPGCCardExperimentEnabled)
         .environment(\.openPgcSeasonRouteAction, { selectedEpisodeID = $0.episodeID })
     }
 

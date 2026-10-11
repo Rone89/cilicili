@@ -127,7 +127,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recommendMinimumLikeRatioPercent: Int
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
-    @Published private(set) var dynamicPGCCardExperimentEnabled: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
@@ -207,7 +206,6 @@ final class LibraryStore: ObservableObject {
     private static let blockedRecommendKeywordsKey = "cc.bili.content.blockedRecommendKeywords.v1"
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
-    private static let dynamicPGCCardExperimentEnabledKey = "cc.bili.dynamic.pgcCardExperimentEnabled.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
@@ -612,7 +610,7 @@ final class LibraryStore: ObservableObject {
         }
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1")
         userDefaults.removeObject(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
-        self.dynamicPGCCardExperimentEnabled = userDefaults.object(forKey: Self.dynamicPGCCardExperimentEnabledKey) as? Bool ?? false
+        userDefaults.removeObject(forKey: "cc.bili.dynamic.pgcCardExperimentEnabled.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
@@ -1209,12 +1207,6 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
-    }
-
-    func setDynamicPGCCardExperimentEnabled(_ enabled: Bool) {
-        guard dynamicPGCCardExperimentEnabled != enabled else { return }
-        dynamicPGCCardExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.dynamicPGCCardExperimentEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

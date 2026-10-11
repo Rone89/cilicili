@@ -1,16 +1,5 @@
 import SwiftUI
 
-private struct DynamicPGCCardEnabledKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var dynamicPGCCardEnabled: Bool {
-        get { self[DynamicPGCCardEnabledKey.self] }
-        set { self[DynamicPGCCardEnabledKey.self] = newValue }
-    }
-}
-
 struct DynamicPGCRouteLink: View {
     let pgc: DynamicPGC
     var compact = false
