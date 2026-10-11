@@ -2,6 +2,22 @@ import XCTest
 @testable import bili
 
 final class PgcSeasonPlaybackRouteTests: XCTestCase {
+    func testEpisodeRouteProvidesImmediatePlayerSeedWithoutInventingPlaybackIDs() throws {
+        let route = PgcSeasonRoute(episodeID: 101, seasonID: 100, title: "第1集", cover: "https://example.com/cover.jpg")
+        let seed = try XCTUnwrap(route.episodeSeedVideo)
+        XCTAssertEqual(seed.bvid, "ep101")
+        XCTAssertEqual(seed.pgcEpisodeID, 101)
+        XCTAssertEqual(seed.pgcSeasonID, 100)
+        XCTAssertEqual(seed.title, route.title)
+        XCTAssertEqual(seed.pic, route.cover)
+        XCTAssertTrue(seed.isPGCEpisode)
+        XCTAssertNil(seed.cid)
+        XCTAssertNil(seed.aid)
+        XCTAssertNil(seed.pages)
+        XCTAssertNil(PgcSeasonRoute(seasonID: 100, title: "番剧", cover: nil).episodeSeedVideo)
+        XCTAssertNil(PgcSeasonRoute(episodeID: 0, seasonID: 100, title: "番剧", cover: nil).episodeSeedVideo)
+    }
+
     func testPreferredPlaybackEpisodeUsesCloudResumeEpisode() throws {
         let season = try decodeSeason(
             """

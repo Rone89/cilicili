@@ -5,6 +5,66 @@ import XCTest
 
 final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     @MainActor
+    func testDynamicPgcPlayerSeedResolvesExactEpisodeInsideDetailPipeline() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"result":{"season_id":100,"episodes":[{"ep_id":101,"cid":1001,"bvid":"BVPGC101","title":"1"},{"ep_id":102,"cid":1002}],"user_status":{"progress":{"last_ep_id":102}}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let seed = try XCTUnwrap(PgcSeasonRoute(episodeID: 101, seasonID: 100, title: "番剧", cover: nil).episodeSeedVideo)
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        let identity = model.detailLoadIdentity
+        XCTAssertEqual(identity, .pgcEpisode(episodeID: 101, seasonID: 100))
+        XCTAssertFalse(model.activateCurrentDetailForFastStart(source: "test"))
+        let video = try await model.fetchFullDetail(identity: identity, priority: .userInitiated)
+        XCTAssertEqual(video.pgcEpisodeID, 101)
+        XCTAssertEqual(video.cid, 1001)
+        XCTAssertEqual(seed.mergingFilledValues(from: video).bvid, "BVPGC101")
+        XCTAssertEqual(seed.mergingFilledValues(from: video).cid, 1001)
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(recorder.request?.url?.path, "/pgc/view/web/season")
+        XCTAssertEqual(Self.queryValue(named: "ep_id", in: try XCTUnwrap(recorder.request)), "101")
+        model.stopPlaybackForNavigation()
+        XCTAssertTrue(model.isPlaybackInvalidatedForNavigation)
+    }
+
+    @MainActor
+    func testDynamicPgcResolutionFailureNeverUsesAnotherEpisodeAndCanRetry() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            throw URLError(.timedOut)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let seed = try XCTUnwrap(PgcSeasonRoute(episodeID: 901, seasonID: nil, title: "番剧", cover: nil).episodeSeedVideo)
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        defer { model.stopPlaybackForNavigation() }
+        await model.loadFullDetailAndMetadata(priority: .userInitiated)
+        guard case .failed = model.state else { return XCTFail("Timeout must remain a real failure") }
+        XCTAssertNil(model.selectedCID)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"result":{"episodes":[{"ep_id":901},{"ep_id":902,"cid":9002}],"user_status":{"progress":{"last_ep_id":902}}}}"#)
+        }
+        await model.loadFullDetailAndMetadata(priority: .userInitiated)
+        XCTAssertEqual(model.state, .failed("该分集不可播放或已失效"))
+        XCTAssertEqual(model.detail, seed)
+        XCTAssertNil(model.selectedCID)
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertTrue(recorder.requests.allSatisfy { $0.url?.path == "/pgc/view/web/season" })
+        let ugc = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"BVordinary","title":"普通视频"}"#.utf8))
+        let ugcModel = VideoDetailViewModel(seedVideo: ugc, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        XCTAssertEqual(ugcModel.detailLoadIdentity, .bvid("BVordinary"))
+        ugcModel.stopPlaybackForNavigation()
+    }
+
+    @MainActor
     func testAccountBlacklistReadAndUnblockContract() async throws {
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in

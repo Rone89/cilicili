@@ -22,13 +22,13 @@ struct PgcSeasonPlaybackRouteView: View {
 
     var body: some View {
         Group {
-            if let selectedVideo {
+            if let video = route.episodeSeedVideo ?? selectedVideo {
                 VideoDetailView(
-                    seedVideo: selectedVideo,
+                    seedVideo: video,
                     onRequestClose: onRequestClose,
                     onPopOne: onPopOne
                 )
-                .id(selectedVideo.id)
+                .id(video.id)
             } else {
                 PgcSeasonPlaybackRouteLoadingView(
                     route: route,
@@ -50,7 +50,7 @@ struct PgcSeasonPlaybackRouteView: View {
     }
 
     private func load() async {
-        guard selectedVideo == nil else { return }
+        guard route.episodeSeedVideo == nil, selectedVideo == nil else { return }
 
         state = .loading
         do {

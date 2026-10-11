@@ -641,15 +641,25 @@ private struct VideoDetailInteractivePlayerLayer: View {
                     .zIndex(3)
                 }
             } else {
-                PlayerLoadingPlaceholder(
-                    progress: 0.08,
-                    message: "加载视频信息",
-                    isFinishing: false,
-                    showsProgress: false
-                )
+                Group {
+                    if let episodeID = viewModel.detail.pgcEpisodeID {
+                        VideoDetailPgcResolutionPlaceholder(
+                            store: viewModel.playbackRenderStore.placeholderStore,
+                            episodeID: episodeID,
+                            retry: { await viewModel.load() }
+                        )
+                    } else {
+                        PlayerLoadingPlaceholder(
+                            progress: 0.08,
+                            message: "加载视频信息",
+                            isFinishing: false,
+                            showsProgress: false
+                        )
+                        .allowsHitTesting(false)
+                    }
+                }
                 .frame(width: layout.playerFrame.width, height: layout.playerFrame.height)
                 .position(x: layout.playerFrame.midX, y: layout.playerFrame.midY)
-                .allowsHitTesting(false)
                 .zIndex(2)
             }
         }

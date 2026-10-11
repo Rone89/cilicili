@@ -3,6 +3,7 @@ import Foundation
 extension VideoDetailViewModel {
     func scheduleDetailAndPlaybackPreloadIfMissingCID(priority: TaskPriority = .utility) {
         guard playbackOptions.usesStartupCaches,
+              !detail.isPGCEpisode,
               !isPlaybackInvalidatedForNavigation,
               selectedCID == nil,
               !detail.bvid.isEmpty

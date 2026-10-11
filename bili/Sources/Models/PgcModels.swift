@@ -8,6 +8,16 @@ nonisolated struct PgcSeasonRoute: Hashable, Identifiable {
 
     var id: String { "season:\(seasonID ?? 0):episode:\(episodeID ?? 0)" }
 
+    // A known episode can open the player shell before its playable CID is resolved.
+    var episodeSeedVideo: VideoItem? {
+        guard let episodeID, episodeID > 0 else { return nil }
+        return VideoItem(
+            bvid: "ep\(episodeID)", aid: nil, title: title, pic: cover, desc: nil,
+            duration: nil, pubdate: nil, owner: nil, stat: nil, cid: nil,
+            pages: nil, dimension: nil, pgcSeasonID: seasonID, pgcEpisodeID: episodeID
+        )
+    }
+
     init(seasonID: Int, title: String, cover: String?) {
         self.seasonID = seasonID
         self.episodeID = nil
@@ -35,6 +45,12 @@ nonisolated struct PgcSeasonRoute: Hashable, Identifiable {
         self.title = media.title
         self.cover = media.cover?.normalizedBiliURL()
     }
+}
+
+enum PgcEpisodePlaybackError: LocalizedError {
+    case unavailable
+
+    var errorDescription: String? { "该分集不可播放或已失效" }
 }
 
 nonisolated struct PgcSeasonInfo: Decodable, Hashable, Sendable {
