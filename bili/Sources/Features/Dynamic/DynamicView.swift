@@ -51,29 +51,24 @@ private struct DynamicContentRoot: View {
         }
         .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
-            if libraryStore.dynamicVideoFilterExperimentEnabled {
-                ToolbarItem(placement: .principal) {
-                    Picker("动态内容", selection: $selectedFeed) {
-                        ForEach(DynamicFeedKind.allCases, id: \.self) { kind in
-                            Text(kind.title).tag(kind)
-                        }
+            ToolbarItem(placement: .principal) {
+                Picker("动态内容", selection: $selectedFeed) {
+                    ForEach(DynamicFeedKind.allCases, id: \.self) { kind in
+                        Text(kind.title).tag(kind)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 180)
-                    .accessibilityIdentifier("dynamic.feedPicker")
-                    .opacity(hidesNavigationChrome ? 0 : 1)
-                    .disabled(hidesNavigationChrome)
-                    .accessibilityHidden(hidesNavigationChrome)
-                    .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
                 }
-                .sharedBackgroundVisibility(hidesNavigationChrome ? .hidden : .automatic)
+                .pickerStyle(.segmented)
+                .frame(width: 180)
+                .accessibilityIdentifier("dynamic.feedPicker")
+                .opacity(hidesNavigationChrome ? 0 : 1)
+                .disabled(hidesNavigationChrome)
+                .accessibilityHidden(hidesNavigationChrome)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
             }
+            .sharedBackgroundVisibility(hidesNavigationChrome ? .hidden : .automatic)
         }
         .onChange(of: selectedFeed) { _, kind in
             holder.selectFeed(kind, api: api, libraryStore: libraryStore, sessionStore: sessionStore)
-        }
-        .onChange(of: libraryStore.dynamicVideoFilterExperimentEnabled) { _, enabled in
-            if !enabled { selectedFeed = .all }
         }
         .onChange(of: DynamicFeedAccountContext(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,
@@ -91,10 +86,7 @@ private struct DynamicContentRoot: View {
 
     private var navigationChromeVisibility: Binding<Bool> {
         Binding(
-            get: {
-                libraryStore.dynamicVideoFilterExperimentEnabled
-                    ? hidesNavigationChrome : rootNavigationTitleHidden.wrappedValue
-            },
+            get: { hidesNavigationChrome },
             set: { isHidden in
                 // Keep a local signal for dynamic pages pushed from Home, where
                 // the root title binding intentionally ignores destination scrolls.

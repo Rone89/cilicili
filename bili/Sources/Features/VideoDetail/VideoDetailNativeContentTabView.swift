@@ -505,7 +505,6 @@ private struct VideoDetailScrollingTabPage<Content: View>: View {
 
 /// Declared by the navigation page for the UIKit shell, rather than its child host.
 struct VideoDetailBottomToolbarModifier: ViewModifier {
-    @EnvironmentObject private var libraryStore: LibraryStore
     @Environment(\.navigationHistoryContext) private var navigationHistory
     var isEnabled = true
     let isHidden: Bool
@@ -526,12 +525,11 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                         ToolbarSpacer(.flexible, placement: .bottomBar)
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailToolbarSegmentedPickerView(
-                                selection: $selection,
-                                usesNativePicker: libraryStore.videoDetailNativeToolbarPickerExperimentEnabled
+                                selection: $selection
                             )
                                 .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                         }
-                        .sharedBackgroundVisibility(pickerBackgroundVisibility)
+                        .sharedBackgroundVisibility(.hidden)
                         ToolbarSpacer(.flexible, placement: .bottomBar)
                         ToolbarItem(placement: .bottomBar) {
                             VideoDetailToolbarCommentAction(onComment: onOpenCommentComposer)
@@ -541,13 +539,12 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
                         ToolbarItemGroup(placement: .bottomBar) {
                             Spacer(minLength: 0)
                             VideoDetailToolbarSegmentedPickerView(
-                                selection: $selection,
-                                usesNativePicker: libraryStore.videoDetailNativeToolbarPickerExperimentEnabled
+                                selection: $selection
                             )
                                 .frame(width: VideoDetailToolbarSegmentedPickerView.toolbarWidth)
                             Spacer(minLength: 0)
                         }
-                        .sharedBackgroundVisibility(pickerBackgroundVisibility)
+                        .sharedBackgroundVisibility(.hidden)
                     }
                 }
                 .toolbarBackground(.automatic, for: .bottomBar)
@@ -555,10 +552,6 @@ struct VideoDetailBottomToolbarModifier: ViewModifier {
         } else {
             content
         }
-    }
-
-    private var pickerBackgroundVisibility: Visibility {
-        libraryStore.videoDetailNativeToolbarPickerExperimentEnabled ? .hidden : .automatic
     }
 }
 

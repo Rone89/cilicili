@@ -4,21 +4,18 @@ import XCTest
 
 final class VideoDetailFormalPerformancePolicyTests: XCTestCase {
     @MainActor
-    func testNativeToolbarPickerDefaultsOffAndPersistsWithoutChangingOtherSettings() {
+    func testRetiredNativeToolbarPickerSettingIsRemovedWithoutChangingOtherSettings() {
         let suiteName = "VideoDetailNativeToolbarPickerTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        // A retired switch must not implicitly opt users into this new experiment.
-        defaults.set(true, forKey: "cc.bili.experimental.videoDetailToolbarSegmentedPicker.v1")
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.videoDetailNativeToolbarPickerExperimentEnabled)
-        store.setFollowsSystemFontSize(false)
-        store.setVideoDetailNativeToolbarPickerExperimentEnabled(true)
-        let restored = LibraryStore(userDefaults: defaults)
-        XCTAssertTrue(restored.videoDetailNativeToolbarPickerExperimentEnabled)
-        XCTAssertFalse(restored.followsSystemFontSize)
-        restored.setVideoDetailNativeToolbarPickerExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailNativeToolbarPickerExperimentEnabled)
+        let key = "cc.bili.videoDetail.nativeToolbarPickerExperimentEnabled.v1"
+        for previousValue in [false, true] {
+            defaults.set(previousValue, forKey: key)
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: key))
+            store.setFollowsSystemFontSize(false)
+            XCTAssertFalse(LibraryStore(userDefaults: defaults).followsSystemFontSize)
+        }
     }
 
     @MainActor

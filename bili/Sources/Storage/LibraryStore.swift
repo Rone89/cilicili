@@ -128,8 +128,6 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var blockedRecommendKeywords: [String]
     @Published private(set) var appliesRecommendFiltersToRelatedVideos: Bool
     @Published private(set) var metalDanmakuRendererExperimentEnabled: Bool
-    @Published private(set) var videoDetailNativeToolbarPickerExperimentEnabled: Bool
-    @Published private(set) var dynamicVideoFilterExperimentEnabled: Bool
     @Published private(set) var danmakuEnabled: Bool
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
@@ -209,9 +207,6 @@ final class LibraryStore: ObservableObject {
     private static let appliesRecommendFiltersToRelatedVideosKey =
         "cc.bili.content.appliesRecommendFiltersToRelatedVideos.v1"
     private static let metalDanmakuRendererExperimentEnabledKey = "cc.bili.playback.metalDanmakuRendererExperimentEnabled.v1"
-    private static let videoDetailNativeToolbarPickerExperimentEnabledKey =
-        "cc.bili.videoDetail.nativeToolbarPickerExperimentEnabled.v1"
-    private static let dynamicVideoFilterExperimentEnabledKey = "cc.bili.dynamic.videoFilterExperimentEnabled.v1"
     private static let danmakuEnabledKey = "cc.bili.playback.danmakuEnabled.v1"
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
@@ -252,6 +247,8 @@ final class LibraryStore: ObservableObject {
     private static let videoCoverBottomScrimEnabledKey = VideoCoverBottomScrimSettings.storageKey
     private static let videoCoverDurationBadgesEnabledKey = VideoCoverDurationBadgeSettings.storageKey
     private static let retiredExperimentKeys = [
+        "cc.bili.dynamic.videoFilterExperimentEnabled.v1",
+        "cc.bili.videoDetail.nativeToolbarPickerExperimentEnabled.v1",
         "cc.bili.appearance.bottomScrollEdgeBlurExperimentEnabled.v1",
         "cc.bili.home.avatarNavigationExperimentEnabled.v1",
         "cc.bili.home.toolbarPickerStyle.v1",
@@ -614,10 +611,6 @@ final class LibraryStore: ObservableObject {
         userDefaults.removeObject(forKey: "cc.bili.videoDetail.fixedBottomBarExperimentEnabled.v1")
         userDefaults.removeObject(forKey: "cc.bili.experimental.personalSpaceEnhancement.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
-        self.videoDetailNativeToolbarPickerExperimentEnabled =
-            userDefaults.object(forKey: Self.videoDetailNativeToolbarPickerExperimentEnabledKey) as? Bool ?? false
-        self.dynamicVideoFilterExperimentEnabled =
-            userDefaults.object(forKey: Self.dynamicVideoFilterExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
@@ -1218,18 +1211,6 @@ final class LibraryStore: ObservableObject {
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {
         metalDanmakuRendererExperimentEnabled = enabled
         userDefaults.set(enabled, forKey: Self.metalDanmakuRendererExperimentEnabledKey)
-    }
-
-    func setVideoDetailNativeToolbarPickerExperimentEnabled(_ enabled: Bool) {
-        guard videoDetailNativeToolbarPickerExperimentEnabled != enabled else { return }
-        videoDetailNativeToolbarPickerExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.videoDetailNativeToolbarPickerExperimentEnabledKey)
-    }
-
-    func setDynamicVideoFilterExperimentEnabled(_ enabled: Bool) {
-        guard dynamicVideoFilterExperimentEnabled != enabled else { return }
-        dynamicVideoFilterExperimentEnabled = enabled
-        userDefaults.set(enabled, forKey: Self.dynamicVideoFilterExperimentEnabledKey)
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

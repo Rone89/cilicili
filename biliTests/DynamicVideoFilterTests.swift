@@ -5,19 +5,18 @@ import XCTest
 
 @MainActor
 final class DynamicVideoFilterTests: XCTestCase {
-    func testExperimentDefaultsOffAndPersistsWithoutChangingOtherSettings() {
+    func testRetiredExperimentSettingIsRemovedWithoutChangingOtherSettings() {
         let suite = "DynamicVideoFilterTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicVideoFilterExperimentEnabled)
-        store.setFollowsSystemFontSize(false)
-        store.setDynamicVideoFilterExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicVideoFilterExperimentEnabled)
-        store.setDynamicVideoFilterExperimentEnabled(false)
-        let restored = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(restored.dynamicVideoFilterExperimentEnabled)
-        XCTAssertFalse(restored.followsSystemFontSize)
+        let key = "cc.bili.dynamic.videoFilterExperimentEnabled.v1"
+        for previousValue in [false, true] {
+            defaults.set(previousValue, forKey: key)
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: key))
+            store.setFollowsSystemFontSize(false)
+            XCTAssertFalse(LibraryStore(userDefaults: defaults).followsSystemFontSize)
+        }
     }
 
     func testVideoFilterExcludesForwardedVideoLivePGCAndMissingArchive() throws {
