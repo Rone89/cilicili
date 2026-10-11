@@ -4660,6 +4660,86 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testSpaceFavoriteCardPreviewsRequestThreeNewestItemsAndCacheEmptySlots() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch Self.queryValues(for: request)["media_id"] {
+            case "9":
+                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"最新"},{"id":2,"type":2,"title":"第二"},{"id":1,"type":2,"title":"第三"},{"id":4,"type":2,"title":"不展示"}]}}"#)
+            case "10":
+                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":5,"type":2,"title":"仅一项"}]}}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"medias":null,"info":{"media_count":0}}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "他人", face: nil), api: api, enhancementEnabled: true)
+        await model.loadFavoriteFolderPreviews(folderIDs: [9, 9, 0, 10, 11])
+        await model.loadFavoriteFolderPreviews(folderIDs: [9, 10, 11])
+        XCTAssertEqual(model.favoriteFolderPreviews[9]?.compactMap(\.aid), [3, 2, 1])
+        XCTAssertEqual(model.favoriteFolderPreviews[10]?.count, 1)
+        XCTAssertEqual(model.favoriteFolderPreviews[11]?.count, 0)
+        XCTAssertEqual(model.favoriteFolderPreviewStates[11], .loaded)
+        XCTAssertEqual(recorder.requests.count, 3)
+        for request in recorder.requests {
+            XCTAssertEqual(Self.queryValues(for: request)["ps"], "3")
+            XCTAssertEqual(Self.queryValues(for: request)["pn"], "1")
+            XCTAssertEqual(Self.queryValues(for: request)["order"], "mtime")
+            XCTAssertFalse(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA") == true)
+        }
+    }
+
+    @MainActor
+    func testSpaceFavoriteCardFailedRefreshKeepsPreviewAndRequiresExplicitRetry() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if recorder.requests.count == 2 {
+                return Self.response(for: request, body: #"{"code":-403,"message":"没有权限"}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"最新"}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadFavoriteFolderPreviews(folderIDs: [9])
+        await model.loadFavoriteFolderPreviews(folderIDs: [9], force: true)
+        await model.loadFavoriteFolderPreviews(folderIDs: [9])
+        XCTAssertEqual(model.favoriteFolderPreviews[9]?.compactMap(\.aid), [3])
+        guard case .failed = model.favoriteFolderPreviewStates[9] else { return XCTFail("失败不能伪装成空收藏夹") }
+        XCTAssertEqual(recorder.requests.count, 2)
+        await model.loadFavoriteFolderPreviews(folderIDs: [9], force: true)
+        XCTAssertEqual(model.favoriteFolderPreviewStates[9], .loaded)
+        XCTAssertEqual(recorder.requests.count, 3)
+    }
+
+    @MainActor
+    func testSpaceFavoriteCardSingleFlightAndAccountSwitchDiscardsResponse() async throws {
+        let recorder = RequestContractRecorder()
+        let entered = expectation(description: "Preview request started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"旧账号"}]}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let load = Task { await model.loadFavoriteFolderPreviews(folderIDs: [9, 10]) }
+        await fulfillment(of: [entered], timeout: 3)
+        await model.loadFavoriteFolderPreviews(folderIDs: [9])
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
+        release.signal()
+        await load.value
+        XCTAssertTrue(model.favoriteFolderPreviews.isEmpty)
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

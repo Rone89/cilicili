@@ -63,6 +63,8 @@ final class UploaderViewModel: ObservableObject {
     @Published private(set) var ownBangumiListState: LoadingState = .idle
     @Published private(set) var ownBangumiLoadMoreState: LoadingState = .idle
     @Published private(set) var ownBangumiHasMore = false
+    @Published private(set) var favoriteFolderPreviews: [Int: [AccountVideoEntry]] = [:]
+    @Published private(set) var favoriteFolderPreviewStates: [Int: LoadingState] = [:]
     private var ownBangumiPage = 0
 
     var spaceSections: [UploaderSpaceSection] {
@@ -192,6 +194,36 @@ final class UploaderViewModel: ObservableObject {
         } catch {
             guard canApplyResponse else { return }
             viewerRelationState = .failed(error.localizedDescription)
+        }
+    }
+
+    // Each visible section loads a bounded three-item preview per folder, sequentially.
+    // Cache belongs to this captured viewer context and is discarded with the space model.
+    func loadFavoriteFolderPreviews(folderIDs: [Int], force: Bool = false) async {
+        guard enhancementEnabled else { return }
+        var seen = Set<Int>()
+        for folderID in folderIDs where folderID > 0 && seen.insert(folderID).inserted {
+            guard canApplyResponse else { return }
+            let state = favoriteFolderPreviewStates[folderID] ?? .idle
+            guard !state.isLoading, force || state == .idle else { continue }
+            favoriteFolderPreviewStates[folderID] = .loading
+            do {
+                let result = try await api.fetchFavoriteFolderVideoPage(folderID: folderID, pageSize: 3, viewerSnapshot: viewerSnapshot)
+                guard canApplyResponse else {
+                    if Task.isCancelled { favoriteFolderPreviewStates[folderID] = .idle }
+                    return
+                }
+                var entryIDs = Set<String>()
+                favoriteFolderPreviews[folderID] = Array(result.entries.filter { entryIDs.insert($0.id).inserted }.prefix(3))
+                favoriteFolderPreviewStates[folderID] = .loaded
+            } catch {
+                guard canApplyResponse else {
+                    if Task.isCancelled { favoriteFolderPreviewStates[folderID] = .idle }
+                    return
+                }
+                // A failed refresh keeps the previously displayed preview.
+                favoriteFolderPreviewStates[folderID] = .failed(error.localizedDescription)
+            }
         }
     }
 

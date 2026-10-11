@@ -131,18 +131,22 @@ struct UploaderEnhancedContentView: View {
 
     private func refreshSelectedSection() async {
         switch selectedSection {
-        case .home: await viewModel.loadSpaceOverview(force: true)
+        case .home:
+            await viewModel.loadSpaceOverview(force: true)
+            await viewModel.loadFavoriteFolderPreviews(folderIDs: Array((viewModel.favoritePreview?.items ?? []).prefix(2)).map { $0.folder.id }, force: true)
         case .videos: await viewModel.refresh()
         case .dynamics: await viewModel.refreshDynamics()
-        case .favorites: await viewModel.loadOwnSpaceFavorites(force: true, requiresCompleteList: true)
+        case .favorites:
+            await viewModel.loadOwnSpaceFavorites(force: true, requiresCompleteList: true)
+            await viewModel.loadFavoriteFolderPreviews(folderIDs: (viewModel.ownSpaceFavorites?.items ?? []).map { $0.folder.id }, force: true)
         case .bangumi: await viewModel.loadOwnBangumiList(force: true)
         }
     }
 
     private var ownFavoritesContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             ForEach(viewModel.ownSpaceFavorites?.items ?? [], id: \.folder.id) { item in
-                SpaceFavoritePreviewRow(item: item)
+                UploaderFavoriteFolderPreviewCard(item: item, viewModel: viewModel)
             }
             ownLibraryStatus("收藏", state: viewModel.ownSpaceFavoritesState,
                              isEmpty: viewModel.ownSpaceFavorites?.items.isEmpty != false) {
@@ -150,6 +154,9 @@ struct UploaderEnhancedContentView: View {
             }
         }
         .padding(.horizontal, horizontalInset)
+        .task(id: viewModel.ownSpaceFavorites?.items.map { $0.folder.id }) {
+            await viewModel.loadFavoriteFolderPreviews(folderIDs: (viewModel.ownSpaceFavorites?.items ?? []).map { $0.folder.id })
+        }
     }
 
     private var ownBangumiContent: some View {
@@ -273,11 +280,14 @@ private struct UploaderSpaceOverviewContent: View {
                 heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible)
                 ForEach(Array(favorites.items.prefix(2).enumerated()), id: \.offset) { _, item in
                     if item.folder.id > 0 {
-                        SpaceFavoritePreviewRow(item: item)
+                        UploaderFavoriteFolderPreviewCard(item: item, viewModel: viewModel)
                     }
                 }
             }
             .padding(.horizontal, metrics.feedHorizontalPadding)
+            .task(id: Array(favorites.items.prefix(2)).map { $0.folder.id }) {
+                await viewModel.loadFavoriteFolderPreviews(folderIDs: Array(favorites.items.prefix(2)).map { $0.folder.id })
+            }
         }
         moduleStatus("收藏", hasItems: favorites?.items.contains(where: { $0.folder.id > 0 }) == true,
                      state: viewModel.ownSpaceFavoritesState,
@@ -330,33 +340,6 @@ private struct UploaderSpaceOverviewContent: View {
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(.horizontal, metrics.feedHorizontalPadding)
         }
-    }
-}
-
-private struct SpaceFavoritePreviewRow: View {
-    let item: UploaderSpaceFavoritePreview
-
-    var body: some View {
-        NavigationLink {
-            UploaderFavoriteFolderContentPage(folder: item.folder)
-        } label: {
-            HStack(spacing: 12) {
-                SpacePreviewCover(urlString: item.folder.cover)
-                    .frame(width: 120, height: 76)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(item.folder.displayTitle).font(.subheadline.weight(.semibold))
-                    HStack(spacing: 6) {
-                        if let count = item.count ?? item.folder.mediaCount { Text("\(count) 个内容") }
-                        if let isPublic = item.isPublic { Text(isPublic ? "公开" : "私密") }
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("打开收藏夹内容")
     }
 }
 
