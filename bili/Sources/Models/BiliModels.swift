@@ -3744,8 +3744,9 @@ nonisolated struct FavoriteFolder: Identifiable, Decodable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = container.decodeLossyIntIfPresent(forKey: .id)
-            ?? container.decodeLossyIntIfPresent(forKey: .mediaID)
+        // APP space previews also carry a local id; resource/list requires media_id.
+        id = container.decodeLossyIntIfPresent(forKey: .mediaID)
+            ?? container.decodeLossyIntIfPresent(forKey: .id)
             ?? 0
         ownerMID = container.decodeLossyIntIfPresent(forKey: .ownerMID)
         title = try container.decodeIfPresent(String.self, forKey: .title)

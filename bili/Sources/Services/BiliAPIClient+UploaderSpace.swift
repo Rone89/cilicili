@@ -1,6 +1,22 @@
 import Foundation
 
 extension BiliAPIClient {
+    func fetchSpaceViewerRelation(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderViewerRelation {
+        try Task.checkCancellation()
+        let current = await MainActor.run { UploaderSpaceRequestIdentity(self.requestSnapshot()) }
+        let identity = UploaderSpaceRequestIdentity(snapshot)
+        guard mid > 0, identity == current, identity.isLoggedIn, identity.isPurposeEnabled,
+              !identity.guestModeEnabled else { throw BiliAPIError.missingSESSDATA }
+        let response: BiliResponse<UploaderViewerRelation> = try await get(
+            base: baseURL, path: "/x/relation", query: ["fid": String(mid)],
+            referer: "https://space.bilibili.com/\(mid)", userAgent: Self.webUserAgent,
+            cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let relation = response.payload, relation.following != nil else { throw BiliAPIError.missingPayload }
+        return relation
+    }
+
     // Use the space's captured main-account credentials, not the interaction account.
     private func validateOwnSpaceRequest(mid: Int, snapshot: RequestSnapshot) async throws {
         try Task.checkCancellation()

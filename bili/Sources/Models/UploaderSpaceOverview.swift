@@ -47,14 +47,31 @@ nonisolated struct UploaderSpaceOverview: Decodable, Hashable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
-        if let decodedProfile = try? UploaderProfile(from: decoder) {
-            profile = decodedProfile
+        let decodedProfile: UploaderProfile
+        if let value = try? UploaderProfile(from: decoder) {
+            decodedProfile = value
         } else {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            profile = UploaderProfile(from: try container.decode(UploaderCard.self, forKey: .card))
+            decodedProfile = UploaderProfile(from: try container.decode(UploaderCard.self, forKey: .card))
         }
         let root = try DynamicJSONValue(from: decoder).objectValueForDynamicParsing ?? [:]
         let card = root["card"]?.objectValueForDynamicParsing ?? [:]
+        let relation = card["relation"]?.objectValueForDynamicParsing ?? [:]
+        let rootRelation = root["relation"]?.intValueForDynamicParsing
+        let isFollow = relation["is_follow"]?.intValueForDynamicParsing
+        let following: Bool?
+        if rootRelation == -1 || rootRelation == 128 {
+            following = false
+        } else if isFollow == 0 || isFollow == 1 {
+            following = isFollow == 1
+        } else if let rootRelation, [0, 1, 2, 4, 6].contains(rootRelation) {
+            following = rootRelation != 0
+        } else {
+            following = nil
+        }
+        profile = UploaderProfile(card: decodedProfile.card, follower: decodedProfile.follower,
+                                  following: following, likeNum: decodedProfile.likeNum,
+                                  archiveCount: decodedProfile.archiveCount)
         let images = root["images"]?.objectValueForDynamicParsing ?? [:]
         backgroundURL = images["imgUrl"]?.textValueForDynamicParsing
         nightBackgroundURL = images["night_imgurl"]?.textValueForDynamicParsing
@@ -170,7 +187,10 @@ nonisolated struct UploaderSpaceFavoritePreview: Decodable, Hashable, Sendable {
         folder = try FavoriteFolder(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         count = c.decodeLossyIntIfPresent(forKey: .count)
-        isPublic = c.decodeLossyBoolIfPresent(forKey: .isPublic)
+        // APP space uses 1 for private and 0 for public (the field name is misleading).
+        if let value = c.decodeLossyIntIfPresent(forKey: .isPublic), value == 0 || value == 1 {
+            isPublic = value == 0
+        } else { isPublic = folder.attr.map { ($0 & 1) == 0 } }
     }
 }
 

@@ -4403,6 +4403,159 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testSpaceUnknownAPPFollowStatusUsesMainAccountRelation() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v2/space" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":123,"relation":{"is_follow":-999,"is_followed":1}},"relation":-999}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"attribute":0}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([Self.makeCookie(name: "DedeUserID", value: "2002"), Self.makeCookie(name: "SESSDATA", value: "other")])
+            try session.selectInteractionAccount(mid: 2002)
+        })
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertFalse(model.isFollowing)
+        XCTAssertEqual(model.profile?.following, false)
+        XCTAssertEqual(model.viewerRelationState, .loaded)
+        XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/relation"])
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[1])["fid"], "123")
+        XCTAssertTrue(recorder.requests[1].value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA=main") == true)
+    }
+
+    @MainActor
+    func testSpaceRefreshUnknownRelationDoesNotKeepCachedFollowingWithoutRecheck() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/relation" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"attribute":0}}"#)
+            }
+            return Self.response(for: request, body: recorder.requests.count == 1
+                ? #"{"code":0,"data":{"card":{"mid":123,"relation":{"is_follow":1}}}}"#
+                : #"{"code":0,"data":{"card":{"mid":123,"relation":{"is_follow":-999}}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertTrue(model.isFollowing)
+        await model.loadSpaceOverview(force: true)
+        XCTAssertFalse(model.isFollowing)
+        XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/v2/space", "/x/relation"])
+    }
+
+    @MainActor
+    func testSpaceUnknownRelationRefreshFailureClearsOldFollowStatus() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/relation" {
+                return Self.response(for: request, body: #"{"code":-500,"message":"关系读取失败"}"#)
+            }
+            return Self.response(for: request, body: recorder.requests.count == 1
+                ? #"{"code":0,"data":{"card":{"mid":123,"relation":{"is_follow":1}}}}"#
+                : #"{"code":0,"data":{"card":{"mid":123,"relation":{"is_follow":-999}}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertTrue(model.isFollowing)
+        await model.loadSpaceOverview(force: true)
+        XCTAssertNil(model.profile?.following)
+        XCTAssertFalse(model.isFollowing)
+        guard case .failed = model.viewerRelationState else { return XCTFail("失败应允许重试") }
+    }
+
+    @MainActor
+    func testSpaceFavoritePageGuestCanReadAndDeduplicatesPagination() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let pn = Self.queryValues(for: request)["pn"]
+            return Self.response(for: request, body: pn == "1"
+                ? #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"}],"has_more":true}}"#
+                : #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"},{"id":12,"type":2,"title":"第二条"}],"has_more":false}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
+        let model = UploaderFavoriteFolderViewModel(folderID: 7001, api: api)
+        await model.refresh()
+        await model.loadMore()
+        await model.loadMore()
+        XCTAssertEqual(model.state, .loaded)
+        XCTAssertEqual(model.entries.map(\.aid), [11, 12])
+        XCTAssertFalse(model.hasMore)
+        XCTAssertEqual(recorder.requests.count, 2)
+        for request in recorder.requests {
+            XCTAssertEqual(request.url?.path, "/x/v3/fav/resource/list")
+            XCTAssertEqual(Self.queryValues(for: request)["media_id"], "7001")
+            XCTAssertFalse(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA") == true)
+        }
+    }
+
+    @MainActor
+    func testSpacePrivateFolderServerErrorIsNotAnEmptySuccess() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, body: #"{"code":-403,"message":"访问权限不足"}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let model = UploaderFavoriteFolderViewModel(folderID: 7001, api: api)
+        await model.refresh()
+        guard case .failed = model.state else { return XCTFail("Permission error must remain visible") }
+        XCTAssertTrue(model.entries.isEmpty)
+    }
+
+    @MainActor
+    func testSpaceFavoritePageLoadMoreFailurePreservesLoadedContentAndCursor() async throws {
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, body: Self.queryValues(for: request)["pn"] == "1"
+                ? #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"}],"has_more":true}}"#
+                : #"{"code":-500,"message":"暂不可用"}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let model = UploaderFavoriteFolderViewModel(folderID: 7001, api: api)
+        await model.refresh()
+        await model.loadMore()
+        guard case .failed = model.loadMoreState else { return XCTFail("Load-more error must remain visible") }
+        XCTAssertEqual(model.entries.map(\.aid), [11])
+        RequestContractURLProtocol.install { request in
+            XCTAssertEqual(Self.queryValues(for: request)["pn"], "2")
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":12,"type":2,"title":"第二条"}],"has_more":false}}"#)
+        }
+        await model.loadMore()
+        XCTAssertEqual(model.entries.map(\.aid), [11, 12])
+        XCTAssertFalse(model.hasMore)
+    }
+
+    @MainActor
+    func testSpaceFolderDiscardsAccountSwitchResponse() async throws {
+        let entered = expectation(description: "Favorite page started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"旧内容"}],"has_more":false}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let model = UploaderFavoriteFolderViewModel(folderID: 7001, api: api)
+        let load = Task { await model.refresh() }
+        await fulfillment(of: [entered], timeout: 3)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
+        release.signal()
+        await load.value
+        XCTAssertTrue(model.entries.isEmpty)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

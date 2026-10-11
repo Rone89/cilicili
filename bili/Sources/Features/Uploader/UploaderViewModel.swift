@@ -58,6 +58,7 @@ final class UploaderViewModel: ObservableObject {
     @Published private(set) var ownSpaceFavoritesState: LoadingState = .idle
     @Published private(set) var ownSpaceBangumi: UploaderSpaceVideoGroup?
     @Published private(set) var ownSpaceBangumiState: LoadingState = .idle
+    @Published private(set) var viewerRelationState: LoadingState = .idle
 
     var favoritePreview: UploaderSpaceFavoriteGroup? {
         if let group = spaceOverview?.favorites, group.items.contains(where: { $0.folder.id > 0 }) { return group }
@@ -120,7 +121,7 @@ final class UploaderViewModel: ObservableObject {
             let overview = try await api.fetchUploaderSpaceOverview(mid: seedOwner.mid, snapshot: viewerSnapshot)
             guard isCurrentViewerContext, !Task.isCancelled else { return }
             spaceOverview = overview
-            applyProfile(overview.profile)
+            applyProfile(overview.profile, preservesUnknownFollowing: false)
             spaceOverviewState = .loaded
             profileState = .loaded
         } catch {
@@ -141,6 +142,9 @@ final class UploaderViewModel: ObservableObject {
             }
         }
         guard isCurrentViewerContext, !Task.isCancelled else { return }
+        if spaceOverviewState == .loaded, spaceOverview?.profile.following == nil {
+            await loadViewerRelation(force: force)
+        }
         // Sequential, bounded preview requests only when the APP aggregation omitted usable data.
         await loadOwnSpaceFavorites(force: force)
         await loadOwnSpaceBangumi(force: force)
@@ -163,6 +167,22 @@ final class UploaderViewModel: ObservableObject {
         } catch {
             guard canApplyResponse else { return }
             ownSpaceFavoritesState = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadViewerRelation(force: Bool = false) async {
+        guard enhancementEnabled, canChangeRelation, !Task.isCancelled,
+              !viewerRelationState.isLoading, force || viewerRelationState == .idle else { return }
+        viewerRelationState = .loading
+        defer { if Task.isCancelled { viewerRelationState = .idle } }
+        do {
+            let relation = try await api.fetchSpaceViewerRelation(mid: seedOwner.mid, snapshot: viewerSnapshot)
+            guard canApplyResponse else { return }
+            applyProfile(relation.profilePatch)
+            viewerRelationState = .loaded
+        } catch {
+            guard canApplyResponse else { return }
+            viewerRelationState = .failed(error.localizedDescription)
         }
     }
 
@@ -510,8 +530,14 @@ final class UploaderViewModel: ObservableObject {
         }
     }
 
-    private func applyProfile(_ profile: UploaderProfile) {
-        let mergedProfile = self.profile?.merged(with: profile) ?? profile
+    private func applyProfile(_ profile: UploaderProfile, preservesUnknownFollowing: Bool = true) {
+        var mergedProfile = self.profile?.merged(with: profile) ?? profile
+        if !preservesUnknownFollowing, profile.following == nil {
+            mergedProfile = UploaderProfile(card: mergedProfile.card, follower: mergedProfile.follower,
+                                            following: nil, likeNum: mergedProfile.likeNum,
+                                            archiveCount: mergedProfile.archiveCount)
+            isFollowing = false
+        }
         self.profile = mergedProfile
         if let isFollowing = profile.following {
             self.isFollowing = isFollowing

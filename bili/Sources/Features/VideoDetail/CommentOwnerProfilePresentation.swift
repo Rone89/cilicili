@@ -41,7 +41,7 @@ struct CommentOwnerProfileNavigationContainer<Content: View>: View {
         .nativeBottomScrollEdgeBlurVisibility(isHidden: true)
         .sheet(item: $profileRoute) { route in
             NavigationStack {
-                UploaderView(owner: route.owner)
+                UploaderView(owner: route.owner, horizontalInset: 20)
                     .environment(\.openVideoOwnerRouteAction, nil)
                     .environment(\.openVideoAction, nil)
                     .environment(\.openLiveRoomAction, nil)

@@ -146,10 +146,21 @@ extension BiliAPIClient {
     func fetchFavoriteFolderVideoPage(
         folderID: Int,
         page: Int = 1,
-        pageSize: Int = 20
+        pageSize: Int = 20,
+        viewerSnapshot: RequestSnapshot? = nil
     ) async throws -> AccountVideoEntryPage {
-        let context = await accountLibraryRequestContext(purpose: .interaction)
-        guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+        let cookieHeader: String
+        if let snapshot = viewerSnapshot {
+            try Task.checkCancellation()
+            let current = await MainActor.run { UploaderSpaceRequestIdentity(self.requestSnapshot()) }
+            guard folderID > 0, UploaderSpaceRequestIdentity(snapshot) == current else { throw BiliAPIError.missingPayload }
+            cookieHeader = snapshot.isLoggedIn && snapshot.isAccountPurposeEnabled && !snapshot.guestModeEnabled
+                ? snapshot.cookieHeader : snapshot.anonymousCookieHeader
+        } else {
+            let context = await accountLibraryRequestContext(purpose: .interaction)
+            guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
+            cookieHeader = context.cookieHeader
+        }
         let response: BiliResponse<DynamicJSONValue> = try await get(
             base: baseURL,
             path: "/x/v3/fav/resource/list",
@@ -158,10 +169,21 @@ extension BiliAPIClient {
                 page: page,
                 pageSize: pageSize
             ),
-            cookieHeader: context.cookieHeader
+            cookieHeader: cookieHeader
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        if viewerSnapshot != nil {
+            guard let payload = Self.dynamicObject(response.payload) else { throw BiliAPIError.missingPayload }
+            switch payload["medias"] {
+            case .array: break
+            case .null:
+                guard Self.dynamicInt(Self.dynamicObject(payload["info"])?["media_count"]) == 0 else {
+                    throw BiliAPIError.missingPayload
+                }
+            default: throw BiliAPIError.missingPayload
+            }
         }
         let entries = response.payload?.accountVideoEntries ?? []
         return AccountVideoEntryPage(

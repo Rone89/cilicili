@@ -1,9 +1,9 @@
 import SwiftUI
 
 struct UploaderEnhancedHeaderView: View {
-    @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
+    var horizontalInset: CGFloat = 20
 
     private var card: UploaderCard? { viewModel.profile?.card }
     private var overview: UploaderSpaceOverview? { viewModel.spaceOverview }
@@ -20,6 +20,14 @@ struct UploaderEnhancedHeaderView: View {
                         Text(card?.name ?? owner.name).font(.title2.weight(.bold))
                         if viewModel.isOwnSpace {
                             Text("我的个人空间").font(.subheadline).foregroundStyle(.secondary)
+                        } else if viewModel.profile?.following == nil, viewModel.canChangeRelation {
+                            Button {
+                                Task { await viewModel.loadViewerRelation(force: true) }
+                            } label: {
+                                if viewModel.viewerRelationState.isLoading { ProgressView() }
+                                else { Text("重新获取关注状态").font(.caption) }
+                            }
+                            .disabled(viewModel.viewerRelationState.isLoading)
                         } else {
                             UploaderFollowButton(owner: owner, viewModel: viewModel)
                                 .disabled(!viewModel.canChangeRelation || viewModel.profile?.following == nil || viewModel.profileState.isLoading)
@@ -39,15 +47,15 @@ struct UploaderEnhancedHeaderView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+            .padding(.horizontal, horizontalInset)
             UploaderStatsRow(viewModel: viewModel, card: card, usesEqualColumns: true)
                 .padding(.horizontal, 20)
             Divider()
                 .padding(.horizontal, 20)
             UploaderFollowMessage(message: viewModel.followMessage, isFollowing: viewModel.isFollowing)
-                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+                .padding(.horizontal, horizontalInset)
             UploaderProfileStatusMessage(state: viewModel.profileState)
-                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+                .padding(.horizontal, horizontalInset)
         }
     }
 

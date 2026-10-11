@@ -7,17 +7,20 @@ struct UploaderView: View {
     let owner: VideoOwner
     let allowsPullToRefresh: Bool
     let showsToolbarRefreshButton: Bool
+    let horizontalInset: CGFloat?
 
     @StateObject private var holder = UploaderViewModelHolder()
 
     init(
         owner: VideoOwner,
         allowsPullToRefresh: Bool = true,
-        showsToolbarRefreshButton: Bool = false
+        showsToolbarRefreshButton: Bool = false,
+        horizontalInset: CGFloat? = nil
     ) {
         self.owner = owner
         self.allowsPullToRefresh = allowsPullToRefresh
         self.showsToolbarRefreshButton = showsToolbarRefreshButton
+        self.horizontalInset = horizontalInset
     }
 
     var body: some View {
@@ -34,7 +37,8 @@ struct UploaderView: View {
                 if viewModel.enhancementEnabled {
                     UploaderEnhancedContentView(
                         owner: owner, viewModel: viewModel,
-                        allowsPullToRefresh: allowsPullToRefresh
+                        allowsPullToRefresh: allowsPullToRefresh,
+                        horizontalInset: horizontalInset ?? libraryStore.standardPageHorizontalInset
                     )
                 } else {
                     UploaderContentView(

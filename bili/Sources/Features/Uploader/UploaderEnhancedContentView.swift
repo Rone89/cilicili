@@ -3,16 +3,16 @@ import SwiftUI
 struct UploaderEnhancedContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var dependencies: AppDependencies
-    @EnvironmentObject private var libraryStore: LibraryStore
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
     let allowsPullToRefresh: Bool
+    var horizontalInset: CGFloat = 20
     @State private var selectedSection: SpaceSection = .home
     @State private var contentWidth: CGFloat = 0
 
     private var metrics: HomeFeedLayoutMetrics {
         HomeFeedLayoutMetrics(mode: .doubleColumn, containerWidth: contentWidth,
-                              standardHorizontalInset: libraryStore.standardPageHorizontalInset)
+                              standardHorizontalInset: horizontalInset)
     }
 
     private let visibleBannerHeight: CGFloat = 120
@@ -95,7 +95,7 @@ struct UploaderEnhancedContentView: View {
                         .accessibilityHidden(true)
                 }
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel)
+                    UploaderEnhancedHeaderView(owner: owner, viewModel: viewModel, horizontalInset: horizontalInset)
                         .padding(.top, backgroundURL == nil ? 12 : 14)
                     selectedContent
                 }
@@ -120,10 +120,10 @@ struct UploaderEnhancedContentView: View {
         case .dynamics:
             UploaderDynamicsSection(api: dependencies.api, viewModel: viewModel,
                                    contentWidth: contentWidth,
-                                   horizontalInset: libraryStore.standardPageHorizontalInset)
+                                   horizontalInset: horizontalInset)
         case .collections:
             UploaderSeasonSeriesSection(viewModel: viewModel,
-                                        horizontalInset: libraryStore.standardPageHorizontalInset)
+                                        horizontalInset: horizontalInset)
         }
     }
 
@@ -230,8 +230,9 @@ private struct UploaderSpaceOverviewContent: View {
                 heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible)
                 ForEach(Array(favorites.items.prefix(2).enumerated()), id: \.offset) { _, item in
                     if item.folder.id > 0 {
-                        // Same canonical folder share URL used by PiliPlus's favorite detail page.
-                        Link(destination: URL(string: "https://www.bilibili.com/medialist/detail/ml\(item.folder.id)")!) {
+                        NavigationLink {
+                            UploaderFavoriteFolderContentPage(folder: item.folder)
+                        } label: {
                             HStack(spacing: 12) {
                                 SpacePreviewCover(urlString: item.folder.cover)
                                     .frame(width: 120, height: 76)
@@ -244,11 +245,11 @@ private struct UploaderSpaceOverviewContent: View {
                                     .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("在浏览器打开收藏夹")
+                        .accessibilityHint("打开收藏夹内容")
                     }
                 }
             }
@@ -334,13 +335,15 @@ private struct SpaceSeasonPreview: View {
 private struct SpacePreviewCover: View {
     let urlString: String?
     var body: some View {
-        CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliImageThumbnailURL(maxSide: 480)) }, targetPixelSize: 480) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
-            Rectangle().fill(.quaternary)
-                .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
+        GeometryReader { geometry in
+            CachedRemoteImage(url: urlString.flatMap { URL(string: $0.biliImageThumbnailURL(maxSide: 480)) }, targetPixelSize: 480) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Rectangle().fill(.quaternary)
+                    .overlay { Image(systemName: "photo").foregroundStyle(.secondary) }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

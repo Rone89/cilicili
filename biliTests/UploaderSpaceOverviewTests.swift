@@ -26,7 +26,7 @@ final class UploaderSpaceOverviewTests: XCTestCase {
         XCTAssertEqual(overview.likes?.items.first?.video(defaultMID: 0)?.owner?.mid, 0)
         XCTAssertEqual(overview.likes?.items.first?.video(defaultMID: 0)?.owner?.name, "真正作者")
         XCTAssertEqual(overview.favorites?.items.first?.count, 221)
-        XCTAssertEqual(overview.favorites?.items.first?.isPublic, false)
+        XCTAssertEqual(overview.favorites?.items.first?.isPublic, true)
         XCTAssertEqual(overview.bangumi?.items.first?.seasonID, 777)
         XCTAssertNil(overview.bangumi?.items.first?.video(defaultMID: 123))
         XCTAssertEqual(overview.privacy?.favoritesVisible, false)
@@ -94,6 +94,27 @@ final class UploaderSpaceOverviewTests: XCTestCase {
         for json in [#"{"list":null}"#, #"{"count":3,"list":null}"#, #"{"count":3,"list":[]}"#, #"{"count":0}"#] {
             XCTAssertThrowsError(try decoder.decode(UploaderSpaceFavoriteList.self, from: Data(json.utf8)))
         }
+    }
+
+    func testAPPFollowSentinelsAndFollowerDirectionAreNotFollowing() throws {
+        for relation in [#"{"is_follow":-999,"is_followed":1}"#, #"{"is_followed":1}"#] {
+            let overview = try decode("{\"card\":{\"mid\":1,\"relation\":\(relation)},\"following\":367,\"relation\":-999}")
+            XCTAssertNil(overview.profile.following)
+        }
+        let unfollowed = try decode(#"{"card":{"mid":1,"relation":{"is_follow":0,"is_followed":1}},"relation":0}"#)
+        XCTAssertEqual(unfollowed.profile.following, false)
+        let followed = try decode(#"{"card":{"mid":1,"relation":{"is_follow":1,"status":2}},"relation":2}"#)
+        XCTAssertEqual(followed.profile.following, true)
+        let blocked = try decode(#"{"card":{"mid":1,"relation":{"is_follow":1}},"relation":-1}"#)
+        XCTAssertEqual(blocked.profile.following, false)
+    }
+
+    func testAPPFavoriteUsesMediaIDAndPrivacyFlagHasAPPSemantics() throws {
+        let overview = try decode(#"{"card":{"mid":1},"favourite2":{"item":[{"id":7,"media_id":7001,"is_public":0},{"id":8,"media_id":8001,"is_public":1},{"id":9,"is_public":-999}]}}"#)
+        XCTAssertEqual(overview.favorites?.items[0].folder.id, 7001)
+        XCTAssertEqual(overview.favorites?.items[0].isPublic, true)
+        XCTAssertEqual(overview.favorites?.items[1].isPublic, false)
+        XCTAssertNil(overview.favorites?.items[2].isPublic)
     }
 
     @MainActor
