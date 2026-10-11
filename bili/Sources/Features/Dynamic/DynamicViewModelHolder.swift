@@ -8,6 +8,10 @@ final class DynamicViewModelHolder: ObservableObject {
     private var lastSnapshot: DynamicRenderSnapshot?
     private var viewModels: [DynamicFeedKind: DynamicViewModel] = [:]
 
+    var topUploaderStripViewModel: DynamicViewModel? {
+        viewModels[.all]
+    }
+
     init(
         api: BiliAPIClient? = nil,
         libraryStore: LibraryStore? = nil,

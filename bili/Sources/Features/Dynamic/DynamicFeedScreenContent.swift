@@ -20,6 +20,7 @@ struct DynamicFeedScreenContent: View {
     @EnvironmentObject private var libraryStore: LibraryStore
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
+    let topUploaderStripViewModel: DynamicViewModel
     let isLoggedIn: Bool
 
     var body: some View {
@@ -30,6 +31,7 @@ struct DynamicFeedScreenContent: View {
             DynamicFeedScrollContent(
                 api: api,
                 viewModel: viewModel,
+                topUploaderStripViewModel: topUploaderStripViewModel,
                 isLoggedIn: isLoggedIn,
                 contentWidth: contentWidth,
                 horizontalInset: horizontalInset

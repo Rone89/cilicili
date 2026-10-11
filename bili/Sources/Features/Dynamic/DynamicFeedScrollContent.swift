@@ -4,6 +4,7 @@ struct DynamicFeedScrollContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
+    var topUploaderStripViewModel: DynamicViewModel? = nil
     let isLoggedIn: Bool
     let contentWidth: CGFloat
     let horizontalInset: CGFloat
@@ -14,6 +15,7 @@ struct DynamicFeedScrollContent: View {
                 DynamicFeedBodyContent(
                     api: api,
                     viewModel: viewModel,
+                    topUploaderStripViewModel: topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: isLoggedIn,
                     contentWidth: contentWidth
                 )
@@ -30,6 +32,9 @@ struct DynamicFeedScrollContent: View {
         .scrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
         .task(id: DynamicFeedLoadIdentity(model: ObjectIdentifier(viewModel), isLoggedIn: isLoggedIn)) {
+            if viewModel.feedKind == .video {
+                topUploaderStripViewModel?.loadTopUploaderStripIfNeeded()
+            }
             await viewModel.loadInitial()
         }
         .refreshable(action: refreshFromNativePull)
@@ -46,6 +51,9 @@ struct DynamicFeedScrollContent: View {
 
     private func refreshFromNativePull() async {
         guard isLoggedIn else { return }
+        if viewModel.feedKind == .video {
+            topUploaderStripViewModel?.refreshTopUploaderStrip()
+        }
         await viewModel.refresh()
     }
 
@@ -54,17 +62,13 @@ struct DynamicFeedScrollContent: View {
 private struct DynamicFeedBodyContent: View {
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
+    let topUploaderStripViewModel: DynamicViewModel
     let isLoggedIn: Bool
     let contentWidth: CGFloat
 
     var body: some View {
         LazyVStack(spacing: 0) {
-            if viewModel.feedKind == .all {
-                FollowedLiveStrip(
-                    items: viewModel.topUploaderStripItems,
-                    isLoading: isLoggedIn && viewModel.isTopUploaderStripLoading
-                )
-            }
+            DynamicFeedTopUploaderStrip(viewModel: topUploaderStripViewModel, isLoggedIn: isLoggedIn)
 
             if !isLoggedIn {
                 DynamicLoginEmptyState()
@@ -91,6 +95,18 @@ private struct DynamicFeedBodyContent: View {
                     .padding(.top, 6)
             }
         }
+    }
+}
+
+private struct DynamicFeedTopUploaderStrip: View {
+    @ObservedObject var viewModel: DynamicViewModel
+    let isLoggedIn: Bool
+
+    var body: some View {
+        FollowedLiveStrip(
+            items: viewModel.topUploaderStripItems,
+            isLoading: isLoggedIn && viewModel.isTopUploaderStripLoading
+        )
     }
 }
 

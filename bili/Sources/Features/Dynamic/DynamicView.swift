@@ -42,6 +42,7 @@ private struct DynamicContentRoot: View {
                 DynamicFeedScreenContent(
                     api: api,
                     viewModel: viewModel,
+                    topUploaderStripViewModel: holder.topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: sessionStore.isLoggedIn
                 )
             } else {

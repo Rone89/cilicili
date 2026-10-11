@@ -190,8 +190,13 @@ final class DynamicViewModel: ObservableObject {
         items = lifecycleCoordinator.filteredCurrentItems()
     }
 
-    private func refreshTopUploaderStrip() {
-        guard feedKind == .all else { return }
+    func loadTopUploaderStripIfNeeded() {
+        guard topUploaderStripItems.isEmpty, !isTopUploaderStripLoading else { return }
+        refreshTopUploaderStrip()
+    }
+
+    func refreshTopUploaderStrip() {
+        guard feedKind == .all, lifecycleCoordinator.isLoggedIn else { return }
         isTopUploaderStripLoading = true
         lifecycleCoordinator.refreshTopUploaderStripItems { [weak self] items in
             self?.topUploaderStripItems = items

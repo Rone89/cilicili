@@ -45,9 +45,11 @@ final class DynamicVideoFilterTests: XCTestCase {
         let api = BiliAPIClient(sessionStore: session, libraryStore: store, homeRecommendDiagnosticsStore: .shared)
         let holder = DynamicViewModelHolder(api: api, libraryStore: store, sessionStore: session)
         let all = try XCTUnwrap(holder.viewModel)
+        XCTAssertTrue(holder.topUploaderStripViewModel === all)
         holder.selectFeed(.video, api: api, libraryStore: store, sessionStore: session)
         let video = try XCTUnwrap(holder.viewModel)
         XCTAssertFalse(all === video)
+        XCTAssertTrue(holder.topUploaderStripViewModel === all)
         await video.loadInitial()
         XCTAssertTrue(video.items.isEmpty)
         XCTAssertFalse(video.state.isLoading)
@@ -59,7 +61,11 @@ final class DynamicVideoFilterTests: XCTestCase {
         holder.reconfigure(api: api, libraryStore: store, sessionStore: session)
         XCTAssertEqual(holder.viewModel?.feedKind, .all)
         XCTAssertFalse(holder.viewModel === all)
+        let newStripModel = try XCTUnwrap(holder.topUploaderStripViewModel)
+        XCTAssertTrue(newStripModel === holder.viewModel)
+        XCTAssertFalse(newStripModel === all)
         holder.selectFeed(.video, api: api, libraryStore: store, sessionStore: session)
         XCTAssertFalse(holder.viewModel === video)
+        XCTAssertTrue(holder.topUploaderStripViewModel === newStripModel)
     }
 }
