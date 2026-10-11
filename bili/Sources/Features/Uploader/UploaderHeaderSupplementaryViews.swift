@@ -41,13 +41,18 @@ struct UploaderProfileStatusMessage: View {
 struct UploaderStatsRow: View {
     @ObservedObject var viewModel: UploaderViewModel
     let card: UploaderCard?
+    var usesEqualColumns = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            UploaderStatItem(title: "粉丝", value: viewModel.followerCount ?? card?.fans)
-            UploaderStatItem(title: "关注", value: viewModel.followingCount ?? card?.attention)
-            UploaderStatItem(title: "获赞", value: viewModel.likeCount)
-            UploaderStatItem(title: "投稿", value: viewModel.archiveCount ?? loadedVideoCount)
+        HStack(spacing: usesEqualColumns ? 0 : 14) {
+            UploaderStatItem(title: "粉丝", value: viewModel.followerCount ?? card?.fans,
+                             alignment: usesEqualColumns ? .center : .leading)
+            UploaderStatItem(title: "关注", value: viewModel.followingCount ?? card?.attention,
+                             alignment: usesEqualColumns ? .center : .leading)
+            UploaderStatItem(title: "获赞", value: viewModel.likeCount,
+                             alignment: usesEqualColumns ? .center : .leading)
+            UploaderStatItem(title: "投稿", value: viewModel.archiveCount ?? loadedVideoCount,
+                             alignment: usesEqualColumns ? .center : .leading)
         }
     }
 
@@ -59,9 +64,10 @@ struct UploaderStatsRow: View {
 private struct UploaderStatItem: View {
     let title: String
     let value: Int?
+    let alignment: HorizontalAlignment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: alignment, spacing: 4) {
             Text(BiliFormatters.compactCount(value))
                 .font(.subheadline.weight(.bold))
 
@@ -69,6 +75,6 @@ private struct UploaderStatItem: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     }
 }

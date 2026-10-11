@@ -7,7 +7,6 @@ struct UploaderEnhancedContentView: View {
     let owner: VideoOwner
     @ObservedObject var viewModel: UploaderViewModel
     let allowsPullToRefresh: Bool
-    let showsToolbarRefreshButton: Bool
     @State private var selectedSection: SpaceSection = .home
     @State private var contentWidth: CGFloat = 0
 
@@ -70,19 +69,12 @@ struct UploaderEnhancedContentView: View {
             }
             .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
-                        Label("分享个人空间", systemImage: "square.and.arrow.up")
-                    }
-                    if showsToolbarRefreshButton {
-                        Button { Task { await refreshSelectedSection() } } label: {
-                            Label("刷新", systemImage: "arrow.clockwise")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
+                ShareLink(item: URL(string: "https://space.bilibili.com/\(owner.mid)")!) {
+                    Label("分享个人空间", systemImage: "square.and.arrow.up")
                 }
-                .accessibilityLabel("个人空间操作")
+                .labelStyle(.iconOnly)
+                .tint(.primary)
+                .accessibilityLabel("分享个人空间")
             }
         }
     }
@@ -110,6 +102,7 @@ struct UploaderEnhancedContentView: View {
                 .background(.background)
             }
         }
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .onPreferenceChange(UploaderContentWidthPreferenceKey.self) { width in
             let rounded = width.rounded(.down)
             if abs(rounded - contentWidth) > 0.5 { contentWidth = rounded }

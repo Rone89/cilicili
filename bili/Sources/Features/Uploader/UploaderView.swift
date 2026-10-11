@@ -34,8 +34,7 @@ struct UploaderView: View {
                 if viewModel.enhancementEnabled {
                     UploaderEnhancedContentView(
                         owner: owner, viewModel: viewModel,
-                        allowsPullToRefresh: allowsPullToRefresh,
-                        showsToolbarRefreshButton: showsToolbarRefreshButton
+                        allowsPullToRefresh: allowsPullToRefresh
                     )
                 } else {
                     UploaderContentView(
