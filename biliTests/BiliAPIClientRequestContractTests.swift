@@ -4556,6 +4556,110 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testSpaceTabsUseMainAccountNotInteractionAccountAndHideOwnTabsForGuests() async throws {
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "other")
+            ])
+            try session.selectInteractionAccount(mid: 2002)
+        })
+        func model(_ mid: Int, api: BiliAPIClient) -> UploaderViewModel {
+            UploaderViewModel(seedOwner: VideoOwner(mid: mid, name: "用户", face: nil), api: api, enhancementEnabled: true)
+        }
+        XCTAssertEqual(model(1001, api: api).spaceSections, [.home, .dynamics, .videos, .favorites, .bangumi])
+        XCTAssertEqual(model(2002, api: api).spaceSections, [.home, .dynamics, .videos])
+        XCTAssertEqual(model(123, api: api).spaceSections, [.home, .dynamics, .videos])
+        let guest = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
+        XCTAssertEqual(model(1001, api: guest).spaceSections, [.home, .dynamics, .videos])
+        let loggedOut = try makeAPI(cookieHeader: "")
+        XCTAssertEqual(model(1001, api: loggedOut).spaceSections, [.home, .dynamics, .videos])
+    }
+
+    @MainActor
+    func testOwnFavoritesTabFetchesCompleteFoldersEvenWithAPPPreviewAndKeepsCache() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v2/space" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001},"favourite2":{"item":[{"id":1}]},"season":{"item":[{"param":"777"}]}}}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"count":3,"list":[{"id":1},{"id":2},{"id":3}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.count, 1)
+        await model.loadOwnSpaceFavorites(requiresCompleteList: true)
+        await model.loadOwnSpaceFavorites(requiresCompleteList: true)
+        XCTAssertEqual(model.ownSpaceFavorites?.items.map { $0.folder.id }, [1, 2, 3])
+        XCTAssertEqual(model.ownSpaceFavoritesState, .loaded)
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertEqual(Self.queryValues(for: recorder.requests.last!)["up_mid"], "1001")
+    }
+
+    @MainActor
+    func testOwnBangumiTabPaginatesAndRetriesFailedPageWithoutRepeatingLoadedPage() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if Self.queryValues(for: request)["pn"] == "1" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":3,"list":[{"season_id":1,"title":"一"},{"season_id":2,"title":"二"}]}}"#)
+            }
+            if recorder.requests.count == 2 {
+                return Self.response(for: request, body: #"{"code":-500,"message":"分页失败"}"#)
+            }
+            return Self.response(for: request, body: #"{"code":0,"data":{"total":3,"list":[{"season_id":2,"title":"二"},{"season_id":3,"title":"三"}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "other")
+            ])
+            try session.selectInteractionAccount(mid: 2002)
+        })
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadOwnBangumiList()
+        await model.loadOwnBangumiList()
+        XCTAssertTrue(model.ownBangumiHasMore)
+        await model.loadMoreOwnBangumi()
+        XCTAssertEqual(model.ownBangumiItems.compactMap(\.seasonID), [1, 2])
+        guard case .failed = model.ownBangumiLoadMoreState else { return XCTFail("失败不能提交分页游标") }
+        await model.loadMoreOwnBangumi()
+        await model.loadMoreOwnBangumi()
+        XCTAssertEqual(model.ownBangumiItems.compactMap(\.seasonID), [1, 2, 3])
+        XCTAssertFalse(model.ownBangumiHasMore)
+        XCTAssertEqual(recorder.requests.map { Self.queryValues(for: $0)["pn"] }, ["1", "2", "2"])
+        for request in recorder.requests {
+            XCTAssertEqual(Self.queryValues(for: request)["ps"], "20")
+            XCTAssertEqual(Self.queryValues(for: request)["vmid"], "1001")
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA=main") == true)
+        }
+    }
+
+    @MainActor
+    func testOtherAndGuestSpacesCannotLoadOwnLibraryTabs() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        for guest in [false, true] {
+            let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: guest)
+            let model = UploaderViewModel(seedOwner: VideoOwner(mid: guest ? 1001 : 123, name: "用户", face: nil), api: api, enhancementEnabled: true)
+            await model.loadOwnSpaceFavorites(requiresCompleteList: true)
+            await model.loadOwnBangumiList()
+            await model.loadMoreOwnBangumi()
+            XCTAssertNil(model.ownSpaceFavorites)
+            XCTAssertTrue(model.ownBangumiItems.isEmpty)
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

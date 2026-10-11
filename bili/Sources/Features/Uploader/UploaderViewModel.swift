@@ -59,6 +59,15 @@ final class UploaderViewModel: ObservableObject {
     @Published private(set) var ownSpaceBangumi: UploaderSpaceVideoGroup?
     @Published private(set) var ownSpaceBangumiState: LoadingState = .idle
     @Published private(set) var viewerRelationState: LoadingState = .idle
+    @Published private(set) var ownBangumiItems: [UploaderSpaceVideoPreview] = []
+    @Published private(set) var ownBangumiListState: LoadingState = .idle
+    @Published private(set) var ownBangumiLoadMoreState: LoadingState = .idle
+    @Published private(set) var ownBangumiHasMore = false
+    private var ownBangumiPage = 0
+
+    var spaceSections: [UploaderSpaceSection] {
+        isOwnSpace ? UploaderSpaceSection.allCases : [.home, .dynamics, .videos]
+    }
 
     var favoritePreview: UploaderSpaceFavoriteGroup? {
         if let group = spaceOverview?.favorites, group.items.contains(where: { $0.folder.id > 0 }) { return group }
@@ -150,10 +159,10 @@ final class UploaderViewModel: ObservableObject {
         await loadOwnSpaceBangumi(force: force)
     }
 
-    func loadOwnSpaceFavorites(force: Bool = false) async {
+    func loadOwnSpaceFavorites(force: Bool = false, requiresCompleteList: Bool = false) async {
         guard enhancementEnabled, isOwnSpace, isCurrentViewerContext, !Task.isCancelled,
               !ownSpaceFavoritesState.isLoading else { return }
-        guard spaceOverview?.favorites?.items.contains(where: { $0.folder.id > 0 }) != true else { return }
+        guard requiresCompleteList || spaceOverview?.favorites?.items.contains(where: { $0.folder.id > 0 }) != true else { return }
         guard force || ownSpaceFavoritesState == .idle else { return }
         ownSpaceFavoritesState = .loading
         defer {
@@ -209,6 +218,57 @@ final class UploaderViewModel: ObservableObject {
     func loadVideosIfNeeded() async {
         guard isCurrentViewerContext, state != .loaded, !state.isLoading else { return }
         await refresh()
+    }
+
+    func loadOwnBangumiList(force: Bool = false) async {
+        guard enhancementEnabled, isOwnSpace, canApplyResponse,
+              !ownBangumiListState.isLoading, !ownBangumiLoadMoreState.isLoading,
+              force || ownBangumiListState == .idle else { return }
+        ownBangumiListState = .loading
+        defer { if Task.isCancelled { ownBangumiListState = .idle } }
+        do {
+            let result = try await api.fetchOwnSpaceBangumiPage(mid: seedOwner.mid, snapshot: viewerSnapshot, page: 1)
+            guard canApplyResponse else { return }
+            var seen = Set<Int>()
+            ownBangumiItems = result.list.filter { item in
+                item.seasonID.map { seen.insert($0).inserted } == true
+            }
+            ownBangumiPage = 1
+            ownBangumiHasMore = !ownBangumiItems.isEmpty && (result.total.map { ownBangumiItems.count < $0 } ?? (result.list.count == 20))
+            ownBangumiLoadMoreState = .idle
+            ownBangumiListState = .loaded
+        } catch {
+            guard canApplyResponse else { return }
+            ownBangumiListState = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadMoreOwnBangumiIfNeeded(seasonID: Int?) async {
+        guard seasonID != nil, seasonID == ownBangumiItems.last?.seasonID,
+              ownBangumiLoadMoreState == .idle else { return }
+        await loadMoreOwnBangumi()
+    }
+
+    func loadMoreOwnBangumi() async {
+        guard enhancementEnabled, isOwnSpace, canApplyResponse, ownBangumiHasMore,
+              !ownBangumiListState.isLoading, !ownBangumiLoadMoreState.isLoading else { return }
+        ownBangumiLoadMoreState = .loading
+        defer { if Task.isCancelled { ownBangumiLoadMoreState = .idle } }
+        do {
+            let result = try await api.fetchOwnSpaceBangumiPage(mid: seedOwner.mid, snapshot: viewerSnapshot, page: ownBangumiPage + 1)
+            guard canApplyResponse else { return }
+            var seen = Set(ownBangumiItems.compactMap(\.seasonID))
+            let incoming = result.list.filter { item in
+                item.seasonID.map { seen.insert($0).inserted } == true
+            }
+            ownBangumiItems.append(contentsOf: incoming)
+            ownBangumiPage += 1
+            ownBangumiHasMore = !incoming.isEmpty && (result.total.map { ownBangumiItems.count < $0 } ?? (result.list.count == 20))
+            ownBangumiLoadMoreState = .idle
+        } catch {
+            guard canApplyResponse else { return }
+            ownBangumiLoadMoreState = .failed(error.localizedDescription)
+        }
     }
 
     func loadInitial() async {

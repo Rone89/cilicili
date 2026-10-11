@@ -7,7 +7,7 @@ struct UploaderEnhancedContentView: View {
     @ObservedObject var viewModel: UploaderViewModel
     let allowsPullToRefresh: Bool
     var horizontalInset: CGFloat = 20
-    @State private var selectedSection: SpaceSection = .home
+    @State private var selectedSection: UploaderSpaceSection = .home
     @State private var contentWidth: CGFloat = 0
 
     private var metrics: HomeFeedLayoutMetrics {
@@ -52,14 +52,15 @@ struct UploaderEnhancedContentView: View {
             case .home: break
             case .videos: await viewModel.loadVideosIfNeeded()
             case .dynamics: await viewModel.loadDynamicsIfNeeded()
-            case .collections: await viewModel.loadSeasonSeriesIfNeeded()
+            case .favorites: await viewModel.loadOwnSpaceFavorites(requiresCompleteList: true)
+            case .bangumi: await viewModel.loadOwnBangumiList()
             }
         }
         .toolbar {
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Picker("空间内容", selection: $selectedSection) {
-                    ForEach(SpaceSection.allCases) { section in
+                    ForEach(viewModel.spaceSections) { section in
                         Text(section.title).tag(section)
                     }
                 }
@@ -121,9 +122,10 @@ struct UploaderEnhancedContentView: View {
             UploaderDynamicsSection(api: dependencies.api, viewModel: viewModel,
                                    contentWidth: contentWidth,
                                    horizontalInset: horizontalInset)
-        case .collections:
-            UploaderSeasonSeriesSection(viewModel: viewModel,
-                                        horizontalInset: horizontalInset)
+        case .favorites:
+            ownFavoritesContent
+        case .bangumi:
+            ownBangumiContent
         }
     }
 
@@ -132,20 +134,61 @@ struct UploaderEnhancedContentView: View {
         case .home: await viewModel.loadSpaceOverview(force: true)
         case .videos: await viewModel.refresh()
         case .dynamics: await viewModel.refreshDynamics()
-        case .collections: await viewModel.refreshSeasonSeries()
+        case .favorites: await viewModel.loadOwnSpaceFavorites(force: true, requiresCompleteList: true)
+        case .bangumi: await viewModel.loadOwnBangumiList(force: true)
         }
     }
-}
 
-private enum SpaceSection: String, CaseIterable, Identifiable {
-    case home, dynamics, videos, collections
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .home: "主页"
-        case .dynamics: "动态"
-        case .videos: "投稿"
-        case .collections: "合集"
+    private var ownFavoritesContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(viewModel.ownSpaceFavorites?.items ?? [], id: \.folder.id) { item in
+                SpaceFavoritePreviewRow(item: item)
+            }
+            ownLibraryStatus("收藏", state: viewModel.ownSpaceFavoritesState,
+                             isEmpty: viewModel.ownSpaceFavorites?.items.isEmpty != false) {
+                await viewModel.loadOwnSpaceFavorites(force: true, requiresCompleteList: true)
+            }
+        }
+        .padding(.horizontal, horizontalInset)
+    }
+
+    private var ownBangumiContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), alignment: .top)], alignment: .leading, spacing: 16) {
+                ForEach(viewModel.ownBangumiItems, id: \.seasonID) { item in
+                    SpaceSeasonPreview(item: item)
+                        .task { await viewModel.loadMoreOwnBangumiIfNeeded(seasonID: item.seasonID) }
+                }
+            }
+            ownLibraryStatus("追番", state: viewModel.ownBangumiListState,
+                             isEmpty: viewModel.ownBangumiItems.isEmpty) {
+                await viewModel.loadOwnBangumiList(force: true)
+            }
+            if viewModel.ownBangumiLoadMoreState.isLoading {
+                InlineLoadingStateView(title: "正在加载更多追番")
+            } else if case .failed(let message) = viewModel.ownBangumiLoadMoreState {
+                ErrorStateView(title: "更多追番加载失败", message: message) {
+                    Task { await viewModel.loadMoreOwnBangumi() }
+                }
+            } else if viewModel.ownBangumiHasMore {
+                Button("加载更多追番") { Task { await viewModel.loadMoreOwnBangumi() } }
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, horizontalInset)
+    }
+
+    @ViewBuilder private func ownLibraryStatus(
+        _ title: String, state: LoadingState, isEmpty: Bool, retry: @escaping () async -> Void
+    ) -> some View {
+        if state == .idle || state.isLoading {
+            InlineLoadingStateView(title: "正在加载\(title)")
+        } else if case .failed(let message) = state {
+            ErrorStateView(title: "\(title)加载失败", message: message) { Task { await retry() } }
+        } else if isEmpty {
+            EmptyStateView(title: "暂无\(title)", systemImage: title == "收藏" ? "folder" : "play.rectangle",
+                           message: "下拉刷新后再试。")
+                .frame(maxWidth: .infinity)
         }
     }
 }
@@ -178,7 +221,7 @@ private struct UploaderSpaceOverviewContent: View {
             if let overview = viewModel.spaceOverview {
                 if !overview.hasPreviewContent && !viewModel.isOwnSpace {
                     EmptyStateView(title: "暂无内容概览", systemImage: "person.crop.rectangle",
-                                   message: "可切换到动态、投稿或合集查看公开内容。")
+                                   message: "可切换到动态或投稿查看公开内容。")
                         .frame(maxWidth: .infinity)
                 }
             } else if viewModel.spaceOverviewState.isLoading {
@@ -230,26 +273,7 @@ private struct UploaderSpaceOverviewContent: View {
                 heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible)
                 ForEach(Array(favorites.items.prefix(2).enumerated()), id: \.offset) { _, item in
                     if item.folder.id > 0 {
-                        NavigationLink {
-                            UploaderFavoriteFolderContentPage(folder: item.folder)
-                        } label: {
-                            HStack(spacing: 12) {
-                                SpacePreviewCover(urlString: item.folder.cover)
-                                    .frame(width: 120, height: 76)
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(item.folder.title ?? "收藏夹").font(.subheadline.weight(.semibold))
-                                    HStack(spacing: 6) {
-                                        if let count = item.count ?? item.folder.mediaCount { Text("\(count) 个内容") }
-                                        if let isPublic = item.isPublic { Text(isPublic ? "公开" : "私密") }
-                                    }
-                                    .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("打开收藏夹内容")
+                        SpaceFavoritePreviewRow(item: item)
                     }
                 }
             }
@@ -306,6 +330,33 @@ private struct UploaderSpaceOverviewContent: View {
                 .font(.subheadline).foregroundStyle(.secondary)
                 .padding(.horizontal, metrics.feedHorizontalPadding)
         }
+    }
+}
+
+private struct SpaceFavoritePreviewRow: View {
+    let item: UploaderSpaceFavoritePreview
+
+    var body: some View {
+        NavigationLink {
+            UploaderFavoriteFolderContentPage(folder: item.folder)
+        } label: {
+            HStack(spacing: 12) {
+                SpacePreviewCover(urlString: item.folder.cover)
+                    .frame(width: 120, height: 76)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.folder.displayTitle).font(.subheadline.weight(.semibold))
+                    HStack(spacing: 6) {
+                        if let count = item.count ?? item.folder.mediaCount { Text("\(count) 个内容") }
+                        if let isPublic = item.isPublic { Text(isPublic ? "公开" : "私密") }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("打开收藏夹内容")
     }
 }
 

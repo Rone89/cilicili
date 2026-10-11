@@ -43,18 +43,26 @@ extension BiliAPIClient {
     }
 
     func fetchOwnSpaceBangumiPreview(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderSpaceVideoGroup {
+        let payload = try await fetchOwnSpaceBangumiPage(mid: mid, snapshot: snapshot, page: 1, pageSize: 3)
+        return UploaderSpaceVideoGroup(count: payload.total, items: payload.list)
+    }
+
+    func fetchOwnSpaceBangumiPage(
+        mid: Int, snapshot: RequestSnapshot, page: Int, pageSize: Int = 20
+    ) async throws -> UploaderSpaceBangumiList {
         try await validateOwnSpaceRequest(mid: mid, snapshot: snapshot)
+        let page = max(page, 1)
         let response: BiliResponse<UploaderSpaceBangumiList> = try await get(
             base: baseURL, path: "/x/space/bangumi/follow/list",
-            query: ["vmid": String(mid), "type": "1", "pn": "1", "ps": "3"],
+            query: ["vmid": String(mid), "type": "1", "pn": String(page), "ps": String(min(max(pageSize, 1), 30))],
             referer: "https://space.bilibili.com/\(mid)/bangumi", userAgent: Self.webUserAgent,
             cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         guard let payload = response.payload,
               payload.list.allSatisfy({ $0.seasonID != nil }),
-              !payload.list.isEmpty || (payload.total ?? 0) == 0 else { throw BiliAPIError.missingPayload }
-        return UploaderSpaceVideoGroup(count: payload.total, items: payload.list)
+              page > 1 || !payload.list.isEmpty || (payload.total ?? 0) == 0 else { throw BiliAPIError.missingPayload }
+        return payload
     }
 
     func fetchUploaderSpaceProfileFallback(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderProfile {

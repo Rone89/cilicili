@@ -1,5 +1,19 @@
 import Foundation
 
+nonisolated enum UploaderSpaceSection: String, CaseIterable, Identifiable {
+    case home, dynamics, videos, favorites, bangumi
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .home: "主页"
+        case .dynamics: "动态"
+        case .videos: "投稿"
+        case .favorites: "收藏"
+        case .bangumi: "追番"
+        }
+    }
+}
+
 nonisolated struct UploaderSpaceRequestIdentity: Hashable, Sendable {
     let accountMID: Int?
     let credentialVersion: Int
