@@ -121,6 +121,7 @@ private struct VideoDetailShellContentBody: View {
             summary: AnyView(
                 VideoDetailLoadedDetailContentPage(
                     viewModel: viewModel,
+                    detail: viewModel.detail,
                     layoutWidth: layoutWidth,
                     mountsSecondaryContent: false,
                     runtimeSettings: runtimeSettings.snapshot,

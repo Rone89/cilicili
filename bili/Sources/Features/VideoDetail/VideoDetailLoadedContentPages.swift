@@ -3,6 +3,9 @@ import SwiftUI
 struct VideoDetailLoadedDetailContentPage: View {
     @Environment(\.videoDetailStandardHorizontalInset) private var standardHorizontalInset
     let viewModel: VideoDetailViewModel
+    // A value input lets SwiftUI invalidate this page when an episode seed
+    // resolves. The view-model reference itself remains identical.
+    let detail: VideoItem
     let layoutWidth: CGFloat
     let mountsSecondaryContent: Bool
     let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
@@ -20,9 +23,10 @@ struct VideoDetailLoadedDetailContentPage: View {
         let renderPack = renderPack
 
         if showsSummary {
-            if viewModel.detail.isPGCEpisode {
+            if detail.isPGCEpisode {
                 VideoDetailPgcEpisodeSection(
-                    detail: viewModel.detail,
+                    detail: detail,
+                    api: viewModel.api,
                     selectEpisode: renderPack.actions.selectPgcEpisode
                 ) {
                     VideoDetailSummaryCard(
@@ -59,13 +63,13 @@ struct VideoDetailLoadedDetailContentPage: View {
         if showsRecommendations {
             if mountsSecondaryContent {
                 VideoDetailRecommendationsSection(
-                    detail: viewModel.detail,
+                    detail: detail,
                     relatedStore: renderPack.relatedStore,
                     layoutWidth: layoutWidth,
                     runtimeSettings: runtimeSettings,
                     retryRelated: renderPack.actions.retryRelated
                 )
-            } else if !viewModel.detail.isPGCEpisode {
+            } else if !detail.isPGCEpisode {
                 InitialRelatedSection(layoutWidth: layoutWidth)
             }
         }

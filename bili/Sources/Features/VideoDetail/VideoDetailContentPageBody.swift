@@ -18,6 +18,7 @@ struct VideoDetailContentPageBody: View {
         case .detail:
             VideoDetailLoadedDetailContentPage(
                 viewModel: viewModel,
+                detail: viewModel.detail,
                 layoutWidth: layoutWidth,
                 mountsSecondaryContent: mountsSecondaryContent,
                 runtimeSettings: runtimeSettings,

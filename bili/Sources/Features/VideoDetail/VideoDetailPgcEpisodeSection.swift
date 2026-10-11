@@ -2,10 +2,10 @@ import SwiftUI
 
 struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
     let detail: VideoItem
+    let api: BiliAPIClient
     let selectEpisode: (VideoItem) -> Void
     @ViewBuilder let actionContent: () -> ActionContent
 
-    @EnvironmentObject private var dependencies: AppDependencies
     @State private var season: PgcSeasonInfo?
     @State private var state: LoadingState = .idle
     @State private var order: VideoDetailPgcEpisodeOrder = .ascending
@@ -74,7 +74,7 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
         }
         state = .loading
         do {
-            season = try await dependencies.api.fetchPgcSeasonInfo(
+            season = try await api.fetchPgcSeasonInfo(
                 seasonID: detail.pgcSeasonID,
                 epID: epID
             )

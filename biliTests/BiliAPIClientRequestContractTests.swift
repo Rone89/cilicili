@@ -1,9 +1,62 @@
 import Foundation
+import SwiftUI
+import UIKit
 import XCTest
 
 @testable import bili
 
 final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
+    @MainActor
+    func testPgcSummaryLeavesSkeletonAfterSeedResolvesWithoutReplacingViewModel() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"result":{"season_id":100,"title":"测试番剧","episodes":[{"ep_id":101,"cid":1001,"title":"1"},{"ep_id":102,"cid":1002,"title":"2"}]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "")
+        let seed = try XCTUnwrap(PgcSeasonRoute(episodeID: 101, seasonID: 100, title: "番剧", cover: nil).episodeSeedVideo)
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(api.libraryStore)
+        let container = VideoDetailSwiftUIContainerModel(viewModel: model, initialVideo: seed,
+            runtimeSettings: runtime, rotationCoordinator: PlaybackRotationCoordinator(), initialContentTab: .detail)
+        var summaryHeight: CGFloat = 0
+        let controller = UIHostingController(rootView: PgcSummaryRefreshHarness(
+            viewModel: model, gate: container.contentUpdateGate, runtimeSettings: runtime.snapshot,
+            onHeight: { summaryHeight = $0 }
+        ).environmentObject(AppDependencies()))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            model.stopPlaybackForNavigation()
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        for _ in 0..<200 where summaryHeight == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThan(summaryHeight, 0)
+        let skeletonHeight = summaryHeight
+        XCTAssertTrue(recorder.requests.isEmpty, "The unresolved seed must not race the foreground query")
+        let resolved = try await model.fetchFullDetail(identity: model.detailLoadIdentity, priority: .userInitiated)
+        // Keep the same parent and model identity, as the production shell does.
+        model.detail = seed.mergingFilledValues(from: resolved)
+        for _ in 0..<200 where summaryHeight <= skeletonHeight + 80 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThan(summaryHeight, skeletonHeight + 80, "Season information and actions must replace the skeleton")
+        XCTAssertEqual(recorder.requests.count, 1, "The section must reuse the resolved season response")
+        XCTAssertEqual(model.detail.cid, 1001)
+    }
+
     @MainActor
     func testDynamicPgcPlayerSeedResolvesExactEpisodeInsideDetailPipeline() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
@@ -5138,6 +5191,26 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             data.append(buffer, count: count)
         }
         return data
+    }
+}
+
+@MainActor
+private struct PgcSummaryRefreshHarness: View {
+    let viewModel: VideoDetailViewModel
+    @ObservedObject var gate: VideoDetailContentUpdateGate
+    let runtimeSettings: VideoDetailRuntimeSettingsSnapshot
+    let onHeight: (CGFloat) -> Void
+
+    var body: some View {
+        let _ = gate.revision
+        VideoDetailLoadedDetailContentPage(
+            viewModel: viewModel, detail: viewModel.detail, layoutWidth: 390,
+            mountsSecondaryContent: false, runtimeSettings: runtimeSettings,
+            onShowNetworkDiagnostics: {}, onShowFavoriteFolders: {}, onShowCoinPicker: {},
+            showsRecommendations: false
+        )
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
     }
 }
 
