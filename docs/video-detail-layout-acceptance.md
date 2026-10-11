@@ -76,3 +76,11 @@ python3 Scripts/build-cache.py run -- xcodebuild -project bili.xcodeproj -scheme
 ## Remaining Boundaries
 
 UIKit still owns the stable AVPlayer surface and system rotation bridge. No lifecycle refactor was performed. Current UI tests do not prove every identity invariant across every frame; recorded sample attach/detach counters are zero during rotation, but this is not a comprehensive leak or black-frame test. Physical devices, VoiceOver, Stage Manager, source-video border analysis, Instruments and prolonged playback remain unverified in this round.
+
+## 横屏底部 toolbar 状态同步修复（2026-10-12）
+
+- 底部 toolbar 由外层 SwiftUI 页面声明，不能只隐藏内部内容页的 chrome。系统自然旋转此前没有调用外层隐藏回调，导致横屏仍显示底部栏。
+- UIKit 系统旋转开始、完成、中断恢复及应用重新激活时同步沉浸状态；横屏退出请求等待系统实际开始竖屏布局再恢复底部栏。页面拆卸或失活时不再由旋转恢复重新隐藏其他页面的 chrome。
+- 保留播放器实例、布局尺寸和旋转 watchdog/settle 时序。没有新增延时或自定义 toolbar 动画。
+- 新增回归测试直接驱动生产旋转控制器回调，覆盖自然旋转、横屏方向切换、快速反向旋转和旋转中退出。
+- Xcode 27.1 应用及相关测试产品编译验证；指定模拟器处于 Shutdown，按项目规则未启动，测试未执行。真机横竖屏及状态栏恢复待验证。

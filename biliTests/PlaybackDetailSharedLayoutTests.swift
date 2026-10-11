@@ -640,6 +640,44 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testSystemRotationNotifiesOuterToolbarWithoutFullscreenButton() throws {
+        let dependencies = AppDependencies()
+        let video = try JSONDecoder.bili.decode(VideoItem.self, from: Data(
+            #"{"bvid":"BVRotationToolbarProbe","title":"旋转工具栏测试","dimension":{"width":1920,"height":1080}}"#.utf8
+        ))
+        let model = VideoDetailViewModel(seedVideo: video, api: dependencies.api,
+            libraryStore: dependencies.libraryStore, sessionStore: dependencies.sessionStore,
+            sponsorBlockService: dependencies.sponsorBlockService)
+        let runtime = VideoDetailRuntimeSettingsStore()
+        runtime.bind(dependencies.libraryStore)
+        var visibilityChanges = [Bool]()
+        let bridge = VideoDetailRotationBridgeViewController(
+            initialVideo: video, viewModel: model, runtimeSettings: runtime, dependencies: dependencies,
+            openVideoOwnerRoute: nil, selectedContentTab: .constant(.detail),
+            onShowNetworkDiagnostics: {}, onShowFavoriteFolders: {}, onShowCoinPicker: {},
+            onOpenCommentComposer: { _ in }, onShowDanmakuSettings: {},
+            onPresentPlayerMoreControls: { _, _ in }, onDismissPlayerMoreControls: {}, onReply: { _ in },
+            onSystemChromeVisibilityChange: { visibilityChanges.append($0) }, onNavigateBack: {}
+        )
+        defer { bridge.prepareForDismantle(); model.stopPlaybackForNavigation() }
+        let transition = ToolbarRotationTestCoordinator()
+        bridge.viewWillTransition(to: CGSize(width: 844, height: 390), with: transition)
+        XCTAssertEqual(visibilityChanges, [true], "System rotation must hide the outer toolbar")
+        XCTAssertTrue(bridge.prefersStatusBarHidden)
+        // Landscape direction changes must keep it hidden without republishing.
+        bridge.viewWillTransition(to: CGSize(width: 844, height: 390), with: transition)
+        XCTAssertEqual(visibilityChanges, [true])
+        bridge.viewWillTransition(to: CGSize(width: 390, height: 844), with: transition)
+        XCTAssertEqual(visibilityChanges, [true, false], "Returning to portrait must restore the toolbar")
+        XCTAssertFalse(bridge.prefersStatusBarHidden)
+        // A rapid reversal should hide it again before the first layout frame.
+        bridge.viewWillTransition(to: CGSize(width: 844, height: 390), with: transition)
+        XCTAssertEqual(visibilityChanges, [true, false, true])
+        bridge.prepareForDismantle()
+        XCTAssertEqual(visibilityChanges, [true, false, true, false], "Exiting mid-rotation must release hidden chrome")
+    }
+
+    @MainActor
     func testPortraitFullscreenDoesNotRequestSystemRotation() {
         let coordinator = PlaybackRotationCoordinator()
         coordinator.activate(isLandscape: false)
@@ -1041,4 +1079,37 @@ private struct PlaybackDetailLoadedStateHarness: View {
                 .onDisappear { recorder.record("initial disappeared") }
         }
     }
+}
+
+/// Drives the real rotation callback without rotating the test runner's window.
+@MainActor
+private final class ToolbarRotationTestCoordinator: NSObject, UIViewControllerTransitionCoordinator {
+    let isAnimated = true
+    let presentationStyle = UIModalPresentationStyle.none
+    let initiallyInteractive = false
+    let isInterruptible = false
+    let isInteractive = false
+    let isCancelled = false
+    let transitionDuration: TimeInterval = 0.3
+    let percentComplete: CGFloat = 0
+    let completionVelocity: CGFloat = 1
+    let completionCurve = UIView.AnimationCurve.easeInOut
+    let containerView = UIView()
+    let targetTransform = CGAffineTransform.identity
+
+    func viewController(forKey key: UITransitionContextViewControllerKey) -> UIViewController? { nil }
+    func view(forKey key: UITransitionContextViewKey) -> UIView? { nil }
+
+    func animate(alongsideTransition animation: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?,
+                 completion: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?) -> Bool {
+        // Keep the transition pending so the test can drive consecutive targets.
+        true
+    }
+
+    func animateAlongsideTransition(in view: UIView?,
+                                    animation: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?,
+                                    completion: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?) -> Bool { true }
+
+    func notifyWhenInteractionEnds(_ handler: @escaping (any UIViewControllerTransitionCoordinatorContext) -> Void) {}
+    func notifyWhenInteractionChanges(_ handler: @escaping (any UIViewControllerTransitionCoordinatorContext) -> Void) {}
 }

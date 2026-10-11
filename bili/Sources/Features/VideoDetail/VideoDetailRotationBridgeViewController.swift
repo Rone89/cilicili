@@ -220,6 +220,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         let generation = rotationGeneration
         cancelRotationTasks()
         rotationCoordinator.beginSystemTransition(toLandscape: toLandscape)
+        // The outer SwiftUI page owns the toolbar. System-driven rotation
+        // must notify it too, not just requests from the fullscreen button.
+        setImmersivePlayback(toLandscape || rotationCoordinator.isPortraitFullscreen)
         contentController.beginSystemRotation(toLandscape: toLandscape)
         contentController.markRotationStarted(toLandscape: toLandscape)
         scheduleRotationWatchdog(
@@ -264,9 +267,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
     }
 
     private func requestExitFullscreen() {
-        setImmersivePlayback(false)
         if rotationCoordinator.isPortraitFullscreen {
             rotationCoordinator.setPortraitFullscreen(false)
+            setImmersivePlayback(false)
             contentController.recoverStableLayout()
             updateOrientationLock()
             setNeedsStatusBarAppearanceUpdate()
@@ -320,6 +323,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                     guard let self, self.isViewActive else { return }
                     if !self.recoverInterruptedRotationIfNeeded(reason: "applicationDidBecomeActive") {
                         self.contentController.recoverStableLayout()
+                        self.setImmersivePlayback(
+                            self.resolvedLandscapeForRecovery || self.rotationCoordinator.isPortraitFullscreen
+                        )
                     }
                     self.updateOrientationLock()
                 }
@@ -372,6 +378,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
                 )
             }
             self.contentController.finishSystemRotation()
+            self.setImmersivePlayback(
+                self.rotationCoordinator.layoutLandscape || self.rotationCoordinator.isPortraitFullscreen
+            )
             let actualOrientation: String?
             switch currentOrientation {
             case .portrait:
@@ -407,6 +416,9 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
             isLandscape: landscape,
             isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
         )
+        if isViewActive, !didPrepareForDismantle {
+            setImmersivePlayback(landscape || rotationCoordinator.isPortraitFullscreen)
+        }
         contentController.recoverStableLayout()
         contentController.markRotationRecovered(reason: reason)
         setNeedsStatusBarAppearanceUpdate()
