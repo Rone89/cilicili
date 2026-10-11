@@ -166,13 +166,17 @@ private struct UploaderSpaceOverviewContent: View {
             if let overview = viewModel.spaceOverview {
                 videoSection("投稿", group: overview.archive, defaultMID: viewModel.seedOwner.mid, limit: 4,
                              showMore: true)
-                favoritesSection(overview)
+            }
+            favoritesSection()
+            if let overview = viewModel.spaceOverview {
                 videoSection("最近点赞的视频", group: overview.likes, defaultMID: 0, limit: 2,
                              isPublic: overview.privacy?.likesVisible)
                 videoSection("最近投币的视频", group: overview.coins, defaultMID: 0, limit: 2,
                              isPublic: overview.privacy?.coinsVisible)
-                bangumiSection(overview)
-                if !overview.hasPreviewContent {
+            }
+            bangumiSection()
+            if let overview = viewModel.spaceOverview {
+                if !overview.hasPreviewContent && !viewModel.isOwnSpace {
                     EmptyStateView(title: "暂无内容概览", systemImage: "person.crop.rectangle",
                                    message: "可切换到动态、投稿或合集查看公开内容。")
                         .frame(maxWidth: .infinity)
@@ -219,10 +223,11 @@ private struct UploaderSpaceOverviewContent: View {
         }
     }
 
-    @ViewBuilder private func favoritesSection(_ overview: UploaderSpaceOverview) -> some View {
-        if let favorites = overview.favorites, !favorites.items.isEmpty {
+    @ViewBuilder private func favoritesSection() -> some View {
+        let favorites = viewModel.favoritePreview
+        if let favorites, favorites.items.contains(where: { $0.folder.id > 0 }) {
             VStack(alignment: .leading, spacing: 12) {
-                heading("收藏", count: favorites.count, isPublic: overview.privacy?.favoritesVisible)
+                heading("收藏", count: favorites.count, isPublic: viewModel.spaceOverview?.privacy?.favoritesVisible)
                 ForEach(Array(favorites.items.prefix(2).enumerated()), id: \.offset) { _, item in
                     if item.folder.id > 0 {
                         // Same canonical folder share URL used by PiliPlus's favorite detail page.
@@ -249,13 +254,18 @@ private struct UploaderSpaceOverviewContent: View {
             }
             .padding(.horizontal, metrics.feedHorizontalPadding)
         }
+        moduleStatus("收藏", hasItems: favorites?.items.contains(where: { $0.folder.id > 0 }) == true,
+                     state: viewModel.ownSpaceFavoritesState,
+                     decodingFailed: viewModel.spaceOverview?.favoritesDecodingFailed == true) {
+            await viewModel.loadOwnSpaceFavorites(force: true)
+        }
     }
 
-    @ViewBuilder private func bangumiSection(_ overview: UploaderSpaceOverview) -> some View {
-        let items = overview.bangumi?.items.filter { $0.seasonID != nil } ?? []
+    @ViewBuilder private func bangumiSection() -> some View {
+        let items = viewModel.bangumiPreview?.items.filter { $0.seasonID != nil } ?? []
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                heading("追番", count: overview.bangumi?.count, isPublic: overview.privacy?.bangumiVisible)
+                heading("追番", count: viewModel.bangumiPreview?.count, isPublic: viewModel.spaceOverview?.privacy?.bangumiVisible)
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(Array(items.prefix(3).enumerated()), id: \.offset) { _, item in
@@ -266,6 +276,34 @@ private struct UploaderSpaceOverviewContent: View {
                 .scrollIndicators(.hidden)
             }
             .padding(.horizontal, metrics.feedHorizontalPadding)
+        }
+        moduleStatus("追番", hasItems: !items.isEmpty, state: viewModel.ownSpaceBangumiState,
+                     decodingFailed: viewModel.spaceOverview?.bangumiDecodingFailed == true) {
+            await viewModel.loadOwnSpaceBangumi(force: true)
+        }
+    }
+
+    @ViewBuilder private func moduleStatus(
+        _ title: String, hasItems: Bool, state: LoadingState, decodingFailed: Bool,
+        retry: @escaping () async -> Void
+    ) -> some View {
+        if viewModel.isOwnSpace {
+            if case .failed(let message) = state {
+                ErrorStateView(title: "\(title)加载失败", message: message) { Task { await retry() } }
+                    .padding(.horizontal, metrics.feedHorizontalPadding)
+            } else if !hasItems, state == .loaded {
+                VStack(alignment: .leading, spacing: 8) {
+                    heading(title, count: 0)
+                    Text("暂无\(title)").font(.subheadline).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, metrics.feedHorizontalPadding)
+            } else if !hasItems, state.isLoading {
+                ProgressView("正在加载\(title)").frame(maxWidth: .infinity)
+            }
+        } else if decodingFailed {
+            Text("\(title)数据暂时无法解析，请刷新重试。")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .padding(.horizontal, metrics.feedHorizontalPadding)
         }
     }
 }

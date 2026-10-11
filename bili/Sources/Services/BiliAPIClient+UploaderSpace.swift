@@ -1,6 +1,46 @@
 import Foundation
 
 extension BiliAPIClient {
+    // Use the space's captured main-account credentials, not the interaction account.
+    private func validateOwnSpaceRequest(mid: Int, snapshot: RequestSnapshot) async throws {
+        try Task.checkCancellation()
+        let identity = UploaderSpaceRequestIdentity(snapshot)
+        let current = await MainActor.run { UploaderSpaceRequestIdentity(self.requestSnapshot()) }
+        guard identity.ownsSpace(mid: mid), identity == current else {
+            throw BiliAPIError.api(code: -101, message: "账号已变更，请重新打开个人空间")
+        }
+    }
+
+    func fetchOwnSpaceFavoritePreview(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderSpaceFavoriteGroup {
+        try await validateOwnSpaceRequest(mid: mid, snapshot: snapshot)
+        let response: BiliResponse<UploaderSpaceFavoriteList> = try await get(
+            base: baseURL, path: "/x/v3/fav/folder/created/list-all",
+            query: ["up_mid": String(mid), "type": "2"],
+            referer: "https://space.bilibili.com/\(mid)/favlist", userAgent: Self.webUserAgent,
+            cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let folders = response.payload?.list, folders.allSatisfy({ $0.id > 0 }) else {
+            throw BiliAPIError.missingPayload
+        }
+        return UploaderSpaceFavoriteGroup(folders: folders)
+    }
+
+    func fetchOwnSpaceBangumiPreview(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderSpaceVideoGroup {
+        try await validateOwnSpaceRequest(mid: mid, snapshot: snapshot)
+        let response: BiliResponse<UploaderSpaceBangumiList> = try await get(
+            base: baseURL, path: "/x/space/bangumi/follow/list",
+            query: ["vmid": String(mid), "type": "1", "pn": "1", "ps": "3"],
+            referer: "https://space.bilibili.com/\(mid)/bangumi", userAgent: Self.webUserAgent,
+            cookieHeader: snapshot.cookieHeader, cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let payload = response.payload,
+              payload.list.allSatisfy({ $0.seasonID != nil }),
+              !payload.list.isEmpty || (payload.total ?? 0) == 0 else { throw BiliAPIError.missingPayload }
+        return UploaderSpaceVideoGroup(count: payload.total, items: payload.list)
+    }
+
     func fetchUploaderSpaceProfileFallback(mid: Int, snapshot: RequestSnapshot) async throws -> UploaderProfile {
         guard mid > 0 else { throw BiliAPIError.api(code: -1, message: "UP 主 UID 无效") }
         let response: BiliResponse<UploaderProfile> = try await get(

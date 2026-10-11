@@ -57,6 +57,45 @@ final class UploaderSpaceOverviewTests: XCTestCase {
         XCTAssertTrue(overview.hasPreviewContent)
     }
 
+    func testMissingEmptyAndMalformedModulesRemainDistinct() throws {
+        let missing = try decode(#"{"card":{"mid":1},"season":null}"#)
+        XCTAssertFalse(missing.favoritesDecodingFailed)
+        XCTAssertFalse(missing.bangumiDecodingFailed)
+        XCTAssertNil(missing.favorites)
+        let empty = try decode(#"{"card":{"mid":1},"favourite2":{"count":0,"item":[]},"season":{"count":0,"item":[]}}"#)
+        XCTAssertEqual(empty.favorites?.items, [])
+        XCTAssertFalse(empty.favoritesDecodingFailed)
+        let malformed = try decode(#"{"card":{"mid":1},"favourite2":{"count":2},"season":"bad"}"#)
+        XCTAssertTrue(malformed.favoritesDecodingFailed)
+        XCTAssertTrue(malformed.bangumiDecodingFailed)
+    }
+
+    func testWebBangumiUsesSeasonIDAndDoesNotBecomeVideo() throws {
+        let payload = try JSONDecoder.bili.decode(UploaderSpaceBangumiList.self, from: Data(#"{"total":5,"list":[{"season_id":777,"title":"追番","cover":"https://example.com/a.jpg"}]}"#.utf8))
+        XCTAssertEqual(payload.total, 5)
+        XCTAssertEqual(payload.list.first?.seasonID, 777)
+        XCTAssertNil(payload.list.first?.video(defaultMID: 1))
+        XCTAssertThrowsError(try JSONDecoder.bili.decode(UploaderSpaceBangumiList.self, from: Data(#"{"total":5}"#.utf8)))
+    }
+
+    func testOwnFavoritePreviewPreservesCountAndKnownPrivacy() throws {
+        let folders = try JSONDecoder.bili.decode([FavoriteFolder].self, from: Data(#"[{"id":1,"title":"私密","attr":3,"media_count":12},{"id":2,"title":"未知"}]"#.utf8))
+        let preview = UploaderSpaceFavoriteGroup(folders: folders)
+        XCTAssertEqual(preview.count, 2)
+        XCTAssertEqual(preview.items[0].count, 12)
+        XCTAssertEqual(preview.items[0].isPublic, false)
+        XCTAssertNil(preview.items[1].isPublic)
+    }
+
+    func testFavoriteNullListIsEmptyOnlyWithExplicitZeroCount() throws {
+        let decoder = JSONDecoder.bili
+        let empty = try decoder.decode(UploaderSpaceFavoriteList.self, from: Data(#"{"count":0,"list":null}"#.utf8))
+        XCTAssertTrue(empty.list.isEmpty)
+        for json in [#"{"list":null}"#, #"{"count":3,"list":null}"#, #"{"count":3,"list":[]}"#, #"{"count":0}"#] {
+            XCTAssertThrowsError(try decoder.decode(UploaderSpaceFavoriteList.self, from: Data(json.utf8)))
+        }
+    }
+
     @MainActor
     func testExperimentDefaultsOffAndPersistsWithoutTouchingOtherSettings() throws {
         let suite = "UploaderSpaceOverviewTests.\(UUID().uuidString)"

@@ -4207,6 +4207,202 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testOwnSpaceMissingModulesUseCapturedWebAccountAndLoadOnce() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/v2/space":
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001,"name":"自己"}}}"#)
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"id":9,"title":"默认收藏夹","media_count":12,"attr":1}]}}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":5,"list":[{"season_id":777,"title":"追番"}]}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "interaction-other")
+            ])
+            try session.selectInteractionAccount(mid: 2002)
+        })
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.map { $0.url!.path }, ["/x/v2/space", "/x/v3/fav/folder/created/list-all", "/x/space/bangumi/follow/list"])
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[1])["up_mid"], "1001")
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[2])["vmid"], "1001")
+        XCTAssertEqual(Self.queryValues(for: recorder.requests[2])["ps"], "3")
+        for request in recorder.requests.suffix(2) {
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("SESSDATA=main") == true)
+        }
+        XCTAssertEqual(model.favoritePreview?.items.first?.folder.id, 9)
+        XCTAssertEqual(model.bangumiPreview?.count, 5)
+        XCTAssertEqual(model.bangumiPreview?.items.first?.seasonID, 777)
+        XCTAssertEqual(model.ownSpaceFavoritesState, .loaded)
+        XCTAssertEqual(model.ownSpaceBangumiState, .loaded)
+    }
+
+    @MainActor
+    func testOwnSpaceValidAPPPreviewsDoNotFetchSupplements() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001},"favourite2":{"item":[{"id":9}]},"season":{"item":[{"param":"777","goto":"bangumi"}]}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(model.favoritePreview?.items.first?.folder.id, 9)
+        XCTAssertEqual(model.bangumiPreview?.items.first?.seasonID, 777)
+    }
+
+    @MainActor
+    func testOwnSpacePartialFailureRetriesOnlyFailedModuleAndPreservesOtherData() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/v2/space":
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001},"favourite2":"bad"}}"#)
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(for: request, body: #"{"code":-500,"message":"暂不可用"}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":0,"list":[]}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        XCTAssertEqual(model.spaceOverviewState, .loaded)
+        XCTAssertTrue(model.spaceOverview?.favoritesDecodingFailed == true)
+        guard case .failed = model.ownSpaceFavoritesState else { return XCTFail("Missing module must retain its error") }
+        XCTAssertEqual(model.ownSpaceBangumiState, .loaded)
+        XCTAssertEqual(model.bangumiPreview?.count, 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"list":[]}}"#)
+        }
+        await model.loadOwnSpaceFavorites(force: true)
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.count, 4)
+        XCTAssertEqual(recorder.requests.last?.url?.path, "/x/v3/fav/folder/created/list-all")
+        XCTAssertEqual(model.ownSpaceFavoritesState, .loaded)
+        XCTAssertEqual(model.favoritePreview?.items.count, 0)
+    }
+
+    @MainActor
+    func testOwnSpaceSupplementDiscardsAccountSwitchResponseAndStopsNextRequest() async throws {
+        let recorder = RequestContractRecorder()
+        let entered = expectation(description: "Favorite supplement started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/v2/space" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001}}}"#)
+            }
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"id":9}]}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        let load = Task { await model.loadInitial() }
+        await fulfillment(of: [entered], timeout: 3)
+        try api.sessionStore.saveLoginCookies(["SESSDATA":"other", "DedeUserID":"2002"], credentialKind: .web)
+        release.signal()
+        await load.value
+        XCTAssertNil(model.ownSpaceFavorites)
+        XCTAssertNil(model.ownSpaceBangumi)
+        XCTAssertEqual(recorder.requests.count, 2)
+        XCTAssertFalse(model.isCurrentViewerContext)
+    }
+
+    @MainActor
+    func testOwnSpaceAPPFailureStillAllowsIndependentAuthenticatedPreviews() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/v2/space":
+                return Self.response(for: request, body: #"{"code":-400,"message":"空间暂不可用"}"#)
+            case "/x/web-interface/card":
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001,"name":"公开资料"}}}"#)
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"id":9}]}}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":1,"list":[{"season_id":777}]}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        guard case .failed = model.spaceOverviewState else { return XCTFail("Overview error must stay visible") }
+        XCTAssertEqual(model.profileState, .loaded)
+        XCTAssertEqual(model.favoritePreview?.items.first?.folder.id, 9)
+        XCTAssertEqual(model.bangumiPreview?.items.first?.seasonID, 777)
+        XCTAssertEqual(recorder.requests.count, 4)
+    }
+
+    @MainActor
+    func testOwnSpaceMalformedSupplementDoesNotErasePreviouslyLoadedPreview() async throws {
+        RequestContractURLProtocol.install { request in
+            switch request.url?.path {
+            case "/x/v2/space":
+                return Self.response(for: request, body: #"{"code":0,"data":{"card":{"mid":1001}}}"#)
+            case "/x/v3/fav/folder/created/list-all":
+                return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"id":9}]}}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":0,"data":{"total":1,"list":[{"season_id":777}]}}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001")
+        let model = UploaderViewModel(seedOwner: VideoOwner(mid: 1001, name: "自己", face: nil), api: api, enhancementEnabled: true)
+        await model.loadInitial()
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, body: #"{"code":0,"data":{"total":5,"list":[{"title":"没有 season_id"}]}}"#)
+        }
+        await model.loadOwnSpaceBangumi(force: true)
+        await model.loadOwnSpaceFavorites(force: true)
+        guard case .failed = model.ownSpaceBangumiState else { return XCTFail("Malformed data must not become empty success") }
+        guard case .failed = model.ownSpaceFavoritesState else { return XCTFail("Missing list must not become empty success") }
+        XCTAssertEqual(model.bangumiPreview?.items.first?.seasonID, 777)
+        XCTAssertEqual(model.favoritePreview?.items.first?.folder.id, 9)
+    }
+
+    @MainActor
+    func testOwnSpaceServiceRejectsGuestAndOtherSpaceBeforeRequesting() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"list":[]}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        for guestMode in [true, false] {
+            let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=1001", guestModeEnabled: guestMode)
+            let snapshot = api.requestSnapshot()
+            let mid = guestMode ? 1001 : 2002
+            do {
+                _ = try await api.fetchOwnSpaceFavoritePreview(mid: mid, snapshot: snapshot)
+                XCTFail("Must reject unauthorized space")
+            } catch { }
+            do {
+                _ = try await api.fetchOwnSpaceBangumiPreview(mid: mid, snapshot: snapshot)
+                XCTFail("Must reject unauthorized space")
+            } catch { }
+        }
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    @MainActor
     private func makeAPI(
         cookieHeader: String,
         accessKey: String? = nil,

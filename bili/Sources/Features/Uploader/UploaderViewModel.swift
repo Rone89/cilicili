@@ -54,6 +54,20 @@ final class UploaderViewModel: ObservableObject {
     let viewerIdentity: UploaderSpaceRequestIdentity
     @Published private(set) var spaceOverview: UploaderSpaceOverview?
     @Published private(set) var spaceOverviewState: LoadingState = .idle
+    @Published private(set) var ownSpaceFavorites: UploaderSpaceFavoriteGroup?
+    @Published private(set) var ownSpaceFavoritesState: LoadingState = .idle
+    @Published private(set) var ownSpaceBangumi: UploaderSpaceVideoGroup?
+    @Published private(set) var ownSpaceBangumiState: LoadingState = .idle
+
+    var favoritePreview: UploaderSpaceFavoriteGroup? {
+        if let group = spaceOverview?.favorites, group.items.contains(where: { $0.folder.id > 0 }) { return group }
+        return ownSpaceFavorites ?? spaceOverview?.favorites
+    }
+
+    var bangumiPreview: UploaderSpaceVideoGroup? {
+        if let group = spaceOverview?.bangumi, group.items.contains(where: { $0.seasonID != nil }) { return group }
+        return ownSpaceBangumi ?? spaceOverview?.bangumi
+    }
 
     private let api: BiliAPIClient
     private let viewerSnapshot: BiliAPIClient.RequestSnapshot
@@ -125,6 +139,50 @@ final class UploaderViewModel: ObservableObject {
             if isCurrentViewerContext, !Task.isCancelled {
                 spaceOverviewState = .failed(overviewError)
             }
+        }
+        guard isCurrentViewerContext, !Task.isCancelled else { return }
+        // Sequential, bounded preview requests only when the APP aggregation omitted usable data.
+        await loadOwnSpaceFavorites(force: force)
+        await loadOwnSpaceBangumi(force: force)
+    }
+
+    func loadOwnSpaceFavorites(force: Bool = false) async {
+        guard enhancementEnabled, isOwnSpace, isCurrentViewerContext, !Task.isCancelled,
+              !ownSpaceFavoritesState.isLoading else { return }
+        guard spaceOverview?.favorites?.items.contains(where: { $0.folder.id > 0 }) != true else { return }
+        guard force || ownSpaceFavoritesState == .idle else { return }
+        ownSpaceFavoritesState = .loading
+        defer {
+            if Task.isCancelled, isCurrentViewerContext { ownSpaceFavoritesState = .idle }
+        }
+        do {
+            let group = try await api.fetchOwnSpaceFavoritePreview(mid: seedOwner.mid, snapshot: viewerSnapshot)
+            guard canApplyResponse else { return }
+            ownSpaceFavorites = group
+            ownSpaceFavoritesState = .loaded
+        } catch {
+            guard canApplyResponse else { return }
+            ownSpaceFavoritesState = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadOwnSpaceBangumi(force: Bool = false) async {
+        guard enhancementEnabled, isOwnSpace, isCurrentViewerContext, !Task.isCancelled,
+              !ownSpaceBangumiState.isLoading else { return }
+        guard spaceOverview?.bangumi?.items.contains(where: { $0.seasonID != nil }) != true else { return }
+        guard force || ownSpaceBangumiState == .idle else { return }
+        ownSpaceBangumiState = .loading
+        defer {
+            if Task.isCancelled, isCurrentViewerContext { ownSpaceBangumiState = .idle }
+        }
+        do {
+            let group = try await api.fetchOwnSpaceBangumiPreview(mid: seedOwner.mid, snapshot: viewerSnapshot)
+            guard canApplyResponse else { return }
+            ownSpaceBangumi = group
+            ownSpaceBangumiState = .loaded
+        } catch {
+            guard canApplyResponse else { return }
+            ownSpaceBangumiState = .failed(error.localizedDescription)
         }
     }
 

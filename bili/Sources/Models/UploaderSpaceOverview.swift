@@ -35,6 +35,8 @@ nonisolated struct UploaderSpaceOverview: Decodable, Hashable, Sendable {
     let coins: UploaderSpaceVideoGroup?
     let favorites: UploaderSpaceFavoriteGroup?
     let bangumi: UploaderSpaceVideoGroup?
+    let favoritesDecodingFailed: Bool
+    let bangumiDecodingFailed: Bool
     let privacy: UploaderSpacePrivacy?
 
     enum CodingKeys: String, CodingKey {
@@ -77,6 +79,10 @@ nonisolated struct UploaderSpaceOverview: Decodable, Hashable, Sendable {
         coins = try? container.decodeIfPresent(UploaderSpaceVideoGroup.self, forKey: .coins)
         favorites = try? container.decodeIfPresent(UploaderSpaceFavoriteGroup.self, forKey: .favorites)
         bangumi = try? container.decodeIfPresent(UploaderSpaceVideoGroup.self, forKey: .season)
+        favoritesDecodingFailed = container.contains(.favorites)
+            && (try? container.decodeNil(forKey: .favorites)) == false && favorites == nil
+        bangumiDecodingFailed = container.contains(.season)
+            && (try? container.decodeNil(forKey: .season)) == false && bangumi == nil
         privacy = try? container.decodeIfPresent(UploaderSpacePrivacy.self, forKey: .setting)
     }
 
@@ -93,10 +99,15 @@ nonisolated struct UploaderSpaceVideoGroup: Decodable, Hashable, Sendable {
     let items: [UploaderSpaceVideoPreview]
     enum CodingKeys: String, CodingKey { case count; case items = "item" }
 
+    init(count: Int?, items: [UploaderSpaceVideoPreview]) {
+        self.count = count
+        self.items = items
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         count = c.decodeLossyIntIfPresent(forKey: .count)
-        items = try c.decodeIfPresent([UploaderSpaceVideoPreview].self, forKey: .items) ?? []
+        items = try c.decode([UploaderSpaceVideoPreview].self, forKey: .items)
     }
 }
 
@@ -104,13 +115,17 @@ nonisolated struct UploaderSpaceVideoPreview: Decodable, Hashable, Sendable {
     let archive: UploaderAppArchiveItem
     let cardGoto: String?
     let isPGC: Bool
-    enum CodingKeys: String, CodingKey { case cardGoto = "goto"; case isPGC = "is_pgc" }
+    fileprivate let webSeasonID: Int?
+    enum CodingKeys: String, CodingKey {
+        case cardGoto = "goto"; case isPGC = "is_pgc"; case webSeasonID = "season_id"
+    }
 
     init(from decoder: Decoder) throws {
         archive = try UploaderAppArchiveItem(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cardGoto = c.decodeLossyStringIfPresent(forKey: .cardGoto)
-        isPGC = c.decodeLossyBoolIfPresent(forKey: .isPGC) ?? false
+        webSeasonID = c.decodeLossyIntIfPresent(forKey: .webSeasonID)
+        isPGC = c.decodeLossyBoolIfPresent(forKey: .isPGC) == true || webSeasonID != nil
     }
 
     func video(defaultMID: Int) -> VideoItem? {
@@ -119,6 +134,7 @@ nonisolated struct UploaderSpaceVideoPreview: Decodable, Hashable, Sendable {
     }
 
     var seasonID: Int? {
+        if let webSeasonID { return webSeasonID > 0 ? webSeasonID : nil }
         guard cardGoto == nil || cardGoto == "bangumi" || cardGoto == "pgc" || isPGC,
               let id = archive.param.flatMap(Int.init), id > 0 else { return nil }
         return id
@@ -129,10 +145,14 @@ nonisolated struct UploaderSpaceFavoriteGroup: Decodable, Hashable, Sendable {
     let count: Int?
     let items: [UploaderSpaceFavoritePreview]
     enum CodingKeys: String, CodingKey { case count; case items = "item" }
+    init(folders: [FavoriteFolder]) {
+        count = folders.count
+        items = folders.map(UploaderSpaceFavoritePreview.init(folder:))
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         count = c.decodeLossyIntIfPresent(forKey: .count)
-        items = try c.decodeIfPresent([UploaderSpaceFavoritePreview].self, forKey: .items) ?? []
+        items = try c.decode([UploaderSpaceFavoritePreview].self, forKey: .items)
     }
 }
 
@@ -141,11 +161,48 @@ nonisolated struct UploaderSpaceFavoritePreview: Decodable, Hashable, Sendable {
     let count: Int?
     let isPublic: Bool?
     enum CodingKeys: String, CodingKey { case count; case isPublic = "is_public" }
+    init(folder: FavoriteFolder) {
+        self.folder = folder
+        count = folder.mediaCount
+        isPublic = folder.attr.map { ($0 & 1) == 0 }
+    }
     init(from decoder: Decoder) throws {
         folder = try FavoriteFolder(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         count = c.decodeLossyIntIfPresent(forKey: .count)
         isPublic = c.decodeLossyBoolIfPresent(forKey: .isPublic)
+    }
+}
+
+nonisolated struct UploaderSpaceBangumiList: Decodable {
+    let total: Int?
+    let list: [UploaderSpaceVideoPreview]
+    enum CodingKeys: String, CodingKey { case total, list }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        total = c.decodeLossyIntIfPresent(forKey: .total)
+        list = try c.decode([UploaderSpaceVideoPreview].self, forKey: .list)
+        guard list.allSatisfy({ ($0.webSeasonID ?? 0) > 0 }) else {
+            throw DecodingError.dataCorruptedError(forKey: .list, in: c, debugDescription: "Missing valid season_id")
+        }
+    }
+}
+
+nonisolated struct UploaderSpaceFavoriteList: Decodable {
+    let list: [FavoriteFolder]
+    enum CodingKeys: String, CodingKey { case count, list }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let count = c.decodeLossyIntIfPresent(forKey: .count)
+        if let folders = try c.decodeIfPresent([FavoriteFolder].self, forKey: .list),
+           !folders.isEmpty || (count ?? 0) == 0 {
+            list = folders
+        } else if count == 0, c.contains(.list), try c.decodeNil(forKey: .list) {
+            // The all-folders endpoint returns list:null with count:0 when truly empty.
+            list = []
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .list, in: c, debugDescription: "Missing favorite folders")
+        }
     }
 }
 

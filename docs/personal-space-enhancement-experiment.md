@@ -9,14 +9,26 @@
 顶部滚动边缘使用系统 `.soft` 效果。主页、动态、投稿、合集切换器位于系统底部 toolbar 中央，顶部右侧为非主题色的系统分享按钮。
 底部 toolbar 由系统处理安全区和内容避让，底部渐进模糊遵循已有显示设置。
 粉丝、关注、获赞、投稿数采用等宽居中的四列布局，统计栏和下方原生分隔线的左右边距均为 20pt。
-概览来自单次 APP `/x/v2/space`，采用现有 Android APP 签名与主账号请求上下文。
+概览优先来自单次 APP `/x/v2/space`，采用现有 Android APP 签名与主账号请求上下文。
 投稿、点赞、投币、收藏、追番只展示服务器返回的有效预览；数量缺失时不推断为零。
 点赞/投币视频不把空间用户当作视频作者；追番复用现有 PgcSeasonRoute。
 收藏预览使用 PiliPlus 分享功能相同的真实收藏夹网页链接，本轮不扩展原生收藏完整分页。
 
 主页首屏不额外请求完整投稿列表。点击投稿、动态、合集后复用现有加载与分页组件。
 切换标签不重复请求已加载的空列表。手动刷新仍可重试。
-APP 聚合失败时只请求公开 `/x/web-interface/card` 保留基本资料，概览仍展示失败及重试入口。
+APP 聚合失败时请求公开 `/x/web-interface/card` 保留基本资料，概览仍展示失败及重试入口。
+
+### 自己的空间：收藏与追番补查
+
+仅实验开启、主账号登录且正在查看自己的空间时，缺少有效 APP 预览才顺序补查：
+- 收藏：复用 `/x/v3/fav/folder/created/list-all`，`up_mid` 为空间本人、`type=2`。补查数量表示收藏夹数量，内容数量来自每个收藏夹的 `media_count`。
+- 追番：`/x/space/bangumi/follow/list`，`vmid` 为空间本人、`type=1`、`pn=1`、`ps=3`。使用 `season_id` 路由、`total` 表示追番总数；不混入追剧或推断缺失数量。
+
+两者均使用页面捕获的主账号 cookie，不能使用另外配置的互动账号；请求前检查账号是否仍一致，响应后丢弃过期内容。
+即使 APP 聚合失败，两个补查模块仍可独立显示。已有有效预览不补查，不在返回页面或切换标签时重复请求。
+明确区分模块缺失、解析失败、成功返回空列表；失败显示原因及单模块重试，刷新失败保留已有预览。
+这些读取不需要 APP access key 或 CSRF，不修改收藏和追番关系，也不扩展他人私密内容的读取。
+收藏接口 `count=0` 且 `list=null` 按真实空列表处理；缺失列表或非零数量配空列表仍视为异常。
 
 实验关闭后继续使用原有三标签页面、资料与投稿加载路径，不删除任何用户数据。
 
@@ -40,10 +52,13 @@ APP 聚合失败时只请求公开 `/x/web-interface/card` 保留基本资料，
 PiliPlus origin/main b2d6a5befb6dd292b9f7ad98794f3620f6dfb818（2026-10-10）：
 `pages/member/controller.dart`、`pages/member_home/view.dart`、`http/member.dart`、
 `models_new/space/space/*`、`models_new/space/space_archive/item.dart`、`pages/fav_detail/view.dart`。
+补查协议参考：[收藏夹接口字段](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/fav/info.md)、
+[RSSHub 追番读取实现](https://github.com/DIYgod/RSSHub/blob/master/lib/routes/bilibili/user-bangumi.ts)。
 
 ## 验证
 
 新增模型/实验持久化测试，以及聚合单次请求、游客认证隔离、公开回退、空列表、账号切换、在途响应丢弃、取消与重试的请求契约测试。
+补查测试覆盖主账号与互动账号隔离、有效预览跳过补查、部分失败独立重试、APP 失败后独立补查、无效载荷保留旧内容以及服务层拒绝游客和他人空间。
 Xcode 27.1、指定 iPhone 18 Pro Max iOS 27.0 模拟器：应用和测试目标编译通过。
 模拟器未启动，按项目约束未启动它。真机 XCTest 因既有分发描述文件与测试运行器 bundle ID 不匹配未执行。
 因此自动化运行、真实接口的账号差异、长列表滚动及视觉验收仍待实测，编译成功不代表这些测试通过。
