@@ -6,6 +6,7 @@ struct HomeFeedContentSection: View {
     let lastSeenMarkerIndex: Int?
     let isLoadingMore: Bool
     let actions: HomeFeedContentActions
+    var viewportHeight: CGFloat? = nil
 
     var body: some View {
         HomeFeedContentSectionResolver(
@@ -13,7 +14,8 @@ struct HomeFeedContentSection: View {
             cells: cells,
             lastSeenMarkerIndex: lastSeenMarkerIndex,
             isLoadingMore: isLoadingMore,
-            actions: actions
+            actions: actions,
+            viewportHeight: viewportHeight
         )
     }
 }

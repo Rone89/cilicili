@@ -6,11 +6,12 @@ struct HomeFeedContentSectionResolver: View {
     let lastSeenMarkerIndex: Int?
     let isLoadingMore: Bool
     let actions: HomeFeedContentActions
+    var viewportHeight: CGFloat? = nil
 
     var body: some View {
         Group {
             if cells.isEmpty {
-                HomeFeedSkeletonSection(metrics: metrics)
+                HomeFeedSkeletonSection(metrics: metrics, viewportHeight: viewportHeight)
             } else if metrics.mode.isDoubleColumn {
                 HomeFeedDoubleColumnContent(
                     metrics: metrics,

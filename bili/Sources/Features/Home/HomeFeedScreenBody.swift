@@ -36,7 +36,8 @@ struct HomeFeedScreenBody: View {
                 cells: viewModel.videoCells,
                 lastSeenMarkerIndex: viewModel.lastSeenMarkerIndex,
                 isLoadingMore: viewModel.state.isLoading && !viewModel.isRefreshing && !viewModel.isUserRefreshing,
-                actions: contentActions
+                actions: contentActions,
+                viewportHeight: viewportState.viewportHeight
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
