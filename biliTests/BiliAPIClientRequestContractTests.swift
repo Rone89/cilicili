@@ -4071,6 +4071,75 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testHomeColdStartKeepsSkeletonUntilFreshRecommendationsAndRetainsLoadedFeedOnReturn() async throws {
+        let entered = expectation(description: "Fresh recommendations requested")
+        let release = DispatchSemaphore(value: 0)
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"item":[{"id":123,"bvid":"BV1HomeFresh","title":"新推荐","goto":"av","idx":12}]}}"#)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(
+            cookieHeader: "SESSDATA=test; DedeUserID=\(Int.random(in: 100_000_000...999_999_999))",
+            accessKey: "app-access-key", recommendSource: .app
+        )
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let snapshotURL = HomeFeedSnapshotCache.snapshotURL(
+            mode: .recommend, guestModeEnabled: false, recommendSource: .app,
+            accountIdentityKey: api.sessionStore.recommendCacheIdentityKey(guestModeEnabled: false)
+        )
+        defer { try? FileManager.default.removeItem(at: snapshotURL) }
+        model.snapshotCoordinator.save(videos: [try HomeFeedbackTestData.video()], mode: .recommend)
+        XCTAssertFalse(try XCTUnwrap(model.snapshotCoordinator.load(mode: .recommend)).videos.isEmpty)
+
+        let load = Task { await model.loadInitial() }
+        await fulfillment(of: [entered], timeout: 3)
+        XCTAssertEqual(model.state, .loading)
+        XCTAssertTrue(model.videos.isEmpty, "Disk snapshots must not replace the cold-start skeleton")
+        XCTAssertTrue(model.videoCells.isEmpty)
+        release.signal()
+        await load.value
+
+        XCTAssertEqual(model.videos.map(\.bvid), ["BV1HomeFresh"])
+        XCTAssertEqual(model.state, .loaded)
+        await model.loadInitial() // Returning from another page reuses the current model.
+        XCTAssertEqual(model.videos.map(\.bvid), ["BV1HomeFresh"])
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
+    func testHomeColdStartRestoresSnapshotOnlyAfterRequestFailure() async throws {
+        let entered = expectation(description: "Initial network request started")
+        let release = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { _ in
+            entered.fulfill()
+            _ = release.wait(timeout: .now() + 5)
+            throw URLError(.notConnectedToInternet)
+        }
+        defer { release.signal(); RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=test; DedeUserID=\(Int.random(in: 100_000_000...999_999_999))")
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        let snapshotURL = HomeFeedSnapshotCache.snapshotURL(
+            mode: .recommend, guestModeEnabled: false, recommendSource: .web,
+            accountIdentityKey: api.sessionStore.recommendCacheIdentityKey(guestModeEnabled: false)
+        )
+        defer { try? FileManager.default.removeItem(at: snapshotURL) }
+        model.snapshotCoordinator.save(videos: [try HomeFeedbackTestData.video()], mode: .recommend)
+
+        let load = Task { await model.loadInitial() }
+        await fulfillment(of: [entered], timeout: 3)
+        XCTAssertTrue(model.videos.isEmpty)
+        XCTAssertEqual(model.state, .loading)
+        release.signal()
+        await load.value
+        XCTAssertEqual(model.videos.map(\.bvid), ["BV1"])
+        XCTAssertEqual(model.state, .loaded)
+    }
+
+    @MainActor
     func testHomeFeedbackSuccessRemovesOnlyCurrentVideoAndRejectsInFlightReinsertion() async throws {
         RequestContractURLProtocol.install { request in Self.response(for: request, body: #"{"code":0}"#) }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", accessKey: "main-access-key")

@@ -6,10 +6,9 @@ extension HomeViewModel {
         guard videos.isEmpty else { return }
         updateLastSeenMarkerIndex(nil)
         updateFeed([])
-        restoreCachedVideosIfAvailable()
-        if videos.isEmpty {
-            state = .loading
-        }
+        // Keep the first screen on its skeleton until fresh content arrives.
+        // refresh() still restores the snapshot on failure or an empty response.
+        state = .loading
         await refresh(resetCursor: true)
     }
 
