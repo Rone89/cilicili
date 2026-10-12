@@ -13,9 +13,13 @@ struct DynamicUPSelector: View {
     }
 
     var body: some View {
+        let searching = !model.searchQuery.isEmpty
+        let loading = searching ? model.isSearching : model.isLoading
+        let error = searching ? model.searchErrorMessage : model.errorMessage
+        let hasMore = searching ? model.searchHasMore : model.hasMore
         NavigationStack {
             List {
-                ForEach(model.owners.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }, id: \.mid) { owner in
+                ForEach(searching ? model.searchOwners : model.owners, id: \.mid) { owner in
                     Button {
                         select(owner)
                         dismiss()
@@ -30,26 +34,44 @@ struct DynamicUPSelector: View {
                     }
                     .accessibilityIdentifier("dynamic.up.select.\(owner.mid)")
                 }
-                if model.isLoading {
+                if loading {
                     ProgressView().frame(maxWidth: .infinity)
                 } else {
-                    if let error = model.errorMessage {
+                    if let error {
                         Text(error).font(.caption).foregroundStyle(.secondary)
                     }
-                    if model.hasMore || model.errorMessage != nil {
-                        Button(model.errorMessage == nil ? "加载更多关注的 UP" : "重试") {
-                            Task { await model.loadMore() }
+                    if hasMore || error != nil {
+                        Button(error != nil ? "重试" : (searching ? "加载更多搜索结果" : "加载更多关注的 UP")) {
+                            Task {
+                                if searching { await model.loadSearch() }
+                                else { await model.loadMore() }
+                            }
                         }
-                    } else if model.owners.isEmpty {
+                    } else if searching, model.searchOwners.isEmpty {
+                        Text("未找到匹配的已关注 UP 主").foregroundStyle(.secondary)
+                    } else if !searching, model.owners.isEmpty {
                         Text("暂无关注的 UP 主").foregroundStyle(.secondary)
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "搜索已加载的 UP 主")
+            .searchable(text: Binding(
+                get: { searchText },
+                set: { searchText = $0; model.updateSearchQuery($0) }
+            ), prompt: "搜索全部已关注 UP 主")
             .navigationTitle("选择 UP 主")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .task { await model.loadInitial() }
+            .task(id: model.searchQuery) {
+                guard !model.searchQuery.isEmpty else { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(300))
+                } catch {
+                    // A newer query or dismissing the sheet cancels the debounce.
+                    return
+                }
+                await model.loadSearch()
+            }
         }
         .presentationDetents([.large])
     }
@@ -61,9 +83,16 @@ final class DynamicUPSelectionModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var hasMore = true
     @Published private(set) var errorMessage: String?
+    @Published private(set) var searchQuery = ""
+    @Published private(set) var searchOwners: [VideoOwner] = []
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchHasMore = true
+    @Published private(set) var searchErrorMessage: String?
     private let api: BiliAPIClient
     private var identity: String?
     private var nextPage = 1
+    private var nextSearchPage = 1
+    private var searchRequestID: UUID?
 
     init(api: BiliAPIClient, recentOwners: [VideoOwner]) {
         self.api = api
@@ -99,6 +128,53 @@ final class DynamicUPSelectionModel: ObservableObject {
             return
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func updateSearchQuery(_ text: String) {
+        let keyword = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard keyword != searchQuery else { return }
+        // Invalidate immediately, before the next debounced request starts.
+        searchRequestID = nil
+        searchQuery = keyword
+        searchOwners = []
+        nextSearchPage = 1
+        searchHasMore = true
+        searchErrorMessage = nil
+        isSearching = !keyword.isEmpty
+    }
+
+    func loadSearch() async {
+        guard !searchQuery.isEmpty, searchHasMore, searchRequestID == nil, !Task.isCancelled else { return }
+        let keyword = searchQuery
+        let requestID = UUID()
+        searchRequestID = requestID
+        isSearching = true
+        searchErrorMessage = nil
+        defer {
+            if searchRequestID == requestID {
+                searchRequestID = nil
+                isSearching = false
+            }
+        }
+        do {
+            let context = await api.dynamicFeedRequestContext()
+            guard identity == nil || context.cookieHeader == identity else { throw CancellationError() }
+            guard searchRequestID == requestID, !Task.isCancelled else { return }
+            let page = try await api.fetchDynamicFollowings(page: nextSearchPage, name: keyword)
+            try Task.checkCancellation()
+            let currentContext = await api.dynamicFeedRequestContext()
+            guard currentContext.cookieHeader == context.cookieHeader,
+                  searchRequestID == requestID, searchQuery == keyword else { return }
+            var seen = Set(searchOwners.map(\.mid))
+            searchOwners += page.list.map(\.owner).filter { $0.mid > 0 && seen.insert($0.mid).inserted }
+            searchHasMore = !page.list.isEmpty && (page.total > 0 ? nextSearchPage * 50 < page.total : page.list.count == 50)
+            nextSearchPage += 1
+        } catch is CancellationError {
+            return
+        } catch {
+            guard searchRequestID == requestID else { return }
+            searchErrorMessage = error.localizedDescription
         }
     }
 

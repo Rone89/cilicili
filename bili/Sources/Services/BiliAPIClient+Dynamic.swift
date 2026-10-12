@@ -161,15 +161,27 @@ extension BiliAPIClient {
         return data
     }
 
-    func fetchDynamicFollowings(page: Int = 1) async throws -> DynamicFollowingPage {
+    func fetchDynamicFollowings(page: Int = 1, name: String? = nil) async throws -> DynamicFollowingPage {
         let context = await dynamicFeedRequestContext()
         guard context.isLoggedIn, let mid = context.currentUserMID, mid > 0 else {
             throw BiliAPIError.missingSESSDATA
         }
+        let keyword = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var query = ["vmid": String(mid), "pn": String(max(1, page)), "ps": "50", "order": "desc", "order_type": "attention"]
+        if !keyword.isEmpty {
+            query["name"] = keyword
+            query["gaia_source"] = "main_web"
+            query["web_location"] = "333.999"
+            query = try await signedWBIQuery(query)
+        }
         let response: BiliResponse<DynamicFollowingPage> = try await get(
-            base: baseURL, path: "/x/relation/followings",
-            query: ["vmid": String(mid), "pn": String(max(1, page)), "ps": "50", "order": "desc", "order_type": "attention"],
-            cookieHeader: context.cookieHeader, responseCachePolicy: .brief
+            base: baseURL, path: keyword.isEmpty ? "/x/relation/followings" : "/x/relation/followings/search",
+            query: query,
+            cookieHeader: context.cookieHeader,
+            // Search failures must not be replayed by the brief response cache
+            // when the user retries the same keyword and page.
+            cachePolicy: keyword.isEmpty ? .useProtocolCachePolicy : .reloadIgnoringLocalCacheData,
+            responseCachePolicy: keyword.isEmpty ? .brief : nil
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)

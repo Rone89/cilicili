@@ -1108,6 +1108,129 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testUPSelectorSearchFindsUnloadedFollowingsUsingDynamicAccountAndKeepsBrowsePages() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#)
+            }
+            let query = Self.queryValues(for: request)
+            let searching = request.url?.path == "/x/relation/followings/search"
+            let list = searching
+                ? (query["pn"] == "1" ? #"[{"mid":901,"uname":"未加载的UP"}]"# : #"[{"mid":901,"uname":"未加载的UP"},{"mid":902,"uname":"另一个UP"}]"#)
+                : #"[{"mid":101,"name":"浏览列表UP"}]"#
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{\"list\":\(list),\"total\":51}}")
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main-session; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "dynamic-session"),
+            ])
+            try session.selectDynamicFeedAccount(mid: 2002)
+        })
+        await api.clearWBIKeysForDynamicFeed()
+        let model = DynamicUPSelectionModel(api: api, recentOwners: [])
+        await model.loadInitial()
+        let browseOwners = model.owners
+        model.updateSearchQuery("  未加载  ")
+        await model.loadSearch()
+        XCTAssertEqual(model.searchQuery, "未加载")
+        XCTAssertEqual(model.searchOwners.map(\.mid), [901])
+        XCTAssertTrue(model.searchHasMore)
+        await model.loadSearch()
+        XCTAssertEqual(model.searchOwners.map(\.mid), [901, 902])
+        XCTAssertFalse(model.searchHasMore)
+        XCTAssertEqual(model.owners, browseOwners)
+        let searches = recorder.requests.filter { $0.url?.path == "/x/relation/followings/search" }
+        XCTAssertEqual(searches.count, 2)
+        for request in searches {
+            let query = Self.queryValues(for: request)
+            XCTAssertEqual(query["name"], "未加载")
+            XCTAssertEqual(query["vmid"], "2002")
+            XCTAssertEqual(query["ps"], "50")
+            XCTAssertNotNil(query["w_rid"])
+            XCTAssertNotNil(query["wts"])
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "dynamic-session")
+        }
+        model.updateSearchQuery("")
+        XCTAssertTrue(model.searchOwners.isEmpty)
+        XCTAssertFalse(model.isSearching)
+        XCTAssertEqual(model.owners, browseOwners)
+        await model.loadMore()
+        XCTAssertEqual(Self.queryValues(for: try XCTUnwrap(recorder.request))["pn"], "2", "Search pagination must not advance browsing")
+    }
+
+    @MainActor
+    func testUPSelectorSearchFailureRetriesSamePageAndNewKeywordResetsResults() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#)
+            }
+            let query = Self.queryValues(for: request)
+            let attempts = recorder.requests.filter { $0.url?.path == "/x/relation/followings/search" && Self.queryValues(for: $0)["name"] == "甲" }.count
+            if query["name"] == "甲", query["pn"] == "2", attempts == 2 {
+                return Self.response(for: request, body: #"{"code":-500,"message":"retry search"}"#)
+            }
+            let mid = query["name"] == "乙" ? 903 : (query["pn"] == "1" ? 901 : 902)
+            let total = query["name"] == "乙" ? 1 : 51
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{\"list\":[{\"mid\":\(mid),\"uname\":\"UP\"}],\"total\":\(total)}}")
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        await api.clearWBIKeysForDynamicFeed()
+        let model = DynamicUPSelectionModel(api: api, recentOwners: [])
+        model.updateSearchQuery("甲")
+        await model.loadSearch()
+        await model.loadSearch()
+        XCTAssertNotNil(model.searchErrorMessage)
+        XCTAssertEqual(model.searchOwners.map(\.mid), [901])
+        XCTAssertTrue(model.searchHasMore)
+        await model.loadSearch()
+        XCTAssertNil(model.searchErrorMessage)
+        XCTAssertEqual(model.searchOwners.map(\.mid), [901, 902])
+        let pages = recorder.requests.filter { $0.url?.path == "/x/relation/followings/search" }.map { Self.queryValues(for: $0)["pn"] }
+        XCTAssertEqual(pages, ["1", "2", "2"])
+        model.updateSearchQuery("乙")
+        XCTAssertTrue(model.searchOwners.isEmpty)
+        await model.loadSearch()
+        XCTAssertEqual(model.searchOwners.map(\.mid), [903])
+        XCTAssertEqual(Self.queryValues(for: try XCTUnwrap(recorder.request))["pn"], "1")
+    }
+
+    @MainActor
+    func testUPSelectorIgnoresSearchResponseAfterQueryIsCleared() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let started = expectation(description: "Search started")
+        let gate = DispatchSemaphore(value: 0)
+        RequestContractURLProtocol.install { request in
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#)
+            }
+            started.fulfill()
+            _ = gate.wait(timeout: .now() + 5)
+            return Self.response(for: request, body: #"{"code":0,"data":{"list":[{"mid":901,"uname":"迟到的UP"}],"total":1}}"#)
+        }
+        defer { gate.signal() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
+        await api.clearWBIKeysForDynamicFeed()
+        let model = DynamicUPSelectionModel(api: api, recentOwners: [])
+        model.updateSearchQuery("旧搜索")
+        let task = Task { await model.loadSearch() }
+        await fulfillment(of: [started], timeout: 5)
+        model.updateSearchQuery("")
+        gate.signal()
+        await task.value
+        XCTAssertTrue(model.searchQuery.isEmpty)
+        XCTAssertTrue(model.searchOwners.isEmpty)
+        XCTAssertFalse(model.isSearching)
+        XCTAssertNil(model.searchErrorMessage)
+    }
+
+    @MainActor
     func testExperimentalFeedBoundsEmptyPageContinuationAndStopsCrossBatchCursorCycles() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
