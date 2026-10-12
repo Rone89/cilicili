@@ -201,7 +201,6 @@ private struct HomeProfileButtonContent: View {
     let action: () -> Void
     let onOpenMessages: () -> Void
 
-    private var mineIsHidden: Bool { !libraryStore.visibleRootTabs.contains(.mine) }
     private var hasHiddenTabs: Bool {
         AppTab.allCases.contains { !libraryStore.visibleRootTabs.contains($0) }
     }
@@ -224,13 +223,15 @@ private struct HomeProfileButtonContent: View {
 
             // Keep unread status outside the menu's animated source control.
             // Dismissing the menu must not fade the ring back in with its label.
-            if mineIsHidden && sessionStore.isLoggedIn && hasUnread {
-                Circle().strokeBorder(appTintColor, lineWidth: 2)
-                    .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                    .transaction { $0.animation = nil }
-            }
+            Circle().strokeBorder(appTintColor, lineWidth: 2)
+                .frame(width: HomeToolbarLayout.controlHeight, height: HomeToolbarLayout.controlHeight)
+                .opacity(hasHiddenTabs && sessionStore.isLoggedIn && hasUnread ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transaction {
+                    $0.animation = nil
+                    $0.disablesAnimations = true
+                }
         }
         .accessibilityLabel(hasHiddenTabs ? "个人空间与账户消息" : "个人空间")
         .accessibilityValue(sessionStore.isLoggedIn ? (hasUnread ? "有未读消息" : "全部已读") : "未登录")
