@@ -74,7 +74,6 @@ private struct DynamicContentRoot: View {
                     selectedUP: categoriesEnabled && selectedFeed == .up ? selectedUP : nil,
                     onChooseUP: { showsUPSelector = true }
                 )
-                .id(categoriesEnabled ? ObjectIdentifier(viewModel) : ObjectIdentifier(holder))
             } else {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
@@ -82,12 +81,17 @@ private struct DynamicContentRoot: View {
         .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("动态内容", selection: $selectedFeed) {
-                    ForEach(categoriesEnabled ? DynamicFeedKind.allCases : [.all, .video], id: \.self) { kind in
-                        Text(!categoriesEnabled && kind == .video ? "视频" : kind.title).tag(kind)
+                Group {
+                    if categoriesEnabled {
+                        DynamicFeedToolbarPicker(selection: $selectedFeed)
+                    } else {
+                        Picker("动态内容", selection: $selectedFeed) {
+                            Text("全部").tag(DynamicFeedKind.all)
+                            Text("视频").tag(DynamicFeedKind.video)
+                        }
+                        .pickerStyle(.segmented)
                     }
                 }
-                .pickerStyle(.segmented)
                 .frame(width: categoriesEnabled ? max(pageWidth - 40, 0) : 180)
                 .accessibilityIdentifier("dynamic.feedPicker")
                 .opacity(hidesNavigationChrome ? 0 : 1)
@@ -101,9 +105,17 @@ private struct DynamicContentRoot: View {
             hidesNavigationChrome = false
             if kind == .up, selectedUP == nil {
                 if sessionStore.isLoggedIn { showsUPSelector = true }
-            } else {
+            } else if !categoriesEnabled {
                 selectFeed(kind)
             }
+        }
+        .task(id: DynamicFeedQuery(kind: selectedFeed, hostMID: selectedUP?.mid)) {
+            guard categoriesEnabled else { return }
+            // Commit the control's selection before updating the feed subtree.
+            // A newer selection cancels this activation without a fixed delay.
+            await Task.yield()
+            guard !Task.isCancelled, selectedFeed != .up || selectedUP != nil else { return }
+            selectFeed(selectedFeed)
         }
         .onChange(of: categoriesEnabled) { _, _ in resetFeeds() }
         .onChange(of: DynamicFeedAccountContext(
@@ -116,7 +128,6 @@ private struct DynamicContentRoot: View {
         .sheet(isPresented: $showsUPSelector) {
             DynamicUPSelector(api: api, recentOwners: holder.topUploaderStripViewModel?.topUploaderStripItems.map(\.owner) ?? []) { owner in
                 selectedUP = owner
-                selectFeed(.up)
                 hidesNavigationChrome = false
             }
         }

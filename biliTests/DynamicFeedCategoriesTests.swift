@@ -65,6 +65,38 @@ final class DynamicFeedCategoriesTests: XCTestCase {
         XCTAssertEqual(article.savedScrollOffset, 0)
     }
 
+    func testStableScrollContainerKeepsOffsetsWhenChangingFeedOrUP() {
+        let suite = "DynamicFeedCategoriesTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = LibraryStore(userDefaults: defaults)
+        let session = SessionStore(keychain: KeychainStore(service: suite))
+        let api = BiliAPIClient(sessionStore: session, libraryStore: store, homeRecommendDiagnosticsStore: .shared)
+        let all = DynamicViewModel(api: api, libraryStore: store, sessionStore: session)
+        let upA = DynamicViewModel(api: api, libraryStore: store, sessionStore: session, feedKind: .up, hostMID: 101)
+        let upB = DynamicViewModel(api: api, libraryStore: store, sessionStore: session, feedKind: .up, hostMID: 102)
+        upA.savedScrollOffset = 120
+        let state = DynamicFeedScrollState()
+        XCTAssertEqual(state.activate(all), 0)
+        state.update(320, for: all)
+        XCTAssertEqual(state.activate(upA), 120)
+        XCTAssertEqual(all.savedScrollOffset, 320)
+        // A late geometry callback from the old model must not overwrite UP A.
+        state.update(999, for: all)
+        state.save()
+        XCTAssertEqual(upA.savedScrollOffset, 120)
+        state.update(240, for: upA)
+        XCTAssertEqual(state.activate(upB), 0)
+        XCTAssertEqual(upA.savedScrollOffset, 240)
+        state.update(80, for: upB)
+        XCTAssertEqual(state.activate(upA), 240)
+        XCTAssertEqual(upB.savedScrollOffset, 80)
+        XCTAssertEqual(state.activate(all), 320)
+        state.update(0, for: all)
+        state.save()
+        XCTAssertEqual(all.savedScrollOffset, 0, "Root-tab reselection persists the reset")
+    }
+
     func testArticleMetadataAndOrdinaryOpusClassification() throws {
         let items = try JSONDecoder.bili.decode([DynamicFeedItem].self, from: Data(#"""
         [
