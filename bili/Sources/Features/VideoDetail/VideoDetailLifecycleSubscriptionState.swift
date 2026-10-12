@@ -2,7 +2,6 @@ import Combine
 
 struct VideoDetailLifecycleSubscriptionState {
     var filterCancellable: AnyCancellable?
-    var commentLoadingRecoveryCancellable: AnyCancellable?
     var sponsorBlockCancellable: AnyCancellable?
     var playbackAutoOptimizationCancellable: AnyCancellable?
     var playbackPerformanceCancellable: AnyCancellable?

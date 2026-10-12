@@ -8,7 +8,7 @@ final class VideoDetailCommentThreadRenderStore: ObservableObject {
     var replyDisplayCache: [Int: VideoDetailCommentReplyDisplayCacheEntry] = [:]
     var dialogDisplayCache: [String: VideoDetailCommentDialogDisplayCacheEntry] = [:]
 
-    func invalidateRecoveryContent() {
+    func invalidateContent() {
         replyDisplayCache.removeAll()
         dialogDisplayCache.removeAll()
         contentRevision &+= 1

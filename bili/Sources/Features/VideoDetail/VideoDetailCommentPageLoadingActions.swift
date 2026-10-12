@@ -37,7 +37,7 @@ extension VideoDetailViewModel {
                     resetCommentStateAfterCancellation(isInitialPage: isInitialPage, wasLoadingMore: isLoadingMore)
                     return
                 }
-                applyLoadedCommentPage(page, previousCount: previousCount, isInitialPage: isInitialPage)
+                applyLoadedCommentPage(page, isInitialPage: isInitialPage)
 
                 guard shouldSkipEmptyCommentPage(
                     previousCount: previousCount,
@@ -45,7 +45,6 @@ extension VideoDetailViewModel {
                     remainingEmptyPageSkips: remainingEmptyPageSkips
                 ) else {
                     finishCommentPageLoadWithoutSkip(
-                        isLoadingMore: isLoadingMore,
                         previousCount: previousCount,
                         previousCursor: previousCursor
                     )

@@ -10,15 +10,13 @@ extension VideoDetailViewModel {
         }
     }
 
-    func applyLoadedCommentPage(_ page: CommentPage, previousCount: Int, isInitialPage: Bool) {
+    func applyLoadedCommentPage(_ page: CommentPage, isInitialPage: Bool) {
         let pageComments = comments.isEmpty
             ? (page.topReplies ?? []) + (page.replies ?? [])
             : (page.replies ?? [])
         appendUniqueComments(filteredComments(pageComments))
-        commentCursor = page.cursor?.nextCursor(usesRecovery: commentListState.usesLoadingRecovery) ?? ""
-        commentsEnd = page.cursor?.isEnd ?? (commentListState.usesLoadingRecovery
-            ? (page.replies ?? []).isEmpty && commentCursor.isEmpty
-            : comments.count == previousCount && commentCursor.isEmpty)
+        commentCursor = page.cursor?.effectiveNext ?? ""
+        commentsEnd = page.cursor?.isEnd ?? ((page.replies ?? []).isEmpty && commentCursor.isEmpty)
         if isInitialPage {
             didCompleteInitialCommentLoad = true
         }

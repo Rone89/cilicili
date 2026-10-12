@@ -13,16 +13,11 @@ final class DynamicCommentReplyStore: ObservableObject {
     private let item: DynamicFeedItem
     private let api: BiliAPIClient
     private var blocksGoodsComments: Bool
-    private var recoveryCancellable: AnyCancellable?
 
     init(item: DynamicFeedItem, api: BiliAPIClient, blocksGoodsComments: Bool) {
         self.item = item
         self.api = api
         self.blocksGoodsComments = blocksGoodsComments
-        recoveryCancellable = api.libraryStore.$commentLoadingRecoveryExperimentEnabled
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] _ in self?.resetForLoadingRecovery() }
     }
 
     private func updateSnapshot(_ transform: (inout DynamicCommentReplyStoreSnapshot) -> Void) {
@@ -39,26 +34,10 @@ final class DynamicCommentReplyStore: ObservableObject {
     func setBlocksGoodsComments(_ isEnabled: Bool) {
         guard blocksGoodsComments != isEnabled else { return }
         blocksGoodsComments = isEnabled
-        if api.libraryStore.commentLoadingRecoveryExperimentEnabled {
-            resetForLoadingRecovery()
-            return
-        }
-        updateSnapshot { snapshot in
-            if isEnabled {
-                snapshot.replyThreads = snapshot.replyThreads.mapValues(filteredComments)
-                snapshot.dialogThreads = snapshot.dialogThreads.mapValues(filteredComments)
-            } else {
-                snapshot.replyThreads = [:]
-                snapshot.dialogThreads = [:]
-                snapshot.replyPages = [:]
-                snapshot.replyHasMore = [:]
-            }
-        }
-        replyItemCache.removeAll()
-        dialogItemCache.removeAll()
+        resetFilteredContent()
     }
 
-    private func resetForLoadingRecovery() {
+    private func resetFilteredContent() {
         // Invalidate, rather than remove, generations so an old request cannot
         // collide with the first request for a newly opened thread.
         replyLoadGenerations = replyLoadGenerations.mapValues { $0 &+ 1 }
@@ -71,7 +50,7 @@ final class DynamicCommentReplyStore: ObservableObject {
 
     func replies(for comment: Comment) -> [Comment] {
         let replies = snapshot.replyThreads[comment.id] ?? comment.replies ?? []
-        return api.libraryStore.commentLoadingRecoveryExperimentEnabled ? filteredComments(replies) : replies
+        return filteredComments(replies)
     }
 
     func repliesSnapshot(for comment: Comment) -> DynamicCommentRepliesSnapshot {

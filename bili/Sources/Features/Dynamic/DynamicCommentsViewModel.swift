@@ -28,8 +28,6 @@ final class DynamicCommentsViewModel: ObservableObject {
     private var commentsEnd = false
     private var commentItemsSignature = DynamicCommentListSignature([])
     private var loadGeneration = 0
-    private var usesLoadingRecovery: Bool
-    private var recoveryCancellable: AnyCancellable?
 
     var canLoadComments: Bool {
         commentOID != nil && commentType != nil
@@ -42,35 +40,20 @@ final class DynamicCommentsViewModel: ObservableObject {
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
         self.api = api
-        self.usesLoadingRecovery = api.libraryStore.commentLoadingRecoveryExperimentEnabled
-        if usesLoadingRecovery { self.blocksGoodsComments = api.libraryStore.blocksGoodsComments }
+        self.blocksGoodsComments = api.libraryStore.blocksGoodsComments
         self.displayedReplyCount = item.replyCount
         self.replyStore = DynamicCommentReplyStore(item: item, api: api, blocksGoodsComments: blocksGoodsComments)
-        recoveryCancellable = api.libraryStore.$commentLoadingRecoveryExperimentEnabled
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] enabled in
-                guard let self else { return }
-                self.usesLoadingRecovery = enabled
-                self.cursor = ""
-                self.commentsEnd = false
-                self.scheduleRecoveryReload()
-            }
     }
 
     func setBlocksGoodsComments(_ isEnabled: Bool) {
         guard blocksGoodsComments != isEnabled else { return }
         blocksGoodsComments = isEnabled
         replyStore.setBlocksGoodsComments(isEnabled)
-        if usesLoadingRecovery {
-            if isEnabled { comments = filteredComments(comments) }
-            scheduleRecoveryReload()
-            return
-        }
-        refilterLoadedComments()
+        if isEnabled { comments = filteredComments(comments) }
+        scheduleFilteredCommentsReload()
     }
 
-    private func scheduleRecoveryReload() {
+    private func scheduleFilteredCommentsReload() {
         loadGeneration &+= 1
         let generation = loadGeneration
         Task { @MainActor [weak self] in
@@ -170,7 +153,7 @@ final class DynamicCommentsViewModel: ObservableObject {
                     cookieHeader: cookieHeader
                 )
                 guard generation == loadGeneration else { return .superseded }
-                if usesLoadingRecovery { try Task.checkCancellation() }
+                try Task.checkCancellation()
                 let pageComments = isInitialPage
                     ? (page.topReplies ?? []) + (page.replies ?? [])
                     : (page.replies ?? [])
@@ -182,10 +165,8 @@ final class DynamicCommentsViewModel: ObservableObject {
                 } else {
                     appendUniqueComments(filteredPageComments)
                 }
-                cursor = page.cursor?.nextCursor(usesRecovery: usesLoadingRecovery) ?? ""
-                commentsEnd = page.cursor?.isEnd ?? (usesLoadingRecovery
-                    ? (page.replies ?? []).isEmpty && cursor.isEmpty
-                    : comments.count == previousCount && cursor.isEmpty)
+                cursor = page.cursor?.effectiveNext ?? ""
+                commentsEnd = page.cursor?.isEnd ?? ((page.replies ?? []).isEmpty && cursor.isEmpty)
                 state = .loaded
                 loadMoreState = .idle
 
@@ -198,12 +179,10 @@ final class DynamicCommentsViewModel: ObservableObject {
                     && !cursor.isEmpty
                     && cursor != previousCursor
                 guard canSkipEmptyPage else {
-                    if usesLoadingRecovery, !commentsEnd,
+                    if !commentsEnd,
                        cursor.isEmpty || cursor == previousCursor || !didAppendComments {
                         if cursor.isEmpty { cursor = previousCursor }
                         loadMoreState = .failed("评论分页暂未推进，点击继续加载")
-                    } else if !usesLoadingRecovery, !isInitialPage, !didAppendComments {
-                        commentsEnd = true
                     }
                     return .refreshed
                 }
@@ -219,22 +198,17 @@ final class DynamicCommentsViewModel: ObservableObject {
                     state = .idle
                 } else {
                     state = .loaded
-                    if !usesLoadingRecovery { commentsEnd = true }
                 }
-                loadMoreState = usesLoadingRecovery && !isInitialPage
+                loadMoreState = !isInitialPage
                     ? .failed("评论加载已中断，点击重试") : .idle
                 return .failed
             } catch {
                 guard generation == loadGeneration else { return .superseded }
-                if usesLoadingRecovery, !isInitialPage || !comments.isEmpty {
+                if !isInitialPage || !comments.isEmpty {
                     state = .loaded
                     loadMoreState = .failed(error.localizedDescription)
-                } else if comments.isEmpty {
-                    state = .failed(error.localizedDescription)
-                    loadMoreState = .idle
                 } else {
-                    state = .loaded
-                    commentsEnd = true
+                    state = .failed(error.localizedDescription)
                     loadMoreState = .idle
                 }
                 return .failed
@@ -243,13 +217,8 @@ final class DynamicCommentsViewModel: ObservableObject {
     }
 
     private func appendUniqueComments(_ more: [Comment]) {
-        if usesLoadingRecovery {
-            var seen = Set(comments.map(\.id))
-            comments.append(contentsOf: more.filter { seen.insert($0.id).inserted })
-            return
-        }
-        let existing = Set(comments.map(\.id))
-        comments.append(contentsOf: more.filter { !existing.contains($0.id) })
+        var seen = Set(comments.map(\.id))
+        comments.append(contentsOf: more.filter { seen.insert($0.id).inserted })
     }
 
     private func uniqueComments(_ comments: [Comment]) -> [Comment] {
@@ -297,14 +266,5 @@ final class DynamicCommentsViewModel: ObservableObject {
     private func filteredComments(_ values: [Comment]) -> [Comment] {
         guard blocksGoodsComments else { return values }
         return values.filter { !$0.containsGoodsPromotion }
-    }
-
-    func refilterLoadedComments() {
-        guard !comments.isEmpty else { return }
-        if blocksGoodsComments {
-            comments = filteredComments(comments)
-        } else {
-            Task { await reload() }
-        }
     }
 }

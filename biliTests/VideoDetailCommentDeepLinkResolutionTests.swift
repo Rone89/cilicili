@@ -2,19 +2,17 @@ import XCTest
 @testable import bili
 
 final class VideoDetailCommentDeepLinkResolutionTests: XCTestCase {
-    func testRecoveryCursorPrefersOpaqueOffsetAndLegacyKeepsNumericNext() throws {
+    func testCursorPrefersOpaqueOffsetAndFallsBackToNumericNext() throws {
         let cursor = try JSONDecoder.bili.decode(CommentCursor.self, from: Data(#"{"next":2,"pagination_reply":{"next_offset":"CAEiAggC"}}"#.utf8))
-        XCTAssertEqual(cursor.nextCursor(usesRecovery: true), "CAEiAggC")
-        XCTAssertEqual(cursor.nextCursor(usesRecovery: false), "2")
+        XCTAssertEqual(cursor.effectiveNext, "CAEiAggC")
         let fallback = try JSONDecoder.bili.decode(CommentCursor.self, from: Data(#"{"next":3,"next_offset":"  "}"#.utf8))
-        XCTAssertEqual(fallback.nextCursor(usesRecovery: true), "3")
+        XCTAssertEqual(fallback.effectiveNext, "3")
     }
 
-    func testRecoveryLocalDialogIncludesParentWithoutChangingLegacyFallback() throws {
+    func testLocalDialogIncludesLoadedParent() throws {
         let parent = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":201,"parent":101}"#.utf8))
         let reply = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":202,"parent":201}"#.utf8))
-        XCTAssertEqual(VideoDetailCommentThreadResolver.localDialogReplies(reply, siblings: [parent, reply]).map(\.id), [202])
-        XCTAssertEqual(VideoDetailCommentThreadResolver.localDialogReplies(reply, siblings: [parent, reply], includesParent: true).map(\.id), [201, 202])
+        XCTAssertEqual(VideoDetailCommentThreadResolver.localDialogReplies(reply, siblings: [parent, reply]).map(\.id), [201, 202])
     }
 
     func testReplyPageUsesServerPaginationRatherThanVisibleReplyCount() throws {

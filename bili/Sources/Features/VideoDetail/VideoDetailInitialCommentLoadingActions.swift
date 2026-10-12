@@ -53,9 +53,9 @@ extension VideoDetailViewModel {
         commentsEnd = false
         resetCommentThreadStateForNewComments()
         comments = []
-        if commentListState.needsThreadRecoveryReload {
-            commentListState.needsThreadRecoveryReload = false
-            commentThreadRenderStore.invalidateRecoveryContent()
+        if commentListState.needsThreadReload {
+            commentListState.needsThreadReload = false
+            commentThreadRenderStore.invalidateContent()
         }
         commentLoadMoreState = .idle
         didCompleteInitialCommentLoad = false

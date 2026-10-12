@@ -2789,11 +2789,7 @@ nonisolated struct CommentCursor: Decodable, Sendable {
     let isEnd: Bool?
 
     var effectiveNext: String? {
-        Self.nonEmpty(next) ?? Self.nonEmpty(nextOffset)
-    }
-
-    func nextCursor(usesRecovery: Bool) -> String? {
-        usesRecovery ? Self.nonEmpty(nextOffset) ?? Self.nonEmpty(next) : effectiveNext
+        Self.nonEmpty(nextOffset) ?? Self.nonEmpty(next)
     }
 
     enum CodingKeys: String, CodingKey {

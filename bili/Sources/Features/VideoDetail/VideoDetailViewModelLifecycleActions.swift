@@ -4,25 +4,12 @@ import Foundation
 extension VideoDetailViewModel {
     func configureLifecycleBindings() {
         lastDanmakuAdaptationProfile = playbackAdaptationProfile
-        commentListState.usesLoadingRecovery = libraryStore.commentLoadingRecoveryExperimentEnabled
-        lifecycleSubscriptionState.commentLoadingRecoveryCancellable = libraryStore.$commentLoadingRecoveryExperimentEnabled
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] enabled in
-                guard let self, !self.isPlaybackInvalidatedForNavigation else { return }
-                self.commentListState.usesLoadingRecovery = enabled
-                self.scheduleCommentRecoveryReload()
-            }
         filterCancellable = libraryStore.$blocksGoodsComments
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] enabled in
                 guard self?.isPlaybackInvalidatedForNavigation != true else { return }
-                if self?.commentListState.usesLoadingRecovery == true {
-                    self?.refilterLoadedCommentsForRecovery(blocksGoodsComments: enabled)
-                } else {
-                    self?.refilterLoadedComments()
-                }
+                self?.refilterLoadedComments(blocksGoodsComments: enabled)
             }
         sponsorBlockCancellable = libraryStore.$sponsorBlockEnabled
             .removeDuplicates()
