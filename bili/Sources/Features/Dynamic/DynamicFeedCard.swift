@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DynamicFeedCard: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.dynamicArticleFeedContext) private var articleFeedContext
     @Environment(\.dynamicDetailNavigationPath) private var detailNavigationPath
     @Environment(\.preloadedOriginalDynamicDetails) private var preloadedOriginalDynamicDetails
     let item: DynamicFeedItem
@@ -36,6 +38,8 @@ struct DynamicFeedCard: View {
     }
 
     var body: some View {
+        let article = libraryStore.dynamicFeedCategoriesExperimentEnabled
+            ? (item.article ?? (articleFeedContext ? item.opusArticle : nil)) : nil
         Group {
             if let video = display.video, display.usesHomeVideoCardStyle {
                 DynamicHomeVideoFeedCard(
@@ -46,7 +50,7 @@ struct DynamicFeedCard: View {
                     usesExternalHorizontalInsets: usesExternalHorizontalInsets,
                     onShowComments: showComments
                 )
-            } else if display.usesSeparatedDynamicLayout {
+            } else if display.usesSeparatedDynamicLayout && article == nil {
                 DynamicSeparatedFeedCardContent(
                     item: item,
                     display: display,
@@ -70,7 +74,8 @@ struct DynamicFeedCard: View {
                     onShowComments: showComments,
                     onOpenDetail: openDetailAction(for: display),
                     onOpenOriginalDetail: openOriginalDetailAction,
-                    showsActionBar: showsActionBar
+                    showsActionBar: showsActionBar,
+                    article: article
                 )
             }
         }

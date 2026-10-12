@@ -11,6 +11,7 @@ struct DynamicStandardFeedCardContent: View {
     let onOpenDetail: (() -> Void)?
     let onOpenOriginalDetail: ((DynamicOriginalItem) -> Void)?
     let showsActionBar: Bool
+    var article: DynamicArticle? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -18,14 +19,16 @@ struct DynamicStandardFeedCardContent: View {
                 authorHeader
                     .padding(.horizontal, horizontalContentInset)
 
-                DynamicFeedCardTextSection(
-                    display: display,
-                    preferredWidth: textWidth,
-                    onOpenDetail: onOpenDetail,
-                    allowsTextCollapsing: allowsTextCollapsing,
-                    isTextExpanded: $isTextExpanded
-                )
-                .padding(.horizontal, horizontalContentInset)
+                if article == nil || (display.topLevelDisplayText != article?.summary && display.topLevelDisplayText != article?.title) {
+                    DynamicFeedCardTextSection(
+                        display: display,
+                        preferredWidth: textWidth,
+                        onOpenDetail: onOpenDetail,
+                        allowsTextCollapsing: allowsTextCollapsing,
+                        isTextExpanded: $isTextExpanded
+                    )
+                    .padding(.horizontal, horizontalContentInset)
+                }
 
                 if let pgc = display.pgc {
                     DynamicPGCRouteLink(pgc: pgc)
@@ -39,6 +42,9 @@ struct DynamicStandardFeedCardContent: View {
                     DynamicPaidContentRouteLink(content: paidContent, video: display.paidVideo) {
                         DynamicPaidContentPreview(content: paidContent, style: .large)
                     }
+                } else if let article {
+                    DynamicArticlePreview(article: article)
+                        .padding(.horizontal, horizontalContentInset)
                 } else if let video = display.video {
                     VideoRouteLink(video) {
                         DynamicArchivePreview(video: video, style: .large, showsHeader: false)
@@ -51,7 +57,7 @@ struct DynamicStandardFeedCardContent: View {
                     }
                 }
 
-                if !display.imageItems.isEmpty {
+                if article == nil && !display.imageItems.isEmpty {
                     DynamicImageThumbnailStrip(
                         images: display.imageItems,
                         availableWidth: contentWidth

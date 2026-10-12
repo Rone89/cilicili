@@ -1039,6 +1039,149 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testExperimentalDynamicCategoryRequestsAndUPHostAreIndependent() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"has_more":false}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=category-session; DedeUserID=1001")
+        for kind in [DynamicFeedKind.pgc, .article] {
+            _ = try await api.fetchDynamicFeed(offset: "category-next", kind: kind)
+            let query = Self.queryValues(for: try XCTUnwrap(recorder.request))
+            XCTAssertEqual(query["type"], kind.rawValue)
+            XCTAssertNil(query["host_mid"])
+            XCTAssertEqual(query["offset"], "category-next")
+        }
+        _ = try await api.fetchDynamicFeed(offset: "up-next", kind: .up, hostMID: 12345)
+        let query = Self.queryValues(for: try XCTUnwrap(recorder.request))
+        XCTAssertEqual(query["host_mid"], "12345")
+        XCTAssertNil(query["type"])
+        XCTAssertEqual(query["offset"], "up-next")
+        XCTAssertEqual(recorder.requests.count, 3)
+        do {
+            _ = try await api.fetchDynamicFeed(kind: .up)
+            XCTFail("A missing UP must not issue an unfiltered feed request")
+        } catch let error as BiliAPIError {
+            guard case .api = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertEqual(recorder.requests.count, 3)
+    }
+
+    @MainActor
+    func testUPSelectorUsesSelectedDynamicAccountAndDeduplicatesFollowingsPages() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let query = Self.queryValues(for: request)
+            let list = query["pn"] == "1"
+                ? #"[{"mid":101,"name":"UP甲","face":"https://i0.hdslb.com/101.jpg"}]"#
+                : #"[{"mid":101,"name":"UP甲"},{"mid":102,"name":"UP乙"}]"#
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{\"list\":\(list),\"total\":51}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=main-session; DedeUserID=1001", configure: { session, _ in
+            _ = try session.saveAdditionalAccount([
+                Self.makeCookie(name: "DedeUserID", value: "2002"),
+                Self.makeCookie(name: "SESSDATA", value: "dynamic-session"),
+            ])
+            try session.selectDynamicFeedAccount(mid: 2002)
+        })
+        let model = DynamicUPSelectionModel(api: api, recentOwners: [VideoOwner(mid: 101, name: "UP甲", face: nil)])
+        await model.loadInitial()
+        XCTAssertTrue(model.hasMore)
+        await model.loadMore()
+        XCTAssertEqual(Set(model.owners.map(\.mid)), [101, 102, 2002])
+        XCTAssertEqual(model.owners.count, 3)
+        XCTAssertFalse(model.hasMore)
+        XCTAssertEqual(recorder.requests.count, 2)
+        for request in recorder.requests {
+            XCTAssertEqual(request.url?.path, "/x/relation/followings")
+            XCTAssertEqual(Self.queryValues(for: request)["vmid"], "2002")
+            XCTAssertEqual(Self.queryValues(for: request)["ps"], "50")
+            XCTAssertEqual(cookieValues(in: request.value(forHTTPHeaderField: "Cookie"))["SESSDATA"], "dynamic-session")
+        }
+        XCTAssertEqual(Self.queryValues(for: try XCTUnwrap(recorder.request))["pn"], "2")
+    }
+
+    @MainActor
+    func testExperimentalFeedBoundsEmptyPageContinuationAndStopsCrossBatchCursorCycles() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let offset = Self.queryValues(for: request)["offset"]
+            let next: String
+            switch offset {
+            case nil: next = "one"
+            case "one": next = "two"
+            case "two": next = "three"
+            default: next = "one"
+            }
+            let items = offset == "three"
+                ? #"[{"id_str":"article","type":"DYNAMIC_TYPE_ARTICLE","modules":{"module_dynamic":{"major":{"article":{"id":101,"title":"有效专栏"}}}}}]"#
+                : "[]"
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{\"items\":\(items),\"offset\":\"\(next)\",\"has_more\":true}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=bounded-session; DedeUserID=1001", configure: { _, store in
+            store.setDynamicFeedCategoriesExperimentEnabled(true)
+        })
+        let model = DynamicViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore, feedKind: .article)
+        await model.loadInitial()
+        XCTAssertEqual(recorder.requests.count, 3, "A single load must stop after three filtered empty pages")
+        XCTAssertEqual(model.state, .loaded)
+        XCTAssertTrue(model.hasMoreItems, "The user can explicitly continue after the bounded batch")
+        await model.loadMore()
+        XCTAssertEqual(model.items.map(\.id), ["article"])
+        XCTAssertFalse(model.hasMoreItems, "A cursor cycle across batches must terminate pagination")
+        await model.loadMore()
+        XCTAssertEqual(recorder.requests.count, 4)
+    }
+
+    @MainActor
+    func testExperimentalContinuationFailureRetainsItemsAndRetryCursor() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        let retained = #"[{"id_str":"retained","type":"DYNAMIC_TYPE_ARTICLE","modules":{"module_dynamic":{"major":{"article":{"id":101,"title":"已有专栏"}}}}}]"#
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: "{\"code\":0,\"data\":{\"items\":\(retained),\"offset\":\"retry-start\",\"has_more\":true}}")
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=retry-session; DedeUserID=1001", configure: { _, store in
+            store.setDynamicFeedCategoriesExperimentEnabled(true)
+        })
+        let model = DynamicViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore, feedKind: .article)
+        await model.loadInitial()
+        await BiliAPIResponseMemoryCache.shared.clear()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            if Self.queryValues(for: request)["offset"] == "retry-start" {
+                return Self.response(for: request, body: "{\"code\":0,\"data\":{\"items\":\(retained),\"offset\":\"failing-continuation\",\"has_more\":true}}")
+            }
+            throw URLError(.timedOut)
+        }
+        await model.loadMore()
+        XCTAssertEqual(model.items.map(\.id), ["retained"])
+        XCTAssertTrue(model.hasMoreItems)
+        guard case .failed = model.state else { return XCTFail("Continuation error must remain retryable") }
+        await BiliAPIResponseMemoryCache.shared.clear()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[{"id_str":"new","type":"DYNAMIC_TYPE_ARTICLE","modules":{"module_dynamic":{"major":{"article":{"id":102,"title":"新专栏"}}}}}],"has_more":false}}"#)
+        }
+        await model.loadMore()
+        XCTAssertEqual(Self.queryValues(for: try XCTUnwrap(recorder.request))["offset"], "retry-start")
+        XCTAssertEqual(model.items.map(\.id), ["retained", "new"])
+        XCTAssertEqual(model.state, .loaded)
+        XCTAssertFalse(model.hasMoreItems)
+    }
+
+    @MainActor
     func testDynamicPortalBuildsRequestAndDecodes() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 

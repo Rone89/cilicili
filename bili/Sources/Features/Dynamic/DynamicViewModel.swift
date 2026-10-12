@@ -4,6 +4,9 @@ import Foundation
 @MainActor
 final class DynamicViewModel: ObservableObject {
     let feedKind: DynamicFeedKind
+    let query: DynamicFeedQuery
+    // Geometry samples are not published; scrolling must not invalidate cards.
+    var savedScrollOffset: CGFloat = 0
     @Published var items: [DynamicFeedItem] = [] {
         didSet {
             itemsRevision &+= 1
@@ -29,8 +32,9 @@ final class DynamicViewModel: ObservableObject {
         lifecycleCoordinator.hasMoreItems
     }
 
-    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore, feedKind: DynamicFeedKind = .all) {
+    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore, feedKind: DynamicFeedKind = .all, hostMID: Int? = nil) {
         self.feedKind = feedKind
+        query = DynamicFeedQuery(kind: feedKind, hostMID: hostMID)
         let contentFilter = DynamicFeedContentFilter(libraryStore: libraryStore)
         let resourcePrefetchCoordinator = DynamicFeedResourcePrefetchCoordinator(
             api: api,
@@ -42,7 +46,8 @@ final class DynamicViewModel: ObservableObject {
             libraryStore: libraryStore,
             contentFilter: contentFilter,
             resourcePrefetchCoordinator: resourcePrefetchCoordinator,
-            feedKind: feedKind
+            feedKind: feedKind,
+            hostMID: query.hostMID
         )
         filterCancellable = libraryStore.$blocksAdDynamics
             .combineLatest(libraryStore.$blocksGoodsDynamics)
@@ -158,6 +163,7 @@ final class DynamicViewModel: ObservableObject {
         cachedInitialRefreshTask = nil
         lifecycleCoordinator.prepareLoggedOutState()
         items = []
+        savedScrollOffset = 0
         topUploaderStripItems = []
         isTopUploaderStripLoading = false
         state = .idle

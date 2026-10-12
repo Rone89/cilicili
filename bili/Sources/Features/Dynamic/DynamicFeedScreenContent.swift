@@ -22,6 +22,8 @@ struct DynamicFeedScreenContent: View {
     @ObservedObject var viewModel: DynamicViewModel
     let topUploaderStripViewModel: DynamicViewModel
     let isLoggedIn: Bool
+    var selectedUP: VideoOwner? = nil
+    var onChooseUP: (() -> Void)? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -34,7 +36,8 @@ struct DynamicFeedScreenContent: View {
                 topUploaderStripViewModel: topUploaderStripViewModel,
                 isLoggedIn: isLoggedIn,
                 contentWidth: contentWidth,
-                horizontalInset: horizontalInset
+                horizontalInset: horizontalInset,
+                selectedUP: selectedUP, onChooseUP: onChooseUP
             )
         }
         .background(Color(.systemBackground))

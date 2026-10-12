@@ -62,12 +62,31 @@ struct DynamicLoginEmptyState: View {
 
 struct DynamicFeedEmptyState: View {
     var isVideoFeed = false
+    var feedKind: DynamicFeedKind = .all
+
+    private var title: String {
+        switch feedKind {
+        case .pgc: "暂无番剧动态"
+        case .article: "暂无专栏动态"
+        case .up: "该 UP 暂无动态"
+        default: isVideoFeed ? "暂无投稿视频" : "暂无动态"
+        }
+    }
+
+    private var message: String {
+        switch feedKind {
+        case .pgc: "关注的番剧更新会显示在这里。"
+        case .article: "关注用户的专栏会显示在这里。"
+        case .up: "可更换 UP 主或下拉刷新。"
+        default: isVideoFeed ? "关注用户的投稿视频会显示在这里。" : "登录后会显示你关注 UP 的动态。"
+        }
+    }
 
     var body: some View {
         EmptyStateView(
-            title: isVideoFeed ? "暂无投稿视频" : "暂无动态",
+            title: title,
             systemImage: "sparkles",
-            message: isVideoFeed ? "关注用户的投稿视频会显示在这里。" : "登录后会显示你关注 UP 的动态。"
+            message: message
         )
     }
 }

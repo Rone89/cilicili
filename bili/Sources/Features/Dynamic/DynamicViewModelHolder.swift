@@ -6,10 +6,11 @@ final class DynamicViewModelHolder: ObservableObject {
     private var cancellable: AnyCancellable?
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshot: DynamicRenderSnapshot?
-    private var viewModels: [DynamicFeedKind: DynamicViewModel] = [:]
+    private var viewModels: [DynamicFeedQuery: DynamicViewModel] = [:]
+    private var recentUPQueries: [DynamicFeedQuery] = []
 
     var topUploaderStripViewModel: DynamicViewModel? {
-        viewModels[.all]
+        viewModels[DynamicFeedQuery(kind: .all)]
     }
 
     init(
@@ -34,18 +35,29 @@ final class DynamicViewModelHolder: ObservableObject {
         lastSnapshot = nil
         viewModels.values.forEach { $0.invalidateAccount() }
         viewModels.removeAll()
+        recentUPQueries = []
         installViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore)
     }
 
-    func selectFeed(_ kind: DynamicFeedKind, api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
-        guard viewModel?.feedKind != kind else { return }
+    func selectFeed(_ kind: DynamicFeedKind, hostMID: Int? = nil, api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
+        let query = DynamicFeedQuery(kind: kind, hostMID: hostMID)
+        guard kind != .up || (hostMID ?? 0) > 0 else { return }
+        guard viewModel?.query != query else { return }
         snapshotRefreshTask?.cancel()
         snapshotRefreshTask = nil
         cancellable = nil
-        let model = viewModels[kind] ?? DynamicViewModel(
-            api: api, libraryStore: libraryStore, sessionStore: sessionStore, feedKind: kind
+        let model = viewModels[query] ?? DynamicViewModel(
+            api: api, libraryStore: libraryStore, sessionStore: sessionStore, feedKind: kind, hostMID: hostMID
         )
         observe(model)
+        if kind == .up {
+            recentUPQueries.removeAll { $0 == query }
+            recentUPQueries.append(query)
+            if recentUPQueries.count > 3 {
+                let evicted = recentUPQueries.removeFirst()
+                viewModels.removeValue(forKey: evicted)?.invalidateAccount()
+            }
+        }
     }
 
     private func installViewModel(
@@ -58,7 +70,7 @@ final class DynamicViewModelHolder: ObservableObject {
     }
 
     private func observe(_ viewModel: DynamicViewModel) {
-        viewModels[viewModel.feedKind] = viewModel
+        viewModels[viewModel.query] = viewModel
         self.viewModel = viewModel
         lastSnapshot = DynamicRenderSnapshot(viewModel)
         cancellable = viewModel.objectWillChange.sink { [weak self] _ in

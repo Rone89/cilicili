@@ -8,6 +8,9 @@ struct DynamicFeedScrollContent: View {
     let isLoggedIn: Bool
     let contentWidth: CGFloat
     let horizontalInset: CGFloat
+    var selectedUP: VideoOwner? = nil
+    var onChooseUP: (() -> Void)? = nil
+    @EnvironmentObject private var libraryStore: LibraryStore
 
     var body: some View {
         ScrollView {
@@ -17,7 +20,8 @@ struct DynamicFeedScrollContent: View {
                     viewModel: viewModel,
                     topUploaderStripViewModel: topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: isLoggedIn,
-                    contentWidth: contentWidth
+                    contentWidth: contentWidth,
+                    selectedUP: selectedUP, onChooseUP: onChooseUP
                 )
                 .frame(width: contentWidth, alignment: .leading)
                 .padding(.horizontal, horizontalInset)
@@ -25,6 +29,8 @@ struct DynamicFeedScrollContent: View {
             }
         }
         .rootFloatingTabBarContentPadding()
+        .environment(\.dynamicArticleFeedContext, viewModel.feedKind == .article)
+        .modifier(DynamicFeedScrollRestoration(viewModel: viewModel, isEnabled: libraryStore.dynamicFeedCategoriesExperimentEnabled))
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
@@ -32,7 +38,7 @@ struct DynamicFeedScrollContent: View {
         .scrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
         .task(id: DynamicFeedLoadIdentity(model: ObjectIdentifier(viewModel), isLoggedIn: isLoggedIn)) {
-            if viewModel.feedKind == .video {
+            if viewModel.feedKind != .all {
                 topUploaderStripViewModel?.loadTopUploaderStripIfNeeded()
             }
             await viewModel.loadInitial()
@@ -51,7 +57,7 @@ struct DynamicFeedScrollContent: View {
 
     private func refreshFromNativePull() async {
         guard isLoggedIn else { return }
-        if viewModel.feedKind == .video {
+        if viewModel.feedKind != .all {
             topUploaderStripViewModel?.refreshTopUploaderStrip()
         }
         await viewModel.refresh()
@@ -65,10 +71,28 @@ private struct DynamicFeedBodyContent: View {
     let topUploaderStripViewModel: DynamicViewModel
     let isLoggedIn: Bool
     let contentWidth: CGFloat
+    var selectedUP: VideoOwner? = nil
+    var onChooseUP: (() -> Void)? = nil
 
     var body: some View {
         LazyVStack(spacing: 0) {
             DynamicFeedTopUploaderStrip(viewModel: topUploaderStripViewModel, isLoggedIn: isLoggedIn)
+
+            if let selectedUP, let onChooseUP {
+                Button(action: onChooseUP) {
+                    HStack {
+                        Text("正在查看：\(selectedUP.name)")
+                            .lineLimit(1)
+                        Spacer()
+                        Label("更换", systemImage: "chevron.down")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dynamic.up.change")
+            }
 
             if !isLoggedIn {
                 DynamicLoginEmptyState()
@@ -77,7 +101,7 @@ private struct DynamicFeedBodyContent: View {
             } else if viewModel.items.isEmpty && viewModel.state != .loaded {
                 DynamicFeedSkeletonList()
             } else if viewModel.items.isEmpty {
-                DynamicFeedEmptyState(isVideoFeed: viewModel.feedKind == .video)
+                DynamicFeedEmptyState(isVideoFeed: viewModel.feedKind == .video, feedKind: viewModel.feedKind)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
                 if viewModel.hasMoreItems {

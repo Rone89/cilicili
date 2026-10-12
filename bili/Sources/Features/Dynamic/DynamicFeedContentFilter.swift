@@ -18,6 +18,7 @@ struct DynamicFeedContentFilter {
                 || item.paidContent != nil
                 || !item.imageItems.isEmpty
                 || item.original?.hasDisplayableContent == true
+                || (libraryStore.dynamicFeedCategoriesExperimentEnabled && (item.pgc != nil || item.article != nil))
 #if DEBUG
             if !isDisplayable, item.author != nil {
                 dynamicContentFilterLogger.debug("Dropped empty dynamic: \(item.contentDiagnosticSummary, privacy: .public)")
@@ -46,7 +47,7 @@ struct DynamicFeedContentFilter {
         _ more: [DynamicFeedItem],
         to items: [DynamicFeedItem]
     ) -> [DynamicFeedItem] {
-        let existing = Set(items.map(\.id))
-        return items + more.filter { !existing.contains($0.id) }
+        var existing = Set(items.map(\.id))
+        return items + more.filter { existing.insert($0.id).inserted }
     }
 }

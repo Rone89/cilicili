@@ -81,6 +81,20 @@ struct MineDeveloperDiagnosticsView: View {
     private var experimentsSection: some View {
         Section("实验开关") {
             Toggle(isOn: Binding(
+                get: { libraryStore.dynamicFeedCategoriesExperimentEnabled },
+                set: { libraryStore.setDynamicFeedCategoriesExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("动态分类与 UP 筛选", systemImage: "line.3.horizontal.decrease")
+                    Text("动态顶部增加投稿、番剧、专栏与指定 UP 分类，各分类独立保存列表和浏览位置。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.dynamicFeedCategories")
+
+            Toggle(isOn: Binding(
                 get: { libraryStore.metalDanmakuRendererExperimentEnabled },
                 set: { libraryStore.setMetalDanmakuRendererExperimentEnabled($0) }
             )) {

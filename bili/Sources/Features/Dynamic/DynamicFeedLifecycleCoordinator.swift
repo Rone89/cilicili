@@ -8,9 +8,14 @@ final class DynamicFeedLifecycleCoordinator {
     private let contentFilter: DynamicFeedContentFilter
     private let resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator
     private let feedKind: DynamicFeedKind
+    private let hostMID: Int?
+    private let enhancesCategories: Bool
+    private let accountIdentity: String
+    private var requestGeneration = 0
     private var rawItems: [DynamicFeedItem] = []
     private var offset = ""
     private var hasMore = true
+    private var seenCursors = Set<String>()
     private var topUploaderStripTask: Task<Void, Never>?
 
     var isLoggedIn: Bool {
@@ -27,7 +32,8 @@ final class DynamicFeedLifecycleCoordinator {
         libraryStore: LibraryStore,
         contentFilter: DynamicFeedContentFilter,
         resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator,
-        feedKind: DynamicFeedKind = .all
+        feedKind: DynamicFeedKind = .all,
+        hostMID: Int? = nil
     ) {
         self.api = api
         self.sessionStore = sessionStore
@@ -35,6 +41,9 @@ final class DynamicFeedLifecycleCoordinator {
         self.contentFilter = contentFilter
         self.resourcePrefetchCoordinator = resourcePrefetchCoordinator
         self.feedKind = feedKind
+        self.hostMID = hostMID
+        enhancesCategories = libraryStore.dynamicFeedCategoriesExperimentEnabled
+        accountIdentity = sessionStore.accountCacheIdentityKey(for: .dynamicFeed, multiAccountEnabled: libraryStore.multiAccountEnabled)
     }
 
     deinit {
@@ -42,56 +51,56 @@ final class DynamicFeedLifecycleCoordinator {
     }
 
     func prepareLoggedOutState() {
+        requestGeneration &+= 1
         topUploaderStripTask?.cancel()
         topUploaderStripTask = nil
         rawItems = []
+        seenCursors = []
         offset = ""
         hasMore = false
     }
 
     func loadInitialPage() async throws -> [DynamicFeedItem] {
         resetPagination()
+        let generation = requestGeneration
         let page: DynamicFeedData
         if feedKind == .all {
             page = try await DynamicFeedWarmCache.shared.page(api: api, identityKey: cacheIdentityKey)
         } else {
-            page = try await api.fetchDynamicFeed(kind: feedKind)
+            page = try await api.fetchDynamicFeed(kind: feedKind, hostMID: hostMID)
         }
-        try Task.checkCancellation()
-        return apply(page: page, prefetchDelay: 0.08)
+        try validate(generation)
+        return try await applyBatch(first: page, appending: false, generation: generation)
     }
 
     func cachedInitialPage() async -> [DynamicFeedItem]? {
         guard feedKind == .all else { return nil }
         resetPagination()
+        let generation = requestGeneration
         guard let page = await DynamicFeedWarmCache.shared.cachedPage(identityKey: cacheIdentityKey) else {
             return nil
         }
+        guard (try? validate(generation)) != nil else { return nil }
         return apply(page: page, prefetchDelay: 0)
     }
 
     func refreshPage() async throws -> [DynamicFeedItem] {
+        requestGeneration &+= 1
+        let generation = requestGeneration
         let identityKey = cacheIdentityKey
-        let page = try await api.fetchDynamicFeed(kind: feedKind)
-        try Task.checkCancellation()
+        let page = try await api.fetchDynamicFeed(kind: feedKind, hostMID: hostMID)
+        try validate(generation)
         if feedKind == .all {
             await DynamicFeedWarmCache.shared.store(page, identityKey: identityKey)
         }
-        return apply(page: page, prefetchDelay: 0.08)
+        return try await applyBatch(first: page, appending: false, generation: generation)
     }
 
     func loadMorePage() async throws -> [DynamicFeedItem] {
-        let page = try await api.fetchDynamicFeed(offset: offset, kind: feedKind)
-        try Task.checkCancellation()
-        let moreItems = contentFilter.displayable(page.items)
-        rawItems = contentFilter.uniqueAppendItems(moreItems, to: rawItems)
-        let filteredItems = filteredCurrentItems()
-        resourcePrefetchCoordinator.scheduleResourcePrefetch(
-            for: moreItems.filter { feedKind.includes($0) }, initialDelay: 0.75
-        )
-        offset = page.offset ?? offset
-        hasMore = page.hasMore ?? false
-        return filteredItems
+        let generation = requestGeneration
+        let page = try await api.fetchDynamicFeed(offset: offset, kind: feedKind, hostMID: hostMID)
+        try validate(generation)
+        return try await applyBatch(first: page, appending: true, generation: generation)
     }
 
     func filteredCurrentItems() -> [DynamicFeedItem] {
@@ -115,8 +124,10 @@ final class DynamicFeedLifecycleCoordinator {
     }
 
     private func resetPagination() {
+        requestGeneration &+= 1
         offset = ""
         hasMore = true
+        seenCursors = []
     }
 
     private var cacheIdentityKey: String {
@@ -126,8 +137,60 @@ final class DynamicFeedLifecycleCoordinator {
         )
     }
 
+    private func validate(_ generation: Int) throws {
+        try Task.checkCancellation()
+        guard generation == requestGeneration, cacheIdentityKey == accountIdentity else {
+            throw CancellationError()
+        }
+    }
+
+    private func applyBatch(first: DynamicFeedData, appending: Bool, generation: Int) async throws -> [DynamicFeedItem] {
+        if !enhancesCategories {
+            if !appending { return apply(page: first, prefetchDelay: 0.08) }
+            let more = contentFilter.displayable(first.items)
+            rawItems = contentFilter.uniqueAppendItems(more, to: rawItems)
+            offset = first.offset ?? offset
+            hasMore = first.hasMore ?? false
+            resourcePrefetchCoordinator.scheduleResourcePrefetch(for: more.filter { feedKind.includes($0) }, initialDelay: 0.75)
+            return filteredCurrentItems()
+        }
+
+        // Commit a batch atomically: a failed continuation leaves the previous
+        // cursor and list intact so retry cannot skip unseen content.
+        let base = appending ? rawItems : []
+        let baseIDs = Set(base.map(\.id))
+        var accumulated = base
+        var cursor = appending ? offset : ""
+        var visited = appending ? seenCursors : Set<String>()
+        if !cursor.isEmpty { visited.insert(cursor) }
+        var page = first
+        var more = false
+        for attempt in 0..<3 {
+            try validate(generation)
+            let items = contentFilter.displayable(page.items)
+            accumulated = contentFilter.uniqueAppendItems(items, to: accumulated)
+            let next = page.offset ?? ""
+            more = page.hasMore == true && !next.isEmpty && visited.insert(next).inserted
+            cursor = next
+            let visibleNew = contentFilter.filtered(accumulated.filter { !baseIDs.contains($0.id) && feedKind.includes($0) })
+            guard visibleNew.isEmpty, more, attempt < 2 else { break }
+            page = try await api.fetchDynamicFeed(offset: cursor, kind: feedKind, hostMID: hostMID)
+        }
+        try validate(generation)
+        rawItems = accumulated
+        offset = cursor
+        hasMore = more
+        seenCursors = visited
+        let visible = filteredCurrentItems()
+        let newVisible = visible.filter { !baseIDs.contains($0.id) }
+        resourcePrefetchCoordinator.scheduleResourcePrefetch(for: newVisible, initialDelay: appending ? 0.75 : 0.08)
+        if !visible.isEmpty { StageOneBaselineMetricsStore.shared.markDynamicFirstData() }
+        return visible
+    }
+
     private func apply(page: DynamicFeedData, prefetchDelay: TimeInterval) -> [DynamicFeedItem] {
-        rawItems = contentFilter.displayable(page.items)
+        let displayable = contentFilter.displayable(page.items)
+        rawItems = enhancesCategories ? contentFilter.uniqueAppendItems(displayable, to: []) : displayable
         let filteredItems = filteredCurrentItems()
         if !filteredItems.isEmpty {
             StageOneBaselineMetricsStore.shared.markDynamicFirstData()
@@ -135,6 +198,10 @@ final class DynamicFeedLifecycleCoordinator {
         resourcePrefetchCoordinator.scheduleResourcePrefetch(for: filteredItems, initialDelay: prefetchDelay)
         offset = page.offset ?? ""
         hasMore = page.hasMore ?? false
+        if enhancesCategories {
+            hasMore = hasMore && !offset.isEmpty
+            seenCursors = offset.isEmpty ? [] : [offset]
+        }
         return filteredItems
     }
 

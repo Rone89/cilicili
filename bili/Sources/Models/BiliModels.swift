@@ -5375,6 +5375,7 @@ nonisolated struct DynamicRichTextEmoji: Decodable, Hashable {
 }
 
 nonisolated struct DynamicMajor: Decodable, Hashable {
+    let article: DynamicArticle?
     let pgc: DynamicPGC?
     let archive: DynamicArchive?
     let opus: DynamicOpus?
@@ -5438,6 +5439,7 @@ nonisolated struct DynamicMajor: Decodable, Hashable {
 
     init(from decoder: Decoder) throws {
         let raw = try DynamicJSONValue(from: decoder)
+        article = DynamicArticle(raw: raw.objectValueForDynamicParsing?["article"])
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pgc = try? container.decodeIfPresent(DynamicPGC.self, forKey: .pgc)
         archive = try? container.decodeIfPresent(DynamicArchive.self, forKey: .archive)
@@ -6237,6 +6239,8 @@ nonisolated struct DynamicLive: Decodable, Hashable {
 }
 
 nonisolated struct DynamicOpus: Decodable, Hashable {
+    let opusID: String?
+    let jumpURL: String?
     let title: String?
     let summary: DynamicText?
     let content: DynamicText?
@@ -6245,6 +6249,8 @@ nonisolated struct DynamicOpus: Decodable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case title, summary, content, desc, pics, images, items
+        case opusID = "opus_id"
+        case jumpURL = "jump_url"
     }
 
     var displayText: String? {
@@ -6267,6 +6273,8 @@ nonisolated struct DynamicOpus: Decodable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        opusID = container.decodeLossyStringIfPresent(forKey: .opusID)
+        jumpURL = container.decodeLossyStringIfPresent(forKey: .jumpURL)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         summary = try? container.decodeIfPresent(DynamicText.self, forKey: .summary)
         content = try? container.decodeIfPresent(DynamicText.self, forKey: .content)

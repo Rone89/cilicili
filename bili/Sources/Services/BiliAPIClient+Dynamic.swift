@@ -8,11 +8,29 @@ private let dynamicWebFeatures =
 nonisolated enum DynamicFeedKind: String, CaseIterable, Hashable, Sendable {
     case all
     case video
+    case pgc
+    case article
+    case up
 
-    var title: String { self == .all ? "全部" : "视频" }
+    var title: String {
+        switch self {
+        case .all: "全部"
+        case .video: "投稿"
+        case .pgc: "番剧"
+        case .article: "专栏"
+        case .up: "UP"
+        }
+    }
 
     func includes(_ item: DynamicFeedItem) -> Bool {
-        self == .all || (item.type == "DYNAMIC_TYPE_AV" && item.archive != nil && item.original == nil)
+        switch self {
+        case .all, .up: true
+        case .video: item.type == "DYNAMIC_TYPE_AV" && item.archive != nil && item.original == nil
+        case .pgc: item.pgc != nil && item.original == nil
+        // The article endpoint also returns opus cards; opus alone is not a
+        // reliable local classifier because ordinary image posts use it too.
+        case .article: true
+        }
     }
 }
 
@@ -25,15 +43,22 @@ extension BiliAPIClient {
         isLoggedIn ? authenticatedCookieHeader : anonymousCookieHeader
     }
 
-    func fetchDynamicFeed(offset: String? = nil, kind: DynamicFeedKind = .all) async throws -> DynamicFeedData {
+    func fetchDynamicFeed(offset: String? = nil, kind: DynamicFeedKind = .all, hostMID: Int? = nil) async throws -> DynamicFeedData {
+        if kind == .up, (hostMID ?? 0) <= 0 {
+            throw BiliAPIError.api(code: -1, message: "请先选择 UP 主")
+        }
         let context = await dynamicFeedRequestContext()
         guard context.isLoggedIn else { throw BiliAPIError.missingSESSDATA }
         var query = [
-            "type": kind.rawValue,
             "platform": "web",
             "features": dynamicWebFeatures,
             "web_location": "333.1365",
         ]
+        if kind == .up, let hostMID {
+            query["host_mid"] = String(hostMID)
+        } else {
+            query["type"] = kind.rawValue
+        }
         if let offset, !offset.isEmpty {
             query["offset"] = offset
         }
@@ -132,6 +157,23 @@ extension BiliAPIClient {
             responseCachePolicy: .brief
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
+        guard let data = response.payload else { throw BiliAPIError.missingPayload }
+        return data
+    }
+
+    func fetchDynamicFollowings(page: Int = 1) async throws -> DynamicFollowingPage {
+        let context = await dynamicFeedRequestContext()
+        guard context.isLoggedIn, let mid = context.currentUserMID, mid > 0 else {
+            throw BiliAPIError.missingSESSDATA
+        }
+        let response: BiliResponse<DynamicFollowingPage> = try await get(
+            base: baseURL, path: "/x/relation/followings",
+            query: ["vmid": String(mid), "pn": String(max(1, page)), "ps": "50", "order": "desc", "order_type": "attention"],
+            cookieHeader: context.cookieHeader, responseCachePolicy: .brief
+        )
+        guard response.code == 0 else {
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
         guard let data = response.payload else { throw BiliAPIError.missingPayload }
         return data
     }
