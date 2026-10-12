@@ -38,8 +38,7 @@ struct DynamicFeedCard: View {
     }
 
     var body: some View {
-        let article = libraryStore.dynamicFeedCategoriesExperimentEnabled
-            ? (item.article ?? (articleFeedContext ? item.opusArticle : nil)) : nil
+        let article = item.article ?? (articleFeedContext ? item.opusArticle : nil)
         Group {
             if let video = display.video, display.usesHomeVideoCardStyle {
                 DynamicHomeVideoFeedCard(

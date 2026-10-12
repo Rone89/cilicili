@@ -29,8 +29,6 @@ private struct DynamicContentRoot: View {
     @State private var selectedUP: VideoOwner?
     @State private var showsUPSelector = false
 
-    private var categoriesEnabled: Bool { libraryStore.dynamicFeedCategoriesExperimentEnabled }
-
     init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore, pageWidth: CGFloat) {
         self.api = api
         self.libraryStore = libraryStore
@@ -47,7 +45,7 @@ private struct DynamicContentRoot: View {
 
     var body: some View {
         Group {
-            if categoriesEnabled, selectedFeed == .up, selectedUP == nil {
+            if selectedFeed == .up, selectedUP == nil {
                 ScrollView {
                     if let strip = holder.topUploaderStripViewModel {
                         FollowedLiveStrip(items: strip.topUploaderStripItems, isLoading: strip.isTopUploaderStripLoading)
@@ -71,7 +69,7 @@ private struct DynamicContentRoot: View {
                     viewModel: viewModel,
                     topUploaderStripViewModel: holder.topUploaderStripViewModel ?? viewModel,
                     isLoggedIn: sessionStore.isLoggedIn,
-                    selectedUP: categoriesEnabled && selectedFeed == .up ? selectedUP : nil,
+                    selectedUP: selectedFeed == .up ? selectedUP : nil,
                     onChooseUP: { showsUPSelector = true }
                 )
             } else {
@@ -81,23 +79,13 @@ private struct DynamicContentRoot: View {
         .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Group {
-                    if categoriesEnabled {
-                        DynamicFeedToolbarPicker(selection: $selectedFeed)
-                    } else {
-                        Picker("动态内容", selection: $selectedFeed) {
-                            Text("全部").tag(DynamicFeedKind.all)
-                            Text("视频").tag(DynamicFeedKind.video)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-                .frame(width: categoriesEnabled ? max(pageWidth - 40, 0) : 180)
-                .accessibilityIdentifier("dynamic.feedPicker")
-                .opacity(hidesNavigationChrome ? 0 : 1)
-                .disabled(hidesNavigationChrome)
-                .accessibilityHidden(hidesNavigationChrome)
-                .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
+                DynamicFeedToolbarPicker(selection: $selectedFeed)
+                    .frame(width: max(pageWidth - 40, 0))
+                    .accessibilityIdentifier("dynamic.feedPicker")
+                    .opacity(hidesNavigationChrome ? 0 : 1)
+                    .disabled(hidesNavigationChrome)
+                    .accessibilityHidden(hidesNavigationChrome)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: hidesNavigationChrome)
             }
             .sharedBackgroundVisibility(hidesNavigationChrome ? .hidden : .automatic)
         }
@@ -105,19 +93,15 @@ private struct DynamicContentRoot: View {
             hidesNavigationChrome = false
             if kind == .up, selectedUP == nil {
                 if sessionStore.isLoggedIn { showsUPSelector = true }
-            } else if !categoriesEnabled {
-                selectFeed(kind)
             }
         }
         .task(id: DynamicFeedQuery(kind: selectedFeed, hostMID: selectedUP?.mid)) {
-            guard categoriesEnabled else { return }
             // Commit the control's selection before updating the feed subtree.
             // A newer selection cancels this activation without a fixed delay.
             await Task.yield()
             guard !Task.isCancelled, selectedFeed != .up || selectedUP != nil else { return }
             selectFeed(selectedFeed)
         }
-        .onChange(of: categoriesEnabled) { _, _ in resetFeeds() }
         .onChange(of: DynamicFeedAccountContext(
             mainCredentialVersion: sessionStore.playbackCredentialVersion,
             dynamicFeedCredentialVersion: sessionStore.dynamicFeedAccountCredentialVersion,

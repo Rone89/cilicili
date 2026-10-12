@@ -18,7 +18,8 @@ struct DynamicFeedContentFilter {
                 || item.paidContent != nil
                 || !item.imageItems.isEmpty
                 || item.original?.hasDisplayableContent == true
-                || (libraryStore.dynamicFeedCategoriesExperimentEnabled && (item.pgc != nil || item.article != nil))
+                || item.pgc != nil
+                || item.article != nil
 #if DEBUG
             if !isDisplayable, item.author != nil {
                 dynamicContentFilterLogger.debug("Dropped empty dynamic: \(item.contentDiagnosticSummary, privacy: .public)")

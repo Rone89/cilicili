@@ -1231,7 +1231,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testExperimentalFeedBoundsEmptyPageContinuationAndStopsCrossBatchCursorCycles() async throws {
+    func testDynamicFeedBoundsEmptyPageContinuationAndStopsCrossBatchCursorCycles() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
@@ -1250,9 +1250,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             return Self.response(for: request, body: "{\"code\":0,\"data\":{\"items\":\(items),\"offset\":\"\(next)\",\"has_more\":true}}")
         }
         defer { RequestContractURLProtocol.reset() }
-        let api = try makeAPI(cookieHeader: "SESSDATA=bounded-session; DedeUserID=1001", configure: { _, store in
-            store.setDynamicFeedCategoriesExperimentEnabled(true)
-        })
+        let api = try makeAPI(cookieHeader: "SESSDATA=bounded-session; DedeUserID=1001")
         let model = DynamicViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore, feedKind: .article)
         await model.loadInitial()
         XCTAssertEqual(recorder.requests.count, 3, "A single load must stop after three filtered empty pages")
@@ -1266,7 +1264,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
-    func testExperimentalContinuationFailureRetainsItemsAndRetryCursor() async throws {
+    func testDynamicContinuationFailureRetainsItemsAndRetryCursor() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
         let retained = #"[{"id_str":"retained","type":"DYNAMIC_TYPE_ARTICLE","modules":{"module_dynamic":{"major":{"article":{"id":101,"title":"已有专栏"}}}}}]"#
@@ -1275,9 +1273,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             return Self.response(for: request, body: "{\"code\":0,\"data\":{\"items\":\(retained),\"offset\":\"retry-start\",\"has_more\":true}}")
         }
         defer { RequestContractURLProtocol.reset() }
-        let api = try makeAPI(cookieHeader: "SESSDATA=retry-session; DedeUserID=1001", configure: { _, store in
-            store.setDynamicFeedCategoriesExperimentEnabled(true)
-        })
+        let api = try makeAPI(cookieHeader: "SESSDATA=retry-session; DedeUserID=1001")
         let model = DynamicViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore, feedKind: .article)
         await model.loadInitial()
         await BiliAPIResponseMemoryCache.shared.clear()

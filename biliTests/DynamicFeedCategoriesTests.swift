@@ -5,20 +5,20 @@ import XCTest
 
 @MainActor
 final class DynamicFeedCategoriesTests: XCTestCase {
-    func testExperimentDefaultsOffAndPersistsWithoutChangingOtherSettings() {
-        let suite = "DynamicFeedCategoriesTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(store.dynamicFeedCategoriesExperimentEnabled)
-        store.setFollowsSystemFontSize(false)
-        store.setDynamicFeedCategoriesExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).dynamicFeedCategoriesExperimentEnabled)
-        store.setDynamicFeedCategoriesExperimentEnabled(false)
-        let restored = LibraryStore(userDefaults: defaults)
-        XCTAssertFalse(restored.dynamicFeedCategoriesExperimentEnabled)
-        XCTAssertFalse(restored.followsSystemFontSize)
-        XCTAssertTrue(MineSearchCatalog.search("动态分类").contains { $0.route == .developerDiagnostics })
+    func testPromotionRemovesOldPreferenceWithoutChangingOtherSettings() {
+        for previouslyEnabled in [false, true] {
+            let suite = "DynamicFeedCategoriesTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let retiredKey = "cc.bili.experimental.dynamicFeedCategories.v1"
+            defaults.set(previouslyEnabled, forKey: retiredKey)
+            let store = LibraryStore(userDefaults: defaults)
+            XCTAssertNil(defaults.object(forKey: retiredKey))
+            store.setFollowsSystemFontSize(false)
+            let restored = LibraryStore(userDefaults: defaults)
+            XCTAssertFalse(restored.followsSystemFontSize)
+            XCTAssertFalse(MineSearchCatalog.search("动态分类").contains { $0.route == .developerDiagnostics })
+        }
     }
 
     func testCategoryAndUPCachesKeepSeparateScrollPositionsAndEvictOldUP() throws {
@@ -26,7 +26,6 @@ final class DynamicFeedCategoriesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        store.setDynamicFeedCategoriesExperimentEnabled(true)
         let session = SessionStore(keychain: KeychainStore(service: suite))
         let api = BiliAPIClient(sessionStore: session, libraryStore: store, homeRecommendDiagnosticsStore: .shared)
         let holder = DynamicViewModelHolder(api: api, libraryStore: store, sessionStore: session)
@@ -119,7 +118,6 @@ final class DynamicFeedCategoriesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        store.setDynamicFeedCategoriesExperimentEnabled(true)
         let filter = DynamicFeedContentFilter(libraryStore: store)
         XCTAssertEqual(filter.displayable(items).map(\.id), items.map(\.id))
         XCTAssertEqual(filter.uniqueAppendItems([items[0], items[1], items[1]], to: [items[0]]).map(\.id), ["legacy", "100"])

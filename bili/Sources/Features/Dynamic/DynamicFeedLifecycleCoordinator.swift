@@ -9,7 +9,6 @@ final class DynamicFeedLifecycleCoordinator {
     private let resourcePrefetchCoordinator: DynamicFeedResourcePrefetchCoordinator
     private let feedKind: DynamicFeedKind
     private let hostMID: Int?
-    private let enhancesCategories: Bool
     private let accountIdentity: String
     private var requestGeneration = 0
     private var rawItems: [DynamicFeedItem] = []
@@ -42,7 +41,6 @@ final class DynamicFeedLifecycleCoordinator {
         self.resourcePrefetchCoordinator = resourcePrefetchCoordinator
         self.feedKind = feedKind
         self.hostMID = hostMID
-        enhancesCategories = libraryStore.dynamicFeedCategoriesExperimentEnabled
         accountIdentity = sessionStore.accountCacheIdentityKey(for: .dynamicFeed, multiAccountEnabled: libraryStore.multiAccountEnabled)
     }
 
@@ -145,16 +143,6 @@ final class DynamicFeedLifecycleCoordinator {
     }
 
     private func applyBatch(first: DynamicFeedData, appending: Bool, generation: Int) async throws -> [DynamicFeedItem] {
-        if !enhancesCategories {
-            if !appending { return apply(page: first, prefetchDelay: 0.08) }
-            let more = contentFilter.displayable(first.items)
-            rawItems = contentFilter.uniqueAppendItems(more, to: rawItems)
-            offset = first.offset ?? offset
-            hasMore = first.hasMore ?? false
-            resourcePrefetchCoordinator.scheduleResourcePrefetch(for: more.filter { feedKind.includes($0) }, initialDelay: 0.75)
-            return filteredCurrentItems()
-        }
-
         // Commit a batch atomically: a failed continuation leaves the previous
         // cursor and list intact so retry cannot skip unseen content.
         let base = appending ? rawItems : []
@@ -190,18 +178,15 @@ final class DynamicFeedLifecycleCoordinator {
 
     private func apply(page: DynamicFeedData, prefetchDelay: TimeInterval) -> [DynamicFeedItem] {
         let displayable = contentFilter.displayable(page.items)
-        rawItems = enhancesCategories ? contentFilter.uniqueAppendItems(displayable, to: []) : displayable
+        rawItems = contentFilter.uniqueAppendItems(displayable, to: [])
         let filteredItems = filteredCurrentItems()
         if !filteredItems.isEmpty {
             StageOneBaselineMetricsStore.shared.markDynamicFirstData()
         }
         resourcePrefetchCoordinator.scheduleResourcePrefetch(for: filteredItems, initialDelay: prefetchDelay)
         offset = page.offset ?? ""
-        hasMore = page.hasMore ?? false
-        if enhancesCategories {
-            hasMore = hasMore && !offset.isEmpty
-            seenCursors = offset.isEmpty ? [] : [offset]
-        }
+        hasMore = page.hasMore == true && !offset.isEmpty
+        seenCursors = offset.isEmpty ? [] : [offset]
         return filteredItems
     }
 

@@ -10,7 +10,6 @@ struct DynamicFeedScrollContent: View {
     let horizontalInset: CGFloat
     var selectedUP: VideoOwner? = nil
     var onChooseUP: (() -> Void)? = nil
-    @EnvironmentObject private var libraryStore: LibraryStore
 
     var body: some View {
         ScrollView {
@@ -30,7 +29,7 @@ struct DynamicFeedScrollContent: View {
         }
         .rootFloatingTabBarContentPadding()
         .environment(\.dynamicArticleFeedContext, viewModel.feedKind == .article)
-        .modifier(DynamicFeedScrollRestoration(viewModel: viewModel, isEnabled: libraryStore.dynamicFeedCategoriesExperimentEnabled))
+        .modifier(DynamicFeedScrollRestoration(viewModel: viewModel))
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
