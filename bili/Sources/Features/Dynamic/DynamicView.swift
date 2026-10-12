@@ -5,11 +5,14 @@ struct DynamicView: View {
     @EnvironmentObject private var libraryStore: LibraryStore
 
     var body: some View {
-        DynamicContentRoot(
-            api: dependencies.api,
-            libraryStore: libraryStore,
-            sessionStore: dependencies.sessionStore
-        )
+        GeometryReader { proxy in
+            DynamicContentRoot(
+                api: dependencies.api,
+                libraryStore: libraryStore,
+                sessionStore: dependencies.sessionStore,
+                pageWidth: proxy.size.width
+            )
+        }
     }
 }
 
@@ -19,6 +22,7 @@ private struct DynamicContentRoot: View {
     let api: BiliAPIClient
     @ObservedObject var libraryStore: LibraryStore
     @ObservedObject var sessionStore: SessionStore
+    let pageWidth: CGFloat
     @StateObject private var holder: DynamicViewModelHolder
     @State private var selectedFeed: DynamicFeedKind = .all
     @State private var hidesNavigationChrome = false
@@ -27,10 +31,11 @@ private struct DynamicContentRoot: View {
 
     private var categoriesEnabled: Bool { libraryStore.dynamicFeedCategoriesExperimentEnabled }
 
-    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore) {
+    init(api: BiliAPIClient, libraryStore: LibraryStore, sessionStore: SessionStore, pageWidth: CGFloat) {
         self.api = api
         self.libraryStore = libraryStore
         self.sessionStore = sessionStore
+        self.pageWidth = pageWidth
         _holder = StateObject(
             wrappedValue: DynamicViewModelHolder(
                 api: api,
@@ -83,8 +88,7 @@ private struct DynamicContentRoot: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: categoriesEnabled ? nil : 180)
-                .frame(maxWidth: categoriesEnabled ? 340 : nil)
+                .frame(width: categoriesEnabled ? max(pageWidth - 40, 0) : 180)
                 .accessibilityIdentifier("dynamic.feedPicker")
                 .opacity(hidesNavigationChrome ? 0 : 1)
                 .disabled(hidesNavigationChrome)
