@@ -100,4 +100,3 @@ final class BiliAPIResponseMemoryCacheTests: XCTestCase {
         XCTAssertEqual(stale, payload)
     }
 }
-
