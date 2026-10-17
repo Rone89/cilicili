@@ -152,9 +152,14 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(keys.imgKey, "abc")
         XCTAssertEqual(recorder.requests.map(\.url?.path), ["/x/web-interface/nav"])
         XCTAssertEqual(recorder.request?.networkServiceType, .responsiveData)
+        // Cleanup of completed tasks and navigation cancellation happen later.
+        let trackedTaskIDs = Set(model.backgroundTasks.keys)
         model.stopPlaybackForNavigation()
         model.schedulePgcPlaybackSigningKeyWarmup()
-        XCTAssertTrue(model.backgroundTasks.isEmpty, "An exited page must not schedule another warmup")
+        XCTAssertEqual(Set(model.backgroundTasks.keys), trackedTaskIDs, "An exited page must not schedule another warmup")
+        XCTAssertEqual(recorder.requests.count, 1)
+        model.finishPlaybackStopAfterNavigationTransition()
+        XCTAssertTrue(model.backgroundTasks.isEmpty)
     }
 
     @MainActor
@@ -984,18 +989,19 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         var sessionStore: SessionStore!
         var libraryStore: LibraryStore!
         let recorder = RequestContractRecorder()
-        let api = try makeAPI(cookieHeader: "SESSDATA=video-session", configure: { session, store in
+        let api = try makeAPI(cookieHeader: "SESSDATA=video-session; DedeUserID=900123", configure: { session, store in
             sessionStore = session
             libraryStore = store
         })
         let model = DynamicViewModel(api: api, libraryStore: libraryStore, sessionStore: sessionStore, feedKind: .video)
         RequestContractURLProtocol.install { request in
             recorder.record(request)
-            return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"offset":"retry-cursor","has_more":true}}"#)
+            return Self.response(for: request, body: #"{"code":0,"data":{"items":[{"id_str":"retry-video","type":"DYNAMIC_TYPE_AV","modules":{"module_dynamic":{"major":{"archive":{"bvid":"BVRetryVideo","title":"投稿"}}}}}],"offset":"retry-cursor","has_more":true}}"#)
         }
         defer { RequestContractURLProtocol.reset() }
         await model.loadInitial()
         XCTAssertTrue(model.hasMoreItems)
+        XCTAssertEqual(model.items.map(\.id), ["retry-video"])
         await BiliAPIResponseMemoryCache.shared.clear()
         RequestContractURLProtocol.install { request in
             recorder.record(request)
@@ -1004,11 +1010,14 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         await model.refresh()
         XCTAssertFalse(model.state.isLoading)
         XCTAssertTrue(model.hasMoreItems)
+        XCTAssertEqual(model.items.map(\.id), ["retry-video"])
+        let requestCountBeforeLoadMore = recorder.requests.count
         RequestContractURLProtocol.install { request in
             recorder.record(request)
             return Self.response(for: request, body: #"{"code":0,"data":{"items":[],"has_more":false}}"#)
         }
         await model.loadMore()
+        XCTAssertEqual(recorder.requests.count, requestCountBeforeLoadMore + 1)
         let request = try XCTUnwrap(recorder.requests.last)
         XCTAssertEqual(Self.queryValues(in: try XCTUnwrap(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)))["offset"], "retry-cursor")
         XCTAssertEqual(model.state, .loaded)
@@ -4376,9 +4385,15 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     func testHomeColdStartRestoresSnapshotOnlyAfterRequestFailure() async throws {
         let entered = expectation(description: "Initial network request started")
         let release = DispatchSemaphore(value: 0)
-        RequestContractURLProtocol.install { _ in
-            entered.fulfill()
-            _ = release.wait(timeout: .now() + 5)
+        let attempts = RequestContractCounter()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            // Gate only the first attempt; normal retries must not over-fulfill.
+            if attempts.increment() == 1 {
+                entered.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+            }
             throw URLError(.notConnectedToInternet)
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
@@ -4399,6 +4414,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         await load.value
         XCTAssertEqual(model.videos.map(\.bvid), ["BV1"])
         XCTAssertEqual(model.state, .loaded)
+        XCTAssertEqual(recorder.requests.count, BiliNetworkRetryPolicy.api.attempts)
     }
 
     @MainActor
@@ -4950,8 +4966,8 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             recorder.record(request)
             let pn = Self.queryValues(for: request)["pn"]
             return Self.response(for: request, body: pn == "1"
-                ? #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"}],"has_more":true}}"#
-                : #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"},{"id":12,"type":2,"title":"第二条"}],"has_more":false}}"#)
+                ? #"{"code":0,"data":{"medias":[{"id":11,"bvid":"BVSpaceFavorite11","type":2,"title":"第一条"}],"has_more":true}}"#
+                : #"{"code":0,"data":{"medias":[{"id":11,"bvid":"BVSpaceFavorite11","type":2,"title":"第一条"},{"id":12,"bvid":"BVSpaceFavorite12","type":2,"title":"第二条"}],"has_more":false}}"#)
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001", guestModeEnabled: true)
@@ -4987,7 +5003,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     func testSpaceFavoritePageLoadMoreFailurePreservesLoadedContentAndCursor() async throws {
         RequestContractURLProtocol.install { request in
             Self.response(for: request, body: Self.queryValues(for: request)["pn"] == "1"
-                ? #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"第一条"}],"has_more":true}}"#
+                ? #"{"code":0,"data":{"medias":[{"id":11,"bvid":"BVSpaceFavorite11","type":2,"title":"第一条"}],"has_more":true}}"#
                 : #"{"code":-500,"message":"暂不可用"}"#)
         }
         defer { RequestContractURLProtocol.reset() }
@@ -4999,7 +5015,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(model.entries.map(\.aid), [11])
         RequestContractURLProtocol.install { request in
             XCTAssertEqual(Self.queryValues(for: request)["pn"], "2")
-            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":12,"type":2,"title":"第二条"}],"has_more":false}}"#)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":12,"bvid":"BVSpaceFavorite12","type":2,"title":"第二条"}],"has_more":false}}"#)
         }
         await model.loadMore()
         XCTAssertEqual(model.entries.map(\.aid), [11, 12])
@@ -5013,7 +5029,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         RequestContractURLProtocol.install { request in
             entered.fulfill()
             _ = release.wait(timeout: .now() + 5)
-            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":11,"type":2,"title":"旧内容"}],"has_more":false}}"#)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":11,"bvid":"BVSpaceFavorite11","type":2,"title":"旧内容"}],"has_more":false}}"#)
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
@@ -5137,9 +5153,9 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             recorder.record(request)
             switch Self.queryValues(for: request)["media_id"] {
             case "9":
-                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"最新"},{"id":2,"type":2,"title":"第二"},{"id":1,"type":2,"title":"第三"},{"id":4,"type":2,"title":"不展示"}]}}"#)
+                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"bvid":"BVSpaceFavorite3","type":2,"title":"最新"},{"id":2,"bvid":"BVSpaceFavorite2","type":2,"title":"第二"},{"id":1,"bvid":"BVSpaceFavorite1","type":2,"title":"第三"},{"id":4,"bvid":"BVSpaceFavorite4","type":2,"title":"不展示"}]}}"#)
             case "10":
-                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":5,"type":2,"title":"仅一项"}]}}"#)
+                return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":5,"bvid":"BVSpaceFavorite5","type":2,"title":"仅一项"}]}}"#)
             default:
                 return Self.response(for: request, body: #"{"code":0,"data":{"medias":null,"info":{"media_count":0}}}"#)
             }
@@ -5170,7 +5186,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             if recorder.requests.count == 2 {
                 return Self.response(for: request, body: #"{"code":-403,"message":"没有权限"}"#)
             }
-            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"最新"}]}}"#)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"bvid":"BVSpaceFavorite3","type":2,"title":"最新"}]}}"#)
         }
         defer { RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")
@@ -5195,7 +5211,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             recorder.record(request)
             entered.fulfill()
             _ = release.wait(timeout: .now() + 5)
-            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"type":2,"title":"旧账号"}]}}"#)
+            return Self.response(for: request, body: #"{"code":0,"data":{"medias":[{"id":3,"bvid":"BVSpaceFavorite3","type":2,"title":"旧账号"}]}}"#)
         }
         defer { release.signal(); RequestContractURLProtocol.reset() }
         let api = try makeAPI(cookieHeader: "SESSDATA=main; DedeUserID=1001")

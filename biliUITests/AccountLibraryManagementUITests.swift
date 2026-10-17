@@ -84,7 +84,9 @@ final class AccountLibraryManagementUITests: XCTestCase {
         select.tap()
         app.buttons["library.manage.selectAll"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "未打开视频")
-        app.toolbars.buttons["移除"].tap()
+        let remove = app.buttons["library.manage.remove"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
         let matches = app.buttons.matching(identifier: "移除")
         let confirm = matches.element(boundBy: matches.count - 1)
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
@@ -110,7 +112,9 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
         app.buttons["library.manage.selectAll"].tap()
-        app.toolbars.buttons["复制"].tap()
+        let copy = app.buttons["library.manage.copy"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.tap()
         let target = app.staticTexts["目标收藏夹"]
         XCTAssertTrue(target.waitForExistence(timeout: 3))
         target.tap()
@@ -129,10 +133,15 @@ final class AccountLibraryManagementUITests: XCTestCase {
         app.buttons["library.watchLater.actions"].tap()
         app.buttons["清空稍后再看"].tap()
         XCTAssertTrue(app.buttons["清空全部"].waitForExistence(timeout: 3))
-        // iOS 27 presents this confirmation as a popover; cancellation uses its dismissal region.
-        let dismiss = app.otherElements["PopoverDismissRegion"]
-        XCTAssertTrue(dismiss.waitForExistence(timeout: 3))
-        dismiss.tap()
+        // Compact presentations expose Cancel; popovers use a dismissal region.
+        let cancel = app.buttons["取消"]
+        if cancel.waitForExistence(timeout: 3) {
+            cancel.tap()
+        } else {
+            let dismiss = app.otherElements["PopoverDismissRegion"]
+            XCTAssertTrue(dismiss.waitForExistence(timeout: 3))
+            dismiss.tap()
+        }
         XCTAssertTrue(app.staticTexts["测试视频 1"].exists)
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }
@@ -146,8 +155,12 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
         app.buttons["library.manage.selectAll"].tap()
-        app.toolbars.buttons["移动"].tap()
-        app.staticTexts["目标收藏夹"].tap()
+        let move = app.buttons["library.manage.move"]
+        XCTAssertTrue(move.waitForExistence(timeout: 5))
+        move.tap()
+        let target = app.staticTexts["目标收藏夹"]
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        target.tap()
         XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
         app.alerts.buttons["好"].tap()
         XCTAssertTrue(app.staticTexts["这个收藏夹还没有视频"].waitForExistence(timeout: 5))
