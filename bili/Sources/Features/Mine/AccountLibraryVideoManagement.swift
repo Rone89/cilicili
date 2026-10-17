@@ -71,11 +71,14 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                             if source != nil {
                                 Button("复制", systemImage: "doc.on.doc") { transferAction = .copy(0) }
                                     .disabled(selection.isEmpty)
+                                    .accessibilityIdentifier("library.manage.copy")
                                 Button("移动", systemImage: "folder") { transferAction = .move(0) }
                                     .disabled(selection.isEmpty)
+                                    .accessibilityIdentifier("library.manage.move")
                             }
                             Button("移除", systemImage: "trash", role: .destructive) { confirmsRemoval = true }
                                 .disabled(selection.isEmpty)
+                                .accessibilityIdentifier("library.manage.remove")
                         }
                     }
                 }
