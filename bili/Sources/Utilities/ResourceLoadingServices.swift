@@ -1395,17 +1395,16 @@ actor BiliAPIResponseMemoryCache {
     private var stores = 0
     private var evictions = 0
 
-    func freshData(for key: String) -> Data? {
-        data(for: key, allowingStale: false)
+    func freshData(for key: String, now: Date = Date()) -> Data? {
+        data(for: key, allowingStale: false, now: now)
     }
 
-    func staleData(for key: String) -> Data? {
-        data(for: key, allowingStale: true)
+    func staleData(for key: String, now: Date = Date()) -> Data? {
+        data(for: key, allowingStale: true, now: now)
     }
 
-    func store(_ data: Data, for key: String, policy: BiliAPIResponseCachePolicy) {
+    func store(_ data: Data, for key: String, policy: BiliAPIResponseCachePolicy, now: Date = Date()) {
         guard policy.freshTTL > 0, !data.isEmpty, data.count <= maxBytes / 2 else { return }
-        let now = Date()
         if let existing = entries[key] {
             estimatedBytes -= existing.data.count
         }
@@ -1449,8 +1448,7 @@ actor BiliAPIResponseMemoryCache {
         estimatedBytes = max(0, estimatedBytes)
     }
 
-    func statistics() -> BiliAPIResponseMemoryCacheStatistics {
-        let now = Date()
+    func statistics(now: Date = Date()) -> BiliAPIResponseMemoryCacheStatistics {
         trimIfNeeded(now: now)
         var freshCount = 0
         var staleCount = 0
@@ -1475,18 +1473,21 @@ actor BiliAPIResponseMemoryCache {
         )
     }
 
-    private func data(for key: String, allowingStale: Bool) -> Data? {
-        let now = Date()
+    private func data(for key: String, allowingStale: Bool, now: Date) -> Data? {
         guard var entry = entries[key] else {
             misses += 1
             return nil
         }
-        let expiry = allowingStale ? entry.staleUntil : entry.freshUntil
-        guard expiry >= now else {
+        // A fresh miss must preserve data that can still serve as stale fallback.
+        guard entry.staleUntil >= now else {
             estimatedBytes -= entry.data.count
             entries[key] = nil
             misses += 1
             evictions += 1
+            return nil
+        }
+        guard allowingStale || entry.freshUntil >= now else {
+            misses += 1
             return nil
         }
         entry.lastAccessedAt = now
@@ -1499,7 +1500,7 @@ actor BiliAPIResponseMemoryCache {
         return entry.data
     }
 
-    private func trimIfNeeded(now: Date = Date()) {
+    private func trimIfNeeded(now: Date) {
         for (key, entry) in entries where entry.staleUntil < now {
             estimatedBytes -= entry.data.count
             entries[key] = nil
