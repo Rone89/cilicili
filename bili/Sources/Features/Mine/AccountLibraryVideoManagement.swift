@@ -86,6 +86,7 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
             .disabled(controller.isBusy)
             .confirmationDialog("移除所选的 \(selection.count) 项？", isPresented: $confirmsRemoval, titleVisibility: .visible) {
                 Button("移除", role: .destructive) { run(.remove) }
+                    .accessibilityIdentifier("library.manage.confirmRemove")
                 Button("取消", role: .cancel) {}
             } message: {
                 Text(source == nil ? "仅从稍后再看中移除。" : "仅取消当前收藏夹内的收藏，不影响其他收藏夹。")

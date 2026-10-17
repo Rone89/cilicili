@@ -51,5 +51,29 @@ cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 (cd "$EXPORT_DIR" && zip -qry "$IPA_PATH" Payload)
 rm -rf "$PAYLOAD_DIR"
 
+python3 - "$APP_PATH/Info.plist" "$IPA_PATH" <<'PY'
+import hashlib
+import json
+import os
+import plistlib
+import sys
+from pathlib import Path
+
+info_path, ipa_path = map(Path, sys.argv[1:])
+with info_path.open("rb") as handle:
+    info = plistlib.load(handle)
+version = str(info["CFBundleShortVersionString"])
+build = str(info["CFBundleVersion"])
+digest = hashlib.sha256(ipa_path.read_bytes()).hexdigest()
+metadata = {"version": version, "build": build, "sha256": digest,
+            "commit": os.environ.get("GITHUB_SHA"), "signed": False}
+ipa_path.with_suffix(".ipa.sha256").write_text(f"{digest}  {ipa_path.name}\n")
+(ipa_path.parent / "build-info.json").write_text(json.dumps(metadata, indent=2) + "\n")
+if output_path := os.environ.get("GITHUB_OUTPUT"):
+    with open(output_path, "a") as handle:
+        handle.write(f"version={version}\nbuild={build}\n")
+print(f"Packaged version {version} build {build}; SHA-256 {digest}")
+PY
+
 echo "Unsigned Release IPA: $IPA_PATH"
 echo "Build log: $LOG_PATH"

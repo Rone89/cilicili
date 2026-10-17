@@ -55,7 +55,7 @@ final class RemoteImageScrollLoadSuppressionTests: XCTestCase {
         await gate.setSuppressed(false, for: scopeID)
     }
 
-    func testNetworkLoadResumesAfterSuppressionEnds() async {
+    func testNetworkLoadResumesAfterSuppressionEnds() async throws {
         let gate = RemoteImageLoadSuppressionGate()
         let scopeID = UUID()
         await gate.setSuppressed(true, for: scopeID)
@@ -64,11 +64,13 @@ final class RemoteImageScrollLoadSuppressionTests: XCTestCase {
             await gate.waitUntilAllowed(priority: .prefetch)
         }
 
-        var waiterCount = 0
-        for _ in 0..<20 {
+        // Task.yield is advisory: a fixed number of yields need not schedule
+        // the waiter on a loaded runner. Observe registration before releasing.
+        let deadline = ContinuousClock.now + .seconds(3)
+        var waiterCount = await gate.waiterCountForTesting()
+        while waiterCount == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
             waiterCount = await gate.waiterCountForTesting()
-            guard waiterCount == 0 else { break }
-            await Task.yield()
         }
         XCTAssertEqual(waiterCount, 1)
 
