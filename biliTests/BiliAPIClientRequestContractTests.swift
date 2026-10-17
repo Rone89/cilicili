@@ -4388,6 +4388,14 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         let attempts = RequestContractCounter()
         let recorder = RequestContractRecorder()
         RequestContractURLProtocol.install { request in
+            if request.url?.path == "/x/web-interface/nav" {
+                return Self.response(for: request, body: #"{"code":0,"data":{"wbi_img":{"img_url":"https://i.example.com/abc.png","sub_url":"https://i.example.com/def.png"}}}"#)
+            }
+            guard request.url?.path == "/x/web-interface/wbi/index/top/feed/rcmd" else {
+                // Other tests can still be finishing background detail loads.
+                // They must not fulfil or contribute to this request's gate.
+                return Self.response(for: request, body: #"{"code":0,"data":{}}"#)
+            }
             recorder.record(request)
             // Gate only the first attempt; normal retries must not over-fulfill.
             if attempts.increment() == 1 {

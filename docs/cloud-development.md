@@ -37,6 +37,17 @@ An unsigned IPA is a build artifact, not an installable signed test release.
 Signing and TestFlight distribution are separate setup work. These workflows
 do not access signing credentials, publish releases, or merge pull requests.
 
+## Device acceptance deliveries
+
+For each new device-acceptance delivery, increment `CURRENT_PROJECT_VERSION` in
+all project configurations before building. Keep the marketing version unless
+the release scope calls for a version change. Never relabel an older IPA as a
+new build. The PR Release artifact name includes the version and build read
+from the built app's Info.plist. Packaging also emits `build-info.json` and a
+SHA-256 checksum alongside the IPA so the delivered binary can be identified.
+The user signs and installs the unsigned IPA independently; include a short
+plain-language device checklist and report test failures separately.
+
 ## Acceptance
 
 1. Run the environment-helper regression tests (also available on Linux):

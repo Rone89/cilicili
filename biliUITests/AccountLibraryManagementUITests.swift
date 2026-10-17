@@ -87,8 +87,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let remove = app.buttons["library.manage.remove"]
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         remove.tap()
-        let matches = app.buttons.matching(identifier: "移除")
-        let confirm = matches.element(boundBy: matches.count - 1)
+        let confirm = app.buttons["library.manage.confirmRemove"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         confirm.tap()
         XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
