@@ -27,7 +27,10 @@ final class CommentSpacingUITests: XCTestCase {
     }
     private func height(_ id: String, app: XCUIApplication) -> Double {
         let metric = app.staticTexts["comment.height.\(id)"]
-        for _ in 0..<30 where !metric.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        for _ in 0..<30 {
+            if metric.isHittable { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
         XCTAssertTrue(metric.isHittable, id)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (Double(metric.label) ?? 0) > 0 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed)
@@ -35,7 +38,11 @@ final class CommentSpacingUITests: XCTestCase {
     }
     private func returnToTop(_ app: XCUIApplication) {
         let metric = app.staticTexts["comment.height.dynamic.0"]
-        for _ in 0..<30 where !metric.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        for _ in 0..<30 {
+            if metric.isHittable { break }
+            app.scrollViews.firstMatch.swipeDown()
+        }
+        XCTAssertTrue(metric.isHittable)
     }
     private func capture(_ app: XCUIApplication, name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())

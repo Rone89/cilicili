@@ -54,7 +54,8 @@ final class DynamicSpacingUITests: XCTestCase {
     private func height(_ id: String, in app: XCUIApplication, direction: Direction = .up) -> Double {
         let text = app.staticTexts["spacing.height.\(id)"]
         let scroll = app.scrollViews.firstMatch
-        for _ in 0..<35 where !text.isHittable {
+        for _ in 0..<35 {
+            if text.isHittable { break }
             if direction == .up { scroll.swipeUp() } else { scroll.swipeDown() }
         }
         XCTAssertTrue(text.isHittable, id)
@@ -67,7 +68,10 @@ final class DynamicSpacingUITests: XCTestCase {
 
     private func returnToStart(_ app: XCUIApplication) {
         let first = app.staticTexts["spacing.height.A"]
-        for _ in 0..<35 where !first.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        for _ in 0..<35 {
+            if first.isHittable { break }
+            app.scrollViews.firstMatch.swipeDown()
+        }
         XCTAssertTrue(first.isHittable)
     }
 
