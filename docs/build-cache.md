@@ -31,7 +31,7 @@ For XcodeBuildMCP, first resolve the same path with `python3 Scripts/build-cache
 
 For simulator development and validation, use the existing local **iPhone 18 Pro Max, iOS 27.0** simulator. Do not create, clone, boot, or switch to another simulator unless the user explicitly asks for it.
 
-GitHub Actions runners are disposable. CI jobs use runner-local DerivedData rather than adding a persistent cache to the repository or sharing one between concurrent jobs.
+GitHub Actions runners are disposable. CI jobs use the same managed wrapper and runner-local DerivedData, without uploading it or sharing it between concurrent jobs. Cloud toolchain selection, checks and artifacts are documented in [cloud development checks](cloud-development.md).
 
 ## Parallel or incompatible builds
 
