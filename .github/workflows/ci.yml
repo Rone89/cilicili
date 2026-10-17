@@ -20,9 +20,17 @@ env:
 
 jobs:
   test:
-    name: Xcode 26 tests
+    name: Xcode 26 ${{ matrix.suite }} tests
     runs-on: macos-26
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: unit
+            test_target: biliTests
+          - suite: ui
+            test_target: biliUITests
 
     steps:
       - name: Checkout
@@ -70,6 +78,7 @@ jobs:
         shell: bash
         env:
           TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
+          TEST_TARGET: ${{ matrix.test_target }}
         run: |
           set -euo pipefail
           result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
@@ -82,11 +91,16 @@ jobs:
             -destination-timeout 120 \
             -resultBundlePath "$result_bundle_path" \
             -parallel-testing-enabled NO \
+            -only-testing:"$TEST_TARGET" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 300 \
+            -maximum-test-execution-time-allowance 600 \
             -enableCodeCoverage YES \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            test 2>&1 | tee "$RUNNER_TEMP/bili-tests.log"
+            test 2>&1 | tee "$RUNNER_TEMP/bili-tests.log" | \
+            awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
           test_status=${PIPESTATUS[0]}
           set -e
           if [ -d "$result_bundle_path" ]; then
@@ -101,7 +115,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-coverage
+          name: ios-coverage-${{ matrix.suite }}
           path: ${{ runner.temp }}/coverage.txt
           if-no-files-found: error
 
@@ -109,7 +123,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-test-results
+          name: ios-test-results-${{ matrix.suite }}
           path: ${{ runner.temp }}/bili-tests.xcresult
           if-no-files-found: error
 
@@ -117,7 +131,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-test-log
+          name: ios-test-log-${{ matrix.suite }}
           path: ${{ runner.temp }}/bili-tests.log
           if-no-files-found: warn
 

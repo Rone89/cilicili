@@ -1,8 +1,10 @@
 # Cloud development checks
 
-Pull requests and main pushes use one `iOS CI` workflow. It runs two independent
-checks: the complete Debug test scheme with coverage, and an unsigned device
-Release build. A failing test does not hide the Release build result.
+Pull requests and main pushes use one `iOS CI` workflow. It runs three independent
+checks: all `biliTests` unit tests, all `biliUITests` UI tests, and an unsigned
+device Release build. The two test targets run on separate disposable runners
+with matrix fail-fast disabled, so one failure cannot cancel the other target.
+Both test targets are still required for a complete pass.
 
 ## Environment
 
@@ -24,12 +26,17 @@ Changed-file Swift formatting remains advisory, as before.
 
 ## Results
 
-The test check uploads its raw log, an xcresult when produced, and a coverage
-report only when xccov successfully generates one. Environment failures do not
-produce a second failure for a missing coverage artifact. Test execution is
-serial to keep UI fixtures and simulator/GPU resources on one destination.
+Each test check uploads its raw log, an xcresult when produced, and a coverage
+report only when xccov successfully generates one. Artifact names end in `unit`
+or `ui`; coverage is reported separately, not as an aggregated project result.
+Environment failures do not produce a second failure for a missing artifact.
+Execution remains serial within each destination to protect UI fixture state.
+XCTest timeouts use a 300-second default and a 600-second maximum per test, so
+one stalled case can fail without consuming the entire 60-minute job budget.
+The Actions console shows test progress and errors; the uploaded raw log keeps
+all compiler output. The pipeline always propagates xcodebuild's exit status.
 
-The Release check uploads `cilicili-pr-release-unsigned-ipa` on success and the
+The Release check uploads a version/build-named unsigned IPA on success and the
 existing Release build log on failure. Tags and manual release builds continue
 to use `Build unsigned IPA` and its original output location.
 
@@ -52,7 +59,7 @@ plain-language device checklist and report test failures separately.
 
 1. Run the environment-helper regression tests (also available on Linux):
    `python3 -m unittest discover -s Scripts/tests -p 'test_ci_environment.py' -v`.
-2. Open a PR and confirm both Xcode 26 checks actually execute.
+2. Open a PR and confirm both Xcode 26 test targets and Release actually execute.
 3. Inspect the xcresult for test outcomes, not just a successful setup step.
 4. Confirm the Release artifact is generated before claiming a build is ready.
 5. Record any remaining app compilation/test failures independently from the
