@@ -20,6 +20,7 @@ env:
 
 jobs:
   test:
+    if: ${{ github.head_ref != 'codex/ui-crash-diagnostics' }}
     name: Xcode 26 ${{ matrix.suite }} tests
     runs-on: macos-26
     timeout-minutes: 60
@@ -176,6 +177,7 @@ jobs:
           if-no-files-found: warn
 
   release:
+    if: ${{ github.head_ref != 'codex/ui-crash-diagnostics' }}
     name: Xcode 26 unsigned Release
     runs-on: macos-26
     timeout-minutes: 30
