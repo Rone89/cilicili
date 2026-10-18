@@ -175,6 +175,20 @@ struct RichCommentDraft: Equatable, Sendable {
     }
 }
 
+/// Shared reference storage crosses the independent composer hosting controller.
+/// Bindings capture this object, rather than a parent view's value-state snapshot.
+@MainActor
+final class RichCommentDraftStore: ObservableObject {
+    @Published private var drafts: [String: RichCommentDraft] = [:]
+
+    func binding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
+        Binding(
+            get: { self.drafts[target.id] ?? RichCommentDraft(replyTarget: target) },
+            set: { self.drafts[target.id] = $0 }
+        )
+    }
+}
+
 struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     @Binding var target: DynamicCommentComposerTarget?
     let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>

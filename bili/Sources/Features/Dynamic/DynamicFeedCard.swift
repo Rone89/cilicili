@@ -259,7 +259,7 @@ private struct DynamicDetailView: View {
     @StateObject private var commentsViewModel: DynamicCommentsViewModel
     @State private var replySheetComment: Comment?
     @State private var richCommentComposerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
     @State private var detailContentWidth: CGFloat?
     private let display: DynamicFeedCardDisplayModel
 
@@ -447,10 +447,7 @@ private struct DynamicDetailView: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 
     private var detailCommentHorizontalAdjustment: CGFloat {

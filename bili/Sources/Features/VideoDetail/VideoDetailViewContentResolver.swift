@@ -18,7 +18,7 @@ struct VideoDetailViewContentResolver: View {
     let commentComposerRequestID: Int
     let onNavigateBack: () -> Void
     @State private var commentComposerTarget: DynamicCommentComposerTarget?
-    @State private var commentComposerDrafts = [String: RichCommentDraft]()
+    @StateObject private var commentComposerDrafts = RichCommentDraftStore()
 
     var body: some View {
         VideoDetailShellRepresentable(
@@ -91,10 +91,7 @@ struct VideoDetailViewContentResolver: View {
     private func commentComposerDraftBinding(
         for target: DynamicCommentComposerTarget
     ) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { commentComposerDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { commentComposerDrafts[target.id] = $0 }
-        )
+        commentComposerDrafts.binding(for: target)
     }
 
     private func submitComment(

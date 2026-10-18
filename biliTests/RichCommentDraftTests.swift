@@ -5,6 +5,37 @@ import XCTest
 
 @MainActor
 final class RichCommentDraftTests: XCTestCase {
+    func testBindingsCapturedBeforeHostRefreshReadTheCurrentSharedDraft() {
+        let store = RichCommentDraftStore()
+        let parentBinding = store.binding(for: .dynamic)
+        let olderHostBinding = store.binding(for: .dynamic)
+        parentBinding.wrappedValue = RichCommentDraft(elements: [.text("n")])
+        let oldRender = olderHostBinding.wrappedValue
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: olderHostBinding, onFocusChange: { _ in }, onHeightChange: { _ in }
+        )
+        let editor = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: oldRender, to: editor, emotes: [])
+        editor.text = "native"
+        editor.selectedRange = NSRange(location: 6, length: 0)
+        coordinator.textViewDidChange(editor)
+        coordinator.updateDraftBinding(parentBinding)
+        coordinator.applyIfNeeded(draft: oldRender, to: editor, emotes: [])
+        XCTAssertEqual(editor.text, "native")
+        XCTAssertEqual(olderHostBinding.wrappedValue.serializedMessage, "native")
+        XCTAssertEqual(store.binding(for: .dynamic).wrappedValue.serializedMessage, "native")
+    }
+
+    func testSharedStoreKeepsReplyTargetsSeparateAcrossHostRecreation() {
+        let store = RichCommentDraftStore()
+        let reply = DynamicCommentComposerTarget(rootID: 42, parentID: 43, authorName: "reply")
+        store.binding(for: .dynamic).wrappedValue = RichCommentDraft(elements: [.text("root draft")])
+        store.binding(for: reply).wrappedValue = RichCommentDraft(elements: [.text("reply draft")], replyTarget: reply)
+        XCTAssertEqual(store.binding(for: .dynamic).wrappedValue.serializedMessage, "root draft")
+        XCTAssertEqual(store.binding(for: reply).wrappedValue.serializedMessage, "reply draft")
+        XCTAssertEqual(store.binding(for: reply).wrappedValue.replyTarget, reply)
+    }
+
     func testSelectionCallbackBeforeTextChangeCannotRollBackNativeBuffer() {
         var draft = RichCommentDraft(elements: [.text("n")])
         let coordinator = RichCommentTextView.Coordinator(

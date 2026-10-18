@@ -11,7 +11,7 @@ struct CommentDialogSheet: View {
     let actions: CommentDialogSheetActions
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var composerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
 
     init(
         rootComment: Comment,
@@ -104,10 +104,7 @@ struct CommentDialogSheet: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 
     private func scrollToFocusedReply(using proxy: ScrollViewProxy) {
