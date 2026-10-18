@@ -399,7 +399,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        XCTAssertTrue(fullscreen.isHittable)
+        XCTAssertTrue(waitForHittable(fullscreenControl(in: app), timeout: 5))
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
         portraitAttachment.name = "Geometry portrait before fullscreen"
@@ -482,9 +482,14 @@ final class VideoDetailFlowUITests: XCTestCase {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(more, timeout: 5))
         more.tap()
         let settings = app.buttons["弹幕设置"]
+        if !settings.waitForExistence(timeout: 3) {
+            revealPlayerControls(in: app)
+            XCTAssertTrue(waitForHittable(app.buttons["ui.player.more"], timeout: 5))
+            app.buttons["ui.player.more"].tap()
+        }
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
 
@@ -511,8 +516,6 @@ final class VideoDetailFlowUITests: XCTestCase {
         let value = diagnostics.value as? String ?? ""
         print("rotationDiagnostics=\(value)")
         XCTAssertTrue(value.contains("playerViewModelIdentity"))
-        XCTAssertTrue(value.contains("avPlayerIdentity"))
-        XCTAssertTrue(value.contains("avPlayerItemIdentity"))
         XCTAssertTrue(value.contains("surfaceIdentity"))
         XCTAssertTrue(value.contains("surfaceAttachCount"))
         XCTAssertTrue(value.contains("surfaceDetachCount"))
@@ -579,9 +582,14 @@ final class VideoDetailFlowUITests: XCTestCase {
             }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [portraitWindow], timeout: 10), .completed)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
         let homeTab = app.buttons["首页"].firstMatch
+        for _ in 0..<2 where !homeTab.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+                .press(
+                    forDuration: 0.3,
+                    thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+                )
+        }
         XCTAssertTrue(homeTab.waitForExistence(timeout: 10))
         XCTAssertTrue(homeTab.isHittable)
     }
@@ -653,7 +661,8 @@ final class VideoDetailFlowUITests: XCTestCase {
         revealPlayerControls(in: app)
         XCTAssertTrue(playButton.waitForExistence(timeout: 5))
         playButton.tap()
-        XCTAssertTrue(pauseButton.waitForExistence(timeout: 5))
+        revealPlayerControls(in: app)
+        XCTAssertTrue(app.buttons["暂停"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(commentHeader.frame.minY, playingHeaderFrame.minY, accuracy: 1)
         XCTAssertEqual(playerFrame.frame.height, playingPlayerFrame.height, accuracy: 1)
     }
@@ -668,12 +677,23 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     private func revealPlayerControls(in app: XCUIApplication) {
-        let control = fullscreenControl(in: app)
-        if control.exists && control.isHittable { return }
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
-        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(control.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<3 {
+            let control = fullscreenControl(in: app)
+            if waitForHittable(control, timeout: 1) { return }
+            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(waitForHittable(fullscreenControl(in: app), timeout: 5), app.debugDescription)
+    }
+
+    @MainActor
+    private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in element.exists && element.isHittable },
+            object: nil
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     @MainActor

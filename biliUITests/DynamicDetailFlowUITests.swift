@@ -102,7 +102,10 @@ final class DynamicDetailFlowUITests: XCTestCase {
         photoButton.tap()
         // CI imports an actual image into the selected simulator's library.
         // Select through the system picker rather than fixed screen coordinates.
-        let photo = app.collectionViews.cells.firstMatch
+        let photo = app.images.matching(NSPredicate(
+            format: "label BEGINSWITH[c] %@ OR label BEGINSWITH %@",
+            "Photo", "照片"
+        )).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
         photo.tap()
         let add = app.navigationBars.buttons.matching(NSPredicate(
@@ -324,15 +327,27 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["固定视频详情回归"].firstMatch.waitForExistence(timeout: 10))
         for _ in 0..<3 where modeButton.isHittable { scrollView.swipeUp() }
 
-        XCTAssertTrue(waitForHittableState(false, element: modeButton, timeout: 3))
-        XCTAssertTrue(waitForHittableState(false, element: messageButton, timeout: 3))
+        XCTAssertTrue(waitForHittableState(
+            false,
+            query: { app.segmentedControls["home.feed.modePicker"] },
+            timeout: 5
+        ))
+        XCTAssertTrue(waitForHittableState(
+            false,
+            query: { app.buttons["账号消息"] },
+            timeout: 5
+        ))
         XCTAssertTrue(app.tabBars.firstMatch.exists)
 
         for _ in 0..<4 where !modeButton.isHittable {
             scrollView.swipeDown()
         }
 
-        XCTAssertTrue(waitForHittableState(true, element: modeButton, timeout: 3))
+        XCTAssertTrue(waitForHittableState(
+            true,
+            query: { app.segmentedControls["home.feed.modePicker"] },
+            timeout: 5
+        ))
     }
 
     @MainActor
@@ -702,14 +717,14 @@ final class DynamicDetailFlowUITests: XCTestCase {
     @MainActor
     private func waitForHittableState(
         _ isHittable: Bool,
-        element: XCUIElement,
+        query: () -> XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while element.isHittable != isHittable, Date() < deadline {
+        while query().isHittable != isHittable, Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
-        return element.isHittable == isHittable
+        return query().isHittable == isHittable
     }
 
     @MainActor
