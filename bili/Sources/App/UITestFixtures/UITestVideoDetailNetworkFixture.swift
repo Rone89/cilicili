@@ -27,6 +27,17 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
             switch url.path {
             case "/x/web-interface/view", "/x/web-interface/wbi/view":
                 payload = Self.video
+            case "/x/emote/user/panel/web":
+                payload = ["packages": [["emote": [["text": "[doge_金箍]",
+                    "url": "https://ui-test.invalid/doge.png", "width": 32, "height": 32]]]]]
+            case "/x/web-interface/wbi/index/top/feed/rcmd", "/x/web-interface/index/top/feed/rcmd":
+                payload = ["item": (1...40).map { index -> [String: Any] in
+                    var video = Self.video
+                    video["bvid"] = "BVFixtureHome\(index)"
+                    video["id"] = index
+                    video["goto"] = "av"
+                    return video
+                }]
             case "/x/web-interface/archive/related":
                 payload = (1...20).map { index -> [String: Any] in
                     var video = Self.video

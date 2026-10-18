@@ -174,6 +174,9 @@ final class RootTabScrollUITests: XCTestCase {
         let app = launch(arguments: arguments)
         for tab in selectedTabs ?? tabs {
             select(tab, in: app)
+            if tab == "直播" {
+                XCTAssertTrue(app.staticTexts["直播内容 1"].waitForExistence(timeout: 10))
+            }
             let top = offset(app)
             let scroll = mainScroll(in: app)
             scroll.swipeUp()

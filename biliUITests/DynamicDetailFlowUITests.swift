@@ -7,7 +7,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
+            "--ui-test-reset-state", "--ui-test-video-detail-network",
             "--ui-test-root-tab-shell"
         ]
         app.launch()
@@ -73,7 +73,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
+            "--ui-test-reset-state", "--ui-test-video-detail-network",
             "--ui-test-root-tab-shell"
         ]
         app.launch()
@@ -86,11 +86,17 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let photoButton = app.buttons["添加图片"]
         XCTAssertTrue(photoButton.waitForExistence(timeout: 3))
         photoButton.tap()
-        sleep(2)
-
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.13, dy: 0.35)).tap()
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.15)).tap()
-        sleep(2)
+        // CI imports an actual image into the selected simulator's library.
+        // Select through the system picker rather than fixed screen coordinates.
+        let photo = app.collectionViews.cells.firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 10))
+        photo.tap()
+        let add = app.navigationBars.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label IN %@",
+            "Add", "添加", ["Done", "完成"]
+        )).firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
 
         let attachments = app.descendants(matching: .any)[
             "dynamic.comment.composer.attachments"
@@ -107,7 +113,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
+            "--ui-test-reset-state", "--ui-test-video-detail-network",
             "--ui-test-root-tab-shell"
         ]
         app.launch()
@@ -289,9 +295,10 @@ final class DynamicDetailFlowUITests: XCTestCase {
     func testHomeNavigationBarMinimizesOnScrollDown() {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-test-reset-state",
+            "--ui-test-reset-state", "--ui-test-video-detail-network",
             "--start-tab", "home",
         ]
+        app.launchArguments += ["-cc.bili.home.recommendFeedSourcePreference.v1", "web"]
         app.launch()
 
         let modeButton = app.segmentedControls["home.feed.modePicker"]
@@ -645,7 +652,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-test-fixture", "dynamicDetail",
-            "--ui-test-reset-state",
+            "--ui-test-reset-state", "--ui-test-video-detail-network",
         ]
         if enablesAnimations {
             app.launchArguments.append("--ui-test-enable-animations")

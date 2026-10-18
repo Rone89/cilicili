@@ -71,3 +71,18 @@ plain-language device checklist and report test failures separately.
 5. Record any remaining app compilation/test failures independently from the
    environment fix. Simulator success does not establish device performance,
    cellular behavior, or measured energy savings.
+
+## Deterministic UI inputs
+
+The detail UI suite opts into `--ui-test-video-detail-network` in Debug only.
+It supplies fixed API responses and the existing test playback engine while
+retaining production routes, views, controls and rotation hosts. Release and
+normal launches retain their production sessions and media engine. These checks
+verify UI state/lifecycle, not real decoding or network performance.
+
+The shard containing DynamicDetailFlowUITests prepares an actual Photos asset.
+An existing composer UI test first lets Xcode start the selected simulator, then
+`simctl addmedia` imports a generated PNG. No simulator is manually booted or
+created. The actual photo test selects and removes that image through the system
+picker. Preflight diagnostics are uploaded on failure; the complete shard still
+runs all its assigned classes.

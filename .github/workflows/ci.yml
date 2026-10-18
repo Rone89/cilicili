@@ -86,6 +86,13 @@ jobs:
           done <<< "$changed_files"
           exit "$format_status"
 
+      - name: Prepare photo picker media
+        if: ${{ matrix.ui_shard != '' }}
+        env:
+          TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
+          UI_SHARD: ${{ matrix.ui_shard }}
+        run: bash Scripts/prepare-ui-photo-fixture.sh
+
       - name: Run tests with coverage
         id: tests
         shell: bash
@@ -133,6 +140,16 @@ jobs:
             fi
           fi
           exit "$test_status"
+
+      - name: Upload photo preflight diagnostics
+        if: ${{ failure() && matrix.ui_shard != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: photo-preflight-${{ matrix.suite }}
+          path: |
+            ${{ runner.temp }}/photo-preflight.log
+            ${{ runner.temp }}/photo-preflight.xcresult
+          if-no-files-found: ignore
 
       - name: Upload coverage report
         if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
