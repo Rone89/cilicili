@@ -7,20 +7,6 @@ case "$selectors" in
   *) exit 0 ;;
 esac
 
-# Let Xcode start its selected existing simulator through a real, isolated UI
-# check. Do not manually boot, create or switch simulators for media preparation.
-python3 Scripts/build-cache.py run -- xcodebuild \
-  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
-  -destination "$TEST_DESTINATION" -destination-timeout 120 \
-  -resultBundlePath "$RUNNER_TEMP/photo-preflight.xcresult" \
-  -only-testing:biliUITests/CommentActionFlowUITests/testReplyActionOpensComposer \
-  -parallel-testing-enabled NO -enableCodeCoverage YES \
-  -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | \
-  tee "$RUNNER_TEMP/photo-preflight.log" | \
-  awk '/Test (Case|Suite)|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
-
 python3 - <<'PY'
 import os
 from pathlib import Path
@@ -38,8 +24,10 @@ Path(os.environ["RUNNER_TEMP"], "comment-photo-fixture.png").write_bytes(png)
 PY
 simulator_id="${TEST_DESTINATION##*id=}"
 [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
-# Wait for the simulator Xcode already started; this does not boot a device.
-python3 - "$simulator_id" <<'PYTHON'
+# Import while Xcode owns the running simulator; Xcode may shut it down
+# immediately after the preflight finishes. Never boot a simulator ourselves.
+python3 - "$simulator_id" <<'PYTHON' &
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -48,24 +36,47 @@ import time
 
 simulator_id = sys.argv[1]
 root = Path(os.environ["RUNNER_TEMP"])
-try:
-    # The preflight already exercised this simulator's UI. bootstatus also waits
-    # for unrelated background boot tasks and can hang despite a usable UI.
-    inventory = subprocess.run(["xcrun", "simctl", "list", "devices", "--json"], timeout=30, check=True, capture_output=True)
-    (root / "photo-simulator-inventory.json").write_bytes(inventory.stdout)
-    with (root / "photo-media-import.log").open("wb") as log:
-        for attempt in range(3):
-            try:
-                result = subprocess.run(["xcrun", "simctl", "addmedia", simulator_id,
-                    str(root / "comment-photo-fixture.png")], timeout=45, stdout=log, stderr=subprocess.STDOUT)
+deadline = time.monotonic() + 600
+with (root / "photo-media-import.log").open("wb") as log:
+    while time.monotonic() < deadline:
+        try:
+            inventory = subprocess.run(
+                ["xcrun", "simctl", "list", "devices", "--json"],
+                timeout=30, check=True, capture_output=True)
+            (root / "photo-simulator-inventory.json").write_bytes(inventory.stdout)
+            devices = json.loads(inventory.stdout)["devices"]
+            is_booted = any(device["udid"] == simulator_id and device["state"] == "Booted"
+                            for group in devices.values() for device in group)
+            if is_booted:
+                result = subprocess.run(
+                    ["xcrun", "simctl", "addmedia", simulator_id,
+                     str(root / "comment-photo-fixture.png")],
+                    timeout=45, stdout=log, stderr=subprocess.STDOUT)
                 if result.returncode == 0:
+                    log.write(b"Imported photo into Xcode-selected running simulator.\n")
                     sys.exit(0)
-            except subprocess.TimeoutExpired:
-                log.write(b"Photo import timed out; retrying.\n")
-                log.flush()
-            if attempt < 2:
-                time.sleep(5)
-except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
-    print(f"Photo prerequisite failed: {error}", flush=True)
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+            log.write(f"Photo import not ready: {error}\n".encode())
+        log.flush()
+        time.sleep(2)
 sys.exit(1)
 PYTHON
+media_import_pid=$!
+trap 'kill "$media_import_pid" 2>/dev/null || true' EXIT
+
+# Let Xcode start its selected existing simulator through a real, isolated UI
+# check. Do not manually boot, create or switch simulators for media preparation.
+python3 Scripts/build-cache.py run -- xcodebuild \
+  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  -destination "$TEST_DESTINATION" -destination-timeout 120 \
+  -resultBundlePath "$RUNNER_TEMP/photo-preflight.xcresult" \
+  -only-testing:biliUITests/CommentActionFlowUITests/testReplyActionOpensComposer \
+  -parallel-testing-enabled NO -enableCodeCoverage YES \
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | \
+  tee "$RUNNER_TEMP/photo-preflight.log" | \
+  awk '/Test (Case|Suite)|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
+
+wait "$media_import_pid"
+trap - EXIT

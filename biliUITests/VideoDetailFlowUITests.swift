@@ -337,10 +337,10 @@ final class VideoDetailFlowUITests: XCTestCase {
         let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         let remainingCollapse = playerFrame.frame.height - 54
         continuationStart.press(
-            forDuration: 0.1,
+            forDuration: 0.8,
             thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -(remainingCollapse + 30))),
             withVelocity: .slow,
-            thenHoldForDuration: 0.2
+            thenHoldForDuration: 1.0
         )
         let minimumPlayer = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -393,7 +393,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         if !fullscreen.isHittable {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
-            surface.tap()
+            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         XCTAssertTrue(fullscreen.isHittable)
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
@@ -430,7 +430,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         if !landscapeExit.waitForExistence(timeout: 2) || !landscapeExit.isHittable {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
-            surface.tap()
+            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         XCTAssertTrue(landscapeExit.waitForExistence(timeout: 5))
         XCTAssertTrue(landscapeExit.isHittable)
@@ -453,6 +453,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testVideoDetailQualitySwitchKeepsPlayerSurfaceMounted() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         more.tap()
@@ -475,6 +476,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testVideoDetailDanmakuInteractionKeepsPlayerSurfaceMounted() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
         more.tap()
@@ -654,11 +656,10 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     private func fullscreenControl(in app: XCUIApplication) -> XCUIElement {
-        let identified = app.descendants(matching: .any)["ui.player.fullscreen.toggle"].firstMatch
-        if identified.exists { return identified }
-        // Glass can export the identifier on a containing accessibility node.
-        // The visible native button retains its user-facing action label.
-        return app.buttons.matching(NSPredicate(format: "label IN %@", ["全屏", "退出全屏"])).firstMatch
+        app.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label IN %@",
+            "ui.player.fullscreen.toggle", ["全屏", "退出全屏"]
+        )).firstMatch
     }
 
     @MainActor
@@ -667,7 +668,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         if control.exists && control.isHittable { return }
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
-        surface.tap()
+        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(control.waitForExistence(timeout: 5), app.debugDescription)
     }
 

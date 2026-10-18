@@ -17,7 +17,11 @@ struct HomeFeedNavigationChrome: ViewModifier {
         content
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    HomeToolbarModePicker(mode: viewModel.mode, onSelectMode: switchMode)
+                    HomeToolbarModePicker(
+                        mode: viewModel.mode,
+                        isHidden: hidesNavigationChrome,
+                        onSelectMode: switchMode
+                    )
                         .frame(width: 140, height: HomeToolbarLayout.controlHeight)
                         .accessibilityIdentifier("home.feed.modePicker")
                         .font(.headline)
@@ -255,6 +259,7 @@ private enum HomeToolbarLayout {
 /// Match the native segmented control to the adjacent toolbar buttons.
 private struct HomeToolbarModePicker: UIViewRepresentable {
     let mode: HomeFeedMode
+    let isHidden: Bool
     let onSelectMode: (HomeFeedMode) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -273,6 +278,10 @@ private struct HomeToolbarModePicker: UIViewRepresentable {
         context.coordinator.onSelectMode = onSelectMode
         control.selectedSegmentIndex = HomeFeedMode.allCases.firstIndex(of: mode) ?? 0
         control.isEnabled = context.environment.isEnabled
+        // SwiftUI toolbar opacity does not hide the embedded UIKit control
+        // from accessibility or hit testing. Keep both trees in sync.
+        control.isHidden = isHidden
+        control.accessibilityElementsHidden = isHidden
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UISegmentedControl, context: Context) -> CGSize? {
