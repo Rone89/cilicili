@@ -72,61 +72,80 @@ struct UITestRootTabScrollFixtureView: View {
     }
 
     var body: some View {
+        rootTabs
+            .tabBarMinimizeBehavior(ProcessInfo.processInfo.arguments.contains("--test-minimize") ? .onScrollDown : .never)
+            .tabViewBottomAccessory(isEnabled: showsBottomAccessory) {
+                if selectedTab == .search { SearchTabBottomAccessory(store: searchAccessory) }
+                else { MineTabBottomSearchAccessory(text: $mineQuery, onActivate: {}) }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if selectedTab == .search && searchFocused {
+                    SearchTabBottomAccessory(store: searchAccessory).padding(.vertical, 8)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                VStack {
+                    RootTabFixtureMetricsView(metrics: metrics, requests: requests, search: search, tab: selectedTab)
+                    Button("重复当前") { selection.wrappedValue = selectedTab }
+                        .accessibilityIdentifier("fixture.root.reselect")
+                        .buttonStyle(.bordered)
+                }
+            }
+            .transformEnvironment(\.accessibilityReduceMotion) { value in
+                if ProcessInfo.processInfo.arguments.contains("--test-reduce-motion") { value = true }
+            }
+    }
+
+    private var showsBottomAccessory: Bool {
+        (paths[selectedTab]?.isEmpty ?? true) && !searchFocused && (selectedTab == .search || selectedTab == .mine)
+    }
+
+    private var rootTabs: some View {
         TabView(selection: selection) {
             ForEach(AppTab.defaultVisibleTabs) { tab in
                 Tab(value: tab, role: tab == .search ? .search : nil) {
-                    NavigationStack(path: path(for: tab)) {
-                        page(tab)
-                            .environment(\.rootTabScrollRequest, scrollRequests[tab])
-                            .navigationHistoryTitle(tab.title)
-                            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top }
-                                action: { _, value in metrics.offsets[tab] = value }
-                            .navigationTitle(tab.title)
-                            .toolbarTitleDisplayMode(.inline)
-                            .navigationDestination(for: String.self) { _ in
-                                ScrollView { Text("二级页面").frame(height: 1800) }
-                                    .toolbar { Button("返回") { paths[tab]?.removeLast() } }
-                            }
-                            .toolbar {
-                                if tab == .search {
-                                    ToolbarItem(placement: .topBarLeading) {
-                                        Button("输入") { isSearchPresented = true }
-                                            .accessibilityIdentifier("fixture.root.focusSearch")
-                                    }
-                                }
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    Button("详情") { paths[tab, default: NavigationPath()].append("detail") }
-                                        .accessibilityIdentifier("fixture.root.detail")
-                                }
-                            }
-                    }
-                    .coordinatesRootTabBarTransitions(isDetailPresented: !(paths[tab]?.isEmpty ?? true),
-                        onRootTabTap: selectedTab == tab ? { selection.wrappedValue = tab } : nil,
-                        capturesSearchReselection: tab == .search)
-                    .navigationHistoryStack(path: path(for: tab), rootTitle: tab.title)
+                    navigationStack(tab)
                 } label: { Label(tab.title, systemImage: tab.systemImage) }
             }
         }
-        .tabBarMinimizeBehavior(ProcessInfo.processInfo.arguments.contains("--test-minimize") ? .onScrollDown : .never)
-        .tabViewBottomAccessory(isEnabled: (paths[selectedTab]?.isEmpty ?? true) && !searchFocused && (selectedTab == .search || selectedTab == .mine)) {
-            if selectedTab == .search { SearchTabBottomAccessory(store: searchAccessory) }
-            else { MineTabBottomSearchAccessory(text: $mineQuery, onActivate: {}) }
+    }
+
+    private func navigationStack(_ tab: AppTab) -> some View {
+        NavigationStack(path: path(for: tab)) {
+            navigationPage(tab)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if selectedTab == .search && searchFocused {
-                SearchTabBottomAccessory(store: searchAccessory).padding(.vertical, 8)
+        .coordinatesRootTabBarTransitions(isDetailPresented: !(paths[tab]?.isEmpty ?? true),
+            onRootTabTap: selectedTab == tab ? { selection.wrappedValue = tab } : nil,
+            capturesSearchReselection: tab == .search)
+        .navigationHistoryStack(path: path(for: tab), rootTitle: tab.title)
+    }
+
+    private func navigationPage(_ tab: AppTab) -> some View {
+        page(tab)
+            .environment(\.rootTabScrollRequest, scrollRequests[tab])
+            .navigationHistoryTitle(tab.title)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top }
+                action: { _, value in metrics.offsets[tab] = value }
+            .navigationTitle(tab.title)
+            .toolbarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { _ in
+                ScrollView { Text("二级页面").frame(height: 1800) }
+                    .toolbar { Button("返回") { paths[tab]?.removeLast() } }
+            }
+            .toolbar { fixtureToolbar(for: tab) }
+    }
+
+    @ToolbarContentBuilder
+    private func fixtureToolbar(for tab: AppTab) -> some ToolbarContent {
+        if tab == .search {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("输入") { isSearchPresented = true }
+                    .accessibilityIdentifier("fixture.root.focusSearch")
             }
         }
-        .overlay(alignment: .topLeading) {
-            VStack {
-                RootTabFixtureMetricsView(metrics: metrics, requests: requests, search: search, tab: selectedTab)
-                Button("重复当前") { selection.wrappedValue = selectedTab }
-                    .accessibilityIdentifier("fixture.root.reselect")
-                    .buttonStyle(.bordered)
-            }
-        }
-        .transformEnvironment(\.accessibilityReduceMotion) { value in
-            if ProcessInfo.processInfo.arguments.contains("--test-reduce-motion") { value = true }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("详情") { paths[tab, default: NavigationPath()].append("detail") }
+                .accessibilityIdentifier("fixture.root.detail")
         }
     }
 
