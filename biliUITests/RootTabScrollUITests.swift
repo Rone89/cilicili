@@ -81,15 +81,25 @@ final class RootTabScrollUITests: XCTestCase {
         let toggle = openReduceMotion(in: settings)
         let original = toggle.value as? String
         XCTAssertTrue(original == "0" || original == "1")
-        if original != "1" { toggle.tap() }
-        XCTAssertEqual(toggle.value as? String, "1")
+        if original != "1" {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        }
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in toggle.value as? String == "1" }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
         defer {
             settings.activate()
             // Settings may return to its root after the app under test takes focus.
             // Resolve the current page again instead of reusing the previous AX node.
             let restoredToggle = openReduceMotion(in: settings)
-            if restoredToggle.value as? String != original { restoredToggle.tap() }
-            XCTAssertEqual(restoredToggle.value as? String, original)
+            if restoredToggle.value as? String != original {
+                restoredToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            }
+            let restored = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in restoredToggle.value as? String == original }, object: nil
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
         }
         verifyReselection(arguments: ["--test-reduce-motion"])
     }

@@ -39,14 +39,32 @@ PY
 simulator_id="${TEST_DESTINATION##*id=}"
 [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
 # Wait for the simulator Xcode already started; this does not boot a device.
-xcrun simctl bootstatus "$simulator_id"
-xcrun simctl list devices --json > "$RUNNER_TEMP/photo-simulator-inventory.json"
-for attempt in 1 2 3; do
-  if xcrun simctl addmedia "$simulator_id" "$RUNNER_TEMP/comment-photo-fixture.png" > "$RUNNER_TEMP/photo-media-import.log" 2>&1; then
-    cat "$RUNNER_TEMP/photo-media-import.log"
-    exit 0
-  fi
-  cat "$RUNNER_TEMP/photo-media-import.log"
-  if [ "$attempt" -lt 3 ]; then sleep 5; fi
-done
-exit 1
+python3 - "$simulator_id" <<'PYTHON'
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+simulator_id = sys.argv[1]
+root = Path(os.environ["RUNNER_TEMP"])
+try:
+    subprocess.run(["xcrun", "simctl", "bootstatus", simulator_id], timeout=90, check=True)
+    inventory = subprocess.run(["xcrun", "simctl", "list", "devices", "--json"], timeout=30, check=True, capture_output=True)
+    (root / "photo-simulator-inventory.json").write_bytes(inventory.stdout)
+    with (root / "photo-media-import.log").open("wb") as log:
+        for attempt in range(3):
+            try:
+                result = subprocess.run(["xcrun", "simctl", "addmedia", simulator_id,
+                    str(root / "comment-photo-fixture.png")], timeout=45, stdout=log, stderr=subprocess.STDOUT)
+                if result.returncode == 0:
+                    sys.exit(0)
+            except subprocess.TimeoutExpired:
+                log.write(b"Photo import timed out; retrying.\n")
+                log.flush()
+            if attempt < 2:
+                time.sleep(5)
+except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+    print(f"Photo prerequisite failed: {error}", flush=True)
+sys.exit(1)
+PYTHON

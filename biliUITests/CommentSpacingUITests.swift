@@ -26,7 +26,7 @@ final class CommentSpacingUITests: XCTestCase {
         XCTAssertFalse(visible.isNull, "Long press must target the visible part of accessibility-sized text")
         XCTAssertGreaterThan(visible.height, 0)
         app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: visible.midX, dy: visible.midY)).press(forDuration: 1)
+            .withOffset(CGVector(dx: visible.minX + min(24, visible.width / 2), dy: visible.minY + min(12, visible.height / 2))).press(forDuration: 1)
         XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 3))
         app.buttons["复制评论"].tap()
 
