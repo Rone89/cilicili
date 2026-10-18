@@ -16,6 +16,12 @@ extension VideoDetailViewModel {
             else { return detail.title }
             return part
         }()
+        let fixtureEngine: PlayerRenderingEngine?
+        #if DEBUG
+        fixtureEngine = UITestVideoDetailNetworkFixture.isEnabled ? UITestPlayerRenderingEngine() : nil
+        #else
+        fixtureEngine = nil
+        #endif
         return PlayerStateViewModel(
             videoURL: isAudioOnly ? nil : variant.videoURL,
             audioURL: listenAudioVariant?.url ?? variant.audioURL,
@@ -36,7 +42,8 @@ extension VideoDetailViewModel {
                 cookieHeader: sessionStore.cookieHeader()
             ),
             artworkURL: playbackTransitionCoverURL(),
-            playbackContentMode: playbackContentMode
+            playbackContentMode: playbackContentMode,
+            engine: fixtureEngine
         )
     }
 

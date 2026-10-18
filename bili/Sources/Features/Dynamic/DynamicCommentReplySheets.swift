@@ -38,6 +38,7 @@ struct DynamicCommentRepliesSheet: View {
                     )
                 }
             }
+            .accessibilityIdentifier("dynamic.replies.scroll")
             .defersRemoteImageLoadsDuringFastScroll()
             .hiddenInlineNavigationTitle()
             .nativeTopScrollEdgeEffect()

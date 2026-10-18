@@ -699,9 +699,15 @@ private struct DeterministicDASHPlaybackFixture {
 
     @MainActor
     private static func finish(_ writer: AVAssetWriter) async throws {
-        writer.finishWriting {}
-        let deadline = ContinuousClock.now + .seconds(10)
-        while writer.status == .writing {
+        let completion = FixtureWriterCompletion()
+        defer {
+            if writer.status == .writing { writer.cancelWriting() }
+        }
+        writer.finishWriting { completion.markFinished() }
+        // Fixture encoding is setup work, not a playback latency assertion.
+        // Wait for the actual completion callback before reading its segments.
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !completion.isFinished {
             guard ContinuousClock.now < deadline else {
                 throw PlaybackFixtureError.writer(
                     "timed out finalizing writer; error=\(writer.error?.localizedDescription ?? "none")"
@@ -871,6 +877,23 @@ private struct DeterministicDASHPlaybackFixture {
 private enum FixtureMediaType {
     case video
     case audio
+}
+
+private final class FixtureWriterCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+
+    var isFinished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
+    }
+
+    func markFinished() {
+        lock.lock()
+        defer { lock.unlock() }
+        finished = true
+    }
 }
 
 private final class FixtureSegmentCollector: NSObject, AVAssetWriterDelegate, @unchecked Sendable {

@@ -39,6 +39,7 @@ final class UITestPlayerFixtureController: ObservableObject {
 final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
     var onNavigationSuspended: (() -> Void)?
     private(set) var hasMedia = true
+    private(set) var isPlaying = false
     private(set) var playbackErrorMessage: String?
     var needsMediaRecovery: Bool { false }
     var lastFailureReason: HLSBridgeFailureReason? { nil }
@@ -69,6 +70,7 @@ final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func play() {
+        isPlaying = true
         playbackErrorMessage = nil
         onPlaybackIntentChange?(true)
         onPlaybackStateChange?(.playing)
@@ -76,6 +78,7 @@ final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func pause() {
+        isPlaying = false
         onPlaybackIntentChange?(false)
         onPlaybackStateChange?(.paused)
     }
@@ -86,6 +89,7 @@ final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
     }
 
     func stop() {
+        isPlaying = false
         onPlaybackIntentChange?(false)
         onPlaybackStateChange?(.idle)
     }
@@ -110,7 +114,7 @@ final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
         PlayerPlaybackSnapshot(
             currentTime: 0,
             duration: durationHint,
-            isPlaying: playbackErrorMessage == nil,
+            isPlaying: isPlaying,
             isSeekable: true,
             bufferedRanges: []
         )
@@ -120,6 +124,7 @@ final class UITestPlayerRenderingEngine: PlayerRenderingEngine {
     func invalidatePictureInPicturePlaybackState() {}
 
     func simulateFailure() {
+        isPlaying = false
         let message = "UI Test Playback Failed"
         playbackErrorMessage = message
         onPlaybackIntentChange?(false)

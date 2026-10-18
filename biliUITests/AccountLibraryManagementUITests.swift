@@ -87,7 +87,9 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let remove = app.buttons["library.manage.remove"]
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         remove.tap()
-        let confirm = app.buttons["library.manage.confirmRemove"]
+        // SwiftUI exports both the confirmation wrapper and its child button.
+        let confirm = app.sheets["移除所选的 3 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         confirm.tap()
         XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))

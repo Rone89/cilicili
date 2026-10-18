@@ -1,10 +1,14 @@
 # Cloud development checks
 
 Pull requests and main pushes use one `iOS CI` workflow. It runs three main independent
-checks: all `biliTests` unit tests, all `biliUITests` UI tests, and an unsigned
+checks: all `biliTests` unit tests, all `biliUITests` UI tests across four shards, and an unsigned
 device Release build. The two test targets run on separate disposable runners
 with matrix fail-fast disabled, so one failure cannot cancel the other target.
-Both test targets are still required for a complete pass. A separate focused
+The unit target and all four UI shards are required for a complete pass.
+`Scripts/ui-test-shards.py` discovers every XCTestCase class containing test
+methods, then balances complete classes by method count. It fails on unsupported
+class declarations rather than silently omitting tests. Shards use independent
+runners and result artifacts; tests remain serial inside each simulator. A separate focused
 `interaction-regression` matrix entry gives earlier feedback for dynamic tab
 reselection and search dismissal; it does not replace the complete UI target.
 
@@ -30,7 +34,7 @@ Changed-file Swift formatting remains advisory, as before.
 
 Each test check uploads its raw log, an xcresult when produced, and a coverage
 report only when xccov successfully generates one. Artifact names end in `unit`
-or `ui`; coverage is reported separately, not as an aggregated project result.
+or `ui-1` through `ui-4`; coverage is reported separately, not as an aggregated project result.
 Environment failures do not produce a second failure for a missing artifact.
 Execution remains serial within each destination to protect UI fixture state.
 XCTest timeouts use a 300-second default and a 600-second maximum per test, so
@@ -67,3 +71,26 @@ plain-language device checklist and report test failures separately.
 5. Record any remaining app compilation/test failures independently from the
    environment fix. Simulator success does not establish device performance,
    cellular behavior, or measured energy savings.
+
+## Deterministic UI inputs
+
+The detail UI suite opts into `--ui-test-video-detail-network` in Debug only.
+It supplies fixed API responses and the existing test playback engine while
+retaining production routes, views, controls and rotation hosts. Release and
+normal launches retain their production sessions and media engine. These checks
+verify UI state/lifecycle, not real decoding or network performance.
+
+The shard containing DynamicDetailFlowUITests prepares an actual Photos asset.
+An existing composer UI test first lets Xcode start the selected simulator, then
+`simctl addmedia` imports a generated PNG. No simulator is manually booted or
+created. The actual photo test selects and removes that image through the system
+picker. Preflight diagnostics are uploaded on failure; the complete shard still
+runs all its assigned classes.
+
+Reduced Motion root-tab coverage enables the actual system setting through Settings
+and verifies the read-only SwiftUI environment value seen by the mounted subtree.
+Restoration resolves the Settings page again because it can return to its root
+after the app under test takes focus; it does not reuse a stale switch node. Accessibility text menu
+tests long-press a visible intersection of oversized text, not an offscreen
+element center. Photo preparation failures remain failures, but the full shard
+still executes so unrelated results and readable crash diagnostics are retained.

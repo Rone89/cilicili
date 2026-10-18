@@ -48,9 +48,11 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         XCTAssertTrue(openReplies.waitForExistence(timeout: 5))
         openReplies.tap()
 
-        let repliesScroll = app.scrollViews.element(boundBy: 1)
+        let repliesScroll = app.scrollViews["dynamic.replies.scroll"]
         XCTAssertTrue(repliesScroll.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["分页回复1"].waitForExistence(timeout: 5), app.debugDescription)
+        let firstReply = app.descendants(matching: .any)["分页回复1"]
+        for _ in 0..<4 where !firstReply.exists { repliesScroll.swipeUp() }
+        XCTAssertTrue(firstReply.waitForExistence(timeout: 5), app.debugDescription)
         let more = app.buttons["查看更多回复"]
         for _ in 0..<12 where !more.isHittable { repliesScroll.swipeUp() }
         XCTAssertTrue(more.isHittable)

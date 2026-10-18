@@ -29,8 +29,6 @@ jobs:
         include:
           - suite: unit
             test_target: biliTests
-          - suite: ui
-            test_target: biliUITests
           - suite: interaction-regression
             test_target: |
               biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
@@ -38,6 +36,14 @@ jobs:
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
               biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
+          - suite: ui-1
+            ui_shard: 1
+          - suite: ui-2
+            ui_shard: 2
+          - suite: ui-3
+            ui_shard: 3
+          - suite: ui-4
+            ui_shard: 4
 
     steps:
       - name: Checkout
@@ -80,15 +86,28 @@ jobs:
           done <<< "$changed_files"
           exit "$format_status"
 
+      - name: Prepare photo picker media
+        id: photo_fixture
+        continue-on-error: true
+        if: ${{ matrix.ui_shard != '' }}
+        env:
+          TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
+          UI_SHARD: ${{ matrix.ui_shard }}
+        run: bash Scripts/prepare-ui-photo-fixture.sh
+
       - name: Run tests with coverage
         id: tests
         shell: bash
         env:
           TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
           TEST_TARGET: ${{ matrix.test_target }}
+          UI_SHARD: ${{ matrix.ui_shard }}
         run: |
           set -euo pipefail
           result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
+          if [ -n "$UI_SHARD" ]; then
+            TEST_TARGET="$(python3 Scripts/ui-test-shards.py --shard "$UI_SHARD" --count 4)"
+          fi
           test_selectors=()
           while IFS= read -r selector; do
             if [ -n "$selector" ]; then
@@ -124,6 +143,35 @@ jobs:
           fi
           exit "$test_status"
 
+      - name: Export readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/readable-tests"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/bili-tests.xcresult" > "$RUNNER_TEMP/readable-tests/summary.json"
+          xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
+
+      - name: Upload readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-test-readable-${{ matrix.suite }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readable-tests
+          if-no-files-found: ignore
+
+      - name: Upload photo preflight diagnostics
+        if: ${{ !cancelled() && matrix.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: photo-preflight-${{ matrix.suite }}
+          path: |
+            ${{ runner.temp }}/photo-preflight.log
+            ${{ runner.temp }}/photo-preflight.xcresult
+            ${{ runner.temp }}/photo-media-import.log
+            ${{ runner.temp }}/photo-simulator-inventory.json
+          if-no-files-found: ignore
+
       - name: Upload coverage report
         if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -147,6 +195,12 @@ jobs:
           name: ios-test-log-${{ matrix.suite }}
           path: ${{ runner.temp }}/bili-tests.log
           if-no-files-found: warn
+
+      - name: Require successful photo fixture preparation
+        if: ${{ !cancelled() && steps.photo_fixture.outcome == 'failure' }}
+        run: |
+          echo "Photo fixture preparation failed; complete UI results were retained above."
+          exit 1
 
   release:
     name: Xcode 26 unsigned Release

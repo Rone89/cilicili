@@ -59,7 +59,10 @@ extension HomeViewModel {
               !hydratedVideos.isEmpty
         else { return }
 
-        let hydratedByID = Dictionary(uniqueKeysWithValues: hydratedVideos.map { ($0.id, $0) })
+        let hydratedByID = Dictionary(
+            hydratedVideos.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let hydratedByAID = Dictionary(
             hydratedVideos.compactMap { video -> (Int, VideoItem)? in
                 guard let aid = video.aid else { return nil }
