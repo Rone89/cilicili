@@ -33,7 +33,10 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         close.tap()
         XCTAssertTrue(close.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["分页回复1"].exists)
-        XCTAssertTrue(avatar.isHittable)
+        let visibleAvatar = app.buttons.matching(identifier: "查看 分页用户100 的个人主页")
+            .element(boundBy: 1)
+        XCTAssertTrue(visibleAvatar.waitForExistence(timeout: 3))
+        XCTAssertTrue(visibleAvatar.isHittable)
     }
 
     func testMoreRepliesAppearBelowCurrentBottomInDynamicDetailSheet() {

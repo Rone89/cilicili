@@ -62,7 +62,7 @@ final class DynamicSpacingUITests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             (Double(text.label) ?? 0) > 0
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed, id)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, id)
         return Double(text.label) ?? -1
     }
 

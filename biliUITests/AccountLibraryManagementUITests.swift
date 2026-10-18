@@ -83,6 +83,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         button.tap()
         let editor = app.textViews["dynamic.comment.composer.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         editor.typeText("测试草稿")
         XCTAssertEqual(editor.value as? String, "测试草稿")
     }

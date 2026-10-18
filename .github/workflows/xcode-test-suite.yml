@@ -1,0 +1,186 @@
+name: Xcode test suite
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        required: true
+        type: string
+      test_target:
+        required: false
+        type: string
+        default: ''
+      ui_shard:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  PROJECT: bili.xcodeproj
+  SCHEME: bili
+
+jobs:
+  test:
+    name: Xcode 26 ${{ inputs.suite }} tests
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check CI environment helpers
+        run: python3 -m unittest discover -s Scripts/tests -p 'test_ci_environment.py' -v
+
+      - name: Select installed Xcode 26
+        run: python3 Scripts/ci-environment.py select-xcode
+
+      - name: Select existing iOS 26 simulator
+        id: simulator
+        run: python3 Scripts/ci-environment.py select-simulator
+
+      - name: Swift format check (changed files)
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          formatter="$(xcrun --find swift-format 2>/dev/null || true)"
+          if [ -z "$formatter" ]; then
+            echo "swift-format is unavailable; skipping format check."
+            exit 0
+          fi
+          base_sha="$BASE_SHA"
+          if [ -z "$base_sha" ] || [[ "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git rev-list --max-parents=0 "$HEAD_SHA" | tail -n 1)"
+          fi
+          changed_files="$(git diff --name-only --diff-filter=ACMR "$base_sha" "$HEAD_SHA" -- '*.swift')"
+          format_status=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            "$formatter" lint --strict --configuration "$GITHUB_WORKSPACE/.swift-format" "$file" || format_status=$?
+          done <<< "$changed_files"
+          exit "$format_status"
+
+      - name: Prepare photo picker media
+        id: photo_fixture
+        continue-on-error: true
+        if: ${{ inputs.ui_shard != '' }}
+        env:
+          TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
+          UI_SHARD: ${{ inputs.ui_shard }}
+        run: bash Scripts/prepare-ui-photo-fixture.sh
+
+      - name: Run tests with coverage
+        id: tests
+        shell: bash
+        env:
+          TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
+          TEST_TARGET: ${{ inputs.test_target }}
+          UI_SHARD: ${{ inputs.ui_shard }}
+        run: |
+          set -euo pipefail
+          result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
+          if [ -n "$UI_SHARD" ]; then
+            TEST_TARGET="$(python3 Scripts/ui-test-shards.py --shard "$UI_SHARD" --count 4)"
+          fi
+          test_selectors=()
+          while IFS= read -r selector; do
+            if [ -n "$selector" ]; then
+              test_selectors+=("-only-testing:$selector")
+            fi
+          done <<< "$TEST_TARGET"
+          set +e
+          python3 Scripts/build-cache.py run -- xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "$TEST_DESTINATION" \
+            -destination-timeout 120 \
+            -resultBundlePath "$result_bundle_path" \
+            -parallel-testing-enabled NO \
+            "${test_selectors[@]}" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 300 \
+            -maximum-test-execution-time-allowance 600 \
+            -enableCodeCoverage YES \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test 2>&1 | tee "$RUNNER_TEMP/bili-tests.log" | \
+            awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|Fatal error:|Restarting after unexpected exit|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
+          test_status=${PIPESTATUS[0]}
+          set -e
+          if [ -d "$result_bundle_path" ]; then
+            echo "has_results=true" >> "$GITHUB_OUTPUT"
+            if xcrun xccov view --report "$result_bundle_path" > "$RUNNER_TEMP/coverage.txt"; then
+              echo "has_coverage=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          exit "$test_status"
+
+      - name: Export readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/readable-tests"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/bili-tests.xcresult" > "$RUNNER_TEMP/readable-tests/summary.json"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/attachments" || true
+          xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
+
+      - name: Upload readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-test-readable-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readable-tests
+          if-no-files-found: ignore
+
+      - name: Upload photo preflight diagnostics
+        if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: photo-preflight-${{ inputs.suite }}
+          path: |
+            ${{ runner.temp }}/photo-preflight.log
+            ${{ runner.temp }}/photo-preflight.xcresult
+            ${{ runner.temp }}/photo-media-import.log
+            ${{ runner.temp }}/photo-simulator-inventory.json
+          if-no-files-found: ignore
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-coverage-${{ inputs.suite }}
+          path: ${{ runner.temp }}/coverage.txt
+          if-no-files-found: error
+
+      - name: Upload test result bundle
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-results-${{ inputs.suite }}
+          path: ${{ runner.temp }}/bili-tests.xcresult
+          if-no-files-found: error
+
+      - name: Upload build and test log
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-log-${{ inputs.suite }}
+          path: ${{ runner.temp }}/bili-tests.log
+          if-no-files-found: warn
+
+      - name: Require successful photo fixture preparation
+        if: ${{ !cancelled() && steps.photo_fixture.outcome == 'failure' }}
+        run: |
+          echo "Photo fixture preparation failed; complete UI results were retained above."
+          exit 1
