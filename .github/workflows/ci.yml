@@ -29,8 +29,6 @@ jobs:
         include:
           - suite: unit
             test_target: biliTests
-          - suite: ui
-            test_target: biliUITests
           - suite: interaction-regression
             test_target: |
               biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
@@ -38,6 +36,14 @@ jobs:
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
               biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
+          - suite: ui-1
+            ui_shard: 1
+          - suite: ui-2
+            ui_shard: 2
+          - suite: ui-3
+            ui_shard: 3
+          - suite: ui-4
+            ui_shard: 4
 
     steps:
       - name: Checkout
@@ -86,9 +92,13 @@ jobs:
         env:
           TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
           TEST_TARGET: ${{ matrix.test_target }}
+          UI_SHARD: ${{ matrix.ui_shard }}
         run: |
           set -euo pipefail
           result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
+          if [ -n "$UI_SHARD" ]; then
+            TEST_TARGET="$(python3 Scripts/ui-test-shards.py --shard "$UI_SHARD" --count 4)"
+          fi
           test_selectors=()
           while IFS= read -r selector; do
             if [ -n "$selector" ]; then

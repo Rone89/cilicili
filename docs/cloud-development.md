@@ -1,10 +1,14 @@
 # Cloud development checks
 
 Pull requests and main pushes use one `iOS CI` workflow. It runs three main independent
-checks: all `biliTests` unit tests, all `biliUITests` UI tests, and an unsigned
+checks: all `biliTests` unit tests, all `biliUITests` UI tests across four shards, and an unsigned
 device Release build. The two test targets run on separate disposable runners
 with matrix fail-fast disabled, so one failure cannot cancel the other target.
-Both test targets are still required for a complete pass. A separate focused
+The unit target and all four UI shards are required for a complete pass.
+`Scripts/ui-test-shards.py` discovers every XCTestCase class containing test
+methods, then balances complete classes by method count. It fails on unsupported
+class declarations rather than silently omitting tests. Shards use independent
+runners and result artifacts; tests remain serial inside each simulator. A separate focused
 `interaction-regression` matrix entry gives earlier feedback for dynamic tab
 reselection and search dismissal; it does not replace the complete UI target.
 
@@ -30,7 +34,7 @@ Changed-file Swift formatting remains advisory, as before.
 
 Each test check uploads its raw log, an xcresult when produced, and a coverage
 report only when xccov successfully generates one. Artifact names end in `unit`
-or `ui`; coverage is reported separately, not as an aggregated project result.
+or `ui-1` through `ui-4`; coverage is reported separately, not as an aggregated project result.
 Environment failures do not produce a second failure for a missing artifact.
 Execution remains serial within each destination to protect UI fixture state.
 XCTest timeouts use a 300-second default and a 600-second maximum per test, so
