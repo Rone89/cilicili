@@ -181,6 +181,7 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
 
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = VideoDetailEdgeEffectScrollView()
+        scrollView.accessibilityElementsHidden = !isActiveContent
         scrollView.alwaysBounceVertical = true
         scrollView.showsVerticalScrollIndicator = false
         scrollView.showsHorizontalScrollIndicator = false
@@ -215,6 +216,9 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
     }
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Opacity/accessibilityHidden on the SwiftUI wrapper does not reliably
+        // remove a nested UIHostingController's UIKit subtree from VoiceOver.
+        scrollView.accessibilityElementsHidden = !isActiveContent
         (scrollView as? VideoDetailEdgeEffectScrollView)?.configureBottomEdgeEffect(
             enabled: bottomEdgeBlurEnabled, isActiveContent: isActiveContent
         )

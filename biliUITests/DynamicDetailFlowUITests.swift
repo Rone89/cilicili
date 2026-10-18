@@ -66,6 +66,13 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertEqual(editor.value as? String, "native\u{FFFC}")
         deleteButton.tap()
         XCTAssertEqual(editor.value as? String, "native")
+        emoteButton.tap()
+        let systemKeyboard = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in !emotePicker.exists }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [systemKeyboard], timeout: 5), .completed)
+        editor.typeText(" typing")
+        XCTAssertEqual(editor.value as? String, "native typing")
     }
 
     @MainActor

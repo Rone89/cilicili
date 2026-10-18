@@ -257,6 +257,9 @@ final class RootTabScrollUITests: XCTestCase {
         if !app.tabBars.buttons[tab].exists { app.tabBars.buttons.firstMatch.tap() }
         XCTAssertTrue(app.tabBars.buttons[tab].waitForExistence(timeout: 3))
         if !app.tabBars.buttons[tab].isSelected { app.tabBars.buttons[tab].tap() }
+        if tab == "直播" {
+            XCTAssertTrue(app.staticTexts["直播内容 1"].waitForExistence(timeout: 10))
+        }
     }
 
     private func mainScroll(in app: XCUIApplication) -> XCUIElement {

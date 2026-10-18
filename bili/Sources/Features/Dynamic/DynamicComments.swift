@@ -9,7 +9,7 @@ struct DynamicCommentsSheet: View {
     @StateObject private var runtimeSettings = DynamicCommentsRuntimeSettingsStore()
     @State private var replySheetComment: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
 
     init(item: DynamicFeedItem, api: BiliAPIClient) {
         self.item = item
@@ -93,10 +93,7 @@ struct DynamicCommentsSheet: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 
     private var submitReplyAction: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void {

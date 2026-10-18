@@ -14,7 +14,7 @@ struct CommentRepliesSheet: View {
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
     @State private var didPresentInitialReply = false
 
     init(
@@ -107,10 +107,7 @@ struct CommentRepliesSheet: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 
     private var replyIDs: [Int] {

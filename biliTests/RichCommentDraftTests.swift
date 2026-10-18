@@ -5,6 +5,37 @@ import XCTest
 
 @MainActor
 final class RichCommentDraftTests: XCTestCase {
+    func testBindingsCapturedBeforeHostRefreshReadTheCurrentSharedDraft() {
+        let store = RichCommentDraftStore()
+        let parentBinding = store.binding(for: .dynamic)
+        let olderHostBinding = store.binding(for: .dynamic)
+        parentBinding.wrappedValue = RichCommentDraft(elements: [.text("n")])
+        let oldRender = olderHostBinding.wrappedValue
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: olderHostBinding, onFocusChange: { _ in }, onHeightChange: { _ in }
+        )
+        let editor = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: oldRender, to: editor, emotes: [])
+        editor.text = "native"
+        editor.selectedRange = NSRange(location: 6, length: 0)
+        coordinator.textViewDidChange(editor)
+        coordinator.updateDraftBinding(parentBinding)
+        coordinator.applyIfNeeded(draft: oldRender, to: editor, emotes: [])
+        XCTAssertEqual(editor.text, "native")
+        XCTAssertEqual(olderHostBinding.wrappedValue.serializedMessage, "native")
+        XCTAssertEqual(store.binding(for: .dynamic).wrappedValue.serializedMessage, "native")
+    }
+
+    func testSharedStoreKeepsReplyTargetsSeparateAcrossHostRecreation() {
+        let store = RichCommentDraftStore()
+        let reply = DynamicCommentComposerTarget(rootID: 42, parentID: 43, authorName: "reply")
+        store.binding(for: .dynamic).wrappedValue = RichCommentDraft(elements: [.text("root draft")])
+        store.binding(for: reply).wrappedValue = RichCommentDraft(elements: [.text("reply draft")], replyTarget: reply)
+        XCTAssertEqual(store.binding(for: .dynamic).wrappedValue.serializedMessage, "root draft")
+        XCTAssertEqual(store.binding(for: reply).wrappedValue.serializedMessage, "reply draft")
+        XCTAssertEqual(store.binding(for: reply).wrappedValue.replyTarget, reply)
+    }
+
     func testSelectionCallbackBeforeTextChangeCannotRollBackNativeBuffer() {
         var draft = RichCommentDraft(elements: [.text("n")])
         let coordinator = RichCommentTextView.Coordinator(
@@ -72,19 +103,19 @@ final class RichCommentDraftTests: XCTestCase {
         XCTAssertEqual(second.serializedMessage, "new reply")
     }
 
-    func testDeferredDraftRecoveryDoesNotOverwriteNewTyping() async {
-        await verifyDeferredRecovery(replacement: "native", expected: "native")
+    func testDraftClearDoesNotOverwriteSubsequentTyping() async {
+        await verifyClearThenNativeEdit(replacement: "native", expected: "native")
     }
 
-    func testDeferredDraftRecoveryDoesNotRestoreDeletedText() async {
-        await verifyDeferredRecovery(replacement: "", expected: "")
+    func testDraftClearDoesNotRestoreDeletedText() async {
+        await verifyClearThenNativeEdit(replacement: "", expected: "")
     }
 
-    func testDeferredDraftRecoveryRestoresUnchangedSnapshot() async {
-        await verifyDeferredRecovery(replacement: nil, expected: "na")
+    func testExplicitDraftClearDoesNotRestorePreviouslyRenderedText() async {
+        await verifyClearThenNativeEdit(replacement: nil, expected: "")
     }
 
-    private func verifyDeferredRecovery(replacement: String?, expected: String) async {
+    private func verifyClearThenNativeEdit(replacement: String?, expected: String) async {
         var draft = RichCommentDraft(elements: [.text("na")])
         let coordinator = RichCommentTextView.Coordinator(
             draft: Binding(get: { draft }, set: { draft = $0 }),
@@ -93,7 +124,7 @@ final class RichCommentDraftTests: XCTestCase {
         )
         let textView = RichCommentUIKitTextView()
         coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
-        // Reproduce an empty SwiftUI snapshot arriving after UIKit rendered text.
+        // Explicitly clearing the model must clear UIKit and stay cleared.
         draft = RichCommentDraft()
         coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
         if let replacement {
@@ -101,7 +132,7 @@ final class RichCommentDraftTests: XCTestCase {
             textView.selectedRange = NSRange(location: replacement.utf16.count, length: 0)
             coordinator.textViewDidChange(textView)
         }
-        // Drain the same queue as recovery, without relying on elapsed time.
+        // Check the next main-queue turn without relying on elapsed time.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async { continuation.resume() }
         }

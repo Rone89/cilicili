@@ -8,7 +8,7 @@ struct DynamicCommentRepliesSheet: View {
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var dialogReply: Comment?
     @State private var composerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
 
     var body: some View {
         CommentOwnerProfileNavigationContainer {
@@ -74,10 +74,7 @@ struct DynamicCommentRepliesSheet: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 }
 
@@ -89,7 +86,7 @@ private struct DynamicCommentDialogSheet: View {
     let api: BiliAPIClient
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     @State private var composerTarget: DynamicCommentComposerTarget?
-    @State private var richCommentDrafts = [String: RichCommentDraft]()
+    @StateObject private var richCommentDrafts = RichCommentDraftStore()
 
     var body: some View {
         CommentOwnerProfileNavigationContainer {
@@ -142,9 +139,6 @@ private struct DynamicCommentDialogSheet: View {
     }
 
     private func richCommentDraftBinding(for target: DynamicCommentComposerTarget) -> Binding<RichCommentDraft> {
-        Binding(
-            get: { richCommentDrafts[target.id] ?? RichCommentDraft(replyTarget: target) },
-            set: { richCommentDrafts[target.id] = $0 }
-        )
+        richCommentDrafts.binding(for: target)
     }
 }
