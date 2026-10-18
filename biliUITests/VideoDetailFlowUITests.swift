@@ -36,7 +36,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(element("ui.videoDetail.ready", in: app).waitForExistence(timeout: 5))
 
         app.buttons["ui.videoDetail.danmakuSettings"].tap()
-        let areaSlider = app.sliders["ui.videoDetail.sheet.danmakuSettings.displayArea"]
+        let areaSlider = app.sliders["DanmakuKit 弹幕显示区域"]
         XCTAssertTrue(areaSlider.waitForExistence(timeout: 2))
         areaSlider.adjust(toNormalizedSliderPosition: 1.0)
         app.buttons["ui.videoDetail.sheet.danmakuSettings.done"].tap()

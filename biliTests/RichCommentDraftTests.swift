@@ -5,6 +5,43 @@ import XCTest
 
 @MainActor
 final class RichCommentDraftTests: XCTestCase {
+    func testDeferredDraftRecoveryDoesNotOverwriteNewTyping() async {
+        await verifyDeferredRecovery(replacement: "native", expected: "native")
+    }
+
+    func testDeferredDraftRecoveryDoesNotRestoreDeletedText() async {
+        await verifyDeferredRecovery(replacement: "", expected: "")
+    }
+
+    func testDeferredDraftRecoveryRestoresUnchangedSnapshot() async {
+        await verifyDeferredRecovery(replacement: nil, expected: "na")
+    }
+
+    private func verifyDeferredRecovery(replacement: String?, expected: String) async {
+        var draft = RichCommentDraft(elements: [.text("na")])
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: Binding(get: { draft }, set: { draft = $0 }),
+            onFocusChange: { _ in },
+            onHeightChange: { _ in }
+        )
+        let textView = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
+        // Reproduce an empty SwiftUI snapshot arriving after UIKit rendered text.
+        draft = RichCommentDraft()
+        coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
+        if let replacement {
+            textView.text = replacement
+            textView.selectedRange = NSRange(location: replacement.utf16.count, length: 0)
+            coordinator.textViewDidChange(textView)
+        }
+        // Drain the same queue as recovery, without relying on elapsed time.
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(draft.serializedMessage, expected)
+        XCTAssertEqual(textView.text, expected)
+    }
+
     func testTextViewDelegateAllowsNativeIMEReplacementAndSyncsCommittedChineseText() {
         var draft = RichCommentDraft()
         let coordinator = RichCommentTextView.Coordinator(

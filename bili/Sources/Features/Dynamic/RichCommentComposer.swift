@@ -455,8 +455,13 @@ struct RichCommentTextView: UIViewRepresentable {
                 effectiveDraft.elements = renderedElements
                 effectiveDraft.selection = RichCommentSelection(textView.selectedRange)
                 let recoveredDraft = effectiveDraft
+                let expectedDraft = draft
                 DispatchQueue.main.async { [weak self] in
-                    guard let self, self.draft != recoveredDraft else { return }
+                    // A newer keystroke, deletion or attachment edit wins over
+                    // recovery scheduled from an older SwiftUI snapshot.
+                    guard let self, self.draft == expectedDraft,
+                          self.renderedElements == recoveredDraft.elements,
+                          self.draft != recoveredDraft else { return }
                     self.draft = recoveredDraft
                 }
             }
