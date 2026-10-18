@@ -185,6 +185,14 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-fixture", "libraryManagement"] + extra
         app.launch()
+        let ready: XCUIElement
+        if extra.contains("--library-logged-out") {
+            ready = app.navigationBars.firstMatch
+        } else {
+            ready = extra.contains("--library-favorites")
+                ? app.staticTexts["来源收藏夹"] : app.buttons["library.video.BVfixture1"]
+        }
+        XCTAssertTrue(ready.waitForExistence(timeout: 15), app.debugDescription)
         return app
     }
 }
