@@ -70,6 +70,10 @@ final class VideoDetailRotationBridgeViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func updateSelectedContentTab(_ binding: Binding<VideoDetailContentTab>) {
+        contentController.updateSelectedContentTab(binding)
+    }
+
     func updateNavigationHistory(_ history: NavigationHistoryContext?) {
         contentController.contentModel.updateNavigationHistory(history)
     }

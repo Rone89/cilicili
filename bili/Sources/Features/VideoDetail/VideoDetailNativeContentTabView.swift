@@ -193,6 +193,8 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
         hostingController.sizingOptions = .intrinsicContentSize
         hostingController.safeAreaRegions = []
         hostingController.view.backgroundColor = .clear
+        hostingController.view.isHidden = !isActiveContent
+        hostingController.view.accessibilityElementsHidden = !isActiveContent
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(hostingController.view)
         NSLayoutConstraint.activate([
@@ -222,6 +224,10 @@ private struct VideoDetailInteractiveScrollHost<Content: View>: UIViewRepresenta
         (scrollView as? VideoDetailEdgeEffectScrollView)?.configureBottomEdgeEffect(
             enabled: bottomEdgeBlurEnabled, isActiveContent: isActiveContent
         )
+        // This hosting view has its own accessibility root. Hide that root as
+        // well as the scroll view while retaining its layout and scroll offset.
+        context.coordinator.hostingController?.view.isHidden = !isActiveContent
+        context.coordinator.hostingController?.view.accessibilityElementsHidden = !isActiveContent
         let contentChanged = context.coordinator.contentConfiguration != contentConfiguration
         if contentChanged {
             context.coordinator.hostingController?.rootView = scrollContent

@@ -12,7 +12,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
         ]
         app.launch()
 
-        app.staticTexts["图文动态测试内容"].tap()
+        let detail = app.buttons["dynamic.feed.detailTapArea.123456789.author"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 10))
+        detail.tap()
         let comment = app.buttons["dynamic.detail.composer.comment"]
         XCTAssertTrue(comment.waitForExistence(timeout: 5))
         comment.tap()
@@ -84,7 +86,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
             "--ui-test-root-tab-shell"
         ]
         app.launch()
-        app.staticTexts["图文动态测试内容"].tap()
+        let detail = app.buttons["dynamic.feed.detailTapArea.123456789.author"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 10))
+        detail.tap()
         let comment = app.buttons["dynamic.detail.composer.comment"]
         XCTAssertTrue(comment.waitForExistence(timeout: 5))
         comment.tap()

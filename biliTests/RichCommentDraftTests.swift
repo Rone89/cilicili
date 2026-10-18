@@ -103,6 +103,26 @@ final class RichCommentDraftTests: XCTestCase {
         XCTAssertEqual(second.serializedMessage, "new reply")
     }
 
+    func testEmotePanelDeleteClearsTheFinalComposedCharacterInModelAndEditor() {
+        var draft = RichCommentDraft(elements: [.text("👨‍👩‍👧‍👦")])
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: Binding(get: { draft }, set: { draft = $0 }),
+            onFocusChange: { _ in },
+            onHeightChange: { _ in }
+        )
+        let textView = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
+        textView.selectedRange = NSRange(location: textView.text.utf16.count, length: 0)
+
+        coordinator.deleteBackward(in: textView)
+
+        XCTAssertEqual(draft.serializedMessage, "")
+        XCTAssertEqual(textView.text, "")
+        XCTAssertEqual(textView.selectedRange, NSRange(location: 0, length: 0))
+        coordinator.deleteBackward(in: textView)
+        XCTAssertEqual(textView.text, "")
+    }
+
     func testDraftClearDoesNotOverwriteSubsequentTyping() async {
         await verifyClearThenNativeEdit(replacement: "native", expected: "native")
     }
