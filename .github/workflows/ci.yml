@@ -36,6 +36,7 @@ jobs:
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
               biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
+              biliUITests/DynamicDetailFlowUITests/testRichCommentComposerUsesNativeTextEditorAndEmoteInputView
           - suite: ui-1
             ui_shard: 1
           - suite: ui-2
@@ -150,6 +151,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/readable-tests"
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/bili-tests.xcresult" > "$RUNNER_TEMP/readable-tests/summary.json"
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/attachments" || true
           xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
 
       - name: Upload readable failure diagnostics

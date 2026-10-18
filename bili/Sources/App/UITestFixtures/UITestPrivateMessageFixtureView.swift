@@ -19,7 +19,7 @@ struct UITestPrivateMessageFixtureView: View {
         accessibilitySize = args.contains("--private-message-accessibility")
         dark = args.contains("--private-message-dark")
         let name = "PrivateMessageFixture.\(UUID().uuidString)"
-        let session = SessionStore(keychain: KeychainStore(service: name))
+        let session = SessionStore(keychain: KeychainStore.inMemory(service: name))
         try? session.saveLoginCookies(["SESSDATA": "fixture", "bili_jct": "fixture", "DedeUserID": String(PrivateMessageFixtureState.senderID)], credentialKind: .web)
         let library = LibraryStore(userDefaults: UserDefaults(suiteName: name)!)
         let config = URLSessionConfiguration.ephemeral

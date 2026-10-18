@@ -10,6 +10,7 @@ nonisolated enum LoginCredentialKind: String, Codable, Sendable {
 
 @MainActor
 final class SessionStore: ObservableObject {
+    @Published private(set) var credentialStorageError: String? = nil
     @Published private(set) var sessdata: String?
     @Published private(set) var accessKey: String?
     @Published private(set) var loginCredentialKind: LoginCredentialKind
@@ -44,6 +45,7 @@ final class SessionStore: ObservableObject {
         let keychain = keychain ?? KeychainStore()
         self.keychain = keychain
 
+        let initialFailureCount = keychain.failureCount
         let storedRegistry = Self.loadRegistry(from: keychain, key: accountRegistryKey)
         var loadedCredentials = [Int: StoredBiliAccountCredentials]()
         var loadedAccounts = storedRegistry?.accounts ?? []
@@ -117,10 +119,12 @@ final class SessionStore: ObservableObject {
         self.loginCredentialKind = mainCredentials?.credentialKind ?? .unknown
         self.user = mainSummary.map(Self.navUserInfo)
 
-        if didMigrateLegacyAccount, let resolvedMainMID, let credentials = loadedCredentials[resolvedMainMID] {
+        // A temporarily unreadable account must never be persisted as a deletion.
+        let credentialLoadFailed = keychain.failureCount != initialFailureCount
+        if !credentialLoadFailed, didMigrateLegacyAccount, let resolvedMainMID, let credentials = loadedCredentials[resolvedMainMID] {
             try? persistAccountCredentials(credentials, for: resolvedMainMID)
             try? persistRegistry()
-        } else if storedRegistry != nil,
+        } else if !credentialLoadFailed, storedRegistry != nil,
                   storedRegistry?.mainAccountMID != resolvedMainMID
                     || storedRegistry?.playbackAccountMID != resolvedPlaybackMID
                     || storedRegistry?.dynamicFeedAccountMID != resolvedDynamicFeedMID
@@ -128,6 +132,32 @@ final class SessionStore: ObservableObject {
                     || storedRegistry?.accounts != loadedAccounts {
             try? persistRegistry()
         }
+        self.credentialStorageError = keychain.failureCount != initialFailureCount
+            ? keychain.lastFailure?.localizedDescription : nil
+    }
+
+    func retryCredentialStorage() {
+        let restored = SessionStore(keychain: keychain)
+        credentialStorageError = restored.credentialStorageError
+        guard credentialStorageError == nil else { return }
+        accounts = restored.accounts
+        credentialsByMID = restored.credentialsByMID
+        mainAccountMID = restored.mainAccountMID
+        playbackAccountMID = restored.playbackAccountMID
+        dynamicFeedAccountMID = restored.dynamicFeedAccountMID
+        interactionAccountMID = restored.interactionAccountMID
+        historyAccountPolicy = restored.historyAccountPolicy
+        loginCookieHeader = restored.loginCookieHeader
+        sessdata = restored.sessdata
+        accessKey = restored.accessKey
+        loginCredentialKind = restored.loginCredentialKind
+        user = restored.user
+        playbackCredentialVersion &+= 1
+        playbackAccountCredentialVersion &+= 1
+        dynamicFeedAccountCredentialVersion &+= 1
+        interactionAccountCredentialVersion &+= 1
+        historyAccountCredentialVersion &+= 1
+        accountConfigurationVersion &+= 1
     }
 
     var isLoggedIn: Bool {
@@ -404,6 +434,7 @@ final class SessionStore: ObservableObject {
     }
 
     func logout() throws {
+        guard credentialStorageError == nil else { throw KeychainError.recoveryRequired }
         for mid in credentialsByMID.keys {
             try deleteAccountCredentials(for: mid)
         }
@@ -446,6 +477,7 @@ final class SessionStore: ObservableObject {
         credentialKind: LoginCredentialKind,
         makeMain: Bool
     ) throws -> BiliAccountSummary {
+        guard credentialStorageError == nil else { throw KeychainError.recoveryRequired }
         let incomingMID = Self.nonEmpty(cookies["DedeUserID"]).flatMap(Int.init)
             ?? mainAccountMID
         guard let mid = incomingMID, mid > 0 else {
@@ -479,8 +511,8 @@ final class SessionStore: ObservableObject {
             accessKey: incomingAccessKey ?? (replacesSession ? nil : existing?.accessKey),
             credentialKind: credentialKind
         )
-        credentialsByMID[mid] = credentials
         try persistAccountCredentials(credentials, for: mid)
+        credentialsByMID[mid] = credentials
 
         if let index = accounts.firstIndex(where: { $0.mid == mid }) {
             accounts[index].credentialKind = credentialKind
@@ -642,6 +674,7 @@ final class SessionStore: ObservableObject {
     }
 
     private func persistRegistry() throws {
+        guard credentialStorageError == nil else { throw KeychainError.recoveryRequired }
         let registry = StoredBiliAccountRegistry(
             accounts: accounts,
             mainAccountMID: mainAccountMID,

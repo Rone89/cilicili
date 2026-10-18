@@ -453,6 +453,11 @@ struct RichCommentTextView: UIViewRepresentable {
             // UIKit can commit another keystroke after SwiftUI captured this
             // render value. Only the current binding may replace editor text.
             guard draft == self.draft, textView.markedTextRange == nil else { return }
+            // UITextView can notify a selection/layout change before didChange
+            // publishes the new characters. An unchanged model is not an external
+            // edit and must not replace that in-flight native buffer.
+            if draft.elements == renderedElements,
+               textView.text != draft.displayText { return }
             let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
             var effectiveDraft = draft
             let renderedText = renderedElements.map { $0.displayString }.joined()
@@ -537,7 +542,9 @@ struct RichCommentTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            guard !isApplyingDraft, textView.markedTextRange == nil else { return }
+            guard !isApplyingDraft, textView.markedTextRange == nil,
+                  textView.text == renderedElements.map({ $0.displayString }).joined()
+            else { return }
             let selection = RichCommentSelection(textView.selectedRange)
             if draft.selection != selection {
                 draft.selection = selection

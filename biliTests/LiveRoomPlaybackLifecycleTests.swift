@@ -109,7 +109,7 @@ final class LiveRoomPlaybackLifecycleTests: XCTestCase {
 
     private func makeViewModel(defaults: UserDefaults, keychainService: String) -> LiveRoomViewModel {
         let libraryStore = LibraryStore(userDefaults: defaults)
-        let sessionStore = SessionStore(keychain: KeychainStore(service: keychainService))
+        let sessionStore = SessionStore(keychain: KeychainStore.inMemory(service: keychainService))
         let api = BiliAPIClient(
             session: URLSession(configuration: .ephemeral),
             sessionStore: sessionStore,

@@ -570,7 +570,7 @@ final class VideoListenModeTests: XCTestCase {
         let libraryStore = LibraryStore(userDefaults: defaults)
         libraryStore.setVideoDetailAutoplayEnabled(false)
         let sessionStore = SessionStore(
-            keychain: KeychainStore(service: "cc.bili.tests.listen.\(UUID().uuidString)")
+            keychain: KeychainStore.inMemory(service: "cc.bili.tests.listen.\(UUID().uuidString)")
         )
         let api = BiliAPIClient(
             session: URLSession(configuration: .ephemeral),
@@ -885,7 +885,7 @@ final class VideoListenModeTests: XCTestCase {
         playbackSessionStore: VideoListenPlaybackSessionStore
     ) -> VideoDetailViewModel {
         let sessionStore = SessionStore(
-            keychain: KeychainStore(service: "cc.bili.tests.listen.\(UUID().uuidString)")
+            keychain: KeychainStore.inMemory(service: "cc.bili.tests.listen.\(UUID().uuidString)")
         )
         let api = BiliAPIClient(
             session: URLSession(configuration: .ephemeral),

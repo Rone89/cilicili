@@ -345,7 +345,7 @@ final class ResourceLoadingServicesTests: XCTestCase {
 
     @MainActor
     func testSessionStorePreservesCurrentSESSDATAWhenCookiesArePartiallyUpdated() throws {
-        let keychain = KeychainStore(service: "cc.bili.tests.session.\(UUID().uuidString)")
+        let keychain = KeychainStore.inMemory(service: "cc.bili.tests.session.\(UUID().uuidString)")
         let store = SessionStore(keychain: keychain)
         defer { try? store.logout() }
 
@@ -370,7 +370,7 @@ final class ResourceLoadingServicesTests: XCTestCase {
 
     @MainActor
     func testSessionStoreDropsOldAccountCookiesWhenSESSDATAChanges() throws {
-        let keychain = KeychainStore(service: "cc.bili.tests.session.\(UUID().uuidString)")
+        let keychain = KeychainStore.inMemory(service: "cc.bili.tests.session.\(UUID().uuidString)")
         let store = SessionStore(keychain: keychain)
         defer { try? store.logout() }
 

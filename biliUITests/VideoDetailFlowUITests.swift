@@ -382,6 +382,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let picker = element("video.detail.toolbar-picker", in: app).firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
 
+        revealPlayerControls(in: app)
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
         if !fullscreen.isHittable {
@@ -457,10 +458,11 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         let qualityTitle = app.navigationBars["清晰度"]
         XCTAssertTrue(qualityTitle.waitForExistence(timeout: 5))
-        let choices = app.buttons
-        XCTAssertGreaterThan(choices.count, 0)
-        choices.element(boundBy: 0).tap()
+        let choice = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "720P")).firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 5))
+        choice.tap()
 
+        revealPlayerControls(in: app)
         XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
     }
@@ -476,12 +478,14 @@ final class VideoDetailFlowUITests: XCTestCase {
         settings.tap()
 
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
+        revealPlayerControls(in: app)
         XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].exists)
     }
 
     @MainActor
     func testVideoDetailRapidRotationPublishesStableIdentityDiagnostics() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
@@ -509,6 +513,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testVideoDetailRotationDuringInitialBufferingRecoversPlaybackSurface() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
@@ -520,6 +525,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         if !app.buttons["ui.player.fullscreen.toggle"].exists {
             app.buttons["ui.player.surface"].tap()
         }
+        revealPlayerControls(in: app)
         XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
     }
 
@@ -546,6 +552,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer() {
         let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
         let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
@@ -602,23 +609,14 @@ final class VideoDetailFlowUITests: XCTestCase {
         let playingPlayerFrame = playerFrame.frame
         let playingHeaderFrame = commentHeader.frame
 
-        let surface = app.buttons["ui.player.surface"].firstMatch
-        XCTAssertTrue(surface.waitForExistence(timeout: 5))
+        revealPlayerControls(in: app)
         if !autoplayEnabled {
             let initialPlayButton = app.buttons["播放"].firstMatch
-            if initialPlayButton.isHittable {
-                initialPlayButton.tap()
-            } else {
-                surface.tap()
-            }
+            XCTAssertTrue(initialPlayButton.waitForExistence(timeout: 5))
+            initialPlayButton.tap()
             XCTAssertEqual(commentHeader.frame.minY, playingHeaderFrame.minY, accuracy: 1)
-        } else {
-            surface.tap()
         }
         let pauseButton = app.buttons["暂停"].firstMatch
-        if !autoplayEnabled && !pauseButton.isHittable {
-            surface.tap()
-        }
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 10))
         pauseButton.tap()
 
@@ -641,10 +639,22 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertEqual(pausedPlayerFrame.height, playingPlayerFrame.height, accuracy: 1)
         XCTAssertEqual(pausedHeaderFrame.minY, playingHeaderFrame.minY, accuracy: 1)
 
+        revealPlayerControls(in: app)
+        XCTAssertTrue(playButton.waitForExistence(timeout: 5))
         playButton.tap()
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 5))
         XCTAssertEqual(commentHeader.frame.minY, playingHeaderFrame.minY, accuracy: 1)
         XCTAssertEqual(playerFrame.frame.height, playingPlayerFrame.height, accuracy: 1)
+    }
+
+    @MainActor
+    private func revealPlayerControls(in app: XCUIApplication) {
+        let control = app.buttons["ui.player.fullscreen.toggle"]
+        if control.exists && control.isHittable { return }
+        let surface = app.buttons["ui.player.surface"].firstMatch
+        XCTAssertTrue(surface.waitForExistence(timeout: 5))
+        surface.tap()
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
     }
 
     @MainActor

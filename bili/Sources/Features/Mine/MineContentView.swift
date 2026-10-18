@@ -37,6 +37,13 @@ struct MineContentView: View {
 
     @ViewBuilder
     private var normalSections: some View {
+        if let error = sessionStore.credentialStorageError {
+            Section("账号读取暂不可用") {
+                Text(error).foregroundStyle(.secondary)
+                Button("重试读取账号") { sessionStore.retryCredentialStorage() }
+                    .accessibilityIdentifier("mine.account.retryStorage")
+            }
+        }
         MineAccountSection(
             viewModel: viewModel,
             sessionStore: sessionStore,

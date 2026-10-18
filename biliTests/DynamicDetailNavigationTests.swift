@@ -212,7 +212,7 @@ final class DynamicDetailNavigationTests: XCTestCase {
             seedVideo: VideoItem(bvid: "BV-replies", aid: 456, title: "Replies", pic: nil, desc: nil, duration: 60, pubdate: nil, owner: nil, stat: nil, cid: 11, pages: nil, dimension: nil),
             api: try makeCommentsAPI(),
             libraryStore: LibraryStore(userDefaults: UserDefaults(suiteName: service)!),
-            sessionStore: SessionStore(keychain: KeychainStore(service: service)),
+            sessionStore: SessionStore(keychain: KeychainStore.inMemory(service: service)),
             sponsorBlockService: SponsorBlockService(session: URLSession(configuration: .ephemeral))
         )
         await viewModel.loadReplies(for: root)
@@ -389,7 +389,7 @@ final class DynamicDetailNavigationTests: XCTestCase {
     @MainActor
     private func makeAPI() throws -> BiliAPIClient {
         let service = "DynamicDetailNavigationTests.\(UUID().uuidString)"
-        let keychain = KeychainStore(service: service)
+        let keychain = KeychainStore.inMemory(service: service)
         let sessionStore = SessionStore(keychain: keychain)
         let libraryStore = LibraryStore(userDefaults: UserDefaults(suiteName: service)!)
 
@@ -410,7 +410,7 @@ final class DynamicDetailNavigationTests: XCTestCase {
     @MainActor
     private func makeCommentsAPI(defaults: UserDefaults? = nil) throws -> BiliAPIClient {
         let service = "DynamicCommentsViewModelTests.\(UUID().uuidString)"
-        let keychain = KeychainStore(service: service)
+        let keychain = KeychainStore.inMemory(service: service)
         let sessionStore = SessionStore(keychain: keychain)
         let libraryStore = LibraryStore(userDefaults: defaults ?? UserDefaults(suiteName: service)!)
 
