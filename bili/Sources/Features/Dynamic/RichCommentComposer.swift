@@ -402,6 +402,7 @@ struct RichCommentTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: RichCommentUIKitTextView, context: Context) {
+        context.coordinator.updateDraftBinding($draft)
         context.coordinator.onFocusChange = onFocusChange
         context.coordinator.onHeightChange = onHeightChange
         textView.onTap = onEditorTap
@@ -440,12 +441,18 @@ struct RichCommentTextView: UIViewRepresentable {
             imageTask?.cancel()
         }
 
+        func updateDraftBinding(_ binding: Binding<RichCommentDraft>) {
+            _draft = binding
+        }
+
         func applyIfNeeded(
             draft: RichCommentDraft,
             to textView: RichCommentUIKitTextView,
             emotes: [BiliInlineEmote]
         ) {
-            guard textView.markedTextRange == nil else { return }
+            // UIKit can commit another keystroke after SwiftUI captured this
+            // render value. Only the current binding may replace editor text.
+            guard draft == self.draft, textView.markedTextRange == nil else { return }
             let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
             var effectiveDraft = draft
             let renderedText = renderedElements.map { $0.displayString }.joined()
