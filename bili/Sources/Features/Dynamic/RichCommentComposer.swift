@@ -1,3 +1,4 @@
+import Combine
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -476,24 +477,7 @@ struct RichCommentTextView: UIViewRepresentable {
             if draft.elements == renderedElements,
                textView.text != draft.displayText { return }
             let font = textView.font ?? UIFont.preferredFont(forTextStyle: .body)
-            var effectiveDraft = draft
-            let renderedText = renderedElements.map { $0.displayString }.joined()
-            if draft.elements.isEmpty,
-               !renderedElements.isEmpty,
-               textView.text == renderedText {
-                effectiveDraft.elements = renderedElements
-                effectiveDraft.selection = RichCommentSelection(textView.selectedRange)
-                let recoveredDraft = effectiveDraft
-                let expectedDraft = draft
-                DispatchQueue.main.async { [weak self] in
-                    // A newer keystroke, deletion or attachment edit wins over
-                    // recovery scheduled from an older SwiftUI snapshot.
-                    guard let self, self.draft == expectedDraft,
-                          self.renderedElements == recoveredDraft.elements,
-                          self.draft != recoveredDraft else { return }
-                    self.draft = recoveredDraft
-                }
-            }
+            let effectiveDraft = draft
 
             let shouldReplaceText = renderedElements != effectiveDraft.elements
                 || textView.text != effectiveDraft.displayText

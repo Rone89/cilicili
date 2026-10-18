@@ -103,19 +103,19 @@ final class RichCommentDraftTests: XCTestCase {
         XCTAssertEqual(second.serializedMessage, "new reply")
     }
 
-    func testDeferredDraftRecoveryDoesNotOverwriteNewTyping() async {
-        await verifyDeferredRecovery(replacement: "native", expected: "native")
+    func testDraftClearDoesNotOverwriteSubsequentTyping() async {
+        await verifyClearThenNativeEdit(replacement: "native", expected: "native")
     }
 
-    func testDeferredDraftRecoveryDoesNotRestoreDeletedText() async {
-        await verifyDeferredRecovery(replacement: "", expected: "")
+    func testDraftClearDoesNotRestoreDeletedText() async {
+        await verifyClearThenNativeEdit(replacement: "", expected: "")
     }
 
-    func testDeferredDraftRecoveryRestoresUnchangedSnapshot() async {
-        await verifyDeferredRecovery(replacement: nil, expected: "na")
+    func testExplicitDraftClearDoesNotRestorePreviouslyRenderedText() async {
+        await verifyClearThenNativeEdit(replacement: nil, expected: "")
     }
 
-    private func verifyDeferredRecovery(replacement: String?, expected: String) async {
+    private func verifyClearThenNativeEdit(replacement: String?, expected: String) async {
         var draft = RichCommentDraft(elements: [.text("na")])
         let coordinator = RichCommentTextView.Coordinator(
             draft: Binding(get: { draft }, set: { draft = $0 }),
@@ -124,7 +124,7 @@ final class RichCommentDraftTests: XCTestCase {
         )
         let textView = RichCommentUIKitTextView()
         coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
-        // Reproduce an empty SwiftUI snapshot arriving after UIKit rendered text.
+        // Explicitly clearing the model must clear UIKit and stay cleared.
         draft = RichCommentDraft()
         coordinator.applyIfNeeded(draft: draft, to: textView, emotes: [])
         if let replacement {
@@ -132,7 +132,7 @@ final class RichCommentDraftTests: XCTestCase {
             textView.selectedRange = NSRange(location: replacement.utf16.count, length: 0)
             coordinator.textViewDidChange(textView)
         }
-        // Drain the same queue as recovery, without relying on elapsed time.
+        // Check the next main-queue turn without relying on elapsed time.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async { continuation.resume() }
         }
