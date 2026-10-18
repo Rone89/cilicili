@@ -2,6 +2,24 @@ import XCTest
 
 @MainActor
 final class SearchScrollRetentionUITests: XCTestCase {
+    func testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults() {
+        let app = launchFixture()
+        let search = app.textFields["navigation.search.field"]
+        let originalQuery = search.value as? String
+        for _ in 0..<2 {
+            search.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForExistence(timeout: 3))
+            // The side margin is content outside a result row and the toolbar.
+            app.scrollViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.1)).tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForNonExistence(timeout: 3))
+            XCTAssertEqual(search.value as? String, originalQuery)
+            XCTAssertTrue(app.staticTexts["结果 1"].exists)
+            XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
+        }
+    }
+
     func testCancelAfterSubmittedSearchRestoresHotSearches() {
         let app = launchFixture()
         let search = app.textFields["navigation.search.field"]

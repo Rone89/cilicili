@@ -34,7 +34,6 @@ struct DynamicFeedScrollContent: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
         .background(Color(.systemBackground))
-        .scrollsToTopOnRootTabReselection()
         .nativeTopScrollEdgeEffect()
         .task(id: DynamicFeedLoadIdentity(model: ObjectIdentifier(viewModel), isLoggedIn: isLoggedIn)) {
             if viewModel.feedKind != .all {

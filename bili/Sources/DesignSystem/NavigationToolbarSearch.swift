@@ -3,7 +3,7 @@ import SwiftUI
 /// An actual navigation-bar item; no UISearchController can move it into a drawer.
 private struct NavigationToolbarSearch: ViewModifier {
     @Binding var text: String
-    var isFocused: FocusState<Bool>.Binding
+    @FocusState.Binding var isFocused: Bool
     let prompt: String
     let hasBackButton: Bool
     let trailingButtonCount: Int
@@ -12,6 +12,12 @@ private struct NavigationToolbarSearch: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded {
+                // Dismiss editing without swallowing row/button actions or
+                // discarding the current query and loaded results.
+                isFocused = false
+            })
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _, width in
                 pageWidth = width
             }
@@ -19,10 +25,10 @@ private struct NavigationToolbarSearch: ViewModifier {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
                         inputField
-                        if isFocused.wrappedValue {
+                        if isFocused {
                             Button("取消") {
                                 text = ""
-                                isFocused.wrappedValue = false
+                                isFocused = false
                             }
                             .foregroundStyle(.primary)
                             .fixedSize()
@@ -34,7 +40,7 @@ private struct NavigationToolbarSearch: ViewModifier {
                 }
                 .sharedBackgroundVisibility(.hidden)
             }
-            .onDisappear { isFocused.wrappedValue = false }
+            .onDisappear { isFocused = false }
     }
 
     private var availableWidth: CGFloat {
@@ -52,7 +58,7 @@ private struct NavigationToolbarSearch: ViewModifier {
                 .accessibilityHidden(true)
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
-                .focused(isFocused)
+                .focused($isFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
