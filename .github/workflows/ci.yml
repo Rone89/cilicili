@@ -36,6 +36,7 @@ jobs:
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
               biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
+              biliUITests/DynamicDetailFlowUITests/testRichCommentComposerUsesNativeTextEditorAndEmoteInputView
           - suite: ui-1
             ui_shard: 1
           - suite: ui-2

@@ -5,6 +5,39 @@ import XCTest
 
 @MainActor
 final class RichCommentDraftTests: XCTestCase {
+    func testSelectionCallbackBeforeTextChangeCannotRollBackNativeBuffer() {
+        var draft = RichCommentDraft(elements: [.text("n")])
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: Binding(get: { draft }, set: { draft = $0 }),
+            onFocusChange: { _ in }, onHeightChange: { _ in }
+        )
+        let editor = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: draft, to: editor, emotes: [])
+        XCTAssertTrue(coordinator.textView(editor, shouldChangeTextIn: NSRange(location: 1, length: 0), replacementText: "ative"))
+        editor.text = "native"
+        editor.selectedRange = NSRange(location: 6, length: 0)
+        coordinator.textViewDidChangeSelection(editor)
+        coordinator.applyIfNeeded(draft: draft, to: editor, emotes: [])
+        XCTAssertEqual(editor.text, "native")
+        coordinator.textViewDidChange(editor)
+        XCTAssertEqual(draft.serializedMessage, "native")
+        XCTAssertEqual(draft.selection?.nsRange, NSRange(location: 6, length: 0))
+    }
+
+    func testExternalReplacementStillReplacesCommittedNativeText() {
+        var draft = RichCommentDraft(elements: [.text("native")])
+        let coordinator = RichCommentTextView.Coordinator(
+            draft: Binding(get: { draft }, set: { draft = $0 }),
+            onFocusChange: { _ in }, onHeightChange: { _ in }
+        )
+        let editor = RichCommentUIKitTextView()
+        coordinator.applyIfNeeded(draft: draft, to: editor, emotes: [])
+        draft.elements = [.text("external replacement")]
+        coordinator.applyIfNeeded(draft: draft, to: editor, emotes: [])
+        XCTAssertEqual(editor.text, "external replacement")
+        XCTAssertEqual(draft.serializedMessage, "external replacement")
+    }
+
     func testStaleRenderSnapshotDoesNotReplaceNewerCommittedText() {
         var draft = RichCommentDraft(elements: [.text("na")])
         let coordinator = RichCommentTextView.Coordinator(
