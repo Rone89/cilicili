@@ -3,26 +3,24 @@ import XCTest
 @MainActor
 final class SearchScrollRetentionUITests: XCTestCase {
     func testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults() {
-        let app = launchFixture()
+        let app = launchFixture(extraArguments: ["--search-test-dismiss-background"])
         let search = app.textFields["navigation.search.field"]
         let originalQuery = search.value as? String
         for _ in 0..<2 {
             search.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
             XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForExistence(timeout: 3))
-            // Keyboard candidates expose their own ScrollView. Derive a point
-            // explicitly between the input and keyboard, in the content margin.
+            // Keyboard candidates have their own ScrollView and result rows
+            // navigate. Use the fixture's explicit blank area instead of either.
             let keyboard = app.keyboards.firstMatch
-            let keyboardFrame = keyboard.frame
-            let top = search.frame.maxY + 24
-            let bottom = keyboardFrame.minY - 24
-            XCTAssertGreaterThan(bottom, top)
-            let targetY = (top + bottom) / 2
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-                .withOffset(CGVector(dx: app.frame.width - 4, dy: targetY - app.frame.minY)).tap()
-            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3),
-                          "Content tap y=\(targetY), input=\(search.frame), keyboard=\(keyboardFrame)")
+            let background = app.buttons["fixture.search.dismissBackground"]
+            XCTAssertTrue(background.waitForExistence(timeout: 3))
+            XCTAssertGreaterThanOrEqual(background.frame.minY, search.frame.maxY)
+            XCTAssertLessThan(background.frame.maxY, keyboard.frame.minY)
+            background.tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
             XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForNonExistence(timeout: 3))
+            XCTAssertTrue(search.waitForExistence(timeout: 3))
             XCTAssertEqual(search.value as? String, originalQuery)
             XCTAssertTrue(app.staticTexts["结果 1"].exists)
             XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
@@ -284,10 +282,10 @@ final class SearchScrollRetentionUITests: XCTestCase {
         add(screenshot)
     }
 
-    private func launchFixture() -> XCUIApplication {
+    private func launchFixture(extraArguments: [String] = []) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-test-fixture", "searchScroll", "--ui-test-enable-animations"]
+        app.launchArguments = ["--ui-test-fixture", "searchScroll", "--ui-test-enable-animations"] + extraArguments
         app.launch()
         XCTAssertTrue(app.staticTexts["结果 1"].waitForExistence(timeout: 5))
         addTeardownBlock { app.terminate() }
