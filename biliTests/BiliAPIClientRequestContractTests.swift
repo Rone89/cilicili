@@ -27,7 +27,9 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         let controller = UIHostingController(rootView: PgcSummaryRefreshHarness(
             viewModel: model, gate: container.contentUpdateGate, runtimeSettings: runtime.snapshot,
             onHeight: { summaryHeight = $0 }
-        ).environmentObject(AppDependencies()))
+        ).environmentObject(AppDependencies())
+            .environmentObject(api.libraryStore)
+            .environmentObject(api.sessionStore))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previousWindow = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
@@ -4315,7 +4317,8 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
                 XCTAssertEqual(query["mobi_app"], "android")
                 var unsigned = query
                 unsigned.removeValue(forKey: "sign")
-                XCTAssertEqual(query["sign"], BiliAppSigner.sign(unsigned, profile: .androidHD)["sign"])
+                let timestamp = try XCTUnwrap(query["ts"].flatMap(Int.init))
+                XCTAssertEqual(query["sign"], BiliAppSigner.sign(unsigned, profile: .androidHD, timestamp: timestamp)["sign"])
                 XCTAssertNotNil(query["ts"])
                 XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
             }
