@@ -521,9 +521,17 @@ private struct DeterministicDASHPlaybackFixture {
         return try JSONDecoder().decode(DASHStream.self, from: Data(json.utf8))
     }
 
+    @MainActor private static var cachedVideoTrack: FixtureFragmentedTrack?
+    @MainActor private static var cachedAudioTrack: FixtureFragmentedTrack?
+
     @MainActor
     private static func makeFragmentedTrack(mediaType: FixtureMediaType) async throws -> FixtureFragmentedTrack {
+        switch mediaType {
+        case .video: if let cachedVideoTrack { return cachedVideoTrack }
+        case .audio: if let cachedAudioTrack { return cachedAudioTrack }
+        }
         let writer = AVAssetWriter(contentType: .mpeg4Movie)
+        defer { if writer.status == .writing { writer.cancelWriting() } }
         let collector = FixtureSegmentCollector()
         writer.delegate = collector
         writer.outputFileTypeProfile = .mpeg4AppleHLS
@@ -549,7 +557,12 @@ private struct DeterministicDASHPlaybackFixture {
         }
         let movie = initialization + media
         guard movie.count < 1_000_000 else { throw PlaybackFixtureError.invalidFragmentedMovie }
-        return try FixtureFragmentedTrack(data: insertingSIDX(into: movie, duration: 8))
+        let track = try FixtureFragmentedTrack(data: insertingSIDX(into: movie, duration: 8))
+        switch mediaType {
+        case .video: cachedVideoTrack = track
+        case .audio: cachedAudioTrack = track
+        }
+        return track
     }
 
     @MainActor
@@ -681,7 +694,7 @@ private struct DeterministicDASHPlaybackFixture {
         writer: AVAssetWriter,
         mediaType: String
     ) async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + .seconds(30)
         while !input.isReadyForMoreMediaData {
             guard writer.status == .writing else {
                 throw PlaybackFixtureError.writer(

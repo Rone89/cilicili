@@ -30,16 +30,26 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.buttons["分享"].exists)
         XCTAssertFalse(app.buttons["刷新评论区"].exists)
         remove.tap()
-        menu.tap()
-        let add = app.buttons["添加到稍后再看"]
-        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        let add = openUpdatedDetailMenu("添加到稍后再看", menu: menu, app: app)
         add.tap()
-        menu.tap()
-        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        _ = openUpdatedDetailMenu("从稍后再看移除", menu: menu, app: app)
         app.buttons["复制链接"].tap()
         XCTAssertEqual(menu.value as? String, "已复制链接")
         app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
+    }
+
+    private func openUpdatedDetailMenu(_ title: String, menu: XCUIElement, app: XCUIApplication) -> XCUIElement {
+        let action = app.buttons[title]
+        for _ in 0..<3 {
+            menu.tap()
+            if action.waitForExistence(timeout: 2) && action.isEnabled { return action }
+            // A native Menu snapshots the async loading state at presentation.
+            // Dismiss before reopening once the mutation/reload has completed.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.4)).tap()
+        }
+        XCTFail("Updated watch-later action did not become available: \(title)")
+        return action
     }
 
     func testDetailMoreMenuPresentsSystemShareSheet() {

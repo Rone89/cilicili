@@ -37,6 +37,7 @@ struct DynamicCommentComposerTarget: Identifiable, Equatable, Sendable {
 struct DynamicInlineCommentEmotePicker: View {
     let emotes: [BiliInlineEmote]
     var bottomSafeAreaInset: CGFloat = 0
+    var deleteButtonTrailingInset: CGFloat = 34
     let onSelect: (String) -> Void
     var onDelete: (() -> Void)? = nil
 
@@ -93,7 +94,7 @@ struct DynamicInlineCommentEmotePicker: View {
                 .buttonBorderShape(.circle)
                 .controlSize(.small)
                 .padding(.top, 12)
-                .padding(.trailing, 26)
+                .padding(.trailing, deleteButtonTrailingInset)
                 .accessibilityLabel("删除")
                 .accessibilityHint("删除光标前的文字或表情")
                 .accessibilityIdentifier("dynamic.comment.emotePicker.delete")

@@ -84,8 +84,8 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertLessThanOrEqual(pickerFrame.maxY, appFrame.maxY)
         XCTAssertGreaterThan(appFrame.maxY - pickerFrame.maxY, 0)
         XCTAssertTrue(picker.isHittable)
-        let detailButton = picker.buttons.element(boundBy: 0)
-        let commentsButton = picker.buttons.element(boundBy: 1)
+        let detailButton = picker.buttons["简介"]
+        let commentsButton = picker.buttons["评论"]
 
         let detailMarker = app.staticTexts["相关推荐"].firstMatch
         XCTAssertTrue(detailMarker.waitForExistence(timeout: 10))
@@ -106,7 +106,12 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         commentsButton.tap()
         XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.descendants(matching: .any)["video.detail.summary"].firstMatch.exists)
+        let hiddenSummary = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !app.descendants(matching: .any)["video.detail.summary"].firstMatch.exists
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hiddenSummary], timeout: 5), .completed, app.debugDescription)
         detailButton.tap()
         XCTAssertTrue(detailMarker.waitForExistence(timeout: 5))
         XCTAssertEqual(detailMarker.frame.minY, scrolledDetailMarkerY, accuracy: 8)
@@ -383,7 +388,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
 
         revealPlayerControls(in: app)
-        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
         if !fullscreen.isHittable {
             let surface = app.buttons["ui.player.surface"]
@@ -421,7 +426,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         landscapeAttachment.lifetime = .keepAlways
         add(landscapeAttachment)
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
-        let landscapeExit = app.buttons["ui.player.fullscreen.toggle"]
+        let landscapeExit = fullscreenControl(in: app)
         if !landscapeExit.waitForExistence(timeout: 2) || !landscapeExit.isHittable {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
@@ -463,7 +468,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         choice.tap()
 
         revealPlayerControls(in: app)
-        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreenControl(in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
     }
 
@@ -479,14 +484,14 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
         revealPlayerControls(in: app)
-        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].exists)
+        XCTAssertTrue(fullscreenControl(in: app).exists)
     }
 
     @MainActor
     func testVideoDetailRapidRotationPublishesStableIdentityDiagnostics() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
-        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
         fullscreen.tap()
@@ -514,7 +519,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     func testVideoDetailRotationDuringInitialBufferingRecoversPlaybackSurface() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
-        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
         fullscreen.tap()
@@ -522,11 +527,11 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 15))
-        if !app.buttons["ui.player.fullscreen.toggle"].exists {
+        if !fullscreenControl(in: app).exists {
             app.buttons["ui.player.surface"].tap()
         }
         revealPlayerControls(in: app)
-        XCTAssertTrue(app.buttons["ui.player.fullscreen.toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreenControl(in: app).waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -543,7 +548,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertGreaterThan(surface.frame.width, 0)
         XCTAssertGreaterThan(surface.frame.height, 0)
 
-        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        let fullscreen = fullscreenControl(in: app)
         if fullscreen.exists {
             XCTAssertTrue(fullscreen.isHittable)
         }
@@ -553,7 +558,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     func testVideoDetailExitDuringRotationReturnsToHomeWithoutRebuildingPlayer() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
-        let fullscreen = app.buttons["ui.player.fullscreen.toggle"]
+        let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
         fullscreen.tap()
@@ -648,13 +653,22 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func fullscreenControl(in app: XCUIApplication) -> XCUIElement {
+        let identified = app.descendants(matching: .any)["ui.player.fullscreen.toggle"].firstMatch
+        if identified.exists { return identified }
+        // Glass can export the identifier on a containing accessibility node.
+        // The visible native button retains its user-facing action label.
+        return app.buttons.matching(NSPredicate(format: "label IN %@", ["全屏", "退出全屏"])).firstMatch
+    }
+
+    @MainActor
     private func revealPlayerControls(in app: XCUIApplication) {
-        let control = app.buttons["ui.player.fullscreen.toggle"]
+        let control = fullscreenControl(in: app)
         if control.exists && control.isHittable { return }
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
         surface.tap()
-        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        XCTAssertTrue(control.waitForExistence(timeout: 5), app.debugDescription)
     }
 
     @MainActor

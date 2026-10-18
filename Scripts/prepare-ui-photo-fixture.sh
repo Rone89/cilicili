@@ -49,7 +49,8 @@ import time
 simulator_id = sys.argv[1]
 root = Path(os.environ["RUNNER_TEMP"])
 try:
-    subprocess.run(["xcrun", "simctl", "bootstatus", simulator_id], timeout=90, check=True)
+    # The preflight already exercised this simulator's UI. bootstatus also waits
+    # for unrelated background boot tasks and can hang despite a usable UI.
     inventory = subprocess.run(["xcrun", "simctl", "list", "devices", "--json"], timeout=30, check=True, capture_output=True)
     (root / "photo-simulator-inventory.json").write_bytes(inventory.stdout)
     with (root / "photo-media-import.log").open("wb") as log:

@@ -307,8 +307,8 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(modeButton.waitForExistence(timeout: 5))
         XCTAssertTrue(messageButton.waitForExistence(timeout: 5))
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
-
-        scrollView.swipeUp()
+        XCTAssertTrue(app.staticTexts["固定视频详情回归"].firstMatch.waitForExistence(timeout: 10))
+        for _ in 0..<3 where modeButton.isHittable { scrollView.swipeUp() }
 
         XCTAssertTrue(waitForHittableState(false, element: modeButton, timeout: 3))
         XCTAssertTrue(waitForHittableState(false, element: messageButton, timeout: 3))

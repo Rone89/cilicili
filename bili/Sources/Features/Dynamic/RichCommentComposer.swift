@@ -374,6 +374,7 @@ struct RichCommentTextView: UIViewRepresentable {
     let inputViewHeight: CGFloat
     let emotes: [BiliInlineEmote]
     let dynamicTypeSize: DynamicTypeSize
+    var deleteButtonTrailingInset: CGFloat = 34
     let onFocusChange: (Bool) -> Void
     let onEditorTap: () -> Void
     let onHeightChange: (CGFloat) -> Void
@@ -395,7 +396,8 @@ struct RichCommentTextView: UIViewRepresentable {
         textView.configureInputView(
             mode: inputMode,
             height: inputViewHeight,
-            emotes: emotes
+            emotes: emotes,
+            deleteButtonTrailingInset: deleteButtonTrailingInset
         )
         textView.setFocused(isFocused)
         return textView
@@ -411,7 +413,8 @@ struct RichCommentTextView: UIViewRepresentable {
         textView.configureInputView(
             mode: inputMode,
             height: inputViewHeight,
-            emotes: emotes
+            emotes: emotes,
+            deleteButtonTrailingInset: deleteButtonTrailingInset
         )
         context.coordinator.applyIfNeeded(draft: draft, to: textView, emotes: emotes)
         textView.setFocused(isFocused)
@@ -851,7 +854,8 @@ final class RichCommentUIKitTextView: UITextView {
     func configureInputView(
         mode: RichCommentInputMode,
         height: CGFloat,
-        emotes: [BiliInlineEmote]
+        emotes: [BiliInlineEmote],
+        deleteButtonTrailingInset: CGFloat = 34
     ) {
         availableEmotes = emotes
         let resolvedHeight = max(height, max(measuredKeyboardHeight, 216))
@@ -864,6 +868,7 @@ final class RichCommentUIKitTextView: UITextView {
             inputView.configure(
                 height: resolvedHeight,
                 emotes: emotes,
+                deleteButtonTrailingInset: deleteButtonTrailingInset,
                 insertEmote: { [weak self] token in
                     guard let self,
                           let coordinator = self.delegate as? RichCommentTextView.Coordinator
@@ -909,6 +914,7 @@ final class RichCommentEmoteInputView: UIInputView {
     private var panelHeight: CGFloat = 216
     private var bottomSafeAreaInset: CGFloat = 0
     private var currentEmotes = [BiliInlineEmote]()
+    private var deleteButtonTrailingInset: CGFloat = 34
     private var insertEmote: ((String) -> Void)?
     private var deleteBackward: (() -> Void)?
 
@@ -951,6 +957,7 @@ final class RichCommentEmoteInputView: UIInputView {
     func configure(
         height: CGFloat,
         emotes: [BiliInlineEmote],
+        deleteButtonTrailingInset: CGFloat = 34,
         insertEmote: @escaping (String) -> Void,
         deleteBackward: @escaping () -> Void
     ) {
@@ -959,6 +966,7 @@ final class RichCommentEmoteInputView: UIInputView {
             invalidateIntrinsicContentSize()
         }
         currentEmotes = emotes
+        self.deleteButtonTrailingInset = deleteButtonTrailingInset
         self.insertEmote = insertEmote
         self.deleteBackward = deleteBackward
         updatePickerRootView()
@@ -969,6 +977,7 @@ final class RichCommentEmoteInputView: UIInputView {
             DynamicInlineCommentEmotePicker(
                 emotes: currentEmotes,
                 bottomSafeAreaInset: bottomSafeAreaInset,
+                deleteButtonTrailingInset: deleteButtonTrailingInset,
                 onSelect: insertEmote ?? { _ in },
                 onDelete: deleteBackward
             )
@@ -1107,6 +1116,7 @@ struct RichCommentComposerView: View {
                 inputViewHeight: resolvedInputViewHeight,
                 emotes: emotes,
                 dynamicTypeSize: dynamicTypeSize,
+                deleteButtonTrailingInset: horizontalPadding + 14,
                 onFocusChange: { isEditorFocused = $0 },
                 onEditorTap: focusEditor,
                 onHeightChange: { editorHeight = $0 }
