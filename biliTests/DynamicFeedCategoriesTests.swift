@@ -26,7 +26,7 @@ final class DynamicFeedCategoriesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        let session = SessionStore(keychain: KeychainStore(service: suite))
+        let session = SessionStore(keychain: KeychainStore.inMemory(service: suite))
         let api = BiliAPIClient(sessionStore: session, libraryStore: store, homeRecommendDiagnosticsStore: .shared)
         let holder = DynamicViewModelHolder(api: api, libraryStore: store, sessionStore: session)
         let all = try XCTUnwrap(holder.viewModel)
@@ -69,7 +69,7 @@ final class DynamicFeedCategoriesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = LibraryStore(userDefaults: defaults)
-        let session = SessionStore(keychain: KeychainStore(service: suite))
+        let session = SessionStore(keychain: KeychainStore.inMemory(service: suite))
         let api = BiliAPIClient(sessionStore: session, libraryStore: store, homeRecommendDiagnosticsStore: .shared)
         let all = DynamicViewModel(api: api, libraryStore: store, sessionStore: session)
         let upA = DynamicViewModel(api: api, libraryStore: store, sessionStore: session, feedKind: .up, hostMID: 101)

@@ -13,7 +13,7 @@ struct UITestHomeFeedbackFixtureView: View {
     init() {
         let suite = "UITestHomeFeedback.\(UUID().uuidString)"
         let library = LibraryStore(userDefaults: UserDefaults(suiteName: suite)!)
-        let keychain = KeychainStore(service: suite)
+        let keychain = KeychainStore.inMemory(service: suite)
         if !ProcessInfo.processInfo.arguments.contains("--feedback-anonymous") {
             try! keychain.save("fixture-access-key", for: "ACCESS_KEY")
             try! keychain.save("SESSDATA=fixture; DedeUserID=1001", for: "LOGIN_COOKIE_HEADER")

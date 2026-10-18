@@ -5387,7 +5387,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
             }
     ) throws -> BiliAPIClient {
         let keychainService = "BiliAPIClientRequestContractTests.\(UUID().uuidString)"
-        let keychain = KeychainStore(service: keychainService)
+        let keychain = KeychainStore.inMemory(service: keychainService)
         let cookieValues = cookieHeader.split(separator: ";").reduce(into: [String: String]()) { values, item in
             let parts = item.split(separator: "=", maxSplits: 1)
             guard parts.count == 2 else { return }

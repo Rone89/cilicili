@@ -19,7 +19,7 @@ struct UITestLibraryManagementFixtureView: View {
         showsDetailMenu = args.contains("--library-detail-menu")
         showsCommentComposer = args.contains("--library-comment-composer")
         let name = "LibraryManagementFixture.\(UUID().uuidString)"
-        let session = SessionStore(keychain: KeychainStore(service: name))
+        let session = SessionStore(keychain: KeychainStore.inMemory(service: name))
         if !args.contains("--library-logged-out") {
             try? session.saveLoginCookies(["SESSDATA":"fixture", "bili_jct":"fixture", "DedeUserID":"1001"], credentialKind: .web)
         }

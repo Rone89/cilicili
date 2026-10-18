@@ -357,7 +357,7 @@ final class MultiAccountSessionTests: XCTestCase {
     }
 
     private func makeKeychain() -> KeychainStore {
-        KeychainStore(service: "cc.bili.tests.multi-account.\(UUID().uuidString)")
+        KeychainStore.inMemory(service: "cc.bili.tests.multi-account.\(UUID().uuidString)")
     }
 
     private func saveMainAccount(
