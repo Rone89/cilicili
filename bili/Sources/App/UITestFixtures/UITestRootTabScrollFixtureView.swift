@@ -125,6 +125,9 @@ struct UITestRootTabScrollFixtureView: View {
                     .buttonStyle(.bordered)
             }
         }
+        .transformEnvironment(\.accessibilityReduceMotion) { value in
+            if ProcessInfo.processInfo.arguments.contains("--test-reduce-motion") { value = true }
+        }
     }
 
     @ViewBuilder private func page(_ tab: AppTab) -> some View {
@@ -161,6 +164,7 @@ struct UITestRootTabScrollFixtureView: View {
 }
 
 private struct RootTabFixtureMetricsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var metrics: RootTabFixtureMetrics
     @ObservedObject var requests: RootTabFixtureRequests
     @ObservedObject var search: SearchViewModel
@@ -170,6 +174,7 @@ private struct RootTabFixtureMetricsView: View {
             Text(String(format: "%.1f", metrics.offsets[tab, default: 0])).accessibilityIdentifier("fixture.root.offset")
             Text("\(requests.count)").accessibilityIdentifier("fixture.root.requests")
             Text(search.query).accessibilityIdentifier("fixture.root.query")
+            Text(reduceMotion ? "1" : "0").accessibilityIdentifier("fixture.root.reduceMotion")
         }.font(.caption2).allowsHitTesting(false)
     }
 }

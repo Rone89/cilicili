@@ -87,6 +87,8 @@ jobs:
           exit "$format_status"
 
       - name: Prepare photo picker media
+        id: photo_fixture
+        continue-on-error: true
         if: ${{ matrix.ui_shard != '' }}
         env:
           TEST_DESTINATION: ${{ steps.simulator.outputs.destination }}
@@ -141,14 +143,33 @@ jobs:
           fi
           exit "$test_status"
 
+      - name: Export readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/readable-tests"
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/bili-tests.xcresult" > "$RUNNER_TEMP/readable-tests/summary.json"
+          xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
+
+      - name: Upload readable failure diagnostics
+        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-test-readable-${{ matrix.suite }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readable-tests
+          if-no-files-found: ignore
+
       - name: Upload photo preflight diagnostics
-        if: ${{ failure() && matrix.ui_shard != '' }}
+        if: ${{ !cancelled() && matrix.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: photo-preflight-${{ matrix.suite }}
           path: |
             ${{ runner.temp }}/photo-preflight.log
             ${{ runner.temp }}/photo-preflight.xcresult
+            ${{ runner.temp }}/photo-media-import.log
+            ${{ runner.temp }}/photo-simulator-inventory.json
           if-no-files-found: ignore
 
       - name: Upload coverage report
@@ -174,6 +195,12 @@ jobs:
           name: ios-test-log-${{ matrix.suite }}
           path: ${{ runner.temp }}/bili-tests.log
           if-no-files-found: warn
+
+      - name: Require successful photo fixture preparation
+        if: ${{ !cancelled() && steps.photo_fixture.outcome == 'failure' }}
+        run: |
+          echo "Photo fixture preparation failed; complete UI results were retained above."
+          exit 1
 
   release:
     name: Xcode 26 unsigned Release

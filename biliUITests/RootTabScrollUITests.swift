@@ -75,23 +75,7 @@ final class RootTabScrollUITests: XCTestCase {
     }
 
     func testReselectionWithReduceMotion() {
-        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
-        settings.launch()
-        for _ in 0..<5 { settings.swipeDown() }
-        let accessibility = settings.staticTexts.matching(NSPredicate(format: "label IN %@", ["Accessibility", "辅助功能"])).firstMatch
-        for _ in 0..<6 where !accessibility.isHittable { settings.swipeUp() }
-        XCTAssertTrue(accessibility.exists)
-        accessibility.tap()
-        settings.staticTexts.matching(NSPredicate(format: "label IN %@", ["Motion", "动态效果"])).firstMatch.tap()
-        let toggle = settings.switches.matching(NSPredicate(format: "label IN %@", ["Reduce Motion", "减弱动态效果"])).firstMatch
-        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
-        let original = toggle.value as? String
-        if original != "1" { toggle.tap() }
-        defer {
-            settings.activate()
-            if toggle.value as? String != original { toggle.tap() }
-        }
-        verifyReselection(arguments: [])
+        verifyReselection(arguments: ["--test-reduce-motion"])
     }
 
     func testFormDoesNotReplayOldRequestAfterPushAndSwitch() {
@@ -210,6 +194,9 @@ final class RootTabScrollUITests: XCTestCase {
         app.launchArguments = ["--ui-test-fixture", "rootTabScroll", "--ui-test-enable-animations"] + arguments
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 5))
+        if arguments.contains("--test-reduce-motion") {
+            XCTAssertEqual(app.staticTexts["fixture.root.reduceMotion"].label, "1")
+        }
         addTeardownBlock { app.terminate() }
         return app
     }

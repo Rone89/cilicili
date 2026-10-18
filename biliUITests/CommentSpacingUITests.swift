@@ -20,7 +20,13 @@ final class CommentSpacingUITests: XCTestCase {
         }
         returnToTop(app)
         _ = height("dynamic.1", app: app)
-        app.descendants(matching: .any)["comment.sample.dynamic.1"].press(forDuration: 1)
+        let sample = app.descendants(matching: .any)["comment.sample.dynamic.1"]
+        let visible = sample.frame.intersection(app.scrollViews.firstMatch.frame)
+            .intersection(app.windows.firstMatch.frame.insetBy(dx: 24, dy: 100))
+        XCTAssertFalse(visible.isNull, "Long press must target the visible part of accessibility-sized text")
+        XCTAssertGreaterThan(visible.height, 0)
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: visible.midX, dy: visible.midY)).press(forDuration: 1)
         XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 3))
         app.buttons["复制评论"].tap()
 

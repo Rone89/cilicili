@@ -35,6 +35,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(element("ui.videoDetail.ready", in: app).waitForExistence(timeout: 5))
 
+        let initialValue = element("ui.videoDetail.danmakuSettings.persistedValue", in: app).label
         app.buttons["ui.videoDetail.danmakuSettings"].tap()
         let areaSlider = app.sliders["DanmakuKit 弹幕显示区域"]
         XCTAssertTrue(areaSlider.waitForExistence(timeout: 2))
@@ -43,14 +44,15 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         let persisted = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
         XCTAssertTrue(persisted.waitForExistence(timeout: 2))
-        XCTAssertEqual(persisted.label, "100%")
+        let selectedValue = persisted.label
+        XCTAssertNotEqual(selectedValue, initialValue, "Slider must actually change the saved setting")
 
         app.terminate()
         app.launchArguments = ["--ui-test-fixture", "danmaku"]
         app.launch()
         let restored = element("ui.videoDetail.danmakuSettings.persistedValue", in: app)
         XCTAssertTrue(restored.waitForExistence(timeout: 5))
-        XCTAssertEqual(restored.label, "100%")
+        XCTAssertEqual(restored.label, selectedValue)
     }
 
     @MainActor

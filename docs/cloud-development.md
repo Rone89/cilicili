@@ -86,3 +86,10 @@ An existing composer UI test first lets Xcode start the selected simulator, then
 created. The actual photo test selects and removes that image through the system
 picker. Preflight diagnostics are uploaded on failure; the complete shard still
 runs all its assigned classes.
+
+Reduced Motion root-tab coverage uses an explicit fixture environment override
+and verifies the value seen by the mounted SwiftUI subtree. It does not drive
+the Settings app or claim to test Settings navigation. Accessibility text menu
+tests long-press a visible intersection of oversized text, not an offscreen
+element center. Photo preparation failures remain failures, but the full shard
+still executes so unrelated results and readable crash diagnostics are retained.

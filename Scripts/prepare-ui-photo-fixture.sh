@@ -38,4 +38,15 @@ Path(os.environ["RUNNER_TEMP"], "comment-photo-fixture.png").write_bytes(png)
 PY
 simulator_id="${TEST_DESTINATION##*id=}"
 [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
-xcrun simctl addmedia "$simulator_id" "$RUNNER_TEMP/comment-photo-fixture.png"
+# Wait for the simulator Xcode already started; this does not boot a device.
+xcrun simctl bootstatus "$simulator_id"
+xcrun simctl list devices --json > "$RUNNER_TEMP/photo-simulator-inventory.json"
+for attempt in 1 2 3; do
+  if xcrun simctl addmedia "$simulator_id" "$RUNNER_TEMP/comment-photo-fixture.png" > "$RUNNER_TEMP/photo-media-import.log" 2>&1; then
+    cat "$RUNNER_TEMP/photo-media-import.log"
+    exit 0
+  fi
+  cat "$RUNNER_TEMP/photo-media-import.log"
+  if [ "$attempt" -lt 3 ]; then sleep 5; fi
+done
+exit 1

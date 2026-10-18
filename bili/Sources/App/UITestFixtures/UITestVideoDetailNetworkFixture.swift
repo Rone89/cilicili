@@ -26,7 +26,15 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
             let payload: Any
             switch url.path {
             case "/x/web-interface/view", "/x/web-interface/wbi/view":
-                payload = Self.video
+                var video = Self.video
+                if let aid = query.first(where: { $0.name == "aid" })?.value.flatMap(Int.init) {
+                    video["aid"] = aid
+                    video["bvid"] = "BVFixtureHome\(aid)"
+                }
+                if let bvid = query.first(where: { $0.name == "bvid" })?.value {
+                    video["bvid"] = bvid
+                }
+                payload = video
             case "/x/emote/user/panel/web":
                 payload = ["packages": [["emote": [["text": "[doge_金箍]",
                     "url": "https://ui-test.invalid/doge.png", "width": 32, "height": 32]]]]]
@@ -35,6 +43,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
                     var video = Self.video
                     video["bvid"] = "BVFixtureHome\(index)"
                     video["id"] = index
+                    video["aid"] = index
                     video["goto"] = "av"
                     return video
                 }]
@@ -42,6 +51,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
                 payload = (1...20).map { index -> [String: Any] in
                     var video = Self.video
                     video["bvid"] = "BVFixtureRelated\(index)"
+                    video["aid"] = index + 200
                     video["title"] = "相关视频 \(index)"
                     return video
                 }
@@ -86,7 +96,8 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
     private static var video: [String: Any] {
         ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
          "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": 120,
-         "owner": ["mid": 1001, "name": "测试 UP"],
+         "pubdate": 1700000000,
+         "owner": ["mid": 1001, "name": "测试 UP", "face": "https://ui-test.invalid/face.png"],
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
          "pages": [["cid": 1001, "page": 1, "part": "测试分 P", "duration": 120]],
          "stat": ["view": 1000, "like": 20, "reply": 25]]

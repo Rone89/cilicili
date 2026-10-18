@@ -7,6 +7,30 @@ import XCTest
 
 final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     @MainActor
+    func testDuplicateRecommendMetadataHydrationResultsDoNotCrashOrDuplicateFeed() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        RequestContractURLProtocol.install { request in
+            Self.response(for: request, body: #"{"code":0,"data":{"bvid":"BVDuplicateHydration","aid":1,"title":"补全标题","pubdate":1700000000,"owner":{"mid":9,"name":"UP","face":"https://fixture.invalid/face.png"}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "", recommendSource: .app)
+        let seed = try JSONDecoder.bili.decode(VideoItem.self, from: Data(
+            #"{"bvid":"BVDuplicateHydration","aid":1,"title":"原始标题"}"#.utf8
+        ))
+        let model = HomeViewModel(api: api, libraryStore: api.libraryStore, sessionStore: api.sessionStore)
+        model.updateFeed([seed])
+        model.scheduleRecommendMetadataHydration(
+            for: [seed, seed], revision: model.requestRevision, reason: "duplicate-result-regression"
+        )
+        let task = try XCTUnwrap(model.recommendMetadataHydrationTasks.values.first)
+        await task.value
+        XCTAssertEqual(model.videos.count, 1)
+        XCTAssertEqual(model.videos.first?.bvid, seed.bvid)
+        XCTAssertEqual(model.videos.first?.pubdate, 1700000000)
+        XCTAssertTrue(model.recommendMetadataHydrationTasks.isEmpty)
+    }
+
+    @MainActor
     func testPgcSummaryLeavesSkeletonAfterSeedResolvesWithoutReplacingViewModel() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let recorder = RequestContractRecorder()
