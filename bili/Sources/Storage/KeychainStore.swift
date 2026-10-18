@@ -3,10 +3,10 @@ import Security
 
 /// Injectable Security calls keep tests independent of simulator entitlements.
 struct KeychainOperations {
-    let update: ([String: Any], [String: Any]) -> OSStatus
-    let add: ([String: Any]) -> OSStatus
-    let read: ([String: Any]) -> (OSStatus, Data?)
-    let delete: ([String: Any]) -> OSStatus
+    let update: @MainActor ([String: Any], [String: Any]) -> OSStatus
+    let add: @MainActor ([String: Any]) -> OSStatus
+    let read: @MainActor ([String: Any]) -> (OSStatus, Data?)
+    let delete: @MainActor ([String: Any]) -> OSStatus
 
     static var system: Self {
         Self(

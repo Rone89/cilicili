@@ -140,6 +140,7 @@ final class KeychainStoreTests: XCTestCase {
         return (KeychainStore(service: service, defaults: defaults, operations: stub.operations), stub, defaults)
     }
 
+    @MainActor
     private final class SecurityStub {
         var values: [String: Data] = [:]
         var updateFailure: OSStatus?
