@@ -834,7 +834,8 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
 
     private let runtimeSettings: VideoDetailRuntimeSettingsStore
     private let dependencies: AppDependencies
-    private let selectedContentTab: Binding<VideoDetailContentTab>
+    private var selectedContentTab: Binding<VideoDetailContentTab>
+    private var lastSelectedContentTab: VideoDetailContentTab
     private let openVideoOwnerRoute: ((VideoOwner) -> Void)?
     private let onShowNetworkDiagnostics: () -> Void
     private let onShowFavoriteFolders: () -> Void
@@ -881,6 +882,7 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         self.runtimeSettings = runtimeSettings
         self.dependencies = dependencies
         self.selectedContentTab = selectedContentTab
+        self.lastSelectedContentTab = selectedContentTab.wrappedValue
         self.openVideoOwnerRoute = openVideoOwnerRoute
         self.onShowNetworkDiagnostics = onShowNetworkDiagnostics
         self.onShowFavoriteFolders = onShowFavoriteFolders
@@ -1058,6 +1060,17 @@ final class VideoDetailSwiftUIContainerViewController: UIViewController {
         contentModel.setBackgroundRenderFreezeActive(false)
         playbackDiagnostics.markPageDisappeared()
         publishLatestRotationDiagnostic()
+    }
+
+    func updateSelectedContentTab(_ binding: Binding<VideoDetailContentTab>) {
+        let selection = binding.wrappedValue
+        selectedContentTab = binding
+        guard selection != lastSelectedContentTab else { return }
+        lastSelectedContentTab = selection
+        // The outer toolbar belongs to a different SwiftUI root. Refresh the
+        // retained host with its current binding when that toolbar changes tabs.
+        // This preserves the hosting controller, model and player identities.
+        hostingController.rootView = makeRootView()
     }
 
     private func makeRootView() -> VideoDetailSwiftUIContainer {

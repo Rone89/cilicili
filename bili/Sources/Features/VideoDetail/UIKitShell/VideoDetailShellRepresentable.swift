@@ -77,6 +77,7 @@ struct VideoDetailShellRepresentable: UIViewControllerRepresentable {
         _ controller: VideoDetailRotationBridgeViewController,
         context _: Context
     ) {
+        controller.updateSelectedContentTab($selectedContentTab)
         controller.scheduleNavigationHistoryUpdate(navigationHistory)
     }
 

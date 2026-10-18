@@ -105,7 +105,9 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertEqual(picker.frame.minY, pickerFrame.minY, accuracy: 2)
 
         commentsButton.tap()
-        XCTAssertTrue(app.scrollViews.staticTexts["评论"].firstMatch.waitForExistence(timeout: 5))
+        let commentHeader = app.scrollViews.staticTexts["评论"].firstMatch
+        XCTAssertTrue(commentHeader.waitForExistence(timeout: 5))
+        XCTAssertTrue(commentHeader.isHittable)
         let hiddenSummary = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 !app.descendants(matching: .any)["video.detail.summary"].firstMatch.exists
