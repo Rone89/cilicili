@@ -59,6 +59,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -67,7 +68,12 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
         XCTAssertEqual(picker.buttons.count, 2)
         XCTAssertEqual(picker.frame.width, 180, accuracy: 2)
-        XCTAssertEqual(picker.frame.height, 38, accuracy: 2)
+        // Native segmented controls use their intrinsic height on the active iOS.
+        for button in picker.buttons.allElementsBoundByIndex {
+            XCTAssertGreaterThan(button.frame.height, 0)
+            XCTAssertGreaterThanOrEqual(button.frame.minY, picker.frame.minY - 1)
+            XCTAssertLessThanOrEqual(button.frame.maxY, picker.frame.maxY + 1)
+        }
         let appFrame = app.windows.firstMatch.frame
         let pickerFrame = picker.frame
         XCTAssertGreaterThanOrEqual(pickerFrame.minX, appFrame.minX)
@@ -136,6 +142,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -173,6 +180,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", "NO",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -250,6 +258,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", "NO",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -363,6 +372,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -574,6 +584,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", autoplayEnabled ? "YES" : "NO",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -646,6 +657,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
+            "--ui-test-video-detail-network",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()

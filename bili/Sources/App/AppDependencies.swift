@@ -28,8 +28,18 @@ final class AppDependencies: ObservableObject {
         self.homeRecommendDiagnosticsStore = homeRecommendDiagnosticsStore
         self.networkMetricsRecorder = networkMetricsRecorder
         StageOneBaselineMetricsStore.shared.beginLaunch()
+        let apiSession: URLSession
+        #if DEBUG
+        if UITestVideoDetailNetworkFixture.isEnabled {
+            apiSession = UITestVideoDetailNetworkFixture.makeSession()
+        } else {
+            apiSession = BiliURLSessionFactory.makeAPISession(delegate: networkMetricsRecorder)
+        }
+        #else
+        apiSession = BiliURLSessionFactory.makeAPISession(delegate: networkMetricsRecorder)
+        #endif
         let api = BiliAPIClient(
-            session: BiliURLSessionFactory.makeAPISession(delegate: networkMetricsRecorder),
+            session: apiSession,
             sessionStore: sessionStore,
             libraryStore: libraryStore,
             homeRecommendDiagnosticsStore: homeRecommendDiagnosticsStore
