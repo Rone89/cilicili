@@ -91,9 +91,6 @@ struct UITestRootTabScrollFixtureView: View {
                         .buttonStyle(.bordered)
                 }
             }
-            .transformEnvironment(\.accessibilityReduceMotion) { value in
-                if ProcessInfo.processInfo.arguments.contains("--test-reduce-motion") { value = true }
-            }
     }
 
     private var showsBottomAccessory: Bool {

@@ -75,6 +75,22 @@ final class RootTabScrollUITests: XCTestCase {
     }
 
     func testReselectionWithReduceMotion() {
+        continueAfterFailure = false
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        settings.launch()
+        let toggle = openReduceMotion(in: settings)
+        let original = toggle.value as? String
+        XCTAssertTrue(original == "0" || original == "1")
+        if original != "1" { toggle.tap() }
+        XCTAssertEqual(toggle.value as? String, "1")
+        defer {
+            settings.activate()
+            // Settings may return to its root after the app under test takes focus.
+            // Resolve the current page again instead of reusing the previous AX node.
+            let restoredToggle = openReduceMotion(in: settings)
+            if restoredToggle.value as? String != original { restoredToggle.tap() }
+            XCTAssertEqual(restoredToggle.value as? String, original)
+        }
         verifyReselection(arguments: ["--test-reduce-motion"])
     }
 
@@ -186,6 +202,32 @@ final class RootTabScrollUITests: XCTestCase {
                 XCTAssertEqual(app.staticTexts["fixture.root.query"].label, "保留关键词")
             }
         }
+    }
+
+    private func openReduceMotion(in settings: XCUIApplication) -> XCUIElement {
+        let labels = ["Reduce Motion", "减弱动态效果"]
+        func toggle() -> XCUIElement {
+            settings.switches.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        }
+        if toggle().waitForExistence(timeout: 3) { return toggle() }
+        let motionLabels = ["Motion", "动态效果"]
+        let motion = settings.staticTexts.matching(NSPredicate(format: "label IN %@", motionLabels)).firstMatch
+        if !motion.waitForExistence(timeout: 2) {
+            let accessibility = settings.staticTexts.matching(
+                NSPredicate(format: "label IN %@", ["Accessibility", "辅助功能"])
+            ).firstMatch
+            for _ in 0..<5 { settings.swipeDown() }
+            for _ in 0..<8 {
+                if accessibility.exists && accessibility.isHittable { break }
+                settings.swipeUp()
+            }
+            XCTAssertTrue(accessibility.waitForExistence(timeout: 5))
+            accessibility.tap()
+        }
+        XCTAssertTrue(motion.waitForExistence(timeout: 5))
+        motion.tap()
+        XCTAssertTrue(toggle().waitForExistence(timeout: 5))
+        return toggle()
     }
 
     private func launch(arguments: [String] = []) -> XCUIApplication {
