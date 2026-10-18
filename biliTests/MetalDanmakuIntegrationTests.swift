@@ -533,6 +533,10 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertEqual(view.debugManualRefreshCount, 1, "Paused updates still need a single-frame refresh")
         view.synchronizePlaybackTime(2, force: true)
         XCTAssertEqual(view.debugManualRefreshCount, 2, "Paused seek must refresh its target frame")
+        let manualFrameDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while diagnostics.metalSummary.manualRefreshFrames == 0, ContinuousClock.now < manualFrameDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertGreaterThan(diagnostics.metalSummary.manualRefreshFrames, 0)
         view.apply(configuration: configuration(items: items(count: 10), time: 2, playing: true))
         XCTAssertFalse(view.metalView.isPaused)
