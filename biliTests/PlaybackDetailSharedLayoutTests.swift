@@ -148,8 +148,12 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             let previousWindow = window.windowScene?.windows.first { $0.isKeyWindow }
             window.rootViewController = controller
             window.makeKeyAndVisible()
+            controller.view.setNeedsLayout()
+            controller.view.layoutIfNeeded()
             defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
-            try await waitUntil { model.playerFrame.width > 0 && model.contentState.topInset > 0 }
+            try await waitUntil("initial layout for \(sourceWidth)x\(sourceHeight)") {
+                model.playerFrame.width > 0 && model.contentState.topInset > 0
+            }
             let width = model.playerFrame.width
             let expanded = width * CGFloat(sourceHeight) / CGFloat(sourceWidth)
             let minimum = VideoDetailShellLayout.standardPlayerHeight(forWidth: width)
@@ -163,12 +167,16 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
             scrollView.delegate?.scrollViewWillBeginDragging?(scrollView)
             scrollView.setContentOffset(CGPoint(x: 0, y: expanded - minimum + 50), animated: false)
             scrollView.delegate?.scrollViewDidEndDragging?(scrollView, willDecelerate: false)
-            try await waitUntil { abs(model.playerFrame.height - minimum) < 0.5 }
+            try await waitUntil("collapse for \(sourceWidth)x\(sourceHeight)") {
+                abs(model.playerFrame.height - minimum) < 0.5
+            }
             XCTAssertEqual(model.playerFrame.height, minimum)
             XCTAssertEqual(model.contentState.topInset, expanded, accuracy: 0.001)
             XCTAssertFalse(model.isCollapsedChromeActive)
             scrollView.setContentOffset(.zero, animated: false)
-            try await waitUntil { abs(model.playerFrame.height - expanded) < 0.5 }
+            try await waitUntil("expansion for \(sourceWidth)x\(sourceHeight)") {
+                abs(model.playerFrame.height - expanded) < 0.5
+            }
             XCTAssertEqual(model.playerFrame.height, expanded, accuracy: 0.001)
         }
     }
@@ -1005,17 +1013,22 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
         XCTAssertEqual(monitor.recentSnapshots().first?.context.title, "已加载直播标题")
     }
 
+    private enum LayoutWaitError: Error { case timedOut }
+
     @MainActor
     private func waitUntil(
-        timeout: Duration = .seconds(2),
+        _ stage: String = "shared layout",
+        timeout: Duration = .seconds(10),
+        file: StaticString = #filePath,
+        line: UInt = #line,
         condition: @escaping @MainActor () -> Bool
     ) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while !condition() {
             guard clock.now < deadline else {
-                XCTFail("Timed out waiting for shared playback detail state")
-                return
+                XCTFail("Timed out waiting for shared playback detail state: \(stage)", file: file, line: line)
+                throw LayoutWaitError.timedOut
             }
             try await Task.sleep(for: .milliseconds(10))
         }

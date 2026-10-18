@@ -7,21 +7,29 @@ final class DynamicFeedDiskSnapshotStoreTests: XCTestCase {
             .appending(path: "dynamic-feed-snapshot-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
         let store = DynamicFeedDiskSnapshotStore(
             directory: directory,
-            freshnessInterval: 0.04,
+            freshnessInterval: 180,
             maximumSnapshotCount: 2
         )
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let data = Data("{\"code\":0,\"data\":{}}".utf8)
         await store.store(data, for: "account-1")
-        let storedData = await store.freshData(for: "account-1")
-        let otherAccountData = await store.freshData(for: "account-2")
+        // Anchor reads to the written file timestamp, independent of runner scheduling.
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
+        ).first)
+        let writtenAt = try XCTUnwrap(file.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate)
+        let storedData = await store.freshData(for: "account-1", now: writtenAt)
+        let otherAccountData = await store.freshData(for: "account-2", now: writtenAt)
 
         XCTAssertEqual(storedData, data)
         XCTAssertNil(otherAccountData)
 
-        try await Task.sleep(nanoseconds: 70_000_000)
-        let expiredData = await store.freshData(for: "account-1")
+        let boundaryData = await store.freshData(for: "account-1", now: writtenAt.addingTimeInterval(180))
+        XCTAssertEqual(boundaryData, data)
+        let expiredData = await store.freshData(for: "account-1", now: writtenAt.addingTimeInterval(181))
         XCTAssertNil(expiredData)
     }
 }

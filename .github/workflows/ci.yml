@@ -113,7 +113,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test 2>&1 | tee "$RUNNER_TEMP/bili-tests.log" | \
-            awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
+            awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|Fatal error:|Restarting after unexpected exit|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
           test_status=${PIPESTATUS[0]}
           set -e
           if [ -d "$result_bundle_path" ]; then
