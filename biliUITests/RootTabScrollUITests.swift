@@ -62,6 +62,14 @@ final class RootTabScrollUITests: XCTestCase {
         verifyReselection(arguments: [])
     }
 
+    func testDynamicTabReselectionScrollsToTopWithoutRefresh() {
+        verifyReselection(arguments: [], selectedTabs: ["动态"])
+    }
+
+    func testDynamicTabReselectionWithMinimizedTabBar() {
+        verifyReselection(arguments: ["--test-minimize"], selectedTabs: ["动态"])
+    }
+
     func testReselectionWithMinimizedTabBar() {
         verifyReselection(arguments: ["--test-minimize"])
     }
@@ -162,9 +170,9 @@ final class RootTabScrollUITests: XCTestCase {
         XCTAssertEqual(app.searchFields.count, 1)
     }
 
-    private func verifyReselection(arguments: [String]) {
+    private func verifyReselection(arguments: [String], selectedTabs: [String]? = nil) {
         let app = launch(arguments: arguments)
-        for tab in tabs {
+        for tab in selectedTabs ?? tabs {
             select(tab, in: app)
             let top = offset(app)
             let scroll = mainScroll(in: app)

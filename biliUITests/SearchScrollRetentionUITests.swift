@@ -24,8 +24,9 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let app = launchFixture()
         let search = app.textFields["navigation.search.field"]
         search.tap()
-        search.typeText(" native\n")
-        XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
+        app.buttons["navigation.search.clear"].tap()
+        search.typeText("native\n")
+        XCTAssertTrue(app.staticTexts["native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
 
         search.tap()
@@ -34,7 +35,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["大家都在搜"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
-        XCTAssertFalse(app.staticTexts["滚动位置测试 native 1"].exists)
+        XCTAssertFalse(app.staticTexts["native 1"].exists)
         XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
 
@@ -61,8 +62,9 @@ final class SearchScrollRetentionUITests: XCTestCase {
         activeScreenshot.name = "Toolbar search editing state"
         activeScreenshot.lifetime = .keepAlways
         add(activeScreenshot)
-        search.typeText(" native\n")
-        XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
+        app.buttons["navigation.search.clear"].tap()
+        search.typeText("native\n")
+        XCTAssertTrue(app.staticTexts["native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         assertIntegratedSearchRow(in: app)

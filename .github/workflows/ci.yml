@@ -33,8 +33,8 @@ jobs:
             test_target: biliUITests
           - suite: interaction-regression
             test_target: |
-              biliUITests/RootTabScrollUITests/testRootTabReselectionScrollsToTopWithoutRefresh
-              biliUITests/RootTabScrollUITests/testReselectionWithMinimizedTabBar
+              biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
+              biliUITests/RootTabScrollUITests/testDynamicTabReselectionWithMinimizedTabBar
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
               biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
