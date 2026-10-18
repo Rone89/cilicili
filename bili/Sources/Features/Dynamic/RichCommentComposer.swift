@@ -605,9 +605,6 @@ struct RichCommentTextView: UIViewRepresentable {
         ) {
             var updatedDraft = draft.replacing(range, with: replacement)
             updatedDraft.selection = RichCommentSelection(NSRange(location: selectionLocation, length: 0))
-            if updatedDraft.elements.isEmpty {
-                renderedElements = []
-            }
             draft = updatedDraft
             applyIfNeeded(draft: updatedDraft, to: textView, emotes: textView.availableEmotes)
         }
