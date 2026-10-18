@@ -1017,7 +1017,7 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
 
     @MainActor
     private func waitUntil(
-        _ stage: String,
+        _ stage: String = "shared layout",
         timeout: Duration = .seconds(10),
         file: StaticString = #filePath,
         line: UInt = #line,
