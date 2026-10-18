@@ -110,7 +110,9 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(commentHeader.isHittable)
         let hiddenSummary = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                !app.descendants(matching: .any)["video.detail.summary"].firstMatch.exists
+                let summary = app.descendants(matching: .any)["video.detail.summary"].firstMatch
+                return (!summary.exists || !summary.isHittable)
+                    && (!detailMarker.exists || !detailMarker.isHittable)
             }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [hiddenSummary], timeout: 5), .completed, app.debugDescription)

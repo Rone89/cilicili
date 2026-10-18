@@ -69,10 +69,13 @@ final class DynamicDetailFlowUITests: XCTestCase {
         deleteButton.tap()
         XCTAssertEqual(editor.value as? String, "native")
         emoteButton.tap()
-        let systemKeyboard = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in !emotePicker.exists }, object: nil
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [systemKeyboard], timeout: 5), .completed)
+        // UIKit retains the custom input view after switching back. Verify the
+        // active native keyboard rather than the lifetime of its old view.
+        let letterKey = app.keyboards.keys.matching(
+            NSPredicate(format: "label IN %@", ["a", "A"])
+        ).firstMatch
+        XCTAssertTrue(letterKey.waitForExistence(timeout: 5))
+        XCTAssertTrue(letterKey.isHittable)
         editor.typeText(" typing")
         XCTAssertEqual(editor.value as? String, "native typing")
     }
