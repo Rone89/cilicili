@@ -2,12 +2,38 @@ import XCTest
 
 @MainActor
 final class SearchScrollRetentionUITests: XCTestCase {
+    func testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults() {
+        let app = launchFixture(extraArguments: ["--search-test-dismiss-background"])
+        let search = app.textFields["navigation.search.field"]
+        let originalQuery = search.value as? String
+        for _ in 0..<2 {
+            search.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForExistence(timeout: 3))
+            // Keyboard candidates have their own ScrollView and result rows
+            // navigate. Use the fixture's explicit blank area instead of either.
+            let keyboard = app.keyboards.firstMatch
+            let background = app.buttons["fixture.search.dismissBackground"]
+            XCTAssertTrue(background.waitForExistence(timeout: 3))
+            XCTAssertGreaterThanOrEqual(background.frame.minY, search.frame.maxY)
+            XCTAssertLessThan(background.frame.maxY, keyboard.frame.minY)
+            background.tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForNonExistence(timeout: 3))
+            XCTAssertTrue(search.waitForExistence(timeout: 3))
+            XCTAssertEqual(search.value as? String, originalQuery)
+            XCTAssertTrue(app.staticTexts["结果 1"].exists)
+            XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
+        }
+    }
+
     func testCancelAfterSubmittedSearchRestoresHotSearches() {
         let app = launchFixture()
         let search = app.textFields["navigation.search.field"]
         search.tap()
-        search.typeText(" native\n")
-        XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
+        app.buttons["navigation.search.clear"].tap()
+        search.typeText("native\n")
+        XCTAssertTrue(app.staticTexts["native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
 
         search.tap()
@@ -16,7 +42,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["大家都在搜"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["热门搜索，热搜保留测试"].exists)
-        XCTAssertFalse(app.staticTexts["滚动位置测试 native 1"].exists)
+        XCTAssertFalse(app.staticTexts["native 1"].exists)
         XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         XCTAssertTrue(app.tabBars.buttons["搜索"].isSelected)
 
@@ -43,8 +69,9 @@ final class SearchScrollRetentionUITests: XCTestCase {
         activeScreenshot.name = "Toolbar search editing state"
         activeScreenshot.lifetime = .keepAlways
         add(activeScreenshot)
-        search.typeText(" native\n")
-        XCTAssertTrue(app.staticTexts["滚动位置测试 native 1"].waitForExistence(timeout: 5))
+        app.buttons["navigation.search.clear"].tap()
+        search.typeText("native\n")
+        XCTAssertTrue(app.staticTexts["native 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertEqual(app.textFields.matching(identifier: "navigation.search.field").count, 1)
         assertIntegratedSearchRow(in: app)
@@ -255,10 +282,10 @@ final class SearchScrollRetentionUITests: XCTestCase {
         add(screenshot)
     }
 
-    private func launchFixture() -> XCUIApplication {
+    private func launchFixture(extraArguments: [String] = []) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-test-fixture", "searchScroll", "--ui-test-enable-animations"]
+        app.launchArguments = ["--ui-test-fixture", "searchScroll", "--ui-test-enable-animations"] + extraArguments
         app.launch()
         XCTAssertTrue(app.staticTexts["结果 1"].waitForExistence(timeout: 5))
         addTeardownBlock { app.terminate() }

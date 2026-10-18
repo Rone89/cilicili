@@ -1,10 +1,12 @@
 # Cloud development checks
 
-Pull requests and main pushes use one `iOS CI` workflow. It runs three independent
+Pull requests and main pushes use one `iOS CI` workflow. It runs three main independent
 checks: all `biliTests` unit tests, all `biliUITests` UI tests, and an unsigned
 device Release build. The two test targets run on separate disposable runners
 with matrix fail-fast disabled, so one failure cannot cancel the other target.
-Both test targets are still required for a complete pass.
+Both test targets are still required for a complete pass. A separate focused
+`interaction-regression` matrix entry gives earlier feedback for dynamic tab
+reselection and search dismissal; it does not replace the complete UI target.
 
 ## Environment
 

@@ -31,6 +31,13 @@ jobs:
             test_target: biliTests
           - suite: ui
             test_target: biliUITests
+          - suite: interaction-regression
+            test_target: |
+              biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
+              biliUITests/RootTabScrollUITests/testDynamicTabReselectionWithMinimizedTabBar
+              biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
+              biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
+              biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
 
     steps:
       - name: Checkout
@@ -82,6 +89,12 @@ jobs:
         run: |
           set -euo pipefail
           result_bundle_path="$RUNNER_TEMP/bili-tests.xcresult"
+          test_selectors=()
+          while IFS= read -r selector; do
+            if [ -n "$selector" ]; then
+              test_selectors+=("-only-testing:$selector")
+            fi
+          done <<< "$TEST_TARGET"
           set +e
           python3 Scripts/build-cache.py run -- xcodebuild \
             -project "$PROJECT" \
@@ -91,7 +104,7 @@ jobs:
             -destination-timeout 120 \
             -resultBundlePath "$result_bundle_path" \
             -parallel-testing-enabled NO \
-            -only-testing:"$TEST_TARGET" \
+            "${test_selectors[@]}" \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 600 \

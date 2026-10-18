@@ -62,6 +62,18 @@ struct UITestSearchScrollFixtureView: View {
     private var searchNavigationStack: some View {
         NavigationStack(path: $path) {
             SearchContentView(viewModel: viewModel, showsHotSearches: true, accessoryStore: accessoryStore)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if ProcessInfo.processInfo.arguments.contains("--search-test-dismiss-background") {
+                        // A deterministic blank target: tapping a result while
+                        // editing is expected to navigate, not remain here.
+                        Button {} label: {
+                            Color(.systemGroupedBackground).frame(height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("搜索内容空白区域")
+                        .accessibilityIdentifier("fixture.search.dismissBackground")
+                    }
+                }
                 .toolbarTitleDisplayMode(.inline)
                 .navigationTitle("")
                 .navigationToolbarSearch(
