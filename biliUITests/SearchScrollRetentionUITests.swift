@@ -10,9 +10,18 @@ final class SearchScrollRetentionUITests: XCTestCase {
             search.tap()
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
             XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForExistence(timeout: 3))
-            // The side margin is content outside a result row and the toolbar.
-            app.scrollViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.1)).tap()
-            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+            // Keyboard candidates expose their own ScrollView. Derive a point
+            // explicitly between the input and keyboard, in the content margin.
+            let keyboard = app.keyboards.firstMatch
+            let keyboardFrame = keyboard.frame
+            let top = search.frame.maxY + 24
+            let bottom = keyboardFrame.minY - 24
+            XCTAssertGreaterThan(bottom, top)
+            let targetY = (top + bottom) / 2
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                .withOffset(CGVector(dx: app.frame.width - 4, dy: targetY - app.frame.minY)).tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 3),
+                          "Content tap y=\(targetY), input=\(search.frame), keyboard=\(keyboardFrame)")
             XCTAssertTrue(app.buttons["navigation.search.cancel"].waitForNonExistence(timeout: 3))
             XCTAssertEqual(search.value as? String, originalQuery)
             XCTAssertTrue(app.staticTexts["结果 1"].exists)
