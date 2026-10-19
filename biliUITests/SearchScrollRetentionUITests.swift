@@ -283,7 +283,13 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let user = app.buttons["search.scope.user"]
         for _ in 0..<4 {
             if user.exists && categories.frame.contains(user.frame) { break }
-            categories.swipeLeft()
+            // Nested scroll views may expose a frame extended behind the toolbar.
+            // Swipe along the visible capsule row, rather than its container center.
+            let bounds = categories.frame.intersection(app.frame)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: bounds.maxX - 20, dy: video.frame.midY))
+            let end = origin.withOffset(CGVector(dx: bounds.minX + 20, dy: video.frame.midY))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
         let revealed = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
