@@ -91,6 +91,29 @@ final class HomeFeedSnapshotStorageTests: XCTestCase {
         XCTAssertTrue(model.videos.isEmpty)
     }
 
+    func testNewRequestInSameModeRejectsPendingRestore() async throws {
+        let gate = SuspendedSnapshotStorage()
+        let model = model(storage: gate)
+        let restore = Task { await model.restoreCachedVideosIfAvailable() }
+        await gate.waitForRead()
+        model.requestRevision += 1
+        await gate.finish(with: HomeFeedSnapshotRestore(videos: [try HomeFeedbackTestData.video()], lastSeenMarkerIndex: nil))
+        await restore.value
+        XCTAssertTrue(model.videos.isEmpty)
+    }
+
+    func testCredentialChangeDuringRestoreRejectsOldSnapshot() async throws {
+        let gate = SuspendedSnapshotStorage()
+        let (library, session) = stores()
+        let coordinator = HomeFeedSnapshotCoordinator(libraryStore: library, sessionStore: session, storage: gate)
+        let load = Task { await coordinator.load(mode: .recommend) }
+        await gate.waitForRead()
+        try session.saveLoginCookies(["SESSDATA": "test-new-session", "DedeUserID": "9999"], credentialKind: .web)
+        await gate.finish(with: HomeFeedSnapshotRestore(videos: [try HomeFeedbackTestData.video()], lastSeenMarkerIndex: nil))
+        let restored = await load.value
+        XCTAssertNil(restored)
+    }
+
     func testFreshContentArrivingDuringRestoreIsNotOverwritten() async throws {
         let gate = SuspendedSnapshotStorage()
         let model = model(storage: gate)
