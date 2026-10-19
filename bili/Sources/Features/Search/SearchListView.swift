@@ -118,12 +118,6 @@ struct SearchListView: View {
     @ViewBuilder
     private var resultsContent: some View {
         ForEach(viewModel.results) { result in
-            if shouldShowSectionHeader(for: result) {
-                Label(result.sectionTitle, systemImage: result.sectionSystemImage)
-                    .font(.headline)
-                    .padding(.top, result == viewModel.results.first ? 0 : 8)
-            }
-
             SearchStructuredResultCard(result: result)
                 .equatable()
         }
@@ -156,13 +150,6 @@ struct SearchListView: View {
 
     private var displayedHotSearches: [HotSearchItem] {
         Array(viewModel.hotSearches.prefix(10))
-    }
-
-    private func shouldShowSectionHeader(for result: SearchResultItem) -> Bool {
-        guard viewModel.selectedScope == .comprehensive else { return false }
-        guard let index = viewModel.results.firstIndex(of: result) else { return false }
-        guard index > 0 else { return true }
-        return viewModel.results[index - 1].sectionTitle != result.sectionTitle
     }
 
     private var emptyResultsView: some View {
@@ -306,7 +293,7 @@ private struct SearchStructuredResultCard: View, Equatable {
 }
 
 struct SearchLoadingContent: View {
-    var scope: SearchScope = .comprehensive
+    var scope: SearchScope = .video
     var count = 8
     var showsTitle = true
 
@@ -340,7 +327,7 @@ private struct SearchScopedResultSkeletonRow: View {
             SearchNonVideoResultSkeletonRow(style: .media)
         case .article:
             SearchNonVideoResultSkeletonRow(style: .article)
-        case .comprehensive, .video:
+        case .video:
             SearchVideoResultSkeletonRow()
         }
     }
@@ -437,7 +424,7 @@ private struct SearchScopeBar: View {
                         Button {
                             Task { await viewModel.selectScope(scope) }
                         } label: {
-                            Label(scope == .comprehensive ? "综合" : scope.title, systemImage: scope.systemImage)
+                            Label(scope.title, systemImage: scope.systemImage)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
