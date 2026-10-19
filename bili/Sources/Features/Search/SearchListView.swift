@@ -26,6 +26,9 @@ struct SearchListView: View {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
+                if !viewModel.showsDiscovery {
+                    SearchScopeBar(viewModel: viewModel)
+                }
                 if viewModel.showsDiscovery {
                     discoveryContent
                 } else if viewModel.results.isEmpty && viewModel.state.isLoading {
@@ -418,4 +421,50 @@ private struct SearchNonVideoResultSkeletonRow: View {
         }
     }
 
+}
+
+/// Scrolls vertically with results while keeping category navigation horizontal.
+private struct SearchScopeBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var viewModel: SearchViewModel
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SearchScope.allCases) { scope in
+                        let selected = scope == viewModel.selectedScope
+                        Button {
+                            Task { await viewModel.selectScope(scope) }
+                        } label: {
+                            Label(scope == .comprehensive ? "综合" : scope.title, systemImage: scope.systemImage)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                                .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("搜索类型：\(scope.title)")
+                        .accessibilityValue(selected ? "已选中" : "未选中")
+                        .accessibilityAddTraits(selected ? [.isSelected] : [])
+                        .accessibilityIdentifier("search.scope.\(scope.rawValue)")
+                        .id(scope)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("search.scopes")
+            .onAppear { proxy.scrollTo(viewModel.selectedScope, anchor: .center) }
+            .onChange(of: viewModel.selectedScope) { _, scope in
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+                    proxy.scrollTo(scope, anchor: .center)
+                }
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+    }
 }
