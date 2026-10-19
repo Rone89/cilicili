@@ -94,7 +94,18 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(picker.frame.minY, summary.frame.maxY - 1)
         XCTAssertGreaterThan(picker.frame.minY, appFrame.midY)
         let initialDetailMarkerY = detailMarker.frame.minY
-        app.swipeUp()
+        let detailScroll = app.scrollViews.containing(.staticText, identifier: "相关推荐").firstMatch
+        XCTAssertTrue(detailScroll.waitForExistence(timeout: 5))
+        let contentStart = app.coordinate(withNormalizedOffset: .zero).withOffset(
+            CGVector(dx: detailScroll.frame.midX, dy: picker.frame.minY - 40)
+        )
+        let contentEnd = contentStart.withOffset(CGVector(dx: 0, dy: -180))
+        contentStart.press(forDuration: 0.1, thenDragTo: contentEnd)
+        let contentMoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in detailMarker.frame.minY < initialDetailMarkerY - 4 },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [contentMoved], timeout: 5), .completed)
         let scrolledDetailMarkerY = detailMarker.frame.minY
         XCTAssertLessThan(scrolledDetailMarkerY, initialDetailMarkerY)
         XCTAssertTrue(picker.isHittable)
@@ -394,18 +405,13 @@ final class VideoDetailFlowUITests: XCTestCase {
         revealPlayerControls(in: app)
         let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
-        if !fullscreen.isHittable {
-            let surface = app.buttons["ui.player.surface"]
-            XCTAssertTrue(surface.waitForExistence(timeout: 5))
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
-        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5))
+        XCTAssertTrue(waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 5))
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
         portraitAttachment.name = "Geometry portrait before fullscreen"
         portraitAttachment.lifetime = .keepAlways
         add(portraitAttachment)
-        fullscreen.tap()
+        tapPlayerControl(fullscreen, in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
         let landscapeWindow = XCTNSPredicateExpectation(
@@ -430,14 +436,14 @@ final class VideoDetailFlowUITests: XCTestCase {
         landscapeAttachment.lifetime = .keepAlways
         add(landscapeAttachment)
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
-        if !waitForInteractable({ fullscreenControl(in: app) }, timeout: 2) {
+        if !waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 2) {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.tap()
         }
-        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5))
+        XCTAssertTrue(waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 5))
         let landscapeExit = fullscreenControl(in: app)
-        landscapeExit.tap()
+        tapPlayerControl(landscapeExit, in: app)
         XCUIDevice.shared.orientation = .portrait
 
         let portraitWindow = XCTNSPredicateExpectation(
@@ -459,7 +465,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 5))
-        more.tap()
+        tapPlayerControl(more, in: app)
 
         let quality = app.descendants(matching: .any)["ui.player.quality"].firstMatch
         XCTAssertTrue(quality.waitForExistence(timeout: 5))
@@ -481,13 +487,13 @@ final class VideoDetailFlowUITests: XCTestCase {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
-        XCTAssertTrue(waitForInteractable({ app.buttons["ui.player.more"] }, timeout: 5))
-        more.tap()
+        XCTAssertTrue(waitForVisiblePlayerControl(in: app, { app.buttons["ui.player.more"] }, timeout: 5))
+        tapPlayerControl(more, in: app)
         let settings = app.buttons["弹幕设置"]
         if !settings.waitForExistence(timeout: 3) {
             revealPlayerControls(in: app)
-            XCTAssertTrue(waitForInteractable({ app.buttons["ui.player.more"] }, timeout: 5))
-            app.buttons["ui.player.more"].tap()
+            XCTAssertTrue(waitForVisiblePlayerControl(in: app, { app.buttons["ui.player.more"] }, timeout: 5))
+            tapPlayerControl(app.buttons["ui.player.more"], in: app)
         }
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
@@ -504,7 +510,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
-        fullscreen.tap()
+        tapPlayerControl(fullscreen, in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
         XCUIDevice.shared.orientation = .portrait
         XCUIDevice.shared.orientation = .landscapeRight
@@ -530,7 +536,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
-        fullscreen.tap()
+        tapPlayerControl(fullscreen, in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
         XCUIDevice.shared.orientation = .portrait
 
@@ -558,7 +564,7 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         let fullscreen = fullscreenControl(in: app)
         if fullscreen.exists {
-            XCTAssertTrue(fullscreen.isHittable)
+            XCTAssertTrue(waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 5))
         }
     }
 
@@ -569,7 +575,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let fullscreen = fullscreenControl(in: app)
         XCTAssertTrue(fullscreen.waitForExistence(timeout: 5))
 
-        fullscreen.tap()
+        tapPlayerControl(fullscreen, in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
         XCUIDevice.shared.orientation = .portrait
 
@@ -679,14 +685,18 @@ final class VideoDetailFlowUITests: XCTestCase {
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
         for _ in 0..<3 {
-            if waitForInteractable({ fullscreenControl(in: app) }, timeout: 1) { return }
+            if waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 1) { return }
             surface.tap()
         }
-        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 5), app.debugDescription)
     }
 
+    // XCUI may reject the activation point of a visible SwiftUI glass button.
+    // Check its enabled state and full on-screen bounds, then perform an actual
+    // coordinate tap; each caller still verifies the resulting UI action.
     @MainActor
-    private func waitForInteractable(
+    private func waitForVisiblePlayerControl(
+        in app: XCUIApplication,
         _ query: () -> XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
@@ -696,7 +706,8 @@ final class VideoDetailFlowUITests: XCTestCase {
             if element.exists,
                element.frame.width > 1,
                element.frame.height > 1,
-               element.isHittable {
+               element.isEnabled,
+               app.windows.firstMatch.frame.contains(element.frame) {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -705,7 +716,19 @@ final class VideoDetailFlowUITests: XCTestCase {
         return element.exists
             && element.frame.width > 1
             && element.frame.height > 1
-            && element.isHittable
+            && element.isEnabled
+            && app.windows.firstMatch.frame.contains(element.frame)
+    }
+
+    @MainActor
+    private func tapPlayerControl(_ control: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        let frame = control.frame
+        XCTAssertGreaterThan(frame.width, 1)
+        XCTAssertGreaterThan(frame.height, 1)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(frame))
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
     }
 
     @MainActor
