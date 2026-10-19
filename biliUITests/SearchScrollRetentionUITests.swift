@@ -120,10 +120,10 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         app.buttons["navigation.search.cancel"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
-        app.scrollViews.firstMatch.swipeUp()
+        app.scrollViews["search.results"].swipeUp()
         assertIntegratedSearchRow(in: app)
 
-        app.scrollViews.firstMatch.swipeDown()
+        app.scrollViews["search.results"].swipeDown()
 
         for tab in ["首页", "动态", "直播"] {
             app.tabBars.buttons[tab].tap()
@@ -138,7 +138,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
     func testReturningFromDetailKeepsVisibleResultAndOffset() {
         let app = launchFixture()
-        let scrollView = app.scrollViews.firstMatch
+        let scrollView = app.scrollViews["search.results"]
         scrollView.swipeUp()
         scrollView.swipeUp()
         let result = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "结果 "))
@@ -162,8 +162,8 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
     func testNewSearchDoesNotRestoreOldResultsOffset() {
         let app = launchFixture()
-        app.scrollViews.firstMatch.swipeUp()
-        app.scrollViews.firstMatch.swipeUp()
+        app.scrollViews["search.results"].swipeUp()
+        app.scrollViews["search.results"].swipeUp()
         app.buttons["fixture.search.newQuery"].tap()
         let first = app.staticTexts["新结果 1"]
         XCTAssertTrue(first.waitForExistence(timeout: 3))
@@ -198,7 +198,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
     func testIntegratedSearchStaysVisibleDuringRepeatedScrolling() {
         let app = launchFixture()
-        let scroll = app.scrollViews.firstMatch
+        let scroll = app.scrollViews["search.results"]
         let search = app.textFields["navigation.search.field"]
         let query = search.value as? String
         for _ in 0..<5 {
@@ -259,6 +259,35 @@ final class SearchScrollRetentionUITests: XCTestCase {
         filters.tap()
         XCTAssertFalse(app.buttons["最多播放"].isEnabled)
         XCTAssertFalse(app.buttons["最新发布"].isEnabled)
+    }
+
+    func testSearchScopeBarStaysBelowSearchAndSwitchesDirectly() {
+        let app = launchFixture()
+        let video = app.buttons["search.scope.video"]
+        XCTAssertTrue(video.waitForExistence(timeout: 3))
+        XCTAssertEqual(video.value as? String, "已选中")
+        let initialY = video.frame.minY
+        let field = app.textFields["navigation.search.field"]
+        XCTAssertGreaterThanOrEqual(initialY, field.frame.maxY)
+        app.scrollViews["search.results"].swipeUp()
+        XCTAssertTrue(video.isHittable)
+        XCTAssertEqual(video.frame.minY, initialY, accuracy: 4)
+
+        let categories = app.scrollViews["search.scopes"]
+        categories.swipeLeft()
+        let user = app.buttons["search.scope.user"]
+        XCTAssertTrue(user.waitForExistence(timeout: 3))
+        XCTAssertTrue(user.isHittable)
+        user.tap()
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "已选中"), object: user
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
+        XCTAssertEqual(app.buttons["search.filters.menu"].value as? String, "UP主，当前类型不支持排序")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Pinned search category capsules"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     private func assertIntegratedSearchRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {

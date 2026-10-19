@@ -263,7 +263,9 @@ final class RootTabScrollUITests: XCTestCase {
     }
 
     private func mainScroll(in app: XCUIApplication) -> XCUIElement {
-        let scroll = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
+        let searchResults = app.scrollViews["search.results"]
+        let scroll = searchResults.exists ? searchResults
+            : (app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch)
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         return scroll
     }

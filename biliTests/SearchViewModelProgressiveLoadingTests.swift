@@ -75,6 +75,30 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         )
     }
 
+    func testSwitchingScopeCancelsPendingVideoSearchAndShowsOnlyUsers() async throws {
+        let user = try JSONDecoder.bili.decode(
+            SearchUserItem.self,
+            from: Data(#"{"mid":100,"uname":"目标用户"}"#.utf8)
+        )
+        let api = SearchAPIStub(user: user)
+        let model = SearchViewModel(api: api)
+        let oldSearch = Task { await model.search("旧关键词") }
+        let started = await eventually { await api.oldSearchStarted }
+        XCTAssertTrue(started)
+
+        await model.selectScope(.user)
+        await oldSearch.value
+        XCTAssertEqual(model.selectedScope, .user)
+        XCTAssertEqual(model.query, "旧关键词")
+        XCTAssertEqual(model.results.map(\.id), ["user-100"])
+        let cancelled = await eventually { await api.oldSearchCancelled }
+        XCTAssertTrue(cancelled)
+
+        await model.search("新关键词")
+        await model.selectScope(.video)
+        XCTAssertEqual(model.results.map(\.id), ["video-BV-new"])
+    }
+
     private func eventually(
         timeout: Duration = .seconds(2),
         condition: @escaping @MainActor () async -> Bool

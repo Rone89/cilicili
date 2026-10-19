@@ -10,6 +10,11 @@ struct SearchContentView: View {
             viewModel: viewModel,
             showsHotSearches: showsHotSearches
         )
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !viewModel.showsDiscovery {
+                SearchScopeBar(viewModel: viewModel)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 SearchFilterToolbarMenu(viewModel: viewModel)
@@ -186,5 +191,52 @@ private struct SearchFilterToolbarMenu: View {
     private var selectionDescription: String {
         let order = viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "当前类型不支持排序"
         return viewModel.selectedScope.title + "，" + order
+    }
+}
+
+/// Kept outside the results scroll view so categories remain directly reachable.
+private struct SearchScopeBar: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var viewModel: SearchViewModel
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SearchScope.allCases) { scope in
+                        let selected = scope == viewModel.selectedScope
+                        Button {
+                            Task { await viewModel.selectScope(scope) }
+                        } label: {
+                            Label(scope == .comprehensive ? "综合" : scope.title, systemImage: scope.systemImage)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                                .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("搜索类型：\(scope.title)")
+                        .accessibilityValue(selected ? "已选中" : "未选中")
+                        .accessibilityAddTraits(selected ? [.isSelected] : [])
+                        .accessibilityIdentifier("search.scope.\(scope.rawValue)")
+                        .id(scope)
+                    }
+                }
+                .padding(.horizontal, libraryStore.standardPageHorizontalInset)
+                .padding(.vertical, 8)
+            }
+            .accessibilityIdentifier("search.scopes")
+            .onAppear { proxy.scrollTo(viewModel.selectedScope, anchor: .center) }
+            .onChange(of: viewModel.selectedScope) { _, scope in
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+                    proxy.scrollTo(scope, anchor: .center)
+                }
+            }
+        }
+        .background(Color(.systemGroupedBackground))
     }
 }
