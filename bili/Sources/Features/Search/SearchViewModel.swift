@@ -86,7 +86,7 @@ enum SearchScope: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-enum SearchResultItem: Identifiable, Hashable {
+enum SearchResultItem: Identifiable, Hashable, Sendable {
     case video(VideoItem)
     case user(SearchUserItem)
     case bangumi(SearchMediaItem)
@@ -139,6 +139,18 @@ enum SearchResultItem: Identifiable, Hashable {
     }
 }
 
+protocol SearchAPIProviding: Sendable {
+    func fetchHotSearch() async throws -> [HotSearchItem]
+    func fetchSearchSuggest(term: String) async throws -> [SearchSuggestItem]
+    func searchVideos(keyword: String, page: Int, order: String?) async throws -> [VideoItem]
+    func searchUsers(keyword: String, page: Int) async throws -> [SearchUserItem]
+    func searchBangumi(keyword: String, page: Int) async throws -> [SearchMediaItem]
+    func searchMovies(keyword: String, page: Int) async throws -> [SearchMediaItem]
+    func searchArticles(keyword: String, page: Int) async throws -> [SearchArticleItem]
+}
+
+extension BiliAPIClient: SearchAPIProviding {}
+
 @MainActor
 final class SearchViewModel: ObservableObject {
     @Published var query = ""
@@ -153,14 +165,15 @@ final class SearchViewModel: ObservableObject {
     private(set) var suggestionsRevision = 0
     private(set) var resultsRevision = 0
 
-    private let api: BiliAPIClient
+    private let api: any SearchAPIProviding
     private let debouncer = TaskDebouncer()
+    private var activeSearchTask: Task<Void, Never>?
     private var page = 1
     private var lastKeyword = ""
     private var hasMore = false
     private var searchGeneration = 0
 
-    init(api: BiliAPIClient) {
+    init(api: any SearchAPIProviding) {
         self.api = api
     }
 
@@ -251,15 +264,22 @@ final class SearchViewModel: ObservableObject {
         hasMore = false
         updateSuggestions([])
         state = .loading
-        do {
-            let fetched = try await fetchResults(keyword: term, page: page)
-            guard generation == searchGeneration else { return }
-            updateResults(fetched)
-            hasMore = !fetched.isEmpty
-            state = .loaded
-        } catch {
-            guard generation == searchGeneration else { return }
-            state = .failed(error.localizedDescription)
+        let scope = selectedScope
+        let order = selectedOrder
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performSearch(
+                keyword: term,
+                generation: generation,
+                scope: scope,
+                order: order
+            )
+        }
+        activeSearchTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
@@ -303,10 +323,17 @@ final class SearchViewModel: ObservableObject {
         let generation = searchGeneration
         let keyword = lastKeyword
         let nextPage = page + 1
+        let scope = selectedScope
+        let order = selectedOrder
         page = nextPage
         state = .loading
         do {
-            let more = try await fetchResults(keyword: keyword, page: nextPage)
+            let more = try await fetchResults(
+                keyword: keyword,
+                page: nextPage,
+                scope: scope,
+                order: order
+            )
             guard generation == searchGeneration else { return }
             if more.isEmpty {
                 hasMore = false
@@ -320,31 +347,123 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    private func fetchResults(keyword: String, page: Int) async throws -> [SearchResultItem] {
-        switch selectedScope {
+    private func performSearch(
+        keyword: String,
+        generation: Int,
+        scope: SearchScope,
+        order: SearchSortOrder
+    ) async {
+        do {
+            if scope == .comprehensive {
+                try await loadInitialComprehensiveResults(
+                    keyword: keyword,
+                    generation: generation,
+                    order: order
+                )
+            } else {
+                let fetched = try await fetchResults(
+                    keyword: keyword,
+                    page: 1,
+                    scope: scope,
+                    order: order
+                )
+                try Task.checkCancellation()
+                guard generation == searchGeneration else { return }
+                updateResults(fetched)
+                hasMore = !fetched.isEmpty
+                state = .loaded
+            }
+        } catch is CancellationError {
+            guard generation == searchGeneration else { return }
+            state = .idle
+        } catch {
+            guard generation == searchGeneration else { return }
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    private func loadInitialComprehensiveResults(
+        keyword: String,
+        generation: Int,
+        order: SearchSortOrder
+    ) async throws {
+        async let users = optionalUsers(keyword: keyword)
+        async let bangumi = optionalBangumi(keyword: keyword)
+        async let movies = optionalMovies(keyword: keyword)
+        async let articles = optionalArticles(keyword: keyword)
+
+        let videos = try await api.searchVideos(keyword: keyword, page: 1, order: order.apiValue)
+            .map(SearchResultItem.video)
+        try Task.checkCancellation()
+        guard generation == searchGeneration else { throw CancellationError() }
+        updateResults(videos)
+        hasMore = !videos.isEmpty
+
+        let userItems = await users
+        try publishSupplemental(userItems, generation: generation)
+        let bangumiItems = await bangumi
+        try publishSupplemental(bangumiItems, generation: generation)
+        let movieItems = await movies
+        try publishSupplemental(movieItems, generation: generation)
+        let articleItems = await articles
+        try publishSupplemental(articleItems, generation: generation)
+        state = .loaded
+    }
+
+    private func publishSupplemental(
+        _ items: [SearchResultItem],
+        generation: Int
+    ) throws {
+        try Task.checkCancellation()
+        guard generation == searchGeneration else { throw CancellationError() }
+        let existing = Set(results.map(\.id))
+        let uniqueItems = items.filter { !existing.contains($0.id) }
+        guard !uniqueItems.isEmpty else { return }
+        let insertionIndex =
+            results.firstIndex { result in
+                if case .video = result { return true }
+                return false
+            } ?? results.endIndex
+        results.insert(contentsOf: uniqueItems, at: insertionIndex)
+        resultsRevision &+= 1
+    }
+
+    private func optionalUsers(keyword: String) async -> [SearchResultItem] {
+        ((try? await api.searchUsers(keyword: keyword, page: 1)) ?? [])
+            .prefix(3)
+            .map(SearchResultItem.user)
+    }
+
+    private func optionalBangumi(keyword: String) async -> [SearchResultItem] {
+        ((try? await api.searchBangumi(keyword: keyword, page: 1)) ?? [])
+            .prefix(2)
+            .map(SearchResultItem.bangumi)
+    }
+
+    private func optionalMovies(keyword: String) async -> [SearchResultItem] {
+        ((try? await api.searchMovies(keyword: keyword, page: 1)) ?? [])
+            .prefix(2)
+            .map(SearchResultItem.movie)
+    }
+
+    private func optionalArticles(keyword: String) async -> [SearchResultItem] {
+        ((try? await api.searchArticles(keyword: keyword, page: 1)) ?? [])
+            .prefix(3)
+            .map(SearchResultItem.article)
+    }
+
+    private func fetchResults(
+        keyword: String,
+        page: Int,
+        scope: SearchScope,
+        order: SearchSortOrder
+    ) async throws -> [SearchResultItem] {
+        switch scope {
         case .comprehensive:
-            let videos = try await api.searchVideos(keyword: keyword, page: page, order: selectedOrder.apiValue)
+            return try await api.searchVideos(keyword: keyword, page: page, order: order.apiValue)
                 .map(SearchResultItem.video)
-            guard page == 1 else { return videos }
-            async let userResults = api.searchUsers(keyword: keyword, page: 1)
-            async let bangumiResults = api.searchBangumi(keyword: keyword, page: 1)
-            async let movieResults = api.searchMovies(keyword: keyword, page: 1)
-            async let articleResults = api.searchArticles(keyword: keyword, page: 1)
-            let users = ((try? await userResults) ?? [])
-                .prefix(3)
-                .map(SearchResultItem.user)
-            let bangumi = ((try? await bangumiResults) ?? [])
-                .prefix(2)
-                .map(SearchResultItem.bangumi)
-            let movies = ((try? await movieResults) ?? [])
-                .prefix(2)
-                .map(SearchResultItem.movie)
-            let articles = ((try? await articleResults) ?? [])
-                .prefix(3)
-                .map(SearchResultItem.article)
-            return users + bangumi + movies + articles + videos
         case .video:
-            return try await api.searchVideos(keyword: keyword, page: page, order: selectedOrder.apiValue)
+            return try await api.searchVideos(keyword: keyword, page: page, order: order.apiValue)
                 .map(SearchResultItem.video)
         case .bangumi:
             return try await api.searchBangumi(keyword: keyword, page: page)
@@ -404,6 +523,8 @@ final class SearchViewModel: ObservableObject {
     }
 
     private func invalidateSearchRequests() {
+        activeSearchTask?.cancel()
+        activeSearchTask = nil
         searchGeneration &+= 1
     }
 }

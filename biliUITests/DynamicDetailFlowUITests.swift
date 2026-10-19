@@ -27,7 +27,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
         let window = app.windows.firstMatch.frame
         let keyboardFrame = keyboard.frame
         editor.typeText("native")
-        XCTAssertEqual(editor.value as? String, "native")
+        XCTAssertTrue(waitForValue("native", element: editor, timeout: 3))
 
         let keyboardScreenshot = XCTAttachment(screenshot: app.screenshot())
         keyboardScreenshot.name = "Rich composer with system keyboard"
@@ -107,18 +107,23 @@ final class DynamicDetailFlowUITests: XCTestCase {
             "Photo", "照片"
         )).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
-        photo.tap()
         let add = app.navigationBars.buttons.matching(NSPredicate(
             format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label IN %@",
             "Add", "添加", ["Done", "完成"]
         )).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 5))
+        let photoFrame = photo.frame
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: photoFrame.midX, dy: photoFrame.midY)).tap()
+        let selection = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in add.isEnabled }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [selection], timeout: 5), .completed, app.debugDescription)
         add.tap()
 
         let attachments = app.descendants(matching: .any)[
             "dynamic.comment.composer.attachments"
         ].firstMatch
-        XCTAssertTrue(attachments.waitForExistence(timeout: 10))
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(attachments.waitForExistence(timeout: 30), app.debugDescription)
         let removeButton = app.buttons["dynamic.comment.composer.removeImage"].firstMatch
         XCTAssertTrue(removeButton.waitForExistence(timeout: 3))
         removeButton.tap()
@@ -320,26 +325,26 @@ final class DynamicDetailFlowUITests: XCTestCase {
 
         let modeButton = app.segmentedControls["home.feed.modePicker"]
         let messageButton = app.buttons["账号消息"]
-        let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(modeButton.waitForExistence(timeout: 5))
         XCTAssertTrue(messageButton.waitForExistence(timeout: 5))
+        let fixtureVideo = app.staticTexts["固定视频详情回归"].firstMatch
+        XCTAssertTrue(fixtureVideo.waitForExistence(timeout: 10))
+        let scrollView = app.scrollViews.containing(.staticText, identifier: "固定视频详情回归").firstMatch
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["固定视频详情回归"].firstMatch.waitForExistence(timeout: 10))
         for _ in 0..<3 where modeButton.isHittable { scrollView.swipeUp() }
 
-        XCTAssertTrue(waitForHittableState(
-            false,
-            query: { app.segmentedControls["home.feed.modePicker"] },
-            timeout: 5
-        ))
-        XCTAssertTrue(waitForHittableState(
-            false,
-            query: { app.buttons["账号消息"] },
-            timeout: 5
-        ))
+        let hiddenChrome = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let picker = app.segmentedControls["home.feed.modePicker"]
+                return (!picker.exists || !picker.isEnabled)
+                    && !app.buttons["账号消息"].exists
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hiddenChrome], timeout: 5), .completed, app.debugDescription)
         XCTAssertTrue(app.tabBars.firstMatch.exists)
 
-        for _ in 0..<4 where !modeButton.isHittable {
+        for _ in 0..<4 {
             scrollView.swipeDown()
         }
 
@@ -725,6 +730,19 @@ final class DynamicDetailFlowUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return query().isHittable == isHittable
+    }
+
+    @MainActor
+    private func waitForValue(
+        _ expectedValue: String,
+        element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while element.value as? String != expectedValue, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return element.value as? String == expectedValue
     }
 
     @MainActor

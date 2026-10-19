@@ -140,6 +140,15 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
         guard !isLayoutTransitioning else { return }
         guard !isAutoHideSuspended else { return }
         cancelAutoHide()
+        #if DEBUG
+        // Layout/lifecycle UI checks must not race the production three-second
+        // timeout while XCUI waits for the shared simulator to become idle.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-test-video-detail-network"),
+           arguments.contains("--ui-test-player-controls-persistent") {
+            return
+        }
+        #endif
         autoHideTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard let self, !Task.isCancelled else { return }
