@@ -36,8 +36,9 @@ extension HomeViewModel {
             guard revision == requestRevision else { return }
             guard !refreshedVideos.isEmpty else {
                 if previousVideos.isEmpty {
-                    restoreCachedVideosIfAvailable()
+                    await restoreCachedVideosIfAvailable()
                 }
+                guard revision == requestRevision, !Task.isCancelled else { return }
                 state = videos.isEmpty ? .failed("暂无内容") : .loaded
                 return
             }
@@ -61,8 +62,9 @@ extension HomeViewModel {
                 return
             }
             if videos.isEmpty {
-                restoreCachedVideosIfAvailable()
+                await restoreCachedVideosIfAvailable()
             }
+            guard revision == requestRevision, !Task.isCancelled else { return }
             state = videos.isEmpty ? .failed(error.localizedDescription) : .loaded
         }
     }

@@ -35,7 +35,8 @@ final class HomeViewModel: ObservableObject {
         api: BiliAPIClient,
         libraryStore: LibraryStore,
         sessionStore: SessionStore,
-        initialMode: HomeFeedMode = .recommend
+        initialMode: HomeFeedMode = .recommend,
+        snapshotStorage: any HomeFeedSnapshotStoring = HomeFeedSnapshotStorage.shared
     ) {
         self.libraryStore = libraryStore
         self.sessionStore = sessionStore
@@ -45,7 +46,8 @@ final class HomeViewModel: ObservableObject {
         )
         snapshotCoordinator = HomeFeedSnapshotCoordinator(
             libraryStore: libraryStore,
-            sessionStore: sessionStore
+            sessionStore: sessionStore,
+            storage: snapshotStorage
         )
         mediaPreloadCoordinator = HomeFeedMediaPreloadCoordinator(
             api: api,

@@ -57,7 +57,7 @@ final class AppDependencies: ObservableObject {
                     await self?.api.resetHomeRecommendState()
                     self?.homeRecommendDiagnosticsStore.reset()
                     HomeRecommendFeedbackCenter.shared.reset()
-                    HomeFeedSnapshotCache.clearAll()
+                    HomeFeedSnapshotStorage.shared.clear()
                 }
             }
             .store(in: &sessionCancellables)
@@ -93,6 +93,9 @@ final class AppDependencies: ObservableObject {
                     self?.handlePlaybackNetworkClassChange()
                 }
             }
+            .store(in: &sessionCancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .sink { _ in HomeFeedSnapshotStorage.shared.flushPendingSaves() }
             .store(in: &sessionCancellables)
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
