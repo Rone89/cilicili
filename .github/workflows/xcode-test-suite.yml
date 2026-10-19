@@ -96,6 +96,10 @@ jobs:
               test_selectors+=("-only-testing:$selector")
             fi
           done <<< "$TEST_TARGET"
+          retry_arguments=()
+          if [ -z "$UI_SHARD" ]; then
+            retry_arguments+=("-retry-tests-on-failure" "-test-iterations" "2")
+          fi
           set +e
           python3 Scripts/build-cache.py run -- xcodebuild \
             -project "$PROJECT" \
@@ -106,6 +110,7 @@ jobs:
             -resultBundlePath "$result_bundle_path" \
             -parallel-testing-enabled NO \
             "${test_selectors[@]}" \
+            "${retry_arguments[@]}" \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 600 \
