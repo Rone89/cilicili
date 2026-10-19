@@ -39,6 +39,7 @@ struct SearchListView: View {
             .padding(.horizontal, horizontalInset)
             .padding(.bottom, 18)
         }
+        .accessibilityIdentifier("search.results")
         .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
