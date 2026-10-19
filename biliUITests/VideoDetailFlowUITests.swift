@@ -399,7 +399,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        XCTAssertTrue(waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 5))
+        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5))
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
         portraitAttachment.name = "Geometry portrait before fullscreen"
@@ -430,14 +430,13 @@ final class VideoDetailFlowUITests: XCTestCase {
         landscapeAttachment.lifetime = .keepAlways
         add(landscapeAttachment)
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
-        let landscapeExit = fullscreenControl(in: app)
-        if !landscapeExit.waitForExistence(timeout: 2) || !landscapeExit.isHittable {
+        if !waitForInteractable({ fullscreenControl(in: app) }, timeout: 2) {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            surface.tap()
         }
-        XCTAssertTrue(landscapeExit.waitForExistence(timeout: 5))
-        XCTAssertTrue(landscapeExit.isHittable)
+        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5))
+        let landscapeExit = fullscreenControl(in: app)
         landscapeExit.tap()
         XCUIDevice.shared.orientation = .portrait
 
@@ -482,12 +481,12 @@ final class VideoDetailFlowUITests: XCTestCase {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
-        XCTAssertTrue(waitForVisibleFrame({ app.buttons["ui.player.more"] }, timeout: 5))
+        XCTAssertTrue(waitForInteractable({ app.buttons["ui.player.more"] }, timeout: 5))
         more.tap()
         let settings = app.buttons["弹幕设置"]
         if !settings.waitForExistence(timeout: 3) {
             revealPlayerControls(in: app)
-            XCTAssertTrue(waitForVisibleFrame({ app.buttons["ui.player.more"] }, timeout: 5))
+            XCTAssertTrue(waitForInteractable({ app.buttons["ui.player.more"] }, timeout: 5))
             app.buttons["ui.player.more"].tap()
         }
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
@@ -680,27 +679,33 @@ final class VideoDetailFlowUITests: XCTestCase {
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
         for _ in 0..<3 {
-            if waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 1) { return }
+            if waitForInteractable({ fullscreenControl(in: app) }, timeout: 1) { return }
             surface.tap()
         }
-        XCTAssertTrue(waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitForInteractable({ fullscreenControl(in: app) }, timeout: 5), app.debugDescription)
     }
 
     @MainActor
-    private func waitForVisibleFrame(
+    private func waitForInteractable(
         _ query: () -> XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             let element = query()
-            if element.exists, element.frame.width > 1, element.frame.height > 1 {
+            if element.exists,
+               element.frame.width > 1,
+               element.frame.height > 1,
+               element.isHittable {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         let element = query()
-        return element.exists && element.frame.width > 1 && element.frame.height > 1
+        return element.exists
+            && element.frame.width > 1
+            && element.frame.height > 1
+            && element.isHittable
     }
 
     @MainActor
