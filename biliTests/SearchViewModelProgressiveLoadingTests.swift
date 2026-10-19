@@ -14,16 +14,15 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         let model = SearchViewModel(api: api)
 
         let search = Task { await model.search("渐进加载") }
-        XCTAssertTrue(
-            await eventually {
-                model.results.contains { result in
-                    if case .video(let video) = result {
-                        return video.bvid == "BV-progressive"
-                    }
-                    return false
+        let didPublishVideo = await eventually {
+            model.results.contains { result in
+                if case .video(let video) = result {
+                    return video.bvid == "BV-progressive"
                 }
+                return false
             }
-        )
+        }
+        XCTAssertTrue(didPublishVideo)
         XCTAssertTrue(model.state.isLoading)
         XCTAssertFalse(
             model.results.contains { result in
@@ -44,12 +43,14 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         let model = SearchViewModel(api: api)
 
         let oldSearch = Task { await model.search("旧关键词") }
-        XCTAssertTrue(await eventually { await api.oldSearchStarted })
+        let didStartOldSearch = await eventually { await api.oldSearchStarted }
+        XCTAssertTrue(didStartOldSearch)
 
         await model.search("新关键词")
         await oldSearch.value
 
-        XCTAssertTrue(await eventually { await api.oldSearchCancelled })
+        let didCancelOldSearch = await eventually { await api.oldSearchCancelled }
+        XCTAssertTrue(didCancelOldSearch)
         XCTAssertEqual(
             model.results.compactMap { result -> String? in
                 if case .video(let video) = result { return video.bvid }
