@@ -280,11 +280,18 @@ final class SearchScrollRetentionUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [scrolledAway], timeout: 5), .completed,
                        "Categories should scroll offscreen with results")
-        app.scrollViews["search.results"].swipeDown()
+        // A reverse swipe may stop with the capsule row partly under the
+        // toolbar. Return fully to the top before checking category interaction.
+        let isCategoryVisible = {
+            video.exists && video.frame.minY >= field.frame.maxY
+                && app.windows.firstMatch.frame.contains(video.frame)
+        }
+        for _ in 0..<4 {
+            if isCategoryVisible() { break }
+            app.scrollViews["search.results"].swipeDown()
+        }
         let returned = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                video.exists && video.frame.minY >= field.frame.maxY && video.isHittable
-            }, object: nil
+            predicate: NSPredicate { _, _ in isCategoryVisible() }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
 
