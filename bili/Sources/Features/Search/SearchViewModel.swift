@@ -263,6 +263,7 @@ final class SearchViewModel: ObservableObject {
         lastKeyword = term
         hasMore = false
         updateSuggestions([])
+        updateResults([])
         state = .loading
         let scope = selectedScope
         let order = selectedOrder
@@ -419,12 +420,7 @@ final class SearchViewModel: ObservableObject {
         let existing = Set(results.map(\.id))
         let uniqueItems = items.filter { !existing.contains($0.id) }
         guard !uniqueItems.isEmpty else { return }
-        let insertionIndex =
-            results.firstIndex { result in
-                if case .video = result { return true }
-                return false
-            } ?? results.endIndex
-        results.insert(contentsOf: uniqueItems, at: insertionIndex)
+        results.append(contentsOf: uniqueItems)
         resultsRevision &+= 1
     }
 
@@ -495,7 +491,16 @@ final class SearchViewModel: ObservableObject {
         let existing = Set(results.map(\.id))
         let uniqueItems = more.filter { !existing.contains($0.id) }
         guard !uniqueItems.isEmpty else { return }
-        results.append(contentsOf: uniqueItems)
+        if selectedScope == .comprehensive {
+            let insertionIndex =
+                results.firstIndex { result in
+                    if case .video = result { return false }
+                    return true
+                } ?? results.endIndex
+            results.insert(contentsOf: uniqueItems, at: insertionIndex)
+        } else {
+            results.append(contentsOf: uniqueItems)
+        }
         resultsRevision &+= 1
     }
 
