@@ -34,8 +34,23 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         await gate.open()
         await search.value
 
-        XCTAssertEqual(model.results.map(\.sectionTitle), ["UP主", "视频"])
+        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "UP主"])
         XCTAssertFalse(model.state.isLoading)
+    }
+
+    func testComprehensivePaginationKeepsAllVideosBeforeSupplementalResults() async throws {
+        let user = try JSONDecoder.bili.decode(
+            SearchUserItem.self,
+            from: Data(#"{"mid":100,"uname":"搜索用户"}"#.utf8)
+        )
+        let model = SearchViewModel(api: SearchAPIStub(user: user))
+        await model.search("视频优先")
+        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "UP主"])
+
+        await model.loadMoreIfNeeded(current: model.results.last)
+
+        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "视频", "UP主"])
+        XCTAssertEqual(model.results.map(\.id), ["video-BV-progressive", "video-BV-page-2", "user-100"])
     }
 
     func testStartingNewSearchCancelsOldNetworkWorkAndRejectsOldResults() async {
@@ -120,7 +135,7 @@ private actor SearchAPIStub: SearchAPIProviding {
                 throw CancellationError()
             }
         }
-        let bvid = keyword == "新关键词" ? "BV-new" : "BV-progressive"
+        let bvid = page > 1 ? "BV-page-\(page)" : (keyword == "新关键词" ? "BV-new" : "BV-progressive")
         return [
             VideoItem(
                 bvid: bvid,

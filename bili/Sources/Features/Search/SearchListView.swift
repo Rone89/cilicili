@@ -7,6 +7,7 @@ struct SearchListView: View {
     @ObservedObject var viewModel: SearchViewModel
     let showsHotSearches: Bool
     @State private var scrollPosition = ScrollPosition()
+    @State private var isPaginationVisible = false
     // Offset samples do not drive UI updates while the user scrolls.
     @State private var scrollOffsets = ScrollOffsets()
 
@@ -123,17 +124,29 @@ struct SearchListView: View {
                 .equatable()
         }
 
-        if let lastResult = viewModel.results.last {
+        if !viewModel.results.isEmpty {
             Color.clear
                 .frame(height: 1)
                 .accessibilityHidden(true)
-                .task(id: lastResult.id) {
-                    await viewModel.loadMoreIfNeeded(current: lastResult)
+                .onAppear {
+                    isPaginationVisible = true
+                    requestNextPage()
+                }
+                .onDisappear { isPaginationVisible = false }
+                .onChange(of: viewModel.state.isLoading) { _, isLoading in
+                    if !isLoading { requestNextPage() }
                 }
         }
 
         if viewModel.state.isLoading {
             SearchLoadingContent(scope: viewModel.selectedScope, count: 4, showsTitle: false)
+        }
+    }
+
+    private func requestNextPage() {
+        guard isPaginationVisible, viewModel.state == .loaded else { return }
+        Task {
+            await viewModel.loadMoreIfNeeded(current: viewModel.results.last)
         }
     }
 
