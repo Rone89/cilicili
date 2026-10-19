@@ -96,10 +96,7 @@ jobs:
               test_selectors+=("-only-testing:$selector")
             fi
           done <<< "$TEST_TARGET"
-          retry_arguments=()
-          if [ -z "$UI_SHARD" ]; then
-            retry_arguments+=("-retry-tests-on-failure" "-test-iterations" "2")
-          fi
+          retry_arguments=("-retry-tests-on-failure" "-test-iterations" "2")
           set +e
           python3 Scripts/build-cache.py run -- xcodebuild \
             -project "$PROJECT" \
