@@ -164,6 +164,72 @@ final class LiveDanmakuRenderStoreTests: XCTestCase {
         XCTAssertEqual(rotationState.snapshot.chatFlushCount, 1)
     }
 
+    func testRotationGateHoldsAutomaticBatchesForBothArrivalOrders() async {
+        for queuesBeforeRotation in [false, true] {
+            let store = makeStore()
+            let item = makeItem(id: "held")
+            if queuesBeforeRotation { store.appendItems([item], retainingLimit: 20) }
+            store.setRenderedUpdatesDeferred(true)
+            if !queuesBeforeRotation { store.appendItems([item], retainingLimit: 20) }
+
+            try? await Task.sleep(nanoseconds: LivePlaybackPolicy.danmakuRenderBatchWindowNanoseconds + 200_000_000)
+            XCTAssertTrue(store.items.isEmpty)
+            XCTAssertTrue(store.chatItems.isEmpty)
+            XCTAssertEqual(store.itemsRevision, 0)
+            XCTAssertEqual(store.chatItemsRevision, 0)
+            XCTAssertEqual(store.queuedLiveItemCount, 1)
+
+            store.setRenderedUpdatesDeferred(false)
+            XCTAssertEqual(store.items, [item])
+            XCTAssertEqual(store.itemsRevision, 1)
+            try? await Task.sleep(nanoseconds: LivePlaybackPolicy.danmakuRenderBatchWindowNanoseconds + 200_000_000)
+            XCTAssertEqual(store.itemsRevision, 1, "Resuming must not leave a second scheduled flush")
+        }
+    }
+
+    func testDeferredQueuesStayBoundedAndResumeWithRetainedItems() {
+        let store = makeStore()
+        store.setRenderedUpdatesDeferred(true)
+        for index in 0..<100 {
+            store.appendItems([makeItem(id: "live-\(index)")], retainingLimit: 3)
+            store.prependHistoryItems([makeItem(id: "history-\(index)")], retainingLimit: 3)
+            XCTAssertLessThanOrEqual(store.queuedLiveItemCount, 3)
+            XCTAssertLessThanOrEqual(store.queuedHistoryItemCount, 3)
+        }
+        store.setRenderedUpdatesDeferred(false)
+        XCTAssertEqual(store.items.map(\.id), ["live-97", "live-98", "live-99"])
+        XCTAssertEqual(store.chatItems.map(\.id), ["history-0", "history-1", "history-2"])
+        XCTAssertEqual(store.queuedLiveItemCount, 0)
+        XCTAssertEqual(store.queuedHistoryItemCount, 0)
+    }
+
+    func testAutomaticBatchUsesLatestRetentionBudget() async {
+        let store = makeStore()
+        store.appendItems([makeItem(id: "already-rendered")], retainingLimit: 20)
+        store.flushPendingLiveItems()
+        store.appendItems([makeItem(id: "old")], retainingLimit: 20)
+        store.appendItems([makeItem(id: "latest")], retainingLimit: 1)
+        try? await Task.sleep(nanoseconds: LivePlaybackPolicy.danmakuRenderBatchWindowNanoseconds + 200_000_000)
+        XCTAssertEqual(store.items.map(\.id), ["latest"])
+        XCTAssertEqual(store.chatItems.map(\.id), ["latest"])
+    }
+
+    func testClearDuringRotationDiscardsAllDeferredPublications() async {
+        let store = makeStore()
+        store.appendItems([makeItem(id: "pending")], retainingLimit: 20)
+        store.setRenderedUpdatesDeferred(true)
+        store.prependHistoryItems([makeItem(id: "history")], retainingLimit: 20)
+        store.updatePlaybackTime(12)
+        store.clearItems()
+        store.setRenderedUpdatesDeferred(false)
+        try? await Task.sleep(nanoseconds: LivePlaybackPolicy.danmakuRenderBatchWindowNanoseconds + 200_000_000)
+        XCTAssertTrue(store.items.isEmpty)
+        XCTAssertTrue(store.chatItems.isEmpty)
+        XCTAssertEqual(store.playbackTime, 0)
+        XCTAssertEqual(store.itemsRevision, 0)
+        XCTAssertEqual(store.chatItemsRevision, 0)
+    }
+
     private func makeStore() -> LiveDanmakuRenderStore {
         LiveDanmakuRenderStore(
             isEnabled: true,

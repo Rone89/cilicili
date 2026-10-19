@@ -38,6 +38,9 @@ final class LiveDanmakuRenderStore: ObservableObject {
         pendingLiveItemsFlushTask?.cancel()
     }
 
+    var queuedLiveItemCount: Int { pendingLiveItems.count }
+    var queuedHistoryItemCount: Int { deferredHistoryItems.count }
+
     var itemCount: Int {
         items.count
     }
@@ -95,7 +98,11 @@ final class LiveDanmakuRenderStore: ObservableObject {
     func setRenderedUpdatesDeferred(_ deferred: Bool) {
         guard defersRenderedUpdates != deferred else { return }
         defersRenderedUpdates = deferred
-        guard !deferred else { return }
+        if deferred {
+            pendingLiveItemsFlushTask?.cancel()
+            pendingLiveItemsFlushTask = nil
+            return
+        }
 
         if let deferredPlaybackTime {
             self.deferredPlaybackTime = nil
@@ -107,9 +114,13 @@ final class LiveDanmakuRenderStore: ObservableObject {
 
     func appendItems(_ newItems: [DanmakuItem], retainingLimit limit: Int) {
         guard !newItems.isEmpty else { return }
-        pendingLiveItems.append(contentsOf: newItems)
+        let limit = max(0, limit)
         pendingLiveItemsRetainingLimit = limit
-        schedulePendingLiveItemsFlush(retainingLimit: limit)
+        pendingLiveItems.append(contentsOf: newItems.suffix(limit))
+        if pendingLiveItems.count > limit {
+            pendingLiveItems.removeFirst(pendingLiveItems.count - limit)
+        }
+        schedulePendingLiveItemsFlush()
     }
 
     func flushPendingLiveItems() {
@@ -122,16 +133,16 @@ final class LiveDanmakuRenderStore: ObservableObject {
         appendLiveItems(itemsToAppend, retainingLimit: pendingLiveItemsRetainingLimit)
     }
 
-    private func schedulePendingLiveItemsFlush(retainingLimit limit: Int) {
-        guard pendingLiveItemsFlushTask == nil else { return }
+    private func schedulePendingLiveItemsFlush() {
+        guard !defersRenderedUpdates, !pendingLiveItems.isEmpty,
+              pendingLiveItemsFlushTask == nil else { return }
         pendingLiveItemsFlushTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: LivePlaybackPolicy.danmakuRenderBatchWindowNanoseconds)
             guard let self, !Task.isCancelled else { return }
             self.pendingLiveItemsFlushTask = nil
-            guard !self.pendingLiveItems.isEmpty else { return }
-            let itemsToAppend = self.pendingLiveItems
-            self.pendingLiveItems.removeAll(keepingCapacity: true)
-            self.appendLiveItems(itemsToAppend, retainingLimit: limit)
+            // Automatic and explicit flushes must obey the same rotation gate
+            // and use the latest retaining limit rather than a timer capture.
+            self.flushPendingLiveItems()
         }
     }
 
@@ -152,8 +163,13 @@ final class LiveDanmakuRenderStore: ObservableObject {
     func prependHistoryItems(_ newItems: [DanmakuItem], retainingLimit limit: Int) {
         guard !newItems.isEmpty else { return }
         guard !defersRenderedUpdates else {
-            deferredHistoryItems.append(contentsOf: newItems)
+            let limit = max(0, limit)
             deferredHistoryItemsRetainingLimit = limit
+            let remaining = max(0, limit - deferredHistoryItems.count)
+            deferredHistoryItems.append(contentsOf: newItems.prefix(remaining))
+            if deferredHistoryItems.count > limit {
+                deferredHistoryItems.removeLast(deferredHistoryItems.count - limit)
+            }
             return
         }
         appendHistoryItems(newItems, retainingLimit: limit)
