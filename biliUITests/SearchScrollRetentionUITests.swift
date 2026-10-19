@@ -270,7 +270,13 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let field = app.textFields["navigation.search.field"]
         XCTAssertGreaterThanOrEqual(initialY, field.frame.maxY)
         app.scrollViews["search.results"].swipeUp()
-        XCTAssertFalse(video.isHittable, "Categories should scroll offscreen with results")
+        let scrolledAway = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !video.exists || video.frame.maxY <= field.frame.maxY
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [scrolledAway], timeout: 5), .completed,
+                       "Categories should scroll offscreen with results")
         app.scrollViews["search.results"].swipeDown()
         let returned = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
