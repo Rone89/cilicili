@@ -1,17 +1,17 @@
 import Foundation
 
-nonisolated struct HomeFeedSnapshot: Codable {
+nonisolated struct HomeFeedSnapshot: Codable, Sendable {
     let savedAt: Date
     let lastSeenMarkerIndex: Int?
     let videos: [HomeFeedCachedVideo]
 }
 
-nonisolated struct HomeFeedSnapshotRestore {
+nonisolated struct HomeFeedSnapshotRestore: Sendable {
     let videos: [VideoItem]
     let lastSeenMarkerIndex: Int?
 }
 
-nonisolated struct HomeFeedCachedVideo: Codable {
+nonisolated struct HomeFeedCachedVideo: Codable, Sendable {
     let bvid: String
     let aid: Int?
     let title: String
@@ -26,13 +26,13 @@ nonisolated struct HomeFeedCachedVideo: Codable {
     let recommendationFeedback: HomeRecommendationFeedbackMetadata?
 }
 
-nonisolated struct HomeFeedCachedOwner: Codable {
+nonisolated struct HomeFeedCachedOwner: Codable, Sendable {
     let mid: Int
     let name: String
     let face: String?
 }
 
-nonisolated struct HomeFeedCachedStat: Codable {
+nonisolated struct HomeFeedCachedStat: Codable, Sendable {
     let view: Int?
     let reply: Int?
     let like: Int?

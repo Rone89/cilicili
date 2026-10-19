@@ -4,9 +4,10 @@ import Foundation
 struct HomeFeedSnapshotCoordinator {
     let libraryStore: LibraryStore
     let sessionStore: SessionStore
+    let storage: any HomeFeedSnapshotStoring
 
-    func load(mode: HomeFeedMode) -> HomeFeedSnapshotRestore? {
-        HomeFeedSnapshotCache.load(
+    func context(mode: HomeFeedMode) -> HomeFeedSnapshotContext {
+        HomeFeedSnapshotContext(
             mode: mode,
             guestModeEnabled: libraryStore.guestModeEnabled,
             recommendSource: libraryStore.homeRecommendFeedSourcePreference,
@@ -16,16 +17,17 @@ struct HomeFeedSnapshotCoordinator {
         )
     }
 
+    func load(mode: HomeFeedMode) async -> HomeFeedSnapshotRestore? {
+        let requestedContext = context(mode: mode)
+        let credentialVersion = sessionStore.playbackCredentialVersion
+        let snapshot = await storage.load(context: requestedContext)
+        guard !Task.isCancelled,
+              credentialVersion == sessionStore.playbackCredentialVersion,
+              requestedContext == context(mode: mode) else { return nil }
+        return snapshot
+    }
+
     func save(videos: [VideoItem], mode: HomeFeedMode, lastSeenMarkerIndex: Int? = nil) {
-        HomeFeedSnapshotCache.save(
-            videos: videos,
-            mode: mode,
-            guestModeEnabled: libraryStore.guestModeEnabled,
-            recommendSource: libraryStore.homeRecommendFeedSourcePreference,
-            accountIdentityKey: sessionStore.recommendCacheIdentityKey(
-                guestModeEnabled: libraryStore.guestModeEnabled
-            ),
-            lastSeenMarkerIndex: lastSeenMarkerIndex
-        )
+        storage.save(videos: videos, context: context(mode: mode), lastSeenMarkerIndex: lastSeenMarkerIndex)
     }
 }

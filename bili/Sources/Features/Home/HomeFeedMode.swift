@@ -1,6 +1,6 @@
 import Foundation
 
-enum HomeFeedMode: String, CaseIterable, Hashable, Identifiable {
+nonisolated enum HomeFeedMode: String, CaseIterable, Hashable, Identifiable, Sendable {
     case recommend
     case popular
 

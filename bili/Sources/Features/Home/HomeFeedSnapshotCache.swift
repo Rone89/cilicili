@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-enum HomeFeedSnapshotCache {
+nonisolated enum HomeFeedSnapshotCache {
     static let maxAge: TimeInterval = 8 * 60 * 60
     static let directoryURL = URL.cachesDirectory.appending(
         path: "HomeFeedSnapshots",

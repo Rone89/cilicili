@@ -7,7 +7,7 @@ extension HomeFeedCachedOwner {
         face = owner.face
     }
 
-    @MainActor var videoOwner: VideoOwner {
+    nonisolated var videoOwner: VideoOwner {
         VideoOwner(mid: mid, name: name, face: face)
     }
 }

@@ -16,7 +16,7 @@ extension HomeFeedCachedVideo {
         recommendationFeedback = video.recommendationFeedback
     }
 
-    @MainActor var videoItem: VideoItem {
+    nonisolated var videoItem: VideoItem {
         VideoItem(
             bvid: bvid,
             aid: aid,

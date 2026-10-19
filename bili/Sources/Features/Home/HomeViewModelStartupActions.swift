@@ -17,6 +17,9 @@ extension HomeViewModel {
         using nativeRefreshAction: RefreshAction? = nil
     ) async {
         guard mode != newMode else { return }
+        requestRevision += 1
+        let revision = requestRevision
+        cancelRecommendMetadataHydrationTasks()
         let previousMode = mode
         if previousMode == .recommend, !videos.isEmpty {
             retainedRecommendVideos = videos
@@ -30,15 +33,15 @@ extension HomeViewModel {
             updateLastSeenMarkerIndex(retainedRecommendLastSeenMarkerIndex)
             state = .loaded
         } else {
-            restoreCachedVideosIfAvailable()
+            state = .loading
+            await restoreCachedVideosIfAvailable()
         }
 
+        guard revision == requestRevision, mode == newMode, !Task.isCancelled else { return }
         guard newMode.requiresRefreshAfterSwitch(
             from: previousMode,
             restoredContent: !videos.isEmpty
         ) else {
-            requestRevision += 1
-            cancelRecommendMetadataHydrationTasks()
             modeSwitchRefreshPending = false
             isRefreshing = false
             isUserRefreshing = false
@@ -63,7 +66,12 @@ extension HomeViewModel {
         guard mode == .recommend else { return }
         updateLastSeenMarkerIndex(nil)
         updateFeed([])
-        restoreCachedVideosIfAvailable()
+        requestRevision += 1
+        let revision = requestRevision
+        cancelRecommendMetadataHydrationTasks()
+        state = .loading
+        await restoreCachedVideosIfAvailable()
+        guard revision == requestRevision, !Task.isCancelled else { return }
         await refresh(resetCursor: true)
     }
 }

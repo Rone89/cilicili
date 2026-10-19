@@ -50,6 +50,7 @@ final class AppDependencies: ObservableObject {
         sessionStore.$playbackCredentialVersion
             .dropFirst()
             .sink { [weak self] _ in
+                HomeFeedSnapshotStorage.shared.clear()
                 Task {
                     await PlayURLCache.shared.invalidateForLoginStateChange()
                     await VideoPreloadCenter.shared.clearPlayURLCache()
@@ -57,7 +58,6 @@ final class AppDependencies: ObservableObject {
                     await self?.api.resetHomeRecommendState()
                     self?.homeRecommendDiagnosticsStore.reset()
                     HomeRecommendFeedbackCenter.shared.reset()
-                    HomeFeedSnapshotCache.clearAll()
                 }
             }
             .store(in: &sessionCancellables)
@@ -93,6 +93,9 @@ final class AppDependencies: ObservableObject {
                     self?.handlePlaybackNetworkClassChange()
                 }
             }
+            .store(in: &sessionCancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .sink { _ in HomeFeedSnapshotStorage.shared.flushPendingSaves() }
             .store(in: &sessionCancellables)
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in

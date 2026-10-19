@@ -48,10 +48,13 @@ extension HomeViewModel {
         )
     }
 
-    func restoreCachedVideosIfAvailable() {
+    func restoreCachedVideosIfAvailable() async {
         guard videos.isEmpty else { return }
-        guard let snapshot = snapshotCoordinator.load(mode: mode),
-              !snapshot.videos.isEmpty
+        let requestedMode = mode
+        let revision = requestRevision
+        guard let snapshot = await snapshotCoordinator.load(mode: requestedMode),
+              !Task.isCancelled, revision == requestRevision, mode == requestedMode,
+              videos.isEmpty, !snapshot.videos.isEmpty
         else { return }
         updateFeed(snapshot.videos)
         updateLastSeenMarkerIndex(snapshot.lastSeenMarkerIndex)

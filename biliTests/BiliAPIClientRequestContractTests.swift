@@ -4391,7 +4391,8 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         )
         defer { try? FileManager.default.removeItem(at: snapshotURL) }
         model.snapshotCoordinator.save(videos: [try HomeFeedbackTestData.video()], mode: .recommend)
-        XCTAssertFalse(try XCTUnwrap(model.snapshotCoordinator.load(mode: .recommend)).videos.isEmpty)
+        let restored = await model.snapshotCoordinator.load(mode: .recommend)
+        XCTAssertFalse(try XCTUnwrap(restored).videos.isEmpty)
 
         let load = Task { await model.loadInitial() }
         await fulfillment(of: [entered], timeout: 3)
