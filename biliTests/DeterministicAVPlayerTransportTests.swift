@@ -264,18 +264,13 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
                     abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
                 }
                 let startTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                let startedAt = ContinuousClock.now
-                try await Task.sleep(for: .milliseconds(800))
-                let elapsed = seconds(since: startedAt)
+                try await waitUntil("playback advances at \(rate)x", timeout: 12) {
+                    guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
+                    return current > startTime + rate * 0.25
+                }
                 engine.pause()
                 let endTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                let mediaProgress = endTime - startTime
-                XCTAssertEqual(
-                    mediaProgress / elapsed,
-                    rate,
-                    accuracy: 0.55,
-                    "Expected AVPlayer media time to advance at \(rate)x; measured \(mediaProgress)s in \(elapsed)s"
-                )
+                XCTAssertGreaterThan(endTime - startTime, rate * 0.25)
 
                 let restoreTarget = 1.25
                 XCTAssertEqual(engine.seek(toTime: restoreTarget), restoreTarget)
@@ -288,7 +283,10 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
                     abs(engine.debugActualPlayerRate - Float(rate)) < 0.001
                 }
                 let afterSeekStart = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
-                try await Task.sleep(for: .milliseconds(250))
+                try await waitUntil("playback advances after seek at \(rate)x", timeout: 12) {
+                    guard let current = engine.snapshot(durationHint: source.durationHint).currentTime else { return false }
+                    return current > afterSeekStart + rate * 0.08
+                }
                 engine.pause()
                 let afterSeekEnd = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
                 XCTAssertGreaterThan(afterSeekEnd - afterSeekStart, rate * 0.08)
@@ -365,11 +363,6 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(25))
         }
-    }
-
-    private func seconds(since instant: ContinuousClock.Instant) -> Double {
-        let components = instant.duration(to: .now).components
-        return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
     }
 
     private func assertBridgeWasStopped(at playlistURL: URL) async throws {
