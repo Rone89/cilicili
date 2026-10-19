@@ -8,7 +8,7 @@ struct SearchLoadingList: View {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                SearchLoadingContent(scope: .comprehensive)
+                SearchLoadingContent(scope: .video)
             }
             .padding(.horizontal, horizontalInset)
             .padding(.bottom, 18)

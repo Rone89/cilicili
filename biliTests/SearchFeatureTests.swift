@@ -5,11 +5,11 @@ import XCTest
 @MainActor
 final class SearchFeatureTests: XCTestCase {
     func testArticleSearchScopeMetadata() {
-        XCTAssertEqual(SearchScope.comprehensive.title, "综合内容")
+        XCTAssertEqual(SearchScope.allCases, [.video, .bangumi, .movie, .article, .user])
         XCTAssertEqual(SearchScope.article.title, "专栏")
         XCTAssertEqual(SearchScope.article.systemImage, "doc.text")
         XCTAssertFalse(SearchScope.article.supportsOrder)
-        XCTAssertTrue(SearchScope.comprehensive.supportsOrder)
+        XCTAssertTrue(SearchScope.video.supportsOrder)
         XCTAssertEqual(SearchSortOrder.comprehensive.title, "综合排序")
     }
 

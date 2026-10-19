@@ -246,8 +246,10 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let app = launchFixture()
         let filters = app.buttons["search.filters.menu"]
         XCTAssertEqual(filters.value as? String, "视频，综合排序")
+        XCTAssertFalse(app.buttons["search.scope.comprehensive"].exists)
         filters.tap()
-        for title in ["综合内容", "视频", "番剧", "影视", "专栏", "UP主",
+        XCTAssertFalse(app.buttons["综合内容"].exists)
+        for title in ["视频", "番剧", "影视", "专栏", "UP主",
                       "综合排序", "最多播放", "最新发布", "最多收藏"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), title)
         }
@@ -263,6 +265,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
 
     func testSearchScopeBarScrollsWithResultsAndSwitchesDirectly() {
         let app = launchFixture()
+        XCTAssertFalse(app.buttons["search.scope.comprehensive"].exists)
         let video = app.buttons["search.scope.video"]
         XCTAssertTrue(video.waitForExistence(timeout: 3))
         XCTAssertEqual(video.value as? String, "已选中")
@@ -277,11 +280,18 @@ final class SearchScrollRetentionUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [scrolledAway], timeout: 5), .completed,
                        "Categories should scroll offscreen with results")
-        app.scrollViews["search.results"].swipeDown()
+        // A reverse swipe may stop with the capsule row partly under the
+        // toolbar. Return fully to the top before checking category interaction.
+        let isCategoryVisible = {
+            video.exists && video.frame.minY >= field.frame.maxY
+                && app.windows.firstMatch.frame.contains(video.frame)
+        }
+        for _ in 0..<4 {
+            if isCategoryVisible() { break }
+            app.scrollViews["search.results"].swipeDown()
+        }
         let returned = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                video.exists && video.frame.minY >= field.frame.maxY && video.isHittable
-            }, object: nil
+            predicate: NSPredicate { _, _ in isCategoryVisible() }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
 

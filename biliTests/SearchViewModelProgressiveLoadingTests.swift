@@ -4,53 +4,28 @@ import XCTest
 
 @MainActor
 final class SearchViewModelProgressiveLoadingTests: XCTestCase {
-    func testComprehensiveSearchPublishesVideosBeforeSupplementalResults() async throws {
-        let gate = SearchTestGate()
-        let user = try JSONDecoder.bili.decode(
-            SearchUserItem.self,
-            from: Data(#"{"mid":100,"uname":"稍后到达的用户"}"#.utf8)
-        )
-        let api = SearchAPIStub(user: user, userGate: gate)
+    func testDefaultSearchRequestsOnlyVideoAndPaginates() async {
+        let api = SearchAPIStub()
         let model = SearchViewModel(api: api)
-
-        let search = Task { await model.search("渐进加载") }
-        let didPublishVideo = await eventually {
-            model.results.contains { result in
-                if case .video(let video) = result {
-                    return video.bvid == "BV-progressive"
-                }
-                return false
-            }
-        }
-        XCTAssertTrue(didPublishVideo)
-        XCTAssertTrue(model.state.isLoading)
-        XCTAssertFalse(
-            model.results.contains { result in
-                if case .user = result { return true }
-                return false
-            }
-        )
-
-        await gate.open()
-        await search.value
-
-        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "UP主"])
-        XCTAssertFalse(model.state.isLoading)
+        XCTAssertEqual(model.selectedScope, .video)
+        await model.search("默认视频")
+        XCTAssertEqual(model.results.map(\.id), ["video-BV-progressive"])
+        await model.loadMoreIfNeeded(current: model.results.last)
+        XCTAssertEqual(model.results.map(\.id), ["video-BV-progressive", "video-BV-page-2"])
+        let calls = await api.requestedScopes
+        XCTAssertEqual(calls, [.video, .video])
     }
 
-    func testComprehensivePaginationKeepsAllVideosBeforeSupplementalResults() async throws {
-        let user = try JSONDecoder.bili.decode(
-            SearchUserItem.self,
-            from: Data(#"{"mid":100,"uname":"搜索用户"}"#.utf8)
-        )
-        let model = SearchViewModel(api: SearchAPIStub(user: user))
-        await model.search("视频优先")
-        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "UP主"])
-
-        await model.loadMoreIfNeeded(current: model.results.last)
-
-        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频", "视频", "UP主"])
-        XCTAssertEqual(model.results.map(\.id), ["video-BV-progressive", "video-BV-page-2", "user-100"])
+    func testHotSearchReturnsFromUserScopeToVideoOnly() async {
+        let api = SearchAPIStub()
+        let model = SearchViewModel(api: api)
+        await model.selectScope(.user)
+        await model.searchHotSearch(HotSearchItem(keyword: "热搜视频", showName: nil, icon: nil))
+        XCTAssertEqual(model.selectedScope, .video)
+        XCTAssertEqual(model.query, "热搜视频")
+        let calls = await api.requestedScopes
+        XCTAssertEqual(calls, [.video])
+        XCTAssertEqual(model.results.map(\.sectionTitle), ["视频"])
     }
 
     func testStartingNewSearchCancelsOldNetworkWorkAndRejectsOldResults() async {
@@ -113,36 +88,15 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
     }
 }
 
-private actor SearchTestGate {
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func wait() async {
-        guard !isOpen else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func open() {
-        isOpen = true
-        let pending = waiters
-        waiters.removeAll()
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-}
-
 private actor SearchAPIStub: SearchAPIProviding {
     private let user: SearchUserItem?
-    private let userGate: SearchTestGate?
     private(set) var oldSearchStarted = false
     private(set) var oldSearchCancelled = false
 
-    init(user: SearchUserItem? = nil, userGate: SearchTestGate? = nil) {
+    private(set) var requestedScopes: [SearchScope] = []
+
+    init(user: SearchUserItem? = nil) {
         self.user = user
-        self.userGate = userGate
     }
 
     func fetchHotSearch() async throws -> [HotSearchItem] { [] }
@@ -150,6 +104,7 @@ private actor SearchAPIStub: SearchAPIProviding {
     func fetchSearchSuggest(term: String) async throws -> [SearchSuggestItem] { [] }
 
     func searchVideos(keyword: String, page: Int, order: String?) async throws -> [VideoItem] {
+        requestedScopes.append(.video)
         if keyword == "旧关键词" {
             oldSearchStarted = true
             do {
@@ -179,15 +134,22 @@ private actor SearchAPIStub: SearchAPIProviding {
     }
 
     func searchUsers(keyword: String, page: Int) async throws -> [SearchUserItem] {
-        if let userGate {
-            await userGate.wait()
-        }
+        requestedScopes.append(.user)
         return user.map { [$0] } ?? []
     }
 
-    func searchBangumi(keyword: String, page: Int) async throws -> [SearchMediaItem] { [] }
+    func searchBangumi(keyword: String, page: Int) async throws -> [SearchMediaItem] {
+        requestedScopes.append(.bangumi)
+        return []
+    }
 
-    func searchMovies(keyword: String, page: Int) async throws -> [SearchMediaItem] { [] }
+    func searchMovies(keyword: String, page: Int) async throws -> [SearchMediaItem] {
+        requestedScopes.append(.movie)
+        return []
+    }
 
-    func searchArticles(keyword: String, page: Int) async throws -> [SearchArticleItem] { [] }
+    func searchArticles(keyword: String, page: Int) async throws -> [SearchArticleItem] {
+        requestedScopes.append(.article)
+        return []
+    }
 }
