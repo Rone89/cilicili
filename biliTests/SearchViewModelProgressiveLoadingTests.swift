@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import bili
 
@@ -13,19 +14,23 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         let model = SearchViewModel(api: api)
 
         let search = Task { await model.search("渐进加载") }
-        XCTAssertTrue(await eventually {
-            model.results.contains { result in
-                if case .video(let video) = result {
-                    return video.bvid == "BV-progressive"
+        XCTAssertTrue(
+            await eventually {
+                model.results.contains { result in
+                    if case .video(let video) = result {
+                        return video.bvid == "BV-progressive"
+                    }
+                    return false
                 }
+            }
+        )
+        XCTAssertTrue(model.state.isLoading)
+        XCTAssertFalse(
+            model.results.contains { result in
+                if case .user = result { return true }
                 return false
             }
-        })
-        XCTAssertTrue(model.state.isLoading)
-        XCTAssertFalse(model.results.contains { result in
-            if case .user = result { return true }
-            return false
-        })
+        )
 
         await gate.open()
         await search.value
@@ -45,10 +50,13 @@ final class SearchViewModelProgressiveLoadingTests: XCTestCase {
         await oldSearch.value
 
         XCTAssertTrue(await eventually { await api.oldSearchCancelled })
-        XCTAssertEqual(model.results.compactMap { result -> String? in
-            if case .video(let video) = result { return video.bvid }
-            return nil
-        }, ["BV-new"])
+        XCTAssertEqual(
+            model.results.compactMap { result -> String? in
+                if case .video(let video) = result { return video.bvid }
+                return nil
+            },
+            ["BV-new"]
+        )
     }
 
     private func eventually(
@@ -126,7 +134,7 @@ private actor SearchAPIStub: SearchAPIProviding {
                 cid: 1,
                 pages: nil,
                 dimension: nil
-            ),
+            )
         ]
     }
 

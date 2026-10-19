@@ -267,7 +267,8 @@ final class SearchViewModel: ObservableObject {
         let scope = selectedScope
         let order = selectedOrder
         let task = Task { [weak self] in
-            await self?.performSearch(
+            guard let self else { return }
+            await self.performSearch(
                 keyword: term,
                 generation: generation,
                 scope: scope,
@@ -418,10 +419,11 @@ final class SearchViewModel: ObservableObject {
         let existing = Set(results.map(\.id))
         let uniqueItems = items.filter { !existing.contains($0.id) }
         guard !uniqueItems.isEmpty else { return }
-        let insertionIndex = results.firstIndex { result in
-            if case .video = result { return true }
-            return false
-        } ?? results.endIndex
+        let insertionIndex =
+            results.firstIndex { result in
+                if case .video = result { return true }
+                return false
+            } ?? results.endIndex
         results.insert(contentsOf: uniqueItems, at: insertionIndex)
         resultsRevision &+= 1
     }
