@@ -61,7 +61,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -153,7 +153,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -191,7 +191,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", "NO",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -269,7 +269,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", "NO",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -383,7 +383,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -611,7 +611,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-reset-state",
             "-cc.bili.videoDetail.autoplayEnabled.v1", autoplayEnabled ? "YES" : "NO",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()
@@ -720,7 +720,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.launchArguments = [
             "--ui-test-reset-state",
             "--start-tab", "home",
-            "--ui-test-video-detail-network",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
         app.launch()

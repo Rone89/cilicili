@@ -3,6 +3,21 @@ import XCTest
 
 final class PlayerPlaybackControlsVisibilityModelTests: XCTestCase {
     @MainActor
+    func testDefaultAutoHideStillRemovesControls() async throws {
+        let model = PlayerPlaybackControlsVisibilityModel()
+        model.scheduleAutoHide(showsPlaybackControls: true, isLayoutTransitioning: false)
+
+        let deadline = ContinuousClock.now + .seconds(6)
+        while model.isVisible, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        XCTAssertFalse(model.isVisible)
+        XCTAssertEqual(model.opacity, 0)
+        XCTAssertFalse(model.acceptsHitTesting)
+    }
+
+    @MainActor
     func testImmediateHideRemovesControlsWithoutTransitionDelay() {
         let model = PlayerPlaybackControlsVisibilityModel()
 
