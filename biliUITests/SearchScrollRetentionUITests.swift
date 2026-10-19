@@ -261,7 +261,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["最新发布"].isEnabled)
     }
 
-    func testSearchScopeBarStaysBelowSearchAndSwitchesDirectly() {
+    func testSearchScopeBarScrollsWithResultsAndSwitchesDirectly() {
         let app = launchFixture()
         let video = app.buttons["search.scope.video"]
         XCTAssertTrue(video.waitForExistence(timeout: 3))
@@ -270,13 +270,39 @@ final class SearchScrollRetentionUITests: XCTestCase {
         let field = app.textFields["navigation.search.field"]
         XCTAssertGreaterThanOrEqual(initialY, field.frame.maxY)
         app.scrollViews["search.results"].swipeUp()
-        XCTAssertTrue(video.isHittable)
-        XCTAssertEqual(video.frame.minY, initialY, accuracy: 4)
+        let scrolledAway = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !video.exists || video.frame.maxY <= field.frame.maxY
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [scrolledAway], timeout: 5), .completed,
+                       "Categories should scroll offscreen with results")
+        app.scrollViews["search.results"].swipeDown()
+        let returned = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                video.exists && video.frame.minY >= field.frame.maxY && video.isHittable
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
 
         let categories = app.scrollViews["search.scopes"]
-        categories.swipeLeft()
         let user = app.buttons["search.scope.user"]
-        XCTAssertTrue(user.waitForExistence(timeout: 3))
+        for _ in 0..<4 {
+            if user.exists && categories.frame.contains(user.frame) { break }
+            // Nested scroll views may expose a frame extended behind the toolbar.
+            // Swipe along the visible capsule row, rather than its container center.
+            let bounds = categories.frame.intersection(app.frame)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: bounds.maxX - 20, dy: video.frame.midY))
+            let end = origin.withOffset(CGVector(dx: bounds.minX + 20, dy: video.frame.midY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+        let revealed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                user.exists && categories.frame.contains(user.frame)
+            }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [revealed], timeout: 5), .completed)
         XCTAssertTrue(user.isHittable)
         user.tap()
         let selected = XCTNSPredicateExpectation(
@@ -285,7 +311,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
         XCTAssertEqual(app.buttons["search.filters.menu"].value as? String, "UP主，当前类型不支持排序")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Pinned search category capsules"
+        screenshot.name = "Search categories scrolling with results"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
