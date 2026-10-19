@@ -107,7 +107,7 @@ final class DynamicDetailFlowUITests: XCTestCase {
             "Photo", "照片"
         )).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
-        photo.tap()
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let add = app.navigationBars.buttons.matching(NSPredicate(
             format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label IN %@",
             "Add", "添加", ["Done", "完成"]
@@ -325,18 +325,12 @@ final class DynamicDetailFlowUITests: XCTestCase {
         XCTAssertTrue(messageButton.waitForExistence(timeout: 5))
         XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["固定视频详情回归"].firstMatch.waitForExistence(timeout: 10))
+        let initialModeFrame = modeButton.frame
+        let initialMessageFrame = messageButton.frame
         for _ in 0..<3 where modeButton.isHittable { scrollView.swipeUp() }
 
-        XCTAssertTrue(waitForHittableState(
-            false,
-            query: { app.segmentedControls["home.feed.modePicker"] },
-            timeout: 5
-        ))
-        XCTAssertTrue(waitForHittableState(
-            false,
-            query: { app.buttons["账号消息"] },
-            timeout: 5
-        ))
+        XCTAssertTrue(waitForFrameAbove(initialModeFrame, element: modeButton, timeout: 5))
+        XCTAssertTrue(waitForFrameAbove(initialMessageFrame, element: messageButton, timeout: 5))
         XCTAssertTrue(app.tabBars.firstMatch.exists)
 
         for _ in 0..<4 where !modeButton.isHittable {

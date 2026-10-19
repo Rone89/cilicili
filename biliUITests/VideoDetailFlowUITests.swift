@@ -399,7 +399,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        XCTAssertTrue(waitForHittable(fullscreenControl(in: app), timeout: 5))
+        XCTAssertTrue(waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 5))
         XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let portraitAttachment = XCTAttachment(screenshot: app.screenshot())
         portraitAttachment.name = "Geometry portrait before fullscreen"
@@ -482,12 +482,12 @@ final class VideoDetailFlowUITests: XCTestCase {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
         let more = app.buttons["ui.player.more"]
-        XCTAssertTrue(waitForHittable(more, timeout: 5))
+        XCTAssertTrue(waitForVisibleFrame({ app.buttons["ui.player.more"] }, timeout: 5))
         more.tap()
         let settings = app.buttons["弹幕设置"]
         if !settings.waitForExistence(timeout: 3) {
             revealPlayerControls(in: app)
-            XCTAssertTrue(waitForHittable(app.buttons["ui.player.more"], timeout: 5))
+            XCTAssertTrue(waitForVisibleFrame({ app.buttons["ui.player.more"] }, timeout: 5))
             app.buttons["ui.player.more"].tap()
         }
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
@@ -680,20 +680,27 @@ final class VideoDetailFlowUITests: XCTestCase {
         let surface = app.buttons["ui.player.surface"].firstMatch
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
         for _ in 0..<3 {
-            let control = fullscreenControl(in: app)
-            if waitForHittable(control, timeout: 1) { return }
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            if waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 1) { return }
+            surface.tap()
         }
-        XCTAssertTrue(waitForHittable(fullscreenControl(in: app), timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitForVisibleFrame({ fullscreenControl(in: app) }, timeout: 5), app.debugDescription)
     }
 
     @MainActor
-    private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in element.exists && element.isHittable },
-            object: nil
-        )
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    private func waitForVisibleFrame(
+        _ query: () -> XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let element = query()
+            if element.exists, element.frame.width > 1, element.frame.height > 1 {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let element = query()
+        return element.exists && element.frame.width > 1 && element.frame.height > 1
     }
 
     @MainActor
