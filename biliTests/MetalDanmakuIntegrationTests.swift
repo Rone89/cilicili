@@ -4,6 +4,31 @@ import XCTest
 
 @MainActor
 final class MetalDanmakuIntegrationTests: XCTestCase {
+    private final class UnavailableDrawableView: MTKView {
+        var renderPassReads = 0
+        override var currentRenderPassDescriptor: MTLRenderPassDescriptor? {
+            renderPassReads += 1
+            return nil
+        }
+    }
+
+    func testBusySlotSkipsDrawableAcquisitionAndUnavailableDrawableReleasesSlot() throws {
+        guard let renderer = MetalDanmakuRenderer() else { throw XCTSkip("Metal unavailable") }
+        let view = UnavailableDrawableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 200), device: renderer.device
+        )
+        let releaseSlot = try XCTUnwrap(renderer.debugHoldNextSlot())
+        renderer.render(view: view, time: 0)
+        releaseSlot()
+        XCTAssertEqual(view.renderPassReads, 0, "A busy slot must return before asking for a drawable")
+        XCTAssertEqual(renderer.skippedFrames, 1)
+        renderer.render(view: view, time: 0)
+        renderer.render(view: view, time: 0)
+        XCTAssertEqual(view.renderPassReads, 2, "Failed acquisition must return its slot for the next attempt")
+        XCTAssertEqual(renderer.skippedFrames, 1)
+        XCTAssertEqual(renderer.submittedFrames, 0)
+    }
+
     func testCorrectedClockKeepsNewlyAdmittedGlyphsVisibleInShader() throws {
         guard let renderer = MetalDanmakuRenderer() else { throw XCTSkip("Metal unavailable") }
         let size = CGSize(width: 320, height: 200)

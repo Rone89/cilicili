@@ -17,7 +17,7 @@
 
 These are source-confirmed sources of unnecessary work, not a measured diagnosis of the user's complete frame-drop symptom. No device FPS, hitch duration or energy improvement is claimed.
 
-4. Build 20 CI exposed a pre-existing paused Metal frame failure. The renderer drops a draw when a GPU slot or drawable is unavailable, but a paused MTKView has no automatic next tick. Retain the pending refresh until a command is submitted; coalesce bounded asynchronous retries (up to 16 attempts at 16 ms), canceling on resume, suspension, detach, or stop. Classify manual-frame diagnostics at the actual draw callback. Strengthen the integration test with deterministic dropped submissions and detach cancellation.
+4. Build 20 CI exposed a pre-existing paused Metal frame failure. The renderer drops a draw when a GPU slot or drawable is unavailable, but a paused MTKView has no automatic next tick. Retain the pending refresh until a command is submitted; coalesce bounded asynchronous retries (up to 16 attempts at 16 ms), canceling on resume, suspension, detach, or stop. Classify manual-frame diagnostics at the actual draw callback. Admit a nonblocking GPU buffer slot before requesting a drawable; a busy slot must not enter drawable acquisition. Add a regression with a held slot and a drawable accessor spy, including slot release after unavailable drawables. Strengthen the integration test with deterministic dropped submissions and detach cancellation.
 
 ## Verification
 

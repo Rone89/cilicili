@@ -184,6 +184,11 @@ final class MetalDanmakuRenderer {
     var debugDiagnostics: DanmakuRendererDiagnostics?
     var debugFramesToDrop = 0
     private var diagnostics: DanmakuRendererDiagnostics { debugDiagnostics ?? .shared }
+    func debugHoldNextSlot() -> (() -> Void)? {
+        let semaphore = slots[nextSlot].available
+        guard semaphore.wait(timeout: .now()) == .success else { return nil }
+        return { semaphore.signal() }
+    }
     #endif
 
     func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil,
@@ -196,8 +201,17 @@ final class MetalDanmakuRenderer {
         let acquisitionStarted = CACurrentMediaTime()
         let start = preparationStartedAt ?? acquisitionStarted
         #endif
-        guard view.bounds.width > 0, view.bounds.height > 0,
-              let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else {
+        guard view.bounds.width > 0, view.bounds.height > 0 else { return }
+        // Admission must precede drawable acquisition: asking for a drawable
+        // first can wait on the GPU even when our next buffer slot is busy.
+        let slot = slots[nextSlot]
+        guard slot.available.wait(timeout: .now()) == .success else {
+            skippedFrames += 1
+            return
+        }
+        var submitted = false
+        defer { if !submitted { slot.available.signal() } }
+        guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable else {
             #if DEBUG
             diagnostics.recordMetalRenderFailure("drawable-or-pass-unavailable")
             #endif
@@ -206,15 +220,7 @@ final class MetalDanmakuRenderer {
         #if DEBUG
         let acquisitionFinished = CACurrentMediaTime()
         #endif
-        // Never wait on the GPU on the UI thread. A busy slot drops this draw.
-        let slot = slots[nextSlot]
-        guard slot.available.wait(timeout: .now()) == .success else {
-            skippedFrames += 1
-            return
-        }
         nextSlot = (nextSlot + 1) % slots.count
-        var submitted = false
-        defer { if !submitted { slot.available.signal() } }
         guard let command = queue.makeCommandBuffer() else {
             #if DEBUG
             diagnostics.recordMetalRenderFailure("command-buffer-unavailable")
