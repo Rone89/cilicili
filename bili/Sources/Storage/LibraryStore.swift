@@ -87,7 +87,7 @@ struct StoredVideo: Identifiable, Codable, Hashable {
     }
 }
 
-nonisolated struct StoredPlaybackProgress: Codable, Equatable {
+nonisolated struct StoredPlaybackProgress: Codable, Equatable, Sendable {
     let bvid: String
     let cid: Int?
     let playbackTime: TimeInterval
@@ -169,6 +169,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var showsHotSearches: Bool
 
     private let userDefaults: UserDefaults
+    let playbackProgressStorage: PlaybackProgressStorage
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
     private static let appIconPreferenceKey = "cc.bili.appearance.appIconPreference.v1"
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
@@ -465,6 +466,9 @@ final class LibraryStore: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        self.playbackProgressStorage = PlaybackProgressStorage(
+            defaults: userDefaults, key: Self.playbackProgressByBVIDKey
+        )
         self.appearanceMode =
             AppAppearanceMode(
                 rawValue: userDefaults.string(forKey: Self.appearanceModeKey) ?? ""
@@ -1050,13 +1054,7 @@ final class LibraryStore: ObservableObject {
                     .map { ($0.bvid, $0) }
             )
         }
-        guard !playbackProgressByBVID.isEmpty,
-            let data = try? JSONEncoder().encode(playbackProgressByBVID)
-        else {
-            userDefaults.removeObject(forKey: Self.playbackProgressByBVIDKey)
-            return
-        }
-        userDefaults.set(data, forKey: Self.playbackProgressByBVIDKey)
+        playbackProgressStorage.save(playbackProgressByBVID)
     }
 
     private static func playbackCDNProbeContextKey(

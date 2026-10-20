@@ -26,11 +26,20 @@ final class DanmakuKitOverlayView: UIView {
     private var displayedUntil: [String: TimeInterval] = [:]
     private var emoteLoadTasks: [URL: Task<Void, Never>] = [:]
     private var lastLayoutSize = CGSize.zero
+    private var rendererConfiguration: RendererConfiguration?
+
+    private struct RendererConfiguration: Equatable {
+        let frame: CGRect
+        let settings: DanmakuKitRenderSettings
+    }
 
     #if DEBUG
     var debugDiagnostics: DanmakuRendererDiagnostics?
     var debugPreferredFramesPerSecond: Int? { didSet { updateDisplayLinkState() } }
     var debugMaximumActiveCount: Int?
+    private(set) var debugItemPreparationCount = 0
+    private(set) var debugRendererConfigurationCount = 0
+    var debugPreparedItemIDs: [String] { items.map(\.id) }
     #endif
 
     private var diagnostics: DanmakuRendererDiagnostics {
@@ -108,11 +117,18 @@ final class DanmakuKitOverlayView: UIView {
             || abs(bottomInset - max(0, newBottomInset)) > 0.5
         let itemsChanged = itemsRevision != newRevision
 
-        items = newItems.filter { $0.time.isFinite && $0.fontSize.isFinite }.sorted {
-            if $0.time != $1.time { return $0.time < $1.time }
-            return $0.id < $1.id
+        // The revision owns the immutable input window, as in the Metal path.
+        // Playback, settings and layout updates must not sort it again on main.
+        if itemsChanged {
+            items = newItems.filter { $0.time.isFinite && $0.fontSize.isFinite }.sorted {
+                if $0.time != $1.time { return $0.time < $1.time }
+                return $0.id < $1.id
+            }
+            itemsRevision = newRevision
+            #if DEBUG
+            debugItemPreparationCount += 1
+            #endif
         }
-        itemsRevision = newRevision
         currentTime = max(0, newCurrentTime.isFinite ? newCurrentTime : 0)
         isPlaying = newIsPlaying
         playbackRate = max(0.1, newPlaybackRate.isFinite ? newPlaybackRate : 1)
@@ -263,21 +279,38 @@ final class DanmakuKitOverlayView: UIView {
         let clampedTopPadding = min(max(topPadding, 0), bounds.height)
         let clampedBottomPadding = min(max(bottomPadding, 0), max(0, bounds.height - clampedTopPadding))
         // Use the inset content frame so top and bottom lanes stay clear of player controls.
-        renderer.frame = CGRect(
+        let frame = CGRect(
             x: 0,
             y: clampedTopPadding,
             width: bounds.width,
             height: max(0, bounds.height - clampedTopPadding - clampedBottomPadding)
         )
-        renderer.displayArea = CGFloat(settings.danmakuKit.displayArea.fraction)
-        renderer.paddingTop = 0
-        renderer.paddingBottom = 0
-        renderer.trackHeight = CGFloat(settings.danmakuKit.trackHeight)
-        renderer.isOverlap = settings.danmakuKit.allowsDanmakuOverlap
-        renderer.enableFloatingDanmaku = settings.danmakuKit.enablesFloating
-        renderer.enableTopDanmaku = settings.danmakuKit.enablesTop
-        renderer.enableBottomDanmaku = settings.danmakuKit.enablesBottom
         configurePlaybackRate()
+        let configuration = RendererConfiguration(frame: frame, settings: settings.danmakuKit)
+        guard rendererConfiguration != configuration else { return }
+        rendererConfiguration = configuration
+        #if DEBUG
+        debugRendererConfigurationCount += 1
+        #endif
+        if renderer.frame != frame { renderer.frame = frame }
+        let area = CGFloat(settings.danmakuKit.displayArea.fraction)
+        if renderer.displayArea != area { renderer.displayArea = area }
+        let trackHeight = CGFloat(settings.danmakuKit.trackHeight)
+        if renderer.trackHeight != trackHeight { renderer.trackHeight = trackHeight }
+        // DanmakuKit's overlap setter walks all tracks; its false enable setters
+        // stop their tracks even when assigned the same value again.
+        if renderer.isOverlap != settings.danmakuKit.allowsDanmakuOverlap {
+            renderer.isOverlap = settings.danmakuKit.allowsDanmakuOverlap
+        }
+        if renderer.enableFloatingDanmaku != settings.danmakuKit.enablesFloating {
+            renderer.enableFloatingDanmaku = settings.danmakuKit.enablesFloating
+        }
+        if renderer.enableTopDanmaku != settings.danmakuKit.enablesTop {
+            renderer.enableTopDanmaku = settings.danmakuKit.enablesTop
+        }
+        if renderer.enableBottomDanmaku != settings.danmakuKit.enablesBottom {
+            renderer.enableBottomDanmaku = settings.danmakuKit.enablesBottom
+        }
     }
 
     private func configurePlaybackRate() {
