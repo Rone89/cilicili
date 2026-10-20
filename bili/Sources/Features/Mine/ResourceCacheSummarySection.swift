@@ -27,9 +27,21 @@ private struct ResourceCacheSummaryRows: View {
 
     var body: some View {
         ResourceCacheRow(
-            title: "总缓存",
+            title: "已统计缓存",
             value: ResourceCacheByteFormatter.bytes(summary.managedBytes),
             subtitle: cacheLimitSubtitle
+        )
+
+        ResourceCacheRow(
+            title: "磁盘缓存",
+            value: ResourceCacheByteFormatter.bytes(summary.diskBytes),
+            subtitle: "图片、网络响应和视频分片"
+        )
+
+        ResourceCacheRow(
+            title: "内存缓存（估算）",
+            value: ResourceCacheByteFormatter.bytes(summary.estimatedMemoryBytes),
+            subtitle: "仅包含部分缓存，不代表应用总内存"
         )
 
         ResourceCacheRow(

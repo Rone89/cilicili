@@ -1931,18 +1931,29 @@ nonisolated struct ResourceCacheSummary: Sendable {
     let progressiveMedia: ProgressiveMediaCacheStatistics
     let subtitlesAndDanmaku: TimedResourceCacheStatistics
 
-    var managedBytes: Int {
+    var diskBytes: Int {
         [
             image.diskUsage,
             api.diskUsage,
+            videoRangeMedia.estimatedBytes
+        ].reduce(0) { partial, value in
+            partial + max(0, value)
+        }
+    }
+
+    // These stores expose byte estimates. Image decoding/display caches and
+    // other process allocations are intentionally not inferred from budgets.
+    var estimatedMemoryBytes: Int {
+        [
             apiMemory.estimatedBytes,
-            videoRangeMedia.estimatedBytes,
             progressiveMedia.estimatedBytes,
             subtitlesAndDanmaku.estimatedBytes
         ].reduce(0) { partial, value in
             partial + max(0, value)
         }
     }
+
+    var managedBytes: Int { diskBytes + estimatedMemoryBytes }
 }
 
 nonisolated enum ResourceCacheLimitSettings {
