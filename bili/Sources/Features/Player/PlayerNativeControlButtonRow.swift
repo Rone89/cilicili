@@ -20,6 +20,7 @@ struct PlayerNativeControlButtonRow: View {
                     PlayerNativeGlassIconButton(
                         systemName: isPlaying ? "pause.fill" : "play.fill",
                         accessibilityLabel: isPlaying ? "暂停" : "播放",
+                        accessibilityIdentifier: "ui.player.playback.toggle",
                         metrics: metrics,
                         action: actions.onTogglePlayback
                     )

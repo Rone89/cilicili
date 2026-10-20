@@ -43,6 +43,10 @@ jobs:
               biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
               biliUITests/DynamicDetailFlowUITests/testRichCommentComposerUsesNativeTextEditorAndEmoteInputView
               biliUITests/VideoDetailFlowUITests/testVideoDetailUsesLayeredPagesAndToolbarPicker
+              biliUITests/VideoDetailFlowUITests/testVideoDetailStartingPausedKeepsCommentOrigin
+              biliUITests/VideoDetailFlowUITests/testVideoDetailBottomPlayStartsManualPlayback
+              biliUITests/DynamicRepliesPaginationUITests/testAvatarAndMentionPresentProfileSheetAndReturnToReplies
+              biliUITests/DynamicRepliesPaginationUITests/testMoreRepliesAppearBelowCurrentBottomInDynamicDetailSheet
           - suite: ui-1
             ui_shard: '1'
           - suite: ui-2

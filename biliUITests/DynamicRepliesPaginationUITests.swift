@@ -14,6 +14,9 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         XCTAssertTrue(replies.waitForExistence(timeout: 5))
         replies.tap()
         XCTAssertTrue(app.buttons["刷新评论"].waitForExistence(timeout: 5), app.debugDescription)
+        let repliesScroll = app.scrollViews["dynamic.replies.scroll"]
+        let firstReply = repliesScroll.descendants(matching: .any)["分页回复1"].firstMatch
+        XCTAssertTrue(firstReply.waitForExistence(timeout: 10), app.debugDescription)
 
         let avatar = app.buttons.matching(identifier: "查看 分页用户100 的个人主页").element(boundBy: 1)
         XCTAssertTrue(avatar.waitForExistence(timeout: 5))
@@ -32,7 +35,7 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.tap()
         XCTAssertTrue(close.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["分页回复1"].exists)
+        XCTAssertTrue(firstReply.waitForExistence(timeout: 5))
         let visibleAvatar = app.buttons.matching(identifier: "查看 分页用户100 的个人主页")
             .element(boundBy: 1)
         XCTAssertTrue(visibleAvatar.waitForExistence(timeout: 3))
@@ -63,6 +66,8 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         capture(app, name: "Dynamic replies before loading page 2")
         more.tap()
         XCTAssertTrue(more.waitForNonExistence(timeout: 5))
+        let loading = repliesScroll.staticTexts["正在加载更多回复"].firstMatch
+        XCTAssertTrue(loading.waitForNonExistence(timeout: 10), app.debugDescription)
 
         let lastReply = app.descendants(matching: .any)["分页回复14"]
         for _ in 0..<3 where !lastReply.isHittable { repliesScroll.swipeUp() }

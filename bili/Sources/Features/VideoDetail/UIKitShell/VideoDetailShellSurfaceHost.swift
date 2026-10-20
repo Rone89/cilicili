@@ -966,6 +966,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         PlayerNativeGlassIconButton(
             systemName: "play.fill",
             accessibilityLabel: "播放",
+            accessibilityIdentifier: "ui.player.playback.start",
             metrics: centerPlaybackControlMetrics
         ) {
             viewModel.play()

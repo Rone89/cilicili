@@ -610,7 +610,15 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    private func verifyAutoplayCommentOrigin(autoplayEnabled: Bool = true) {
+    func testVideoDetailBottomPlayStartsManualPlayback() {
+        verifyAutoplayCommentOrigin(autoplayEnabled: false, manualStartIdentifier: "ui.player.playback.toggle")
+    }
+
+    @MainActor
+    private func verifyAutoplayCommentOrigin(
+        autoplayEnabled: Bool = true,
+        manualStartIdentifier: String = "ui.player.playback.start"
+    ) {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
@@ -635,14 +643,16 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         revealPlayerControls(in: app)
         if !autoplayEnabled {
-            let initialPlayButton = app.buttons["播放"].firstMatch
+            let initialPlayButton = app.buttons[manualStartIdentifier]
             XCTAssertTrue(initialPlayButton.waitForExistence(timeout: 5))
-            initialPlayButton.tap()
+            tapPlayerControl(initialPlayButton, in: app)
+            revealPlayerControls(in: app)
             XCTAssertEqual(commentHeader.frame.minY, playingHeaderFrame.minY, accuracy: 1)
         }
-        let pauseButton = app.buttons["暂停"].firstMatch
+        let pauseButton = app.buttons.matching(identifier: "ui.player.playback.toggle")
+            .matching(NSPredicate(format: "label == %@", "暂停")).firstMatch
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 10))
-        pauseButton.tap()
+        tapPlayerControl(pauseButton, in: app)
 
         let playButton = app.buttons["播放"].firstMatch
         XCTAssertTrue(playButton.waitForExistence(timeout: 5))
@@ -665,7 +675,7 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         revealPlayerControls(in: app)
         XCTAssertTrue(playButton.waitForExistence(timeout: 5))
-        playButton.tap()
+        tapPlayerControl(playButton, in: app)
         revealPlayerControls(in: app)
         XCTAssertTrue(app.buttons["暂停"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(commentHeader.frame.minY, playingHeaderFrame.minY, accuracy: 1)
