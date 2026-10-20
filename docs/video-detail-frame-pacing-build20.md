@@ -1,4 +1,4 @@
-# Video detail frame pacing: Build 20 candidate
+# Video detail frame pacing: Build 21 candidate
 
 ## Verified starting point
 
@@ -17,16 +17,19 @@
 
 These are source-confirmed sources of unnecessary work, not a measured diagnosis of the user's complete frame-drop symptom. No device FPS, hitch duration or energy improvement is claimed.
 
+4. Build 20 CI exposed a pre-existing paused Metal frame failure. The renderer drops a draw when a GPU slot or drawable is unavailable, but a paused MTKView has no automatic next tick. Retain the pending refresh until a command is submitted; coalesce bounded asynchronous retries (up to 16 attempts at 16 ms), canceling on resume, suspension, detach, or stop. Classify manual-frame diagnostics at the actual draw callback. Strengthen the integration test with deterministic dropped submissions and detach cancellation.
+
 ## Verification
 
 - Local `git diff --check`: passed.
 - Environment helper regressions: all 7 passed on Linux.
 - New XCTest cases cover stable on-screen DanmakuKit cells across 120 repeated updates, revision/settings/viewport refreshes, background encoding, ordered persistence, failed encoding, and resume restoration.
-- Swift compilation, new XCTest execution and Xcode 26 Release build: **not yet run**. The current host is Linux; the local Mac workspace connector returns an internal error.
+- Build 20 run 39455894935: Xcode 26.6 Release succeeded and all 5 new regression tests passed on their first attempts. AVPlayer recovery timed out once, then passed its configured retry. MetalDanmakuIntegrationTests/testMTKViewActuallySubmitsFramesAndPausesStopsOnWindowDetach failed its paused manual-frame assertion twice; the overall unit job failed and downstream UI jobs were skipped. Build 20 IPA was generated but is superseded by the Build 21 candidate.
+- Build 21 adds the paused Metal retry fix and the strengthened integration regression. Its Xcode 26 compilation, XCTest and Release verification are pending. The user explicitly authorized uploading Build 21 and the subsequent changes needed to complete this frame-drop task, updating the draft PR and continuing Xcode 26 builds/tests on 2026-10-21. Build 21 cloud verification is now being resumed; no successful new result is claimed yet.
 - Initial submission was blocked by automatic approval review. The user explicitly authorized uploading the reviewed changes, creating an independent branch and draft PR, and using GitHub Actions Xcode 26 builds in the current chat on 2026-10-21. Cloud verification is now pending; no successful new build is claimed yet.
 
-## Resume after remote write authorization
+## Delivery
 
-Publish only this reviewed candidate to a new development branch based on Build 19, create a draft PR, and use the existing Xcode 26 CI selection/cache helpers. Do not merge main. Inspect the Release log and XCTest results, repair any compilation/test failures, then deliver only the newly built unsigned IPA with build number 20 and its checksum.
+The user authorized remote writes. Draft PR #36 and branch `codex/video-detail-frame-pacing-build20` are based on Build 19. Use the existing Xcode 26 CI selection/cache helpers. Do not merge main. Inspect the Release log and XCTest results, repair any compilation/test failures, then deliver only the newly built unsigned IPA with build number 21 and its checksum.
 
-Device comparison should use the same video and settings in Builds 19 and 20: scroll description/comments during playback with danmaku both enabled and disabled, pause/resume, seek, and rotate to/from fullscreen. Simulator correctness does not establish device performance. Do not expand live device testing.
+Device comparison should use the same video and settings in Builds 19 and 21: scroll description/comments during playback with danmaku both enabled and disabled, pause/resume, seek, and rotate to/from fullscreen. Simulator correctness does not establish device performance. Do not expand live device testing.

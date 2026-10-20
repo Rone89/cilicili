@@ -182,12 +182,17 @@ final class MetalDanmakuRenderer {
 
     #if DEBUG
     var debugDiagnostics: DanmakuRendererDiagnostics?
+    var debugFramesToDrop = 0
     private var diagnostics: DanmakuRendererDiagnostics { debugDiagnostics ?? .shared }
     #endif
 
     func render(view: MTKView, time: TimeInterval, preparationStartedAt: CFTimeInterval? = nil,
                 isManualRefresh: Bool = false, stage: MetalDanmakuRenderStage? = nil) {
         #if DEBUG
+        if debugFramesToDrop > 0 {
+            debugFramesToDrop -= 1
+            return
+        }
         let acquisitionStarted = CACurrentMediaTime()
         let start = preparationStartedAt ?? acquisitionStarted
         #endif

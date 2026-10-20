@@ -33,14 +33,17 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     private var canvasViewport = CGRect.zero
     private var suspended = false
     private var stopped = false
+    private var manualRefreshPending = false
+    private var manualRefreshRetryTask: Task<Void, Never>?
+    private var manualRefreshGeneration = 0
     var isLoadSheddingValue: Bool { configuration?.isLoadShedding ?? false }
     #if DEBUG
     var debugDiagnostics: DanmakuRendererDiagnostics? {
         didSet { renderer.debugDiagnostics = debugDiagnostics }
     }
     var debugPreferredFramesPerSecond: Int? { didSet { updateDrawLoop() } }
-    private var isManualRefresh = false
     private(set) var debugManualRefreshCount = 0
+    var debugHasPendingManualRefresh: Bool { manualRefreshPending || manualRefreshRetryTask != nil }
     var debugMaximumActiveCount: Int?
     var debugActiveCount: Int { timeline.active.count }
     var debugActiveItemIDs: Set<String> { Set(timeline.active.map { $0.item.id }) }
@@ -119,6 +122,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     }
     required init?(coder: NSCoder) { nil }
     isolated deinit {
+        manualRefreshRetryTask?.cancel()
         metalView.isPaused = true
         metalView.delegate = nil
         NotificationCenter.default.removeObserver(self)
@@ -239,6 +243,7 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
     }
 
     func stop() {
+        cancelManualRefresh()
         let before = timeline.active.count
         stopped = true
         metalView.isPaused = true
@@ -276,6 +281,8 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         // Tiny player-clock corrections must not hide newly admitted glyphs.
         let presentationTime = timeline.presentationTime ?? sampledTime
         let renderStage = currentRenderStage
+        let isManualRefresh = manualRefreshPending && view.isPaused
+        let submittedBefore = renderer.submittedFrames
         #if DEBUG
         renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
                         isManualRefresh: isManualRefresh, stage: renderStage)
@@ -283,6 +290,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         renderer.render(view: view, time: presentationTime, preparationStartedAt: start,
                         stage: renderStage)
         #endif
+        if isManualRefresh, renderer.submittedFrames > submittedBefore {
+            cancelManualRefresh()
+        }
     }
 
     private var shouldRender: Bool {
@@ -450,6 +460,9 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         let fontSettleActive = timeline.hasActiveFontScaleSettle(at: CACurrentMediaTime())
         metalView.isPaused = metalView.isHidden || suspended || window == nil
             || (configuration?.isPlaying != true && !fontSettleActive)
+        if !metalView.isPaused || metalView.isHidden || suspended || window == nil || stopped {
+            cancelManualRefresh()
+        }
         #if DEBUG
         if wasHidden != metalView.isHidden {
             traceScene("hidden=\(metalView.isHidden) renderable=\(shouldRender) stopped=\(stopped)", before: timeline.active.count)
@@ -474,12 +487,40 @@ final class MetalDanmakuView: UIView, DanmakuOverlayRendering, MTKViewDelegate {
         // The running MTKView loop will present updated state on its next tick.
         // A synchronous extra draw competes for drawables and disturbs that cadence.
         guard metalView.isPaused, !metalView.isHidden, !suspended, window != nil else { return }
+        manualRefreshPending = true
         #if DEBUG
         debugManualRefreshCount += 1
-        isManualRefresh = true
-        defer { isManualRefresh = false }
         #endif
         metalView.draw()
+        guard manualRefreshPending, manualRefreshRetryTask == nil else { return }
+        let generation = manualRefreshGeneration
+        manualRefreshRetryTask = Task { @MainActor [weak self] in
+            // A paused MTKView has no next scheduled tick after a busy GPU slot
+            // or unavailable drawable drops its one-shot draw. Retry without
+            // waiting on the GPU, coalescing requests into the latest state.
+            for _ in 0..<16 {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard let self, !Task.isCancelled,
+                      self.manualRefreshGeneration == generation else { return }
+                guard self.manualRefreshPending, self.metalView.isPaused,
+                      !self.metalView.isHidden, !self.suspended,
+                      self.window != nil, !self.stopped else {
+                    self.cancelManualRefresh()
+                    return
+                }
+                self.metalView.draw()
+            }
+            guard let self, self.manualRefreshGeneration == generation else { return }
+            self.cancelManualRefresh()
+        }
+    }
+
+    private func cancelManualRefresh() {
+        guard manualRefreshPending || manualRefreshRetryTask != nil else { return }
+        manualRefreshGeneration &+= 1
+        manualRefreshPending = false
+        manualRefreshRetryTask?.cancel()
+        manualRefreshRetryTask = nil
     }
     @objc private func suspend() {
         setAnchor(effectiveTime())
