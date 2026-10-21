@@ -81,11 +81,17 @@ normal launches retain their production sessions and media engine. These checks
 verify UI state/lifecycle, not real decoding or network performance.
 
 The shard containing DynamicDetailFlowUITests prepares an actual Photos asset.
-An existing composer UI test first lets Xcode start the selected simulator, then
+A launch-only fixture test first lets Xcode start the selected simulator, then
 `simctl addmedia` imports a generated PNG. No simulator is manually booted or
 created. The actual photo test selects and removes that image through the system
 picker. Preflight diagnostics are uploaded on failure; the complete shard still
-runs all its assigned classes.
+runs all its assigned classes. The comment menu and editor assertions remain in
+their normal UI test; media preparation does not exercise them. A failed import
+or failed launch still fails the photo preparation gate.
+
+Readable failure diagnostics are also exported when a test fails before passing
+on retry. A green xcodebuild exit status must not discard evidence of an earlier
+application exit or assertion failure.
 
 Reduced Motion root-tab coverage enables the actual system setting through Settings
 and verifies the read-only SwiftUI environment value seen by the mounted subtree.

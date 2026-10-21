@@ -119,6 +119,11 @@ jobs:
             awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|Fatal error:|Restarting after unexpected exit|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
           test_status=${PIPESTATUS[0]}
           set -e
+          # xcodebuild can succeed after a retry. Retain diagnostics from the
+          # failed attempt too, including unexpected application termination.
+          if awk '/Test Case .* failed \(/ || /Restarting after unexpected exit/ { found=1 } END { exit !found }' "$RUNNER_TEMP/bili-tests.log"; then
+            echo "had_test_failures=true" >> "$GITHUB_OUTPUT"
+          fi
           if [ -d "$result_bundle_path" ]; then
             echo "has_results=true" >> "$GITHUB_OUTPUT"
             if xcrun xccov view --report "$result_bundle_path" > "$RUNNER_TEMP/coverage.txt"; then
@@ -128,7 +133,7 @@ jobs:
           exit "$test_status"
 
       - name: Export readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && (steps.tests.outcome == 'failure' || steps.tests.outputs.had_test_failures == 'true') }}
         continue-on-error: true
         shell: bash
         run: |
@@ -138,7 +143,7 @@ jobs:
           xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
 
       - name: Upload readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && (steps.tests.outcome == 'failure' || steps.tests.outputs.had_test_failures == 'true') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ios-test-readable-${{ inputs.suite }}-attempt-${{ github.run_attempt }}

@@ -244,7 +244,7 @@ enum PlaybackStartupURLProbeService {
 
         do {
             let (data, response) = try await BiliNetworkRetry.data(
-                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSessionLease() },
                 request: request,
                 policy: .playbackProbe
             )
@@ -277,7 +277,7 @@ enum PlaybackStartupURLProbeService {
         let start = Date()
         do {
             let (_, response) = try await BiliNetworkRetry.data(
-                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSessionLease() },
                 request: request,
                 policy: .playbackProbe
             )
@@ -362,7 +362,7 @@ enum PlaybackStartupURLProbeService {
         let start = Date()
         do {
             let (data, response) = try await BiliNetworkRetry.data(
-                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSessionLease() },
                 request: request,
                 policy: .playbackProbe
             )

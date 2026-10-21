@@ -36,8 +36,31 @@ Both replies and dialog requests used `URLSessionTask.lowPriority`, which also s
 
 Xcode 26 run 39531243594 repeated both unchanged UI cases three times with a fresh runner process for each repetition, without failure-triggered retries: all 6 runs passed with zero failures. A captured iteration delivered page 1 to the store about 0.3 seconds after request submission. This is local-fixture simulator timing, not a production network benchmark. Full unit/UI and Release results, including any failures, are recorded in [PR #36](https://github.com/Rone89/cilicili/pull/36).
 
-## Delivery
+## Build 23 network-session lifetime follow-up
 
-Draft PR #36 and branch `codex/video-detail-frame-pacing-build20` are based on Build 19. Main remains unmerged. Device acceptance builds use the existing Xcode 26 selection/cache helpers and increment all project build configurations together; the reply-loading candidate is version 1.1.1 build 22. Deliver an IPA only after verifying its embedded build number, source commit, architecture, unsigned status and checksum.
+Build 22 run 39532665895 ultimately passed after rerunning photo preparation;
+all 1104 unit tests passed without retries. A RootTabScroll UI case passed on
+retry after its first launch exited. Its archived crash report captures the
+exit at 02:56:59 UTC: SIGABRT in NSURLSession task creation, called by
+`BiliNetworkRetry.dataOnce` from `PlaybackCDNProbeService.probe`.
+
+The pool returned a raw session under a lock, then invalidated it outside the
+lock during a network-path refresh. A borrower could therefore create a task
+on an already-invalidated session. Build 23 lends a retained session generation
+instead. Refresh switches the pool to a new generation immediately; the old
+generation is invalidated only when its last borrower releases it. Retry attempts
+acquire the current generation independently. Buffered and first-byte streaming
+requests also retain their lease across suspension and response consumption.
+
+Four regressions cover probe and buffered task creation after refresh, eventual
+invalidation after the last borrower, and 24 concurrent borrowed requests with
+path refreshes. CI photo preparation now checks fixture launch independently
+from comment-editor interaction, and retains readable diagnostics even when a
+failed test later passes its configured retry. Xcode 26 validation results will
+be recorded in PR #36; these changes alone do not establish device crash rates.
+
+## Current delivery
+
+Draft PR #36 and branch `codex/video-detail-frame-pacing-build20` are based on Build 19. Main remains unmerged. Device acceptance builds use the existing Xcode 26 selection/cache helpers and increment all project build configurations together; the session-lifetime candidate is version 1.1.1 build 23. Deliver an IPA only after verifying its embedded build number, source commit, architecture, unsigned status and checksum.
 
 Device comparison should use the same video and settings in Builds 19 and 21: scroll description/comments during playback with danmaku both enabled and disabled, pause/resume, seek, and rotate to/from fullscreen. Simulator correctness does not establish device performance. Do not expand live device testing.

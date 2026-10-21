@@ -615,7 +615,7 @@ enum PlaybackCDNProbeService {
         let start = Date()
         do {
             let (data, response) = try await BiliNetworkRetry.data(
-                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSession() },
+                sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackProbeSessionLease() },
                 request: request,
                 policy: .playbackProbe
             )

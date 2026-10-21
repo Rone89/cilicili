@@ -64,13 +64,14 @@ PYTHON
 media_import_pid=$!
 trap 'kill "$media_import_pid" 2>/dev/null || true' EXIT
 
-# Let Xcode start its selected existing simulator through a real, isolated UI
-# check. Do not manually boot, create or switch simulators for media preparation.
+# Only verify fixture launch here. Composer interaction is covered by its normal
+# UI test and must not be a prerequisite for importing a Photos asset.
+# Let Xcode start its selected existing simulator; never boot or create one here.
 python3 Scripts/build-cache.py run -- xcodebuild \
   -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
   -destination "$TEST_DESTINATION" -destination-timeout 120 \
   -resultBundlePath "$RUNNER_TEMP/photo-preflight.xcresult" \
-  -only-testing:biliUITests/CommentActionFlowUITests/testReplyActionOpensComposer \
+  -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
   -parallel-testing-enabled NO -enableCodeCoverage YES \
   -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
   -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
