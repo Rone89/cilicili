@@ -29,6 +29,11 @@ final class DynamicCommentReplyStore: ObservableObject {
     private func setSnapshot(_ next: DynamicCommentReplyStoreSnapshot) {
         guard next.changeSignature != snapshot.changeSignature else { return }
         snapshot = next
+        #if DEBUG
+        if UITestFixtureScenario.current == .dynamicReplies {
+            NSLog("[RepliesProbe] states=%@ counts=%@", String(describing: next.replyStates), String(describing: next.replyThreads.mapValues { $0.count }))
+        }
+        #endif
     }
 
     func setBlocksGoodsComments(_ isEnabled: Bool) {
@@ -215,6 +220,9 @@ final class DynamicCommentReplyStore: ObservableObject {
                 resolvedCookieHeader = await api.interactionRequestContext().cookieHeader
             }
             guard generation == replyLoadGenerations[comment.id] else { return .superseded }
+            #if DEBUG
+            if UITestFixtureScenario.current == .dynamicReplies { NSLog("[RepliesProbe] requesting page %d", nextPage) }
+            #endif
             let page = try await api.fetchCommentReplies(
                 oid: oid,
                 type: type,
@@ -224,6 +232,9 @@ final class DynamicCommentReplyStore: ObservableObject {
                 cookieHeader: resolvedCookieHeader
             )
             guard generation == replyLoadGenerations[comment.id] else { return .superseded }
+            #if DEBUG
+            if UITestFixtureScenario.current == .dynamicReplies { NSLog("[RepliesProbe] received page %d count %d", nextPage, page.replies?.count ?? 0) }
+            #endif
             let fetchedReplies = filteredComments(page.replies ?? [])
             let existingReplies = reset
                 ? filteredComments(comment.replies ?? [])

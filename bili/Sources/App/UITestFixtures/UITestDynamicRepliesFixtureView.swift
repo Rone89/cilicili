@@ -36,6 +36,7 @@ nonisolated private final class DynamicRepliesFixtureURLProtocol: URLProtocol {
     override func startLoading() {
         do {
             let url = request.url!
+            NSLog("[RepliesProbe] protocol request %@", url.absoluteString)
             let data: [String: Any]
             switch url.path {
             case "/x/v2/reply/main":
