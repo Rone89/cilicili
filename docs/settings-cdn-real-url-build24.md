@@ -30,3 +30,15 @@ the selected automatic/manual mode to remain unchanged. Repeat after restarting
 the app; without a playback record expect the guidance message. Live device
 testing remains deferred. A connectivity result is not a throughput measurement
 or proof that another video uses the same CDN route.
+
+The user accepted Build 24 on device. Package run 39641885581 used Xcode 26.6
+(17F113) and verified application commit 4a0ce7e7d3d911afb8df58285b93435a1b09dcc6,
+tree c348f5521646476d8b07a9b32c6e84f71f9e8543. Delivered unsigned IPA SHA-256:
+`d93be33f74bdee473f2101bf973aae4b445b85592e5e365c38f583b5b2f1c293`.
+Follow-up CI-only changes do not replace that accepted binary or increment its
+build number. Original run 39638959963 passed 1114 unique unit methods with two
+existing timing-case retries. Full UI shard 1 passed all 29 methods without
+retries, but its separate launch-only photo preflight timed out, so the job
+correctly failed its preparation gate. Shard 4 passed all 28 methods without
+retries. Remaining results and validation of the bounded preflight retry are
+tracked in PR #36; these partial results are not a complete CI pass.

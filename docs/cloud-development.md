@@ -64,7 +64,7 @@ plain-language device checklist and report test failures separately.
 ## Acceptance
 
 1. Run the environment-helper regression tests (also available on Linux):
-   `python3 -m unittest discover -s Scripts/tests -p 'test_ci_environment.py' -v`.
+   `python3 -m unittest discover -s Scripts/tests -v`.
 2. Open a PR and confirm both Xcode 26 test targets and Release actually execute.
 3. Inspect the xcresult for test outcomes, not just a successful setup step.
 4. Confirm the Release artifact is generated before claiming a build is ready.
@@ -92,6 +92,10 @@ or failed launch still fails the photo preparation gate.
 Readable failure diagnostics are also exported when a test fails before passing
 on retry. A green xcodebuild exit status must not discard evidence of an earlier
 application exit or assertion failure.
+The launch-only photo preflight allows one Xcode-managed retry, matching the
+bounded retry policy of the full UI suite. Its log and xcresult are uploaded even
+if that retry passes. Two failed launch attempts or a failed media import still
+fail the preparation gate; the full UI suite continues to retain its own results.
 
 Reduced Motion root-tab coverage enables the actual system setting through Settings
 and verifies the read-only SwiftUI environment value seen by the mounted subtree.

@@ -67,17 +67,29 @@ trap 'kill "$media_import_pid" 2>/dev/null || true' EXIT
 # Only verify fixture launch here. Composer interaction is covered by its normal
 # UI test and must not be a prerequisite for importing a Photos asset.
 # Let Xcode start its selected existing simulator; never boot or create one here.
+set +e
 python3 Scripts/build-cache.py run -- xcodebuild \
   -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
   -destination "$TEST_DESTINATION" -destination-timeout 120 \
   -resultBundlePath "$RUNNER_TEMP/photo-preflight.xcresult" \
   -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
+  -retry-tests-on-failure -test-iterations 2 \
   -parallel-testing-enabled NO -enableCodeCoverage YES \
   -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
   -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | \
   tee "$RUNNER_TEMP/photo-preflight.log" | \
   awk '/Test (Case|Suite)|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
+preflight_status=$?
+set -e
+
+# Keep evidence of the first launch failure even when Xcode's one retry passes.
+if awk '/Test Case .* failed \(/ || /Restarting after unexpected exit/ { found=1 } END { exit !found }' "$RUNNER_TEMP/photo-preflight.log"; then
+  echo "had_test_failures=true" >> "$GITHUB_OUTPUT"
+fi
+if [ "$preflight_status" -ne 0 ]; then
+  exit "$preflight_status"
+fi
 
 wait "$media_import_pid"
 trap - EXIT

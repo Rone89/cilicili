@@ -33,8 +33,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CI environment helpers
-        run: python3 -m unittest discover -s Scripts/tests -p 'test_ci_environment.py' -v
+      - name: Check CI helper regressions
+        run: python3 -m unittest discover -s Scripts/tests -v
 
       - name: Select installed Xcode 26
         run: python3 Scripts/ci-environment.py select-xcode
@@ -151,7 +151,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload photo preflight diagnostics
-        if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure') }}
+        if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure' || steps.photo_fixture.outputs.had_test_failures == 'true') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: photo-preflight-${{ inputs.suite }}
