@@ -298,7 +298,7 @@ extension BiliAPIClient {
             query: query,
             cookieHeader: resolvedCookieHeader,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: URLSessionTask.lowPriority
+            priority: URLSessionTask.defaultPriority
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
@@ -343,7 +343,7 @@ extension BiliAPIClient {
             ],
             cookieHeader: resolvedCookieHeader,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: URLSessionTask.lowPriority
+            priority: URLSessionTask.defaultPriority
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)

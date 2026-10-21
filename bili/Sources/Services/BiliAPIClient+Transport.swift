@@ -63,6 +63,9 @@ extension BiliAPIClient {
 
         do {
             let data = try await readData(for: request, priority: priority)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("dynamicReplies") { NSLog("[RepliesProbe] transport received %@", path) }
+            #endif
             guard !data.isEmpty else { throw BiliAPIError.emptyData }
             let decoded: T = try await Self.decode(data, priority: priority)
             if let responseCachePolicy, let responseCacheKey {
@@ -294,7 +297,14 @@ extension BiliAPIClient {
         }
 
         return try await Task.detached(priority: taskPriority) {
-            try JSONDecoder.bili.decode(T.self, from: data)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("dynamicReplies") { NSLog("[RepliesProbe] decoding %@ priority %@", String(reflecting: T.self), String(describing: Task.currentPriority)) }
+            #endif
+            let decoded = try JSONDecoder.bili.decode(T.self, from: data)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("dynamicReplies") { NSLog("[RepliesProbe] decoded %@", String(reflecting: T.self)) }
+            #endif
+            return decoded
         }.value
     }
 

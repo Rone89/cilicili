@@ -96,7 +96,7 @@ jobs:
               test_selectors+=("-only-testing:$selector")
             fi
           done <<< "$TEST_TARGET"
-          retry_arguments=("-retry-tests-on-failure" "-test-iterations" "2")
+          retry_arguments=("-test-iterations" "3" "-test-repetition-relaunch-enabled" "YES")
           set +e
           python3 Scripts/build-cache.py run -- xcodebuild \
             -project "$PROJECT" \
@@ -128,7 +128,7 @@ jobs:
           exit "$test_status"
 
       - name: Export readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
         continue-on-error: true
         shell: bash
         run: |
@@ -138,7 +138,7 @@ jobs:
           xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
 
       - name: Upload readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ios-test-readable-${{ inputs.suite }}-attempt-${{ github.run_attempt }}

@@ -55,6 +55,7 @@ nonisolated private final class DynamicRepliesFixtureURLProtocol: URLProtocol {
             client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: body)
             client?.urlProtocolDidFinishLoading(self)
+            NSLog("[RepliesProbe] protocol finished %@", url.path)
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
