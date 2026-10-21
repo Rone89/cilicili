@@ -292,13 +292,14 @@ extension BiliAPIClient {
             query["sort"] = "1"
         }
         let resolvedCookieHeader = await resolvedCommentCookieHeader(cookieHeader)
+        // Reply sheets are visible work; keep their response decoding at utility QoS.
         let response: BiliResponse<CommentPage> = try await get(
             base: baseURL,
             path: "/x/v2/reply/reply",
             query: query,
             cookieHeader: resolvedCookieHeader,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: URLSessionTask.lowPriority
+            priority: URLSessionTask.defaultPriority
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
@@ -331,6 +332,7 @@ extension BiliAPIClient {
     ) async throws -> CommentPage
     {
         let resolvedCookieHeader = await resolvedCommentCookieHeader(cookieHeader)
+        // Match the foreground reply list instead of scheduling background decoding.
         let response: BiliResponse<CommentPage> = try await get(
             base: baseURL,
             path: "/x/v2/reply/dialog/cursor",
@@ -343,7 +345,7 @@ extension BiliAPIClient {
             ],
             cookieHeader: resolvedCookieHeader,
             cachePolicy: .reloadIgnoringLocalCacheData,
-            priority: URLSessionTask.lowPriority
+            priority: URLSessionTask.defaultPriority
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
         return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
