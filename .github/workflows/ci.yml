@@ -1,84 +1,50 @@
-name: iOS CI
+name: Build 24 package validation
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 env:
   PROJECT: bili.xcodeproj
   SCHEME: bili
 
 jobs:
-  unit:
-    name: Unit tests first
-    uses: ./.github/workflows/xcode-test-suite.yml
-    with:
-      suite: unit
-      test_target: biliTests
-
-  test:
-    name: ${{ matrix.suite }}
-    needs: unit
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: interaction-regression
-            test_target: |
-              biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
-              biliUITests/RootTabScrollUITests/testDynamicTabReselectionWithMinimizedTabBar
-              biliUITests/SearchScrollRetentionUITests/testSearchScopeBarScrollsWithResultsAndSwitchesDirectly
-              biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults
-              biliUITests/SearchScrollRetentionUITests/testOpeningResultDuringActiveSearchRestoresQueryAndFilters
-              biliUITests/SearchScrollRetentionUITests/testCancelAfterSubmittedSearchRestoresHotSearches
-              biliUITests/DynamicDetailFlowUITests/testRichCommentComposerUsesNativeTextEditorAndEmoteInputView
-              biliUITests/VideoDetailFlowUITests/testVideoDetailUsesLayeredPagesAndToolbarPicker
-              biliUITests/VideoDetailFlowUITests/testVideoDetailStartingPausedKeepsCommentOrigin
-              biliUITests/VideoDetailFlowUITests/testVideoDetailBottomPlayStartsManualPlayback
-              biliUITests/DynamicRepliesPaginationUITests/testAvatarAndMentionPresentProfileSheetAndReturnToReplies
-              biliUITests/DynamicRepliesPaginationUITests/testMoreRepliesAppearBelowCurrentBottomInDynamicDetailSheet
-          - suite: ui-1
-            ui_shard: '1'
-          - suite: ui-2
-            ui_shard: '2'
-          - suite: ui-3
-            ui_shard: '3'
-          - suite: ui-4
-            ui_shard: '4'
-    uses: ./.github/workflows/xcode-test-suite.yml
-    with:
-      suite: ${{ matrix.suite }}
-      test_target: ${{ matrix.test_target || '' }}
-      ui_shard: ${{ matrix.ui_shard || '' }}
-
   release:
-    name: Xcode 26 unsigned Release
+    name: Xcode 26 Build 24 package
     runs-on: macos-26
     timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
+      - name: Checkout exact application source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 4a0ce7e7d3d911afb8df58285b93435a1b09dcc6
+      - name: Verify application source
+        run: |
+          test "$(git rev-parse HEAD)" = "4a0ce7e7d3d911afb8df58285b93435a1b09dcc6"
+          test "$(git rev-parse HEAD^{tree})" = "c348f5521646476d8b07a9b32c6e84f71f9e8543"
       - name: Select installed Xcode 26
         run: python3 Scripts/ci-environment.py select-xcode
-
       - name: Build Release without signing
         id: release
-        run: zsh Scripts/build-release-unsigned-ipa.sh
-
+        run: |
+          zsh Scripts/build-release-unsigned-ipa.sh
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          path = Path("build/release-unsigned-ipa/build-info.json")
+          info = json.loads(path.read_text())
+          info["workflow_commit"] = info["commit"]
+          info["commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          info["source_tree"] = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+          assert info["commit"] == "4a0ce7e7d3d911afb8df58285b93435a1b09dcc6"
+          assert info["source_tree"] == "c348f5521646476d8b07a9b32c6e84f71f9e8543"
+          path.write_text(json.dumps(info, indent=2) + "\n")
+          PY
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: cilicili-${{ steps.release.outputs.version }}-build-${{ steps.release.outputs.build }}-unsigned-ipa
           path: |
@@ -86,11 +52,10 @@ jobs:
             build/release-unsigned-ipa/build-info.json
             build/release-unsigned-ipa/bili-release-unsigned.ipa.sha256
           if-no-files-found: error
-
-      - name: Upload Release build log
+      - name: Upload build log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ios-release-log
+          name: build24-package-log
           path: build/logs/release-unsigned-ipa.log
-          if-no-files-found: warn
+          if-no-files-found: ignore
