@@ -438,6 +438,10 @@ final class LibraryStore: ObservableObject {
         playbackCDNProbeSnapshotsByContext[currentPlaybackCDNProbeContextKey]
     }
 
+    var recentPlaybackCDNProbeVideo: PlaybackCDNProbeVideo? {
+        PlaybackCDNSettingsProbe.latestVideo(in: Array(playbackProgressByBVID.values))
+    }
+
     var appTintColor: Color {
         AppThemeTintColor.color(for: appTintColorHex)
     }
@@ -1020,7 +1024,7 @@ final class LibraryStore: ObservableObject {
         objectWillChange.send()
     }
 
-    private var currentPlaybackCDNProbeContextKey: String {
+    var currentPlaybackCDNProbeContextKey: String {
         Self.playbackCDNProbeContextKey(
             networkClass: PlaybackEnvironment.current.networkClass,
             addressFamilyPreference: playbackNetworkAddressFamilyPreference

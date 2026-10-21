@@ -7,10 +7,12 @@ struct MinePlaybackSettingsView: View {
     }
 
     @ObservedObject var libraryStore: LibraryStore
+    let api: BiliAPIClient
     let mode: Mode
     @AppStorage("cc.bili.playback.showsAdvancedSettings.v1") var showsAdvancedPlaybackSettings = false
     @State var isProbingPlaybackCDN = false
-    @State var playbackCDNProbeResults: [PlaybackCDNProbeResult] = []
+    @State var playbackCDNSettingsSnapshot: PlaybackCDNProbeSnapshot?
+    @State var playbackCDNSettingsContextKey: String?
     @State var playbackCDNProbeMessage: String?
     @State var playbackCDNProbeTask: Task<Void, Never>?
     @State var isShowingPlaybackCDNProbeDetails = false
@@ -18,8 +20,9 @@ struct MinePlaybackSettingsView: View {
     @State var isShowingPlaybackURLPreferenceDetails = false
     @State var playbackCustomCDNHostDraft = ""
 
-    init(libraryStore: LibraryStore, mode: Mode = .user) {
+    init(libraryStore: LibraryStore, api: BiliAPIClient, mode: Mode = .user) {
         self.libraryStore = libraryStore
+        self.api = api
         self.mode = mode
     }
 

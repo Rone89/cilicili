@@ -358,6 +358,7 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             MineSettingsLabel(isProbingPlaybackCDN ? "测速中" : "测试 CDN 连通性", systemImage: "speedometer")
         }
         .disabled(isProbingPlaybackCDN)
+        .accessibilityHint("获取最近观看视频的播放地址进行测试，不会开始播放")
     }
 
     @ViewBuilder

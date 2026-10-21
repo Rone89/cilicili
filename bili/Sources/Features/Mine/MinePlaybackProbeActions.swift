@@ -13,41 +13,53 @@ extension MinePlaybackSettingsView {
 
     func startPlaybackCDNProbe(isAutomatic: Bool) {
         guard !isProbingPlaybackCDN else { return }
+        guard let video = libraryStore.recentPlaybackCDNProbeVideo else {
+            playbackCDNProbeMessage = "请先播放一个视频几秒，再返回这里测试 CDN。"
+            return
+        }
+        let contextKey = libraryStore.currentPlaybackCDNProbeContextKey
+        let addressFamilyPreference = libraryStore.playbackNetworkAddressFamilyPreference
         isProbingPlaybackCDN = true
-        playbackCDNProbeMessage = isAutomatic ? "CDN 测速已过期，正在刷新 Host 连通性参考..." : "正在测试 CDN Host 连通性..."
+        playbackCDNProbeMessage = "正在使用最近观看视频的播放地址测试 CDN…"
         if !isAutomatic {
-            playbackCDNProbeResults = []
+            playbackCDNSettingsSnapshot = nil
+            playbackCDNSettingsContextKey = nil
         }
 
         playbackCDNProbeTask?.cancel()
-        playbackCDNProbeTask = Task {
-            let addressFamilyPreference = await MainActor.run {
-                libraryStore.playbackNetworkAddressFamilyPreference
+        playbackCDNProbeTask = Task { @MainActor in
+            defer {
+                if !Task.isCancelled {
+                    isProbingPlaybackCDN = false
+                    playbackCDNProbeTask = nil
+                }
             }
-            let snapshot = await PlaybackCDNProbeService.recommendedSnapshot(
-                addressFamilyPreference: addressFamilyPreference
-            )
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                playbackCDNProbeResults = snapshot.results
-                libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
-                if snapshot.isWeakReferenceOnly {
-                    playbackCDNProbeMessage = "设置页没有当前播放地址，本次只做 Host 弱参考；403/959 不代表真实播放失败，也不会更新自动推荐。"
-                } else if let preference = snapshot.recommendedPreference,
-                   let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
-                    if !isAutomatic {
-                        libraryStore.setPlaybackCDNPreference(preference)
+            do {
+                let snapshot = try await PlaybackCDNSettingsProbe.run(
+                    video: video,
+                    addressFamilyPreference: addressFamilyPreference,
+                    fetchPlayURL: { [api] video in
+                        try await api.fetchPlayURLUncached(bvid: video.bvid, cid: video.cid)
                     }
-                    playbackCDNProbeMessage = isAutomatic
-                        ? "已自动刷新 CDN：\(preference.title)，\(elapsed) ms"
-                        : "已推荐 \(preference.title)，\(elapsed) ms"
+                )
+                try Task.checkCancellation()
+                guard contextKey == libraryStore.currentPlaybackCDNProbeContextKey else {
+                    playbackCDNProbeMessage = "网络或协议设置已改变，请重新测试 CDN。"
+                    return
+                }
+                playbackCDNSettingsSnapshot = snapshot
+                playbackCDNSettingsContextKey = contextKey
+                libraryStore.setPlaybackCDNProbeSnapshot(snapshot)
+                if let preference = snapshot.recommendedPreference,
+                   let elapsed = snapshot.result(for: preference)?.elapsedMilliseconds {
+                    playbackCDNProbeMessage = "已使用最近观看视频测速：推荐 \(preference.title)，\(elapsed) ms"
                 } else {
                     playbackCDNProbeMessage = "未找到可用 CDN，已保留当前设置"
                 }
                 refreshPlaybackURLPreferenceSnapshots()
-                isProbingPlaybackCDN = false
-                playbackCDNProbeTask = nil
+            } catch {
+                guard !Task.isCancelled else { return }
+                playbackCDNProbeMessage = "CDN 测试未完成：\(error.localizedDescription)"
             }
         }
     }

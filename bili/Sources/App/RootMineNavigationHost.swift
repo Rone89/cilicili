@@ -55,11 +55,11 @@ struct RootMineNavigationDestination: View {
         case .homeAndSearchSettings:
             MineHomeAndSearchSettingsView(libraryStore: libraryStore)
         case .playbackSettings:
-            MinePlaybackSettingsView(libraryStore: libraryStore)
+            MinePlaybackSettingsView(libraryStore: libraryStore, api: api)
         case .cacheSettings:
             ResourceCacheManagementView(mode: .user)
         case .developerDiagnostics:
-            MineDeveloperDiagnosticsView(libraryStore: libraryStore)
+            MineDeveloperDiagnosticsView(libraryStore: libraryStore, api: api)
         case .contentFilterSettings:
             MineContentFilterSettingsView(libraryStore: libraryStore, sessionStore: sessionStore, api: api)
         case .privacySettings:

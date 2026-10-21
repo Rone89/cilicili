@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MineDeveloperDiagnosticsView: View {
     @ObservedObject var libraryStore: LibraryStore
+    let api: BiliAPIClient
 
     var body: some View {
         Form {
@@ -59,7 +60,7 @@ struct MineDeveloperDiagnosticsView: View {
             }
 
             NavigationLink {
-                MinePlaybackSettingsView(libraryStore: libraryStore, mode: .developer)
+                MinePlaybackSettingsView(libraryStore: libraryStore, api: api, mode: .developer)
             } label: {
                 PlainSettingsNavigationRow(
                     title: "播放与网络诊断",
