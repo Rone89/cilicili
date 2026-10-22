@@ -61,10 +61,16 @@ private struct PlayerNowPlayingMetadataFingerprint: Equatable {
     let playbackRatePercent: Int
     let playbackState: MPNowPlayingPlaybackState
     let isLiveStream: Bool
+    let playbackContentMode: PlayerPlaybackContentMode
 }
 
 enum PlayerSystemMediaPresentationPolicy {
-    static let publishesNowPlayingInfo = false
+    static let publishesNowPlayingInfo = true
+    static let continuesRecordedVideoAudioInBackground = true
+
+    static func mediaType(for contentMode: PlayerPlaybackContentMode) -> MPNowPlayingInfoMediaType {
+        contentMode == .audioOnly ? .audio : .video
+    }
 }
 
 enum PlayerNowPlayingPublicationPolicy {
@@ -74,10 +80,11 @@ enum PlayerNowPlayingPublicationPolicy {
         isPlaying: Bool,
         isTerminated: Bool,
         hasPlaybackFailure: Bool,
-        playbackContentMode: PlayerPlaybackContentMode = .video
+        playbackContentMode: PlayerPlaybackContentMode = .video,
+        isLiveStream: Bool = false
     ) -> Bool {
         guard playbackContentMode == .audioOnly
-                || PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo
+                || (!isLiveStream && PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo)
         else {
             return false
         }
@@ -157,7 +164,8 @@ private final class PlayerRemoteControlSession {
             durationSeconds: duration.map { Int($0.rounded()) },
             playbackRatePercent: Int((player.playbackRate.rawValue * 100).rounded()),
             playbackState: playbackState,
-            isLiveStream: player.isNowPlayingLiveStream
+            isLiveStream: player.isNowPlayingLiveStream,
+            playbackContentMode: player.playbackContentMode
         )
 
         let commandCenter = MPRemoteCommandCenter.shared()
@@ -173,7 +181,9 @@ private final class PlayerRemoteControlSession {
             MPMediaItemPropertyArtist: player.nowPlayingArtist,
             MPNowPlayingInfoPropertyPlaybackRate: effectiveRate,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: max(player.playbackRate.rawValue, 0),
-            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
+            MPNowPlayingInfoPropertyMediaType: PlayerSystemMediaPresentationPolicy
+                .mediaType(for: player.playbackContentMode)
+                .rawValue
         ]
         if player.isNowPlayingLiveStream {
             info[MPNowPlayingInfoPropertyIsLiveStream] = true
@@ -900,7 +910,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             isPlaying: isPlaying,
             isTerminated: isTerminated,
             hasPlaybackFailure: errorMessage != nil,
-            playbackContentMode: playbackContentMode
+            playbackContentMode: playbackContentMode,
+            isLiveStream: isLiveStream
         )
     }
 
@@ -1695,20 +1706,27 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     func pauseForAppBackground() -> Bool {
         #if DEBUG
         debugManualPauseStartedAt = nil
-        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
         #endif
         guard !isTerminated else { return false }
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
         guard !isPictureInPictureActive else { return false }
-        if playbackContentMode == .audioOnly {
+        if playbackContentMode == .audioOnly
+            || (
+                !isLiveStream
+                    && PlayerSystemMediaPresentationPolicy.continuesRecordedVideoAudioInBackground
+            ) {
+            // Keep Now Playing current while audio-only or recorded-video playback
+            // remains active. Live video keeps its existing background policy.
             syncRemotePlaybackControls(forceNowPlayingTimeUpdate: true)
             return false
         }
 
-        // Recorded video should not pretend to keep playing when iOS has moved
-        // the app off screen. Leave live playback on the existing resume path,
-        // but make normal video an explicit manual restart after foregrounding.
+        #if DEBUG
+        engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
+        #endif
+
+        // Retain the paused-recovery path if recorded-video background audio is disabled.
         if !isLiveStream {
             if isPlaybackStoppedForAppBackground {
                 return true

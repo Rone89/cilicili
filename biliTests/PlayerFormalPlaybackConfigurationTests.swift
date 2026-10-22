@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import MediaPlayer
 import SwiftUI
 import UIKit
 import XCTest
@@ -54,28 +55,44 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testSystemNowPlayingPublicationIsDisabled() {
-        XCTAssertFalse(PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo)
+    func testSystemNowPlayingPublicationIncludesEligibleVideoPlayback() {
+        XCTAssertTrue(PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo)
+        XCTAssertTrue(PlayerSystemMediaPresentationPolicy.continuesRecordedVideoAudioInBackground)
+        XCTAssertEqual(PlayerSystemMediaPresentationPolicy.mediaType(for: .video), .video)
+        XCTAssertEqual(PlayerSystemMediaPresentationPolicy.mediaType(for: .audioOnly), .audio)
 
         let playbackStates = [
-            (true, true, false, false, false),
-            (true, false, true, false, false),
-            (true, false, false, false, false),
-            (false, true, true, false, false),
-            (true, true, true, true, false),
-            (true, true, true, false, true),
+            (true, true, false, false, false, true),
+            (true, false, true, false, false, true),
+            (true, false, false, false, false, false),
+            (false, true, true, false, false, false),
+            (true, true, true, true, false, false),
+            (true, true, true, false, true, false),
         ]
         for state in playbackStates {
-            XCTAssertFalse(
+            XCTAssertEqual(
                 PlayerNowPlayingPublicationPolicy.shouldPublish(
                     isActive: state.0,
                     wantsAutoplay: state.1,
                     isPlaying: state.2,
                     isTerminated: state.3,
                     hasPlaybackFailure: state.4
-                )
+                ),
+                state.5
             )
         }
+
+        XCTAssertFalse(
+            PlayerNowPlayingPublicationPolicy.shouldPublish(
+                isActive: true,
+                wantsAutoplay: true,
+                isPlaying: true,
+                isTerminated: false,
+                hasPlaybackFailure: false,
+                playbackContentMode: .video,
+                isLiveStream: true
+            )
+        )
     }
 
     @MainActor
@@ -692,7 +709,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testSystemBackgroundStopsRecordedVideoWhenPictureInPictureIsConfiguredButInactive() {
+    func testSystemBackgroundKeepsRecordedVideoPlayingWhenPictureInPictureIsInactive() {
         let coordinator = ActivePlaybackCoordinator.shared
         coordinator.stopActivePlayback()
 
@@ -700,7 +717,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         let player = PlayerStateViewModel(
             videoURL: nil,
             audioURL: nil,
-            title: "系统后台暂停测试",
+            title: "系统后台续播测试",
             referer: "https://www.bilibili.com",
             engine: engine
         )
@@ -715,32 +732,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
             coordinator.stopActivePlayback()
         }
 
-        player.pauseForAppBackground()
-        XCTAssertFalse(player.wantsAutoplay)
-        XCTAssertEqual(engine.backgroundPauseCallCount, 1)
-        XCTAssertTrue(player.isAwaitingAppBackgroundSurfaceRecovery)
+        XCTAssertFalse(player.isPictureInPictureActive)
+        XCTAssertFalse(player.pauseForAppBackground())
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(engine.backgroundPauseCallCount, 0)
+        XCTAssertFalse(player.isAwaitingAppBackgroundSurfaceRecovery)
 
-        // The engine can report a reset time after a long lock. Foreground
-        // preparation must still rebuild at the time captured before suspension.
-        engine.snapshotTime = 0
-
-        player.pauseForAppBackground()
-        XCTAssertEqual(engine.backgroundPauseCallCount, 1)
         XCTAssertFalse(player.resumePlaybackAfterAppBackgroundIfNeeded())
-        XCTAssertTrue(player.prepareStoppedPlaybackAfterAppBackgroundIfNeeded())
-        XCTAssertFalse(player.wantsAutoplay)
-        XCTAssertEqual(engine.recoverSurfaceCallCount, 1)
-        XCTAssertEqual(engine.videoOutputRefreshCallCount, 1)
-        XCTAssertEqual(engine.seekCallCount, 1)
-        XCTAssertEqual(engine.lastSeekTime, 12)
-        XCTAssertEqual(engine.pausedPlaybackWarmCallCount, 1)
-        XCTAssertEqual(engine.playerItemRecoveryCallCount, 0)
-        XCTAssertEqual(engine.playCallCount, 0)
-
-        engine.renderedVideoTime = 12
-        XCTAssertTrue(player.isStoppedAppBackgroundSurfaceRecoveryReadyForReveal())
-        player.finishAppBackgroundSurfaceRecoveryReveal()
-        XCTAssertEqual(player.playbackPhase, .paused)
+        XCTAssertFalse(player.prepareStoppedPlaybackAfterAppBackgroundIfNeeded())
+        XCTAssertEqual(engine.backgroundPauseCallCount, 0)
     }
 
     @MainActor
@@ -911,73 +911,6 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertTrue(coordinator.currentActivePlayer() === newPlayer)
         XCTAssertGreaterThanOrEqual(oldEngine.pauseCallCount, 1)
         XCTAssertEqual(newEngine.temporaryAudioSuppressionValues.last, false)
-    }
-
-    @MainActor
-    func testStoppedBackgroundPreparationFallsBackToPlayerItemWhenSoftWarmIsUnavailable() {
-        let coordinator = ActivePlaybackCoordinator.shared
-        coordinator.stopActivePlayback()
-
-        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
-        engine.videoOutputRefreshResult = false
-        engine.pausedPlaybackWarmResult = false
-        let player = PlayerStateViewModel(
-            videoURL: nil,
-            audioURL: nil,
-            title: "后台预热兜底测试",
-            referer: "https://www.bilibili.com",
-            engine: engine
-        )
-        let surface = VideoSurfaceContainerView()
-        player.attachSurface(surface, prefersNativePlaybackControls: false)
-        coordinator.activate(player)
-        player.setPlaybackIntent(true)
-        engine.onFirstFrame?(12)
-        defer {
-            player.stop()
-            coordinator.stopActivePlayback()
-        }
-
-        XCTAssertTrue(player.pauseForAppBackground())
-        XCTAssertTrue(player.prepareStoppedPlaybackAfterAppBackgroundIfNeeded())
-        XCTAssertEqual(engine.videoOutputRefreshCallCount, 1)
-        XCTAssertEqual(engine.pausedPlaybackWarmCallCount, 2)
-        XCTAssertEqual(engine.playerItemRecoveryCallCount, 1)
-        XCTAssertEqual(engine.lastPlayerItemRecoveryTime, 12)
-        XCTAssertEqual(engine.playCallCount, 0)
-    }
-
-    @MainActor
-    func testStoppedBackgroundManualResumeEscalatesBeforeGenericStallRecovery() async throws {
-        let coordinator = ActivePlaybackCoordinator.shared
-        coordinator.stopActivePlayback()
-
-        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
-        let player = PlayerStateViewModel(
-            videoURL: URL(string: "https://example.com/video.m4s"),
-            audioURL: nil,
-            title: "后台继续播放快速兜底测试",
-            referer: "https://www.bilibili.com",
-            engine: engine
-        )
-        let surface = VideoSurfaceContainerView()
-        player.attachSurface(surface, prefersNativePlaybackControls: false)
-        coordinator.activate(player)
-        player.setPlaybackIntent(true)
-        engine.onFirstFrame?(12)
-        defer {
-            player.stop()
-            coordinator.stopActivePlayback()
-        }
-
-        XCTAssertTrue(player.pauseForAppBackground())
-        XCTAssertTrue(player.prepareStoppedPlaybackAfterAppBackgroundIfNeeded())
-        player.play()
-
-        try await Task.sleep(nanoseconds: 1_800_000_000)
-        XCTAssertEqual(engine.videoOutputRefreshCallCount, 2)
-        XCTAssertEqual(engine.playerItemRecoveryCallCount, 1)
-        XCTAssertGreaterThanOrEqual(engine.playCallCount, 3)
     }
 
     @MainActor
