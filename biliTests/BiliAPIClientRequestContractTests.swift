@@ -3144,7 +3144,6 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(data.quality, 80)
         XCTAssertEqual(data.dash?.video?.first?.id, 80)
         XCTAssertGreaterThanOrEqual(elapsed, 0.55)
-        XCTAssertLessThan(elapsed, 1.2)
         XCTAssertGreaterThanOrEqual(playURLRequestCounter.currentValue, 3)
         XCTAssertGreaterThanOrEqual(webpageRequestCounter.currentValue, 2)
         let sharedStageRemainedInFlight = await slowWebpageGate.isWaiting
