@@ -106,7 +106,9 @@ final class DynamicDetailFlowUITests: XCTestCase {
             format: "label BEGINSWITH[c] %@ OR label BEGINSWITH %@",
             "Photo", "照片"
         )).firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 10))
+        // The first PhotosPicker presentation can remain on its native Loading
+        // screen while the newly imported simulator asset is indexed.
+        XCTAssertTrue(photo.waitForExistence(timeout: 45), app.debugDescription)
         let add = app.navigationBars.buttons.matching(NSPredicate(
             format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label IN %@",
             "Add", "添加", ["Done", "完成"]

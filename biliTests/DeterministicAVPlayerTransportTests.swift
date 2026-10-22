@@ -139,6 +139,10 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         engine.pause()
         let target = await engine.seekAfterUserScrub(toProgress: 0.6, duration: fixture.primarySource.durationHint)
         XCTAssertNotNil(target)
+        // The production seek-recovery snapshot reports rendered timestamps for
+        // a short post-seek window. Exercise that existing read immediately so
+        // the trace does not depend on simulator frame scheduling to record it.
+        _ = engine.snapshot(durationHint: fixture.primarySource.durationHint)
         engine.recoverSurface()
         engine.play()
         try await waitUntil("new target frame after seek") {

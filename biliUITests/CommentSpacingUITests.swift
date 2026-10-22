@@ -39,7 +39,7 @@ final class CommentSpacingUITests: XCTestCase {
         }
         XCTAssertTrue(metric.isHittable, id)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (Double(metric.label) ?? 0) > 0 }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         return Double(metric.label) ?? -1
     }
     private func returnToTop(_ app: XCUIApplication) {

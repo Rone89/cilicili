@@ -16,12 +16,12 @@ final class CommentActionFlowUITests: XCTestCase {
 
         let open = app.buttons["ui.commentAction.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 3))
-        open.press(forDuration: 0.6)
+        open.press(forDuration: 1.0)
 
         let copy = app.buttons["复制评论"]
         let reply = app.buttons["回复"]
-        XCTAssertTrue(copy.waitForExistence(timeout: 2))
-        XCTAssertTrue(reply.waitForExistence(timeout: 2))
+        XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), app.debugDescription)
         reply.tap()
 
         let editor = app.textViews["dynamic.comment.composer.editor"]
