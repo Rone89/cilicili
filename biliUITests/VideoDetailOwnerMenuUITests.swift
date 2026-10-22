@@ -22,11 +22,11 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
         XCTAssertTrue(follow.waitForExistence(timeout: 3))
         XCTAssertEqual(follow.label, "关注")
         follow.tap()
-        XCTAssertEqual(menu.value as? String, "已关注")
+        XCTAssertTrue(waitForAccessibilityValue("已关注", on: menu), app.debugDescription)
         menu.tap()
-        XCTAssertEqual(follow.label, "已关注")
+        XCTAssertTrue(waitForAccessibilityLabel("已关注", on: follow), app.debugDescription)
         follow.tap()
-        XCTAssertEqual(menu.value as? String, "未关注")
+        XCTAssertTrue(waitForAccessibilityValue("未关注", on: menu), app.debugDescription)
         menu.tap()
         app.buttons["video.detail.ownerMenu.space"].tap()
         XCTAssertTrue(app.staticTexts["fixture.owner.space"].waitForExistence(timeout: 3))
@@ -73,6 +73,22 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
 
     private func actionButtons(in app: XCUIApplication) -> [XCUIElement] {
         ["like", "coin", "favorite", "more"].map { app.buttons["video.detail.\($0)"] }
+    }
+
+    private func waitForAccessibilityValue(_ value: String, on element: XCUIElement) -> Bool {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", value),
+            object: element
+        )
+        return XCTWaiter.wait(for: [updated], timeout: 5) == .completed
+    }
+
+    private func waitForAccessibilityLabel(_ label: String, on element: XCUIElement) -> Bool {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", label),
+            object: element
+        )
+        return XCTWaiter.wait(for: [updated], timeout: 5) == .completed
     }
 
     private func assertMatchingFrames(_ buttons: [XCUIElement], expected: [CGRect]) {

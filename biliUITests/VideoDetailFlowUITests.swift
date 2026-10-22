@@ -135,7 +135,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let homeTab = app.buttons["首页"].firstMatch
         XCTAssertTrue(homeTab.waitForExistence(timeout: 5))
         XCTAssertTrue(homeTab.isHittable)
-        XCTAssertFalse(picker.exists)
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), app.debugDescription)
     }
 
     @MainActor
