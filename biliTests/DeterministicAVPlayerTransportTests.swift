@@ -148,8 +148,12 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertTrue(seekSummary.contains("seekCompletion"))
         XCTAssertTrue(seekSummary.contains("recoverSurfaceComplete"))
         XCTAssertTrue(seekSummary.contains("toleranceBefore=0.35"))
-        try await waitUntil("advancing target timestamps from existing snapshot reads") {
+        try await waitUntil("advancing target timestamps from existing playback reads", timeout: 10) {
             _ = engine.snapshot(durationHint: fixture.primarySource.durationHint)
+            // The recovery gate also samples this existing player-output API. Keep
+            // observing beyond the snapshot's short post-seek reporting window so
+            // simulator scheduling delays cannot hide a later advancing frame.
+            _ = engine.currentRenderedVideoTime()
             return RecoveryTraceStore.shared.summary(seekID)?.contains("targetVideoAdvanceObserved@") == true
         }
         engine.debugRecoveryEvent("uiReveal", fields: ["reason": "testObservationBoundary"])
