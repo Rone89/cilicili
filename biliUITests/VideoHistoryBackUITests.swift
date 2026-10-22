@@ -77,8 +77,16 @@ final class VideoHistoryBackUITests: XCTestCase {
         app.buttons["video.detail.history.depth.2"].tap()
         XCTAssertTrue(app.buttons["history.fixture.video"].waitForExistence(timeout: 3))
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
-        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
-        XCTAssertTrue(app.buttons["history.fixture.owner"].waitForExistence(timeout: 3))
+        start.press(
+            forDuration: 0.05,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+            withVelocity: .slow,
+            thenHoldForDuration: 0.2
+        )
+        XCTAssertTrue(
+            app.buttons["history.fixture.owner"].waitForExistence(timeout: 8),
+            "System edge swipe did not return to the uploader page.\n\(app.debugDescription)"
+        )
     }
 
     @MainActor

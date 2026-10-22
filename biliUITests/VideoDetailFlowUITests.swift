@@ -350,13 +350,21 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         // Reach the boundary in small held drags. A single long drag can add
         // momentum and legitimately scroll the header out of view afterwards.
-        for _ in 0..<24 {
+        for _ in 0..<48 {
             let remainingCollapse = playerFrame.frame.height - 54
             if remainingCollapse <= 1 { break }
+            let dragDistance: CGFloat
+            if remainingCollapse > 24 {
+                dragDistance = 24
+            } else if remainingCollapse > 8 {
+                dragDistance = 8
+            } else {
+                dragDistance = max(remainingCollapse, 1)
+            }
             let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             start.press(
                 forDuration: 0.8,
-                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -min(24, max(14, remainingCollapse)))),
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -dragDistance)),
                 withVelocity: .slow,
                 thenHoldForDuration: 1.0
             )
