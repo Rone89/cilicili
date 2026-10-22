@@ -108,3 +108,13 @@ after the app under test takes focus; it does not reuse a stale switch node. Acc
 tests long-press a visible intersection of oversized text, not an offscreen
 element center. Photo preparation failures remain failures, but the full shard
 still executes so unrelated results and readable crash diagnostics are retained.
+
+The recommendation-feedback UI case can explicitly arm its Debug fixture's
+three-second notice expiration after observing the actual notice. This avoids
+missing the entire transient notice when a system menu tap takes longer than
+its lifetime. Other fixture launches retain automatic expiration, and Release
+does not include this control. The test still checks the native menu, notice
+image/label, expiration and correct card removal. Long presses target the visible
+cover. The player-collapse case uses bounded held drags to reach minimum height,
+then separately checks relative content scrolling with a small additional drag;
+its player-height, header-motion and viewport assertions remain active.

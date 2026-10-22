@@ -348,15 +348,19 @@ final class VideoDetailFlowUITests: XCTestCase {
             "comment section should move with the player before the player reaches minimum height"
         )
 
-        let settledCommentHeaderFrame = commentHeader.frame
-        let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let remainingCollapse = playerFrame.frame.height - 54
-        continuationStart.press(
-            forDuration: 0.8,
-            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -(remainingCollapse + 30))),
-            withVelocity: .slow,
-            thenHoldForDuration: 1.0
-        )
+        // Reach the boundary in small held drags. A single long drag can add
+        // momentum and legitimately scroll the header out of view afterwards.
+        for _ in 0..<24 {
+            let remainingCollapse = playerFrame.frame.height - 54
+            if remainingCollapse <= 1 { break }
+            let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            start.press(
+                forDuration: 0.8,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -min(24, max(14, remainingCollapse)))),
+                withVelocity: .slow,
+                thenHoldForDuration: 1.0
+            )
+        }
         let minimumPlayer = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 playerFrame.frame.height <= 55
@@ -364,9 +368,17 @@ final class VideoDetailFlowUITests: XCTestCase {
             object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [minimumPlayer], timeout: 3), .completed)
+        let headerAtMinimum = commentHeader.frame
+        let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        continuationStart.press(
+            forDuration: 0.8,
+            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -20)),
+            withVelocity: .slow,
+            thenHoldForDuration: 1.0
+        )
         XCTAssertLessThan(
             commentHeader.frame.minY,
-            settledCommentHeaderFrame.minY - 4,
+            headerAtMinimum.minY - 4,
             "comment content should start relative scrolling only after the player reaches minimum height"
         )
         let minimumAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

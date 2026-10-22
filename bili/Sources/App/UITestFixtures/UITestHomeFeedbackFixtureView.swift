@@ -8,6 +8,10 @@ struct UITestHomeFeedbackFixtureView: View {
     @State private var path = [String]()
     @State private var viewport = HomeFeedViewportState()
     @StateObject private var scrollActions = HomeFeedScrollActions()
+    @State private var noticeExpirationRequested = false
+    private let controlsNoticeExpiration = ProcessInfo.processInfo.arguments.contains(
+        "--feedback-controlled-notice-expiration"
+    )
     private let nativeRefresh = HomeNativeRefreshActionStore()
 
     init() {
@@ -55,9 +59,22 @@ struct UITestHomeFeedbackFixtureView: View {
                 }
             }
             .task(id: model.recommendationFeedbackNotice) {
+                guard !controlsNoticeExpiration else { return }
                 guard model.recommendationFeedbackNotice != nil else { return }
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 model.recommendationFeedbackNotice = nil
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if controlsNoticeExpiration, model.recommendationFeedbackNotice != nil {
+                    Button("开始等待反馈提示消失") { noticeExpirationRequested = true }
+                        .accessibilityIdentifier("fixture.feedback.expireNotice")
+                }
+            }
+            .task(id: noticeExpirationRequested) {
+                guard controlsNoticeExpiration, noticeExpirationRequested else { return }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                model.recommendationFeedbackNotice = nil
+                noticeExpirationRequested = false
             }
             .navigationDestination(for: String.self) { id in
                 Text("视频详情 \(id)").accessibilityIdentifier("fixture.feedback.detail")
