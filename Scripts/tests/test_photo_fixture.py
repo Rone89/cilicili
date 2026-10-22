@@ -95,6 +95,8 @@ class PhotoFixtureTests(unittest.TestCase):
             args = json.loads((root / "xcode-args.json").read_text())
             self.assertIn("-retry-tests-on-failure", args)
             self.assertEqual(args[args.index("-test-iterations") + 1], "2")
+            self.assertEqual(args[args.index("-default-test-execution-time-allowance") + 1], "360")
+            self.assertEqual(args[args.index("-maximum-test-execution-time-allowance") + 1], "600")
             self.assertTrue((root / "imported").exists())
             calls = [json.loads(line) for line in (root / "simctl-calls").read_text().splitlines()]
             self.assertTrue(all(call[1] in ("list", "bootstatus", "get_app_container", "addmedia") for call in calls))

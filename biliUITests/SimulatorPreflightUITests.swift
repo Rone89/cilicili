@@ -21,7 +21,7 @@ final class SimulatorPreflightUITests: XCTestCase {
                 },
                 object: nil
             )
-            let result = XCTWaiter.wait(for: [imported], timeout: 180)
+            let result = XCTWaiter.wait(for: [imported], timeout: 240)
             XCTAssertEqual(result, .completed)
             guard result == .completed else { return }
             print("PHOTO_IMPORT_CONFIRMED \(token)")

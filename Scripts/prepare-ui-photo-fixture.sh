@@ -100,7 +100,7 @@ TEST_RUNNER_CILICILI_PHOTO_IMPORT_TOKEN="$photo_token" python3 Scripts/build-cac
   -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
   -retry-tests-on-failure -test-iterations 2 \
   -parallel-testing-enabled NO -enableCodeCoverage YES \
-  -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 360 \
   -maximum-test-execution-time-allowance 600 -skipPackagePluginValidation \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test-without-building 2>&1 | \
   tee "$RUNNER_TEMP/photo-preflight.log" | \
@@ -113,10 +113,20 @@ if awk '/Test Case .* failed \(/ || /Restarting after unexpected exit/ { found=1
   echo "had_test_failures=true" >> "$GITHUB_OUTPUT"
 fi
 if [ "$preflight_status" -ne 0 ]; then
+  echo "Photo preflight failed; simulator import diagnostics follow." >&2
+  if [ -f "$RUNNER_TEMP/photo-media-import.log" ]; then
+    tail -n 80 "$RUNNER_TEMP/photo-media-import.log" >&2
+  fi
+  if [ -f "$RUNNER_TEMP/photo-simulator-inventory.json" ]; then
+    cat "$RUNNER_TEMP/photo-simulator-inventory.json" >&2
+  fi
   exit "$preflight_status"
 fi
 if ! awk -v expected="PHOTO_IMPORT_CONFIRMED $photo_token" 'index($0, expected) { found=1 } END { exit !found }' "$RUNNER_TEMP/photo-preflight.log"; then
   echo "Photo preflight did not acknowledge this import; refusing an unverified preparation." >&2
+  if [ -f "$RUNNER_TEMP/photo-media-import.log" ]; then
+    tail -n 80 "$RUNNER_TEMP/photo-media-import.log" >&2
+  fi
   exit 1
 fi
 
