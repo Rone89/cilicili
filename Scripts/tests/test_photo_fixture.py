@@ -15,7 +15,7 @@ SIMULATOR = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 
 
 class PhotoFixtureTests(unittest.TestCase):
-    def run_preflight(self, status, log, build_status=0):
+    def run_preflight(self, status, log, build_status=0, acknowledge=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             commands = root / "bin"
@@ -33,12 +33,17 @@ class PhotoFixtureTests(unittest.TestCase):
                         print('** BUILD SUCCEEDED **')
                         sys.exit(0)
                     assert 'test-without-building' in sys.argv
+                    token = os.environ['TEST_RUNNER_CILICILI_PHOTO_IMPORT_TOKEN']
+                    marker = root / 'runner-data' / 'Documents' / f'cilicili-photo-fixture-{token}'
                     (root / 'xcode-args.json').write_text(json.dumps(sys.argv[2:]))
                     # Let the real background importer observe the fake device.
                     deadline = time.monotonic() + 5
-                    while not (root / 'imported').exists() and time.monotonic() < deadline:
+                    while not marker.exists() and time.monotonic() < deadline:
                         time.sleep(0.01)
+                    assert marker.exists()
                     print(os.environ['FAKE_PREFLIGHT_LOG'])
+                    if os.environ['FAKE_ACKNOWLEDGE'] == '1':
+                        print(f'PHOTO_IMPORT_CONFIRMED {token}')
                     sys.exit(int(os.environ['FAKE_PREFLIGHT_STATUS']))
                 os.execv(sys.executable, [sys.executable] + sys.argv[1:])
                 """))
@@ -61,6 +66,9 @@ class PhotoFixtureTests(unittest.TestCase):
                     assert sys.argv[3:] == [os.environ['FAKE_SIMULATOR']]
                     assert (root / 'compiled').exists()
                     (root / 'ready').touch()
+                elif sys.argv[1:3] == ['simctl', 'get_app_container']:
+                    assert sys.argv[3:] == [os.environ['FAKE_SIMULATOR'], 'cc.biliUITests.xctrunner', 'data']
+                    print(root / 'runner-data')
                 else:
                     sys.exit(9)
                 """))
@@ -76,6 +84,7 @@ class PhotoFixtureTests(unittest.TestCase):
                          TEST_DESTINATION="platform=iOS Simulator,id=" + SIMULATOR,
                          FAKE_SIMULATOR=SIMULATOR, FAKE_PREFLIGHT_STATUS=str(status),
                          FAKE_BUILD_STATUS=str(build_status),
+                         FAKE_ACKNOWLEDGE='1' if acknowledge else '0',
                          FAKE_PREFLIGHT_LOG=log),
                 capture_output=True, text=True, timeout=15,
             )
@@ -88,7 +97,7 @@ class PhotoFixtureTests(unittest.TestCase):
             self.assertEqual(args[args.index("-test-iterations") + 1], "2")
             self.assertTrue((root / "imported").exists())
             calls = [json.loads(line) for line in (root / "simctl-calls").read_text().splitlines()]
-            self.assertTrue(all(call[1] in ("list", "bootstatus", "addmedia") for call in calls))
+            self.assertTrue(all(call[1] in ("list", "bootstatus", "get_app_container", "addmedia") for call in calls))
             return result, output.read_text(), (root / "photo-preflight.log").read_text()
 
     def test_success_requires_media_import_and_does_not_report_a_retry(self):
@@ -101,6 +110,12 @@ class PhotoFixtureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 65, result.stderr)
         self.assertEqual(output, "")
         self.assertIn("compilation failed", retained)
+
+    def test_successful_xcode_without_import_acknowledgment_still_fails_gate(self):
+        result, output, _ = self.run_preflight(0, "** TEST EXECUTE SUCCEEDED **", acknowledge=False)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("did not acknowledge", result.stderr)
+        self.assertEqual(output, "")
 
     def test_recovered_launch_retains_first_failure_for_artifact_upload(self):
         log = "Test Case '-[Preflight testLaunch]' failed (1.0 seconds).\n** TEST SUCCEEDED **"

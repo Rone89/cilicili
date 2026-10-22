@@ -100,6 +100,15 @@ The launch-only photo preflight allows one Xcode-managed retry, matching the
 bounded retry policy of the full UI suite. Its log and xcresult are uploaded even
 if that retry passes. Two failed launch attempts or a failed media import still
 fail the preparation gate; the full UI suite continues to retain its own results.
+The preflight receives a unique import token via Xcode's documented
+`TEST_RUNNER_` environment forwarding. It waits for that token's marker in the
+UI test runner's Documents directory before ending, so Xcode cannot shut down
+the simulator while the host is still importing. Only a successful `addmedia`
+command writes the marker. The host also requires the runner's matching
+acknowledgment in its log; a successful Xcode exit alone is insufficient.
+The cold preflight uses the same 300/600-second test allowances as the full suite,
+with a bounded 180-second marker wait after fixture launch. Ordinary full-suite
+launches have no import token and retain the launch-only assertion.
 
 Reduced Motion root-tab coverage enables the actual system setting through Settings
 and verifies the read-only SwiftUI environment value seen by the mounted subtree.
