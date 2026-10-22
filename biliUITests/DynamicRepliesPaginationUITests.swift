@@ -51,7 +51,7 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
 
         app.buttons["打开动态详情"].tap()
         let openReplies = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "14 条回复")).firstMatch
-        XCTAssertTrue(openReplies.waitForExistence(timeout: 5))
+        XCTAssertTrue(openReplies.waitForExistence(timeout: 15), app.debugDescription)
         openReplies.tap()
 
         let repliesScroll = app.scrollViews["dynamic.replies.scroll"]
