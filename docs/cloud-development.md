@@ -126,4 +126,7 @@ does not include this control. The test still checks the native menu, notice
 image/label, expiration and correct card removal. Long presses target the visible
 cover. The player-collapse case uses bounded held drags to reach minimum height,
 then separately checks relative content scrolling with a small additional drag;
-its player-height, header-motion and viewport assertions remain active.
+its player-height, header-motion and viewport assertions remain active. Header
+visibility is checked at the minimum-height boundary, before the additional
+content scroll, since the header may correctly leave the viewport once content
+is scrolling normally.

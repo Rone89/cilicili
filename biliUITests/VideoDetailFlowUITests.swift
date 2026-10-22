@@ -369,6 +369,18 @@ final class VideoDetailFlowUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [minimumPlayer], timeout: 3), .completed)
         let headerAtMinimum = commentHeader.frame
+        // Check visibility at the collapse boundary. Subsequent content
+        // scrolling may legitimately move this header above the viewport.
+        XCTAssertLessThan(
+            headerAtMinimum.minY,
+            scrollView.frame.maxY,
+            "comment header should remain in the scroll viewport when the player reaches minimum height"
+        )
+        XCTAssertGreaterThan(
+            headerAtMinimum.maxY,
+            scrollView.frame.minY,
+            "collapsing the player should not scroll the comment header completely above the viewport"
+        )
         let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         continuationStart.press(
             forDuration: 0.8,
@@ -387,16 +399,6 @@ final class VideoDetailFlowUITests: XCTestCase {
         add(minimumAttachment)
         XCTAssertEqual(playerFrame.frame.height, 54, accuracy: 1)
         XCTAssertTrue(commentHeader.exists)
-        XCTAssertLessThan(
-            commentHeader.frame.minY,
-            scrollView.frame.maxY,
-            "comment header should remain in the scroll viewport after the player reaches minimum height"
-        )
-        XCTAssertGreaterThan(
-            commentHeader.frame.maxY,
-            scrollView.frame.minY,
-            "comment header should not be scrolled completely above the viewport"
-        )
     }
 
     @MainActor
