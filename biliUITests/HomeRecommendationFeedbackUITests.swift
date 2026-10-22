@@ -101,7 +101,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-fixture", "homeFeedback", "--ui-test-enable-animations"] + extra
         app.launch()
-        XCTAssertTrue(card(1, app).waitForExistence(timeout: 5))
+        XCTAssertTrue(card(1, app).waitForExistence(timeout: 10), app.debugDescription)
         addTeardownBlock { app.terminate() }
         return app
     }

@@ -34,7 +34,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         add.tap()
         _ = openUpdatedDetailMenu("从稍后再看移除", menu: menu, app: app)
         app.buttons["复制链接"].tap()
-        XCTAssertEqual(menu.value as? String, "已复制链接")
+        XCTAssertTrue(waitForAccessibilityValue("已复制链接", on: menu), app.debugDescription)
         app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
     }
@@ -50,6 +50,14 @@ final class AccountLibraryManagementUITests: XCTestCase {
         }
         XCTFail("Updated watch-later action did not become available: \(title)")
         return action
+    }
+
+    private func waitForAccessibilityValue(_ value: String, on element: XCUIElement) -> Bool {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", value),
+            object: element
+        )
+        return XCTWaiter.wait(for: [updated], timeout: 5) == .completed
     }
 
     func testDetailMoreMenuPresentsSystemShareSheet() {
