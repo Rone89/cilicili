@@ -101,7 +101,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "未打开视频")
         let remove = app.buttons["library.manage.remove"]
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
@@ -131,7 +131,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         let copy = app.buttons["library.manage.copy"]
         XCTAssertTrue(copy.waitForExistence(timeout: 5))
         copy.tap()
@@ -174,7 +174,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         let move = app.buttons["library.manage.move"]
         XCTAssertTrue(move.waitForExistence(timeout: 5))
         move.tap()
@@ -190,6 +190,12 @@ final class AccountLibraryManagementUITests: XCTestCase {
         destination.tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+    }
+
+    private func selectAll(in app: XCUIApplication) {
+        let selectAll = app.buttons["library.manage.selectAll"]
+        XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)
+        selectAll.tap()
     }
 
     private func launch(_ extra: [String] = []) -> XCUIApplication {

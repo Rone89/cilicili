@@ -80,12 +80,17 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
     func testScrollDoesNotOpenMenuAndFeedbackDoesNotResetScrollToTop() {
         let app = launch()
         let scroll = app.scrollViews["fixture.feedback.scroll"]
+        let firstCard = card(1, app)
         scroll.swipeUp()
         XCTAssertFalse(app.buttons["屏蔽该 UP"].exists)
         XCTAssertFalse(app.staticTexts["fixture.feedback.detail"].exists)
         let visible = card(7, app)
         XCTAssertTrue(visible.waitForExistence(timeout: 3))
         XCTAssertTrue(visible.isHittable)
+        XCTAssertTrue(
+            waitForHittability(of: firstCard, matching: false, timeout: 3),
+            app.debugDescription
+        )
         let selectedID = visible.identifier
         // Press the visible cover, away from the transparent metadata gaps.
         visible.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).press(forDuration: 1.5)
@@ -93,7 +98,22 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         app.buttons["不感兴趣"].tap()
         app.buttons["不想看此类内容"].tap()
         XCTAssertTrue(app.buttons[selectedID].waitForNonExistence(timeout: 3))
-        XCTAssertFalse(card(1, app).isHittable)
+        XCTAssertTrue(
+            waitForHittability(of: firstCard, matching: false, timeout: 3),
+            app.debugDescription
+        )
+    }
+
+    private func waitForHittability(
+        of element: XCUIElement,
+        matching expected: Bool,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == %@", NSNumber(value: expected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     private func launch(extra: [String] = []) -> XCUIApplication {
