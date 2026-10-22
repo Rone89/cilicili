@@ -15,7 +15,7 @@ SIMULATOR = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 
 
 class PhotoFixtureTests(unittest.TestCase):
-    def run_preflight(self, status, log):
+    def run_preflight(self, status, log, build_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             commands = root / "bin"
@@ -25,6 +25,14 @@ class PhotoFixtureTests(unittest.TestCase):
                 import json, os, pathlib, sys, time
                 root = pathlib.Path(os.environ['RUNNER_TEMP'])
                 if sys.argv[1] == 'Scripts/build-cache.py':
+                    if 'build-for-testing' in sys.argv:
+                        if int(os.environ['FAKE_BUILD_STATUS']):
+                            print('error: compilation failed')
+                            sys.exit(int(os.environ['FAKE_BUILD_STATUS']))
+                        (root / 'compiled').touch()
+                        print('** BUILD SUCCEEDED **')
+                        sys.exit(0)
+                    assert 'test-without-building' in sys.argv
                     (root / 'xcode-args.json').write_text(json.dumps(sys.argv[2:]))
                     # Let the real background importer observe the fake device.
                     deadline = time.monotonic() + 5
@@ -45,9 +53,14 @@ class PhotoFixtureTests(unittest.TestCase):
                         'udid': os.environ['FAKE_SIMULATOR'], 'state': 'Booted'
                     }]}}))
                 elif sys.argv[1:3] == ['simctl', 'addmedia']:
+                    assert (root / 'ready').exists()
                     assert sys.argv[3] == os.environ['FAKE_SIMULATOR']
                     assert pathlib.Path(sys.argv[4]).read_bytes().startswith(b'\\x89PNG')
                     (root / 'imported').touch()
+                elif sys.argv[1:3] == ['simctl', 'bootstatus']:
+                    assert sys.argv[3:] == [os.environ['FAKE_SIMULATOR']]
+                    assert (root / 'compiled').exists()
+                    (root / 'ready').touch()
                 else:
                     sys.exit(9)
                 """))
@@ -62,21 +75,32 @@ class PhotoFixtureTests(unittest.TestCase):
                          PROJECT="bili.xcodeproj", SCHEME="bili",
                          TEST_DESTINATION="platform=iOS Simulator,id=" + SIMULATOR,
                          FAKE_SIMULATOR=SIMULATOR, FAKE_PREFLIGHT_STATUS=str(status),
+                         FAKE_BUILD_STATUS=str(build_status),
                          FAKE_PREFLIGHT_LOG=log),
                 capture_output=True, text=True, timeout=15,
             )
+            if build_status:
+                self.assertFalse((root / 'simctl-calls').exists())
+                self.assertFalse((root / 'xcode-args.json').exists())
+                return result, output.read_text(), (root / 'photo-build.log').read_text()
             args = json.loads((root / "xcode-args.json").read_text())
             self.assertIn("-retry-tests-on-failure", args)
             self.assertEqual(args[args.index("-test-iterations") + 1], "2")
             self.assertTrue((root / "imported").exists())
             calls = [json.loads(line) for line in (root / "simctl-calls").read_text().splitlines()]
-            self.assertTrue(all(call[1] in ("list", "addmedia") for call in calls))
+            self.assertTrue(all(call[1] in ("list", "bootstatus", "addmedia") for call in calls))
             return result, output.read_text(), (root / "photo-preflight.log").read_text()
 
     def test_success_requires_media_import_and_does_not_report_a_retry(self):
         result, output, _ = self.run_preflight(0, "** TEST SUCCEEDED **")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(output, "")
+
+    def test_build_failure_stops_before_starting_simulator_observer(self):
+        result, output, retained = self.run_preflight(0, "", build_status=65)
+        self.assertEqual(result.returncode, 65, result.stderr)
+        self.assertEqual(output, "")
+        self.assertIn("compilation failed", retained)
 
     def test_recovered_launch_retains_first_failure_for_artifact_upload(self):
         log = "Test Case '-[Preflight testLaunch]' failed (1.0 seconds).\n** TEST SUCCEEDED **"

@@ -24,6 +24,17 @@ Path(os.environ["RUNNER_TEMP"], "comment-photo-fixture.png").write_bytes(png)
 PY
 simulator_id="${TEST_DESTINATION##*id=}"
 [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
+# Compile before starting the bounded import window. A cold runner can spend
+# most of that window compiling without having started its simulator yet.
+python3 Scripts/build-cache.py run -- xcodebuild \
+  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  -destination "$TEST_DESTINATION" -destination-timeout 120 \
+  -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
+  -enableCodeCoverage YES -skipPackagePluginValidation \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing 2>&1 | \
+  tee "$RUNNER_TEMP/photo-build.log" | \
+  awk '/error:|\*\* BUILD/ { print; fflush() }'
+
 # Import while Xcode owns the running simulator; Xcode may shut it down
 # immediately after the preflight finishes. Never boot a simulator ourselves.
 python3 - "$simulator_id" <<'PYTHON' &
@@ -48,6 +59,11 @@ with (root / "photo-media-import.log").open("wb") as log:
             is_booted = any(device["udid"] == simulator_id and device["state"] == "Booted"
                             for group in devices.values() for device in group)
             if is_booted:
+                # Booted is reported before services finish initial startup.
+                # Observe Xcode's boot; do not pass -b (which could boot it).
+                subprocess.run(
+                    ["xcrun", "simctl", "bootstatus", simulator_id],
+                    timeout=120, check=True, stdout=log, stderr=subprocess.STDOUT)
                 result = subprocess.run(
                     ["xcrun", "simctl", "addmedia", simulator_id,
                      str(root / "comment-photo-fixture.png")],
@@ -77,7 +93,7 @@ python3 Scripts/build-cache.py run -- xcodebuild \
   -parallel-testing-enabled NO -enableCodeCoverage YES \
   -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
   -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test-without-building 2>&1 | \
   tee "$RUNNER_TEMP/photo-preflight.log" | \
   awk '/Test (Case|Suite)|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
 preflight_status=$?

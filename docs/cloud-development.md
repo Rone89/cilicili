@@ -33,8 +33,10 @@ Changed-file Swift formatting remains advisory, as before.
 ## Results
 
 Each test check uploads its raw log, an xcresult when produced, and a coverage
-report only when xccov successfully generates one. Artifact names end in `unit`
-or `ui-1` through `ui-4`; coverage is reported separately, not as an aggregated project result.
+report only when xccov successfully generates one. Artifact names identify `unit`
+or `ui-1` through `ui-4` and the workflow attempt, so a job rerun retains the first
+attempt's evidence without conflicting with its artifact names. Coverage is
+reported separately, not as an aggregated project result.
 Environment failures do not produce a second failure for a missing artifact.
 Execution remains serial within each destination to protect UI fixture state.
 XCTest timeouts use a 300-second default and a 600-second maximum per test, so
@@ -81,8 +83,10 @@ normal launches retain their production sessions and media engine. These checks
 verify UI state/lifecycle, not real decoding or network performance.
 
 The shard containing DynamicDetailFlowUITests prepares an actual Photos asset.
-A launch-only fixture test first lets Xcode start the selected simulator, then
-`simctl addmedia` imports a generated PNG. No simulator is manually booted or
+A cached build-for-testing completes before the bounded media-import window
+starts. A launch-only fixture test then lets Xcode start the selected simulator.
+The importer observes boot completion with `simctl bootstatus` without its boot
+flag, then `simctl addmedia` imports a generated PNG. No simulator is manually booted or
 created. The actual photo test selects and removes that image through the system
 picker. Preflight diagnostics are uploaded on failure; the complete shard still
 runs all its assigned classes. The comment menu and editor assertions remain in
