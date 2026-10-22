@@ -185,7 +185,9 @@ final class AccountLibraryManagementUITests: XCTestCase {
         app.alerts.buttons["好"].tap()
         XCTAssertTrue(app.staticTexts["这个收藏夹还没有视频"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()
-        app.staticTexts["目标收藏夹"].tap()
+        let destination = app.staticTexts["目标收藏夹"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 5), app.debugDescription)
+        destination.tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }

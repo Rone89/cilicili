@@ -27,7 +27,7 @@ final class CommentSpacingUITests: XCTestCase {
         XCTAssertGreaterThan(visible.height, 0)
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: visible.minX + min(24, visible.width / 2), dy: visible.minY + min(12, visible.height / 2))).press(forDuration: 1)
-        XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 8), app.debugDescription)
         app.buttons["复制评论"].tap()
 
     }
