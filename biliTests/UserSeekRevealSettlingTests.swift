@@ -138,6 +138,74 @@ final class UserSeekRevealSettlingTests: XCTestCase {
         XCTAssertFalse(state.hasAdvancingRenderedFrames)
     }
 
+    func testRegressionAboveInitialFrameRestartsMotionVerification() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 120,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 120.08,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.02,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.3, settleDelay: 0.12))
+        XCTAssertNil(state.readySince)
+        XCTAssertFalse(state.hasAdvancingRenderedFrames)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.02,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.5, settleDelay: 0.12))
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.04,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.6, settleDelay: 0.12))
+        XCTAssertEqual(state.readySince, 1.6)
+        XCTAssertTrue(state.observe(frameReady: true, renderedVideoTime: 120.08,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.73, settleDelay: 0.12))
+    }
+
+    func testMissingSampleAfterRegressionCannotReusePreviousMotion() {
+        var state = UserSeekRevealSettling()
+        for (now, frame) in [(1.0, 120.0), (1.1, 120.08), (1.2, 120.02)] {
+            _ = state.observe(frameReady: true, renderedVideoTime: frame,
+                missingSampleCanContinue: false, requiresAdvancingVideo: true,
+                at: now, settleDelay: 0.12)
+        }
+        XCTAssertFalse(state.observe(frameReady: false, renderedVideoTime: nil,
+            missingSampleCanContinue: true, requiresAdvancingVideo: true,
+            at: 1.5, settleDelay: 0.12))
+        XCTAssertNil(state.readySince)
+        XCTAssertFalse(state.canContinueAdvancingFrame(renderedVideoTime: 120.6,
+            currentTime: 120.6, isPlaying: true, playbackRate: 1, at: 1.6))
+    }
+
+    func testRegressionRestartsWindowWhenMotionIsNotRequired() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 120,
+            missingSampleCanContinue: false, at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 120.08,
+            missingSampleCanContinue: false, at: 1.05, settleDelay: 0.12)
+        XCTAssertFalse(state.observe(frameReady: true, renderedVideoTime: 120.02,
+            missingSampleCanContinue: false, at: 1.2, settleDelay: 0.12))
+        XCTAssertEqual(state.readySince, 1.2)
+        XCTAssertTrue(state.observe(frameReady: true, renderedVideoTime: 120.02,
+            missingSampleCanContinue: false, at: 1.33, settleDelay: 0.12))
+    }
+
+    func testSubMillisecondTimestampJitterPreservesAdvancingWindow() {
+        var state = UserSeekRevealSettling()
+        _ = state.observe(frameReady: true, renderedVideoTime: 120,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1, settleDelay: 0.12)
+        _ = state.observe(frameReady: true, renderedVideoTime: 120.04,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.1, settleDelay: 0.12)
+        XCTAssertTrue(state.observe(frameReady: true, renderedVideoTime: 120.0395,
+            missingSampleCanContinue: false, requiresAdvancingVideo: true,
+            at: 1.3, settleDelay: 0.12))
+        XCTAssertEqual(state.readySince, 1.1)
+        XCTAssertTrue(state.hasAdvancingRenderedFrames)
+    }
+
     func testNaturalForwardMotionPreservesSettleAfterLeavingTargetWindow() {
         var state = UserSeekRevealSettling()
         _ = state.observe(frameReady: true, renderedVideoTime: 90.2667,
