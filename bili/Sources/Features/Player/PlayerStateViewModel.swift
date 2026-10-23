@@ -1053,11 +1053,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         return engine.currentSurfaceSnapshotImage()
     }
 
-    private func firstUsablePlaybackSnapshotImage(_ images: UIImage?...) -> UIImage? {
-        for image in images {
-            guard let image, !image.biliLooksLikeBlackFrame else { continue }
-            return image
-        }
+    private func firstUsablePlaybackSnapshotImage(
+        _ first: @autoclosure () -> UIImage?,
+        _ second: @autoclosure () -> UIImage? = nil,
+        _ third: @autoclosure () -> UIImage? = nil
+    ) -> UIImage? {
+        // Snapshot reads can rasterize a UIKit surface or convert a video buffer
+        // on main. Evaluate a fallback only if the preceding image is unusable.
+        if let image = first(), !image.biliLooksLikeBlackFrame { return image }
+        if let image = second(), !image.biliLooksLikeBlackFrame { return image }
+        if let image = third(), !image.biliLooksLikeBlackFrame { return image }
         return nil
     }
 
