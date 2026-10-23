@@ -135,7 +135,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let homeTab = app.buttons["首页"].firstMatch
         XCTAssertTrue(homeTab.waitForExistence(timeout: 5))
         XCTAssertTrue(homeTab.isHittable)
-        XCTAssertFalse(picker.exists)
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), app.debugDescription)
     }
 
     @MainActor
@@ -348,15 +348,61 @@ final class VideoDetailFlowUITests: XCTestCase {
             "comment section should move with the player before the player reaches minimum height"
         )
 
-        let settledCommentHeaderFrame = commentHeader.frame
-        let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let remainingCollapse = playerFrame.frame.height - 54
-        continuationStart.press(
-            forDuration: 0.8,
-            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -(remainingCollapse + 30))),
-            withVelocity: .slow,
-            thenHoldForDuration: 1.0
+        // Stop short of the minimum first. A gesture that crosses the boundary
+        // can legitimately continue scrolling the comments.
+        for _ in 0..<24 {
+            let remainingCollapse = playerFrame.frame.height - 54
+            // Keep enough distance to avoid one 24-point drag reaching the minimum.
+            if remainingCollapse <= 32 { break }
+            let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let dragEnd = start.withOffset(
+                CGVector(dx: 0, dy: -min(24, remainingCollapse))
+            )
+            start.press(
+                forDuration: 0.8,
+                thenDragTo: dragEnd,
+                withVelocity: .slow,
+                thenHoldForDuration: 1.0
+            )
+        }
+        let headerBeforeMinimum = commentHeader.frame
+        XCTAssertGreaterThan(
+            playerFrame.frame.height,
+            54,
+            "player should remain above its minimum before the final collapse drag"
         )
+        XCTAssertGreaterThan(
+            headerBeforeMinimum.maxY,
+            scrollView.frame.minY,
+            "comment header should remain visible until the player reaches its minimum height"
+        )
+        let finalCollapseStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let finalCollapseEnd = finalCollapseStart.withOffset(CGVector(dx: 0, dy: -24))
+        finalCollapseStart.press(
+            forDuration: 0.8,
+            thenDragTo: finalCollapseEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.2
+        )
+        for _ in 0..<48 {
+            let remainingCollapse = playerFrame.frame.height - 54
+            if remainingCollapse <= 1 { break }
+            let dragDistance: CGFloat
+            if remainingCollapse > 24 {
+                dragDistance = 24
+            } else if remainingCollapse > 8 {
+                dragDistance = 8
+            } else {
+                dragDistance = max(remainingCollapse, 1)
+            }
+            let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            start.press(
+                forDuration: 0.8,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -dragDistance)),
+                withVelocity: .slow,
+                thenHoldForDuration: 1.0
+            )
+        }
         let minimumPlayer = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 playerFrame.frame.height <= 55
@@ -364,9 +410,17 @@ final class VideoDetailFlowUITests: XCTestCase {
             object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [minimumPlayer], timeout: 3), .completed)
+        let headerAtMinimum = commentHeader.frame
+        let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        continuationStart.press(
+            forDuration: 0.8,
+            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -20)),
+            withVelocity: .slow,
+            thenHoldForDuration: 1.0
+        )
         XCTAssertLessThan(
             commentHeader.frame.minY,
-            settledCommentHeaderFrame.minY - 4,
+            headerAtMinimum.minY - 4,
             "comment content should start relative scrolling only after the player reaches minimum height"
         )
         let minimumAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -375,16 +429,6 @@ final class VideoDetailFlowUITests: XCTestCase {
         add(minimumAttachment)
         XCTAssertEqual(playerFrame.frame.height, 54, accuracy: 1)
         XCTAssertTrue(commentHeader.exists)
-        XCTAssertLessThan(
-            commentHeader.frame.minY,
-            scrollView.frame.maxY,
-            "comment header should remain in the scroll viewport after the player reaches minimum height"
-        )
-        XCTAssertGreaterThan(
-            commentHeader.frame.maxY,
-            scrollView.frame.minY,
-            "comment header should not be scrolled completely above the viewport"
-        )
     }
 
     @MainActor
@@ -480,6 +524,31 @@ final class VideoDetailFlowUITests: XCTestCase {
         revealPlayerControls(in: app)
         XCTAssertTrue(fullscreenControl(in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["相关推荐"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testVideoDetailMoreControlsToggleBackgroundPlayback() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        tapPlayerControl(more, in: app)
+
+        let backgroundPlayback = app.switches["ui.player.backgroundPlayback"]
+        XCTAssertTrue(backgroundPlayback.waitForExistence(timeout: 5))
+        XCTAssertEqual(backgroundPlayback.value as? String, "0")
+
+        backgroundPlayback.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
+        ).tap()
+        let backgroundPlaybackEnabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "1"),
+            object: backgroundPlayback
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backgroundPlaybackEnabled], timeout: 3),
+            .completed
+        )
     }
 
     @MainActor

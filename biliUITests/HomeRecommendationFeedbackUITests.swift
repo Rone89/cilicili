@@ -9,8 +9,10 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
     }
 
     func testNativeContextMenuReasonsRemoveOnlyCurrentCard() {
-        let app = launch()
-        card(1, app).press(forDuration: 1.5)
+        // XCTest can take longer than the transient notice's lifetime to return
+        // from a menu tap. Observe the real notice before arming fixture expiry.
+        let app = launch(extra: ["--feedback-controlled-notice-expiration"])
+        openMenu(on: card(1, app))
         XCTAssertTrue(app.buttons["屏蔽该 UP"].waitForExistence(timeout: 3))
         XCTAssertEqual(card(1, app).value as? String, "菜单已打开")
         screenshot(app, "Native feedback context menu")
@@ -22,6 +24,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         XCTAssertTrue(completed.waitForExistence(timeout: 3))
         XCTAssertEqual(completed.label, "将减少此类推荐")
         screenshot(app, "Glass completion icon")
+        app.buttons["fixture.feedback.expireNotice"].tap()
         XCTAssertTrue(completed.waitForNonExistence(timeout: 5))
         XCTAssertFalse(card(1, app).exists)
         XCTAssertTrue(card(3, app).exists)
@@ -30,7 +33,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testFailedFeedbackKeepsCard() {
         let app = launch(extra: ["--feedback-failure"])
-        card(1, app).press(forDuration: 1.5)
+        openMenu(on: card(1, app))
         app.buttons["不感兴趣"].tap()
         app.buttons["不想看此类内容"].tap()
         XCTAssertTrue(app.staticTexts["fixture.feedback.message"].waitForExistence(timeout: 3))
@@ -41,7 +44,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testAnonymousLocalBlockPrunesAllSameUPCards() {
         let app = launch(extra: ["--feedback-anonymous"])
-        card(1, app).press(forDuration: 1.5)
+        openMenu(on: card(1, app))
         screenshot(app, "Anonymous native menu")
         XCTAssertFalse(app.buttons["不感兴趣"].exists)
         XCTAssertTrue(app.buttons["屏蔽该 UP"].waitForExistence(timeout: 3))
@@ -59,7 +62,7 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
 
     func testCancelBlockLeavesFeedAndShortTapIntact() {
         let app = launch()
-        card(1, app).press(forDuration: 1.5)
+        openMenu(on: card(1, app))
         app.buttons["屏蔽该 UP"].tap()
         XCTAssertTrue(app.buttons["拉黑并同步到 Bilibili"].waitForExistence(timeout: 3))
         screenshot(app, "Native block submenu")
@@ -77,12 +80,17 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
     func testScrollDoesNotOpenMenuAndFeedbackDoesNotResetScrollToTop() {
         let app = launch()
         let scroll = app.scrollViews["fixture.feedback.scroll"]
+        let firstCard = card(1, app)
         scroll.swipeUp()
         XCTAssertFalse(app.buttons["屏蔽该 UP"].exists)
         XCTAssertFalse(app.staticTexts["fixture.feedback.detail"].exists)
         let visible = card(7, app)
         XCTAssertTrue(visible.waitForExistence(timeout: 3))
         XCTAssertTrue(visible.isHittable)
+        XCTAssertTrue(
+            waitForHittability(of: firstCard, matching: false, timeout: 3),
+            app.debugDescription
+        )
         let selectedID = visible.identifier
         // Press the visible cover, away from the transparent metadata gaps.
         visible.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).press(forDuration: 1.5)
@@ -90,7 +98,22 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         app.buttons["不感兴趣"].tap()
         app.buttons["不想看此类内容"].tap()
         XCTAssertTrue(app.buttons[selectedID].waitForNonExistence(timeout: 3))
-        XCTAssertFalse(card(1, app).isHittable)
+        XCTAssertTrue(
+            waitForHittability(of: firstCard, matching: false, timeout: 3),
+            app.debugDescription
+        )
+    }
+
+    private func waitForHittability(
+        of element: XCUIElement,
+        matching expected: Bool,
+        timeout: TimeInterval
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == %@", NSNumber(value: expected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     private func launch(extra: [String] = []) -> XCUIApplication {
@@ -98,13 +121,20 @@ final class HomeRecommendationFeedbackUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-fixture", "homeFeedback", "--ui-test-enable-animations"] + extra
         app.launch()
-        XCTAssertTrue(card(1, app).waitForExistence(timeout: 5))
+        XCTAssertTrue(card(1, app).waitForExistence(timeout: 10), app.debugDescription)
         addTeardownBlock { app.terminate() }
         return app
     }
 
     private func card(_ number: Int, _ app: XCUIApplication) -> XCUIElement {
         app.buttons["fixture.feedback.card.fixture-\(number)"]
+    }
+
+    private func openMenu(on card: XCUIElement) {
+        XCTAssertTrue(card.isHittable)
+        // Target the visible cover rather than a transparent metadata gap.
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .press(forDuration: 1.5)
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {

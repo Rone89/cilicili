@@ -34,7 +34,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         add.tap()
         _ = openUpdatedDetailMenu("从稍后再看移除", menu: menu, app: app)
         app.buttons["复制链接"].tap()
-        XCTAssertEqual(menu.value as? String, "已复制链接")
+        XCTAssertTrue(waitForAccessibilityValue("已复制链接", on: menu), app.debugDescription)
         app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
     }
@@ -50,6 +50,14 @@ final class AccountLibraryManagementUITests: XCTestCase {
         }
         XCTFail("Updated watch-later action did not become available: \(title)")
         return action
+    }
+
+    private func waitForAccessibilityValue(_ value: String, on element: XCUIElement) -> Bool {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", value),
+            object: element
+        )
+        return XCTWaiter.wait(for: [updated], timeout: 5) == .completed
     }
 
     func testDetailMoreMenuPresentsSystemShareSheet() {
@@ -93,7 +101,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "未打开视频")
         let remove = app.buttons["library.manage.remove"]
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
@@ -123,7 +131,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         let copy = app.buttons["library.manage.copy"]
         XCTAssertTrue(copy.waitForExistence(timeout: 5))
         copy.tap()
@@ -166,7 +174,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let select = app.buttons["library.manage.select"]
         XCTAssertTrue(select.waitForExistence(timeout: 5))
         select.tap()
-        app.buttons["library.manage.selectAll"].tap()
+        selectAll(in: app)
         let move = app.buttons["library.manage.move"]
         XCTAssertTrue(move.waitForExistence(timeout: 5))
         move.tap()
@@ -177,9 +185,17 @@ final class AccountLibraryManagementUITests: XCTestCase {
         app.alerts.buttons["好"].tap()
         XCTAssertTrue(app.staticTexts["这个收藏夹还没有视频"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()
-        app.staticTexts["目标收藏夹"].tap()
+        let destination = app.staticTexts["目标收藏夹"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 5), app.debugDescription)
+        destination.tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+    }
+
+    private func selectAll(in app: XCUIApplication) {
+        let selectAll = app.buttons["library.manage.selectAll"]
+        XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)
+        selectAll.tap()
     }
 
     private func launch(_ extra: [String] = []) -> XCUIApplication {

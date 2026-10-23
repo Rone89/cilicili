@@ -541,6 +541,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
+        // Configure before the app leaves the foreground. Skipping our own pause
+        // alone leaves AVPlayer's automatic background policy free to stop video.
+        // Changing this policy preserves the current item, buffer and play rate.
+        player.audiovisualBackgroundPlaybackPolicy = isEnabled ? .continuesIfPossible : .automatic
+    }
+
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
         guard playerViewController === controller else { return }
         removeContentOverlayHostingController()
@@ -5367,7 +5374,9 @@ struct LocalHLSBridge: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            let session = BiliPlaybackNetworkSessionPool.shared.playbackDataSession()
+            let lease = BiliPlaybackNetworkSessionPool.shared.playbackDataSessionLease()
+            defer { withExtendedLifetime(lease) {} }
+            let session = lease.session
             if let onFirstByte, range.length <= 16 * 1024 {
                 // This buffered helper primarily fetches small SIDX/init ranges.
                 // Keep byte-wise diagnostics bounded so larger media responses
@@ -6546,7 +6555,7 @@ nonisolated private final class LocalLiveHLSProxy: @unchecked Sendable {
         request.networkServiceType = .video
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await BiliNetworkRetry.data(
-            sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackDataSession() },
+            sessionProvider: { BiliPlaybackNetworkSessionPool.shared.playbackDataSessionLease() },
             request: request,
             policy: .playbackShortResource
         )

@@ -24,9 +24,21 @@ Path(os.environ["RUNNER_TEMP"], "comment-photo-fixture.png").write_bytes(png)
 PY
 simulator_id="${TEST_DESTINATION##*id=}"
 [[ "$simulator_id" =~ ^[0-9A-Fa-f-]{36}$ ]]
+photo_token="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+# Compile before starting the bounded import window. A cold runner can spend
+# most of that window compiling without having started its simulator yet.
+python3 Scripts/build-cache.py run -- xcodebuild \
+  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  -destination "$TEST_DESTINATION" -destination-timeout 120 \
+  -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
+  -enableCodeCoverage YES -skipPackagePluginValidation \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing 2>&1 | \
+  tee "$RUNNER_TEMP/photo-build.log" | \
+  awk '/error:|\*\* BUILD/ { print; fflush() }'
+
 # Import while Xcode owns the running simulator; Xcode may shut it down
 # immediately after the preflight finishes. Never boot a simulator ourselves.
-python3 - "$simulator_id" <<'PYTHON' &
+python3 - "$simulator_id" "$photo_token" <<'PYTHON' &
 import json
 import os
 from pathlib import Path
@@ -35,6 +47,7 @@ import sys
 import time
 
 simulator_id = sys.argv[1]
+photo_token = sys.argv[2]
 root = Path(os.environ["RUNNER_TEMP"])
 deadline = time.monotonic() + 600
 with (root / "photo-media-import.log").open("wb") as log:
@@ -48,11 +61,23 @@ with (root / "photo-media-import.log").open("wb") as log:
             is_booted = any(device["udid"] == simulator_id and device["state"] == "Booted"
                             for group in devices.values() for device in group)
             if is_booted:
+                # Booted is reported before services finish initial startup.
+                # Observe Xcode's boot; do not pass -b (which could boot it).
+                subprocess.run(
+                    ["xcrun", "simctl", "bootstatus", simulator_id],
+                    timeout=120, check=True, stdout=log, stderr=subprocess.STDOUT)
+                runner_container = subprocess.run(
+                    ["xcrun", "simctl", "get_app_container", simulator_id,
+                     "cc.biliUITests.xctrunner", "data"],
+                    timeout=30, check=True, capture_output=True)
+                documents = Path(runner_container.stdout.decode().strip()) / "Documents"
                 result = subprocess.run(
                     ["xcrun", "simctl", "addmedia", simulator_id,
                      str(root / "comment-photo-fixture.png")],
                     timeout=45, stdout=log, stderr=subprocess.STDOUT)
                 if result.returncode == 0:
+                    documents.mkdir(parents=True, exist_ok=True)
+                    (documents / f"cilicili-photo-fixture-{photo_token}").write_text("imported\n")
                     log.write(b"Imported photo into Xcode-selected running simulator.\n")
                     sys.exit(0)
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
@@ -64,19 +89,46 @@ PYTHON
 media_import_pid=$!
 trap 'kill "$media_import_pid" 2>/dev/null || true' EXIT
 
-# Let Xcode start its selected existing simulator through a real, isolated UI
-# check. Do not manually boot, create or switch simulators for media preparation.
-python3 Scripts/build-cache.py run -- xcodebuild \
+# Only verify fixture launch here. Composer interaction is covered by its normal
+# UI test and must not be a prerequisite for importing a Photos asset.
+# Let Xcode start its selected existing simulator; never boot or create one here.
+set +e
+TEST_RUNNER_CILICILI_PHOTO_IMPORT_TOKEN="$photo_token" python3 Scripts/build-cache.py run -- xcodebuild \
   -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
   -destination "$TEST_DESTINATION" -destination-timeout 120 \
   -resultBundlePath "$RUNNER_TEMP/photo-preflight.xcresult" \
-  -only-testing:biliUITests/CommentActionFlowUITests/testReplyActionOpensComposer \
+  -only-testing:biliUITests/SimulatorPreflightUITests/testFixtureLaunches \
+  -retry-tests-on-failure -test-iterations 2 \
   -parallel-testing-enabled NO -enableCodeCoverage YES \
-  -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 180 -skipPackagePluginValidation \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test 2>&1 | \
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 360 \
+  -maximum-test-execution-time-allowance 600 -skipPackagePluginValidation \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test-without-building 2>&1 | \
   tee "$RUNNER_TEMP/photo-preflight.log" | \
-  awk '/Test (Case|Suite)|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
+  awk '/Test (Case|Suite)|PHOTO_IMPORT_CONFIRMED|: error:|Fatal error:|\*\* TEST/ { print; fflush() }'
+preflight_status=$?
+set -e
+
+# Keep evidence of the first launch failure even when Xcode's one retry passes.
+if awk '/Test Case .* failed \(/ || /Restarting after unexpected exit/ { found=1 } END { exit !found }' "$RUNNER_TEMP/photo-preflight.log"; then
+  echo "had_test_failures=true" >> "$GITHUB_OUTPUT"
+fi
+if [ "$preflight_status" -ne 0 ]; then
+  echo "Photo preflight failed; simulator import diagnostics follow." >&2
+  if [ -f "$RUNNER_TEMP/photo-media-import.log" ]; then
+    tail -n 80 "$RUNNER_TEMP/photo-media-import.log" >&2
+  fi
+  if [ -f "$RUNNER_TEMP/photo-simulator-inventory.json" ]; then
+    cat "$RUNNER_TEMP/photo-simulator-inventory.json" >&2
+  fi
+  exit "$preflight_status"
+fi
+if ! awk -v expected="PHOTO_IMPORT_CONFIRMED $photo_token" 'index($0, expected) { found=1 } END { exit !found }' "$RUNNER_TEMP/photo-preflight.log"; then
+  echo "Photo preflight did not acknowledge this import; refusing an unverified preparation." >&2
+  if [ -f "$RUNNER_TEMP/photo-media-import.log" ]; then
+    tail -n 80 "$RUNNER_TEMP/photo-media-import.log" >&2
+  fi
+  exit 1
+fi
 
 wait "$media_import_pid"
 trap - EXIT

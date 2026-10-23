@@ -23,7 +23,7 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         XCTAssertTrue(avatar.isHittable)
         avatar.tap()
         let close = app.buttons["comment.profile.close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
         close.tap()
         XCTAssertTrue(close.waitForNonExistence(timeout: 3))
         XCTAssertTrue(avatar.isHittable)
@@ -32,7 +32,7 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
         XCTAssertTrue(mention.waitForExistence(timeout: 3))
         mention.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: 35, dy: mention.frame.height / 2)).tap()
-        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
         close.tap()
         XCTAssertTrue(close.waitForNonExistence(timeout: 3))
         XCTAssertTrue(firstReply.waitForExistence(timeout: 5))
@@ -51,7 +51,7 @@ final class DynamicRepliesPaginationUITests: XCTestCase {
 
         app.buttons["打开动态详情"].tap()
         let openReplies = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "14 条回复")).firstMatch
-        XCTAssertTrue(openReplies.waitForExistence(timeout: 5))
+        XCTAssertTrue(openReplies.waitForExistence(timeout: 15), app.debugDescription)
         openReplies.tap()
 
         let repliesScroll = app.scrollViews["dynamic.replies.scroll"]

@@ -4,6 +4,31 @@ import XCTest
 
 @MainActor
 final class MetalDanmakuIntegrationTests: XCTestCase {
+    private final class UnavailableDrawableView: MTKView {
+        var renderPassReads = 0
+        override var currentRenderPassDescriptor: MTLRenderPassDescriptor? {
+            renderPassReads += 1
+            return nil
+        }
+    }
+
+    func testBusySlotSkipsDrawableAcquisitionAndUnavailableDrawableReleasesSlot() throws {
+        guard let renderer = MetalDanmakuRenderer() else { throw XCTSkip("Metal unavailable") }
+        let view = UnavailableDrawableView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 200), device: renderer.device
+        )
+        let releaseSlot = try XCTUnwrap(renderer.debugHoldNextSlot())
+        renderer.render(view: view, time: 0)
+        releaseSlot()
+        XCTAssertEqual(view.renderPassReads, 0, "A busy slot must return before asking for a drawable")
+        XCTAssertEqual(renderer.skippedFrames, 1)
+        renderer.render(view: view, time: 0)
+        renderer.render(view: view, time: 0)
+        XCTAssertEqual(view.renderPassReads, 2, "Failed acquisition must return its slot for the next attempt")
+        XCTAssertEqual(renderer.skippedFrames, 1)
+        XCTAssertEqual(renderer.submittedFrames, 0)
+    }
+
     func testCorrectedClockKeepsNewlyAdmittedGlyphsVisibleInShader() throws {
         guard let renderer = MetalDanmakuRenderer() else { throw XCTSkip("Metal unavailable") }
         let size = CGSize(width: 320, height: 200)
@@ -528,6 +553,9 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
         XCTAssertEqual(view.debugRenderer.submittedFrames, submitted)
         XCTAssertEqual(view.debugManualRefreshCount, 0)
 
+        // Force transient submission failures instead of depending on simulator
+        // GPU timing. A paused surface must retry its latest frame on its own.
+        view.debugRenderer.debugFramesToDrop = 2
         view.apply(configuration: configuration(items: items(count: 10), time: 1.5, playing: false))
         XCTAssertTrue(view.metalView.isPaused)
         XCTAssertEqual(view.debugManualRefreshCount, 1, "Paused updates still need a single-frame refresh")
@@ -538,14 +566,24 @@ final class MetalDanmakuIntegrationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThan(diagnostics.metalSummary.manualRefreshFrames, 0)
+        XCTAssertEqual(view.debugRenderer.debugFramesToDrop, 0)
+        XCTAssertFalse(view.debugHasPendingManualRefresh)
         view.apply(configuration: configuration(items: items(count: 10), time: 2, playing: true))
         XCTAssertFalse(view.metalView.isPaused)
         XCTAssertEqual(view.debugManualRefreshCount, 2, "Resume uses the scheduled loop")
+        view.debugRenderer.debugFramesToDrop = 100
+        view.apply(configuration: configuration(items: items(count: 10), time: 2, playing: false))
+        XCTAssertTrue(view.debugHasPendingManualRefresh)
+        let beforeDetach = view.debugRenderer.submittedFrames
         view.removeFromSuperview()
         XCTAssertTrue(view.metalView.isPaused)
+        XCTAssertFalse(view.debugHasPendingManualRefresh)
         view.apply(configuration: configuration(items: items(count: 10), time: 3, playing: false))
-        XCTAssertEqual(view.debugManualRefreshCount, 2, "Detached surfaces must not draw")
+        XCTAssertEqual(view.debugManualRefreshCount, 3, "Detached surfaces must not draw")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(view.debugRenderer.submittedFrames, beforeDetach)
         view.stop()
         XCTAssertEqual(view.debugActiveCount, 0)
+        XCTAssertFalse(view.debugHasPendingManualRefresh)
     }
 }

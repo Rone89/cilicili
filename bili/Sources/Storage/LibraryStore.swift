@@ -87,7 +87,7 @@ struct StoredVideo: Identifiable, Codable, Hashable {
     }
 }
 
-nonisolated struct StoredPlaybackProgress: Codable, Equatable {
+nonisolated struct StoredPlaybackProgress: Codable, Equatable, Sendable {
     let bvid: String
     let cid: Int?
     let playbackTime: TimeInterval
@@ -132,6 +132,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var pictureInPictureEnabled: Bool
+    @Published private(set) var backgroundPlaybackEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
     @Published private(set) var playbackPlayableFallbackDeadlineExperimentEnabled: Bool
@@ -169,6 +170,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var showsHotSearches: Bool
 
     private let userDefaults: UserDefaults
+    let playbackProgressStorage: PlaybackProgressStorage
     private static let appearanceModeKey = "cc.bili.appearance.mode.v1"
     private static let appIconPreferenceKey = "cc.bili.appearance.appIconPreference.v1"
     private static let appTintColorHexKey = "cc.bili.appearance.tintColorHex.v1"
@@ -211,6 +213,7 @@ final class LibraryStore: ObservableObject {
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
+    private static let backgroundPlaybackEnabledKey = "cc.bili.playback.backgroundPlaybackEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature
         .resumePacketWarmup.storageKey
@@ -437,6 +440,10 @@ final class LibraryStore: ObservableObject {
         playbackCDNProbeSnapshotsByContext[currentPlaybackCDNProbeContextKey]
     }
 
+    var recentPlaybackCDNProbeVideo: PlaybackCDNProbeVideo? {
+        PlaybackCDNSettingsProbe.latestVideo(in: Array(playbackProgressByBVID.values))
+    }
+
     var appTintColor: Color {
         AppThemeTintColor.color(for: appTintColorHex)
     }
@@ -465,6 +472,9 @@ final class LibraryStore: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        self.playbackProgressStorage = PlaybackProgressStorage(
+            defaults: userDefaults, key: Self.playbackProgressByBVIDKey
+        )
         self.appearanceMode =
             AppAppearanceMode(
                 rawValue: userDefaults.string(forKey: Self.appearanceModeKey) ?? ""
@@ -615,6 +625,7 @@ final class LibraryStore: ObservableObject {
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
+        self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
             userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.resourceLoadingResumePacketWarmupEnabled =
@@ -1016,7 +1027,7 @@ final class LibraryStore: ObservableObject {
         objectWillChange.send()
     }
 
-    private var currentPlaybackCDNProbeContextKey: String {
+    var currentPlaybackCDNProbeContextKey: String {
         Self.playbackCDNProbeContextKey(
             networkClass: PlaybackEnvironment.current.networkClass,
             addressFamilyPreference: playbackNetworkAddressFamilyPreference
@@ -1050,13 +1061,7 @@ final class LibraryStore: ObservableObject {
                     .map { ($0.bvid, $0) }
             )
         }
-        guard !playbackProgressByBVID.isEmpty,
-            let data = try? JSONEncoder().encode(playbackProgressByBVID)
-        else {
-            userDefaults.removeObject(forKey: Self.playbackProgressByBVIDKey)
-            return
-        }
-        userDefaults.set(data, forKey: Self.playbackProgressByBVIDKey)
+        playbackProgressStorage.save(playbackProgressByBVID)
     }
 
     private static func playbackCDNProbeContextKey(
@@ -1208,6 +1213,11 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
+    }
+
+    func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
+        backgroundPlaybackEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.backgroundPlaybackEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

@@ -89,6 +89,9 @@ final class VideoDetailShellSurfaceHost: UIView {
         self.overlayState = overlayState
         self.experimentState = experimentState
         self.libraryStore = dependencies.libraryStore
+        playerViewModel.setBackgroundPlaybackEnabled(
+            dependencies.libraryStore.backgroundPlaybackEnabled
+        )
         self.rotationCoordinator = rotationCoordinator
         self.surfaceHostView = DirectUIKitPlayerSurfaceHostView(
             viewModel: playerViewModel,
@@ -310,6 +313,9 @@ final class VideoDetailShellSurfaceHost: UIView {
     func setPlayerViewModel(_ playerViewModel: PlayerStateViewModel) {
         guard state.playerViewModel !== playerViewModel else { return }
         state.playerViewModel = playerViewModel
+        playerViewModel.setBackgroundPlaybackEnabled(
+            libraryStore.backgroundPlaybackEnabled
+        )
         surfaceHostView.setPlayerViewModel(playerViewModel)
         surfaceHostView.setPictureInPictureEnabled(
             libraryStore.pictureInPictureEnabled
@@ -1702,6 +1708,17 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     )) {
                         Label("画中画播放", systemImage: "pip")
                     }
+
+                    Toggle(isOn: Binding(
+                        get: { libraryStore.backgroundPlaybackEnabled },
+                        set: {
+                            libraryStore.setBackgroundPlaybackEnabled($0)
+                            viewModel.setBackgroundPlaybackEnabled($0)
+                        }
+                    )) {
+                        Label("后台播放", systemImage: "speaker.wave.2")
+                    }
+                    .accessibilityIdentifier("ui.player.backgroundPlayback")
                 }
 
                 Toggle(isOn: Binding(
@@ -2175,6 +2192,15 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         )
 
                         Divider().padding(.leading, 44)
+
+                        SurfaceOnlyLandscapeToggleRow(
+                            title: "后台播放",
+                            systemImage: "speaker.wave.2",
+                            accessory: backgroundPlaybackAccessory,
+                            isOn: backgroundPlaybackBinding
+                        )
+
+                        Divider().padding(.leading, 44)
                     }
 
                     SurfaceOnlyLandscapeToggleRow(
@@ -2486,6 +2512,20 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
 
     private var pictureInPictureAccessory: String? {
         return libraryStore.pictureInPictureEnabled ? "已开启" : "已关闭"
+    }
+
+    private var backgroundPlaybackAccessory: String? {
+        libraryStore.backgroundPlaybackEnabled ? "已开启" : "已关闭"
+    }
+
+    private var backgroundPlaybackBinding: Binding<Bool> {
+        Binding(
+            get: { libraryStore.backgroundPlaybackEnabled },
+            set: {
+                libraryStore.setBackgroundPlaybackEnabled($0)
+                viewModel.setBackgroundPlaybackEnabled($0)
+            }
+        )
     }
 
     private var showsVideoListenModeToggle: Bool {

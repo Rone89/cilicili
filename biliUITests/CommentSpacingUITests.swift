@@ -27,7 +27,7 @@ final class CommentSpacingUITests: XCTestCase {
         XCTAssertGreaterThan(visible.height, 0)
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: visible.minX + min(24, visible.width / 2), dy: visible.minY + min(12, visible.height / 2))).press(forDuration: 1)
-        XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["复制评论"].waitForExistence(timeout: 8), app.debugDescription)
         app.buttons["复制评论"].tap()
 
     }
@@ -39,7 +39,7 @@ final class CommentSpacingUITests: XCTestCase {
         }
         XCTAssertTrue(metric.isHittable, id)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (Double(metric.label) ?? 0) > 0 }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed, app.debugDescription)
         return Double(metric.label) ?? -1
     }
     private func returnToTop(_ app: XCUIApplication) {

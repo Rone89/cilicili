@@ -65,6 +65,15 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
             let initialTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
             XCTAssertGreaterThanOrEqual(initialTime, 0)
 
+            // Opt in on an already playing item, then opt out again. Neither
+            // change may replace its item/bridge, seek, or pause foreground audio.
+            let playingItemIdentity = engine.debugPlayerItemIdentity
+            for enabled in [true, false, true] {
+                engine.setBackgroundPlaybackEnabled(enabled)
+                XCTAssertEqual(engine.debugPlayerItemIdentity, playingItemIdentity)
+                XCTAssertGreaterThan(engine.debugActualPlayerRate, 0)
+            }
+
             try await verifyPauseResume(on: engine, duration: source.durationHint ?? 8)
             try await verifySeeking(on: engine, duration: source.durationHint ?? 8)
 
@@ -139,6 +148,10 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         engine.pause()
         let target = await engine.seekAfterUserScrub(toProgress: 0.6, duration: fixture.primarySource.durationHint)
         XCTAssertNotNil(target)
+        // The production seek-recovery snapshot reports rendered timestamps for
+        // a short post-seek window. Exercise that existing read immediately so
+        // the trace does not depend on simulator frame scheduling to record it.
+        _ = engine.snapshot(durationHint: fixture.primarySource.durationHint)
         engine.recoverSurface()
         engine.play()
         try await waitUntil("new target frame after seek") {
@@ -148,8 +161,12 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
         XCTAssertTrue(seekSummary.contains("seekCompletion"))
         XCTAssertTrue(seekSummary.contains("recoverSurfaceComplete"))
         XCTAssertTrue(seekSummary.contains("toleranceBefore=0.35"))
-        try await waitUntil("advancing target timestamps from existing snapshot reads") {
+        try await waitUntil("advancing target timestamps from existing playback reads", timeout: 10) {
             _ = engine.snapshot(durationHint: fixture.primarySource.durationHint)
+            // The recovery gate also samples this existing player-output API. Keep
+            // observing beyond the snapshot's short post-seek reporting window so
+            // simulator scheduling delays cannot hide a later advancing frame.
+            _ = engine.currentRenderedVideoTime()
             return RecoveryTraceStore.shared.summary(seekID)?.contains("targetVideoAdvanceObserved@") == true
         }
         engine.debugRecoveryEvent("uiReveal", fields: ["reason": "testObservationBoundary"])

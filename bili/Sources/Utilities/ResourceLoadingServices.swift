@@ -967,20 +967,37 @@ nonisolated enum BiliNetworkRetry {
         policy: BiliNetworkRetryPolicy
     ) async throws -> (Data, URLResponse) {
         try await data(
-            sessionProvider: { session },
             request: request,
-            priority: priority,
-            priorityHandle: priorityHandle,
             policy: policy
-        )
+        ) {
+            try await dataOnce(
+                session: session, request: request, priority: priority, priorityHandle: priorityHandle
+            )
+        }
     }
 
     static func data(
-        sessionProvider: @escaping @Sendable () -> URLSession,
+        sessionProvider: @escaping @Sendable () -> BiliPlaybackNetworkSessionLease,
         request: URLRequest,
         priority: Float = URLSessionTask.defaultPriority,
         priorityHandle: BiliNetworkTaskPriorityHandle? = nil,
         policy: BiliNetworkRetryPolicy
+    ) async throws -> (Data, URLResponse) {
+        try await data(request: request, policy: policy) {
+            let lease = sessionProvider()
+            // Retain this generation across task creation and suspension. A path
+            // refresh may retire it, but cannot invalidate a borrowed session.
+            defer { withExtendedLifetime(lease) {} }
+            return try await dataOnce(
+                session: lease.session, request: request, priority: priority, priorityHandle: priorityHandle
+            )
+        }
+    }
+
+    private static func data(
+        request: URLRequest,
+        policy: BiliNetworkRetryPolicy,
+        operation: @escaping @Sendable () async throws -> (Data, URLResponse)
     ) async throws -> (Data, URLResponse) {
         let canRetryRequest = policy.canRetry(request)
         var lastError: Error?
@@ -989,12 +1006,7 @@ nonisolated enum BiliNetworkRetry {
         for attempt in 0..<policy.attempts {
             try Task.checkCancellation()
             do {
-                let (data, response) = try await dataOnce(
-                    session: sessionProvider(),
-                    request: request,
-                    priority: priority,
-                    priorityHandle: priorityHandle
-                )
+                let (data, response) = try await operation()
                 if canRetryRequest,
                    attempt < policy.attempts - 1,
                    let reason = retryReason(data: data, response: response, policy: policy) {
@@ -1309,23 +1321,47 @@ private nonisolated final class BiliNetworkURLSessionTaskBox: @unchecked Sendabl
     }
 }
 
+/// The pool and each borrower retain the same session generation. Retirement
+/// releases the pool's ownership; only the last borrower invalidates the session.
+nonisolated final class BiliPlaybackNetworkSessionLease: Sendable {
+    let session: URLSession
+
+    init(session: URLSession) {
+        self.session = session
+    }
+
+    deinit {
+        session.finishTasksAndInvalidate()
+    }
+}
+
 nonisolated final class BiliPlaybackNetworkSessionPool: @unchecked Sendable {
     static let shared = BiliPlaybackNetworkSessionPool()
 
     private let lock = NSLock()
-    private var dataSession = BiliURLSessionFactory.makePlaybackDataSession()
-    private var probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
+    private let dataSessionFactory: @Sendable () -> URLSession
+    private let probeSessionFactory: @Sendable () -> URLSession
+    private var dataSession: BiliPlaybackNetworkSessionLease
+    private var probeSession: BiliPlaybackNetworkSessionLease
 
-    private init() {}
+    init(
+        dataSessionFactory: @escaping @Sendable () -> URLSession = { BiliURLSessionFactory.makePlaybackDataSession() },
+        probeSessionFactory: @escaping @Sendable () -> URLSession = { BiliURLSessionFactory.makePlaybackProbeSession() }
+    ) {
+        self.dataSessionFactory = dataSessionFactory
+        self.probeSessionFactory = probeSessionFactory
+        dataSession = BiliPlaybackNetworkSessionLease(session: dataSessionFactory())
+        probeSession = BiliPlaybackNetworkSessionLease(session: probeSessionFactory())
+    }
 
-    func playbackDataSession() -> URLSession {
+    func playbackDataSessionLease() -> BiliPlaybackNetworkSessionLease {
         lock.lock()
         let session = dataSession
         lock.unlock()
         return session
     }
 
-    func playbackProbeSession() -> URLSession {
+    func playbackProbeSessionLease() -> BiliPlaybackNetworkSessionLease {
         lock.lock()
         let session = probeSession
         lock.unlock()
@@ -1333,17 +1369,16 @@ nonisolated final class BiliPlaybackNetworkSessionPool: @unchecked Sendable {
     }
 
     func refreshForNetworkPathChange() {
-        let oldDataSession: URLSession
-        let oldProbeSession: URLSession
+        let oldDataSession: BiliPlaybackNetworkSessionLease
+        let oldProbeSession: BiliPlaybackNetworkSessionLease
         lock.lock()
         oldDataSession = dataSession
         oldProbeSession = probeSession
-        dataSession = BiliURLSessionFactory.makePlaybackDataSession()
-        probeSession = BiliURLSessionFactory.makePlaybackProbeSession()
+        dataSession = BiliPlaybackNetworkSessionLease(session: dataSessionFactory())
+        probeSession = BiliPlaybackNetworkSessionLease(session: probeSessionFactory())
         lock.unlock()
 
-        oldDataSession.finishTasksAndInvalidate()
-        oldProbeSession.finishTasksAndInvalidate()
+        withExtendedLifetime((oldDataSession, oldProbeSession)) {}
     }
 }
 

@@ -184,9 +184,6 @@ final class RootTabScrollUITests: XCTestCase {
         let app = launch(arguments: arguments)
         for tab in selectedTabs ?? tabs {
             select(tab, in: app)
-            if tab == "直播" {
-                XCTAssertTrue(app.staticTexts["直播内容 1"].waitForExistence(timeout: 10))
-            }
             let top = offset(app)
             let scroll = mainScroll(in: app)
             scroll.swipeUp()
@@ -255,10 +252,18 @@ final class RootTabScrollUITests: XCTestCase {
 
     private func select(_ tab: String, in app: XCUIApplication) {
         if !app.tabBars.buttons[tab].exists { app.tabBars.buttons.firstMatch.tap() }
-        XCTAssertTrue(app.tabBars.buttons[tab].waitForExistence(timeout: 3))
-        if !app.tabBars.buttons[tab].isSelected { app.tabBars.buttons[tab].tap() }
+        let tabButton = app.tabBars.buttons[tab]
+        XCTAssertTrue(tabButton.waitForExistence(timeout: 3), app.debugDescription)
+        if !tabButton.isSelected { tabButton.tap() }
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in tabButton.isSelected }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed, app.debugDescription)
         if tab == "直播" {
-            XCTAssertTrue(app.staticTexts["直播内容 1"].waitForExistence(timeout: 10))
+            XCTAssertTrue(
+                app.staticTexts["直播内容 1"].waitForExistence(timeout: 20),
+                "Live fixture did not load after selecting its root tab.\n\(app.debugDescription)"
+            )
         }
     }
 

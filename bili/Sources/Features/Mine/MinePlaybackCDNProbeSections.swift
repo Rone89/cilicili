@@ -2,14 +2,9 @@ import SwiftUI
 
 extension MinePlaybackSettingsView {
     var activePlaybackCDNProbeSnapshot: PlaybackCDNProbeSnapshot? {
-        if !playbackCDNProbeResults.isEmpty {
-            return PlaybackCDNProbeSnapshot(
-                probedAt: Date(),
-                recommendedPreference: playbackCDNProbeResults.first {
-                    $0.isActionableForPlaybackRecommendation
-                }?.preference,
-                results: playbackCDNProbeResults
-            )
+        if let playbackCDNSettingsSnapshot,
+           playbackCDNSettingsContextKey == libraryStore.currentPlaybackCDNProbeContextKey {
+            return playbackCDNSettingsSnapshot
         }
         return libraryStore.playbackCDNProbeSnapshotForCurrentContext
     }

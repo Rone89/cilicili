@@ -33,8 +33,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CI environment helpers
-        run: python3 -m unittest discover -s Scripts/tests -p 'test_ci_environment.py' -v
+      - name: Check CI helper regressions
+        run: python3 -m unittest discover -s Scripts/tests -v
 
       - name: Select installed Xcode 26
         run: python3 Scripts/ci-environment.py select-xcode
@@ -119,6 +119,11 @@ jobs:
             awk '/Test (Case|Suite)|Executed [0-9]+ tests|: error:|Fatal error:|Restarting after unexpected exit|\*\* TEST|Testing started|Testing failed|Testing cancelled/ { print; fflush() }'
           test_status=${PIPESTATUS[0]}
           set -e
+          # xcodebuild can succeed after a retry. Retain diagnostics from the
+          # failed attempt too, including unexpected application termination.
+          if awk '/Test Case .* failed \(/ || /Restarting after unexpected exit/ { found=1 } END { exit !found }' "$RUNNER_TEMP/bili-tests.log"; then
+            echo "had_test_failures=true" >> "$GITHUB_OUTPUT"
+          fi
           if [ -d "$result_bundle_path" ]; then
             echo "has_results=true" >> "$GITHUB_OUTPUT"
             if xcrun xccov view --report "$result_bundle_path" > "$RUNNER_TEMP/coverage.txt"; then
@@ -128,7 +133,7 @@ jobs:
           exit "$test_status"
 
       - name: Export readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' && (steps.tests.outcome == 'failure' || steps.tests.outputs.had_test_failures == 'true') }}
         continue-on-error: true
         shell: bash
         run: |
@@ -138,7 +143,7 @@ jobs:
           xcrun xcresulttool export diagnostics --path "$RUNNER_TEMP/bili-tests.xcresult" --output-path "$RUNNER_TEMP/readable-tests/diagnostics"
 
       - name: Upload readable failure diagnostics
-        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && (steps.tests.outcome == 'failure' || steps.tests.outputs.had_test_failures == 'true') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ios-test-readable-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
@@ -146,11 +151,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload photo preflight diagnostics
-        if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure') }}
+        if: ${{ !cancelled() && inputs.ui_shard != '' && (failure() || steps.photo_fixture.outcome == 'failure' || steps.photo_fixture.outputs.had_test_failures == 'true') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: photo-preflight-${{ inputs.suite }}
+          name: photo-preflight-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/photo-build.log
             ${{ runner.temp }}/photo-preflight.log
             ${{ runner.temp }}/photo-preflight.xcresult
             ${{ runner.temp }}/photo-media-import.log
@@ -161,7 +167,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outputs.has_coverage == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-coverage-${{ inputs.suite }}
+          name: ios-coverage-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/coverage.txt
           if-no-files-found: error
 
@@ -169,7 +175,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outputs.has_results == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-test-results-${{ inputs.suite }}
+          name: ios-test-results-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bili-tests.xcresult
           if-no-files-found: error
 
@@ -177,7 +183,7 @@ jobs:
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-test-log-${{ inputs.suite }}
+          name: ios-test-log-${{ inputs.suite }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bili-tests.log
           if-no-files-found: warn
 
