@@ -937,6 +937,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
         isBackgroundPlaybackEnabled = isEnabled
+        engine.setBackgroundPlaybackEnabled(continuesPlaybackInBackground)
+    }
+
+    private var continuesPlaybackInBackground: Bool {
+        PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: playbackContentMode,
+            isLiveStream: isLiveStream,
+            backgroundPlaybackEnabled: isBackgroundPlaybackEnabled
+        )
     }
 
     func requestNextTrack() {
@@ -1724,11 +1733,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
         guard !isPictureInPictureActive else { return false }
-        if PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
-            playbackContentMode: playbackContentMode,
-            isLiveStream: isLiveStream,
-            backgroundPlaybackEnabled: isBackgroundPlaybackEnabled
-        ) {
+        if continuesPlaybackInBackground {
             // Audio-only playback and opted-in recorded-video playback stay active.
             // Live video keeps its existing background policy.
             syncRemotePlaybackControls(forceNowPlayingTimeUpdate: true)
@@ -4321,6 +4326,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func bindEngine(_ engine: PlayerRenderingEngine, restoreVolumeState: Bool) {
+        engine.setBackgroundPlaybackEnabled(continuesPlaybackInBackground)
         engineCallbackGeneration &+= 1
         let callbackGeneration = engineCallbackGeneration
         if restoreVolumeState {

@@ -65,6 +65,15 @@ final class DeterministicAVPlayerTransportTests: XCTestCase {
             let initialTime = try XCTUnwrap(engine.snapshot(durationHint: source.durationHint).currentTime)
             XCTAssertGreaterThanOrEqual(initialTime, 0)
 
+            // Opt in on an already playing item, then opt out again. Neither
+            // change may replace its item/bridge, seek, or pause foreground audio.
+            let playingItemIdentity = engine.debugPlayerItemIdentity
+            for enabled in [true, false, true] {
+                engine.setBackgroundPlaybackEnabled(enabled)
+                XCTAssertEqual(engine.debugPlayerItemIdentity, playingItemIdentity)
+                XCTAssertGreaterThan(engine.debugActualPlayerRate, 0)
+            }
+
             try await verifyPauseResume(on: engine, duration: source.durationHint ?? 8)
             try await verifySeeking(on: engine, duration: source.durationHint ?? 8)
 

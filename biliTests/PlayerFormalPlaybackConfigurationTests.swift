@@ -1287,6 +1287,51 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testBackgroundPlaybackToggleConfiguresAVPlayerBeforeBackgroundEntry() throws {
+        let engine = AVPlayerHLSBridgeEngine()
+        let player = PlayerStateViewModel(
+            videoURL: nil, audioURL: nil, title: "后台策略测试",
+            referer: "https://www.bilibili.com", engine: engine
+        )
+        let controller = AVPlayerViewController()
+        engine.attachNativePlaybackController(controller)
+        let avPlayer = try XCTUnwrap(controller.player)
+        defer {
+            engine.detachNativePlaybackController(controller)
+            player.stop()
+        }
+
+        XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .automatic)
+        for _ in 0..<2 {
+            player.setBackgroundPlaybackEnabled(true)
+            XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .continuesIfPossible)
+            XCTAssertTrue(controller.player === avPlayer)
+            player.setBackgroundPlaybackEnabled(false)
+            XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .automatic)
+        }
+    }
+
+    @MainActor
+    func testAudioOnlyAVPlayerContinuesInBackgroundWithoutVideoOptIn() throws {
+        let engine = AVPlayerHLSBridgeEngine()
+        let player = PlayerStateViewModel(
+            videoURL: nil, audioURL: URL(string: "https://example.com/audio.m4s"),
+            title: "听视频后台策略测试", referer: "https://www.bilibili.com",
+            playbackContentMode: .audioOnly, engine: engine
+        )
+        let controller = AVPlayerViewController()
+        engine.attachNativePlaybackController(controller)
+        defer {
+            engine.detachNativePlaybackController(controller)
+            player.stop()
+        }
+        let avPlayer = try XCTUnwrap(controller.player)
+        XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .continuesIfPossible)
+        player.setBackgroundPlaybackEnabled(false)
+        XCTAssertEqual(avPlayer.audiovisualBackgroundPlaybackPolicy, .continuesIfPossible)
+    }
+
+    @MainActor
     func testVideoSurfaceContainerCanShowSystemPlaybackControls() {
         let surface = VideoSurfaceContainerView()
 

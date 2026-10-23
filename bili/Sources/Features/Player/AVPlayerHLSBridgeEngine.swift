@@ -541,6 +541,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
     }
 
+    func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
+        // Configure before the app leaves the foreground. Skipping our own pause
+        // alone leaves AVPlayer's automatic background policy free to stop video.
+        // Changing this policy preserves the current item, buffer and play rate.
+        player.audiovisualBackgroundPlaybackPolicy = isEnabled ? .continuesIfPossible : .automatic
+    }
+
     func detachNativePlaybackController(_ controller: AVPlayerViewController) {
         guard playerViewController === controller else { return }
         removeContentOverlayHostingController()
