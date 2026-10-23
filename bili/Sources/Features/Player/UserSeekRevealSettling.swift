@@ -74,14 +74,15 @@ nonisolated struct UserSeekRevealSettling {
         if frameReady, let time = renderedVideoTime, time.isFinite, time >= 0 {
             hasVerifiedRenderedFrame = true
             if let first = firstRenderedVideoTime {
-                if time > first + 0.001 {
-                    hasAdvancingRenderedFrames = true
-                } else if time < first - 0.001 {
-                    // A regressing sample cannot carry forward a prior settle window.
+                if let last = lastRenderedVideoTime, time < last - 0.001 {
+                    // Compare with the latest sample: a frame can regress while
+                    // remaining ahead of the first frame in this settle window.
                     readySince = nil
                     hasAdvancingRenderedFrames = false
                     firstRenderedVideoTime = time
                     firstRenderedAt = now
+                } else if time > first + 0.001 {
+                    hasAdvancingRenderedFrames = true
                 }
             } else {
                 firstRenderedVideoTime = time
