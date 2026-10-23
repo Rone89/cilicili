@@ -57,7 +57,26 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     @MainActor
     func testSystemNowPlayingPublicationIncludesEligibleVideoPlayback() {
         XCTAssertTrue(PlayerSystemMediaPresentationPolicy.publishesNowPlayingInfo)
-        XCTAssertTrue(PlayerSystemMediaPresentationPolicy.continuesRecordedVideoAudioInBackground)
+        XCTAssertFalse(PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: .video,
+            isLiveStream: false,
+            backgroundPlaybackEnabled: false
+        ))
+        XCTAssertTrue(PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: .video,
+            isLiveStream: false,
+            backgroundPlaybackEnabled: true
+        ))
+        XCTAssertFalse(PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: .video,
+            isLiveStream: true,
+            backgroundPlaybackEnabled: true
+        ))
+        XCTAssertTrue(PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: .audioOnly,
+            isLiveStream: false,
+            backgroundPlaybackEnabled: false
+        ))
         XCTAssertEqual(PlayerSystemMediaPresentationPolicy.mediaType(for: .video), .video)
         XCTAssertEqual(PlayerSystemMediaPresentationPolicy.mediaType(for: .audioOnly), .audio)
 
@@ -93,6 +112,22 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
                 isLiveStream: true
             )
         )
+    }
+
+    @MainActor
+    func testBackgroundPlaybackPreferenceDefaultsOffAndPersists() {
+        let suite = "PlayerFormalPlaybackConfigurationTests.backgroundPlayback.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = LibraryStore(userDefaults: defaults)
+        XCTAssertFalse(store.backgroundPlaybackEnabled)
+
+        store.setBackgroundPlaybackEnabled(true)
+        XCTAssertTrue(LibraryStore(userDefaults: defaults).backgroundPlaybackEnabled)
+
+        store.setBackgroundPlaybackEnabled(false)
+        XCTAssertFalse(LibraryStore(userDefaults: defaults).backgroundPlaybackEnabled)
     }
 
     @MainActor
@@ -709,7 +744,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testSystemBackgroundKeepsRecordedVideoPlayingWhenPictureInPictureIsInactive() {
+    func testSystemBackgroundKeepsRecordedVideoPlayingWhenBackgroundPlaybackIsEnabledAndPictureInPictureIsInactive() {
         let coordinator = ActivePlaybackCoordinator.shared
         coordinator.stopActivePlayback()
 
@@ -725,6 +760,7 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         coordinator.activate(player)
         player.setPictureInPictureEnabled(true)
+        player.setBackgroundPlaybackEnabled(true)
         player.setPlaybackIntent(true)
         engine.onFirstFrame?(12)
         defer {

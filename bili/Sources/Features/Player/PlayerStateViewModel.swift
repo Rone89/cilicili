@@ -66,7 +66,15 @@ private struct PlayerNowPlayingMetadataFingerprint: Equatable {
 
 enum PlayerSystemMediaPresentationPolicy {
     static let publishesNowPlayingInfo = true
-    static let continuesRecordedVideoAudioInBackground = true
+
+    static func continuesPlaybackInBackground(
+        playbackContentMode: PlayerPlaybackContentMode,
+        isLiveStream: Bool,
+        backgroundPlaybackEnabled: Bool
+    ) -> Bool {
+        playbackContentMode == .audioOnly
+            || (!isLiveStream && backgroundPlaybackEnabled)
+    }
 
     static func mediaType(for contentMode: PlayerPlaybackContentMode) -> MPNowPlayingInfoMediaType {
         contentMode == .audioOnly ? .audio : .video
@@ -442,6 +450,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     @Published private(set) var bufferingCount = 0
     @Published private(set) var lastBufferingElapsedMilliseconds: Int?
     @Published private(set) var playbackPhase: PlayerPlaybackPhase = .idle
+    private(set) var isBackgroundPlaybackEnabled = false
     private(set) var canRequestNextTrack = false
     private(set) var canRequestPreviousTrack = false
     @Published private(set) var recoveryAttemptCount = 0
@@ -924,6 +933,10 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         canRequestPreviousTrack = hasPrevious
         canRequestNextTrack = hasNext
         syncRemotePlaybackControls()
+    }
+
+    func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
+        isBackgroundPlaybackEnabled = isEnabled
     }
 
     func requestNextTrack() {
@@ -1711,13 +1724,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard ActivePlaybackCoordinator.shared.isActive(self) else { return false }
         syncPictureInPictureState()
         guard !isPictureInPictureActive else { return false }
-        if playbackContentMode == .audioOnly
-            || (
-                !isLiveStream
-                    && PlayerSystemMediaPresentationPolicy.continuesRecordedVideoAudioInBackground
-            ) {
-            // Keep Now Playing current while audio-only or recorded-video playback
-            // remains active. Live video keeps its existing background policy.
+        if PlayerSystemMediaPresentationPolicy.continuesPlaybackInBackground(
+            playbackContentMode: playbackContentMode,
+            isLiveStream: isLiveStream,
+            backgroundPlaybackEnabled: isBackgroundPlaybackEnabled
+        ) {
+            // Audio-only playback and opted-in recorded-video playback stay active.
+            // Live video keeps its existing background policy.
             syncRemotePlaybackControls(forceNowPlayingTimeUpdate: true)
             return false
         }

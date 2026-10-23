@@ -40,7 +40,32 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.resumeActivePlaybackAfterCancelledNavigation())
     }
 
-    func testGlobalAppBackgroundPauseKeepsRecordedVideoPlaying() {
+    func testGlobalAppBackgroundPauseStopsRecordedVideoByDefault() {
+        let coordinator = ActivePlaybackCoordinator.shared
+        coordinator.stopActivePlayback()
+        defer { coordinator.stopActivePlayback() }
+
+        let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let player = PlayerStateViewModel(
+            videoURL: nil,
+            audioURL: nil,
+            title: "默认关闭后台播放测试",
+            referer: "https://www.bilibili.com",
+            engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        coordinator.activate(player)
+        player.setPlaybackIntent(true)
+        engine.onFirstFrame?(12)
+
+        XCTAssertTrue(coordinator.pauseActivePlaybackForAppBackground())
+        XCTAssertFalse(player.wantsAutoplay)
+        XCTAssertEqual(engine.backgroundPauseCallCount, 1)
+        XCTAssertFalse(player.resumePlaybackAfterAppBackgroundIfNeeded())
+    }
+
+    func testGlobalAppBackgroundPauseKeepsRecordedVideoPlayingWhenEnabled() {
         let coordinator = ActivePlaybackCoordinator.shared
         coordinator.stopActivePlayback()
         defer { coordinator.stopActivePlayback() }
@@ -56,6 +81,7 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         let surface = VideoSurfaceContainerView()
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         coordinator.activate(player)
+        player.setBackgroundPlaybackEnabled(true)
         player.setPlaybackIntent(true)
         engine.onFirstFrame?(12)
 
@@ -69,7 +95,7 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         XCTAssertEqual(engine.playerItemRecoveryCallCount, 0)
     }
 
-    func testAppDelegateBackgroundCallbacksKeepRecordedVideoPlaying() {
+    func testAppDelegateBackgroundCallbacksKeepRecordedVideoPlayingWhenEnabled() {
         let coordinator = ActivePlaybackCoordinator.shared
         coordinator.stopActivePlayback()
         defer { coordinator.stopActivePlayback() }
@@ -85,6 +111,7 @@ final class ActivePlaybackCoordinatorTests: XCTestCase {
         let surface = VideoSurfaceContainerView()
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         coordinator.activate(player)
+        player.setBackgroundPlaybackEnabled(true)
         player.setPlaybackIntent(true)
 
         let appDelegate = AppDelegate()

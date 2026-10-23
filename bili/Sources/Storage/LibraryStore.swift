@@ -132,6 +132,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var danmakuSettings: DanmakuSettings
     @Published private(set) var sponsorBlockEnabled: Bool
     @Published private(set) var pictureInPictureEnabled: Bool
+    @Published private(set) var backgroundPlaybackEnabled: Bool
     @Published private(set) var playerPerformanceOverlayEnabled: Bool
     @Published private(set) var resourceLoadingResumePacketWarmupEnabled: Bool
     @Published private(set) var playbackPlayableFallbackDeadlineExperimentEnabled: Bool
@@ -212,6 +213,7 @@ final class LibraryStore: ObservableObject {
     private static let danmakuSettingsKey = "cc.bili.playback.danmakuSettings.v1"
     private static let sponsorBlockEnabledKey = "cc.bili.playback.sponsorBlockEnabled.v1"
     private static let pictureInPictureEnabledKey = "cc.bili.playback.pictureInPictureEnabled.v1"
+    private static let backgroundPlaybackEnabledKey = "cc.bili.playback.backgroundPlaybackEnabled.v1"
     private static let playerPerformanceOverlayEnabledKey = "cc.bili.playback.performanceOverlayEnabled.v1"
     private static let resourceLoadingResumePacketWarmupEnabledKey = ResourceLoadingExperiment.Feature
         .resumePacketWarmup.storageKey
@@ -623,6 +625,7 @@ final class LibraryStore: ObservableObject {
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
+        self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
         self.playerPerformanceOverlayEnabled =
             userDefaults.object(forKey: Self.playerPerformanceOverlayEnabledKey) as? Bool ?? false
         self.resourceLoadingResumePacketWarmupEnabled =
@@ -1210,6 +1213,11 @@ final class LibraryStore: ObservableObject {
     func setPictureInPictureEnabled(_ isEnabled: Bool) {
         pictureInPictureEnabled = isEnabled
         userDefaults.set(isEnabled, forKey: Self.pictureInPictureEnabledKey)
+    }
+
+    func setBackgroundPlaybackEnabled(_ isEnabled: Bool) {
+        backgroundPlaybackEnabled = isEnabled
+        userDefaults.set(isEnabled, forKey: Self.backgroundPlaybackEnabledKey)
     }
 
     func setMetalDanmakuRendererExperimentEnabled(_ enabled: Bool) {

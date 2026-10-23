@@ -526,6 +526,22 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testVideoDetailMoreControlsToggleBackgroundPlayback() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        revealPlayerControls(in: app)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        tapPlayerControl(more, in: app)
+
+        let backgroundPlayback = app.switches["ui.player.backgroundPlayback"]
+        XCTAssertTrue(backgroundPlayback.waitForExistence(timeout: 5))
+        XCTAssertEqual(backgroundPlayback.value as? String, "0")
+
+        backgroundPlayback.tap()
+        XCTAssertEqual(backgroundPlayback.value as? String, "1")
+    }
+
+    @MainActor
     func testVideoDetailDanmakuInteractionKeepsPlayerSurfaceMounted() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         revealPlayerControls(in: app)
