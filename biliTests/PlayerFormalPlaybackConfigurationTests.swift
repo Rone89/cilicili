@@ -1631,6 +1631,10 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     var videoOutputRefreshResult = true
     var pausedPlaybackWarmResult = true
     var playerItemRecoveryResult: TimeInterval? = 12
+    var videoFrameImage: UIImage?
+    var surfaceSnapshotImage: UIImage?
+    private(set) var videoFrameImageReadCount = 0
+    private(set) var surfaceSnapshotImageReadCount = 0
     private(set) var pauseCallCount = 0
     private(set) var backgroundPauseCallCount = 0
     private(set) var playCallCount = 0
@@ -1764,9 +1768,15 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
         )
     }
 
-    func currentVideoFrameImage() -> UIImage? { nil }
+    func currentVideoFrameImage() -> UIImage? {
+        videoFrameImageReadCount += 1
+        return videoFrameImage
+    }
     func currentRenderedVideoTime() -> TimeInterval? { renderedVideoTime }
-    func currentSurfaceSnapshotImage() -> UIImage? { nil }
+    func currentSurfaceSnapshotImage() -> UIImage? {
+        surfaceSnapshotImageReadCount += 1
+        return surfaceSnapshotImage
+    }
     func pictureInPictureContentSource() -> AVPictureInPictureController.ContentSource? { nil }
     func togglePictureInPicture() {}
     func stopPictureInPictureIfNeeded() {
