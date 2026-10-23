@@ -352,7 +352,8 @@ final class VideoDetailFlowUITests: XCTestCase {
         // can legitimately continue scrolling the comments.
         for _ in 0..<24 {
             let remainingCollapse = playerFrame.frame.height - 54
-            if remainingCollapse <= 16 { break }
+            // Keep enough distance to avoid one 24-point drag reaching the minimum.
+            if remainingCollapse <= 32 { break }
             let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             let dragEnd = start.withOffset(
                 CGVector(dx: 0, dy: -min(24, remainingCollapse))
@@ -537,8 +538,17 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(backgroundPlayback.waitForExistence(timeout: 5))
         XCTAssertEqual(backgroundPlayback.value as? String, "0")
 
-        backgroundPlayback.tap()
-        XCTAssertEqual(backgroundPlayback.value as? String, "1")
+        backgroundPlayback.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
+        ).tap()
+        let backgroundPlaybackEnabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "1"),
+            object: backgroundPlayback
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [backgroundPlaybackEnabled], timeout: 3),
+            .completed
+        )
     }
 
     @MainActor
