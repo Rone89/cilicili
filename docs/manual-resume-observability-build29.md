@@ -59,3 +59,28 @@ about 1204 ms after transport, matching the previous 1.2 s playback refresh.
 These samples cannot establish equivalent visible freezes. The bounded 50 ms
 observation replaces that coarse measurement; it does not attempt a playback
 recovery optimization. CI must pass again before retesting the updated IPA.
+
+## CI #108 and subsequent device evidence
+
+Head `c716a1089d4c38c322bfc1c6e2bd4afd7c7fb9c4` passed all seven required
+Xcode 26 jobs in [CI #108](https://github.com/Rone89/cilicili/actions/runs/40089305971).
+Its unsigned IPA is 1.1.1 (29), bundle `cc.bili`, 24,335,710 bytes, SHA-256
+`f2ab4e3d89288bf03484889e6900d40d2ed157e36c15c7d93e75c11dd07c4cfb`.
+It adds `playbackRecovery stage=resumePlayCommand` with synchronous
+`audioSession`, `postAudio`, and `total` durations; it changes no audio policy.
+
+On 2026-10-24 the user supplied these Release-device observations:
+
+| Diagnostic generated | Video | Tap-to-transport (ms) | Tap-to-observed-frame (ms) | Audio session (ms) |
+| --- | --- | --- | --- | --- |
+| 20:48:30 | BV1NVnP6kERN | 30 / 29 / 29 | 164 / 167 / 166 | 25 / 25 / 25 |
+| 20:51:50 | BV1qmnH6GEcg | 29 / 32 (two complete timeline records) | 137 / 134 | 24 / 24 (matched records) |
+
+The second report also retained an earlier audio-command duration of 32 ms,
+but its matching frame event had already left the copied timeline. Do not
+invent a third frame timing. Observed sample gaps were 52–54 ms in these
+reports. The previous 1.4-second slowdown did not recur. The night-market
+video resumed from history at 43.36 seconds, unlike its earlier run, and cache
+conditions differed. These normal samples validate the new diagnostic fields;
+they do not establish a performance fix, exact display timing, or the cause of
+the earlier slow samples.
