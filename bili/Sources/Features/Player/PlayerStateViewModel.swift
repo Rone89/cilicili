@@ -508,7 +508,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var startupResumeRetryTask: Task<Void, Never>?
     private var startupResumeRetryGeneration = 0
     private var resumeRecoveryWatchdogTask: Task<Void, Never>?
-    private var manualResumeRecoveryTiming: ManualResumeRecoveryTiming?
+    private var manualResumeFrameObservationTask: Task<Void, Never>?
+    private var manualResumeRecoveryTiming: ManualResumeRecoveryTiming? {
+        didSet {
+            if manualResumeRecoveryTiming?.playRequestedAt == nil {
+                manualResumeFrameObservationTask?.cancel()
+                manualResumeFrameObservationTask = nil
+            }
+        }
+    }
     private var deferredBufferingIndicatorTask: Task<Void, Never>?
     private var playbackRecoveryWatchdogTask: Task<Void, Never>?
     private var appBackgroundResumeRecoveryTask: Task<Void, Never>?
@@ -2809,6 +2817,45 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         recordManualResumeRecovery(
             "stage=playRequested pauseToPlay=\(String(format: "%.0f", pauseToPlay))ms"
         )
+        guard timing.canObserveAdvancingFrame else { return }
+        startManualResumeFrameObservation()
+    }
+
+    private func startManualResumeFrameObservation() {
+        manualResumeFrameObservationTask?.cancel()
+        // Observe only this manual resume. The regular 1.2 s UI refresh is too
+        // coarse for this metric; do not change its cadence or playback policy.
+        manualResumeFrameObservationTask = Task { @MainActor [weak self] in
+            let startedAt = CACurrentMediaTime()
+            var previousSampleAt = startedAt
+            var maximumSampleGap: Double = 0
+            for _ in 0..<100 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard !Task.isCancelled,
+                      let self,
+                      !self.isTerminated,
+                      let timing = self.manualResumeRecoveryTiming,
+                      timing.playRequestedAt != nil
+                else { return }
+                let now = CACurrentMediaTime()
+                let sampleGap = (now - previousSampleAt) * 1_000
+                previousSampleAt = now
+                maximumSampleGap = max(maximumSampleGap, sampleGap)
+                guard now - startedAt < 5 else { break }
+                guard timing.transportPlayingAt != nil else { continue }
+                self.recordManualResumeFreshFrame(
+                    self.engine.currentRenderedVideoTime(),
+                    at: CACurrentMediaTime(),
+                    sampleGap: sampleGap,
+                    maximumSampleGap: maximumSampleGap
+                )
+            }
+            guard !Task.isCancelled, let self,
+                  self.manualResumeRecoveryTiming?.playRequestedAt != nil
+            else { return }
+            self.recordManualResumeRecovery("stage=frameObservationTimeout budget=5000ms sampleInterval=50ms")
+            self.manualResumeRecoveryTiming = nil
+        }
     }
 
     private func recordManualResumeTransportPlaying(at now: CFTimeInterval) {
@@ -2822,7 +2869,12 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         manualResumeRecoveryTiming = timing.canObserveAdvancingFrame ? timing : nil
     }
 
-    private func recordManualResumeFreshFrame(_ frameTime: TimeInterval?, at now: CFTimeInterval) {
+    private func recordManualResumeFreshFrame(
+        _ frameTime: TimeInterval?,
+        at now: CFTimeInterval,
+        sampleGap: Double,
+        maximumSampleGap: Double
+    ) {
         guard let timing = manualResumeRecoveryTiming,
               let result = timing.observeFreshFrame(frameTime, at: now)
         else { return }
@@ -2830,6 +2882,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             "stage=firstAdvancingFrame pauseToFrame=\(String(format: "%.0f", result.pauseToFrameMilliseconds))ms"
                 + " playToFrame=\(String(format: "%.0f", result.playToFrameMilliseconds))ms"
                 + " frameTime=\(String(format: "%.3f", frameTime ?? 0))"
+                + " sampleInterval=50ms sampleGap=\(String(format: "%.0f", sampleGap))ms"
+                + " maxSampleGap=\(String(format: "%.0f", maximumSampleGap))ms"
         )
         manualResumeRecoveryTiming = nil
     }
@@ -4490,15 +4544,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if snapshot.isPlaying {
             recordManualResumeTransportPlaying(at: CACurrentMediaTime())
         }
-        // Snapshot renderedVideoTime is intentionally seek-scoped; manual resume
-        // must sample the output directly while its timing record is awaiting a frame.
-        let isAwaitingManualResumeFrame =
-            manualResumeRecoveryTiming?.playRequestedAt != nil
-                && manualResumeRecoveryTiming?.transportPlayingAt != nil
-        let manualResumeFrameTime = isAwaitingManualResumeFrame
-            ? engine.currentRenderedVideoTime()
-            : nil
-        recordManualResumeFreshFrame(manualResumeFrameTime, at: CACurrentMediaTime())
         updateSeekBufferProgressIfNeeded(snapshot)
         var acceptedSnapshotTime: TimeInterval?
         if let snapshotTime = snapshot.currentTime,
