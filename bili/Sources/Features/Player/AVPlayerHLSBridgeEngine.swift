@@ -678,8 +678,29 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugAudioPhase = "play"
         defer { debugAudioPhase = "other" }
         #endif
+        let measuresResumeCommand = didReportFirstFrame && !wantsPlayback
+        let playCommandStartedAt = CACurrentMediaTime()
+        var audioSessionFinishedAt = playCommandStartedAt
+        defer {
+            if measuresResumeCommand, let source {
+                let finishedAt = CACurrentMediaTime()
+                let audioMilliseconds = (audioSessionFinishedAt - playCommandStartedAt) * 1_000
+                let postAudioMilliseconds = (finishedAt - audioSessionFinishedAt) * 1_000
+                let totalMilliseconds = (finishedAt - playCommandStartedAt) * 1_000
+                PlayerMetricsLog.record(
+                    .playbackRecovery,
+                    metricsID: source.metricsID,
+                    title: source.title,
+                    message: "stage=resumePlayCommand"
+                        + " audioSession=\(String(format: "%.0f", audioMilliseconds))ms"
+                        + " postAudio=\(String(format: "%.0f", postAudioMilliseconds))ms"
+                        + " total=\(String(format: "%.0f", totalMilliseconds))ms"
+                )
+            }
+        }
         shouldPrerollPausedRecoveryAfterSeek = false
         configureAudioSession()
+        audioSessionFinishedAt = CACurrentMediaTime()
         applyTargetAudioState()
         wantsPlayback = true
         guard item.status == .readyToPlay else {
