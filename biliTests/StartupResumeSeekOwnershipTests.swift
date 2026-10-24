@@ -12,7 +12,11 @@ final class StartupResumeSeekOwnershipTests: XCTestCase {
         }
 
         player.play()
-        try await Task.sleep(nanoseconds: 250_000_000)
+        // Surface activation can reschedule the initial correction on a busy
+        // simulator. Wait for the actual seek, with a finite failure bound.
+        for _ in 0..<100 where engine.seekCallCount == 0 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
 
         XCTAssertGreaterThan(engine.seekCallCount, 0)
         XCTAssertEqual(engine.lastSeekTime, 40)
