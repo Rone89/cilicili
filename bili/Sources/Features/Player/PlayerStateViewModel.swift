@@ -3331,7 +3331,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
-        cancelStartupResumeCorrectionAfterUserSeek()
         cancelSeekRecoveryTracking()
         cancelDeferredBufferingIndicator()
         playbackRecoveryWatchdogTask?.cancel()
@@ -3488,7 +3487,6 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
-        cancelStartupResumeCorrectionAfterUserSeek()
         let initialSnapshot = engine.snapshot(durationHint: durationHint)
         let shouldResumeAfterSeek = shouldResumePlaybackAfterUserScrub
             || wantsAutoplay
@@ -4710,7 +4708,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func scheduleImmediateResumeCorrectionIfNeeded() {
-        guard startupResumePolicy == .immediate, resumeTime > 0.25 else { return }
+        // User seeking owns the position for this session; later play requests
+        // must not revive correction toward the original history position.
+        guard startupResumePolicy == .immediate, resumeTime > 0.25,
+              lastUserSeekAt == nil
+        else { return }
         cancelStartupResumeRetryTask()
         let targetTime = resumeTime
         let retryGeneration = advanceStartupResumeRetryGeneration()
@@ -5374,6 +5376,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private func markUserSeekIntent() {
         manualResumeRecoveryTiming = nil
         lastUserSeekAt = Date()
+        cancelStartupResumeCorrectionAfterUserSeek()
     }
 
     private func beginSeekRecoveryTracking(
