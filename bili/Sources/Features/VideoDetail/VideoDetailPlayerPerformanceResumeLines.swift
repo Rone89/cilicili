@@ -20,6 +20,14 @@ struct PlayerPerformanceOverlayResumeLines: View {
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if let manualResumeRecoveryMessage = session.manualResumeRecoveryMessage {
+                Label(manualResumeRecoveryMessage, systemImage: "play.circle")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

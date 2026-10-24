@@ -1235,6 +1235,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case qualitySupplement
         case resumeDecision
         case resumeRecovery
+        case manualResumeRecovery
         case seek
         case seekRecovery
         case speedBoost
@@ -1246,6 +1247,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
             case .qualitySupplement: return "Supplement"
             case .resumeDecision: return "续播"
             case .resumeRecovery: return "续播验证"
+            case .manualResumeRecovery: return "手动续播"
             case .seek: return "Seek"
             case .seekRecovery: return "Seek 恢复"
             case .speedBoost: return "倍速"
@@ -1597,6 +1599,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
     var resumeRecoveryCount: Int
     var resumeRecoverySlowCount: Int
     var lastResumeRecoveryMilliseconds: Int?
+    var manualResumeRecoveryMessage: String?
     var firstFrameTotalMilliseconds: Int?
     var firstFramePlayerMilliseconds: Int?
     var bufferCount: Int
@@ -1660,6 +1663,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         resumeRecoveryCount = session.resumeRecoveryCount
         resumeRecoverySlowCount = session.resumeRecoverySlowCount
         lastResumeRecoveryMilliseconds = session.lastResumeRecoveryMilliseconds
+        manualResumeRecoveryMessage = session.manualResumeRecoveryMessage
         firstFrameTotalMilliseconds = session.firstFrameTotalMilliseconds
         firstFramePlayerMilliseconds = session.firstFramePlayerMilliseconds
         bufferCount = session.bufferCount
@@ -1724,6 +1728,7 @@ private struct PlayerPerformancePersistedSession: Codable, Equatable, Sendable {
         session.resumeRecoveryCount = resumeRecoveryCount
         session.resumeRecoverySlowCount = resumeRecoverySlowCount
         session.lastResumeRecoveryMilliseconds = lastResumeRecoveryMilliseconds
+        session.manualResumeRecoveryMessage = manualResumeRecoveryMessage
         session.firstFrameTotalMilliseconds = firstFrameTotalMilliseconds
         session.firstFramePlayerMilliseconds = firstFramePlayerMilliseconds
         session.bufferCount = bufferCount
@@ -1918,6 +1923,7 @@ struct PlayerPerformanceSession: Identifiable, Equatable {
     var qualitySupplementMessage: String?
     var resumeDecisionMessage: String?
     var resumeRecoveryMessage: String?
+    var manualResumeRecoveryMessage: String?
     var seekMessage: String?
     var seekRecoveryMessage: String?
     var speedBoostMessage: String?
@@ -2084,6 +2090,7 @@ enum PlayerPerformanceCopyTextFormatter {
         appendDiagnosticSection("accessLog", session.accessLogMessage, to: &lines)
         appendDiagnosticSection("mediaCache", session.mediaCacheMessage, to: &lines)
         appendDiagnosticSection("playbackRecovery", session.playbackRecoveryMessage, to: &lines)
+        appendDiagnosticSection("manualResumeRecovery", session.manualResumeRecoveryMessage, to: &lines)
         appendDiagnosticSection("failure", session.failureMessage, to: &lines)
 
         let samples = session.recentStartupSamples
@@ -2971,6 +2978,12 @@ final class PlayerPerformanceStore: ObservableObject {
                 event.message,
                 maxParts: 4
             )
+        case .manualResumeRecovery:
+            session.manualResumeRecoveryMessage = Self.appendDiagnosticMessage(
+                session.manualResumeRecoveryMessage,
+                event.message,
+                maxParts: 4
+            )
         case .seek:
             let isBufferReady = event.message?.contains("bufferReady") == true
             let isScrubInteraction = event.message?.hasPrefix("scrub ") == true
@@ -3311,6 +3324,7 @@ final class PlayerPerformanceStore: ObservableObject {
         session.qualitySupplementMessage = nil
         session.resumeDecisionMessage = nil
         session.resumeRecoveryMessage = nil
+        session.manualResumeRecoveryMessage = nil
         session.seekMessage = nil
         session.seekRecoveryMessage = nil
         session.speedBoostMessage = nil

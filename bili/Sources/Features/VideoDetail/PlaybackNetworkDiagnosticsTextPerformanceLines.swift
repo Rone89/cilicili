@@ -48,6 +48,7 @@ extension PlaybackNetworkDiagnosticsTextBuilder {
         }
         appendOptional("最近 Seek", session.seekMessage, to: &lines)
         appendOptional("最近续播验证", session.resumeRecoveryMessage, to: &lines)
+        appendOptional("最近手动续播", session.manualResumeRecoveryMessage, to: &lines)
         appendOptional("最近恢复", session.seekRecoveryMessage, to: &lines)
         appendOptional("最近播放恢复", session.playbackRecoveryMessage, to: &lines)
         appendOptional("最近倍速", session.speedBoostMessage, to: &lines)
