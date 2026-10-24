@@ -975,7 +975,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             accessibilityIdentifier: "ui.player.playback.start",
             metrics: centerPlaybackControlMetrics
         ) {
-            viewModel.play()
+            viewModel.playFromUserInteraction()
             playbackControlsVisibility.showAndSchedule(
                 showsPlaybackControls: keepsChromeMounted,
                 isLayoutTransitioning: isBareSurfaceTransitionActive

@@ -58,6 +58,7 @@ struct PlayerPerformanceEventRow: View {
         case .qualitySupplement: return "arrow.triangle.2.circlepath"
         case .resumeDecision: return "clock.arrow.circlepath"
         case .resumeRecovery: return "checkmark.circle"
+        case .manualResumeRecovery: return "play.circle"
         case .seek: return "forward.frame"
         case .seekRecovery: return "speedometer"
         case .speedBoost: return "forward.fill"

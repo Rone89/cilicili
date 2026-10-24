@@ -508,6 +508,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var startupResumeRetryTask: Task<Void, Never>?
     private var startupResumeRetryGeneration = 0
     private var resumeRecoveryWatchdogTask: Task<Void, Never>?
+    private var manualResumeFrameObservationTask: Task<Void, Never>?
+    private var manualResumeRecoveryTiming: ManualResumeRecoveryTiming? {
+        didSet {
+            if manualResumeRecoveryTiming?.playRequestedAt == nil {
+                manualResumeFrameObservationTask?.cancel()
+                manualResumeFrameObservationTask = nil
+            }
+        }
+    }
     private var deferredBufferingIndicatorTask: Task<Void, Never>?
     private var playbackRecoveryWatchdogTask: Task<Void, Never>?
     private var appBackgroundResumeRecoveryTask: Task<Void, Never>?
@@ -1731,6 +1740,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     @discardableResult
     func pauseForAppBackground() -> Bool {
+        manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
         #endif
@@ -2799,7 +2809,108 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    private func recordManualResumePlayRequest() {
+        guard var timing = manualResumeRecoveryTiming,
+              let pauseToPlay = timing.beginPlay(at: CACurrentMediaTime())
+        else { return }
+        manualResumeRecoveryTiming = timing
+        recordManualResumeRecovery(
+            "stage=playRequested pauseToPlay=\(String(format: "%.0f", pauseToPlay))ms"
+        )
+        guard timing.canObserveAdvancingFrame else { return }
+        startManualResumeFrameObservation()
+    }
+
+    private func startManualResumeFrameObservation() {
+        manualResumeFrameObservationTask?.cancel()
+        // Observe only this manual resume. The regular 1.2 s UI refresh is too
+        // coarse for this metric; do not change its cadence or playback policy.
+        manualResumeFrameObservationTask = Task { @MainActor [weak self] in
+            let startedAt = CACurrentMediaTime()
+            var previousSampleAt = startedAt
+            var maximumSampleGap: Double = 0
+            for _ in 0..<100 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard !Task.isCancelled,
+                      let self,
+                      !self.isTerminated,
+                      let timing = self.manualResumeRecoveryTiming,
+                      timing.playRequestedAt != nil
+                else { return }
+                let now = CACurrentMediaTime()
+                let sampleGap = (now - previousSampleAt) * 1_000
+                previousSampleAt = now
+                maximumSampleGap = max(maximumSampleGap, sampleGap)
+                guard now - startedAt < 5 else { break }
+                guard timing.transportPlayingAt != nil else { continue }
+                self.recordManualResumeFreshFrame(
+                    self.engine.currentRenderedVideoTime(),
+                    at: CACurrentMediaTime(),
+                    sampleGap: sampleGap,
+                    maximumSampleGap: maximumSampleGap
+                )
+            }
+            guard !Task.isCancelled, let self,
+                  self.manualResumeRecoveryTiming?.playRequestedAt != nil
+            else { return }
+            self.recordManualResumeRecovery("stage=frameObservationTimeout budget=5000ms sampleInterval=50ms")
+            self.manualResumeRecoveryTiming = nil
+        }
+    }
+
+    private func recordManualResumeTransportPlaying(at now: CFTimeInterval) {
+        guard var timing = manualResumeRecoveryTiming,
+              let result = timing.observeTransportPlaying(at: now)
+        else { return }
+        recordManualResumeRecovery(
+            "stage=transportPlaying pauseToPlay=\(String(format: "%.0f", result.pauseToPlayMilliseconds))ms"
+                + " playToTransport=\(String(format: "%.0f", result.playToTransportMilliseconds))ms"
+        )
+        manualResumeRecoveryTiming = timing.canObserveAdvancingFrame ? timing : nil
+    }
+
+    private func recordManualResumeFreshFrame(
+        _ frameTime: TimeInterval?,
+        at now: CFTimeInterval,
+        sampleGap: Double,
+        maximumSampleGap: Double
+    ) {
+        guard let timing = manualResumeRecoveryTiming,
+              let result = timing.observeFreshFrame(frameTime, at: now)
+        else { return }
+        recordManualResumeRecovery(
+            "stage=firstAdvancingFrame pauseToFrame=\(String(format: "%.0f", result.pauseToFrameMilliseconds))ms"
+                + " playToFrame=\(String(format: "%.0f", result.playToFrameMilliseconds))ms"
+                + " frameTime=\(String(format: "%.3f", frameTime ?? 0))"
+                + " sampleInterval=50ms sampleGap=\(String(format: "%.0f", sampleGap))ms"
+                + " maxSampleGap=\(String(format: "%.0f", maximumSampleGap))ms"
+        )
+        manualResumeRecoveryTiming = nil
+    }
+
+    private func recordManualResumeRecovery(_ message: String) {
+        PlayerMetricsLog.record(
+            .manualResumeRecovery,
+            metricsID: metricsID,
+            title: title,
+            message: message
+        )
+    }
+
     func pause() {
+        if !isTerminated, hasPresentedPlayback, engine.hasMedia, !isUserSeeking,
+           wantsAutoplay || isPlaying {
+            let pausedAt = CACurrentMediaTime()
+            let baselineFrameTime = engine.currentRenderedVideoTime()
+            manualResumeRecoveryTiming = ManualResumeRecoveryTiming(
+                pausedAt: pausedAt,
+                baselineRenderedVideoTime: baselineFrameTime
+            )
+            let baseline = baselineFrameTime.map { String(format: "%.3f", $0) } ?? "-"
+            recordManualResumeRecovery("stage=paused baselineFrame=\(baseline)")
+        } else {
+            manualResumeRecoveryTiming = nil
+        }
         #if DEBUG
         if !isTerminated, hasPresentedPlayback, engine.hasMedia, !isUserSeeking,
            wantsAutoplay || isPlaying {
@@ -2860,6 +2971,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func pauseForNavigation() {
+        manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
         engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
@@ -3000,6 +3112,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func stop(reason: PlayerStopReason = .navigation) {
+        manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
         engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
@@ -3130,9 +3243,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             pause()
             return false
         } else {
-            play()
+            playFromUserInteraction()
             return wantsAutoplay && errorMessage == nil
         }
+    }
+
+    func playFromUserInteraction() {
+        guard !isTerminated else { return }
+        recordManualResumePlayRequest()
+        play()
     }
 
     @discardableResult
@@ -4422,6 +4541,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
 
         let snapshot = engine.snapshot(durationHint: durationHint)
+        if snapshot.isPlaying {
+            recordManualResumeTransportPlaying(at: CACurrentMediaTime())
+        }
         updateSeekBufferProgressIfNeeded(snapshot)
         var acceptedSnapshotTime: TimeInterval?
         if let snapshotTime = snapshot.currentTime,
@@ -5054,6 +5176,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 schedulePlaybackRecoveryWatchdog(reason: .firstFrame)
             }
         case .playing:
+            recordManualResumeTransportPlaying(at: CACurrentMediaTime())
             if isUserSeeking {
                 if wantsAutoplay {
                     guard clearUserSeekOverlayAfterPlaybackStartsIfNeeded(
@@ -5249,6 +5372,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func markUserSeekIntent() {
+        manualResumeRecoveryTiming = nil
         lastUserSeekAt = Date()
     }
 
