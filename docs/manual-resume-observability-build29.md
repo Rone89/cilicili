@@ -20,12 +20,18 @@ Keep a short-lived timing record only after an explicit pause of active video.
 Mark the next user play request, the first playing state, and the first sampled
 rendered timestamp more than the existing 8 ms freshness margin beyond the
 pre-pause frame. Write these phases to the existing player-performance session
-and copied diagnostics. The same snapshots already sample rendered media time;
-this adds no polling loop, image conversion, buffering change, seek, audio gate,
-delay, or playback-policy change.
+and copied diagnostics. After a play tap with a valid baseline, a cancellable
+main-actor task samples the existing rendered-time output every 50 ms for at most
+5 seconds (also bounded to 100 attempts). It stops on success, timeout, another
+pause, seek, background/navigation transition, or player stop. It does not change
+the regular UI refresh interval, convert pixels to images, or change buffering,
+seeking, audio gating, or playback policy.
 
 The frame endpoint is the first advancing output sample observed by the
-existing refresh path. It is not an exact display-presentation timestamp. If no
+short observation window. It is not an exact display-presentation timestamp.
+The nominal interval is 50 ms; actual scheduling can be slower. Diagnostics include
+`sampleGap` and `maxSampleGap` so scheduling delays remain visible. A missing frame
+within the window records `frameObservationTimeout` instead of a frame duration. If no
 trustworthy pre-pause rendered timestamp is available, log the play and
 transport phases but do not claim a fresh-frame duration. Explicit seeks,
 background/navigation transitions, and player stop cancel pending manual
@@ -44,3 +50,12 @@ separate pause duration, tap-to-playing, and tap-to-first-observed-frame; the
 existing seek-recovery value reports seek-to-stable-frame. Compare Build 28 and
 29 using medians, and keep actual display-presentation timing distinct from the
 observed-frame sample.
+
+## Device evidence and precision correction
+
+The 2026-10-24 trace for BV1iPnh6YEsf recorded tap-to-transport/frame pairs
+838/2042 ms, 16/1219 ms, and 16/18 ms. The first two frame observations were
+about 1204 ms after transport, matching the previous 1.2 s playback refresh.
+These samples cannot establish equivalent visible freezes. The bounded 50 ms
+observation replaces that coarse measurement; it does not attempt a playback
+recovery optimization. CI must pass again before retesting the updated IPA.
