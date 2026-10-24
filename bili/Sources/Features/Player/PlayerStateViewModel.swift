@@ -4490,7 +4490,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if snapshot.isPlaying {
             recordManualResumeTransportPlaying(at: CACurrentMediaTime())
         }
-        recordManualResumeFreshFrame(snapshot.renderedVideoTime, at: CACurrentMediaTime())
+        // Snapshot renderedVideoTime is intentionally seek-scoped; manual resume
+        // must sample the output directly while its timing record is awaiting a frame.
+        let isAwaitingManualResumeFrame =
+            manualResumeRecoveryTiming?.playRequestedAt != nil
+                && manualResumeRecoveryTiming?.transportPlayingAt != nil
+        let manualResumeFrameTime = isAwaitingManualResumeFrame
+            ? engine.currentRenderedVideoTime()
+            : nil
+        recordManualResumeFreshFrame(manualResumeFrameTime, at: CACurrentMediaTime())
         updateSeekBufferProgressIfNeeded(snapshot)
         var acceptedSnapshotTime: TimeInterval?
         if let snapshotTime = snapshot.currentTime,
