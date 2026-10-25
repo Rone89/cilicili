@@ -14,6 +14,41 @@ final class CommentSheetAppearanceUITests: XCTestCase {
         verify(startsDark: true)
     }
 
+    func testLightComposerFollowsAppAppearanceUnderDarkVideoHost() {
+        verifyComposer(startsDark: false)
+    }
+
+    func testDarkComposerFollowsAppAppearanceUnderLightHost() {
+        verifyComposer(startsDark: true)
+    }
+
+    private func verifyComposer(startsDark: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-fixture", "commentAppearance",
+            "--ui-test-enable-animations",
+        ] + (startsDark ? ["--comment-appearance-dark"] : [])
+        app.launch()
+        defer { app.terminate() }
+
+        let open = app.buttons["comment.appearance.composer"]
+        XCTAssertTrue(open.waitForExistence(timeout: 8))
+        for expected in [startsDark ? "dark" : "light", startsDark ? "light" : "dark"] {
+            open.tap()
+            assertNativeAppearance(expected, app: app, identifier: "comment.appearance.composerStyle")
+            XCTAssertTrue(app.textViews["dynamic.comment.composer.editor"].waitForExistence(timeout: 5))
+            capture(app, name: "comment-composer-\(expected)")
+            // Dismiss through the real presentation backdrop, then reopen after an app setting change.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+            let dismissed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"),
+                object: app.staticTexts["comment.appearance.composerStyle"]
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+            app.buttons["comment.appearance.rootToggle"].tap()
+        }
+    }
+
     private func verify(startsDark: Bool) {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -58,11 +93,15 @@ final class CommentSheetAppearanceUITests: XCTestCase {
         capture(app, name: "comment-appearance-\(changed)-large-after-toggle")
     }
 
-    private func assertNativeAppearance(_ expected: String, app: XCUIApplication) {
-        let probe = app.staticTexts["comment.appearance.nativeStyle"]
+    private func assertNativeAppearance(
+        _ expected: String,
+        app: XCUIApplication,
+        identifier: String = "comment.appearance.nativeStyle"
+    ) {
+        let probe = app.staticTexts[identifier]
         XCTAssertTrue(probe.waitForExistence(timeout: 5))
         let matches = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", expected),
+            predicate: NSPredicate(format: "label == %@", "\(expected)/\(expected)"),
             object: probe
         )
         XCTAssertEqual(XCTWaiter.wait(for: [matches], timeout: 8), .completed, app.debugDescription)

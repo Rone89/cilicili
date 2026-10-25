@@ -68,6 +68,11 @@ struct RootTabView: View {
             InAppBrowserView(url: item.url)
                 .ignoresSafeArea()
         }
+        .environment(
+            \.appContentColorScheme,
+            runtimeSettings.appearanceMode.preferredColorScheme
+                ?? videoContentColorScheme ?? systemColorScheme
+        )
         .task {
             // Let the initial tab hierarchy commit a frame before configuring
             // nonessential feature holders and startup maintenance. Otherwise a

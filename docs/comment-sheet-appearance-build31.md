@@ -47,3 +47,34 @@ open comments and replies over a video, expand and collapse the sheet, and
 check body text, usernames, links and emotes. Also check nested conversation/
 profile sheets and settings appearance changes, then confirm the underlying
 player and status-bar contrast remain correct.
+
+## Device follow-up: app appearance was not followed (2026-10-25)
+
+The user supplied two Build 31 screenshots: the video comment page is light,
+but both the reply-list sheet and the reply composer are dark. CI111's two
+appearance tests passed, yet the original fixture directly injected colorScheme
+inside the sheet. It did not exercise the production presentation boundary, and
+it did not cover the independent UIKit composer host. CI111 is not acceptance
+of this device issue.
+
+Preserve the resolved app content appearance in a separate optional environment
+value at RootTabView, outside the sheet boundary. Read it in the shared sheet
+modifier and set both SwiftUI content appearance and native preferred appearance.
+The existing video host/status-bar appearance strategy remains intact.
+
+RichCommentComposerPresenter now explicitly transfers that resolved appearance
+into its independent UIHostingController's SwiftUI root and native override,
+both at creation and subsequent updates. This includes native editor descendants.
+Third-party keyboard rendering itself remains outside app-controlled coverage.
+
+The sheet fixture no longer injects colorScheme inside the sheet. Its two
+existing tests now compare both actual native UIKit traits and SwiftUI content
+appearance, retaining real medium-to-large dragging and live theme toggling.
+Two additional tests open the actual production UIKit composer presenter under
+opposing host/content appearances, dismiss through its backdrop, toggle the app
+content appearance and reopen, checking both native and SwiftUI appearances.
+
+No local Xcode/Swift toolchain is available; the follow-up requires fresh Xcode26
+CI results, including all four individual CommentSheetAppearanceUITests.
+Keep version/build 1.1.1(31). A replacement IPA is not ready until that head passes
+all seven jobs and its package metadata/hash/provenance are verified.
