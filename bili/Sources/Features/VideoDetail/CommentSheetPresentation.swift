@@ -17,12 +17,17 @@ extension EnvironmentValues {
 }
 
 private struct CommentSheetPresentation: ViewModifier {
+    @Environment(\.colorScheme) private var contentColorScheme
     @State private var selectedDetent: PresentationDetent = .medium
     let onDismiss: () -> Void
     let onRefresh: () -> Void
 
     func body(content: Content) -> some View {
         content
+            // The video host can request dark status-bar contrast while its
+            // content stays light. Keep this presentation's UIKit background
+            // and its SwiftUI comment text on the same appearance.
+            .preferredColorScheme(contentColorScheme)
             .presentationDetents([.medium, .large], selection: $selectedDetent)
             .presentationContentInteraction(.resizes)
             .presentationDragIndicator(.visible)
