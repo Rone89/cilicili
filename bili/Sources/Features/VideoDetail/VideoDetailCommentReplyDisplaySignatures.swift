@@ -14,12 +14,14 @@ nonisolated struct VideoDetailCommentReplyDisplaySignature: Equatable {
         let parentID: Int?
         let dialogID: Int?
         let message: String?
+        let locationText: String?
 
         init(_ reply: Comment) {
             id = reply.id
             parentID = reply.parentID
             dialogID = reply.dialogID
             message = reply.content?.message
+            locationText = reply.locationText
         }
     }
 }

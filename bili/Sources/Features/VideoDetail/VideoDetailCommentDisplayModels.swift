@@ -17,6 +17,7 @@ nonisolated struct VideoDetailCommentDisplayModel: Equatable {
     let authorOwner: VideoOwner?
     let avatarURLString: String?
     let timeText: String
+    let metadataText: String
     let likeText: String
     let isLiked: Bool
     let replyPreviews: [Comment]
@@ -28,6 +29,7 @@ nonisolated struct VideoDetailCommentDisplayModel: Equatable {
         authorOwner = comment.member?.videoOwner
         avatarURLString = comment.member?.avatar
         timeText = BiliFormatters.relativeTime(comment.ctime)
+        metadataText = comment.metadataText(timeText: timeText)
         likeText = BiliFormatters.compactCount(comment.like)
         isLiked = comment.likeState == 1
         replyPreviews = Array((comment.replies ?? []).prefix(2))

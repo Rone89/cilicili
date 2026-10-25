@@ -10,6 +10,7 @@ enum UITestFixtureScenario: String {
     case privateMessage
     case libraryManagement
     case commentSpacing
+    case commentLocation
     case commentAppearance
     case dynamicReplies
     case dynamicPGC

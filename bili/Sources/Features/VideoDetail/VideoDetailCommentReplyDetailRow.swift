@@ -36,8 +36,8 @@ struct CommentReplyDetailRow: View {
 
                         Spacer(minLength: 0)
 
-                        if !display.timeText.isEmpty {
-                            Text(display.timeText)
+                        if !display.metadataText.isEmpty {
+                            Text(display.metadataText)
                                 .appTypography(.metadata, fallback: .caption)
                                 .foregroundStyle(.secondary)
                         }
