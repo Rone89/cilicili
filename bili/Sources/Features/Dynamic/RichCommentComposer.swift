@@ -191,6 +191,8 @@ final class RichCommentDraftStore: ObservableObject {
 }
 
 struct RichCommentComposerPresenter: UIViewControllerRepresentable {
+    @Environment(\.colorScheme) private var inheritedColorScheme
+    @Environment(\.appContentColorScheme) private var appContentColorScheme
     @Binding var target: DynamicCommentComposerTarget?
     let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>
     let api: BiliAPIClient
@@ -228,6 +230,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     ) {
         context.coordinator.update(
             target: target,
+            colorScheme: appContentColorScheme ?? inheritedColorScheme,
             draft: draft,
             api: api,
             horizontalPadding: horizontalPadding,
@@ -246,6 +249,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
 
         func update(
             target: DynamicCommentComposerTarget?,
+            colorScheme: ColorScheme,
             draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
             api: BiliAPIClient,
             horizontalPadding: CGFloat?,
@@ -283,15 +287,20 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
                         }
                     )
                 }
+                .environment(\.colorScheme, colorScheme)
+                .environment(\.appContentColorScheme, colorScheme)
+                .preferredColorScheme(colorScheme)
             )
 
             if let presentedController {
                 presentedTargetID = target.id
+                presentedController.overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
                 presentedController.rootView = rootView
                 return
             }
 
             let host = UIHostingController(rootView: rootView)
+            host.overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
             host.view.backgroundColor = .clear
             host.view.isOpaque = false
             host.view.alpha = 0
@@ -1182,6 +1191,15 @@ struct RichCommentComposerView: View {
             .font(.body)
             .foregroundStyle(.primary)
         }
+        #if DEBUG
+        .background {
+            if ProcessInfo.processInfo.arguments.contains("commentAppearance") {
+                CommentSheetAppearanceProbe(identifier: "comment.appearance.composerStyle")
+                    .frame(width: 100, height: 20)
+                    .allowsHitTesting(false)
+            }
+        }
+        #endif
         .padding(14)
         .frame(maxWidth: .infinity)
         .biliGlassEffect(interactive: true, in: .rect(cornerRadius: 24, style: .continuous))
