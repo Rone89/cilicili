@@ -42,6 +42,7 @@ nonisolated struct VideoDetailCommentSignature: Equatable {
     let likeState: Int?
     let replyCount: Int?
     let message: String?
+    let locationText: String?
     let replyIDs: [Int]
     let pictureURLs: [String]
 
@@ -51,6 +52,7 @@ nonisolated struct VideoDetailCommentSignature: Equatable {
         likeState = comment.likeState
         replyCount = comment.replyCount
         message = comment.content?.message
+        locationText = comment.locationText
         replyIDs = (comment.replies ?? []).map(\.id)
         pictureURLs = (comment.content?.pictures ?? []).compactMap(\.url)
     }

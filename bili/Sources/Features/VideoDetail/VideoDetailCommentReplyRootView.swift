@@ -29,8 +29,8 @@ struct CommentReplyRootView: View {
                     CommentAuthorIdentity(name: display.authorName, owner: display.authorOwner)
                         .foregroundStyle(.primary)
 
-                    if !display.timeText.isEmpty {
-                        Text(display.timeText)
+                    if !display.metadataText.isEmpty {
+                        Text(display.metadataText)
                             .appTypography(.metadata, fallback: .caption)
                             .foregroundStyle(.secondary)
                     }

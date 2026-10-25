@@ -2843,6 +2843,7 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
     let replies: [Comment]?
     let replyCount: Int?
     let likeState: Int?
+    let replyControl: CommentReplyControl?
 
     var id: Int { rpid }
 
@@ -2859,6 +2860,7 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
         case dialogID = "dialog"
         case replyCount = "rcount"
         case likeState = "like_state"
+        case replyControl = "reply_control"
     }
 
     init(from decoder: Decoder) throws {
@@ -2872,6 +2874,7 @@ nonisolated struct Comment: Identifiable, Decodable, Hashable, Sendable {
         like = container.decodeLossyIntIfPresent(forKey: .like)
         ctime = container.decodeLossyIntIfPresent(forKey: .ctime)
         replies = try container.decodeIfPresent([Comment].self, forKey: .replies)
+        replyControl = try? container.decodeIfPresent(CommentReplyControl.self, forKey: .replyControl)
         replyCount = container.decodeLossyIntIfPresent(forKey: .replyCount)
         likeState = container.decodeLossyIntIfPresent(forKey: .action)
             ?? container.decodeLossyIntIfPresent(forKey: .likeState)

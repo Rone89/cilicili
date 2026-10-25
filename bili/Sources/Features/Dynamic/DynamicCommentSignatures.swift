@@ -15,6 +15,7 @@ nonisolated struct DynamicCommentSignature: Equatable {
     let message: String?
     let like: Int?
     let ctime: Int?
+    let locationText: String?
     let replyCount: Int?
     let likeState: Int?
     let pictureURLs: [String]
@@ -29,6 +30,7 @@ nonisolated struct DynamicCommentSignature: Equatable {
         message = comment.content?.message
         like = comment.like
         ctime = comment.ctime
+        locationText = comment.locationText
         replyCount = comment.replyCount
         likeState = comment.likeState
         pictureURLs = (comment.content?.pictures ?? []).map(\.url)
