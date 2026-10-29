@@ -166,6 +166,24 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }
 
+    func testFavoriteSearchOnlyLoadedItemsAndLoadMore() {
+        let app = launch(["--library-favorites", "--library-paginated"])
+        app.staticTexts["来源收藏夹"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        let search = app.searchFields["搜索已加载的收藏"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
+        search.tap()
+        search.typeText("BVfixture30")
+        XCTAssertTrue(app.staticTexts["已加载的收藏中没有匹配结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["library.favorite.search.scope"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 30"].exists)
+        let more = app.buttons["library.favorite.search.loadMore"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        XCTAssertTrue(app.staticTexts["测试视频 30"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+    }
+
     func testFavoriteMoveUpdatesBothLists() {
         let app = launch(["--library-favorites"])
         let folder = app.staticTexts["来源收藏夹"]
