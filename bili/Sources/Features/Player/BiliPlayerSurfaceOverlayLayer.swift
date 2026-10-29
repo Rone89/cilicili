@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BiliPlayerSurfaceOverlayLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var networkUnavailable = false
     let state: BiliPlayerSurfaceChromeState
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
     @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
@@ -59,12 +60,25 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 .zIndex(7)
             }
 
-            if state.showsInlineLoadingProgress, !state.isUserSeeking {
+            if state.showsInlineLoadingProgress, !state.isUserSeeking, !networkUnavailable {
                 PlayerInlineLoadingIndicator(message: "正在缓冲")
                 .padding(.top, state.presentation == .embedded ? 10 : 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .zIndex(6)
+            }
+
+            if networkUnavailable {
+                Label(PlayerOfflineNotice.message(isBuffering: state.isBuffering), systemImage: "wifi.slash")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.72), in: Capsule())
+                .padding(.top, state.presentation == .embedded ? 10 : 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .accessibilityIdentifier("player.network.disconnected")
+                .zIndex(8)
             }
 
             if speedBoostModel.isIndicatorVisible {
@@ -87,6 +101,12 @@ struct BiliPlayerSurfaceOverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+        .onAppear {
+            networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .biliPlaybackConnectivityDidChange)) { _ in
+            networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
+        }
         .transaction { transaction in
             if reduceMotion {
                 transaction.animation = nil
@@ -112,5 +132,11 @@ private extension BiliPlayerSurfaceChromeState {
     var showsAppBackgroundRecoverySnapshot: Bool {
         appBackgroundRecoverySnapshotOpacity > 0
             && appBackgroundRecoverySnapshot != nil
+    }
+}
+
+nonisolated enum PlayerOfflineNotice {
+    static func message(isBuffering: Bool) -> String {
+        isBuffering ? "网络已断开，等待网络恢复" : "网络已断开"
     }
 }
