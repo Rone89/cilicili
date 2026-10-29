@@ -111,11 +111,9 @@ final class DynamicCommentReplyStore: ObservableObject {
     func reloadReplies(for comment: Comment) async {
         let generation = nextReplyLoadGeneration(for: comment.id)
         updateSnapshot {
-            $0.replyThreads[comment.id] = nil
             $0.replyPages[comment.id] = 0
             $0.replyHasMore[comment.id] = true
         }
-        replyItemCache[comment.id] = nil
         _ = await loadReplyPage(for: comment, reset: true, generation: generation)
     }
 
@@ -124,7 +122,7 @@ final class DynamicCommentReplyStore: ObservableObject {
               !(snapshot.replyStates[comment.id]?.isLoading ?? false)
         else { return }
         let generation = replyLoadGenerations[comment.id] ?? nextReplyLoadGeneration(for: comment.id)
-        _ = await loadReplyPage(for: comment, reset: false, generation: generation)
+        _ = await loadReplyPage(for: comment, reset: snapshot.replyPages[comment.id] == 0, generation: generation)
     }
 
     func dialogItems(for root: Comment, reply: Comment) -> [DynamicCommentDialogItem] {
@@ -239,7 +237,7 @@ final class DynamicCommentReplyStore: ObservableObject {
         } catch {
             guard generation == replyLoadGenerations[comment.id] else { return .superseded }
             updateSnapshot {
-                if reset {
+                if reset, $0.replyThreads[comment.id] == nil {
                     $0.replyThreads[comment.id] = filteredComments(comment.replies ?? [])
                 }
                 // Keep replies and pagination intact for the footer's retry action.
