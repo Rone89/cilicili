@@ -516,6 +516,25 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
     }
 
+
+    func testRateLimitLongRetryAfterDoesNotSendAnEarlySecondRequest() async throws {
+        let recorder = DynamicCommentsResponseSequence([])
+        DynamicCommentsURLProtocol.install { request in
+            _ = try? recorder.nextResponse(for: request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil,
+                                           headerFields: ["Retry-After": "60"])!
+            return (response, Data())
+        }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DynamicCommentsURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let request = URLRequest(url: URL(string: "https://api.bilibili.com/x/v2/reply/main")!)
+        let (_, response) = try await BiliNetworkRetry.data(session: session, request: request, policy: .api)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 429)
+        XCTAssertEqual(recorder.requestCount, 1)
+    }
+
     @MainActor
     private func makeVideoCommentsModel(api: BiliAPIClient) -> VideoDetailViewModel {
         VideoDetailViewModel(
