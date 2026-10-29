@@ -44,6 +44,11 @@ final class ResourceLoadingServicesTests: XCTestCase {
         XCTAssertNil(BiliNetworkRetry.retryDelayNanoseconds(response: response(503, "Thu, 01 Jan 1970 00:00:03 GMT"), policy: policy, attempt: 0, now: now))
     }
 
+    func testOfflineNoticeDistinguishesBufferingFromOrdinaryPlaybackOrPause() {
+        XCTAssertEqual(PlayerOfflineNotice.message(isBuffering: false), "网络已断开")
+        XCTAssertEqual(PlayerOfflineNotice.message(isBuffering: true), "网络已断开，等待网络恢复")
+    }
+
     func testWebPagePlayInfoStreamParserExtractsAcrossChunkBoundaries() throws {
         var parser = BiliWebPagePlayInfoStreamParser()
         let first = Data("<html><script>window.__playin".utf8)
