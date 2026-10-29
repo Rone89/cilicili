@@ -413,6 +413,58 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(model.dialogState(for: root, reply: reply), .loaded)
     }
 
+
+    @MainActor
+    func testDynamicReplyRefreshFailurePreservesRepliesAndRetriesFirstPage() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":201}]}}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":202}]}}"#),
+            .success(#"{"code":-400,"message":"刷新失败"}"#),
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":203}]}}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":204}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":2}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(), blocksGoodsComments: false)
+        await store.loadReplies(for: root)
+        await store.loadMoreReplies(for: root)
+        await store.reloadReplies(for: root)
+        XCTAssertEqual(store.replies(for: root).map(\.id), [201, 202])
+        guard case .failed = store.replyState(for: root) else { return XCTFail("Expected retryable failure") }
+        await store.loadMoreReplies(for: root)
+        XCTAssertEqual(store.replies(for: root).map(\.id), [203])
+        await store.loadMoreReplies(for: root)
+        XCTAssertEqual(store.replies(for: root).map(\.id), [203, 204])
+        XCTAssertEqual(responses.requestedPages, [1, 2, 1, 1, 2])
+    }
+
+    @MainActor
+    func testVideoReplyRefreshFailurePreservesRepliesAndRetriesFirstPage() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":201}]}}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":202}]}}"#),
+            .success(#"{"code":-400,"message":"刷新失败"}"#),
+            .success(#"{"code":0,"data":{"page":{"num":1,"size":1,"count":2},"replies":[{"rpid":203}]}}"#),
+            .success(#"{"code":0,"data":{"page":{"num":2,"size":1,"count":2},"replies":[{"rpid":204}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101,"rcount":2}"#.utf8))
+        let model = makeVideoCommentsModel(api: try makeCommentsAPI())
+        defer { model.stopPlaybackForNavigation() }
+        await model.loadReplies(for: root)
+        await model.loadMoreReplies(for: root)
+        await model.reloadReplies(for: root)
+        XCTAssertEqual(model.replies(for: root).map(\.id), [201, 202])
+        guard case .failed = model.replyState(for: root) else { return XCTFail("Expected retryable failure") }
+        await model.loadMoreReplies(for: root)
+        XCTAssertEqual(model.replies(for: root).map(\.id), [203])
+        await model.loadMoreReplies(for: root)
+        XCTAssertEqual(model.replies(for: root).map(\.id), [203, 204])
+        XCTAssertEqual(responses.requestedPages, [1, 2, 1, 1, 2])
+    }
+
     @MainActor
     private func makeVideoCommentsModel(api: BiliAPIClient) -> VideoDetailViewModel {
         VideoDetailViewModel(
