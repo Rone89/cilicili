@@ -8,22 +8,28 @@ struct FavoriteFolderContentPage: View {
 
     @State private var selectedIDs = Set<String>()
     @State private var editMode: EditMode = .inactive
+    @State private var searchText = ""
 
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 content
             } header: {
-                if let count = viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount ?? folder.mediaCount {
+                if isSearching {
+                    Text("仅搜索已加载的 \(items.count) 个内容")
+                        .accessibilityIdentifier("library.favorite.search.scope")
+                } else if let count = viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount ?? folder.mediaCount {
                     Text("\(count) 个内容")
                 }
             }
         }
         .modifier(AccountLibraryVideoManagementModifier(
-            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: items,
+            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: visibleItems,
             source: folder, folders: viewModel.favoriteFolders,
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
+        .searchable(text: $searchText, prompt: "搜索已加载的收藏")
+        .onChange(of: searchText) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -38,7 +44,7 @@ struct FavoriteFolderContentPage: View {
             }
         }
         .task(id: managedTaskID) {
-            selectedIDs = []; editMode = .inactive
+            selectedIDs = []; editMode = .inactive; searchText = ""
             guard !viewModel.libraryManagement.isBusy else { return }
             await viewModel.synchronizeManagedLibrary(kind: .favorites, folder: folder)
             await loadIfNeeded()
@@ -61,7 +67,10 @@ struct FavoriteFolderContentPage: View {
         } else if items.isEmpty {
             LibraryEmptyRow(title: "这个收藏夹还没有视频", systemImage: "folder")
         } else {
-            ForEach(items) { item in
+            if isSearching && visibleItems.isEmpty {
+                LibraryEmptyRow(title: "已加载的收藏中没有匹配结果", systemImage: "magnifyingglass")
+            }
+            ForEach(visibleItems) { item in
                 AccountLibraryManagedVideoRow(item: item, timestampTitle: "收藏时间",
                     isEditing: managementEnabled && editMode.isEditing,
                     canManage: managementEnabled && (item.aid ?? 0) > 0) {
@@ -71,7 +80,7 @@ struct FavoriteFolderContentPage: View {
                     }
                 }
                 .task {
-                    await viewModel.loadMoreFavoriteFolderIfNeeded(folder, current: item)
+                    if !isSearching { await viewModel.loadMoreFavoriteFolderIfNeeded(folder, current: item) }
                 }
             }
 
@@ -88,8 +97,15 @@ struct FavoriteFolderContentPage: View {
                     Task { await viewModel.loadMoreFavoriteFolder(folder) }
                 }
             } else if hasMore {
-                LibraryLoadMoreTriggerRow(title: "正在加载更多收藏") {
-                    Task { await viewModel.loadMoreFavoriteFolder(folder) }
+                if isSearching {
+                    Button("加载更多收藏后继续搜索") {
+                        Task { await viewModel.loadMoreFavoriteFolder(folder) }
+                    }
+                    .accessibilityIdentifier("library.favorite.search.loadMore")
+                } else {
+                    LibraryLoadMoreTriggerRow(title: "正在加载更多收藏") {
+                        Task { await viewModel.loadMoreFavoriteFolder(folder) }
+                    }
                 }
             }
         }
@@ -104,6 +120,17 @@ struct FavoriteFolderContentPage: View {
 
     private var items: [AccountVideoEntry] {
         viewModel.favoriteFolderEntries[folder.id] ?? []
+    }
+
+    private var normalizedSearch: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isSearching: Bool { !normalizedSearch.isEmpty }
+    private var visibleItems: [AccountVideoEntry] {
+        guard isSearching else { return items }
+        return items.filter {
+            $0.title.localizedStandardContains(normalizedSearch)
+                || ($0.owner?.name.localizedStandardContains(normalizedSearch) ?? false)
+                || $0.bvid.localizedStandardContains(normalizedSearch)
+        }
     }
 
     private var state: LoadingState {
