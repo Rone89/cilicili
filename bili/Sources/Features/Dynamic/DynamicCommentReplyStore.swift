@@ -167,8 +167,6 @@ final class DynamicCommentReplyStore: ObservableObject {
     func reloadDialog(for root: Comment, reply: Comment) async {
         let key = dialogKey(root: root, reply: reply)
         let generation = nextDialogLoadGeneration(for: key)
-        updateSnapshot { $0.dialogThreads[key] = nil }
-        dialogItemCache[key] = nil
         await loadDialogPage(for: root, reply: reply, generation: generation)
     }
 
@@ -289,7 +287,7 @@ final class DynamicCommentReplyStore: ObservableObject {
         } catch {
             guard generation == dialogLoadGenerations[key] else { return }
             updateSnapshot {
-                $0.dialogThreads[key] = fallbackReplies
+                $0.dialogThreads[key] = uniqueComments(filteredComments($0.dialogThreads[key] ?? []) + fallbackReplies)
                 $0.dialogStates[key] = .failed(error.localizedDescription)
             }
         }
