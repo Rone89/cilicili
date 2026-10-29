@@ -78,7 +78,7 @@ struct UITestLibraryManagementFixtureView: View {
 nonisolated private final class LibraryManagementFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var watchIDs = [1, 2, 3]
-    private var folderVideos = [9: [1, 2, 3], 10: [Int]()]
+    private var folderVideos = [9: ProcessInfo.processInfo.arguments.contains("--library-paginated") ? Array(1...30) : [1, 2, 3], 10: [Int]()]
     private func bodyData(_ request: URLRequest) -> Data {
         if let data = request.httpBody { return data }
         guard let stream = request.httpBodyStream else { return Data() }
@@ -111,7 +111,15 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         case "/x/v3/fav/resource/list":
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
             let id = Int(query?.first { $0.name == "media_id" }?.value ?? "9") ?? 9
-            data = ["medias": (folderVideos[id] ?? []).map(video), "has_more": false]
+            let videos = folderVideos[id] ?? []
+            let paginated = ProcessInfo.processInfo.arguments.contains("--library-paginated") && id == 9
+            let page = Int(query?.first { $0.name == "pn" }?.value ?? "1") ?? 1
+            if paginated {
+                let pageVideos = page == 1 ? Array(videos.prefix(20)) : Array(videos.dropFirst(20))
+                data = ["medias": pageVideos.map(video), "has_more": page == 1 && videos.count > 20]
+            } else {
+                data = ["medias": videos.map(video), "has_more": false]
+            }
         case "/x/v3/fav/resource/batch-deal":
             if let add = Int(body["add_media_ids"] ?? "") { folderVideos[add] = Array(Set((folderVideos[add] ?? []) + resources)).sorted() }
             if let remove = Int(body["del_media_ids"] ?? "") { folderVideos[remove]?.removeAll { resources.contains($0) } }
