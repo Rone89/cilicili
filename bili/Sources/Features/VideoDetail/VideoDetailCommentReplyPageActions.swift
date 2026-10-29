@@ -35,7 +35,7 @@ extension VideoDetailViewModel {
             guard isCurrentReplyThreadLoad(commentID: comment.id, token: token, target: target) else {
                 return
             }
-            if reset {
+            if reset, replyThreads[comment.id] == nil {
                 replyThreads[comment.id] = filteredComments(comment.replies ?? [])
             }
             // Preserve the last successful page so retry requests the same next page.
