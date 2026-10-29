@@ -17,8 +17,6 @@ extension VideoDetailViewModel {
     }
 
     func reloadDialog(for root: Comment, reply: Comment) async {
-        let key = dialogKey(root: root, reply: reply)
-        dialogThreads[key] = nil
         await loadDialogPage(for: root, reply: reply)
     }
 
@@ -62,7 +60,7 @@ extension VideoDetailViewModel {
             guard isCurrentDialogThreadLoad(key: key, rootID: root.id, token: token, target: target) else {
                 return
             }
-            dialogThreads[key] = fallbackReplies
+            dialogThreads[key] = uniqueComments(filteredComments(dialogThreads[key] ?? []) + fallbackReplies)
             dialogThreadStates[key] = .failed(error.localizedDescription)
         }
     }
