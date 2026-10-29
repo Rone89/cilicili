@@ -294,6 +294,7 @@ final class NetworkPathSnapshot: @unchecked Sendable {
     nonisolated private let lock = NSLock()
     nonisolated(unsafe) private var cachedClass: PlaybackEnvironment.NetworkClass = .unknown
     nonisolated(unsafe) private var cachedUsesCellular = false
+    nonisolated(unsafe) private var cachedNetworkUnavailable: Bool?
     #if DEBUG
     nonisolated(unsafe) private var cachedDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)?
     nonisolated var recoveryDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)? {
@@ -316,6 +317,10 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         lock.withLock { cachedUsesCellular }
     }
 
+    nonisolated var networkUnavailable: Bool? {
+        lock.withLock { cachedNetworkUnavailable }
+    }
+
     nonisolated private func update(_ path: NWPath) {
         let usesCellular = path.usesInterfaceType(.cellular)
         let value: PlaybackEnvironment.NetworkClass
@@ -328,16 +333,24 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         } else {
             value = .unknown
         }
-        let didChange = lock.withLock {
+        let unavailable = path.status == .unsatisfied
+        let (didChange, connectivityChanged) = lock.withLock {
+            let connectivityChanged = cachedNetworkUnavailable != unavailable
+            cachedNetworkUnavailable = unavailable
             #if DEBUG
             cachedDiagnosticsFlags = (path.isConstrained, path.isExpensive)
             #endif
             let previous = cachedClass
             let previousUsesCellular = cachedUsesCellular
-            guard previous != value || previousUsesCellular != usesCellular else { return false }
+            let didChange = previous != value || previousUsesCellular != usesCellular
             cachedClass = value
             cachedUsesCellular = usesCellular
-            return true
+            return (didChange, connectivityChanged)
+        }
+        if connectivityChanged {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .biliPlaybackConnectivityDidChange, object: self)
+            }
         }
         if didChange {
             DispatchQueue.main.async {
@@ -350,6 +363,7 @@ final class NetworkPathSnapshot: @unchecked Sendable {
 
 extension Notification.Name {
     static let biliPlaybackNetworkClassDidChange = Notification.Name("cc.bili.playbackNetworkClassDidChange")
+    static let biliPlaybackConnectivityDidChange = Notification.Name("cc.bili.playbackConnectivityDidChange")
 }
 
 private extension NSLock {
