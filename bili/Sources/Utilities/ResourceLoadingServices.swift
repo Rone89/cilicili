@@ -1010,7 +1010,9 @@ nonisolated enum BiliNetworkRetry {
                 if canRetryRequest,
                    attempt < policy.attempts - 1,
                    let reason = retryReason(data: data, response: response, policy: policy) {
-                    let delay = policy.delayNanoseconds(afterFailureAt: attempt)
+                    guard let delay = retryDelayNanoseconds(response: response, policy: policy, attempt: attempt) else {
+                        return (data, response)
+                    }
                     logRetry(
                         policy: policy,
                         request: request,
@@ -1055,6 +1057,36 @@ nonisolated enum BiliNetworkRetry {
         }
 
         throw lastError ?? URLError(.unknown)
+    }
+
+    // Avoid retrying earlier than requested, while bounding user-visible waiting.
+    static func retryDelayNanoseconds(
+        response: URLResponse,
+        policy: BiliNetworkRetryPolicy,
+        attempt: Int,
+        now: Date = Date()
+    ) -> UInt64? {
+        let fallback = policy.delayNanoseconds(afterFailureAt: attempt)
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 429 || http.statusCode == 503,
+              let header = http.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !header.isEmpty
+        else { return fallback }
+
+        let seconds: TimeInterval
+        if let integer = UInt64(header) {
+            guard integer <= 2 else { return nil }
+            seconds = TimeInterval(integer)
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+            guard let date = formatter.date(from: header) else { return fallback }
+            seconds = max(0, date.timeIntervalSince(now))
+            guard seconds <= 2 else { return nil }
+        }
+        return max(fallback, UInt64((seconds * 1_000_000_000).rounded(.up)))
     }
 
     private static func dataOnce(

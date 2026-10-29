@@ -27,6 +27,23 @@ final class ResourceLoadingServicesTests: XCTestCase {
         super.tearDown()
     }
 
+
+    func testRetryAfterHonorsShortWaitAndStopsWhenWaitExceedsBudget() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com"))
+        let policy = BiliNetworkRetryPolicy(attempts: 2, baseDelayNanoseconds: 100_000_000,
+                                            maxDelayNanoseconds: 100_000_000, jitterNanoseconds: 0)
+        func response(_ status: Int, _ value: String) -> HTTPURLResponse {
+            HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Retry-After": value])!
+        }
+        XCTAssertEqual(BiliNetworkRetry.retryDelayNanoseconds(response: response(429, "1"), policy: policy, attempt: 0), 1_000_000_000)
+        XCTAssertNil(BiliNetworkRetry.retryDelayNanoseconds(response: response(503, "30"), policy: policy, attempt: 0))
+        XCTAssertEqual(BiliNetworkRetry.retryDelayNanoseconds(response: response(429, "invalid"), policy: policy, attempt: 0), 100_000_000)
+        XCTAssertEqual(BiliNetworkRetry.retryDelayNanoseconds(response: response(500, "30"), policy: policy, attempt: 0), 100_000_000)
+        let now = Date(timeIntervalSince1970: 0)
+        XCTAssertEqual(BiliNetworkRetry.retryDelayNanoseconds(response: response(503, "Thu, 01 Jan 1970 00:00:01 GMT"), policy: policy, attempt: 0, now: now), 1_000_000_000)
+        XCTAssertNil(BiliNetworkRetry.retryDelayNanoseconds(response: response(503, "Thu, 01 Jan 1970 00:00:03 GMT"), policy: policy, attempt: 0, now: now))
+    }
+
     func testWebPagePlayInfoStreamParserExtractsAcrossChunkBoundaries() throws {
         var parser = BiliWebPagePlayInfoStreamParser()
         let first = Data("<html><script>window.__playin".utf8)
