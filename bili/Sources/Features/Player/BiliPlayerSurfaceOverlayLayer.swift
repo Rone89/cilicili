@@ -147,7 +147,7 @@ struct PlayerOfflineNoticeOverlay: View {
     @State private var networkUnavailable = false
 
     var body: some View {
-        Group {
+        ZStack {
             if networkUnavailable {
                 Label(PlayerOfflineNotice.message(isBuffering: isBuffering), systemImage: "wifi.slash")
                     .font(.caption.weight(.medium))
