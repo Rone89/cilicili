@@ -295,6 +295,7 @@ final class NetworkPathSnapshot: @unchecked Sendable {
     nonisolated(unsafe) private var cachedClass: PlaybackEnvironment.NetworkClass = .unknown
     nonisolated(unsafe) private var cachedUsesCellular = false
     nonisolated(unsafe) private var cachedNetworkUnavailable: Bool?
+    nonisolated(unsafe) private var cachedPathStatus: String = "unknown"
     #if DEBUG
     nonisolated(unsafe) private var cachedDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)?
     nonisolated var recoveryDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)? {
@@ -321,6 +322,10 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         lock.withLock { cachedNetworkUnavailable }
     }
 
+    nonisolated var diagnosticPathStatus: String {
+        lock.withLock { cachedPathStatus }
+    }
+
     nonisolated private func update(_ path: NWPath) {
         let usesCellular = path.usesInterfaceType(.cellular)
         let value: PlaybackEnvironment.NetworkClass
@@ -334,7 +339,15 @@ final class NetworkPathSnapshot: @unchecked Sendable {
             value = .unknown
         }
         let unavailable = path.status == .unsatisfied
+        let pathStatus: String
+        switch path.status {
+        case .satisfied: pathStatus = "satisfied"
+        case .unsatisfied: pathStatus = "unsatisfied"
+        case .requiresConnection: pathStatus = "requiresConnection"
+        @unknown default: pathStatus = "unknown"
+        }
         let (didChange, connectivityChanged) = lock.withLock {
+            cachedPathStatus = pathStatus
             let connectivityChanged = cachedNetworkUnavailable != unavailable
             cachedNetworkUnavailable = unavailable
             #if DEBUG

@@ -4,6 +4,7 @@ struct BiliPlayerSurfaceOverlayLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var networkUnavailable = false
     let state: BiliPlayerSurfaceChromeState
+    var displaysOfflineNotice = true
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
     @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
 
@@ -68,17 +69,9 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 .zIndex(6)
             }
 
-            if networkUnavailable {
-                Label(PlayerOfflineNotice.message(isBuffering: state.isBuffering), systemImage: "wifi.slash")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.72), in: Capsule())
-                .padding(.top, state.presentation == .embedded ? 10 : 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .accessibilityIdentifier("player.network.disconnected")
-                .zIndex(8)
+            if displaysOfflineNotice {
+                PlayerOfflineNoticeOverlay(isBuffering: state.isBuffering, presentation: state.presentation)
+                    .zIndex(8)
             }
 
             if speedBoostModel.isIndicatorVisible {
@@ -101,17 +94,24 @@ struct BiliPlayerSurfaceOverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
-        .onAppear {
-            networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
-        }
+        .onAppear { updateNetworkStatus() }
         .onReceive(NotificationCenter.default.publisher(for: .biliPlaybackConnectivityDidChange)) { _ in
-            networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
+            updateNetworkStatus()
         }
         .transaction { transaction in
             if reduceMotion {
                 transaction.animation = nil
             }
         }
+    }
+    private func updateNetworkStatus() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-offline") {
+            networkUnavailable = true
+            return
+        }
+        #endif
+        networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
     }
 }
 
@@ -138,5 +138,44 @@ private extension BiliPlayerSurfaceChromeState {
 nonisolated enum PlayerOfflineNotice {
     static func message(isBuffering: Bool) -> String {
         isBuffering ? "网络已断开，等待网络恢复" : "网络已断开"
+    }
+}
+
+struct PlayerOfflineNoticeOverlay: View {
+    let isBuffering: Bool
+    let presentation: BiliPlayerPresentation
+    @State private var networkUnavailable = false
+
+    var body: some View {
+        ZStack {
+            if networkUnavailable {
+                Label(PlayerOfflineNotice.message(isBuffering: isBuffering), systemImage: "wifi.slash")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.85), in: Capsule())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("player.network.disconnected")
+                    .padding(.top, presentation == .embedded ? 10 : 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+        .onAppear { updateNetworkStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: .biliPlaybackConnectivityDidChange)) { _ in
+            updateNetworkStatus()
+        }
+    }
+
+    private func updateNetworkStatus() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-player-offline") {
+            networkUnavailable = true
+            return
+        }
+        #endif
+        networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
     }
 }

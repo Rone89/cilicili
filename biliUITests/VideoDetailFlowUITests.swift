@@ -5,6 +5,34 @@ final class VideoDetailFlowUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+
+    @MainActor
+    func testDisconnectedNoticeVisibleInPausedRealPlayerHost() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state",
+            "-cc.bili.videoDetail.autoplayEnabled.v1", "NO",
+            "--start-tab", "home",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
+            "--ui-test-player-offline",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        app.launch()
+        let frame = app.descendants(matching: .any)["ui.videoDetail.playerFrame"].firstMatch
+        XCTAssertTrue(frame.waitForExistence(timeout: 15))
+        let notice = app.descendants(matching: .any)["player.network.disconnected"].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(notice.label.contains("网络已断开"))
+        XCTAssertGreaterThan(notice.frame.width, 0)
+        XCTAssertGreaterThan(notice.frame.height, 0)
+        XCTAssertTrue(frame.frame.intersects(notice.frame))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Disconnected notice in paused player"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor
     func testDanmakuSettingsSheetPresentsAndDismisses() {
         let app = XCUIApplication()

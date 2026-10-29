@@ -101,6 +101,8 @@ enum PlayerPerformanceOverlayDiagnosticsCopyTextFormatter {
         lines.append("playbackContentMode: \(diagnostics.playbackContentMode.diagnosticTitle)")
         lines.append("playerState: \(PlaybackNetworkPlayerDiagnosticSnapshot.playerStateTitle(playerViewModel))")
         lines.append("playbackPhase: \(playerViewModel.playbackPhase.diagnosticTitle)")
+        lines.append("systemNetworkPath: \(NetworkPathSnapshot.shared.diagnosticPathStatus)")
+        lines.append("offlineNoticeCondition: \(NetworkPathSnapshot.shared.networkUnavailable.map { $0 ? "true" : "false" } ?? "unknown")")
         lines.append("engine: \(diagnostics.engineName)")
         lines.append("decodePath: \(diagnostics.decodePath.title)")
         lines.append("playbackPipeline: \(diagnostics.playbackPipeline.title)")
