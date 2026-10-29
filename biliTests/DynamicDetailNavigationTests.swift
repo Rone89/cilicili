@@ -465,6 +465,57 @@ final class DynamicDetailNavigationTests: XCTestCase {
         XCTAssertEqual(responses.requestedPages, [1, 2, 1, 1, 2])
     }
 
+
+    func testSponsorBlockRetriesNetworkFailureThenReturnsSegments() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .failure(URLError(.timedOut)),
+            .success(#"[{"UUID":"s1","category":"sponsor","actionType":"skip","segment":[1,3]}]"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DynamicCommentsURLProtocol.self]
+        let service = SponsorBlockService(baseURL: URL(string: "https://api.bilibili.com")!,
+                                          session: URLSession(configuration: config), retryDelay: .zero)
+        let result = try await service.fetchSkipSegments(bvid: "BVtest", cid: 1)
+        XCTAssertEqual(result.map(\.uuid), ["s1"])
+        XCTAssertEqual(responses.requestCount, 2)
+    }
+
+    func testSponsorBlockStopsAfterThreeNetworkFailures() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .failure(URLError(.timedOut)), .failure(URLError(.timedOut)), .failure(URLError(.timedOut)),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DynamicCommentsURLProtocol.self]
+        let service = SponsorBlockService(baseURL: URL(string: "https://api.bilibili.com")!,
+                                          session: URLSession(configuration: config), retryDelay: .zero)
+        do {
+            _ = try await service.fetchSkipSegments(bvid: "BVtest", cid: 1)
+            XCTFail("Expected failure after bounded retries")
+        } catch {
+            XCTAssertEqual(responses.requestCount, 3)
+        }
+    }
+
+    func testSponsorBlock404IsConfirmedEmptyWithoutRetry() async throws {
+        let recorder = DynamicCommentsResponseSequence([])
+        DynamicCommentsURLProtocol.install { request in
+            _ = try? recorder.nextResponse(for: request)
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DynamicCommentsURLProtocol.self]
+        let service = SponsorBlockService(baseURL: URL(string: "https://api.bilibili.com")!,
+                                          session: URLSession(configuration: config), retryDelay: .zero)
+        let result = try await service.fetchSkipSegments(bvid: "BVtest", cid: 1)
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(recorder.requestCount, 1)
+    }
+
     @MainActor
     private func makeVideoCommentsModel(api: BiliAPIClient) -> VideoDetailViewModel {
         VideoDetailViewModel(
@@ -638,6 +689,13 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
     private var responses: [Response]
     private var pages: [Int] = []
     private var offsets: [String] = []
+    private var count = 0
+
+    var requestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
 
     var requestedOffsets: [String] {
         lock.lock()
@@ -657,6 +715,7 @@ private final class DynamicCommentsResponseSequence: @unchecked Sendable {
 
     func nextResponse(for request: URLRequest) throws -> (HTTPURLResponse, Data) {
         lock.lock()
+        count += 1
         if let url = request.url,
            let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pn" })?.value.flatMap(Int.init) {
             pages.append(page)
@@ -696,7 +755,7 @@ private final class DynamicCommentsURLProtocol: URLProtocol {
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "api.bilibili.com"
-            && ["/x/v2/reply/main", "/x/v2/reply/reply", "/x/v2/reply/dialog/cursor"].contains(request.url?.path ?? "")
+            && ["/x/v2/reply/main", "/x/v2/reply/reply", "/x/v2/reply/dialog/cursor", "/api/skipSegments"].contains(request.url?.path ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {

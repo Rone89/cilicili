@@ -50,16 +50,41 @@ struct SponsorBlockSkipEvent: Equatable, Sendable {
 final class SponsorBlockService: @unchecked Sendable {
     private let baseURL: URL
     private let session: URLSession
+    private let retryDelay: Duration
 
     init(
         baseURL: URL = URL(string: "https://www.bsbsb.top")!,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        retryDelay: Duration = .seconds(1)
     ) {
         self.baseURL = baseURL
         self.session = session
+        self.retryDelay = retryDelay
     }
 
     func fetchSkipSegments(bvid: String, cid: Int) async throws -> [SponsorBlockSegment] {
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            do {
+                return try await fetchSkipSegmentsOnce(bvid: bvid, cid: cid)
+            } catch {
+                try Task.checkCancellation()
+                let retryable: Bool
+                if let error = error as? URLError {
+                    retryable = error.code != .cancelled
+                } else if let apiError = error as? BiliAPIError, case .api(let code, _) = apiError {
+                    retryable = (500...599).contains(code)
+                } else {
+                    retryable = false
+                }
+                guard retryable, attempt < 2 else { throw error }
+                try await Task.sleep(for: retryDelay)
+            }
+        }
+        throw URLError(.unknown)
+    }
+
+    private func fetchSkipSegmentsOnce(bvid: String, cid: Int) async throws -> [SponsorBlockSegment] {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("/api/skipSegments"),
             resolvingAgainstBaseURL: false
@@ -80,7 +105,7 @@ final class SponsorBlockService: @unchecked Sendable {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            return []
+            throw URLError(.badServerResponse)
         }
         if httpResponse.statusCode == 404 {
             return []

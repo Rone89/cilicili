@@ -53,7 +53,8 @@ extension VideoDetailViewModel {
                       self.selectedCID == cid,
                       self.sponsorBlockIdentity(for: self.detail.bvid, cid: cid) == identity
                 else { return }
-                self.sponsorBlockIdentity = identity
+                // A failed lookup is not a confirmed empty result; allow a later retry.
+                self.sponsorBlockIdentity = nil
                 self.sponsorBlockSegments = []
                 self.applySponsorBlockSegmentsToPlayer()
             }
