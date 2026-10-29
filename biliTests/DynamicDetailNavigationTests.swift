@@ -364,6 +364,55 @@ final class DynamicDetailNavigationTests: XCTestCase {
         guard case .failed = model.commentLoadMoreState else { return XCTFail("Default pagination must remain retryable") }
     }
 
+
+    @MainActor
+    func testDynamicDialogRefreshFailureRetainsRepliesAndRetryReplacesThem() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":201},{"rpid":202}]}}"#),
+            .success(#"{"code":-400,"message":"刷新失败"}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":203}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101}"#.utf8))
+        let reply = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":202,"dialog":201}"#.utf8))
+        let store = DynamicCommentReplyStore(item: try makeCommentableItem(), api: try makeCommentsAPI(), blocksGoodsComments: false)
+
+        await store.loadDialog(for: root, reply: reply)
+        XCTAssertEqual(store.dialogSnapshot(for: root, reply: reply).items.map(\.id), [201, 202])
+        await store.reloadDialog(for: root, reply: reply)
+        XCTAssertEqual(store.dialogSnapshot(for: root, reply: reply).items.map(\.id), [201, 202])
+        guard case .failed = store.dialogState(for: root, reply: reply) else { return XCTFail("Expected retryable failure") }
+        await store.reloadDialog(for: root, reply: reply)
+        XCTAssertEqual(store.dialogSnapshot(for: root, reply: reply).items.map(\.id), [203, 202])
+        XCTAssertEqual(store.dialogState(for: root, reply: reply), .loaded)
+    }
+
+    @MainActor
+    func testVideoDialogRefreshFailureRetainsRepliesAndRetryReplacesThem() async throws {
+        let responses = DynamicCommentsResponseSequence([
+            .success(#"{"code":0,"data":{"replies":[{"rpid":201},{"rpid":202}]}}"#),
+            .success(#"{"code":-400,"message":"刷新失败"}"#),
+            .success(#"{"code":0,"data":{"replies":[{"rpid":203}]}}"#),
+        ])
+        DynamicCommentsURLProtocol.install { try responses.nextResponse(for: $0) }
+        defer { DynamicCommentsURLProtocol.reset() }
+        let root = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":101}"#.utf8))
+        let reply = try JSONDecoder.bili.decode(Comment.self, from: Data(#"{"rpid":202,"dialog":201}"#.utf8))
+        let model = makeVideoCommentsModel(api: try makeCommentsAPI())
+        defer { model.stopPlaybackForNavigation() }
+        model.replyThreadStates[root.id] = .loaded
+
+        await model.loadDialog(for: root, reply: reply)
+        XCTAssertEqual(model.dialogReplies(for: root, reply: reply).map(\.id), [201, 202])
+        await model.reloadDialog(for: root, reply: reply)
+        XCTAssertEqual(model.dialogReplies(for: root, reply: reply).map(\.id), [201, 202])
+        guard case .failed = model.dialogState(for: root, reply: reply) else { return XCTFail("Expected retryable failure") }
+        await model.reloadDialog(for: root, reply: reply)
+        XCTAssertEqual(model.dialogReplies(for: root, reply: reply).map(\.id), [203, 202])
+        XCTAssertEqual(model.dialogState(for: root, reply: reply), .loaded)
+    }
+
     @MainActor
     private func makeVideoCommentsModel(api: BiliAPIClient) -> VideoDetailViewModel {
         VideoDetailViewModel(
@@ -595,7 +644,7 @@ private final class DynamicCommentsURLProtocol: URLProtocol {
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "api.bilibili.com"
-            && ["/x/v2/reply/main", "/x/v2/reply/reply"].contains(request.url?.path ?? "")
+            && ["/x/v2/reply/main", "/x/v2/reply/reply", "/x/v2/reply/dialog/cursor"].contains(request.url?.path ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
