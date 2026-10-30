@@ -20,6 +20,7 @@ final class CommentMosaicRotationTests: XCTestCase {
             let host = UIHostingController(rootView: CompactDynamicImageMosaicGrid(
                 images: Array(repeating: image, count: count),
                 accessibilityName: "评论图片", placeholderFill: .gray))
+            host.safeAreaRegions = []
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 1000))
             window.rootViewController = host
             window.isHidden = false
