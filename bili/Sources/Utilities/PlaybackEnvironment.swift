@@ -290,12 +290,18 @@ final class NetworkPathSnapshot: @unchecked Sendable {
     nonisolated static let shared = NetworkPathSnapshot()
 
     nonisolated private let monitor = NWPathMonitor()
+    nonisolated private let wifiMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    nonisolated private let cellularMonitor = NWPathMonitor(requiredInterfaceType: .cellular)
+    nonisolated private let wiredMonitor = NWPathMonitor(requiredInterfaceType: .wiredEthernet)
     nonisolated private let queue = DispatchQueue(label: "cc.bili.network-path")
     nonisolated private let lock = NSLock()
     nonisolated(unsafe) private var cachedClass: PlaybackEnvironment.NetworkClass = .unknown
     nonisolated(unsafe) private var cachedUsesCellular = false
     nonisolated(unsafe) private var cachedNetworkUnavailable: Bool?
     nonisolated(unsafe) private var cachedPathStatus: String = "unknown"
+    nonisolated(unsafe) private var primaryUnavailable: Bool?
+    nonisolated(unsafe) private var primaryHasPhysicalInterface = false
+    nonisolated(unsafe) private var physicalUnavailable: [String: Bool] = [:]
     #if DEBUG
     nonisolated(unsafe) private var cachedDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)?
     nonisolated var recoveryDiagnosticsFlags: (isConstrained: Bool, isExpensive: Bool)? {
@@ -308,6 +314,9 @@ final class NetworkPathSnapshot: @unchecked Sendable {
             self?.update(path)
         }
         monitor.start(queue: queue)
+        startPhysicalMonitor(wifiMonitor, name: "wifi")
+        startPhysicalMonitor(cellularMonitor, name: "cellular")
+        startPhysicalMonitor(wiredMonitor, name: "wired")
     }
 
     nonisolated var currentNetworkClass: PlaybackEnvironment.NetworkClass {
@@ -324,6 +333,44 @@ final class NetworkPathSnapshot: @unchecked Sendable {
 
     nonisolated var diagnosticPathStatus: String {
         lock.withLock { cachedPathStatus }
+    }
+
+    nonisolated var diagnosticConnectivityEvidence: String {
+        lock.withLock {
+            "primaryHasPhysicalInterface=\(primaryHasPhysicalInterface) " + ["wifi", "cellular", "wired"].map { name in
+                "\(name)=\(physicalUnavailable[name].map { $0 ? "unsatisfied" : "notUnsatisfied" } ?? "unknown")"
+            }.joined(separator: " ")
+        }
+    }
+
+    // Called only while holding lock. An unresolved or connection-required
+    // interface never counts as proof that every physical route is down.
+    nonisolated private func resolvedUnavailable() -> Bool? {
+        PlaybackConnectivityPolicy.isUnavailable(
+            primary: primaryUnavailable,
+            primaryHasPhysicalInterface: primaryHasPhysicalInterface,
+            wifi: physicalUnavailable["wifi"],
+            cellular: physicalUnavailable["cellular"],
+            wired: physicalUnavailable["wired"])
+    }
+
+    nonisolated private func startPhysicalMonitor(_ monitor: NWPathMonitor, name: String) {
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let changed = self.lock.withLock {
+                self.physicalUnavailable[name] = path.status == .unsatisfied
+                let resolved = self.resolvedUnavailable()
+                let changed = self.cachedNetworkUnavailable != resolved
+                self.cachedNetworkUnavailable = resolved
+                return changed
+            }
+            if changed {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .biliPlaybackConnectivityDidChange, object: self)
+                }
+            }
+        }
+        monitor.start(queue: queue)
     }
 
     nonisolated private func update(_ path: NWPath) {
@@ -348,8 +395,13 @@ final class NetworkPathSnapshot: @unchecked Sendable {
         }
         let (didChange, connectivityChanged) = lock.withLock {
             cachedPathStatus = pathStatus
-            let connectivityChanged = cachedNetworkUnavailable != unavailable
-            cachedNetworkUnavailable = unavailable
+            primaryHasPhysicalInterface = path.availableInterfaces.contains {
+                $0.type == .wifi || $0.type == .cellular || $0.type == .wiredEthernet
+            }
+            primaryUnavailable = unavailable
+            let resolved = resolvedUnavailable()
+            let connectivityChanged = cachedNetworkUnavailable != resolved
+            cachedNetworkUnavailable = resolved
             #if DEBUG
             cachedDiagnosticsFlags = (path.isConstrained, path.isExpensive)
             #endif
@@ -384,5 +436,14 @@ private extension NSLock {
         lock()
         defer { unlock() }
         return body()
+    }
+}
+
+nonisolated enum PlaybackConnectivityPolicy {
+    static func isUnavailable(primary: Bool?, primaryHasPhysicalInterface: Bool = false,
+                              wifi: Bool?, cellular: Bool?, wired: Bool?) -> Bool? {
+        if primary == true { return true }
+        if !primaryHasPhysicalInterface && wifi == true && cellular == true && wired == true { return true }
+        return primary
     }
 }
