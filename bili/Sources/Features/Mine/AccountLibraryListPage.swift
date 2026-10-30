@@ -9,15 +9,21 @@ struct AccountLibraryListPage: View {
     @State private var selectedIDs = Set<String>()
     @State private var editMode: EditMode = .inactive
     @State private var confirmsClear = false
+    @State private var searchText = ""
 
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 content
+            } header: {
+                if isSearching {
+                    Text("仅搜索已加载的 \(items.count) 个内容")
+                        .accessibilityIdentifier("library.watchLater.search.scope")
+                }
             }
         }
         .modifier(AccountLibraryVideoManagementModifier(
-            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: items,
+            controller: viewModel.libraryManagement, enabled: managementEnabled, entries: visibleItems,
             source: nil, folders: viewModel.favoriteFolders,
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
@@ -25,6 +31,8 @@ struct AccountLibraryListPage: View {
             viewModel: viewModel, controller: viewModel.libraryManagement,
             enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
+        .modifier(WatchLaterSearchModifier(enabled: kind == .watchLater && sessionStore.isLoggedIn, text: $searchText))
+        .onChange(of: searchText) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -64,7 +72,7 @@ struct AccountLibraryListPage: View {
             }
         }
         .task(id: managedTaskID) {
-            selectedIDs = []; editMode = .inactive
+            selectedIDs = []; editMode = .inactive; searchText = ""
             guard !viewModel.libraryManagement.isBusy else { return }
             await viewModel.synchronizeManagedLibrary(kind: kind)
             await loadIfNeeded()
@@ -89,7 +97,10 @@ struct AccountLibraryListPage: View {
         } else if items.isEmpty {
             LibraryEmptyRow(title: kind.emptyTitle, systemImage: kind.systemImage)
         } else {
-            ForEach(items) { item in
+            if isSearching && visibleItems.isEmpty {
+                LibraryEmptyRow(title: "已加载的稍后再看中没有匹配结果", systemImage: "magnifyingglass")
+            }
+            ForEach(visibleItems) { item in
                 AccountLibraryManagedVideoRow(item: item, timestampTitle: kind.timestampTitle,
                     isEditing: managementEnabled && editMode.isEditing,
                     canManage: managementEnabled && (item.aid ?? 0) > 0) {
@@ -142,6 +153,17 @@ struct AccountLibraryListPage: View {
             return viewModel.accountFavorites
         case .watchLater:
             return viewModel.accountWatchLater
+        }
+    }
+
+    private var normalizedSearch: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isSearching: Bool { kind == .watchLater && !normalizedSearch.isEmpty }
+    private var visibleItems: [AccountVideoEntry] {
+        guard isSearching else { return items }
+        return items.filter {
+            $0.title.localizedStandardContains(normalizedSearch)
+                || ($0.owner?.name.localizedStandardContains(normalizedSearch) ?? false)
+                || $0.bvid.localizedStandardContains(normalizedSearch)
         }
     }
 
@@ -207,6 +229,20 @@ struct AccountLibraryListPage: View {
             await viewModel.loadMoreHistory()
         case .favorites, .watchLater:
             break
+        }
+    }
+}
+
+private struct WatchLaterSearchModifier: ViewModifier {
+    let enabled: Bool
+    @Binding var text: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $text, prompt: "搜索已加载的稍后再看")
+        } else {
+            content
         }
     }
 }
