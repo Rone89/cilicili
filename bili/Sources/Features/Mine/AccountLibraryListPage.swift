@@ -14,6 +14,9 @@ struct AccountLibraryListPage: View {
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
+                if kind == .watchLater && sessionStore.isLoggedIn {
+                    LibrarySearchField(text: $searchText, prompt: "搜索已加载的稍后再看", identifier: "library.watchLater.search.field")
+                }
                 content
             } header: {
                 if isSearching {
@@ -31,7 +34,6 @@ struct AccountLibraryListPage: View {
             viewModel: viewModel, controller: viewModel.libraryManagement,
             enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
-        .modifier(WatchLaterSearchModifier(enabled: kind == .watchLater && sessionStore.isLoggedIn, text: $searchText))
         .onChange(of: searchText) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
@@ -233,16 +235,3 @@ struct AccountLibraryListPage: View {
     }
 }
 
-private struct WatchLaterSearchModifier: ViewModifier {
-    let enabled: Bool
-    @Binding var text: String
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if enabled {
-            content.searchable(text: $text, prompt: "搜索已加载的稍后再看")
-        } else {
-            content
-        }
-    }
-}

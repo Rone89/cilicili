@@ -168,7 +168,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
 
     func testWatchLaterSearchLimitsBatchRemovalToMatches() {
         let app = launch()
-        let search = app.searchFields["搜索已加载的稍后再看"]
+        let search = app.textFields["library.watchLater.search.field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
         search.tap()
         search.typeText("BVfixture2\n")
@@ -197,10 +197,10 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let app = launch(["--library-favorites", "--library-paginated"])
         app.staticTexts["来源收藏夹"].tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
-        let search = app.searchFields["搜索已加载的收藏"]
+        let search = app.textFields["library.favorite.search.field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
         search.tap()
-        search.typeText("BVfixture30")
+        search.typeText("BVfixture30\n")
         XCTAssertTrue(app.staticTexts["已加载的收藏中没有匹配结果"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["library.favorite.search.scope"].exists)
         XCTAssertFalse(app.staticTexts["测试视频 30"].exists)
@@ -209,6 +209,20 @@ final class AccountLibraryManagementUITests: XCTestCase {
         more.tap()
         XCTAssertTrue(app.staticTexts["测试视频 30"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        let select = app.buttons["library.manage.select"]
+        XCTAssertTrue(select.waitForExistence(timeout: 5))
+        select.tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 1 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["已完成 1 项"].exists)
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 30"].exists)
     }
 
     func testFavoriteMoveUpdatesBothLists() {
