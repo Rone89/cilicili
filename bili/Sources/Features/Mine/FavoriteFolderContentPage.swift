@@ -13,6 +13,9 @@ struct FavoriteFolderContentPage: View {
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
+                if sessionStore.isLoggedIn {
+                    LibrarySearchField(text: $searchText, prompt: "搜索已加载的收藏", identifier: "library.favorite.search.field")
+                }
                 content
             } header: {
                 if isSearching {
@@ -28,7 +31,6 @@ struct FavoriteFolderContentPage: View {
             source: folder, folders: viewModel.favoriteFolders,
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
-        .searchable(text: $searchText, prompt: "搜索已加载的收藏")
         .onChange(of: searchText) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)

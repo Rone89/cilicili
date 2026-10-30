@@ -136,3 +136,35 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
         }
     }
 }
+
+struct LibrarySearchField: View {
+    @Binding var text: String
+    let prompt: String
+    let identifier: String
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField(prompt, text: $text)
+                .focused($isFocused)
+                .submitLabel(.search)
+                .onSubmit { isFocused = false }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier(identifier)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清除搜索")
+            }
+        }
+    }
+}
