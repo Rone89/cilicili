@@ -2,7 +2,6 @@ import SwiftUI
 
 struct CompactDynamicImageMosaicGrid: View {
     @StateObject private var previewGroup = ZoomyImagePreviewGroup()
-    @State private var availableWidth: CGFloat = CompactDynamicImageMosaicMetrics.compactWidth
     private let imageCount: Int
     private let displayedImages: [CompactDynamicImageDisplayItem]
     private let layout: CompactDynamicImageMosaicLayout
@@ -28,21 +27,20 @@ struct CompactDynamicImageMosaicGrid: View {
     }
 
     var body: some View {
-        if imageCount > 0 {
-            if imageCount > 1 {
-                mosaicContent
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(widthReader)
-                    .onPreferenceChange(CompactDynamicImageMosaicWidthPreferenceKey.self) { width in
-                        updateAvailableWidth(width)
+        if imageCount > 1 {
+            CompactCommentMosaicContainer(imageCount: displayedImages.count) {
+                GeometryReader { proxy in
+                    if proxy.size.width > DynamicImageGridMetrics.spacing * 2 {
+                        mosaicContent(width: proxy.size.width)
                     }
-            } else {
-                mosaicContent
+                }
             }
+        } else if imageCount == 1 {
+            mosaicContent(width: CompactDynamicImageMosaicMetrics.compactWidth)
         }
     }
 
-    private var mosaicContent: some View {
+    private func mosaicContent(width: CGFloat) -> some View {
         CompactDynamicImageMosaicContent(
             imageCount: imageCount,
             displayedImages: displayedImages,
@@ -51,37 +49,35 @@ struct CompactDynamicImageMosaicGrid: View {
             previewGroup: previewGroup,
             accessibilityName: accessibilityName,
             placeholderFill: placeholderFill,
-            adaptiveWidth: resolvedWidth
+            adaptiveWidth: width
         )
-    }
-
-    private var resolvedWidth: CGFloat {
-        availableWidth > 1 ? floor(availableWidth) : CompactDynamicImageMosaicMetrics.compactWidth
-    }
-
-    private var widthReader: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: CompactDynamicImageMosaicWidthPreferenceKey.self,
-                value: proxy.size.width
-            )
-        }
-    }
-
-    private func updateAvailableWidth(_ width: CGFloat) {
-        let roundedWidth = floor(width)
-        guard roundedWidth > 1, abs(availableWidth - roundedWidth) > 0.5 else { return }
-        availableWidth = roundedWidth
     }
 }
 
-private struct CompactDynamicImageMosaicWidthPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+// The outer proposal determines the canvas, not a measurement of its already
+// fixed-width child. No landscape width survives the next portrait proposal.
+struct CompactCommentMosaicContainer: Layout {
+    let imageCount: Int
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        let nextWidth = nextValue()
-        if nextWidth > 0 {
-            value = nextWidth
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let proposed = proposal.width ?? CompactDynamicImageMosaicMetrics.compactWidth
+        let width = proposed.isFinite ? max(0, proposed) : CompactDynamicImageMosaicMetrics.compactWidth
+        let height: CGFloat
+        if imageCount <= 4 {
+            height = width * 9 / 16
+        } else {
+            let spacing = DynamicImageGridMetrics.spacing
+            let rows = CGFloat((imageCount + 2) / 3)
+            let side = max(0, (width - spacing * 2) / 3)
+            height = rows * side + max(0, rows - 1) * spacing
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            subview.place(at: bounds.origin, anchor: .topLeading,
+                          proposal: ProposedViewSize(bounds.size))
         }
     }
 }
