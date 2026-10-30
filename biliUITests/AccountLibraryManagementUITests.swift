@@ -166,6 +166,33 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }
 
+    func testWatchLaterSearchLimitsBatchRemovalToMatches() {
+        let app = launch()
+        let search = app.searchFields["搜索已加载的稍后再看"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
+        search.tap()
+        search.typeText("BVfixture2\n")
+        XCTAssertTrue(app.staticTexts["测试视频 2"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["library.watchLater.search.scope"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        let select = app.buttons["library.manage.select"]
+        XCTAssertTrue(select.waitForExistence(timeout: 5))
+        select.tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 1 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["已完成 1 项"].exists)
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
+    }
+
     func testFavoriteSearchOnlyLoadedItemsAndLoadMore() {
         let app = launch(["--library-favorites", "--library-paginated"])
         app.staticTexts["来源收藏夹"].tap()
