@@ -150,6 +150,9 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         case "/x/v2/history/toview/add":
             if let aid = Int(body["aid"] ?? ""), !watchIDs.contains(aid) { watchIDs.append(aid) }
         case "/x/v2/history/toview/v2/dels":
+            if ProcessInfo.processInfo.arguments.contains("--library-single-removal-failure") {
+                return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "测试移除失败"])
+            }
             let retryFixture = ProcessInfo.processInfo.arguments.contains("--library-batch-retry")
             if retryFixture, resources.contains(where: { !watchIDs.contains($0) }) {
                 return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "重复处理了已完成的项目"])
@@ -184,6 +187,9 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
                 folderVideos[add] = Array(Set((folderVideos[add] ?? []) + resources)).sorted()
             }
             if let remove = Int(body["del_media_ids"] ?? "") {
+                if ProcessInfo.processInfo.arguments.contains("--library-single-removal-failure") {
+                    return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "测试移除失败"])
+                }
                 if retryFixture, !didFailMoveRemoval {
                     didFailMoveRemoval = true
                     return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "来源移除暂时失败"])

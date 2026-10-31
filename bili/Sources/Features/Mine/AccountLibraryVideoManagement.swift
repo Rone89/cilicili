@@ -19,9 +19,13 @@ struct AccountLibraryManagedVideoRow: View {
         }
         .tag(item.id)
         .accessibilityIdentifier("library.video.\(item.id)")
-        .swipeActions {
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if canManage {
-                Button("移除", role: .destructive, action: remove)
+                // The row remains in the data source until the network result is
+                // reconciled. Avoid the destructive role's optimistic deletion.
+                Button("移除", action: remove)
+                    .tint(.red)
+                    .accessibilityIdentifier("library.video.swipeRemove.\(item.id)")
             }
         }
         .contextMenu {
