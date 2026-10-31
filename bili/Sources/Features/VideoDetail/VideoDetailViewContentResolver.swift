@@ -57,6 +57,9 @@ struct VideoDetailViewContentResolver: View {
                 draft: commentComposerDraftBinding,
                 api: dependencies.api,
                 horizontalPadding: dependencies.libraryStore.standardPageHorizontalInset,
+                contentTarget: CommentLikeTarget(
+                    oid: viewModel.commentTarget?.oid, type: viewModel.commentTarget?.type, referer: ""
+                ),
                 submit: { target, message, pictures in
                     try await submitComment(target: target, message: message, pictures: pictures)
                 }

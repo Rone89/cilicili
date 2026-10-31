@@ -440,6 +440,43 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.buttons["dynamic.comment.composer.send"].isEnabled)
     }
 
+
+    func testCommentDraftReturnsAfterHostRecreationWithoutCrossingContentTargets() {
+        let app = launch(["--library-detail-menu", "--library-comment-composer", "--library-comment-shared-drafts"])
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("draft A")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["重建评论入口"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "draft A")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["切换评论目标"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "")
+        editor.typeText("draft B")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["切换评论目标"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "draft A")
+    }
+
+    private func dismissDraftComposer(in app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.15)).tap()
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.textViews["dynamic.comment.composer.editor"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+    }
+
     private func selectAll(in app: XCUIApplication) {
         let selectAll = app.buttons["library.manage.selectAll"]
         XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)

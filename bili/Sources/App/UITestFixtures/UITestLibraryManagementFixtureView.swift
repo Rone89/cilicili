@@ -9,6 +9,8 @@ struct UITestLibraryManagementFixtureView: View {
     @State private var openedTitle = ""
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var draft = RichCommentDraft()
+    @State private var draftContentID = "fixture-A"
+    @State private var composerGeneration = 0
     private let favorites: Bool
     private let showsDetailMenu: Bool
     private let showsCommentComposer: Bool
@@ -57,6 +59,21 @@ struct UITestLibraryManagementFixtureView: View {
                                 })
                         }
                     }
+                    if ProcessInfo.processInfo.arguments.contains("--library-comment-shared-drafts") {
+                        ToolbarItem(placement: .bottomBar) {
+                            Menu("草稿测试") {
+                                Button("重建评论入口") {
+                                    draft = RichCommentDraft()
+                                    composerGeneration += 1
+                                }
+                                Button("切换评论目标") {
+                                    draftContentID = draftContentID == "fixture-A" ? "fixture-B" : "fixture-A"
+                                    draft = RichCommentDraft()
+                                    composerGeneration += 1
+                                }
+                            }
+                        }
+                    }
                     ToolbarItem(placement: .topBarLeading) {
                         Text(openedTitle.isEmpty ? "未打开视频" : openedTitle)
                             .accessibilityIdentifier("library.fixture.openedVideo")
@@ -65,12 +82,16 @@ struct UITestLibraryManagementFixtureView: View {
                 .background {
                     RichCommentComposerPresenter(
                         target: $composerTarget, draft: { _ in $draft },
-                        api: model.libraryManagement.api, submit: { _, _, _ in
+                        api: model.libraryManagement.api,
+                        contentTarget: ProcessInfo.processInfo.arguments.contains("--library-comment-shared-drafts")
+                            ? CommentLikeTarget(oid: draftContentID, type: 1, referer: "") : nil,
+                        submit: { _, _, _ in
                             if ProcessInfo.processInfo.arguments.contains("--library-comment-delayed-submit") {
                                 try await Task.sleep(for: .seconds(8))
                             }
                         }
                     )
+                    .id(composerGeneration)
                     .allowsHitTesting(false)
                 }
         }

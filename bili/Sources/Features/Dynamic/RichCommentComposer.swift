@@ -204,10 +204,12 @@ final class RichCommentDraftStore: ObservableObject {
 struct RichCommentComposerPresenter: UIViewControllerRepresentable {
     @Environment(\.colorScheme) private var inheritedColorScheme
     @Environment(\.appContentColorScheme) private var appContentColorScheme
+    @Environment(\.commentLikeTarget) private var inheritedCommentTarget
     @Binding var target: DynamicCommentComposerTarget?
     let draft: (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>
     let api: BiliAPIClient
     let horizontalPadding: CGFloat?
+    let contentTarget: CommentLikeTarget?
     let submit: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
 
     init(
@@ -215,12 +217,14 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
         draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
         api: BiliAPIClient,
         horizontalPadding: CGFloat? = nil,
+        contentTarget: CommentLikeTarget? = nil,
         submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
     ) {
         self._target = target
         self.draft = draft
         self.api = api
         self.horizontalPadding = horizontalPadding
+        self.contentTarget = contentTarget
         self.submit = submit
     }
 
@@ -245,6 +249,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             draft: draft,
             api: api,
             horizontalPadding: horizontalPadding,
+            contentTarget: contentTarget ?? inheritedCommentTarget,
             submit: submit,
             presenter: controller,
             targetBinding: $target
@@ -264,6 +269,7 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
             draft: @escaping (DynamicCommentComposerTarget) -> Binding<RichCommentDraft>,
             api: BiliAPIClient,
             horizontalPadding: CGFloat?,
+            contentTarget: CommentLikeTarget?,
             submit: @escaping (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void,
             presenter: UIViewController,
             targetBinding: Binding<DynamicCommentComposerTarget?>
@@ -287,12 +293,15 @@ struct RichCommentComposerPresenter: UIViewControllerRepresentable {
                         targetBinding.wrappedValue = nil
                     }
                 ) {
-                    RichCommentComposerView(
-                        draft: draft(target),
+                    ScopedRichCommentComposerView(
+                        sessionStore: api.sessionStore,
+                        libraryStore: api.libraryStore,
+                        localDraft: draft(target),
                         target: target,
+                        contentTarget: contentTarget,
                         api: api,
-                        submit: submit,
                         horizontalPadding: horizontalPadding ?? 20,
+                        submit: submit,
                         onDismiss: {
                             targetBinding.wrappedValue = nil
                         }
