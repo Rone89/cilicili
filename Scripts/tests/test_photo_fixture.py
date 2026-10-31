@@ -15,7 +15,7 @@ SIMULATOR = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 
 
 class PhotoFixtureTests(unittest.TestCase):
-    def run_preflight(self, status, log, build_status=0, acknowledge=True):
+    def run_preflight(self, status, log, build_status=0, acknowledge=True, requires_photo=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             commands = root / "bin"
@@ -24,6 +24,11 @@ class PhotoFixtureTests(unittest.TestCase):
             python.write_text(f"#!{sys.executable}\n" + textwrap.dedent("""\
                 import json, os, pathlib, sys, time
                 root = pathlib.Path(os.environ['RUNNER_TEMP'])
+                # Test preflight behavior independently of class-count-based
+                # shard balancing, which changes whenever UI tests are added.
+                if sys.argv[1] == 'Scripts/ui-test-shards.py':
+                    print(os.environ['FAKE_UI_SELECTORS'])
+                    sys.exit(0)
                 if sys.argv[1] == 'Scripts/build-cache.py':
                     if 'build-for-testing' in sys.argv:
                         if int(os.environ['FAKE_BUILD_STATUS']):
@@ -85,13 +90,22 @@ class PhotoFixtureTests(unittest.TestCase):
                          FAKE_SIMULATOR=SIMULATOR, FAKE_PREFLIGHT_STATUS=str(status),
                          FAKE_BUILD_STATUS=str(build_status),
                          FAKE_ACKNOWLEDGE='1' if acknowledge else '0',
+                         FAKE_UI_SELECTORS='biliUITests/' + (
+                             'DynamicDetailFlowUITests' if requires_photo else 'AccountLibraryManagementUITests'),
                          FAKE_PREFLIGHT_LOG=log),
                 capture_output=True, text=True, timeout=15,
             )
+            if not requires_photo:
+                for name in ('comment-photo-fixture.png', 'photo-build.log',
+                             'photo-preflight.log', 'simctl-calls', 'xcode-args.json'):
+                    self.assertFalse((root / name).exists(), name)
+                return result, output.read_text(), ''
+            self.assertTrue((root / 'photo-build.log').exists(), result.stdout + result.stderr)
             if build_status:
                 self.assertFalse((root / 'simctl-calls').exists())
                 self.assertFalse((root / 'xcode-args.json').exists())
                 return result, output.read_text(), (root / 'photo-build.log').read_text()
+            self.assertTrue((root / 'xcode-args.json').exists(), result.stdout + result.stderr)
             args = json.loads((root / "xcode-args.json").read_text())
             self.assertIn("-retry-tests-on-failure", args)
             self.assertEqual(args[args.index("-test-iterations") + 1], "2")
@@ -106,6 +120,11 @@ class PhotoFixtureTests(unittest.TestCase):
         result, output, _ = self.run_preflight(0, "** TEST SUCCEEDED **")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(output, "")
+
+    def test_shard_without_photo_test_skips_all_preparation(self):
+        result, output, _ = self.run_preflight(0, '', requires_photo=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output, '')
 
     def test_build_failure_stops_before_starting_simulator_observer(self):
         result, output, retained = self.run_preflight(0, "", build_status=65)
@@ -131,3 +150,4 @@ class PhotoFixtureTests(unittest.TestCase):
             65, "Test Case '-[Preflight testLaunch]' failed (1.0 seconds).\n** TEST FAILED **")
         self.assertEqual(result.returncode, 65, result.stderr)
         self.assertEqual(output, "had_test_failures=true\n")
+

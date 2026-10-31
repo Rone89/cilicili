@@ -480,6 +480,94 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
     }
 
+
+    func testWatchLaterSwipeButtonRemovalThroughLastRow() {
+        verifySwipeRemoval(inFavorites: false, fullSwipe: false)
+    }
+
+    func testFavoriteSwipeButtonRemovalThroughLastRow() {
+        verifySwipeRemoval(inFavorites: true, fullSwipe: false)
+    }
+
+    func testWatchLaterFullSwipeRemovalThroughLastRow() {
+        verifySwipeRemoval(inFavorites: false, fullSwipe: true)
+    }
+
+    func testFavoriteFullSwipeRemovalThroughLastRow() {
+        verifySwipeRemoval(inFavorites: true, fullSwipe: true)
+    }
+
+    func testWatchLaterFailedSwipeRemovalKeepsSourceRow() {
+        verifyFailedSwipeRemoval(inFavorites: false)
+    }
+
+    func testFavoriteFailedSwipeRemovalKeepsSourceRow() {
+        verifyFailedSwipeRemoval(inFavorites: true)
+    }
+
+    private func verifySwipeRemoval(inFavorites: Bool, fullSwipe: Bool) {
+        let app = launch(inFavorites ? ["--library-favorites"] : [])
+        if inFavorites { app.staticTexts["来源收藏夹"].tap() }
+        for aid in 1...3 {
+            let row = app.buttons["library.video.BVfixture\(aid)"].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            removeBySwiping(row, aid: aid, fullSwipe: fullSwipe, in: app)
+            XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.alerts.staticTexts["已完成 1 项"].exists)
+            app.alerts.buttons["好"].tap()
+            let removed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: row
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 5), .completed)
+            XCTAssertEqual(app.state, .runningForeground)
+        }
+        let emptyTitle = inFavorites ? "这个收藏夹还没有视频" : "稍后再看里还没有视频"
+        XCTAssertTrue(app.staticTexts[emptyTitle].waitForExistence(timeout: 5))
+    }
+
+    private func verifyFailedSwipeRemoval(inFavorites: Bool) {
+        var arguments = ["--library-single-removal-failure"]
+        if inFavorites { arguments.append("--library-favorites") }
+        let app = launch(arguments)
+        if inFavorites { app.staticTexts["来源收藏夹"].tap() }
+        let row = app.buttons["library.video.BVfixture1"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        removeBySwiping(row, aid: 1, fullSwipe: false, in: app)
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        let failure = app.alerts.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "已完成 0 项", "测试移除失败")
+        ).firstMatch
+        XCTAssertTrue(failure.exists)
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 2"].exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    private func removeBySwiping(_ row: XCUIElement, aid: Int, fullSwipe: Bool, in app: XCUIApplication) {
+        if fullSwipe {
+            // XCTest's default swipe only reveals the action on this row.
+            // Cross almost the entire row to exercise full-swipe activation.
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).press(
+                forDuration: 0.05,
+                thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.3
+            )
+        } else {
+            // Reveal the action without crossing the full-swipe commit threshold.
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).press(
+                forDuration: 0.05,
+                thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.3
+            )
+            let remove = app.buttons["library.video.swipeRemove.BVfixture\(aid)"].firstMatch
+            XCTAssertTrue(remove.waitForExistence(timeout: 5))
+            remove.tap()
+        }
+    }
+
     private func selectAll(in app: XCUIApplication) {
         let selectAll = app.buttons["library.manage.selectAll"]
         XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)
