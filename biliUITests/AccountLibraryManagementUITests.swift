@@ -378,6 +378,50 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertFalse(app.buttons["library.manage.remove"].isEnabled)
     }
 
+
+    func testWatchLaterViewingFilterScopesSelectionAndRemoval() {
+        let app = launch(["--library-watch-status"])
+        let menu = app.buttons["library.watchLater.actions"]
+        menu.tap()
+        app.buttons["可继续观看"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        XCTAssertTrue(app.staticTexts["library.watchLater.filter.scope"].exists)
+        let search = app.textFields["library.watchLater.search.field"]
+        search.tap()
+        search.typeText("BVfixture2\n")
+        XCTAssertTrue(app.staticTexts["已加载的稍后再看中没有匹配结果"].waitForExistence(timeout: 5))
+        app.buttons["清除搜索"].tap()
+
+        menu.tap()
+        app.buttons["已看完"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        menu.tap()
+        app.buttons["全部"].tap()
+        XCTAssertFalse(app.buttons["library.manage.remove"].isEnabled)
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+
+        menu.tap()
+        app.buttons["已看完"].tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 1 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["已完成 1 项"].exists)
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
+    }
+
     private func selectAll(in app: XCUIApplication) {
         let selectAll = app.buttons["library.manage.selectAll"]
         XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)
