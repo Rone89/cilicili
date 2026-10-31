@@ -33,8 +33,11 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let add = openUpdatedDetailMenu("添加到稍后再看", menu: menu, app: app)
         add.tap()
         _ = openUpdatedDetailMenu("从稍后再看移除", menu: menu, app: app)
-        app.buttons["复制链接"].tap()
-        XCTAssertTrue(waitForAccessibilityValue("已复制链接", on: menu), app.debugDescription)
+        let copy = app.buttons["video.detail.more.copyLink"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let copiedLink = app.staticTexts["library.fixture.openedVideo"]
+        XCTAssertTrue(waitForAccessibilityValue("https://www.bilibili.com/video/BVfixture1", on: copiedLink), app.debugDescription)
         app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
     }
@@ -160,7 +163,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
             XCTAssertTrue(app.alerts.staticTexts["已完成 25 项"].exists)
         }
         if retry {
-            let retryButton = app.alerts.buttons["library.manage.retry"]
+            let retryButton = app.alerts.buttons["library.manage.retry"].firstMatch
             XCTAssertTrue(retryButton.waitForExistence(timeout: 5))
             retryButton.tap()
             XCTAssertTrue(count.waitForExistence(timeout: 5))
@@ -331,7 +334,7 @@ final class AccountLibraryManagementUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "3 项已加入目标收藏夹")
         ).firstMatch
         XCTAssertTrue(partial.exists)
-        let retry = app.alerts.buttons["library.manage.retry"]
+        let retry = app.alerts.buttons["library.manage.retry"].firstMatch
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
         retry.tap()
         let completed = app.alerts.staticTexts["已完成 3 项"]

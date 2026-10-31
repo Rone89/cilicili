@@ -1,12 +1,14 @@
 #if DEBUG
 import SwiftUI
 import Foundation
+import UIKit
 
 struct UITestLibraryManagementFixtureView: View {
     @StateObject private var session: SessionStore
     @StateObject private var library: LibraryStore
     @StateObject private var model: MineViewModel
     @State private var openedTitle = ""
+    @State private var copiedLinkForTest = ""
     @State private var composerTarget: DynamicCommentComposerTarget?
     @State private var draft = RichCommentDraft()
     @State private var draftContentID = "fixture-A"
@@ -77,6 +79,7 @@ struct UITestLibraryManagementFixtureView: View {
                     ToolbarItem(placement: .topBarLeading) {
                         Text(openedTitle.isEmpty ? "未打开视频" : openedTitle)
                             .accessibilityIdentifier("library.fixture.openedVideo")
+                            .accessibilityValue(copiedLinkForTest)
                     }
                 }
                 .background {
@@ -94,6 +97,10 @@ struct UITestLibraryManagementFixtureView: View {
                     .id(composerGeneration)
                     .allowsHitTesting(false)
                 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
+            guard showsDetailMenu else { return }
+            copiedLinkForTest = UIPasteboard.general.string ?? ""
         }
         .environmentObject(session)
         .environmentObject(library)
