@@ -133,6 +133,12 @@ final class ScopedCommentDraftCache: ObservableObject {
                 sequence &+= 1
                 next[record.key] = entry(draft, date: record.updatedAt)
             }
+            // Hydration must never make older disk entries newer than input
+            // already entered in this process, especially at the capacity limit.
+            for (key, value) in entries.sorted(by: { $0.value.sequence < $1.value.sequence }) {
+                sequence &+= 1
+                next[key] = entry(value.draft, date: value.updatedAt)
+            }
             trim(&next, preserving: nil)
             entries = next
         } catch {

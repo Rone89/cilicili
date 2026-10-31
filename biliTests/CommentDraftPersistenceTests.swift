@@ -162,6 +162,21 @@ final class CommentDraftPersistenceTests: XCTestCase {
         XCTAssertNil(cache.draft(for: key(oid: "bad")))
     }
 
+    func testHydrationAtCapacityKeepsNewInputOverOlderDiskDrafts() async {
+        let store = CommentDraftDiskStore(directory: directory)
+        let cache = ScopedCommentDraftCache(maximumEntries: 2, persistence: store)
+        cache.set(RichCommentDraft(elements: [.text("A")]), for: key(oid: "A"))
+        cache.set(RichCommentDraft(elements: [.text("B")]), for: key(oid: "B"))
+        await cache.flush()
+        let next = ScopedCommentDraftCache(maximumEntries: 2,
+                                          persistence: CommentDraftDiskStore(directory: directory))
+        next.set(RichCommentDraft(elements: [.text("new input")]), for: key(oid: "C"))
+        await next.load()
+        XCTAssertEqual(next.draft(for: key(oid: "C"))?.serializedMessage, "new input")
+        XCTAssertNil(next.draft(for: key(oid: "A")))
+        XCTAssertEqual(next.draft(for: key(oid: "B"))?.serializedMessage, "B")
+    }
+
     func testLateOlderWriteCannotReviveDeletedDraft() async throws {
         let store = CommentDraftDiskStore(directory: directory)
         let record = StoredCommentDraft(
