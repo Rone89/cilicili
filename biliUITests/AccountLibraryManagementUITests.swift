@@ -546,7 +546,14 @@ final class AccountLibraryManagementUITests: XCTestCase {
 
     private func removeBySwiping(_ row: XCUIElement, aid: Int, fullSwipe: Bool, in app: XCUIApplication) {
         if fullSwipe {
-            row.swipeLeft()
+            // XCTest's default swipe only reveals the action on this row.
+            // Cross almost the entire row to exercise full-swipe activation.
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).press(
+                forDuration: 0.05,
+                thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.3
+            )
         } else {
             // Reveal the action without crossing the full-swipe commit threshold.
             row.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).press(
