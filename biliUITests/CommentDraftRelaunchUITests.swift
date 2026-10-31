@@ -37,10 +37,12 @@ final class CommentDraftRelaunchUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["library.video.BVfixture1"].waitForExistence(timeout: 15))
         XCTAssertEqual(openComposer(in: app).value as? String, "restored text")
-        XCTAssertTrue(app.otherElements["comment.draft.missingImages"].exists
-                      || app.staticTexts["上次选择的 2 张图片未恢复，请重新添加"].exists)
+        XCTAssertTrue(app.staticTexts["comment.draft.missingImages"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["dynamic.comment.composer.send"].isEnabled)
-        app.buttons["comment.draft.acknowledgeMissingImages"].tap()
+        let acknowledge = app.buttons["comment.draft.acknowledgeMissingImages"]
+        XCTAssertTrue(acknowledge.waitForExistence(timeout: 5))
+        XCTAssertTrue(acknowledge.isHittable)
+        acknowledge.tap()
         XCTAssertTrue(app.buttons["dynamic.comment.composer.send"].isEnabled)
         XCTAssertEqual(app.textViews["dynamic.comment.composer.editor"].value as? String, "restored text")
     }

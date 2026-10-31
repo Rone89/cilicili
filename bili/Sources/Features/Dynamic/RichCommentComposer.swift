@@ -1134,13 +1134,19 @@ struct RichCommentComposerView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("上次选择的 \(draft.unavailableImageCount) 张图片未恢复，请重新添加")
                         .font(.footnote)
-                    Button(draft.images.isEmpty ? "仅保留文字" : "使用当前已选图片") {
+                        .accessibilityIdentifier("comment.draft.missingImages")
+                    Button {
                         draft.unavailableImageCount = 0
+                    } label: {
+                        Text(draft.images.isEmpty ? "仅保留文字" : "使用当前已选图片")
+                            .font(.footnote)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
-                    .font(.footnote)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
                     .accessibilityIdentifier("comment.draft.acknowledgeMissingImages")
                 }
-                .accessibilityIdentifier("comment.draft.missingImages")
             }
             if keepsNewerDraftAfterSending {
                 Text("评论已发送，后续修改已保留")
