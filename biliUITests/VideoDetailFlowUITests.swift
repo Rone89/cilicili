@@ -343,7 +343,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             scrollView.isHittable && scrollView.frame.contains(commentHeader.frame)
         }
         XCTAssertNotNil(scrollView)
-        guard scrollView != nil else { return }
+        guard let scrollView else { return }
 
         // Use absolute screen coordinates: the header itself moves while the
         // player collapses. A short press also avoids long-press reply actions.
@@ -406,7 +406,18 @@ final class VideoDetailFlowUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [minimumPlayer], timeout: 3), .completed)
         let headerAtMinimum = commentHeader.frame
-        dragHeader(up: 32)
+        // The header may already be above the visible area after the boundary
+        // crossing. Start the continuation inside the visible scroll viewport,
+        // never at the off-screen header (which can hit the status bar).
+        let viewport = scrollView.frame
+        let continuationStart = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: viewport.midX, dy: viewport.minY + viewport.height * 0.65))
+        continuationStart.press(
+            forDuration: 0.05,
+            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -32)),
+            withVelocity: .slow,
+            thenHoldForDuration: 1.0
+        )
         XCTAssertLessThan(
             commentHeader.frame.minY,
             headerAtMinimum.minY - 4,
