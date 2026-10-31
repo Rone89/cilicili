@@ -362,6 +362,7 @@ private struct DynamicDetailView: View {
                 target: $richCommentComposerTarget,
                 draft: richCommentDraftBinding,
                 api: api,
+                contentTarget: CommentLikeTarget(oid: item.commentOID, type: item.commentType, referer: ""),
                 submit: { submissionTarget, message, pictures in
                     try await submitComment(submissionTarget, message, pictures: pictures)
                 }

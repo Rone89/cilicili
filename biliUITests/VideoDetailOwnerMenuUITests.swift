@@ -21,14 +21,14 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
         let follow = app.buttons["video.detail.ownerMenu.follow"]
         XCTAssertTrue(follow.waitForExistence(timeout: 3))
         XCTAssertEqual(follow.label, "关注")
-        follow.tap()
+        tapMenuAction(follow)
         XCTAssertTrue(waitForAccessibilityValue("已关注", on: menu), app.debugDescription)
         menu.tap()
         XCTAssertTrue(waitForAccessibilityLabel("已关注", on: follow), app.debugDescription)
-        follow.tap()
+        tapMenuAction(follow)
         XCTAssertTrue(waitForAccessibilityValue("未关注", on: menu), app.debugDescription)
         menu.tap()
-        app.buttons["video.detail.ownerMenu.space"].tap()
+        tapMenuAction(app.buttons["video.detail.ownerMenu.space"])
         XCTAssertTrue(app.staticTexts["fixture.owner.space"].waitForExistence(timeout: 3))
     }
 
@@ -39,7 +39,7 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
         let follow = app.buttons["video.detail.ownerMenu.follow"]
         XCTAssertTrue(follow.waitForExistence(timeout: 3))
         XCTAssertFalse(follow.isEnabled)
-        app.buttons["video.detail.ownerMenu.space"].tap()
+        tapMenuAction(app.buttons["video.detail.ownerMenu.space"])
         XCTAssertTrue(app.staticTexts["fixture.owner.space"].waitForExistence(timeout: 3))
     }
 
@@ -51,6 +51,15 @@ final class VideoDetailOwnerMenuUITests: XCTestCase {
             XCTAssertTrue(button.exists)
             XCTAssertTrue(button.isEnabled)
         }
+    }
+
+    private func tapMenuAction(_ action: XCUIElement) {
+        let button = action.firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertGreaterThan(button.frame.width, 0)
+        XCTAssertGreaterThan(button.frame.height, 0)
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func launchFixture() -> XCUIApplication {

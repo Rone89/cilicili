@@ -82,6 +82,7 @@ struct DynamicCommentsSheet: View {
                 target: $composerTarget,
                 draft: richCommentDraftBinding,
                 api: dependencies.api,
+                contentTarget: CommentLikeTarget(oid: item.commentOID, type: item.commentType, referer: ""),
                 submit: submitReplyAction
             )
             .allowsHitTesting(false)

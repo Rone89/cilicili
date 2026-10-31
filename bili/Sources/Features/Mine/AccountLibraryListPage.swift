@@ -10,18 +10,30 @@ struct AccountLibraryListPage: View {
     @State private var editMode: EditMode = .inactive
     @State private var confirmsClear = false
     @State private var searchText = ""
+    @State private var sortOrder: LibraryVideoOrder = .original
+    @State private var viewingFilter: WatchLaterViewingFilter = .all
 
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 if kind == .watchLater && sessionStore.isLoggedIn {
-                    LibrarySearchField(text: $searchText, prompt: "搜索已加载的稍后再看", identifier: "library.watchLater.search.field")
+                    HStack {
+                        LibrarySearchField(text: $searchText, prompt: "搜索已加载的稍后再看", identifier: "library.watchLater.search.field")
+                        LibraryVideoSortMenu(order: $sortOrder, identifier: "library.watchLater.sort")
+                    }
                 }
                 content
             } header: {
                 if isSearching {
                     Text("仅搜索已加载的 \(items.count) 个内容")
                         .accessibilityIdentifier("library.watchLater.search.scope")
+                }
+                if kind == .watchLater, viewingFilter != .all {
+                    Text("\(viewingFilter.title) · 已加载 \(items.count) 项，显示 \(visibleItems.count) 项")
+                        .accessibilityIdentifier("library.watchLater.filter.scope")
+                } else if kind == .watchLater, !isSearching, sortOrder != .original {
+                    Text("仅排序已加载的 \(items.count) 个内容")
+                        .accessibilityIdentifier("library.watchLater.sort.scope")
                 }
             }
         }
@@ -35,6 +47,8 @@ struct AccountLibraryListPage: View {
             enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
         .onChange(of: searchText) { _, _ in selectedIDs = [] }
+        .onChange(of: sortOrder) { _, _ in selectedIDs = [] }
+        .onChange(of: viewingFilter) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -54,13 +68,20 @@ struct AccountLibraryListPage: View {
             if managementEnabled {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        if let resume = items.first(where: { $0.resumeTime != nil }) ?? items.first {
+                        Picker("观看状态", selection: $viewingFilter) {
+                            ForEach(WatchLaterViewingFilter.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        if let resume = visibleItems.first(where: { $0.resumeTime != nil }) ?? visibleItems.first {
                             VideoRouteLink(resume.videoItem) { Label("继续播放", systemImage: "play.fill") }
                         }
                         Button("清空稍后再看", systemImage: "trash", role: .destructive) { confirmsClear = true }
                             .disabled(items.isEmpty)
                     } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityIdentifier("library.watchLater.actions")
+                    .accessibilityValue(viewingFilter.title)
                     .disabled(viewModel.libraryManagement.isBusy)
                 }
             }
@@ -74,7 +95,7 @@ struct AccountLibraryListPage: View {
             }
         }
         .task(id: managedTaskID) {
-            selectedIDs = []; editMode = .inactive; searchText = ""
+            selectedIDs = []; editMode = .inactive; searchText = ""; sortOrder = .original; viewingFilter = .all
             guard !viewModel.libraryManagement.isBusy else { return }
             await viewModel.synchronizeManagedLibrary(kind: kind)
             await loadIfNeeded()
@@ -99,8 +120,11 @@ struct AccountLibraryListPage: View {
         } else if items.isEmpty {
             LibraryEmptyRow(title: kind.emptyTitle, systemImage: kind.systemImage)
         } else {
-            if isSearching && visibleItems.isEmpty {
-                LibraryEmptyRow(title: "已加载的稍后再看中没有匹配结果", systemImage: "magnifyingglass")
+            if kind == .watchLater, visibleItems.isEmpty {
+                LibraryEmptyRow(
+                    title: isSearching ? "已加载的稍后再看中没有匹配结果" : viewingFilter.emptyTitle,
+                    systemImage: "magnifyingglass"
+                )
             }
             ForEach(visibleItems) { item in
                 AccountLibraryManagedVideoRow(item: item, timestampTitle: kind.timestampTitle,
@@ -161,12 +185,8 @@ struct AccountLibraryListPage: View {
     private var normalizedSearch: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var isSearching: Bool { kind == .watchLater && !normalizedSearch.isEmpty }
     private var visibleItems: [AccountVideoEntry] {
-        guard isSearching else { return items }
-        return items.filter {
-            $0.title.localizedStandardContains(normalizedSearch)
-                || ($0.owner?.name.localizedStandardContains(normalizedSearch) ?? false)
-                || $0.bvid.localizedStandardContains(normalizedSearch)
-        }
+        guard kind == .watchLater else { return items }
+        return sortOrder.arrange(items.filter { viewingFilter.includes($0) }, query: normalizedSearch)
     }
 
     private var state: LoadingState {

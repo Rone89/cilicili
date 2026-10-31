@@ -9,18 +9,25 @@ struct FavoriteFolderContentPage: View {
     @State private var selectedIDs = Set<String>()
     @State private var editMode: EditMode = .inactive
     @State private var searchText = ""
+    @State private var sortOrder: LibraryVideoOrder = .original
 
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 if sessionStore.isLoggedIn {
-                    LibrarySearchField(text: $searchText, prompt: "搜索已加载的收藏", identifier: "library.favorite.search.field")
+                    HStack {
+                        LibrarySearchField(text: $searchText, prompt: "搜索已加载的收藏", identifier: "library.favorite.search.field")
+                        LibraryVideoSortMenu(order: $sortOrder, identifier: "library.favorite.sort")
+                    }
                 }
                 content
             } header: {
                 if isSearching {
                     Text("仅搜索已加载的 \(items.count) 个内容")
                         .accessibilityIdentifier("library.favorite.search.scope")
+                } else if sortOrder != .original {
+                    Text("仅排序已加载的 \(items.count) 个内容")
+                        .accessibilityIdentifier("library.favorite.sort.scope")
                 } else if let count = viewModel.favoriteFolders.first(where: { $0.id == folder.id })?.mediaCount ?? folder.mediaCount {
                     Text("\(count) 个内容")
                 }
@@ -32,6 +39,7 @@ struct FavoriteFolderContentPage: View {
             selection: $selectedIDs, editMode: $editMode, reload: reload
         ))
         .onChange(of: searchText) { _, _ in selectedIDs = [] }
+        .onChange(of: sortOrder) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -46,7 +54,7 @@ struct FavoriteFolderContentPage: View {
             }
         }
         .task(id: managedTaskID) {
-            selectedIDs = []; editMode = .inactive; searchText = ""
+            selectedIDs = []; editMode = .inactive; searchText = ""; sortOrder = .original
             guard !viewModel.libraryManagement.isBusy else { return }
             await viewModel.synchronizeManagedLibrary(kind: .favorites, folder: folder)
             await loadIfNeeded()
@@ -82,7 +90,7 @@ struct FavoriteFolderContentPage: View {
                     }
                 }
                 .task {
-                    if !isSearching { await viewModel.loadMoreFavoriteFolderIfNeeded(folder, current: item) }
+                    if !usesLocalArrangement { await viewModel.loadMoreFavoriteFolderIfNeeded(folder, current: item) }
                 }
             }
 
@@ -99,11 +107,11 @@ struct FavoriteFolderContentPage: View {
                     Task { await viewModel.loadMoreFavoriteFolder(folder) }
                 }
             } else if hasMore {
-                if isSearching {
-                    Button("加载更多收藏后继续搜索") {
+                if usesLocalArrangement {
+                    Button(isSearching ? "加载更多收藏后继续搜索" : "加载更多收藏后继续排序") {
                         Task { await viewModel.loadMoreFavoriteFolder(folder) }
                     }
-                    .accessibilityIdentifier("library.favorite.search.loadMore")
+                    .accessibilityIdentifier(isSearching ? "library.favorite.search.loadMore" : "library.favorite.sort.loadMore")
                 } else {
                     LibraryLoadMoreTriggerRow(title: "正在加载更多收藏") {
                         Task { await viewModel.loadMoreFavoriteFolder(folder) }
@@ -126,13 +134,9 @@ struct FavoriteFolderContentPage: View {
 
     private var normalizedSearch: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var isSearching: Bool { !normalizedSearch.isEmpty }
+    private var usesLocalArrangement: Bool { isSearching || sortOrder != .original }
     private var visibleItems: [AccountVideoEntry] {
-        guard isSearching else { return items }
-        return items.filter {
-            $0.title.localizedStandardContains(normalizedSearch)
-                || ($0.owner?.name.localizedStandardContains(normalizedSearch) ?? false)
-                || $0.bvid.localizedStandardContains(normalizedSearch)
-        }
+        sortOrder.arrange(items, query: normalizedSearch)
     }
 
     private var state: LoadingState {

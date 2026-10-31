@@ -33,8 +33,11 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let add = openUpdatedDetailMenu("添加到稍后再看", menu: menu, app: app)
         add.tap()
         _ = openUpdatedDetailMenu("从稍后再看移除", menu: menu, app: app)
-        app.buttons["复制链接"].tap()
-        XCTAssertTrue(waitForAccessibilityValue("已复制链接", on: menu), app.debugDescription)
+        let copy = app.buttons["video.detail.more.copyLink"].firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let copiedLink = app.staticTexts["library.fixture.openedVideo"]
+        XCTAssertTrue(waitForAccessibilityValue("https://www.bilibili.com/video/BVfixture1", on: copiedLink), app.debugDescription)
         app.buttons["video.detail.toolbar-comment"].tap()
         XCTAssertEqual(app.staticTexts["library.fixture.openedVideo"].label, "发表评论")
     }
@@ -115,6 +118,71 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.alerts.staticTexts["已完成 3 项"].exists)
         app.alerts.buttons["好"].tap()
         XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 3))
+    }
+
+
+    func testWatchLaterBatchProgressCountsOnlyCompletedRequests() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: false)
+    }
+
+    func testWatchLaterBatchProgressStopsAtLastConfirmedBatchOnFailure() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: true)
+    }
+
+    func testWatchLaterRetryDoesNotRepeatCompletedBatch() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: true, retry: true)
+    }
+
+    private func verifyWatchLaterBatchProgress(failsSecondBatch: Bool, retry: Bool = false) {
+        var arguments = ["--library-batch-progress"]
+        if failsSecondBatch { arguments.append("--library-batch-failure") }
+        if retry { arguments.append("--library-batch-retry") }
+        let app = launch(arguments)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 25 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        let count = app.staticTexts["library.manage.progress.count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "已完成 0 / 25 项")
+        let firstBatch = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "已完成 20 / 25 项"),
+            object: count
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [firstBatch], timeout: 10), .completed)
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 10))
+        if failsSecondBatch {
+            let result = app.alerts.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "已完成 20 项", "测试批次失败")
+            ).firstMatch
+            XCTAssertTrue(result.exists)
+        } else {
+            XCTAssertTrue(app.alerts.staticTexts["已完成 25 项"].exists)
+        }
+        if retry {
+            let retryButton = app.alerts.buttons["library.manage.retry"].firstMatch
+            XCTAssertTrue(retryButton.waitForExistence(timeout: 5))
+            retryButton.tap()
+            XCTAssertTrue(count.waitForExistence(timeout: 5))
+            XCTAssertEqual(count.label, "已完成 0 / 5 项")
+            XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.alerts.staticTexts["已完成 5 项"].exists)
+            app.alerts.buttons["好"].tap()
+            XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 5))
+            return
+        }
+        app.alerts.buttons["好"].tap()
+        XCTAssertFalse(count.exists)
+        if failsSecondBatch {
+            XCTAssertTrue(app.staticTexts["测试视频 21"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["测试视频 25"].exists)
+            XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        } else {
+            XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 5))
+        }
     }
 
     func testLoggedOutHasNoManagementActions() {
@@ -249,6 +317,167 @@ final class AccountLibraryManagementUITests: XCTestCase {
         destination.tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+    }
+
+
+    func testFavoriteMoveRetrySkipsConfirmedTargetAddition() {
+        let app = launch(["--library-favorites", "--library-move-retry"])
+        app.staticTexts["来源收藏夹"].tap()
+        let select = app.buttons["library.manage.select"]
+        XCTAssertTrue(select.waitForExistence(timeout: 5))
+        select.tap()
+        selectAll(in: app)
+        app.buttons["library.manage.move"].tap()
+        app.staticTexts["目标收藏夹"].tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        let partial = app.alerts.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "3 项已加入目标收藏夹")
+        ).firstMatch
+        XCTAssertTrue(partial.exists)
+        let retry = app.alerts.buttons["library.manage.retry"].firstMatch
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        let completed = app.alerts.staticTexts["已完成 3 项"]
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["这个收藏夹还没有视频"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.staticTexts["目标收藏夹"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+    }
+
+
+    func testWatchLaterSortingAndSearchKeepRowsManageable() {
+        let app = launch(["--library-sorting"])
+        let sort = app.buttons["library.watchLater.sort"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        sort.tap()
+        app.buttons["时长从长到短"].tap()
+        let reordered = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.video."))
+                    .allElementsBoundByIndex
+                return rows.map(\.identifier) == [
+                    "library.video.BVfixture3", "library.video.BVfixture2", "library.video.BVfixture1"
+                ]
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 5), .completed)
+        XCTAssertTrue(app.staticTexts["library.watchLater.sort.scope"].exists)
+        let search = app.textFields["library.watchLater.search.field"]
+        search.tap()
+        search.typeText("BVfixture2\n")
+        XCTAssertTrue(app.staticTexts["测试视频 2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        XCTAssertTrue(app.buttons["library.manage.remove"].isEnabled)
+        // Changing order clears the old selection before another bulk action.
+        sort.tap()
+        app.buttons["默认顺序"].tap()
+        XCTAssertFalse(app.buttons["library.manage.remove"].isEnabled)
+    }
+
+
+    func testWatchLaterViewingFilterScopesSelectionAndRemoval() {
+        let app = launch(["--library-watch-status"])
+        let menu = app.buttons["library.watchLater.actions"]
+        menu.tap()
+        app.buttons["可继续观看"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        XCTAssertTrue(app.staticTexts["library.watchLater.filter.scope"].exists)
+        let search = app.textFields["library.watchLater.search.field"]
+        search.tap()
+        search.typeText("BVfixture2\n")
+        XCTAssertTrue(app.staticTexts["已加载的稍后再看中没有匹配结果"].waitForExistence(timeout: 5))
+        app.buttons["清除搜索"].tap()
+
+        menu.tap()
+        app.buttons["已看完"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        menu.tap()
+        app.buttons["全部"].tap()
+        XCTAssertFalse(app.buttons["library.manage.remove"].isEnabled)
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+
+        menu.tap()
+        app.buttons["已看完"].tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 1 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["已完成 1 项"].exists)
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
+    }
+
+
+    func testCommentSubmissionPreservesTypingAfterSendStarted() {
+        let app = launch([
+            "--library-detail-menu", "--library-comment-composer", "--library-comment-delayed-submit"
+        ])
+        app.buttons["video.detail.toolbar-comment"].tap()
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("before")
+        app.buttons["dynamic.comment.composer.send"].tap()
+        editor.typeText("after")
+        let preserved = app.staticTexts["dynamic.comment.composer.newerDraftPreserved"]
+        XCTAssertTrue(preserved.waitForExistence(timeout: 15))
+        XCTAssertTrue(editor.exists)
+        XCTAssertEqual(editor.value as? String, "beforeafter")
+        XCTAssertTrue(app.buttons["dynamic.comment.composer.send"].isEnabled)
+    }
+
+
+    func testCommentDraftReturnsAfterHostRecreationWithoutCrossingContentTargets() {
+        let app = launch(["--library-detail-menu", "--library-comment-composer", "--library-comment-shared-drafts"])
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("draft A")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["重建评论入口"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "draft A")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["切换评论目标"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "")
+        editor.typeText("draft B")
+        dismissDraftComposer(in: app)
+        app.buttons["草稿测试"].tap()
+        app.buttons["切换评论目标"].tap()
+        app.buttons["video.detail.toolbar-comment"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "draft A")
+    }
+
+    private func dismissDraftComposer(in app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.15)).tap()
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.textViews["dynamic.comment.composer.editor"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
     }
 
     private func selectAll(in app: XCUIApplication) {

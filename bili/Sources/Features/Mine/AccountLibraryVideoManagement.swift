@@ -84,6 +84,24 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                 }
             }
             .disabled(controller.isBusy)
+            .overlay {
+                if enabled, let progress = controller.batchProgress {
+                    VStack(spacing: 12) {
+                        Text(progress.stage)
+                            .font(.headline)
+                            .accessibilityIdentifier("library.manage.progress.stage")
+                        ProgressView(value: Double(progress.completed), total: Double(progress.total))
+                        Text("已完成 \(progress.completed) / \(progress.total) 项")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("library.manage.progress.count")
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 280)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                    .allowsHitTesting(false)
+                }
+            }
             .confirmationDialog("移除所选的 \(selection.count) 项？", isPresented: $confirmsRemoval, titleVisibility: .visible) {
                 Button("移除", role: .destructive) { run(.remove) }
                     .accessibilityIdentifier("library.manage.confirmRemove")
@@ -113,6 +131,16 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                 }
             }
             .alert("管理结果", isPresented: Binding(get: { enabled && controller.message != nil }, set: { if !$0 { Task { @MainActor in controller.message = nil } } })) {
+                if controller.retryItemCount(source: source) > 0 {
+                    Button("重试未完成的 \(controller.retryItemCount(source: source)) 项") {
+                        controller.message = nil
+                        Task {
+                            await controller.retryUnfinished(source: source)
+                            await reload()
+                        }
+                    }
+                    .accessibilityIdentifier("library.manage.retry")
+                }
                 Button("好") { controller.message = nil }
             } message: { Text(controller.message ?? "") }
             .onChange(of: entries.map(\.id)) { _, _ in selection.formIntersection(selectableIDs) }

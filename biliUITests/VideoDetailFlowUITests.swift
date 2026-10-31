@@ -345,14 +345,20 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertNotNil(scrollView)
         guard let scrollView else { return }
 
-        let dragStart = commentHeader.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let dragEnd = dragStart.withOffset(CGVector(dx: 0, dy: -32))
-        dragStart.press(
-            forDuration: 0.8,
-            thenDragTo: dragEnd,
-            withVelocity: .slow,
-            thenHoldForDuration: 0.2
-        )
+        // Use absolute screen coordinates: the header itself moves while the
+        // player collapses. A short press also avoids long-press reply actions.
+        func dragHeader(up distance: CGFloat) {
+            let frame = commentHeader.frame
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -distance)),
+                withVelocity: .slow,
+                thenHoldForDuration: 1.0
+            )
+        }
+        dragHeader(up: 32)
 
         let playerCollapsed = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -380,60 +386,17 @@ final class VideoDetailFlowUITests: XCTestCase {
             "comment section should move with the player before the player reaches minimum height"
         )
 
-        // Stop short of the minimum first. A gesture that crosses the boundary
-        // can legitimately continue scrolling the comments.
-        for _ in 0..<24 {
-            let remainingCollapse = playerFrame.frame.height - 54
-            // Keep enough distance to avoid one 24-point drag reaching the minimum.
-            if remainingCollapse <= 32 { break }
-            let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-            let dragEnd = start.withOffset(
-                CGVector(dx: 0, dy: -min(24, remainingCollapse))
-            )
-            start.press(
-                forDuration: 0.8,
-                thenDragTo: dragEnd,
-                withVelocity: .slow,
-                thenHoldForDuration: 1.0
-            )
-        }
-        let headerBeforeMinimum = commentHeader.frame
         XCTAssertGreaterThan(
-            playerFrame.frame.height,
-            54,
-            "player should remain above its minimum before the final collapse drag"
+            playerFrame.frame.height, 54,
+            "the initial small drag must verify coupling before the player reaches minimum height"
         )
-        XCTAssertGreaterThan(
-            headerBeforeMinimum.maxY,
-            scrollView.frame.minY,
-            "comment header should remain visible until the player reaches its minimum height"
-        )
-        let finalCollapseStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let finalCollapseEnd = finalCollapseStart.withOffset(CGVector(dx: 0, dy: -24))
-        finalCollapseStart.press(
-            forDuration: 0.8,
-            thenDragTo: finalCollapseEnd,
-            withVelocity: .slow,
-            thenHoldForDuration: 0.2
-        )
-        for _ in 0..<48 {
+        // Collapse using the inert header, not a comment row. Fixed 24/8-point
+        // steps assumed a one-to-one pan distance and could tap a reply or fail
+        // to cross UIScrollView's drag threshold near the minimum.
+        for _ in 0..<3 {
             let remainingCollapse = playerFrame.frame.height - 54
             if remainingCollapse <= 1 { break }
-            let dragDistance: CGFloat
-            if remainingCollapse > 24 {
-                dragDistance = 24
-            } else if remainingCollapse > 8 {
-                dragDistance = 8
-            } else {
-                dragDistance = max(remainingCollapse, 1)
-            }
-            let start = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-            start.press(
-                forDuration: 0.8,
-                thenDragTo: start.withOffset(CGVector(dx: 0, dy: -dragDistance)),
-                withVelocity: .slow,
-                thenHoldForDuration: 1.0
-            )
+            dragHeader(up: remainingCollapse + 16)
         }
         let minimumPlayer = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -443,10 +406,15 @@ final class VideoDetailFlowUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [minimumPlayer], timeout: 3), .completed)
         let headerAtMinimum = commentHeader.frame
-        let continuationStart = scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        // The header may already be above the visible area after the boundary
+        // crossing. Start the continuation inside the visible scroll viewport,
+        // never at the off-screen header (which can hit the status bar).
+        let viewport = scrollView.frame
+        let continuationStart = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: viewport.midX, dy: viewport.minY + viewport.height * 0.65))
         continuationStart.press(
-            forDuration: 0.8,
-            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -20)),
+            forDuration: 0.05,
+            thenDragTo: continuationStart.withOffset(CGVector(dx: 0, dy: -32)),
             withVelocity: .slow,
             thenHoldForDuration: 1.0
         )

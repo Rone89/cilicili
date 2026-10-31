@@ -135,6 +135,45 @@ final class RichCommentDraftTests: XCTestCase {
         await verifyClearThenNativeEdit(replacement: nil, expected: "")
     }
 
+
+    func testSuccessfulSubmissionClearsDraftWhenOnlyCursorMoved() {
+        let submitted = RichCommentDraft(elements: [.text("before"), .emote("[doge]")])
+        var current = submitted
+        current.selection = RichCommentSelection(NSRange(location: 0, length: 0))
+        XCTAssertTrue(current.clearIfMatchingSubmission(submitted))
+        XCTAssertFalse(current.hasContent)
+    }
+
+    func testSuccessfulSubmissionCannotClearNewTextOrAttachments() {
+        let submitted = RichCommentDraft(elements: [.text("before")])
+        var current = submitted
+        current.elements.append(.text("after"))
+        let edited = current
+        XCTAssertFalse(current.clearIfMatchingSubmission(submitted))
+        XCTAssertEqual(current, edited)
+        var newAttachment = submitted
+        newAttachment.images.append(RichCommentImageDraft(sourceIdentifier: "new", data: Data([1])))
+        let attached = newAttachment
+        XCTAssertFalse(newAttachment.clearIfMatchingSubmission(submitted))
+        XCTAssertEqual(newAttachment, attached)
+    }
+
+    func testSuccessfulSubmissionCannotClearRemovedAttachmentsOrChangedReplyTarget() {
+        let reply = DynamicCommentComposerTarget(rootID: 1, parentID: 2, authorName: "A")
+        let submitted = RichCommentDraft(
+            elements: [.text("before")],
+            images: [RichCommentImageDraft(sourceIdentifier: "old", data: Data([1]))],
+            replyTarget: reply
+        )
+        var current = submitted
+        current.images = []
+        XCTAssertFalse(current.clearIfMatchingSubmission(submitted))
+        current = submitted
+        current.replyTarget = DynamicCommentComposerTarget(rootID: 1, parentID: 3, authorName: "B")
+        XCTAssertFalse(current.clearIfMatchingSubmission(submitted))
+        XCTAssertEqual(current.replyTarget?.parentID, 3)
+    }
+
     private func verifyClearThenNativeEdit(replacement: String?, expected: String) async {
         var draft = RichCommentDraft(elements: [.text("na")])
         let coordinator = RichCommentTextView.Coordinator(
