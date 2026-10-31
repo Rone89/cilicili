@@ -126,9 +126,14 @@ final class AccountLibraryManagementUITests: XCTestCase {
         verifyWatchLaterBatchProgress(failsSecondBatch: true)
     }
 
-    private func verifyWatchLaterBatchProgress(failsSecondBatch: Bool) {
+    func testWatchLaterRetryDoesNotRepeatCompletedBatch() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: true, retry: true)
+    }
+
+    private func verifyWatchLaterBatchProgress(failsSecondBatch: Bool, retry: Bool = false) {
         var arguments = ["--library-batch-progress"]
         if failsSecondBatch { arguments.append("--library-batch-failure") }
+        if retry { arguments.append("--library-batch-retry") }
         let app = launch(arguments)
         app.buttons["library.manage.select"].tap()
         selectAll(in: app)
@@ -153,6 +158,18 @@ final class AccountLibraryManagementUITests: XCTestCase {
             XCTAssertTrue(result.exists)
         } else {
             XCTAssertTrue(app.alerts.staticTexts["已完成 25 项"].exists)
+        }
+        if retry {
+            let retryButton = app.alerts.buttons["library.manage.retry"]
+            XCTAssertTrue(retryButton.waitForExistence(timeout: 5))
+            retryButton.tap()
+            XCTAssertTrue(count.waitForExistence(timeout: 5))
+            XCTAssertEqual(count.label, "已完成 0 / 5 项")
+            XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.alerts.staticTexts["已完成 5 项"].exists)
+            app.alerts.buttons["好"].tap()
+            XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 5))
+            return
         }
         app.alerts.buttons["好"].tap()
         XCTAssertFalse(count.exists)
@@ -295,6 +312,34 @@ final class AccountLibraryManagementUITests: XCTestCase {
         let destination = app.staticTexts["目标收藏夹"]
         XCTAssertTrue(destination.waitForExistence(timeout: 5), app.debugDescription)
         destination.tap()
+        XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
+    }
+
+
+    func testFavoriteMoveRetrySkipsConfirmedTargetAddition() {
+        let app = launch(["--library-favorites", "--library-move-retry"])
+        app.staticTexts["来源收藏夹"].tap()
+        let select = app.buttons["library.manage.select"]
+        XCTAssertTrue(select.waitForExistence(timeout: 5))
+        select.tap()
+        selectAll(in: app)
+        app.buttons["library.manage.move"].tap()
+        app.staticTexts["目标收藏夹"].tap()
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 5))
+        let partial = app.alerts.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "3 项已加入目标收藏夹")
+        ).firstMatch
+        XCTAssertTrue(partial.exists)
+        let retry = app.alerts.buttons["library.manage.retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        let completed = app.alerts.staticTexts["已完成 3 项"]
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        app.alerts.buttons["好"].tap()
+        XCTAssertTrue(app.staticTexts["这个收藏夹还没有视频"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.staticTexts["目标收藏夹"].tap()
         XCTAssertTrue(app.staticTexts["测试视频 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }

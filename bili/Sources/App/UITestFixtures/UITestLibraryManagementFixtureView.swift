@@ -77,6 +77,8 @@ struct UITestLibraryManagementFixtureView: View {
 
 nonisolated private final class LibraryManagementFixtureState: @unchecked Sendable {
     private let lock = NSLock()
+    private var didFailWatchBatch = false
+    private var didFailMoveRemoval = false
     private var watchIDs = ProcessInfo.processInfo.arguments.contains("--library-batch-progress") ? Array(1...25) : [1, 2, 3]
     private var folderVideos = [9: ProcessInfo.processInfo.arguments.contains("--library-paginated") ? Array(1...30) : [1, 2, 3], 10: [Int]()]
     private func bodyData(_ request: URLRequest) -> Data {
@@ -105,7 +107,13 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         case "/x/v2/history/toview/add":
             if let aid = Int(body["aid"] ?? ""), !watchIDs.contains(aid) { watchIDs.append(aid) }
         case "/x/v2/history/toview/v2/dels":
-            if ProcessInfo.processInfo.arguments.contains("--library-batch-failure"), resources.contains(21) {
+            let retryFixture = ProcessInfo.processInfo.arguments.contains("--library-batch-retry")
+            if retryFixture, resources.contains(where: { !watchIDs.contains($0) }) {
+                return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "重复处理了已完成的项目"])
+            }
+            if ProcessInfo.processInfo.arguments.contains("--library-batch-failure"), resources.contains(21),
+               !retryFixture || !didFailWatchBatch {
+                didFailWatchBatch = true
                 return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "测试批次失败"])
             }
             watchIDs.removeAll { resources.contains($0) }
@@ -125,8 +133,20 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
                 data = ["medias": videos.map(video), "has_more": false]
             }
         case "/x/v3/fav/resource/batch-deal":
-            if let add = Int(body["add_media_ids"] ?? "") { folderVideos[add] = Array(Set((folderVideos[add] ?? []) + resources)).sorted() }
-            if let remove = Int(body["del_media_ids"] ?? "") { folderVideos[remove]?.removeAll { resources.contains($0) } }
+            let retryFixture = ProcessInfo.processInfo.arguments.contains("--library-move-retry")
+            if let add = Int(body["add_media_ids"] ?? "") {
+                if retryFixture, resources.contains(where: { (folderVideos[add] ?? []).contains($0) }) {
+                    return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "重复加入目标收藏夹"])
+                }
+                folderVideos[add] = Array(Set((folderVideos[add] ?? []) + resources)).sorted()
+            }
+            if let remove = Int(body["del_media_ids"] ?? "") {
+                if retryFixture, !didFailMoveRemoval {
+                    didFailMoveRemoval = true
+                    return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "来源移除暂时失败"])
+                }
+                folderVideos[remove]?.removeAll { resources.contains($0) }
+            }
         default: break
         }
         return try! JSONSerialization.data(withJSONObject: ["code": 0, "data": data])

@@ -131,6 +131,16 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                 }
             }
             .alert("管理结果", isPresented: Binding(get: { enabled && controller.message != nil }, set: { if !$0 { Task { @MainActor in controller.message = nil } } })) {
+                if controller.retryItemCount(source: source) > 0 {
+                    Button("重试未完成的 \(controller.retryItemCount(source: source)) 项") {
+                        controller.message = nil
+                        Task {
+                            await controller.retryUnfinished(source: source)
+                            await reload()
+                        }
+                    }
+                    .accessibilityIdentifier("library.manage.retry")
+                }
                 Button("好") { controller.message = nil }
             } message: { Text(controller.message ?? "") }
             .onChange(of: entries.map(\.id)) { _, _ in selection.formIntersection(selectableIDs) }

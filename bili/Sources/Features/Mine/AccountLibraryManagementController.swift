@@ -30,73 +30,131 @@ final class AccountLibraryManagementController: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var batchProgress: LibraryBatchProgress?
     @Published var message: String?
+    @Published private var pendingRetry: PendingRetry?
     private(set) var displayedContexts: [BiliAccountPurpose: LibraryManagementContext] = [:]
     let api: BiliAPIClient
+
+    private struct Step {
+        let aids: [Int]
+        var action: LibraryVideoManagementAction
+        // A removal-only retry can still represent an incomplete move.
+        var copiedToTarget = false
+    }
+
+    private struct PendingRetry {
+        let source: FavoriteFolder?
+        let context: LibraryManagementContext
+        let steps: [Step]
+    }
 
     init(api: BiliAPIClient) { self.api = api }
 
     func setDisplayedContext(_ snapshot: BiliAPIClient.RequestSnapshot, purpose: BiliAccountPurpose) {
+        if let retry = pendingRetry, retry.context.purpose == purpose,
+           (retry.context.snapshot.currentUserMID != snapshot.currentUserMID
+            || retry.context.snapshot.cookieHeader != snapshot.cookieHeader
+            || retry.context.snapshot.playbackCredentialVersion != snapshot.playbackCredentialVersion) {
+            pendingRetry = nil
+        }
         displayedContexts[purpose] = LibraryManagementContext(purpose: purpose, snapshot: snapshot)
     }
-    func clearDisplayedContext(purpose: BiliAccountPurpose) { displayedContexts[purpose] = nil }
+
+    func clearDisplayedContext(purpose: BiliAccountPurpose) {
+        displayedContexts[purpose] = nil
+        if pendingRetry?.context.purpose == purpose { pendingRetry = nil }
+    }
+
+    func retryItemCount(source: FavoriteFolder?) -> Int {
+        guard let retry = pendingRetry, retry.source?.id == source?.id else { return 0 }
+        return retry.steps.reduce(0) { $0 + $1.aids.count }
+    }
+
+    func retryUnfinished(source: FavoriteFolder?) async {
+        guard !isBusy, let retry = pendingRetry, retry.source?.id == source?.id else { return }
+        pendingRetry = nil
+        await execute(steps: retry.steps, source: retry.source, context: retry.context)
+    }
 
     func perform(entries: [AccountVideoEntry], source: FavoriteFolder?, action: LibraryVideoManagementAction) async {
         guard !isBusy, !entries.isEmpty else { return }
+        pendingRetry = nil
+        guard let context = displayedContexts[source == nil ? .historyRead : .interaction] else {
+            message = "操作已停止或账号已切换，请检查列表状态"
+            return
+        }
+        let aids = Array(Set(entries.compactMap(\.aid).filter { $0 > 0 })).sorted()
+        guard aids.count == entries.count else {
+            message = "选择包含无法管理的视频，请重新选择"
+            return
+        }
+        let steps = stride(from: 0, to: aids.count, by: 20).map { start in
+            Step(aids: Array(aids[start..<min(start + 20, aids.count)]), action: action)
+        }
+        await execute(steps: steps, source: source, context: context)
+    }
+
+    private func execute(steps: [Step], source: FavoriteFolder?, context: LibraryManagementContext) async {
         isBusy = true
+        message = nil
         defer { isBusy = false; batchProgress = nil }
+        var remaining = steps
+        let total = steps.reduce(0) { $0 + $1.aids.count }
         var result = LibraryBatchResult()
         do {
-            guard let context = displayedContexts[source == nil ? .historyRead : .interaction],
-                  await api.isCurrentLibraryContext(context) else { throw CancellationError() }
+            guard await api.isCurrentLibraryContext(context) else { throw CancellationError() }
             if let source, !source.canManage(accountMID: context.snapshot.currentUserMID) {
                 throw BiliAPIError.api(code: -400, message: "没有管理该收藏夹的权限")
             }
-            let aids = Array(Set(entries.compactMap(\.aid).filter { $0 > 0 })).sorted()
-            guard aids.count == entries.count else { throw BiliAPIError.api(code: -400, message: "选择包含无法管理的视频，请重新选择") }
-            for start in stride(from: 0, to: aids.count, by: 20) {
+            while let step = remaining.first {
                 try Task.checkCancellation()
-                let batch = Array(aids[start..<min(start + 20, aids.count)])
                 let stage: String
-                switch action {
-                case .remove: stage = "正在移除"
+                switch step.action {
+                case .remove: stage = step.copiedToTarget ? "正在从来源收藏夹移除" : "正在移除"
                 case .copy: stage = "正在复制到目标收藏夹"
                 case .move: stage = "正在加入目标收藏夹"
                 }
-                batchProgress = LibraryBatchProgress(completed: result.completed, total: aids.count, stage: stage)
-                switch action {
+                batchProgress = LibraryBatchProgress(completed: result.completed, total: total, stage: stage)
+                switch step.action {
                 case .remove:
                     if let source {
-                        try await api.changeFavoriteResources(aids: batch, removeFolderID: source.id, context: context)
+                        try await api.changeFavoriteResources(aids: step.aids, removeFolderID: source.id, context: context)
                     } else {
-                        try await api.removeWatchLater(aids: batch, context: context)
+                        try await api.removeWatchLater(aids: step.aids, context: context)
                     }
                 case .copy(let target), .move(let target):
                     guard let source, target != source.id else { throw BiliAPIError.missingPayload }
-                    try await api.changeFavoriteResources(aids: batch, addFolderID: target, context: context)
-                    if case .move = action {
-                        do {
-                            try Task.checkCancellation()
-                            batchProgress = LibraryBatchProgress(
-                                completed: result.completed, total: aids.count, stage: "正在从来源收藏夹移除"
-                            )
-                            try await api.changeFavoriteResources(aids: batch, removeFolderID: source.id, context: context)
-                        } catch {
-                            result.copiedButNotRemoved += batch.count
-                            throw error
-                        }
+                    try await api.changeFavoriteResources(aids: step.aids, addFolderID: target, context: context)
+                    if case .move = step.action {
+                        // Record the confirmed addition before the next async boundary.
+                        // A retry must not add these items to the target again.
+                        remaining[0].action = .remove
+                        remaining[0].copiedToTarget = true
+                        try Task.checkCancellation()
+                        batchProgress = LibraryBatchProgress(
+                            completed: result.completed, total: total, stage: "正在从来源收藏夹移除"
+                        )
+                        try await api.changeFavoriteResources(aids: step.aids, removeFolderID: source.id, context: context)
                     }
                 }
-                result.completed += batch.count
-                batchProgress = LibraryBatchProgress(completed: result.completed, total: aids.count, stage: stage)
+                result.completed += step.aids.count
+                remaining.removeFirst()
+                batchProgress = LibraryBatchProgress(completed: result.completed, total: total, stage: stage)
             }
         } catch {
-            result.failure = error is CancellationError ? "操作已停止或账号已切换，请检查列表状态" : error.localizedDescription
+            result.copiedButNotRemoved = remaining.filter(\.copiedToTarget).reduce(0) { $0 + $1.aids.count }
+            let contextIsCurrent = await api.isCurrentLibraryContext(context)
+            let stopped = error is CancellationError || Task.isCancelled || !contextIsCurrent
+            result.failure = stopped ? "操作已停止或账号已切换，请检查列表状态" : error.localizedDescription
+            if !stopped, !remaining.isEmpty {
+                pendingRetry = PendingRetry(source: source, context: context, steps: remaining)
+            }
         }
         message = result.message
     }
 
     func mutate(purpose: BiliAccountPurpose, operation: (LibraryManagementContext) async throws -> Void) async -> Bool {
         guard !isBusy else { return false }
+        pendingRetry = nil
         isBusy = true
         defer { isBusy = false }
         do {
