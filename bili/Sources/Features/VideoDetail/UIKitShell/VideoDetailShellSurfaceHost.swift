@@ -758,7 +758,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
                         BiliPlayerSurfaceOverlayLayer(
                             state: chromeState,
-                            displaysOfflineNotice: false,
                             speedBoostModel: renderContext.speedBoostModel,
                             seekPreviewModel: renderContext.seekPreviewModel
                         )
@@ -817,14 +816,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     .allowsHitTesting(!isBareSurfaceTransitionActive)
                 }
 
-                if shouldKeepChromeMounted && !isBareSurfaceTransitionActive {
-                    PlayerOfflineNoticeOverlay(
-                        isBuffering: chromeState.isBuffering,
-                        presentation: chromeState.presentation
-                    )
-                    .zIndex(10)
-                }
-
                 if showsCenterPlaybackControl {
                     centerPlaybackControl
                         .zIndex(5)
@@ -848,6 +839,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     .zIndex(2.5)
                 }
             }
+            .playerOfflineNotice(
+                isBuffering: chromeState.isBuffering,
+                isPresented: shouldKeepChromeMounted && !isBareSurfaceTransitionActive,
+                bottomInset: chromeState.contentInsets.bottom
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)

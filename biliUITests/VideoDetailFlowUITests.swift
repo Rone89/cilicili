@@ -27,6 +27,10 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertGreaterThan(notice.frame.width, 0)
         XCTAssertGreaterThan(notice.frame.height, 0)
         XCTAssertTrue(frame.frame.intersects(notice.frame))
+        let progress = app.descendants(matching: .any)["ui.player.progress"].firstMatch
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(notice.frame.maxY, progress.frame.minY - 4)
+        XCTAssertTrue(frame.frame.contains(notice.frame))
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Disconnected notice in paused player"
         attachment.lifetime = .keepAlways

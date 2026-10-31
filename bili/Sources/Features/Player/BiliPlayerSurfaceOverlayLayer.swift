@@ -4,7 +4,6 @@ struct BiliPlayerSurfaceOverlayLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var networkUnavailable = false
     let state: BiliPlayerSurfaceChromeState
-    var displaysOfflineNotice = true
     @ObservedObject var speedBoostModel: PlayerSpeedBoostModel
     @ObservedObject var seekPreviewModel: PlayerSeekPreviewModel
 
@@ -67,11 +66,6 @@ struct BiliPlayerSurfaceOverlayLayer: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .zIndex(6)
-            }
-
-            if displaysOfflineNotice {
-                PlayerOfflineNoticeOverlay(isBuffering: state.isBuffering, presentation: state.presentation)
-                    .zIndex(8)
             }
 
             if speedBoostModel.isIndicatorVisible {
@@ -143,7 +137,7 @@ nonisolated enum PlayerOfflineNotice {
 
 struct PlayerOfflineNoticeOverlay: View {
     let isBuffering: Bool
-    let presentation: BiliPlayerPresentation
+    let bottomPadding: CGFloat
     @State private var networkUnavailable = false
 
     var body: some View {
@@ -154,11 +148,12 @@ struct PlayerOfflineNoticeOverlay: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(.black.opacity(0.85), in: Capsule())
+                    .biliPlayerClearGlass(interactive: false, in: Capsule())
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("player.network.disconnected")
-                    .padding(.top, presentation == .embedded ? 10 : 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, bottomPadding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -177,5 +172,38 @@ struct PlayerOfflineNoticeOverlay: View {
         }
         #endif
         networkUnavailable = NetworkPathSnapshot.shared.networkUnavailable == true
+    }
+}
+
+struct PlayerProgressBoundsPreferenceKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
+    }
+}
+
+extension View {
+    func playerOfflineNotice(
+        isBuffering: Bool,
+        isPresented: Bool = true,
+        bottomInset: CGFloat = 0
+    ) -> some View {
+        overlayPreferenceValue(PlayerProgressBoundsPreferenceKey.self) { progressBounds in
+            if isPresented {
+                GeometryReader { proxy in
+                    // Track the actual slider, including fullscreen safe-area spacing.
+                    // Hidden controls fall back above the persistent bottom progress strip.
+                    let bottomPadding = progressBounds.map {
+                        max(8, proxy.size.height - proxy[$0].minY + 8)
+                    } ?? (bottomInset + VideoDetailPinnedProgressBar.height + 8)
+                    PlayerOfflineNoticeOverlay(
+                        isBuffering: isBuffering,
+                        bottomPadding: bottomPadding
+                    )
+                }
+                .allowsHitTesting(false)
+            }
+        }
     }
 }
