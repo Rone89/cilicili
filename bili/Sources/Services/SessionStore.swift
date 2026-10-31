@@ -416,6 +416,7 @@ final class SessionStore: ObservableObject {
         credentialsByMID[mid] = nil
         accounts.removeAll { $0.mid == mid }
         try deleteAccountCredentials(for: mid)
+        ScopedCommentDraftCache.shared.remove(accountMID: mid)
         if playbackAccountMID == mid {
             playbackAccountMID = mainAccountMID
             playbackAccountCredentialVersion &+= 1
@@ -443,6 +444,9 @@ final class SessionStore: ObservableObject {
         try keychain.delete(accessKeyKey)
         try keychain.delete(loginCookieHeaderKey)
         try keychain.delete(loginCredentialKindKey)
+        for mid in credentialsByMID.keys {
+            ScopedCommentDraftCache.shared.remove(accountMID: mid)
+        }
         credentialsByMID = [:]
         accounts = []
         mainAccountMID = nil
