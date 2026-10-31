@@ -344,6 +344,40 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["测试视频 3"].exists)
     }
 
+
+    func testWatchLaterSortingAndSearchKeepRowsManageable() {
+        let app = launch(["--library-sorting"])
+        let sort = app.buttons["library.watchLater.sort"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        sort.tap()
+        app.buttons["时长从长到短"].tap()
+        let reordered = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.video."))
+                    .allElementsBoundByIndex
+                return rows.map(\.identifier) == [
+                    "library.video.BVfixture3", "library.video.BVfixture2", "library.video.BVfixture1"
+                ]
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 5), .completed)
+        XCTAssertTrue(app.staticTexts["library.watchLater.sort.scope"].exists)
+        let search = app.textFields["library.watchLater.search.field"]
+        search.tap()
+        search.typeText("BVfixture2\n")
+        XCTAssertTrue(app.staticTexts["测试视频 2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        XCTAssertFalse(app.staticTexts["测试视频 3"].exists)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        XCTAssertTrue(app.buttons["library.manage.remove"].isEnabled)
+        // Changing order clears the old selection before another bulk action.
+        sort.tap()
+        app.buttons["默认顺序"].tap()
+        XCTAssertFalse(app.buttons["library.manage.remove"].isEnabled)
+    }
+
     private func selectAll(in app: XCUIApplication) {
         let selectAll = app.buttons["library.manage.selectAll"]
         XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)

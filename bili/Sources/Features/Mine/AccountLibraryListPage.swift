@@ -10,18 +10,25 @@ struct AccountLibraryListPage: View {
     @State private var editMode: EditMode = .inactive
     @State private var confirmsClear = false
     @State private var searchText = ""
+    @State private var sortOrder: LibraryVideoOrder = .original
 
     var body: some View {
         List(selection: managementEnabled ? $selectedIDs : nil) {
             Section {
                 if kind == .watchLater && sessionStore.isLoggedIn {
-                    LibrarySearchField(text: $searchText, prompt: "搜索已加载的稍后再看", identifier: "library.watchLater.search.field")
+                    HStack {
+                        LibrarySearchField(text: $searchText, prompt: "搜索已加载的稍后再看", identifier: "library.watchLater.search.field")
+                        LibraryVideoSortMenu(order: $sortOrder, identifier: "library.watchLater.sort")
+                    }
                 }
                 content
             } header: {
                 if isSearching {
                     Text("仅搜索已加载的 \(items.count) 个内容")
                         .accessibilityIdentifier("library.watchLater.search.scope")
+                } else if kind == .watchLater, sortOrder != .original {
+                    Text("仅排序已加载的 \(items.count) 个内容")
+                        .accessibilityIdentifier("library.watchLater.sort.scope")
                 }
             }
         }
@@ -35,6 +42,7 @@ struct AccountLibraryListPage: View {
             enabled: kind == .favorites && sessionStore.isLoggedIn
         ))
         .onChange(of: searchText) { _, _ in selectedIDs = [] }
+        .onChange(of: sortOrder) { _, _ in selectedIDs = [] }
         .nativeTopScrollEdgeEffect()
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .hiddenInlineNavigationTitle()
@@ -74,7 +82,7 @@ struct AccountLibraryListPage: View {
             }
         }
         .task(id: managedTaskID) {
-            selectedIDs = []; editMode = .inactive; searchText = ""
+            selectedIDs = []; editMode = .inactive; searchText = ""; sortOrder = .original
             guard !viewModel.libraryManagement.isBusy else { return }
             await viewModel.synchronizeManagedLibrary(kind: kind)
             await loadIfNeeded()
@@ -161,12 +169,8 @@ struct AccountLibraryListPage: View {
     private var normalizedSearch: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var isSearching: Bool { kind == .watchLater && !normalizedSearch.isEmpty }
     private var visibleItems: [AccountVideoEntry] {
-        guard isSearching else { return items }
-        return items.filter {
-            $0.title.localizedStandardContains(normalizedSearch)
-                || ($0.owner?.name.localizedStandardContains(normalizedSearch) ?? false)
-                || $0.bvid.localizedStandardContains(normalizedSearch)
-        }
+        guard kind == .watchLater else { return items }
+        return sortOrder.arrange(items, query: normalizedSearch)
     }
 
     private var state: LoadingState {

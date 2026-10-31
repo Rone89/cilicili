@@ -100,7 +100,7 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         let fields = URLComponents(string: "https://fixture/?" + String(data: bodyData(request), encoding: .utf8)!)?.queryItems ?? []
         let body = Dictionary(fields.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
         let resources = body["resources"]?.split(separator: ",").compactMap { Int($0.split(separator: ":")[0]) } ?? []
-        let video: (Int) -> [String: Any] = { ["aid": $0, "bvid": "BVfixture\($0)", "title": "测试视频 \($0)", "duration": 120] }
+        let video: (Int) -> [String: Any] = { ["aid": $0, "bvid": "BVfixture\($0)", "title": "测试视频 \($0)", "duration": ProcessInfo.processInfo.arguments.contains("--library-sorting") ? $0 * 60 : 120] }
         var data: [String: Any] = [:]
         switch path {
         case "/x/v2/history/toview": data = ["list": watchIDs.map(video)]
