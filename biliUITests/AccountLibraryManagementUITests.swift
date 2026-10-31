@@ -422,6 +422,24 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["测试视频 2"].exists)
     }
 
+
+    func testCommentSubmissionPreservesTypingAfterSendStarted() {
+        let app = launch([
+            "--library-detail-menu", "--library-comment-composer", "--library-comment-delayed-submit"
+        ])
+        app.buttons["video.detail.toolbar-comment"].tap()
+        let editor = app.textViews["dynamic.comment.composer.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("before")
+        app.buttons["dynamic.comment.composer.send"].tap()
+        editor.typeText("after")
+        let preserved = app.staticTexts["dynamic.comment.composer.newerDraftPreserved"]
+        XCTAssertTrue(preserved.waitForExistence(timeout: 15))
+        XCTAssertTrue(editor.exists)
+        XCTAssertEqual(editor.value as? String, "beforeafter")
+        XCTAssertTrue(app.buttons["dynamic.comment.composer.send"].isEnabled)
+    }
+
     private func selectAll(in app: XCUIApplication) {
         let selectAll = app.buttons["library.manage.selectAll"]
         XCTAssertTrue(selectAll.waitForExistence(timeout: 5), app.debugDescription)

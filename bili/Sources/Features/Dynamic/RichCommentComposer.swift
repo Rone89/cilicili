@@ -72,6 +72,17 @@ struct RichCommentDraft: Equatable, Sendable {
         elements.map(\.displayString).joined()
     }
 
+    /// Cursor movement is not a new draft, but text, attachments and reply changes are.
+    @discardableResult
+    mutating func clearIfMatchingSubmission(_ submitted: RichCommentDraft) -> Bool {
+        guard elements == submitted.elements,
+              images == submitted.images,
+              replyTarget == submitted.replyTarget else { return false }
+        self = RichCommentDraft()
+        return true
+    }
+
+
     var serializedMessage: String {
         elements.map(\.serializedString).joined()
     }
@@ -1064,6 +1075,8 @@ struct RichCommentComposerView: View {
     @State private var showsPhotoPicker = false
     @State private var isLoadingImages = false
     @State private var isSubmitting = false
+    @State private var keepsNewerDraftAfterSending = false
+    @State private var photoLoadGeneration = UUID()
     @State private var errorMessage: String?
     @State private var photoLoadTask: Task<Void, Never>?
     @State private var submitTask: Task<Void, Never>?
@@ -1092,10 +1105,6 @@ struct RichCommentComposerView: View {
         self.onDismiss = onDismiss
     }
 
-    private var sendableMessage: String {
-        draft.serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var canSend: Bool {
         draft.canSubmitWithCurrentAPI
             && !isSubmitting
@@ -1106,6 +1115,12 @@ struct RichCommentComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if keepsNewerDraftAfterSending {
+                Text("评论已发送，后续修改已保留")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("dynamic.comment.composer.newerDraftPreserved")
+            }
             if let authorName = target.authorName,
                !authorName.isEmpty {
                 Label("回复 @\(authorName)", systemImage: "arrowshape.turn.up.left")
@@ -1278,12 +1293,15 @@ struct RichCommentComposerView: View {
     private func loadSelectedPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         photoLoadTask?.cancel()
+        let generation = UUID()
+        photoLoadGeneration = generation
         let knownIdentifiers = Set(draft.images.compactMap(\.sourceIdentifier))
         let newItems = items.filter { item in
             guard let identifier = item.itemIdentifier else { return true }
             return !knownIdentifiers.contains(identifier)
         }
         guard !newItems.isEmpty else {
+            isLoadingImages = false
             selectedPhotos = []
             return
         }
@@ -1291,18 +1309,26 @@ struct RichCommentComposerView: View {
         isLoadingImages = true
         photoLoadTask = Task { @MainActor in
             defer {
-                isLoadingImages = false
-                selectedPhotos = []
+                if generation == photoLoadGeneration {
+                    isLoadingImages = false
+                    selectedPhotos = []
+                }
             }
 
             for item in newItems {
                 guard !Task.isCancelled else { return }
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                    let loadedData = try await item.loadTransferable(type: Data.self)
+                    try Task.checkCancellation()
+                    guard generation == photoLoadGeneration else { return }
+                    guard let data = loadedData else {
                         errorMessage = "无法读取所选图片"
                         continue
                     }
-                    guard let normalizedData = await Self.normalizedImageData(data) else {
+                    let normalized = await Self.normalizedImageData(data)
+                    try Task.checkCancellation()
+                    guard generation == photoLoadGeneration else { return }
+                    guard let normalizedData = normalized else {
                         errorMessage = "无法处理所选图片"
                         continue
                     }
@@ -1313,10 +1339,14 @@ struct RichCommentComposerView: View {
                         data: normalizedData
                     ))
                     draft = updatedDraft
+                } catch is CancellationError {
+                    return
                 } catch {
+                    guard generation == photoLoadGeneration else { return }
                     errorMessage = error.localizedDescription
                 }
             }
+            guard !Task.isCancelled, generation == photoLoadGeneration else { return }
             focusEditor()
         }
     }
@@ -1339,30 +1369,40 @@ struct RichCommentComposerView: View {
 
     private func submitDraft() {
         guard canSend else { return }
-        let submissionTarget = draft.replyTarget ?? target
-        let message = sendableMessage
+        let submittedDraft = draft
+        let submissionTarget = submittedDraft.replyTarget ?? target
+        let message = submittedDraft.serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         isSubmitting = true
+        keepsNewerDraftAfterSending = false
         errorMessage = nil
         submitTask = Task { @MainActor in
             defer { isSubmitting = false }
             do {
                 var pictures = [DynamicCommentImage]()
-                for image in draft.images {
+                for image in submittedDraft.images {
                     try Task.checkCancellation()
                     pictures.append(try await api.uploadDynamicCommentImage(image.data))
                 }
+                try Task.checkCancellation()
                 try await submit(submissionTarget, message, pictures.isEmpty ? nil : pictures)
-                draft = RichCommentDraft()
-                isEditorFocused = false
+                try Task.checkCancellation()
+                var currentDraft = draft
                 Haptics.success()
-                if let onDismiss {
-                    onDismiss()
+                if currentDraft.clearIfMatchingSubmission(submittedDraft) {
+                    draft = currentDraft
+                    isEditorFocused = false
+                    if let onDismiss {
+                        onDismiss()
+                    } else {
+                        dismiss()
+                    }
                 } else {
-                    dismiss()
+                    keepsNewerDraftAfterSending = true
                 }
             } catch is CancellationError {
                 return
             } catch {
+                guard !Task.isCancelled else { return }
                 errorMessage = error.localizedDescription
             }
         }

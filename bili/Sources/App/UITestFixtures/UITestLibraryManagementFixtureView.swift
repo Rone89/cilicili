@@ -65,7 +65,11 @@ struct UITestLibraryManagementFixtureView: View {
                 .background {
                     RichCommentComposerPresenter(
                         target: $composerTarget, draft: { _ in $draft },
-                        api: model.libraryManagement.api, submit: { _, _, _ in }
+                        api: model.libraryManagement.api, submit: { _, _, _ in
+                            if ProcessInfo.processInfo.arguments.contains("--library-comment-delayed-submit") {
+                                try await Task.sleep(for: .seconds(8))
+                            }
+                        }
                     )
                     .allowsHitTesting(false)
                 }
