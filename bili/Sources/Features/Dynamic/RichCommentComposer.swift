@@ -55,17 +55,20 @@ struct RichCommentDraft: Equatable, Sendable {
     var selection: RichCommentSelection?
     var images: [RichCommentImageDraft]
     var replyTarget: DynamicCommentComposerTarget?
+    var unavailableImageCount: Int
 
     init(
         elements: [RichCommentDraftElement] = [],
         selection: RichCommentSelection? = nil,
         images: [RichCommentImageDraft] = [],
-        replyTarget: DynamicCommentComposerTarget? = nil
+        replyTarget: DynamicCommentComposerTarget? = nil,
+        unavailableImageCount: Int = 0
     ) {
         self.elements = Self.normalized(elements)
         self.selection = selection
         self.images = images
         self.replyTarget = replyTarget
+        self.unavailableImageCount = max(0, unavailableImageCount)
     }
 
     var displayText: String {
@@ -77,7 +80,8 @@ struct RichCommentDraft: Equatable, Sendable {
     mutating func clearIfMatchingSubmission(_ submitted: RichCommentDraft) -> Bool {
         guard elements == submitted.elements,
               images == submitted.images,
-              replyTarget == submitted.replyTarget else { return false }
+              replyTarget == submitted.replyTarget,
+              unavailableImageCount == submitted.unavailableImageCount else { return false }
         self = RichCommentDraft()
         return true
     }
@@ -98,6 +102,7 @@ struct RichCommentDraft: Equatable, Sendable {
         !serializedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || containsEmote
             || !images.isEmpty
+            || unavailableImageCount > 0
     }
 
     var canSubmitWithCurrentAPI: Bool {
@@ -1116,6 +1121,7 @@ struct RichCommentComposerView: View {
 
     private var canSend: Bool {
         draft.canSubmitWithCurrentAPI
+            && draft.unavailableImageCount == 0
             && !isSubmitting
             && !isLoadingImages
     }
@@ -1124,6 +1130,24 @@ struct RichCommentComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if draft.unavailableImageCount > 0 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("上次选择的 \(draft.unavailableImageCount) 张图片未恢复，请重新添加")
+                        .font(.footnote)
+                        .accessibilityIdentifier("comment.draft.missingImages")
+                    Button {
+                        draft.unavailableImageCount = 0
+                    } label: {
+                        Text(draft.images.isEmpty ? "仅保留文字" : "使用当前已选图片")
+                            .font(.footnote)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .accessibilityIdentifier("comment.draft.acknowledgeMissingImages")
+                }
+            }
             if keepsNewerDraftAfterSending {
                 Text("评论已发送，后续修改已保留")
                     .font(.footnote)
