@@ -39,6 +39,11 @@ struct UITestLibraryManagementFixtureView: View {
         _session = StateObject(wrappedValue: session)
         _library = StateObject(wrappedValue: library)
         _model = StateObject(wrappedValue: MineViewModel(api: api, sessionStore: session))
+        if args.contains("--library-comment-missing-images") {
+            _draft = State(initialValue: RichCommentDraft(
+                elements: [.text("restored text")], unavailableImageCount: 2
+            ))
+        }
     }
 
     var body: some View {
