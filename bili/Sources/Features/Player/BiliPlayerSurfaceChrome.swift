@@ -27,5 +27,6 @@ struct BiliPlayerSurfaceChrome: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(.black)
+        .playerOfflineNotice(isBuffering: state.isBuffering, bottomInset: state.contentInsets.bottom)
     }
 }

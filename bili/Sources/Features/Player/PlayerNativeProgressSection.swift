@@ -24,5 +24,7 @@ struct PlayerNativeProgressSection: View {
         )
         .frame(maxWidth: .infinity)
         .frame(height: metrics.progressControlHeight)
+        .anchorPreference(key: PlayerProgressBoundsPreferenceKey.self, value: .bounds) { $0 }
+        .accessibilityIdentifier("ui.player.progress")
     }
 }
