@@ -178,8 +178,9 @@ final class ScopedCommentDraftCache: ObservableObject {
         let revision = saveRevision
         do {
             try await persistence.save(records, revision: revision)
-            persistenceError = nil
+            if revision == saveRevision { persistenceError = nil }
         } catch {
+            guard revision == saveRevision else { return }
             persistenceError = "草稿暂未保存到本机，请保留此页面并稍后重试"
         }
     }

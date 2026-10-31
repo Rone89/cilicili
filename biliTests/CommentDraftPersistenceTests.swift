@@ -191,6 +191,28 @@ final class CommentDraftPersistenceTests: XCTestCase {
         XCTAssertTrue(remaining.isEmpty)
     }
 
+    func testFailedNewerSaveStillRejectsOlderQueuedSnapshot() async throws {
+        let store = CommentDraftDiskStore(directory: directory, maximumBytes: 1024)
+        func record(_ value: String) -> StoredCommentDraft {
+            StoredCommentDraft(
+                key: key(), parts: [.init(kind: "text", value: value)],
+                selectionLocation: nil, selectionLength: nil,
+                authorName: nil, imageCount: 0, updatedAt: Date()
+            )
+        }
+        try await store.save([record("initial")], revision: 0)
+        do {
+            try await store.save([record(String(repeating: "x", count: 2048))], revision: 2)
+            XCTFail("Oversized snapshot must fail")
+        } catch {}
+        try await store.save([record("stale")], revision: 1)
+        let unchanged = try await store.load()
+        XCTAssertEqual(unchanged.first?.parts.first?.value, "initial")
+        try await store.save([record("retried")], revision: 2)
+        let retried = try await store.load()
+        XCTAssertEqual(retried.first?.parts.first?.value, "retried")
+    }
+
     private func makeCache() -> ScopedCommentDraftCache {
         ScopedCommentDraftCache(persistence: CommentDraftDiskStore(directory: directory))
     }

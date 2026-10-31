@@ -55,6 +55,9 @@ actor CommentDraftDiskStore {
 
     func save(_ drafts: [StoredCommentDraft], revision: UInt64 = 0) throws {
         guard revision >= latestRevision else { return }
+        // Reject older requests even if this newest write fails; the same
+        // revision may still retry after storage becomes available again.
+        latestRevision = revision
         let manager = FileManager.default
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         var values = URLResourceValues()
@@ -64,12 +67,10 @@ actor CommentDraftDiskStore {
         let file = directory.appendingPathComponent("drafts-v1.json")
         if drafts.isEmpty {
             if manager.fileExists(atPath: file.path) { try manager.removeItem(at: file) }
-            latestRevision = revision
             return
         }
         let data = try JSONEncoder().encode(Archive(version: 1, drafts: drafts))
         guard data.count <= maximumBytes else { throw CocoaError(.fileWriteOutOfSpace) }
         try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        latestRevision = revision
     }
 }
