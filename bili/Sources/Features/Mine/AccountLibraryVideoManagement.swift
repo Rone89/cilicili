@@ -84,6 +84,24 @@ struct AccountLibraryVideoManagementModifier: ViewModifier {
                 }
             }
             .disabled(controller.isBusy)
+            .overlay {
+                if enabled, let progress = controller.batchProgress {
+                    VStack(spacing: 12) {
+                        Text(progress.stage)
+                            .font(.headline)
+                            .accessibilityIdentifier("library.manage.progress.stage")
+                        ProgressView(value: Double(progress.completed), total: Double(progress.total))
+                        Text("已完成 \(progress.completed) / \(progress.total) 项")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("library.manage.progress.count")
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 280)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                    .allowsHitTesting(false)
+                }
+            }
             .confirmationDialog("移除所选的 \(selection.count) 项？", isPresented: $confirmsRemoval, titleVisibility: .visible) {
                 Button("移除", role: .destructive) { run(.remove) }
                     .accessibilityIdentifier("library.manage.confirmRemove")

@@ -19,9 +19,16 @@ nonisolated struct LibraryBatchResult: Equatable {
     }
 }
 
+nonisolated struct LibraryBatchProgress {
+    let completed: Int
+    let total: Int
+    let stage: String
+}
+
 @MainActor
 final class AccountLibraryManagementController: ObservableObject {
     @Published private(set) var isBusy = false
+    @Published private(set) var batchProgress: LibraryBatchProgress?
     @Published var message: String?
     private(set) var displayedContexts: [BiliAccountPurpose: LibraryManagementContext] = [:]
     let api: BiliAPIClient
@@ -36,7 +43,7 @@ final class AccountLibraryManagementController: ObservableObject {
     func perform(entries: [AccountVideoEntry], source: FavoriteFolder?, action: LibraryVideoManagementAction) async {
         guard !isBusy, !entries.isEmpty else { return }
         isBusy = true
-        defer { isBusy = false }
+        defer { isBusy = false; batchProgress = nil }
         var result = LibraryBatchResult()
         do {
             guard let context = displayedContexts[source == nil ? .historyRead : .interaction],
@@ -49,6 +56,13 @@ final class AccountLibraryManagementController: ObservableObject {
             for start in stride(from: 0, to: aids.count, by: 20) {
                 try Task.checkCancellation()
                 let batch = Array(aids[start..<min(start + 20, aids.count)])
+                let stage: String
+                switch action {
+                case .remove: stage = "正在移除"
+                case .copy: stage = "正在复制到目标收藏夹"
+                case .move: stage = "正在加入目标收藏夹"
+                }
+                batchProgress = LibraryBatchProgress(completed: result.completed, total: aids.count, stage: stage)
                 switch action {
                 case .remove:
                     if let source {
@@ -62,6 +76,9 @@ final class AccountLibraryManagementController: ObservableObject {
                     if case .move = action {
                         do {
                             try Task.checkCancellation()
+                            batchProgress = LibraryBatchProgress(
+                                completed: result.completed, total: aids.count, stage: "正在从来源收藏夹移除"
+                            )
                             try await api.changeFavoriteResources(aids: batch, removeFolderID: source.id, context: context)
                         } catch {
                             result.copiedButNotRemoved += batch.count
@@ -70,6 +87,7 @@ final class AccountLibraryManagementController: ObservableObject {
                     }
                 }
                 result.completed += batch.count
+                batchProgress = LibraryBatchProgress(completed: result.completed, total: aids.count, stage: stage)
             }
         } catch {
             result.failure = error is CancellationError ? "操作已停止或账号已切换，请检查列表状态" : error.localizedDescription

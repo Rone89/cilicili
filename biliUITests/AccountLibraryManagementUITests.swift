@@ -117,6 +117,54 @@ final class AccountLibraryManagementUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 3))
     }
 
+
+    func testWatchLaterBatchProgressCountsOnlyCompletedRequests() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: false)
+    }
+
+    func testWatchLaterBatchProgressStopsAtLastConfirmedBatchOnFailure() {
+        verifyWatchLaterBatchProgress(failsSecondBatch: true)
+    }
+
+    private func verifyWatchLaterBatchProgress(failsSecondBatch: Bool) {
+        var arguments = ["--library-batch-progress"]
+        if failsSecondBatch { arguments.append("--library-batch-failure") }
+        let app = launch(arguments)
+        app.buttons["library.manage.select"].tap()
+        selectAll(in: app)
+        app.buttons["library.manage.remove"].tap()
+        let confirm = app.sheets["移除所选的 25 项？"].buttons
+            .matching(identifier: "library.manage.confirmRemove").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        let count = app.staticTexts["library.manage.progress.count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "已完成 0 / 25 项")
+        let firstBatch = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "已完成 20 / 25 项"),
+            object: count
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [firstBatch], timeout: 10), .completed)
+        XCTAssertTrue(app.alerts["管理结果"].waitForExistence(timeout: 10))
+        if failsSecondBatch {
+            let result = app.alerts.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "已完成 20 项", "测试批次失败")
+            ).firstMatch
+            XCTAssertTrue(result.exists)
+        } else {
+            XCTAssertTrue(app.alerts.staticTexts["已完成 25 项"].exists)
+        }
+        app.alerts.buttons["好"].tap()
+        XCTAssertFalse(count.exists)
+        if failsSecondBatch {
+            XCTAssertTrue(app.staticTexts["测试视频 21"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["测试视频 25"].exists)
+            XCTAssertFalse(app.staticTexts["测试视频 1"].exists)
+        } else {
+            XCTAssertTrue(app.staticTexts["稍后再看里还没有视频"].waitForExistence(timeout: 5))
+        }
+    }
+
     func testLoggedOutHasNoManagementActions() {
         let app = launch(["--library-logged-out"])
         XCTAssertTrue(app.staticTexts["登录后同步稍后再看"].waitForExistence(timeout: 5))

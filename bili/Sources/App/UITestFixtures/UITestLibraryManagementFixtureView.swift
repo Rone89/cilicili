@@ -77,7 +77,7 @@ struct UITestLibraryManagementFixtureView: View {
 
 nonisolated private final class LibraryManagementFixtureState: @unchecked Sendable {
     private let lock = NSLock()
-    private var watchIDs = [1, 2, 3]
+    private var watchIDs = ProcessInfo.processInfo.arguments.contains("--library-batch-progress") ? Array(1...25) : [1, 2, 3]
     private var folderVideos = [9: ProcessInfo.processInfo.arguments.contains("--library-paginated") ? Array(1...30) : [1, 2, 3], 10: [Int]()]
     private func bodyData(_ request: URLRequest) -> Data {
         if let data = request.httpBody { return data }
@@ -104,7 +104,11 @@ nonisolated private final class LibraryManagementFixtureState: @unchecked Sendab
         case "/x/v2/history/toview": data = ["list": watchIDs.map(video)]
         case "/x/v2/history/toview/add":
             if let aid = Int(body["aid"] ?? ""), !watchIDs.contains(aid) { watchIDs.append(aid) }
-        case "/x/v2/history/toview/v2/dels": watchIDs.removeAll { resources.contains($0) }
+        case "/x/v2/history/toview/v2/dels":
+            if ProcessInfo.processInfo.arguments.contains("--library-batch-failure"), resources.contains(21) {
+                return try! JSONSerialization.data(withJSONObject: ["code": -400, "message": "测试批次失败"])
+            }
+            watchIDs.removeAll { resources.contains($0) }
         case "/x/v2/history/toview/clear": watchIDs = []
         case "/x/v3/fav/folder/created/list-all":
             data = ["list": [9,10].map { ["id": $0, "mid": 1001, "attr": 2, "title": $0 == 9 ? "来源收藏夹" : "目标收藏夹", "media_count": folderVideos[$0]?.count ?? 0] }]
@@ -134,6 +138,11 @@ nonisolated private final class LibraryManagementFixtureProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if request.httpMethod == "POST",
+           ProcessInfo.processInfo.arguments.contains("--library-batch-progress") {
+            // Simulate a slow server so both sequential batches are observable.
+            Thread.sleep(forTimeInterval: 4)
+        }
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Self.state.response(request))
