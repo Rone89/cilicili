@@ -93,6 +93,7 @@ struct PlayerPlaybackSnapshot: Equatable, Sendable {
     let isPlaying: Bool
     let isSeekable: Bool
     let bufferedRanges: [PlayerBufferedRange]
+    let bufferObservationAvailable: Bool
 
     init(
         currentTime: TimeInterval?,
@@ -101,7 +102,8 @@ struct PlayerPlaybackSnapshot: Equatable, Sendable {
         duration: TimeInterval?,
         isPlaying: Bool,
         isSeekable: Bool,
-        bufferedRanges: [PlayerBufferedRange]
+        bufferedRanges: [PlayerBufferedRange],
+        bufferObservationAvailable: Bool = false
     ) {
         self.currentTime = currentTime
         self.renderedVideoTime = renderedVideoTime
@@ -110,6 +112,7 @@ struct PlayerPlaybackSnapshot: Equatable, Sendable {
         self.isPlaying = isPlaying
         self.isSeekable = isSeekable
         self.bufferedRanges = bufferedRanges
+        self.bufferObservationAvailable = bufferObservationAvailable
     }
 
     func bufferedCoverageProgress(
@@ -491,6 +494,7 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
     func seek(by interval: TimeInterval, from currentTime: TimeInterval, duration: TimeInterval?) -> TimeInterval?
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval?
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot
+    func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot?
     func currentRenderedVideoTime() -> TimeInterval?
     func currentVideoFrameImage() -> UIImage?
     func currentSurfaceSnapshotImage() -> UIImage?
@@ -501,6 +505,8 @@ protocol PlayerRenderingEngine: AnyObject, Sendable {
 }
 
 extension PlayerRenderingEngine {
+    func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot? { nil }
+
 #if DEBUG
     func debugBeginRecoveryTrace(type: String, at: Double, fields: [String: String]) {}
     func debugRecoveryEvent(_ name: String, fields: [String: String] = [:]) {}
@@ -1972,6 +1978,8 @@ struct PlayerPerformanceStoreUpdate {
 }
 
 enum PlayerPerformanceCopyTextFormatter {
+    private static let recoveryBaselineRunID = UUID().uuidString
+
     static func millisecondsText(_ value: Int?) -> String {
         guard let value else { return "-" }
         if value >= 1000 {
@@ -1986,9 +1994,15 @@ enum PlayerPerformanceCopyTextFormatter {
         relatedPrefetchFunnelSummary: String? = nil
     ) -> String {
         let reportableSessions = sessions.filter(isReportableSession)
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
         var sections = [
             "CiliCili 播放性能日志",
             "generated: \(copyDateFormatter.string(from: Date()))",
+            "recoveryBaselineSchema: 1 exportRunID: \(recoveryBaselineRunID)",
+            "exportApp: \(appVersion) build: \(appBuild)",
+            "device: \(UIDevice.current.model) system: \(UIDevice.current.systemVersion)",
+            "recoveryEvidence: sampled video-output timestamps / seek state; not display presentation",
             "sessions: \(reportableSessions.count)",
         ]
         if let relatedPrefetchFunnelSummary, !relatedPrefetchFunnelSummary.isEmpty {
@@ -2982,7 +2996,7 @@ final class PlayerPerformanceStore: ObservableObject {
             session.manualResumeRecoveryMessage = Self.appendDiagnosticMessage(
                 session.manualResumeRecoveryMessage,
                 event.message,
-                maxParts: 4
+                maxParts: 16
             )
         case .seek:
             let isBufferReady = event.message?.contains("bufferReady") == true
@@ -2998,7 +3012,7 @@ final class PlayerPerformanceStore: ObservableObject {
             session.seekMessage = Self.appendDiagnosticMessage(
                 session.seekMessage,
                 event.message,
-                maxParts: 4
+                maxParts: 16
             )
         case .seekRecovery:
             session.seekRecoveryCount += 1
@@ -3013,7 +3027,7 @@ final class PlayerPerformanceStore: ObservableObject {
             session.seekRecoveryMessage = Self.appendDiagnosticMessage(
                 session.seekRecoveryMessage,
                 event.message,
-                maxParts: 4
+                maxParts: 16
             )
         case .speedBoost:
             let message = event.message ?? ""

@@ -1398,8 +1398,10 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         let coordinator = ActivePlaybackCoordinator.shared
         coordinator.stopActivePlayback()
         let engine = PlayerLifecycleEngineSpy(isPlaying: true)
+        let metricsID = UUID().uuidString
+        engine.snapshotBufferObservationAvailable = true
         let player = PlayerStateViewModel(videoURL: nil, audioURL: nil,
-            title: "Seek moving-frame reveal", referer: "https://www.bilibili.com", engine: engine)
+            title: "Seek moving-frame reveal", referer: "https://www.bilibili.com", metricsID: metricsID, engine: engine)
         let surface = VideoSurfaceContainerView()
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         coordinator.activate(player)
@@ -1427,6 +1429,15 @@ final class PlayerFormalPlaybackConfigurationTests: XCTestCase {
         XCTAssertFalse(player.isUserSeeking)
         player.finishUserSeekVisualReveal()
         XCTAssertEqual(engine.temporaryAudioSuppressionValues.last, false)
+        let session = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID))
+        let transition = try XCTUnwrap(session.seekMessage)
+        let recovery = try XCTUnwrap(session.seekRecoveryMessage)
+        let sampleID = try XCTUnwrap(transition.components(separatedBy: "sampleID=").last?
+            .components(separatedBy: " ").first)
+        XCTAssertFalse(sampleID.isEmpty)
+        XCTAssertTrue(recovery.contains("sampleID=\(sampleID)"))
+        XCTAssertTrue(recovery.contains("mode=seekPlaying"))
+        XCTAssertTrue(recovery.contains("targetLoadedRange=covered"))
     }
 
     @MainActor
@@ -1626,6 +1637,9 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
 
     private var isPlaying: Bool
     var snapshotTime: TimeInterval = 12
+    var snapshotBufferObservationAvailable = false
+    var snapshotBufferedRanges = [PlayerBufferedRange(start: 0, end: 60)]
+    var bufferedRangesAfterSeek: [PlayerBufferedRange]?
     var renderedVideoTime: TimeInterval?
     var requiresRenderedVideoTimeForRecovery = false
     var videoOutputRefreshResult = true
@@ -1745,6 +1759,7 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
 
     func seek(toProgress progress: Double, duration: TimeInterval?) -> TimeInterval? {
         guard let duration else { return nil }
+        if let bufferedRangesAfterSeek { snapshotBufferedRanges = bufferedRangesAfterSeek }
         return min(max(progress, 0), 1) * duration
     }
 
@@ -1764,9 +1779,12 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
             duration: durationHint ?? 60,
             isPlaying: isPlaying,
             isSeekable: true,
-            bufferedRanges: [PlayerBufferedRange(start: 0, end: 60)]
+            bufferedRanges: snapshotBufferedRanges,
+            bufferObservationAvailable: snapshotBufferObservationAvailable
         )
     }
+
+    func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot? { snapshot(durationHint: nil) }
 
     func currentVideoFrameImage() -> UIImage? {
         videoFrameImageReadCount += 1
