@@ -2965,6 +2965,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         )
     }
 
+    func recordManualPauseAudioDeactivation(milliseconds: Double, succeeded: Bool) {
+        guard milliseconds.isFinite, milliseconds >= 0,
+              let timing = manualResumeRecoveryTiming, timing.playRequestedAt == nil
+        else { return }
+        recordManualResumeRecovery(
+            "stage=audioSessionDeactivation audioDeactivationMs=\(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), milliseconds)) succeeded=\(succeeded)"
+        )
+    }
+
     func pause() {
         if !isTerminated, hasPresentedPlayback, engine.hasMedia, !isUserSeeking,
            wantsAutoplay || isPlaying {

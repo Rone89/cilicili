@@ -89,6 +89,31 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         try await assertPausedSeekHasNoLateRetry(useSlider: false)
     }
 
+
+    func testPauseAudioWorkIsCorrelatedAndCannotAttachAfterResume() throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: true)
+        defer { player.stop(); _ = surface }
+        player.pause()
+        player.recordManualPauseAudioDeactivation(milliseconds: 740, succeeded: true)
+        player.recordManualPauseAudioDeactivation(milliseconds: .nan, succeeded: false)
+        let records = PlayerPerformanceStore.shared.events.filter {
+            $0.metricsID == metricsID && $0.message?.contains("stage=audioSessionDeactivation") == true
+        }
+        XCTAssertEqual(records.count, 1)
+        let paused = try XCTUnwrap(PlayerPerformanceStore.shared.events.first {
+            $0.metricsID == metricsID && $0.message?.hasPrefix("stage=paused") == true
+        }?.message)
+        let sampleID = try XCTUnwrap(paused.components(separatedBy: "sampleID=").last)
+        XCTAssertTrue(records[0].message?.contains("sampleID=\(sampleID)") == true)
+        XCTAssertTrue(records[0].message?.contains("audioDeactivationMs=740.0") == true)
+        engine.snapshotTime = 12
+        player.playFromUserInteraction()
+        player.recordManualPauseAudioDeactivation(milliseconds: 99, succeeded: true)
+        XCTAssertEqual(PlayerPerformanceStore.shared.events.filter {
+            $0.metricsID == metricsID && $0.message?.contains("stage=audioSessionDeactivation") == true
+        }.count, 1)
+    }
+
     private func assertPausedSeekHasNoLateRetry(useSlider: Bool) async throws {
         let (player, engine, surface, metricsID) = makePlayer(playing: false)
         defer { player.stop(); _ = surface }
@@ -149,7 +174,7 @@ private final class HeldInteractiveSeeks {
     }
 
     func finish(_ index: Int, result: TimeInterval?) {
-        guard let continuation = continuations[index] else { return }
+        guard continuations.indices.contains(index), let continuation = continuations[index] else { return }
         continuations[index] = nil
         continuation.resume(returning: result)
     }

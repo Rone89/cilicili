@@ -39,11 +39,12 @@ nonisolated struct PlaybackRecoveryTestMetric: Codable, Equatable, Sendable {
             "loadedAheadSeconds", "requestedTargetSeconds", "pauseToPlay", "playToTransport",
             "playToFrame", "pauseToFrame", "total", "engine", "source", "recovered", "frameTime",
             "sampleInterval", "sampleGap", "maxSampleGap", "target", "progress", "budget", "baselineFrame",
+            "audioDeactivationMs", "succeeded",
         ]
         let numericKeys: Set<String> = [
             "loadedAheadSeconds", "requestedTargetSeconds", "pauseToPlay", "playToTransport",
             "playToFrame", "pauseToFrame", "total", "engine", "frameTime", "sampleInterval",
-            "sampleGap", "maxSampleGap", "target", "progress", "budget", "baselineFrame",
+            "sampleGap", "maxSampleGap", "target", "progress", "budget", "baselineFrame", "audioDeactivationMs",
         ]
         var fields: [String: String] = [:]
         for token in message.split(whereSeparator: \.isWhitespace) {

@@ -1746,8 +1746,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard let viewModel,
               ActivePlaybackCoordinator.shared.isActive(viewModel)
         else { return }
+        let startedAt = CACurrentMediaTime()
+        var succeeded = false
+        defer {
+            viewModel.recordManualPauseAudioDeactivation(
+                milliseconds: max(0, (CACurrentMediaTime() - startedAt) * 1_000),
+                succeeded: succeeded
+            )
+        }
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            succeeded = true
         } catch {
             // The session may already be inactive or owned by a system transition.
         }

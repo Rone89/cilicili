@@ -31,7 +31,9 @@ Report schema 2 adds optional synchronous pause/play/seek command durations and
 a pause hold duration. Existing actualPauseMilliseconds retains its original
 definition: command start until the following play request. pauseHoldMilliseconds
 isolates the requested hold after the pause command returns. These command spans
-are not frame/display/audio-output latencies.
+are not frame/display/audio-output latencies. The synchronous audio-session
+deactivation span is also recorded against the current manual-pause ID, with
+a success flag, so its share of a slow explicit-pause command can be measured.
 
 Seek metrics now retain their safe action prefix so an original transition can
 be distinguished from its retry/rebuild. A playing-seek completion must carry a
