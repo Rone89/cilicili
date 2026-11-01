@@ -164,6 +164,21 @@ final class PlaybackRecoveryTestRunnerTests: XCTestCase {
         XCTAssertFalse(runner.report?.trials.contains { $0.metrics.contains { $0.kind == "failure" } } ?? true)
     }
 
+
+    func testPauseCommandWorkIsSeparatedFromTheRequestedHold() async throws {
+        let (runner, driver, _, _) = makeRunner(repetitions: 1)
+        driver.pauseCommandDelay = 0.75
+        runner.start()
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.first)
+        XCTAssertEqual(trial.pauseCommandMilliseconds ?? -1, 750, accuracy: 0.001)
+        XCTAssertEqual(trial.pauseHoldMilliseconds ?? -1, 5000, accuracy: 0.001)
+        XCTAssertEqual(trial.actualPauseMilliseconds ?? -1, 5750, accuracy: 0.001)
+        XCTAssertNotNil(trial.playCommandMilliseconds)
+        let burst = try XCTUnwrap(runner.report?.trials.last)
+        XCTAssertEqual(burst.seekCommandMilliseconds?.count, 3)
+    }
+
     private func makeRunner(repetitions: Int = 3) -> (
         PlaybackRecoveryTestRunner, RecoveryScriptDriver, RecoveryScriptClock, PlaybackRecoveryTestReportStore
     ) {
@@ -223,6 +238,7 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     var omitFinalContinuousRecovery = false
     var autoplayPausedSeek = false
     var neverFinishesSeek = false
+    var pauseCommandDelay = 0.0
     var commands: [String] = []
     private var position = 0.0
     private var playingAt: Double?
@@ -255,6 +271,7 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
         pauseSample = id
         pausedAt = clock.time
         onMetric?("manualResume", "stage=paused sampleID=\(id) baselineFrame=\(position)")
+        clock.time += pauseCommandDelay
     }
 
     func play() {

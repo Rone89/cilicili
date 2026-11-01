@@ -1,0 +1,160 @@
+import XCTest
+@testable import bili
+
+@MainActor
+final class PlayerOverlappingSeekTests: XCTestCase {
+    func testScriptedContinuousCommitsPreservePlayingIntentAndIgnoreOlderCompletions() async throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: true)
+        let requests = HeldInteractiveSeeks()
+        engine.interactiveSeekHandler = { await requests.seek(progress: $0, duration: $1) }
+        let driver = PlayerRecoveryTestDriver(player: player, metricsID: metricsID)
+        defer { requests.finishAll(); player.stop(); _ = surface }
+        for (index, progress) in [0.4, 0.75, 0.3].enumerated() {
+            driver.seek(to: progress)
+            try await wait { requests.count == index + 1 }
+            if index == 0 {
+                // A queued playing callback must re-pause quietly, without
+                // deactivating audio or replacing the saved user intent.
+                engine.onPlaybackStateChange?(.playing)
+            }
+        }
+        engine.snapshotTime = 180
+        requests.finish(2, result: 180)
+        try await wait { engine.playCallCount > 0 }
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(player.currentTime, 180, accuracy: 0.01)
+        let callsAfterFinal = engine.playCallCount
+        requests.finish(1, result: 450)
+        requests.finish(0, result: 240)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(player.currentTime, 180, accuracy: 0.01)
+        XCTAssertEqual(engine.playCallCount, callsAfterFinal)
+        XCTAssertEqual(engine.pauseCallCount, 0, "Interactive commits must not release the audio session")
+        XCTAssertGreaterThanOrEqual(engine.scrubPauseCallCount, 6)
+        let message = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID)?.seekMessage)
+        XCTAssertTrue(message.contains("mode=seekPlaying"), message)
+        XCTAssertFalse(message.contains("mode=seekPaused"), message)
+    }
+
+    func testContinuousCommitsStartingPausedStayPaused() async throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: false)
+        let requests = HeldInteractiveSeeks()
+        engine.interactiveSeekHandler = { await requests.seek(progress: $0, duration: $1) }
+        let driver = PlayerRecoveryTestDriver(player: player, metricsID: metricsID)
+        defer { requests.finishAll(); player.stop(); _ = surface }
+        for (index, progress) in [0.4, 0.75, 0.3].enumerated() {
+            driver.seek(to: progress)
+            try await wait { requests.count == index + 1 }
+        }
+        engine.snapshotTime = 180
+        requests.finish(2, result: 180)
+        try await wait { !player.isUserSeeking }
+        requests.finish(0, result: 240)
+        requests.finish(1, result: 450)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(player.wantsAutoplay)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(engine.playCallCount, 0)
+        XCTAssertEqual(engine.pauseCallCount, 0)
+        let message = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID)?.seekMessage)
+        XCTAssertTrue(message.contains("mode=seekPaused"), message)
+    }
+
+    func testExplicitPauseWhileCommitsArePendingWinsOverOriginalPlayingIntent() async throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: true)
+        let requests = HeldInteractiveSeeks()
+        engine.interactiveSeekHandler = { await requests.seek(progress: $0, duration: $1) }
+        let driver = PlayerRecoveryTestDriver(player: player, metricsID: metricsID)
+        defer { requests.finishAll(); player.stop(); _ = surface }
+        driver.seek(to: 0.4)
+        try await wait { requests.count == 1 }
+        driver.seek(to: 0.3)
+        try await wait { requests.count == 2 }
+        player.pause()
+        requests.finish(1, result: 180)
+        requests.finish(0, result: 240)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(player.wantsAutoplay)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(engine.playCallCount, 0)
+        XCTAssertEqual(engine.pauseCallCount, 1, "An explicit user pause retains its normal audio-session semantics")
+    }
+
+    func testPausedSliderSeekDoesNotLeaveAWatchdogThatReseeksAfterExplicitPlay() async throws {
+        try await assertPausedSeekHasNoLateRetry(useSlider: true)
+    }
+
+    func testPausedScrubSeekDoesNotLeaveAWatchdogThatReseeksAfterExplicitPlay() async throws {
+        try await assertPausedSeekHasNoLateRetry(useSlider: false)
+    }
+
+    private func assertPausedSeekHasNoLateRetry(useSlider: Bool) async throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: false)
+        defer { player.stop(); _ = surface }
+        // Keep a deliberately stale rendered/snapshot position. A leftover
+        // 2.8-second seek watchdog would interpret this as a stall and reseek.
+        engine.snapshotTime = 0
+        engine.requiresRenderedVideoTimeForRecovery = true
+        engine.renderedVideoTime = nil
+        player.beginUserScrubInteraction()
+        if useSlider { player.seekAfterSliderCommit(to: 0.55) }
+        else { player.seekAfterUserScrub(to: 0.55) }
+        try await wait { !player.isUserSeeking }
+        player.playFromUserInteraction()
+        try await Task.sleep(for: .milliseconds(3100))
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(engine.seekCallCount, 0, "A paused seek must not schedule a playing-recovery retry")
+        XCTAssertNil(PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage)
+        XCTAssertEqual(engine.pauseCallCount, 0)
+        XCTAssertGreaterThanOrEqual(engine.scrubPauseCallCount, 2)
+    }
+
+    private func makePlayer(playing: Bool) -> (
+        PlayerStateViewModel, PlayerLifecycleEngineSpy, VideoSurfaceContainerView, String
+    ) {
+        ActivePlaybackCoordinator.shared.stopActivePlayback()
+        let engine = PlayerLifecycleEngineSpy(isPlaying: playing)
+        engine.snapshotBufferObservationAvailable = true
+        let metricsID = UUID().uuidString
+        let player = PlayerStateViewModel(
+            videoURL: URL(string: "https://unit-test.invalid/video.mp4"), audioURL: nil,
+            title: "Overlapping native seeks", referer: "https://www.bilibili.com",
+            durationHint: 600, metricsID: metricsID, engine: engine
+        )
+        let surface = VideoSurfaceContainerView()
+        player.attachSurface(surface, prefersNativePlaybackControls: false)
+        ActivePlaybackCoordinator.shared.activate(player)
+        player.setPlaybackIntent(playing)
+        engine.onFirstFrame?(12)
+        return (player, engine, surface, metricsID)
+    }
+
+    private func wait(_ predicate: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while !predicate(), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(predicate(), "Seek operation did not reach the expected state")
+    }
+}
+
+@MainActor
+private final class HeldInteractiveSeeks {
+    private var continuations: [CheckedContinuation<TimeInterval?, Never>?] = []
+    var count: Int { continuations.count }
+
+    func seek(progress: Double, duration: TimeInterval?) async -> TimeInterval? {
+        await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func finish(_ index: Int, result: TimeInterval?) {
+        guard let continuation = continuations[index] else { return }
+        continuations[index] = nil
+        continuation.resume(returning: result)
+    }
+
+    func finishAll() {
+        for index in continuations.indices { finish(index, result: nil) }
+    }
+}

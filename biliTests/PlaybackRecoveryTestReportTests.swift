@@ -123,6 +123,35 @@ final class PlaybackRecoveryTestReportTests: XCTestCase {
         XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled)
     }
 
+
+    func testSeekActionIdentifiesRetryWithoutExportingUnsafeText() throws {
+        let metric = try XCTUnwrap(PlaybackRecoveryTestMetric.parse(
+            kind: "seek", message: "slider-engine-recovery sampleID=abc total=3000ms",
+            receivedMilliseconds: 3001
+        ))
+        XCTAssertEqual(metric.fields["action"], "slider-engine-recovery")
+        let unsafe = try XCTUnwrap(PlaybackRecoveryTestMetric.parse(
+            kind: "seek", message: "https://private.invalid sampleID=abc total=3000ms",
+            receivedMilliseconds: 3001
+        ))
+        XCTAssertNil(unsafe.fields["action"])
+    }
+
+    func testSchemaOneReportsStillDecodeWithMissingCommandDurations() throws {
+        let old = """
+        {"schemaVersion":1,"runID":"00000000-0000-0000-0000-000000000001","startedAt":"2026-01-01T00:00:00Z","status":"completed","context":{"build":"47"},"plannedTrialCount":21,"limits":[],"trials":[{"id":"00000000-0000-0000-0000-000000000002","scenario":"pause5","repetition":1,"outcome":"observed","targetProgresses":[],"metrics":[],"checks":{},"actualPauseMilliseconds":5738}]}
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let report = try decoder.decode(PlaybackRecoveryTestReport.self, from: Data(old.utf8))
+        XCTAssertEqual(report.schemaVersion, 1)
+        XCTAssertEqual(report.trials.first?.actualPauseMilliseconds, 5738)
+        XCTAssertNil(report.trials.first?.pauseCommandMilliseconds)
+        XCTAssertNil(report.trials.first?.pauseHoldMilliseconds)
+        XCTAssertNil(report.trials.first?.playCommandMilliseconds)
+        XCTAssertNil(report.trials.first?.seekCommandMilliseconds)
+    }
+
     private func temporaryURL() -> URL {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

@@ -3468,7 +3468,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             setPendingUserSeekRevealTarget(optimisticTargetTime)
             _ = updatePlaybackTime(optimisticTargetTime, force: true, countsAsNaturalPlayback: false)
         }
-        engine.pause()
+        engine.pauseForUserScrub()
         rescheduleTimeObserverIfNeeded(force: true)
         scrubSeekTask?.cancel()
         scrubSeekTask = Task(priority: .userInitiated) { @MainActor [weak self] in
@@ -3529,14 +3529,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             }
             self.setPendingUserSeekRevealTarget(appliedTime)
             self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
-            self.beginSeekRecoveryTracking(
-                reason: seekReason,
-                targetTime: appliedTime,
-                targetProgress: targetProgress,
-                startedAt: userSeekStart,
-                engineElapsedMilliseconds: engineElapsed,
-                baselineContext: recoveryBaselineContext
-            )
+            if shouldResumeAfterSeek {
+                self.beginSeekRecoveryTracking(
+                    reason: seekReason,
+                    targetTime: appliedTime,
+                    targetProgress: targetProgress,
+                    startedAt: userSeekStart,
+                    engineElapsedMilliseconds: engineElapsed,
+                    baselineContext: recoveryBaselineContext
+                )
+            }
             self.recordSeekTransition(
                 reason: seekReason,
                 targetTime: appliedTime,
@@ -3574,6 +3576,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
+        cancelSeekRecoveryTracking()
         let initialSnapshot = engine.snapshot(durationHint: durationHint)
         let shouldResumeAfterSeek = shouldResumePlaybackAfterUserScrub
             || wantsAutoplay
@@ -3601,7 +3604,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         isBuffering = true
         loadingProgress = hasPresentedPlayback ? 0.22 : max(loadingProgress, 0.78)
         playbackPhase = .seeking
-        engine.pause()
+        engine.pauseForUserScrub()
         engine.setTemporaryAudioSuppressed(true)
         rescheduleTimeObserverIfNeeded(force: true)
         scrubSeekTask?.cancel()
@@ -3658,14 +3661,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             if let appliedTime {
                 self.setPendingUserSeekRevealTarget(appliedTime)
                 self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
-                self.beginSeekRecoveryTracking(
-                    reason: seekReason,
-                    targetTime: appliedTime,
-                    targetProgress: targetProgress,
-                    startedAt: userSeekStart,
-                    engineElapsedMilliseconds: engineElapsed,
-                    baselineContext: recoveryBaselineContext
-                )
+                if shouldResumeAfterSeek {
+                    self.beginSeekRecoveryTracking(
+                        reason: seekReason,
+                        targetTime: appliedTime,
+                        targetProgress: targetProgress,
+                        startedAt: userSeekStart,
+                        engineElapsedMilliseconds: engineElapsed,
+                        baselineContext: recoveryBaselineContext
+                    )
+                }
             }
             self.recordSeekTransition(
                 reason: seekReason,
@@ -3710,7 +3715,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard engine.hasMedia else { return }
         markUserSeekIntent()
         guard hasPresentedPlayback else { return }
-        shouldResumePlaybackAfterUserScrub = wantsAutoplay || isPlaying || playbackPhase == .playing
+        // A new drag can arrive while an earlier commit is still seeking. Its
+        // temporary pause is not a new user pause; retain the original intent.
+        let continuingSeekWantsPlayback = isUserSeeking && shouldResumePlaybackAfterUserScrub
+        shouldResumePlaybackAfterUserScrub = continuingSeekWantsPlayback
+            || wantsAutoplay || isPlaying || playbackPhase == .playing
         if activeUserScrubSource == nil {
             activeUserScrubSource = source
             activeUserScrubStartedAt = CACurrentMediaTime()
@@ -5304,7 +5313,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     isBuffering = true
                     playbackPhase = .seeking
                     loadingProgress = max(loadingProgress, 0.22)
-                    engine.pause()
+                    engine.pauseForUserScrub()
                     engine.setTemporaryAudioSuppressed(true)
                     rescheduleTimeObserverIfNeeded(force: true)
                     return

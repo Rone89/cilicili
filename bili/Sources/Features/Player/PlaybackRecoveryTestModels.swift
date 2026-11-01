@@ -62,6 +62,12 @@ nonisolated struct PlaybackRecoveryTestMetric: Codable, Equatable, Sendable {
             }
             fields[key] = value
         }
+        if kind == "seek" || kind == "seekRecovery",
+           let first = message.split(whereSeparator: \.isWhitespace).first,
+           first.count <= 64,
+           first.allSatisfy({ $0.asciiValue != nil && ($0.isLetter || $0.isNumber || "_-".contains($0)) }) {
+            fields["action"] = String(first)
+        }
         if kind == "failure" { fields = ["reason": "playerReportedFailure"] }
         guard !fields.isEmpty else { return nil }
         return Self(kind: kind, receivedMilliseconds: receivedMilliseconds, fields: fields)
@@ -75,6 +81,10 @@ nonisolated struct PlaybackRecoveryTestTrial: Codable, Equatable, Identifiable, 
     var outcome = "running"
     var requestedPauseSeconds: Double?
     var actualPauseMilliseconds: Double?
+    var pauseCommandMilliseconds: Double?
+    var pauseHoldMilliseconds: Double?
+    var playCommandMilliseconds: Double?
+    var seekCommandMilliseconds: [Double]?
     var targetProgresses: [Double] = []
     var metrics: [PlaybackRecoveryTestMetric] = []
     var checks: [String: Bool] = [:]
@@ -94,7 +104,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
     let limits: [String]
 
     init(context: [String: String], plannedTrialCount: Int) {
-        schemaVersion = 1
+        schemaVersion = 2
         runID = UUID()
         startedAt = Date()
         status = "running"
@@ -110,6 +120,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
             "Automatic preparation seeks warm buffers; classify actual evidence, never assume a cold-cache trial.",
             "Observed means required evidence was collected, not that latency or visual/audio quality passed.",
             "Retry/rebuild total timings are attempt-relative and may not include the original seek command.",
+            "Command durations measure synchronous API work, not display or audible output. actualPauseMilliseconds includes pause command work; pauseHoldMilliseconds begins after the pause command returns.",
         ]
     }
 
