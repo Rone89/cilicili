@@ -88,6 +88,15 @@ struct MinePlaybackToolsSection: View {
                 )
             }
 
+            NavigationLink {
+                PlaybackRecoveryTestSavedReportView()
+            } label: {
+                PlainSettingsNavigationRow(
+                    title: "自动恢复测试报告",
+                    subtitle: "查看并复制最近一轮自动测试结果"
+                )
+            }
+
             ForEach(Array(PlaybackPerformanceTestVideo.fixedSamples.enumerated()), id: \.element.id) { index, video in
                 NavigationLink {
                     PlaybackPerformanceTestVideoView(testVideo: video)

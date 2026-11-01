@@ -503,6 +503,53 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
     }
 
+
+    @MainActor
+    func testAutomaticRecoveryTestBlocksShortVideo() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        openAutomaticRecoveryTest(in: app)
+        let start = app.buttons["recovery.test.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        XCTAssertFalse(start.isEnabled)
+        XCTAssertTrue(app.staticTexts["请选择至少5分钟的普通视频。"].exists)
+    }
+
+    @MainActor
+    func testAutomaticRecoveryTestStopsAndCopiesPartialReport() {
+        let app = launchVideoDetail(waitForDetailMarker: false,
+                                    extraArguments: ["--ui-test-recovery-long-video"])
+        openAutomaticRecoveryTest(in: app)
+        let start = app.buttons["recovery.test.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        XCTAssertTrue(start.isEnabled, app.debugDescription)
+        start.tap()
+        let stop = app.buttons["recovery.test.stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        stop.tap()
+        let result = app.staticTexts["recovery.test.result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertTrue(result.label.contains("中断"))
+        let copy = app.buttons["recovery.test.copy"]
+        if !copy.isHittable { app.swipeUp() }
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.tap()
+        XCTAssertTrue(app.buttons["已复制测试报告"].waitForExistence(timeout: 5))
+        XCTAssertFalse(stop.exists)
+    }
+
+    @MainActor
+    private func openAutomaticRecoveryTest(in app: XCUIApplication) {
+        revealPlayerControls(in: app)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        tapPlayerControl(more, in: app)
+        let entry = app.buttons["recovery.test.open"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !entry.isHittable { app.swipeUp() }
+        XCTAssertTrue(entry.isHittable, app.debugDescription)
+        entry.tap()
+    }
+
     @MainActor
     func testVideoDetailQualitySwitchKeepsPlayerSurfaceMounted() {
         let app = launchVideoDetail(waitForDetailMarker: false)
@@ -816,7 +863,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchVideoDetail(waitForDetailMarker: Bool = true) -> XCUIApplication {
+    private func launchVideoDetail(waitForDetailMarker: Bool = true, extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = [
@@ -825,6 +872,7 @@ final class VideoDetailFlowUITests: XCTestCase {
             "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
             "--start-bvid", "BV1xx411c7mD",
         ]
+        app.launchArguments += extraArguments
         app.launch()
         XCTAssertTrue(
             element("video.detail.toolbar-picker", in: app).firstMatch.waitForExistence(timeout: 10)

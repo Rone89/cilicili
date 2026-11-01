@@ -60,7 +60,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
                 payload = [
                     "quality": quality, "accept_quality": [80, 64],
                     "accept_description": ["1080P 高清", "720P 高清"],
-                    "durl": [["url": "https://ui-test.invalid/video.mp4", "length": 120000]],
+                    "durl": [["url": "https://ui-test.invalid/video.mp4", "length": Self.fixtureDuration * 1000]],
                     "support_formats": [
                         ["quality": 80, "new_description": "1080P 高清", "format": "mp4"],
                         ["quality": 64, "new_description": "720P 高清", "format": "mp4"],
@@ -93,13 +93,17 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 
+    private static var fixtureDuration: Int {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-recovery-long-video") ? 600 : 120
+    }
+
     private static var video: [String: Any] {
         ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
-         "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": 120,
+         "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": Self.fixtureDuration,
          "pubdate": 1700000000,
          "owner": ["mid": 1001, "name": "测试 UP", "face": "https://ui-test.invalid/face.png"],
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
-         "pages": [["cid": 1001, "page": 1, "part": "测试分 P", "duration": 120]],
+         "pages": [["cid": 1001, "page": 1, "part": "测试分 P", "duration": Self.fixtureDuration]],
          "stat": ["view": 1000, "like": 20, "reply": 25]]
     }
 }

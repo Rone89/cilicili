@@ -509,6 +509,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var startupResumeRetryGeneration = 0
     private var resumeRecoveryWatchdogTask: Task<Void, Never>?
     private var manualResumeFrameObservationTask: Task<Void, Never>?
+    private var recoveryTestRunnerStorage: PlaybackRecoveryTestRunner?
     private var manualResumeRecoveryTiming: ManualResumeRecoveryTiming? {
         didSet {
             if manualResumeRecoveryTiming?.playRequestedAt == nil {
@@ -1740,6 +1741,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
 
     @discardableResult
     func pauseForAppBackground() -> Bool {
+        recoveryTestRunnerStorage?.cancel(reason: "播放页面离开或播放器停止", pausePlayback: false)
         manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
@@ -2809,6 +2811,46 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+
+    var recoveryTestRunner: PlaybackRecoveryTestRunner {
+        if let recoveryTestRunnerStorage { return recoveryTestRunnerStorage }
+        let runner = PlaybackRecoveryTestRunner(driver: PlayerRecoveryTestDriver(player: self, metricsID: metricsID))
+        recoveryTestRunnerStorage = runner
+        return runner
+    }
+
+    func recoveryTestObservation() -> PlaybackRecoveryTestObservation {
+        let snapshot = engine.recoveryBufferSnapshot()
+        let environment = PlaybackEnvironment.current
+        let issue: String?
+        if isTerminated { issue = "播放器已退出" }
+        else if !ActivePlaybackCoordinator.shared.isActive(self) { issue = "当前播放器已切换" }
+        else if UIApplication.shared.applicationState != .active { issue = "App未处于前台" }
+        else if isPictureInPictureActive { issue = "请先退出画中画" }
+        else if isLiveStream || playbackContentMode != .video { issue = "仅支持普通视频播放测试" }
+        else if errorMessage != nil { issue = "播放器报告播放失败" }
+        else { issue = nil }
+        let identity = [
+            streamSource.videoURL?.absoluteString ?? "-",
+            streamSource.audioURL?.absoluteString ?? "-",
+            String(playbackRate.rawValue),
+            engineDiagnostics.codec ?? "-",
+            engineDiagnostics.resolution ?? "-",
+        ].joined(separator: "|")
+        return PlaybackRecoveryTestObservation(
+            available: !isTerminated && engine.hasMedia && hasPresentedPlayback && canSeek,
+            currentTime: snapshot?.currentTime ?? currentTime,
+            duration: duration ?? durationHint ?? snapshot?.duration ?? 0,
+            isPlaying: snapshot?.isPlaying ?? isPlaying,
+            wantsPlayback: wantsAutoplay,
+            isSeeking: isUserSeeking,
+            isBuffering: isBuffering,
+            issue: issue,
+            sourceIdentity: identity,
+            networkClass: String(describing: environment.networkClass)
+        )
+    }
+
     private func recoveryBaseline(
         snapshot: PlayerPlaybackSnapshot?,
         targetTime: TimeInterval?,
@@ -2997,6 +3039,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func pauseForNavigation() {
+        recoveryTestRunnerStorage?.cancel(reason: "播放页面离开或播放器停止", pausePlayback: false)
         manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
@@ -3123,6 +3166,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func suspendForNavigation() {
+        recoveryTestRunnerStorage?.cancel(reason: "播放页面离开或播放器停止", pausePlayback: false)
         #if DEBUG
         debugManualPauseStartedAt = nil
         engine.debugRecoveryEvent("sessionEnded", fields: ["reason": "systemTransition"])
@@ -3138,6 +3182,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     func stop(reason: PlayerStopReason = .navigation) {
+        recoveryTestRunnerStorage?.cancel(reason: "播放页面离开或播放器停止", pausePlayback: false)
         manualResumeRecoveryTiming = nil
         #if DEBUG
         debugManualPauseStartedAt = nil
