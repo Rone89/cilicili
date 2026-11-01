@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import bili
 
@@ -126,6 +127,12 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         engine.requiresRenderedVideoTimeForRecovery = true
         engine.snapshotTime = 330.04
         engine.renderedVideoTime = 330.04
+        // Recovery requires both the target timestamp and a usable visible frame.
+        // A timestamp-only spy correctly exercises the stalled-video path instead.
+        engine.surfaceSnapshotImage = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        }
         player.playFromUserInteraction()
         try await wait {
             PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage?.contains("recovered=true") == true
