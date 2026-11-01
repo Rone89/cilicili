@@ -1994,11 +1994,13 @@ enum PlayerPerformanceCopyTextFormatter {
         relatedPrefetchFunnelSummary: String? = nil
     ) -> String {
         let reportableSessions = sessions.filter(isReportableSession)
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
         var sections = [
             "CiliCili 播放性能日志",
             "generated: \(copyDateFormatter.string(from: Date()))",
             "recoveryBaselineSchema: 1 exportRunID: \(recoveryBaselineRunID)",
-            "exportApp: \(Bundle.main.object(forInfoDictionaryKey: \"CFBundleShortVersionString\") as? String ?? \"-\") build: \(Bundle.main.object(forInfoDictionaryKey: \"CFBundleVersion\") as? String ?? \"-\")",
+            "exportApp: \(appVersion) build: \(appBuild)",
             "device: \(UIDevice.current.model) system: \(UIDevice.current.systemVersion)",
             "recoveryEvidence: sampled video-output timestamps / seek state; not display presentation",
             "sessions: \(reportableSessions.count)",
