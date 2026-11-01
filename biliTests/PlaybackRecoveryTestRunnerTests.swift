@@ -212,8 +212,8 @@ private final class RecoveryScriptClock {
 @MainActor
 private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     let clock: RecoveryScriptClock
-    var onMetric: ((String, String) -> Void)?
-    var onInterrupt: ((String) -> Void)?
+    var onMetric: (@MainActor (String, String) -> Void)?
+    var onInterrupt: (@MainActor (String) -> Void)?
     var identity = "original-source-secret"
     var network = "wifi"
     var duration = 600.0
@@ -310,13 +310,16 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     }
 }
 
-actor RecoveryScriptMemoryDisk: PlaybackRecoveryTestReportPersistence {
-    var value: PlaybackRecoveryTestReport?
-    var fails = false
-    func read() -> PlaybackRecoveryTestReport? { value }
+nonisolated final class RecoveryScriptMemoryDisk: PlaybackRecoveryTestReportPersistence, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: PlaybackRecoveryTestReport?
+    private var fails = false
+    func read() -> PlaybackRecoveryTestReport? { lock.withLock { value } }
     func write(_ report: PlaybackRecoveryTestReport, revision: UInt64) throws {
-        if fails { throw CocoaError(.fileWriteUnknown) }
-        value = report
+        try lock.withLock {
+            if fails { throw CocoaError(.fileWriteUnknown) }
+            value = report
+        }
     }
-    func setFailure(_ fails: Bool) { self.fails = fails }
+    func setFailure(_ fails: Bool) async { lock.withLock { self.fails = fails } }
 }

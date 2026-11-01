@@ -11,8 +11,8 @@ final class PlayerRecoveryTestDriver: PlaybackRecoveryTestDriving {
     private var cancellables = Set<AnyCancellable>()
     private var interruptionCancellables = Set<AnyCancellable>()
     private var originalIdleTimerDisabled: Bool?
-    var onMetric: ((String, String) -> Void)?
-    var onInterrupt: ((String) -> Void)?
+    var onMetric: (@MainActor (String, String) -> Void)?
+    var onInterrupt: (@MainActor (String) -> Void)?
 
     init(player: PlayerStateViewModel, metricsID: String) {
         self.player = player

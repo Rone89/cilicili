@@ -140,8 +140,8 @@ struct PlaybackRecoveryTestObservation {
 protocol PlaybackRecoveryTestDriving: AnyObject {
     var observation: PlaybackRecoveryTestObservation { get }
     var reportContext: [String: String] { get }
-    var onMetric: ((String, String) -> Void)? { get set }
-    var onInterrupt: ((String) -> Void)? { get set }
+    var onMetric: (@MainActor (String, String) -> Void)? { get set }
+    var onInterrupt: (@MainActor (String) -> Void)? { get set }
     func setTestingActive(_ active: Bool)
     func pause()
     func play()
@@ -157,6 +157,6 @@ struct PlaybackRecoveryTestTiming {
     var recoveryTimeout = 10.0
     var preparationTimeout = 20.0
     var pollSeconds = 0.1
-    var now: () -> Double = { ProcessInfo.processInfo.systemUptime }
-    var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+    var now: @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime }
+    var sleep: @MainActor (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
 }
