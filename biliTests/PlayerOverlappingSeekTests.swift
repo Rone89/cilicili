@@ -114,6 +114,26 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         }.count, 1)
     }
 
+
+    func testHealthyPausedSeekResumeResolvesFreshGuardWithoutReseeking() async throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: false)
+        defer { player.stop(); _ = surface }
+        player.beginUserScrubInteraction()
+        player.seekAfterSliderCommit(to: 0.55)
+        try await wait { !player.isUserSeeking }
+        engine.requiresRenderedVideoTimeForRecovery = true
+        engine.snapshotTime = 330.04
+        engine.renderedVideoTime = 330.04
+        player.playFromUserInteraction()
+        try await wait {
+            PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage?.contains("recovered=true") == true
+        }
+        try await Task.sleep(for: .milliseconds(3100))
+        XCTAssertEqual(engine.seekCallCount, 0)
+        let message = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage)
+        XCTAssertTrue(message.contains("paused-resume"), message)
+    }
+
     private func assertPausedSeekHasNoLateRetry(useSlider: Bool) async throws {
         let (player, engine, surface, metricsID) = makePlayer(playing: false)
         defer { player.stop(); _ = surface }
@@ -126,11 +146,17 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         if useSlider { player.seekAfterSliderCommit(to: 0.55) }
         else { player.seekAfterUserScrub(to: 0.55) }
         try await wait { !player.isUserSeeking }
-        player.playFromUserInteraction()
-        try await Task.sleep(for: .milliseconds(3100))
-        XCTAssertTrue(player.wantsAutoplay)
-        XCTAssertEqual(engine.seekCallCount, 0, "A paused seek must not schedule a playing-recovery retry")
+        try await Task.sleep(for: .milliseconds(2000))
+        XCTAssertEqual(engine.seekCallCount, 0)
         XCTAssertNil(PlayerPerformanceStore.shared.session(for: metricsID)?.seekRecoveryMessage)
+        player.playFromUserInteraction()
+        try await Task.sleep(for: .milliseconds(1100))
+        XCTAssertTrue(player.wantsAutoplay)
+        XCTAssertEqual(engine.seekCallCount, 0, "The old pre-play deadline must not reseek after only 1.1 seconds of playback")
+        // Still-stale video after a fresh full budget must retain recovery.
+        try await wait { engine.seekCallCount > 0 }
+        let message = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID)?.seekMessage)
+        XCTAssertTrue(message.contains("paused-resume-recovery"), message)
         XCTAssertEqual(engine.pauseCallCount, 0)
         XCTAssertGreaterThanOrEqual(engine.scrubPauseCallCount, 2)
     }

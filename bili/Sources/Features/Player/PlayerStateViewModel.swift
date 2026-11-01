@@ -559,6 +559,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pendingStartupResume: PendingStartupResume?
     private var pendingResumeRecoveryMetric: PendingStartupResumeRecoveryMetric?
     private var pendingSeekRecoveryMetric: PendingSeekRecoveryMetric?
+    private var pendingPausedSeekRecoveryMetric: PendingSeekRecoveryMetric?
     private var lastRecoveredSeekMetricID: UUID?
     private var lastSeekBufferReadyMetricID: UUID?
     private var activeUserScrubSource: PlayerScrubInteractionSource?
@@ -2665,6 +2666,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return
         }
 
+        startPausedSeekRecoveryForPlaybackIfNeeded()
         startPreparedPlayback()
         if let stoppedBackgroundResumeTime {
             scheduleStoppedAppBackgroundResumeRecovery(from: stoppedBackgroundResumeTime)
@@ -3575,6 +3577,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.playbackPhase = .paused
                 self.clearPendingUserSeekRevealTarget()
                 self.refreshPlaybackState()
+                self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
+                    reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
+                    startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
+                    baselineContext: recoveryBaselineContext
+                )
                 self.engine.setTemporaryAudioSuppressed(false)
             }
         }
@@ -3710,6 +3717,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.playbackPhase = .paused
                 self.clearPendingUserSeekRevealTarget()
                 self.refreshPlaybackState()
+                if let appliedTime {
+                    self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
+                        reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
+                        startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
+                        baselineContext: recoveryBaselineContext
+                    )
+                }
                 self.engine.setTemporaryAudioSuppressed(false)
             }
         }
@@ -5497,9 +5511,25 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func markUserSeekIntent() {
+        pendingPausedSeekRecoveryMetric = nil
         manualResumeRecoveryTiming = nil
         lastUserSeekAt = Date()
         cancelStartupResumeCorrectionAfterUserSeek()
+    }
+
+    private func startPausedSeekRecoveryForPlaybackIfNeeded() {
+        guard engine.hasMedia, let paused = pendingPausedSeekRecoveryMetric else { return }
+        pendingPausedSeekRecoveryMetric = nil
+        // Paused time is not stalled playback. Start a full recovery budget only
+        // when playback is actually requested, retaining the target/frame guards.
+        beginSeekRecoveryTracking(
+            reason: "\(paused.reason)-paused-resume",
+            targetTime: paused.targetTime,
+            targetProgress: paused.targetProgress,
+            startedAt: CACurrentMediaTime(),
+            engineElapsedMilliseconds: nil,
+            baselineContext: paused.baselineContext
+        )
     }
 
     private func beginSeekRecoveryTracking(
@@ -5867,6 +5897,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func cancelSeekRecoveryTracking() {
+        pendingPausedSeekRecoveryMetric = nil
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
         pendingSeekRecoveryMetric = nil

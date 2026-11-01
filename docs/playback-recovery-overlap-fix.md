@@ -17,7 +17,9 @@ was explicitly resumed before that old deadline.
   background and navigation policies remain unchanged.
 - Playing recovery tracking is started only for a commit that intends to
   resume playback. Paused commits retain transition metrics but have no stale
-  playing-recovery watchdog. The scrub path also cancels the previous seek's
+  playing-recovery watchdog while paused. An explicit subsequent play starts a
+  fresh full watchdog budget against the retained target; stale video can still
+  recover and healthy target video resolves that guard. The scrub path cancels the previous seek's
   tracking at the start of a newer commit.
 
 Frame eligibility, advancing-frame checks, the stable reveal window and fallback

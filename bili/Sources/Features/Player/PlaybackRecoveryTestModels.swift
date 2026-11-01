@@ -121,6 +121,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
             "Automatic preparation seeks warm buffers; classify actual evidence, never assume a cold-cache trial.",
             "Observed means required evidence was collected, not that latency or visual/audio quality passed.",
             "Retry/rebuild total timings are attempt-relative and may not include the original seek command.",
+            "A paused-resume recovery total starts at the subsequent play request, not at the earlier paused seek.",
             "Command durations measure synchronous API work, not display or audible output. actualPauseMilliseconds includes pause command work; pauseHoldMilliseconds begins after the pause command returns.",
         ]
     }
