@@ -24,12 +24,13 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         XCTAssertTrue(player.wantsAutoplay)
         XCTAssertEqual(player.currentTime, 180, accuracy: 0.01)
         let callsAfterFinal = engine.playCallCount
-        requests.finish(1, result: 450)
+        requests.finish(1, result: nil)
         requests.finish(0, result: 240)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(player.wantsAutoplay)
         XCTAssertEqual(player.currentTime, 180, accuracy: 0.01)
         XCTAssertEqual(engine.playCallCount, callsAfterFinal)
+        XCTAssertEqual(engine.seekCallCount, 0, "A cancelled completion must not fallback to an old target")
         XCTAssertEqual(engine.pauseCallCount, 0, "Interactive commits must not release the audio session")
         XCTAssertGreaterThanOrEqual(engine.scrubPauseCallCount, 6)
         let message = try XCTUnwrap(PlayerPerformanceStore.shared.session(for: metricsID)?.seekMessage)
@@ -50,8 +51,8 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         engine.snapshotTime = 180
         requests.finish(2, result: 180)
         try await wait { !player.isUserSeeking }
-        requests.finish(0, result: 240)
-        requests.finish(1, result: 450)
+        requests.finish(0, result: nil)
+        requests.finish(1, result: nil)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertFalse(player.wantsAutoplay)
         XCTAssertFalse(player.isPlaying)
@@ -72,13 +73,14 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         driver.seek(to: 0.3)
         try await wait { requests.count == 2 }
         player.pause()
-        requests.finish(1, result: 180)
-        requests.finish(0, result: 240)
+        requests.finish(1, result: nil)
+        requests.finish(0, result: nil)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertFalse(player.wantsAutoplay)
         XCTAssertFalse(player.isPlaying)
         XCTAssertEqual(engine.playCallCount, 0)
         XCTAssertEqual(engine.pauseCallCount, 1, "An explicit user pause retains its normal audio-session semantics")
+        XCTAssertEqual(engine.seekCallCount, 0, "Cancelled requests cannot issue a fallback after explicit pause")
     }
 
     func testPausedSliderSeekStartsAFreshRecoveryBudgetAtExplicitPlay() async throws {

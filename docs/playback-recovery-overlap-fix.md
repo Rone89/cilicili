@@ -10,7 +10,9 @@ was explicitly resumed before that old deadline.
 
 - A repeated begin-scrub while a commit is pending preserves the original
   resume intent. An explicit pause still cancels that intent and invalidates
-  pending commits. Existing generation checks keep older completions inert.
+  pending commits. Cancellation/generation checks run immediately after the
+  awaited engine result, before a nil result can trigger a fallback seek.
+  Engine seek-generation ownership also gates native-overlay repositioning.
 - Slider/scrub commit pauses and a queued playing callback during a scrub use
   the existing quiet pause path. This pauses AVPlayer and retains temporary
   audio suppression without deactivating the audio session. Explicit pause,

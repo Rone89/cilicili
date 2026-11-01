@@ -3512,6 +3512,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 duration: seekDuration
             )
             seekReason = shouldResumeAfterSeek ? "slider-engine-resume" : "slider-engine"
+            // A cancelled AVPlayer seek may return nil. Ownership must be
+            // checked before a fallback can issue another seek.
+            guard !Task.isCancelled, !self.isTerminated,
+                  self.scrubSeekGeneration == generation
+            else {
+                signpostMessage = "mode=slider cancelled"
+                return
+            }
             if appliedTime == nil,
                let fallbackTarget = optimisticTargetTime ?? (self.currentTime > 0 ? self.currentTime : nil) {
                 appliedTime = self.engine.seek(toTime: fallbackTarget)
@@ -3658,6 +3666,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 duration: resolvedDuration > 0 ? resolvedDuration : self.duration
             )
             var seekReason = "scrub-engine"
+            // A cancelled AVPlayer seek may return nil. Ownership must be
+            // checked before a fallback can issue another seek.
+            guard !Task.isCancelled, !self.isTerminated,
+                  self.scrubSeekGeneration == generation
+            else {
+                signpostMessage = "mode=scrub cancelled"
+                return
+            }
             if appliedTime == nil,
                let fallbackTarget = optimisticTargetTime ?? (self.currentTime > 0 ? self.currentTime : nil) {
                 appliedTime = self.engine.seek(toTime: fallbackTarget)

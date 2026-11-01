@@ -1048,6 +1048,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 continuation.resume(returning: finished)
             }
         }
+        guard isCurrentPlaybackGeneration(seekPlaybackGeneration), seekGeneration == generation else { return nil }
         #if DEBUG
         if debugRecoveryTraceID == recoveryID {
             debugRecoverySeekCompleted = finished
@@ -1055,7 +1056,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         #endif
         nativeDolbyVideoOverlay.seek(to: displayTarget, shouldPlay: false)
-        guard isCurrentPlaybackGeneration(seekPlaybackGeneration) else { return nil }
         finishSeekTransaction(generation: generation, finished: finished, shouldResume: false)
         return finished ? displayTarget : nil
     }
