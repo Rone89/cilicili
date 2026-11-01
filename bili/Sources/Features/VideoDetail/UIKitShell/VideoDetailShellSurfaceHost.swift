@@ -1726,6 +1726,15 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     .accessibilityIdentifier("ui.player.backgroundPlayback")
                 }
 
+                if !detailViewModel.isVideoListenModeEnabled {
+                    NavigationLink {
+                        PlaybackRecoveryTestView(player: viewModel)
+                    } label: {
+                        Label("自动恢复测试", systemImage: "testtube.2")
+                    }
+                    .accessibilityIdentifier("recovery.test.open")
+                }
+
                 Toggle(isOn: Binding(
                     get: { libraryStore.playerPerformanceOverlayEnabled },
                     set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
