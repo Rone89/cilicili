@@ -2809,10 +2809,33 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         }
     }
 
+    private func recoveryBaseline(
+        snapshot: PlayerPlaybackSnapshot?,
+        targetTime: TimeInterval?,
+        mode: String,
+        sampleID: String = UUID().uuidString
+    ) -> PlaybackRecoveryBaseline {
+        PlaybackRecoveryBaseline(
+            sampleID: sampleID,
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-",
+            mode: mode,
+            networkClass: String(describing: PlaybackEnvironment.current.networkClass),
+            targetTime: targetTime,
+            ranges: snapshot?.bufferObservationAvailable == true ? snapshot?.bufferedRanges : nil
+        )
+    }
+
     private func recordManualResumePlayRequest() {
         guard var timing = manualResumeRecoveryTiming,
               let pauseToPlay = timing.beginPlay(at: CACurrentMediaTime())
         else { return }
+        let snapshot = engine.recoveryBufferSnapshot()
+        timing.baselineContext = recoveryBaseline(
+            snapshot: snapshot,
+            targetTime: snapshot?.currentTime,
+            mode: "manualResume",
+            sampleID: timing.sampleID
+        ).diagnosticText
         manualResumeRecoveryTiming = timing
         recordManualResumeRecovery(
             "stage=playRequested pauseToPlay=\(String(format: "%.0f", pauseToPlay))ms"
@@ -2889,11 +2912,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func recordManualResumeRecovery(_ message: String) {
+        let context = manualResumeRecoveryTiming.map {
+            $0.baselineContext ?? "sampleID=\($0.sampleID)"
+        }
         PlayerMetricsLog.record(
             .manualResumeRecovery,
             metricsID: metricsID,
             title: title,
-            message: message
+            message: [message, context].compactMap { $0 }.joined(separator: " ")
         )
     }
 
@@ -3296,6 +3322,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             message: "mode=tap target=\(String(format: "%.3f", progress))"
         )
         let userSeekStart = CACurrentMediaTime()
+        let baselineSnapshot = engine.recoveryBufferSnapshot()
+        let baselineDuration = duration ?? durationHint ?? baselineSnapshot?.duration ?? 0
+        let recoveryBaselineContext = recoveryBaseline(
+            snapshot: baselineSnapshot,
+            targetTime: baselineDuration > 0 ? min(max(progress, 0), 1) * baselineDuration : nil,
+            mode: wantsAutoplay || isPlaying || baselineSnapshot?.isPlaying == true ? "seekPlaying" : "seekPaused"
+        ).diagnosticText
         var signpostMessage = "mode=tap pending"
         defer {
             PlayerMetricsLog.endSignpostedInterval(
@@ -3311,14 +3344,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 targetTime: time,
                 targetProgress: progress,
                 startedAt: userSeekStart,
-                engineElapsedMilliseconds: nil
+                engineElapsedMilliseconds: nil,
+                baselineContext: recoveryBaselineContext
             )
             self.recordSeekTransition(
                 reason: "tap",
                 targetTime: time,
                 targetProgress: progress,
                 totalElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: userSeekStart),
-                engineElapsedMilliseconds: nil
+                engineElapsedMilliseconds: nil,
+                baselineContext: recoveryBaselineContext
             )
             signpostMessage = "mode=tap target=\(String(format: "%.3f", progress)) applied=\(String(format: "%.2f", time))"
         } else {
@@ -3347,6 +3382,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let targetProgress = min(max(progress, 0), 1)
         let resolvedDuration = duration ?? durationHint ?? playbackClock.duration ?? initialSnapshot.duration ?? 0
         let optimisticTargetTime = resolvedDuration > 0 ? targetProgress * resolvedDuration : nil
+        let recoveryBaselineContext = recoveryBaseline(
+            snapshot: initialSnapshot,
+            targetTime: optimisticTargetTime,
+            mode: shouldResumeAfterSeek ? "seekPlaying" : "seekPaused"
+        ).diagnosticText
         let userSeekStart = CACurrentMediaTime()
         #if DEBUG
         debugManualPauseStartedAt = nil
@@ -3449,14 +3489,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 targetTime: appliedTime,
                 targetProgress: targetProgress,
                 startedAt: userSeekStart,
-                engineElapsedMilliseconds: engineElapsed
+                engineElapsedMilliseconds: engineElapsed,
+                baselineContext: recoveryBaselineContext
             )
             self.recordSeekTransition(
                 reason: seekReason,
                 targetTime: appliedTime,
                 targetProgress: targetProgress,
                 totalElapsedMilliseconds: totalElapsed,
-                engineElapsedMilliseconds: engineElapsed
+                engineElapsedMilliseconds: engineElapsed,
+                baselineContext: recoveryBaselineContext
             )
             signpostMessage = "mode=slider target=\(String(format: "%.3f", targetProgress)) applied=\(String(format: "%.2f", appliedTime)) total=\(String(format: "%.1f", totalElapsed))ms engine=\(String(format: "%.1f", engineElapsed))ms reason=\(seekReason)"
             self.isPreparing = false
@@ -3500,6 +3542,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         let userSeekStart = CACurrentMediaTime()
         let resolvedDuration = duration ?? durationHint ?? playbackClock.duration ?? engine.snapshot(durationHint: durationHint).duration ?? 0
         let optimisticTargetTime = resolvedDuration > 0 ? targetProgress * resolvedDuration : nil
+        let recoveryBaselineContext = recoveryBaseline(
+            snapshot: initialSnapshot,
+            targetTime: optimisticTargetTime,
+            mode: shouldResumeAfterSeek ? "seekPlaying" : "seekPaused"
+        ).diagnosticText
         let signpostState = PlayerMetricsLog.beginSignpostedInterval(
             "PlayerSeek",
             message: "mode=scrub target=\(String(format: "%.3f", targetProgress))"
@@ -3571,7 +3618,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     targetTime: appliedTime,
                     targetProgress: targetProgress,
                     startedAt: userSeekStart,
-                    engineElapsedMilliseconds: engineElapsed
+                    engineElapsedMilliseconds: engineElapsed,
+                    baselineContext: recoveryBaselineContext
                 )
             }
             self.recordSeekTransition(
@@ -3579,7 +3627,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 targetTime: appliedTime,
                 targetProgress: targetProgress,
                 totalElapsedMilliseconds: totalElapsed,
-                engineElapsedMilliseconds: engineElapsed
+                engineElapsedMilliseconds: engineElapsed,
+                baselineContext: recoveryBaselineContext
             )
             signpostMessage = "mode=scrub target=\(String(format: "%.3f", targetProgress)) applied=\(String(format: "%.2f", appliedTime ?? 0)) total=\(String(format: "%.1f", totalElapsed))ms engine=\(String(format: "%.1f", engineElapsed))ms reason=\(seekReason)"
             self.playbackRecoveryWatchdogTask?.cancel()
@@ -3696,6 +3745,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             message: "mode=step delta=\(String(format: "%.2f", interval))"
         )
         let userSeekStart = CACurrentMediaTime()
+        let baselineSnapshot = engine.recoveryBufferSnapshot()
+        let baselineDuration = duration ?? durationHint ?? baselineSnapshot?.duration
+        let requestedTarget = currentTime + interval
+        let recoveryBaselineContext = recoveryBaseline(
+            snapshot: baselineSnapshot,
+            targetTime: requestedTarget.isFinite
+                ? max(0, min(requestedTarget, baselineDuration ?? requestedTarget)) : nil,
+            mode: wantsAutoplay || isPlaying || baselineSnapshot?.isPlaying == true ? "seekPlaying" : "seekPaused"
+        ).diagnosticText
         var signpostMessage = "mode=step pending"
         defer {
             PlayerMetricsLog.endSignpostedInterval(
@@ -3712,14 +3770,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 targetTime: time,
                 targetProgress: nil,
                 startedAt: userSeekStart,
-                engineElapsedMilliseconds: nil
+                engineElapsedMilliseconds: nil,
+                baselineContext: recoveryBaselineContext
             )
             recordSeekTransition(
                 reason: reason,
                 targetTime: time,
                 targetProgress: nil,
                 totalElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: userSeekStart),
-                engineElapsedMilliseconds: nil
+                engineElapsedMilliseconds: nil,
+                baselineContext: recoveryBaselineContext
             )
             signpostMessage = "mode=step delta=\(String(format: "%.2f", interval)) applied=\(String(format: "%.2f", time))"
         } else {
@@ -5384,7 +5444,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         targetTime: TimeInterval?,
         targetProgress: Double?,
         startedAt: CFTimeInterval,
-        engineElapsedMilliseconds: Double?
+        engineElapsedMilliseconds: Double?,
+        baselineContext: String? = nil
     ) {
         guard wantsAutoplay || isPlaying || isUserSeeking else { return }
         seekRecoveryWatchdogTask?.cancel()
@@ -5393,7 +5454,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             targetTime: targetTime,
             targetProgress: targetProgress,
             startedAt: startedAt,
-            engineElapsedMilliseconds: engineElapsedMilliseconds
+            engineElapsedMilliseconds: engineElapsedMilliseconds,
+            baselineContext: baselineContext
         )
         pendingSeekRecoveryMetric = metric
         lastRecoveredSeekMetricID = nil
@@ -5449,7 +5511,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         targetTime: TimeInterval?,
         targetProgress: Double?,
         totalElapsedMilliseconds: Double,
-        engineElapsedMilliseconds: Double?
+        engineElapsedMilliseconds: Double?,
+        baselineContext: String? = nil
     ) {
         PlayerMetricsLog.record(
             .seek,
@@ -5460,7 +5523,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 targetTime: targetTime,
                 targetProgress: targetProgress,
                 totalElapsedMilliseconds: totalElapsedMilliseconds,
-                engineElapsedMilliseconds: engineElapsedMilliseconds
+                engineElapsedMilliseconds: engineElapsedMilliseconds,
+                baselineContext: baselineContext
             )
         )
     }
@@ -5502,7 +5566,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 engineElapsedMilliseconds: pending.engineElapsedMilliseconds,
                 currentTime: currentTime,
                 recovered: recovered,
-                source: source
+                source: source,
+                baselineContext: pending.baselineContext
             )
         )
     }
@@ -5550,14 +5615,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             targetTime: appliedTargetTime,
             targetProgress: pending.targetProgress,
             totalElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: pending.startedAt),
-            engineElapsedMilliseconds: recoveryElapsedMilliseconds
+            engineElapsedMilliseconds: recoveryElapsedMilliseconds,
+            baselineContext: pending.baselineContext
         )
         beginSeekRecoveryTracking(
             reason: recoveryReason,
             targetTime: appliedTargetTime,
             targetProgress: pending.targetProgress,
             startedAt: recoveryStart,
-            engineElapsedMilliseconds: recoveryElapsedMilliseconds
+            engineElapsedMilliseconds: recoveryElapsedMilliseconds,
+            baselineContext: pending.baselineContext
         )
         return true
     }
@@ -5630,14 +5697,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     targetTime: appliedTargetTime,
                     targetProgress: pending.targetProgress,
                     totalElapsedMilliseconds: PlayerMetricsLog.elapsedMilliseconds(since: pending.startedAt),
-                    engineElapsedMilliseconds: rebuildElapsedMilliseconds
+                    engineElapsedMilliseconds: rebuildElapsedMilliseconds,
+                    baselineContext: pending.baselineContext
                 )
                 self.beginSeekRecoveryTracking(
                     reason: rebuildReason,
                     targetTime: appliedTargetTime,
                     targetProgress: pending.targetProgress,
                     startedAt: rebuildStart,
-                    engineElapsedMilliseconds: rebuildElapsedMilliseconds
+                    engineElapsedMilliseconds: rebuildElapsedMilliseconds,
+                    baselineContext: pending.baselineContext
                 )
 
                 if self.wantsAutoplay {
@@ -5678,7 +5747,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         targetTime: TimeInterval?,
         targetProgress: Double?,
         totalElapsedMilliseconds: Double,
-        engineElapsedMilliseconds: Double?
+        engineElapsedMilliseconds: Double?,
+        baselineContext: String? = nil
     ) -> String {
         var parts = [reason]
         if let targetProgress {
@@ -5691,6 +5761,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         if let engineElapsedMilliseconds {
             parts.append("engine=\(String(format: "%.0fms", engineElapsedMilliseconds))")
         }
+        if let baselineContext { parts.append(baselineContext) }
         return parts.joined(separator: " ")
     }
 
@@ -5702,7 +5773,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         engineElapsedMilliseconds: Double?,
         currentTime: TimeInterval,
         recovered: Bool,
-        source: String
+        source: String,
+        baselineContext: String? = nil
     ) -> String {
         var parts = [reason, "recovered=\(recovered)"]
         if let targetProgress {
@@ -5717,6 +5789,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             parts.append("engine=\(String(format: "%.0fms", engineElapsedMilliseconds))")
         }
         parts.append("source=\(source)")
+        if let baselineContext { parts.append(baselineContext) }
         return parts.joined(separator: " ")
     }
 
@@ -6287,6 +6360,7 @@ private struct PendingSeekRecoveryMetric {
     let targetProgress: Double?
     let startedAt: CFTimeInterval
     let engineElapsedMilliseconds: Double?
+    var baselineContext: String? = nil
 }
 
 nonisolated private final class PictureInPictureRestoreCompletion: @unchecked Sendable {

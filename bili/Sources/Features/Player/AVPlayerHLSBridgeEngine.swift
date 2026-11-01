@@ -1060,6 +1060,20 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         return finished ? displayTarget : nil
     }
 
+    func recoveryBufferSnapshot() -> PlayerPlaybackSnapshot? {
+        guard let item = player.currentItem else { return nil }
+        let time = displayTime(fromPlayerTime: player.currentTime().seconds)
+        let duration = resolvedDuration(durationHint: nil)
+        return PlayerPlaybackSnapshot(
+            currentTime: time.isFinite && time >= 0 ? time : nil,
+            duration: duration > 0 ? duration : nil,
+            isPlaying: player.rate > 0,
+            isSeekable: item.status == .readyToPlay,
+            bufferedRanges: bufferedRanges(for: item),
+            bufferObservationAvailable: true
+        )
+    }
+
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot {
         let currentSeconds = displayTime(fromPlayerTime: player.currentTime().seconds)
         let durationSeconds = resolvedDuration(durationHint: durationHint)
@@ -1074,7 +1088,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             duration: durationSeconds > 0 ? durationSeconds : durationHint,
             isPlaying: player.rate > 0,
             isSeekable: status == .readyToPlay || (durationHint ?? 0) > 0,
-            bufferedRanges: item.map(bufferedRanges(for:)) ?? []
+            bufferedRanges: item.map(bufferedRanges(for:)) ?? [],
+            bufferObservationAvailable: item != nil
         )
     }
 

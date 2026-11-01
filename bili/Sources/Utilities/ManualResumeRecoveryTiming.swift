@@ -11,6 +11,8 @@ nonisolated struct ManualResumeRecoveryTiming: Sendable {
         let playToFrameMilliseconds: Double
     }
 
+    let sampleID = UUID().uuidString
+    var baselineContext: String?
     private let pausedAt: Double
     private let baselineRenderedVideoTime: Double?
     private(set) var playRequestedAt: Double?
