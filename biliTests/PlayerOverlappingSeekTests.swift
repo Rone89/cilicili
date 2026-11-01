@@ -178,8 +178,8 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         let surface = VideoSurfaceContainerView()
         player.attachSurface(surface, prefersNativePlaybackControls: false)
         ActivePlaybackCoordinator.shared.activate(player)
-        player.setPlaybackIntent(playing)
         engine.onFirstFrame?(12)
+        player.setPlaybackIntent(playing)
         return (player, engine, surface, metricsID)
     }
 
