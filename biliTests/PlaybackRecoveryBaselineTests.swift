@@ -39,7 +39,8 @@ final class PlaybackRecoveryBaselineTests: XCTestCase {
 
     func testInvalidTargetsAndMalformedRangesRemainUnknown() {
         let valid = [PlayerBufferedRange(start: 0, end: 60)]
-        for target: Double? in [nil, .nan, .infinity, -1] {
+        let invalidTargets: [Double?] = [nil, .nan, .infinity, -1]
+        for target in invalidTargets {
             XCTAssertEqual(baseline(target: target, ranges: valid).bufferState, .unknown)
         }
         for range in [
@@ -76,6 +77,7 @@ final class PlaybackRecoveryBaselineTests: XCTestCase {
         coordinator.activate(player)
         defer { player.stop(); coordinator.stopActivePlayback() }
 
+        player.setPlaybackIntent(false)
         player.seekAfterSliderCommit(to: 0.5)
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline,
