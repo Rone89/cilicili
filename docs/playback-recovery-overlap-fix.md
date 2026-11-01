@@ -50,7 +50,9 @@ stay paused, an explicit pause wins, queued playing callbacks re-pause quietly,
 and old completions cannot restore a stale target or play intent.
 
 Both slider and scrub paused-seek cases resume before the former watchdog
-deadline and verify that no late retry/reseek is generated. Collection tests
+deadline and reject an early retry from that old deadline. Still-stale video
+retains recovery after the fresh full playback budget; healthy target video
+resolves its guard without reseeking. Collection tests
 separate a simulated 750 ms synchronous pause command from its five-second
 hold, verify safe action labeling and preserve schema 1 decoding.
 

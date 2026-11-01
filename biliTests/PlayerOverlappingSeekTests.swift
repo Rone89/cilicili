@@ -81,11 +81,11 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         XCTAssertEqual(engine.pauseCallCount, 1, "An explicit user pause retains its normal audio-session semantics")
     }
 
-    func testPausedSliderSeekDoesNotLeaveAWatchdogThatReseeksAfterExplicitPlay() async throws {
+    func testPausedSliderSeekStartsAFreshRecoveryBudgetAtExplicitPlay() async throws {
         try await assertPausedSeekHasNoLateRetry(useSlider: true)
     }
 
-    func testPausedScrubSeekDoesNotLeaveAWatchdogThatReseeksAfterExplicitPlay() async throws {
+    func testPausedScrubSeekStartsAFreshRecoveryBudgetAtExplicitPlay() async throws {
         try await assertPausedSeekHasNoLateRetry(useSlider: false)
     }
 
