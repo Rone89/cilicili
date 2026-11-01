@@ -1048,6 +1048,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 continuation.resume(returning: finished)
             }
         }
+        guard isCurrentPlaybackGeneration(seekPlaybackGeneration), seekGeneration == generation else { return nil }
         #if DEBUG
         if debugRecoveryTraceID == recoveryID {
             debugRecoverySeekCompleted = finished
@@ -1055,7 +1056,6 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         }
         #endif
         nativeDolbyVideoOverlay.seek(to: displayTarget, shouldPlay: false)
-        guard isCurrentPlaybackGeneration(seekPlaybackGeneration) else { return nil }
         finishSeekTransaction(generation: generation, finished: finished, shouldResume: false)
         return finished ? displayTarget : nil
     }
@@ -1746,8 +1746,17 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard let viewModel,
               ActivePlaybackCoordinator.shared.isActive(viewModel)
         else { return }
+        let startedAt = CACurrentMediaTime()
+        var succeeded = false
+        defer {
+            viewModel.recordManualPauseAudioDeactivation(
+                milliseconds: max(0, (CACurrentMediaTime() - startedAt) * 1_000),
+                succeeded: succeeded
+            )
+        }
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            succeeded = true
         } catch {
             // The session may already be inactive or owned by a system transition.
         }

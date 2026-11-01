@@ -1650,6 +1650,8 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     private(set) var videoFrameImageReadCount = 0
     private(set) var surfaceSnapshotImageReadCount = 0
     private(set) var pauseCallCount = 0
+    private(set) var scrubPauseCallCount = 0
+    var interactiveSeekHandler: (@MainActor (Double, TimeInterval?) async -> TimeInterval?)?
     private(set) var backgroundPauseCallCount = 0
     private(set) var playCallCount = 0
     private(set) var recoverSurfaceCallCount = 0
@@ -1720,6 +1722,11 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
         onPlaybackStateChange?(.paused)
     }
 
+    func pauseForUserScrub() {
+        scrubPauseCallCount += 1
+        isPlaying = false
+    }
+
     func pauseForAppBackground() {
         backgroundPauseCallCount += 1
         isPlaying = false
@@ -1768,7 +1775,8 @@ final class PlayerLifecycleEngineSpy: PlayerRenderingEngine {
     }
 
     func seekAfterUserScrub(toProgress progress: Double, duration: TimeInterval?) async -> TimeInterval? {
-        seek(toProgress: progress, duration: duration)
+        if let interactiveSeekHandler { return await interactiveSeekHandler(progress, duration) }
+        return seek(toProgress: progress, duration: duration)
     }
 
     func snapshot(durationHint: TimeInterval?) -> PlayerPlaybackSnapshot {

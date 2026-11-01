@@ -559,6 +559,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private var pendingStartupResume: PendingStartupResume?
     private var pendingResumeRecoveryMetric: PendingStartupResumeRecoveryMetric?
     private var pendingSeekRecoveryMetric: PendingSeekRecoveryMetric?
+    private var pendingPausedSeekRecoveryMetric: PendingSeekRecoveryMetric?
     private var lastRecoveredSeekMetricID: UUID?
     private var lastSeekBufferReadyMetricID: UUID?
     private var activeUserScrubSource: PlayerScrubInteractionSource?
@@ -2665,6 +2666,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             return
         }
 
+        startPausedSeekRecoveryForPlaybackIfNeeded()
         startPreparedPlayback()
         if let stoppedBackgroundResumeTime {
             scheduleStoppedAppBackgroundResumeRecovery(from: stoppedBackgroundResumeTime)
@@ -2962,6 +2964,15 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             metricsID: metricsID,
             title: title,
             message: [message, context].compactMap { $0 }.joined(separator: " ")
+        )
+    }
+
+    func recordManualPauseAudioDeactivation(milliseconds: Double, succeeded: Bool) {
+        guard milliseconds.isFinite, milliseconds >= 0,
+              let timing = manualResumeRecoveryTiming, timing.playRequestedAt == nil
+        else { return }
+        recordManualResumeRecovery(
+            "stage=audioSessionDeactivation audioDeactivationMs=\(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), milliseconds)) succeeded=\(succeeded)"
         )
     }
 
@@ -3468,7 +3479,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             setPendingUserSeekRevealTarget(optimisticTargetTime)
             _ = updatePlaybackTime(optimisticTargetTime, force: true, countsAsNaturalPlayback: false)
         }
-        engine.pause()
+        engine.pauseForUserScrub()
         rescheduleTimeObserverIfNeeded(force: true)
         scrubSeekTask?.cancel()
         scrubSeekTask = Task(priority: .userInitiated) { @MainActor [weak self] in
@@ -3501,6 +3512,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 duration: seekDuration
             )
             seekReason = shouldResumeAfterSeek ? "slider-engine-resume" : "slider-engine"
+            // A cancelled AVPlayer seek may return nil. Ownership must be
+            // checked before a fallback can issue another seek.
+            guard !Task.isCancelled, !self.isTerminated,
+                  self.scrubSeekGeneration == generation
+            else {
+                signpostMessage = "mode=slider cancelled"
+                return
+            }
             if appliedTime == nil,
                let fallbackTarget = optimisticTargetTime ?? (self.currentTime > 0 ? self.currentTime : nil) {
                 appliedTime = self.engine.seek(toTime: fallbackTarget)
@@ -3529,14 +3548,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             }
             self.setPendingUserSeekRevealTarget(appliedTime)
             self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
-            self.beginSeekRecoveryTracking(
-                reason: seekReason,
-                targetTime: appliedTime,
-                targetProgress: targetProgress,
-                startedAt: userSeekStart,
-                engineElapsedMilliseconds: engineElapsed,
-                baselineContext: recoveryBaselineContext
-            )
+            if shouldResumeAfterSeek {
+                self.beginSeekRecoveryTracking(
+                    reason: seekReason,
+                    targetTime: appliedTime,
+                    targetProgress: targetProgress,
+                    startedAt: userSeekStart,
+                    engineElapsedMilliseconds: engineElapsed,
+                    baselineContext: recoveryBaselineContext
+                )
+            }
             self.recordSeekTransition(
                 reason: seekReason,
                 targetTime: appliedTime,
@@ -3564,6 +3585,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.playbackPhase = .paused
                 self.clearPendingUserSeekRevealTarget()
                 self.refreshPlaybackState()
+                self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
+                    reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
+                    startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
+                    baselineContext: recoveryBaselineContext
+                )
                 self.engine.setTemporaryAudioSuppressed(false)
             }
         }
@@ -3574,6 +3600,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard !isTerminated else { return }
         guard engine.hasMedia else { return }
         markUserSeekIntent()
+        cancelSeekRecoveryTracking()
         let initialSnapshot = engine.snapshot(durationHint: durationHint)
         let shouldResumeAfterSeek = shouldResumePlaybackAfterUserScrub
             || wantsAutoplay
@@ -3601,7 +3628,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         isBuffering = true
         loadingProgress = hasPresentedPlayback ? 0.22 : max(loadingProgress, 0.78)
         playbackPhase = .seeking
-        engine.pause()
+        engine.pauseForUserScrub()
         engine.setTemporaryAudioSuppressed(true)
         rescheduleTimeObserverIfNeeded(force: true)
         scrubSeekTask?.cancel()
@@ -3639,6 +3666,14 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 duration: resolvedDuration > 0 ? resolvedDuration : self.duration
             )
             var seekReason = "scrub-engine"
+            // A cancelled AVPlayer seek may return nil. Ownership must be
+            // checked before a fallback can issue another seek.
+            guard !Task.isCancelled, !self.isTerminated,
+                  self.scrubSeekGeneration == generation
+            else {
+                signpostMessage = "mode=scrub cancelled"
+                return
+            }
             if appliedTime == nil,
                let fallbackTarget = optimisticTargetTime ?? (self.currentTime > 0 ? self.currentTime : nil) {
                 appliedTime = self.engine.seek(toTime: fallbackTarget)
@@ -3658,14 +3693,16 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             if let appliedTime {
                 self.setPendingUserSeekRevealTarget(appliedTime)
                 self.updatePlaybackTime(appliedTime, force: true, countsAsNaturalPlayback: false)
-                self.beginSeekRecoveryTracking(
-                    reason: seekReason,
-                    targetTime: appliedTime,
-                    targetProgress: targetProgress,
-                    startedAt: userSeekStart,
-                    engineElapsedMilliseconds: engineElapsed,
-                    baselineContext: recoveryBaselineContext
-                )
+                if shouldResumeAfterSeek {
+                    self.beginSeekRecoveryTracking(
+                        reason: seekReason,
+                        targetTime: appliedTime,
+                        targetProgress: targetProgress,
+                        startedAt: userSeekStart,
+                        engineElapsedMilliseconds: engineElapsed,
+                        baselineContext: recoveryBaselineContext
+                    )
+                }
             }
             self.recordSeekTransition(
                 reason: seekReason,
@@ -3696,6 +3733,13 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                 self.playbackPhase = .paused
                 self.clearPendingUserSeekRevealTarget()
                 self.refreshPlaybackState()
+                if let appliedTime {
+                    self.pendingPausedSeekRecoveryMetric = PendingSeekRecoveryMetric(
+                        reason: seekReason, targetTime: appliedTime, targetProgress: targetProgress,
+                        startedAt: userSeekStart, engineElapsedMilliseconds: engineElapsed,
+                        baselineContext: recoveryBaselineContext
+                    )
+                }
                 self.engine.setTemporaryAudioSuppressed(false)
             }
         }
@@ -3710,7 +3754,11 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         guard engine.hasMedia else { return }
         markUserSeekIntent()
         guard hasPresentedPlayback else { return }
-        shouldResumePlaybackAfterUserScrub = wantsAutoplay || isPlaying || playbackPhase == .playing
+        // A new drag can arrive while an earlier commit is still seeking. Its
+        // temporary pause is not a new user pause; retain the original intent.
+        let continuingSeekWantsPlayback = isUserSeeking && shouldResumePlaybackAfterUserScrub
+        shouldResumePlaybackAfterUserScrub = continuingSeekWantsPlayback
+            || wantsAutoplay || isPlaying || playbackPhase == .playing
         if activeUserScrubSource == nil {
             activeUserScrubSource = source
             activeUserScrubStartedAt = CACurrentMediaTime()
@@ -5304,7 +5352,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
                     isBuffering = true
                     playbackPhase = .seeking
                     loadingProgress = max(loadingProgress, 0.22)
-                    engine.pause()
+                    engine.pauseForUserScrub()
                     engine.setTemporaryAudioSuppressed(true)
                     rescheduleTimeObserverIfNeeded(force: true)
                     return
@@ -5479,9 +5527,25 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func markUserSeekIntent() {
+        pendingPausedSeekRecoveryMetric = nil
         manualResumeRecoveryTiming = nil
         lastUserSeekAt = Date()
         cancelStartupResumeCorrectionAfterUserSeek()
+    }
+
+    private func startPausedSeekRecoveryForPlaybackIfNeeded() {
+        guard engine.hasMedia, let paused = pendingPausedSeekRecoveryMetric else { return }
+        pendingPausedSeekRecoveryMetric = nil
+        // Paused time is not stalled playback. Start a full recovery budget only
+        // when playback is actually requested, retaining the target/frame guards.
+        beginSeekRecoveryTracking(
+            reason: "\(paused.reason)-paused-resume",
+            targetTime: paused.targetTime,
+            targetProgress: paused.targetProgress,
+            startedAt: CACurrentMediaTime(),
+            engineElapsedMilliseconds: nil,
+            baselineContext: paused.baselineContext
+        )
     }
 
     private func beginSeekRecoveryTracking(
@@ -5849,6 +5913,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     }
 
     private func cancelSeekRecoveryTracking() {
+        pendingPausedSeekRecoveryMetric = nil
         seekRecoveryWatchdogTask?.cancel()
         seekRecoveryWatchdogTask = nil
         pendingSeekRecoveryMetric = nil

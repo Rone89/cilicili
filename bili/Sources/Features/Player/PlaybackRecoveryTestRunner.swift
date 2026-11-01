@@ -128,9 +128,18 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         updateTrial { $0.requestedPauseSeconds = seconds }
         let pausedAt = timing.now()
         driver.pause()
+        try check(token)
+        let pauseReturnedAt = timing.now()
+        updateTrial { $0.pauseCommandMilliseconds = max(0, (pauseReturnedAt - pausedAt) * 1_000) }
         try await delay(seconds, token: token, requiresPaused: true)
-        updateTrial { $0.actualPauseMilliseconds = max(0, (timing.now() - pausedAt) * 1_000) }
+        let playRequestedAt = timing.now()
+        updateTrial {
+            $0.actualPauseMilliseconds = max(0, (playRequestedAt - pausedAt) * 1_000)
+            $0.pauseHoldMilliseconds = max(0, (playRequestedAt - pauseReturnedAt) * 1_000)
+        }
         driver.play()
+        try check(token)
+        updateTrial { $0.playCommandMilliseconds = max(0, (timing.now() - playRequestedAt) * 1_000) }
         let found = try await wait(seconds: timing.recoveryTimeout, token: token) {
             self.hasResumeFrame || self.hasFrameObservationTimeout
         }
@@ -158,10 +167,21 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         default: targets = []
         }
         updateTrial { $0.targetProgresses = targets }
-        if scenario == .pausedSeek { driver.pause() }
+        if scenario == .pausedSeek {
+            let startedAt = timing.now()
+            driver.pause()
+            try check(token)
+            updateTrial { $0.pauseCommandMilliseconds = max(0, (timing.now() - startedAt) * 1_000) }
+        }
         for (index, target) in targets.enumerated() {
             try check(token)
+            let startedAt = timing.now()
             driver.seek(to: target)
+            try check(token)
+            updateTrial {
+                $0.seekCommandMilliseconds = ($0.seekCommandMilliseconds ?? [])
+                    + [max(0, (timing.now() - startedAt) * 1_000)]
+            }
             if index < targets.count - 1 {
                 try await delay(timing.continuousSeekSpacing, token: token)
             }
@@ -176,10 +196,15 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
                 completeTrial("timeout", reason: "暂停跳转未取得完成记录")
                 return
             }
+            let holdStartedAt = timing.now()
             try await delay(timing.pausedSeekHoldSeconds, token: token, requiresPaused: true)
+            updateTrial { $0.pauseHoldMilliseconds = max(0, (timing.now() - holdStartedAt) * 1_000) }
             updateTrial { $0.checks["keptPaused"] = true }
             let baseline = driver.observation.currentTime
+            let playStartedAt = timing.now()
             driver.play()
+            try check(token)
+            updateTrial { $0.playCommandMilliseconds = max(0, (timing.now() - playStartedAt) * 1_000) }
             let resumed = try await wait(seconds: timing.recoveryTimeout, token: token) {
                 let value = self.driver.observation
                 return value.isPlaying && !value.isSeeking && value.currentTime > baseline + 0.2
@@ -227,6 +252,7 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         }.compactMap { $0.fields["sampleID"] })
         return metrics.contains {
             $0.kind == "seekRecovery" && $0.fields["recovered"] == "true"
+                && $0.fields["mode"] == "seekPlaying"
                 && $0.fields["total"] != nil && $0.fields["total"] != "-"
                 && $0.fields["sampleID"].map(ids.contains) == true
         }
