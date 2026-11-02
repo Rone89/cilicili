@@ -22,6 +22,28 @@ class AcceptanceEvidenceTests(unittest.TestCase):
         for changed in [{'skippedTests': 1}, {'failedTests': 1}, {'totalTestCount': 2}, {}]:
             self.assertFalse(a.simulator_passed(dict(passing, **changed) if changed else {}))
 
+    def test_confirmation_is_neither_issue_nor_normal_until_clarified(self):
+        result = a.manual_observation('确认')
+        self.assertEqual(result['userObservation'], '确认')
+        self.assertEqual(result['status'], 'needsClarification')
+        normal = a.manual_observation('正常')
+        self.assertEqual(a.acceptance_result([], [result, normal, normal]), 'manualPending')
+
+    def test_explicit_manual_choices_and_missing_observations(self):
+        for answer in ['1', '正常', '通过', 'OK']:
+            self.assertEqual(a.manual_observation(answer)['status'], 'userReportedNormal')
+        for answer in ['2', '异常']:
+            self.assertEqual(a.manual_observation(answer)['status'], 'userReportedIssue')
+        self.assertEqual(a.manual_observation('')['status'], 'pending')
+        self.assertEqual(a.acceptance_result([], []), 'manualPending')
+        self.assertEqual(a.acceptance_result([], [{'status': 'unrecognized'}] * 3), 'manualPending')
+
+    def test_only_three_explicit_normals_without_errors_close_manual_acceptance(self):
+        normal = a.manual_observation('1')
+        self.assertEqual(a.acceptance_result([], [normal] * 3), 'userReportedNormal')
+        self.assertEqual(a.acceptance_result(['capture failed'], [normal] * 3), 'requiresReview')
+        self.assertEqual(a.acceptance_result([], [normal, normal, a.manual_observation('2')]), 'requiresReview')
+
     def test_crash_filter_excludes_other_apps_and_path_traversal(self):
         names = ['bili-2026-11-02-123000.ips', 'bili-overseas.diskwrites.ips', '../bili-2026.ips']
         payload = {'result': {'files': [{'name': n, 'relativePath': n} for n in names]}}

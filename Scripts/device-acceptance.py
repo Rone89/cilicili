@@ -34,6 +34,26 @@ def simulator_passed(summary):
             and summary.get('failedTests') == 0 and summary.get('skippedTests') == 0)
 
 
+def manual_observation(answer):
+    value = answer.strip()
+    if value.lower() in ('1', '正常', '通过', 'ok'):
+        status = 'userReportedNormal'
+    elif value in ('2', '异常'):
+        status = 'userReportedIssue'
+    else:
+        status = 'needsClarification' if value else 'pending'
+    return {'userObservation': value, 'status': status}
+
+
+def acceptance_result(errors, observations):
+    statuses = [v.get('status') if isinstance(v, dict) else v for v in observations]
+    if errors or 'userReportedIssue' in statuses:
+        return 'requiresReview'
+    if len(statuses) == 3 and all(v == 'userReportedNormal' for v in statuses):
+        return 'userReportedNormal'
+    return 'manualPending'
+
+
 def crash_names(payload):
     return {f['relativePath'] for f in payload['result']['files']
             if re.fullmatch(r'bili-\d{4}[^/]*\.ips', f['name'])
@@ -129,9 +149,15 @@ def main():
             summary['manual'][key] = 'pending'
             if not args.non_interactive and not args.collect_only:
                 print('\n' + instruction + '\n观察黑屏、有声无画、意外播放或闪退。')
-                answer = input('完成后输入“正常”，或填写异常动作／时刻；直接回车表示未确认：').strip()
-                summary['manual'][key] = {'userObservation': answer, 'status':
-                    'userReportedNormal' if answer == '正常' else ('userReportedIssue' if answer else 'pending')}
+                answer = input('完成后输入 1（正常）、2（异常），或回车（未确认）：').strip()
+                observation = manual_observation(answer)
+                summary['manual'][key] = observation
+                if observation['status'] == 'needsClarification':
+                    choice = input('刚才的输入需要确认：1 表示正常，2 表示异常，回车保留待确认：').strip()
+                    observation['clarification'] = choice
+                    observation['status'] = manual_observation(choice)['status']
+                if observation['status'] == 'userReportedIssue':
+                    observation['details'] = input('请补充异常动作、大概时刻和表现：').strip()
 
         if not args.non_interactive and not args.collect_only:
             print('\n在手机“我的 → 开发者与诊断 → 播放与网络诊断 → 启动链路性能日志”点复制；输入 c 读取这份日志，回车跳过。')
@@ -175,12 +201,7 @@ def main():
     except (KeyboardInterrupt, EOFError):
         summary['errors'].append('用户中止，保留已采集部分结果')
     finally:
-        observations = list(summary['manual'].values())
-        issues = any(isinstance(v, dict) and v['status'] == 'userReportedIssue' for v in observations)
-        pending = len(observations) != 3 or any(v == 'pending' or
-            (isinstance(v, dict) and v['status'] == 'pending') for v in observations)
-        summary['result'] = ('requiresReview' if summary['errors'] or issues else
-                             'manualPending' if pending else 'userReportedNormal')
+        summary['result'] = acceptance_result(summary['errors'], list(summary['manual'].values()))
         summary['endedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         (folder / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
         print('\n结果：' + str(folder / 'summary.json'))

@@ -10,7 +10,7 @@
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 52，签名 Release 已原位安装。已验证：本地 1228 单元、3 项重点 UI 最终通过；Build 51 完整真机 30 observed，Build 52 定向边界短测 3/3 observed，覆盖停用结束后的 play→pause 并保持暂停。待验证：实际音画、首次加载、后台／导航、横竖屏等；整体性能收益未证实。Build 50 CI #153 最终成功，仅覆盖 Build 50。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.1 / Build 52，签名 Release 已原位安装。已验证：本地 1228 单元、3 项重点 UI 最终通过；Build 51 完整真机 30 observed，Build 52 定向边界短测 3/3 observed，覆盖停用结束后的 play→pause 并保持暂停。已收到三组真机短验收用户确认正常；待验证：首次加载性能、耳机／系统中断等专项项目，整体性能收益未证实。Build 50 CI #153 最终成功，仅覆盖 Build 50。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -211,3 +211,12 @@
 - 已验证：3 项脚本证据回归通过；zsh 语法、桌面入口 `--help` 通过；真实手机 collect-only 取证通过。脚本端到端非交互执行成功，三项 UI 3/3，报告 runID 与已验证 Build 52 报告一致，人工三项和总结果保持 pending。证据 `build/device-acceptance/20261102-232904-f24zy6fv/`（采集）、`20261102-232932-jml163t7/`（全自动部分）及 `build/logs/oneclick-launcher-help.log`。
 - 待验证：用户双击后按提示完成真机音画／横竖屏、返回重进、后台恢复，选择取回性能日志的交互路径也需实际使用确认；没有代填人工正常。脚本本轮验证不等于真机音画通过。首次加载及耳机／系统中断仍待专项采集。
 - 原 main 改动核对不变。下一步交付桌面入口，收到 summary／异常日志继续分析；本轮脚本、测试和文档提交备份，不合并 PR，不新开云端 CI。
+
+## 2026-11-02 一键脚本实机使用与反馈轮
+
+- 分支 `codex/pause-boundary-short-test-build52`，本轮开始 HEAD `44e11d660698cab56a7167d1a5a4a764bf9d75cb`；应用源码／手机版本仍为 `1b77a638628eeef78a61123e51d61125e7f14141`／Build 52，没有改 App、构建或安装。
+- 用户实际运行 23:33:09–23:37:19 的 summary 已核验：自动 UI 3/3、零失败／跳过，errors=[]，性能日志取回成功，前后无新增同名 crash。后台填写正常；横竖屏和返回重进填写“确认”，用户随后明确澄清“两项都正常”。三组短验收用户观察均正常，原 requiresReview 来自脚本输入误分类，不是已证实的 App 异常。
+- 已修复脚本：明确 1 正常／2 异常选项；“确认”等文字要求澄清，不直接当故障或通过。空白／未知状态保留 pending，只有三项明确正常且无执行错误才记 userReportedNormal。新增回归后共 6/6 通过；不需要用户重新做本轮手机操作。
+- 原 summary 保留，另存 `summary-reviewed.json` 和 `analysis.json` 补记澄清；原始 summary SHA-256 `ca1fbf369ea67b7af46c5b8ee0d6c60ad1891058c98b07d32b7cffaee94a2f1d`。详见 [一键验收分析](playback-build52-guided-acceptance-analysis-2026-11-02.md)。留存暂停边界报告 runID 未变，没有冒称是本轮新测量。设备数据仅本地归档。
+- 性能线索：本轮期间更新的三条会话 totalFirstFrame 为 552／840／1450ms；后两条有网页回退取流，playURL 506／605ms，prepare 124／411ms。不同视频／编码／缓存，且每组仅一次，不认定整体性能改善或退化。
+- 待办：保留 Build 52，下一阶段优先同条件首次加载采样，追踪取流回退与清单准备；耳机／系统中断仍待专项验收。原 main 改动保留，本轮 Mac 脚本和文档提交备份，不合并 PR、不启动云端回归。
