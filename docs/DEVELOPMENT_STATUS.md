@@ -10,7 +10,7 @@
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 52，本地签名 Release 已原位安装并启动。Build 52 本地单元 1228/1228、重点 UI 3/3，通过；真机边界短测报告待采集。本地单元 1222/1222 通过；Build 51 首轮真机 30 observed，最终暂停三次保持；停用刚完成后的边界仍待真机覆盖。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 重跑最终成功，不是 Build 51 云端验证。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.1 / Build 52，签名 Release 已原位安装。已验证：本地 1228 单元、3 项重点 UI 最终通过；Build 51 完整真机 30 observed，Build 52 定向边界短测 3/3 observed，覆盖停用结束后的 play→pause 并保持暂停。待验证：实际音画、首次加载、后台／导航、横竖屏等；整体性能收益未证实。Build 50 CI #153 最终成功，仅覆盖 Build 50。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -185,3 +185,11 @@
 
 - Build 52 源码及本轮测试／交付文档已提交并备份：`1b77a638628eeef78a61123e51d61125e7f14141`，分支 `codex/pause-boundary-short-test-build52`。GitHub tree 与本地一致（`8dea0d11889df2d94e2f7fb12494b880202ea8ee`），实际设备构建时的四个改动应用文件 hash 与该提交逐一一致；构建时基线为 `037167c` 加未提交源码，没有冒称构建时 HEAD 已是新提交。本记录随后做文档提交，应用源码保持上述提交。
 - 原 main diff／porcelain 与接续前快照逐字节一致。仅新分支备份，没有合并／强推、没有创建 Build 52 PR 或发起 Build 52 云端回归。Build 50 CI #153 的成功不作为 Build 52 云端结论。真机目前仅验证安装启动，边界、实际音画及性能仍待用户报告。
+
+## 2026-11-02 Build 52 真机报告分析轮
+
+- 当前分支 `codex/pause-boundary-short-test-build52`，本轮开始 HEAD `daa4d2946b03809b9d157ca7ea0ebf0a4bffbcce`；应用源码仍为 `1b77a638628eeef78a61123e51d61125e7f14141`。本轮只校验、归档及更新文档，未改代码、构建、安装或重跑自动测试。
+- 已验证：收到 schema 4／pauseBoundary 报告 `F788D232-E597-4FA5-9CF2-048BFA6833CF`，3/3 observed，零失败／超时／缺证。三次 play 和最后 pause 前 pending 均 false，命令后意图与实际引擎状态 false→true→false，五项 checks 全 true；六次停用均成功且 ID 归属正确。补齐 Build 51 首轮缺少的停用结束边界，旧暂停异常本轮未复现，不外推所有时序。
+- 耗时：三次最后暂停命令 0.469／1.068／1.067ms；第二次后台停用 786.7ms 仍保持最终暂停，不能把后台长尾当成同步暂停阻塞。playToTransport 中位数 32ms，本短测没有首帧记录，不能与旧 playToFrame 直接比较或宣称整体加速。
+- 详细结论与局限见 [Build 52 真机分析](playback-recovery-build52-device-analysis-2026-11-02.md)。原报告、断言脚本和机器可读分析存于 Git 忽略的 `build/device-reports/`；原始 SHA-256 `4335d3b72f184c3ce4f5a1a027d912d49193d27b587ae635b2dcbca5625ca11a`。
+- 待办：保留 Build 52，优先补实际音画、横竖屏、返回重进、后台恢复的短人工验收；首次加载、耳机／系统中断仍待专项采样。出现异常再按动作／时刻取日志，当前没有依据新增性能修复或新 Build。本轮文档随后提交备份，不合并 PR，不新开云端回归。
