@@ -796,11 +796,9 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
             let systemAllowsResume = options.contains(.shouldResume)
             let shouldResume = audioInterruptionState.end(systemAllowsResume: systemAllowsResume)
-            let didReactivate = shouldResume
-                ? reactivateAudioSessionForListenPlayback()
-                : true
+            if shouldResume { reactivateAudioSessionForListenPlayback() }
             recordAudioSessionEvent(
-                "interruption=ended systemAllowsResume=\(systemAllowsResume) resume=\(shouldResume) sessionActive=\(didReactivate)"
+                "interruption=ended systemAllowsResume=\(systemAllowsResume) resume=\(shouldResume)"
             )
             if shouldResume {
                 play()
@@ -830,25 +828,21 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             || playbackSnapshot().isPlaying
             || audioInterruptionState.shouldResume
         audioInterruptionState.reset()
-        let didReactivate = reactivateAudioSessionForListenPlayback()
         wantsAutoplay = shouldResume
+        reactivateAudioSessionForListenPlayback()
         recordAudioSessionEvent(
-            "mediaServices=reset resume=\(shouldResume) sessionActive=\(didReactivate)"
+            "mediaServices=reset resume=\(shouldResume)"
         )
         rebuildMediaAfterPlaybackInterruption(allowsDetachedSurface: true)
     }
 
-    @discardableResult
-    private func reactivateAudioSessionForListenPlayback() -> Bool {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try session.setActive(true)
-            return true
-        } catch {
-            recordAudioSessionEvent("sessionActivation=failed error=\(error.localizedDescription)")
-            return false
-        }
+    private func reactivateAudioSessionForListenPlayback() {
+        PlaybackAudioSession.shared.activate(when: { [weak self] in
+            guard let self, !self.isTerminated else { return false }
+            return ActivePlaybackCoordinator.shared.isActive(self) && self.wantsAutoplay
+        }, completion: { [weak self] succeeded in
+            self?.recordAudioSessionEvent("sessionActivation=\(succeeded ? "active" : "failed")")
+        })
     }
 
     private func recordAudioSessionEvent(_ message: String) {
@@ -2847,6 +2841,7 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
             wantsPlayback: wantsAutoplay,
             isSeeking: isUserSeeking,
             isBuffering: isBuffering,
+            audioDeactivationPending: PlaybackAudioSession.shared.isDeactivating,
             issue: issue,
             sourceIdentity: identity,
             networkClass: String(describing: environment.networkClass)
@@ -2967,12 +2962,20 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
         )
     }
 
-    func recordManualPauseAudioDeactivation(milliseconds: Double, succeeded: Bool) {
+    var manualPauseAudioDeactivationSampleID: String? {
+        guard let timing = manualResumeRecoveryTiming, timing.playRequestedAt == nil else { return nil }
+        return timing.sampleID
+    }
+
+    func recordManualPauseAudioDeactivation(milliseconds: Double, succeeded: Bool, sampleID: String? = nil) {
         guard milliseconds.isFinite, milliseconds >= 0,
-              let timing = manualResumeRecoveryTiming, timing.playRequestedAt == nil
+              let sampleID = sampleID ?? manualPauseAudioDeactivationSampleID
         else { return }
-        recordManualResumeRecovery(
-            "stage=audioSessionDeactivation audioDeactivationMs=\(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), milliseconds)) succeeded=\(succeeded)"
+        PlayerMetricsLog.record(
+            .manualResumeRecovery,
+            metricsID: metricsID,
+            title: title,
+            message: "stage=audioSessionDeactivation audioDeactivationMs=\(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), milliseconds)) succeeded=\(succeeded) sampleID=\(sampleID)"
         )
     }
 

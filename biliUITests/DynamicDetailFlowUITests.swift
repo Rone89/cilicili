@@ -69,13 +69,11 @@ final class DynamicDetailFlowUITests: XCTestCase {
         deleteButton.tap()
         XCTAssertEqual(editor.value as? String, "native")
         emoteButton.tap()
-        // UIKit retains the custom input view after switching back. Verify the
-        // active native keyboard rather than the lifetime of its old view.
-        let letterKey = app.keyboards.keys.matching(
-            NSPredicate(format: "label IN %@", ["a", "A"])
-        ).firstMatch
-        XCTAssertTrue(letterKey.waitForExistence(timeout: 5))
-        XCTAssertTrue(letterKey.isHittable)
+        // A native nine-key Chinese keyboard groups ABC in one key. Space has
+        // the same identifier across layouts and is absent from our emote view.
+        let spaceKey = app.keyboards.keys["space"].firstMatch
+        XCTAssertTrue(spaceKey.waitForExistence(timeout: 5))
+        XCTAssertTrue(spaceKey.isHittable)
         editor.typeText(" typing")
         XCTAssertEqual(editor.value as? String, "native typing")
     }

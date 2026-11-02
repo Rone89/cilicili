@@ -2,6 +2,7 @@ import Foundation
 
 nonisolated enum PlaybackRecoveryTestScenario: String, Codable, CaseIterable, Sendable {
     case pause5, pause30, pause120, nearbySeek, distantSeek, pausedSeek, continuousSeek
+    case immediateResume, rapidTogglePlaying, rapidTogglePaused
 
     var title: String {
         switch self {
@@ -12,6 +13,9 @@ nonisolated enum PlaybackRecoveryTestScenario: String, Codable, CaseIterable, Se
         case .distantSeek: "远距离跳转"
         case .pausedSeek: "暂停中跳转"
         case .continuousSeek: "连续跳转"
+        case .immediateResume: "暂停后立即播放"
+        case .rapidTogglePlaying: "反复切换后保持播放"
+        case .rapidTogglePaused: "反复切换后保持暂停"
         }
     }
 
@@ -23,6 +27,17 @@ nonisolated enum PlaybackRecoveryTestScenario: String, Codable, CaseIterable, Se
         default: nil
         }
     }
+
+    var isRapidToggle: Bool {
+        self == .immediateResume || self == .rapidTogglePlaying || self == .rapidTogglePaused
+    }
+}
+
+nonisolated struct PlaybackRecoveryTestCommand: Codable, Equatable, Sendable {
+    let action: String
+    let startedMilliseconds: Double
+    let durationMilliseconds: Double
+    let audioDeactivationPending: Bool?
 }
 
 nonisolated struct PlaybackRecoveryTestMetric: Codable, Equatable, Sendable {
@@ -86,6 +101,7 @@ nonisolated struct PlaybackRecoveryTestTrial: Codable, Equatable, Identifiable, 
     var pauseHoldMilliseconds: Double?
     var playCommandMilliseconds: Double?
     var seekCommandMilliseconds: [Double]?
+    var commands: [PlaybackRecoveryTestCommand]?
     var targetProgresses: [Double] = []
     var metrics: [PlaybackRecoveryTestMetric] = []
     var checks: [String: Bool] = [:]
@@ -105,7 +121,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
     let limits: [String]
 
     init(context: [String: String], plannedTrialCount: Int) {
-        schemaVersion = 2
+        schemaVersion = 3
         runID = UUID()
         startedAt = Date()
         status = "running"
@@ -123,6 +139,8 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
             "Retry/rebuild total timings are attempt-relative and may not include the original seek command.",
             "A paused-resume recovery total starts at the subsequent play request, not at the earlier paused seek.",
             "Command durations measure synchronous API work, not display or audible output. actualPauseMilliseconds includes pause command work; pauseHoldMilliseconds begins after the pause command returns.",
+            "From Build 49, audioDeactivationMs measures the background audio-session call; it is not part of pauseCommandMilliseconds and may be recorded after a play request with the original pause sampleID.",
+            "Immediate resume has no scheduled hold; repeated toggles use 20ms spacing. Observed requires a play command while audio deactivation is pending, and evidence for the final intent only. Pending includes queued work; it is not proof of a system call executing concurrently.",
         ]
     }
 
@@ -143,6 +161,7 @@ struct PlaybackRecoveryTestObservation {
     var wantsPlayback = false
     var isSeeking = false
     var isBuffering = false
+    var audioDeactivationPending: Bool?
     var issue: String?
     // In-memory only. May contain source identity; never copied to reports.
     var sourceIdentity = ""
@@ -166,6 +185,7 @@ struct PlaybackRecoveryTestTiming {
     var repetitions = 3
     var settleSeconds = 2.0
     var pausedSeekHoldSeconds = 2.0
+    var rapidPausedHoldSeconds = 1.0
     var continuousSeekSpacing = 0.15
     var recoveryTimeout = 10.0
     var preparationTimeout = 20.0

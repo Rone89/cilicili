@@ -18,22 +18,28 @@ private struct NavigationToolbarSearch: ViewModifier {
                 pageWidth = width
             }
             .toolbar {
-                ToolbarItem(placement: .principal) {
+                // A principal title can draw beyond UIKit's title hit region.
+                // Use a bar item so the whole row receives its own touches.
+                ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: 8) {
                         inputField
                         if isEditing {
                             Button("取消") {
+                                isFocused = false
+                                UIApplication.shared.sendAction(
+                                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+                                )
                                 text = ""
                                 isEditing = false
-                                isFocused = false
                             }
+                            .buttonStyle(.plain)
                             .foregroundStyle(.primary)
                             .fixedSize()
                             .accessibilityIdentifier("navigation.search.cancel")
                         }
                     }
-                    // Keep the input in this row; reserve space only for existing actions.
                     .frame(width: availableWidth)
+                    .background(SearchOutsideTapDismissalSource { isEditing = false; isFocused = false })
                 }
                 .sharedBackgroundVisibility(.hidden)
             }
@@ -80,12 +86,11 @@ private struct NavigationToolbarSearch: ViewModifier {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 44)
         .biliRegularGlassEffect(interactive: true, in: Capsule())
-        .background(SearchOutsideTapDismissalSource { isEditing = false; isFocused = false })
     }
 }
 
 /// Observe taps without consuming result/navigation actions. The exclusion
-/// rect covers the whole input capsule, including its clear button and padding.
+/// rect covers the complete search row, including Clear and Cancel.
 private struct SearchOutsideTapDismissalSource: UIViewRepresentable {
     let onDismiss: () -> Void
 

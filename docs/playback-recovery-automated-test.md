@@ -1,5 +1,9 @@
 # Automated on-device recovery collection (Build 47)
 
+Build 50 adds three rapid pause/play scenarios for **30 trials** and report schema 3.
+See [rapid recovery collection](playback-recovery-rapid-build50.md). The original
+seven scenarios and their timing/evidence semantics below remain in the plan.
+
 Open a recorded video of at least five minutes, let its first frame appear,
 then choose More playback settings > Automatic recovery test > Start.
 The normal run executes all seven scenarios three times: pause 5/30/120 seconds,
