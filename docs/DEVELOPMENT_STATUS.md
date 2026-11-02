@@ -161,3 +161,6 @@
 - 本地测试证据：`build51-stale-kvo-before.*`（确定性失败）、`build51-stale-kvo-after.*`（仅刷新仍失败）、`build51-stale-kvo-rate-check.*`（补充正速率验证后通过）、`build51-unit.*`／`build51-unit-summary.json`（最终 1222 通过）。MCP 设备构建日志在用户 XcodeBuildMCP workspace 日志目录，构建有既存 Swift 隔离等警告，未扩展本轮修复范围。
 - 当前授权 profile 的 get-task-allow=false，可签名安装并收集日志；直接 LLDB 断点附加需要允许调试的开发 profile，未擅改权限。
 - 原 main 工作区 diff 再次与接续前逐字节一致。Build 50 首轮 UI4 完整日志已归档；其 256MB 可读诊断 ZIP 在下载时超时，`.zip.partial` 不可作为完整证据，完整远端 artifact 为 `13147406557`，首次失败日志不依赖该 ZIP。新分工下日常开发不等待云端；下一步运行 Build 51 的 30 次真机试验，重点复验 rapidTogglePaused 三次及实际声音／画面，另补后台／导航／耳机、中断和横竖屏验收。
+
+- Build 51 源码及本轮报告／工作流文档已提交并备份：`aa562916e76d9a54c14d6805661c158aca6e4fed`，分支 `codex/stale-player-observation-build51`。通过连接器发布 Git tree 并核对与本地一致，GitHub API 原始 commit 元数据重建后 SHA 逐字节相同；本地分支已对齐。设备实际构建时以 `317f89b` 加本轮工作树源码完成，后续备份的三个应用源文件 hash 均与实际构建记录一致，不冒称构建时 HEAD 已是新提交。
+- 仅作分支提交备份，没有创建新的 Build 51 PR、启动 Build 51 完整云端 CI、合并或强推。当前收尾记录为随后文档提交，应用源码提交保持上述 `aa562916`；Build 50 既有云端重跑仍待最终结果。后续每轮继续更新本文。
