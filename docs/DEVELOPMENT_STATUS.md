@@ -38,7 +38,7 @@
 - Build 49 本轮本地：13 项脚本测试全部通过；针对性 62 项全部通过；全量单元 xcresult 核对共 1215，1215 通过、0 失败、0 跳过。使用 Xcode 27.1、规定的 iPhone 18 Pro Max / iOS 27.0，共享 Xcode-27 缓存，串行执行。
 - Build 48 接续首轮历史：单元共 1209，1206 通过、1 失败、2 跳过（跳过原因分别为受限网络禁用 parallel range fallback 和 startup hedging）；并非 Build 49 当前结果。
 - 本轮重点 UI 共 14（CI 的 12 项交互 + 2 项恢复页面），12 通过、2 失败；恢复页面两项均通过。未重跑完整 141 项 UI。
-- 历史 UI 失败已定位：评论用例错误要求英文独立 a/A 键，中文九宫格其实已恢复；搜索取消第 43 行失败是未恢复“大家都在搜”，先前误记为等待键盘消失失败。Build 50 评论用例改用原生 space 键与真实输入断言，已回归通过；搜索触摸日志进一步确认 principal 标题区域外的 Cancel 未命中，已改为实际工具栏项目并覆盖整行手势排除，独立取消回归通过、最终搜索组回归执行中。
+- 历史 UI 失败已定位：评论用例错误要求英文独立 a/A 键，中文九宫格其实已恢复；搜索取消第 43 行失败是未恢复“大家都在搜”，先前误记为等待键盘消失失败。Build 50 评论用例改用原生 space 键与真实输入断言，已回归通过；搜索触摸日志进一步确认 principal 标题区域外的 Cancel 未命中，已改为自适应原生标题分配宽度并覆盖整行手势排除，独立取消回归通过、最终搜索组回归执行中。
 - xcresult 同时记录主线程音频会话调用可能阻塞 UI，以及视图更新期间发布状态的运行时警告；仅记录观察，未据此认定为真机恢复延迟原因。
 - 原工作树的已跟踪 diff 和 porcelain 状态均与接续前逐字节一致。
 - 本地 Release：使用原仓库持锁包装脚本执行接续工作树 `Scripts/build-release-unsigned-ipa.sh`，成功。核验版本 1.1.1、Build 48、bundle ID `cc.bili`、最低 iOS 26.1，无 embedded.mobileprovision 或 _CodeSignature 文件。
@@ -123,6 +123,9 @@
 - 分支：`codex/rapid-recovery-and-keyboard-build50`；已提交 `04c89ab5c5c8d81bca34ec99b5325a6d55594b26`，收纳 Build 49 非阻塞停用、快速操作 30 次／schema 3、兼容修复和前几轮文档。随后补充搜索工具栏命中区域修复；最终发布提交以远端草稿 PR 为准，原 PR #64 不合并。
 - 完成：新增立即暂停／播放、20ms 连续切换后播放／暂停三种情景；记录命令时间线和在途停用证据，最后播放必须匹配最终 play ID，最终暂停等待停用结束并持续观察一秒。缺少竞争证据标为 missingEvidence，旧报告仍兼容。
 - 已验证：首轮全量单元 1220/1220、脚本 13/13；20ms 最终间隔随后通过重点单元 31/31。评论原生输入法测试通过；14 项重点 UI 首轮 13/14，剩余搜索取消在工具栏布局修复后独立回归通过。最终搜索全组＋评论回归执行中，完整 CI 和 Release 尚待执行完成。
-- 原因与修复：导航栏 principal 标题会绘制到原生点击边界之外，触摸命中导航容器；完整搜索行改为 topBarLeading bar item，并将行外点击排除范围包含 Cancel。评论旧测试要求英文 a/A，现用 native space 键和真实追加输入断言，产品输入法不变。
+- 原因与修复：导航栏 principal 标题会绘制到原生点击边界之外，触摸命中导航容器；保留 principal 搜索行，idealWidth/maxWidth 接受原生较小宽度，并将行外点击排除范围包含 Cancel。尝试 topBarLeading 虽能取消，但整组回归发现挤压筛选和我的页，已弃用。评论旧测试要求英文 a/A，现用 native space 键和真实追加输入断言，产品输入法不变。
 - 待办：完成最终搜索回归、发布新分支草稿 PR 并跑完整 CI、下载并核验 Build 50 未签名产物、沿用授权证书原位更新 iPhone，再收集 build=50/schema=3/plannedTrialCount=30 报告。Build 50 真机性能、实际音画、后台／导航／耳机与音频中断仍待验证。
 - Git HTTPS 推送缺少本机凭据，改用已认证 GitHub 连接器创建同内容 Git tree/commit 并快进新分支；不改动原工作树及其凭据配置，不使用强推。
+
+- 发布补充：草稿 [PR #65](https://github.com/Rone89/cilicili/pull/65) 已创建，首个远端提交 `ebff3689efb31b9ffd50fc98ac154967462846af`，CI #152 正在执行。随后发现搜索 leading 布局导致其他场景回归，改回 principal 并采用自适应宽度，待最终提交与完整 CI 重新确认；不可使用 #152 的 Release 交付最终源码。
+- 本机 github.com Git 传输连续连接失败；api.github.com 可用。通过公开 Git commit API 元数据重建对象、逐字节 SHA-1 核验得到远端相同 commit，本地分支已对齐 `ebff3689`；原两次本地提交保存在 `codex/build50-local-backup`。没有修改全局网络／Git 配置。

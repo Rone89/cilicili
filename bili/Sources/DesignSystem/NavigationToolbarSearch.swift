@@ -18,9 +18,7 @@ private struct NavigationToolbarSearch: ViewModifier {
                 pageWidth = width
             }
             .toolbar {
-                // A principal title can draw beyond UIKit's title hit region.
-                // Use a bar item so the whole row receives its own touches.
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
                         inputField
                         if isEditing {
@@ -38,7 +36,7 @@ private struct NavigationToolbarSearch: ViewModifier {
                             .accessibilityIdentifier("navigation.search.cancel")
                         }
                     }
-                    .frame(width: availableWidth)
+                    .frame(idealWidth: availableWidth, maxWidth: availableWidth)
                     .background(SearchOutsideTapDismissalSource { isEditing = false; isFocused = false })
                 }
                 .sharedBackgroundVisibility(.hidden)
