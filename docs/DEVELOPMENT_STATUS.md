@@ -193,3 +193,12 @@
 - 耗时：三次最后暂停命令 0.469／1.068／1.067ms；第二次后台停用 786.7ms 仍保持最终暂停，不能把后台长尾当成同步暂停阻塞。playToTransport 中位数 32ms，本短测没有首帧记录，不能与旧 playToFrame 直接比较或宣称整体加速。
 - 详细结论与局限见 [Build 52 真机分析](playback-recovery-build52-device-analysis-2026-11-02.md)。原报告、断言脚本和机器可读分析存于 Git 忽略的 `build/device-reports/`；原始 SHA-256 `4335d3b72f184c3ce4f5a1a027d912d49193d27b587ae635b2dcbca5625ca11a`。
 - 待办：保留 Build 52，优先补实际音画、横竖屏、返回重进、后台恢复的短人工验收；首次加载、耳机／系统中断仍待专项采样。出现异常再按动作／时刻取日志，当前没有依据新增性能修复或新 Build。本轮文档随后提交备份，不合并 PR，不新开云端回归。
+
+## 2026-11-02 Build 52 音画／生命周期验收准备轮
+
+- 分支 `codex/pause-boundary-short-test-build52`，本轮开始 HEAD `b6fe418a74800036296f9ee090fd0e67db0f9988`；应用源码保持 `1b77a638628eeef78a61123e51d61125e7f14141`，手机仍为 Build 52。本轮没有修改应用、递增 Build、安装或开启云端 CI。
+- 已验证：使用规定的 iPhone 18 Pro Max／iOS 27.0 模拟器及原共享 Xcode-27 缓存串行执行现有生命周期 UI 用例，3/3、零失败／零跳过，覆盖后台返回、旋转中退出和全屏往返；这只证明 fixture 的 UI 结构／生命周期回归，不等于真机音画通过。证据 `build/logs/build52-lifecycle-ui.log/.xcresult` 和 summary.json。
+- 自动取证已实测：直接从连接的 RCe2027 应用容器读取 `PlaybackRecoveryTests/latest.json`，与用户 Build 52／runID `F788D232-E597-4FA5-9CF2-048BFA6833CF` 粘贴报告逐字段一致；无需重新启动 App 或复制粘贴。系统 crash 目录三个 bili 文件均核对为 2026-10-31／Build 43／cc.bili，未将它们当成当前 Build 52 故障。查询未发现新的同名记录，不据此宣称绝无崩溃。
+- 操作步骤、取证命令和结果边界写入 [Build 52 短验收指南](playback-build52-device-acceptance.md)。日志仅本地 Git 忽略目录归档；既有内存性能日志仍需用户在“启动链路性能日志”复制，应用持久化恢复报告不包含本轮人工动作记录。
+- 待办：用户用当前版本完成播放中／暂停时横竖屏、返回列表重进、后台约十秒再返回，并反馈音画与状态；异常需动作／时刻和性能日志，若闪退则拉取对应新 crash。首次加载、耳机／系统中断继续待专项验证。现有 MCP 没有真机触摸／旋转能力，未为自动化更改签名／调试权限。
+- 原 main diff／porcelain 再次与接续前快照一致。本轮只新增验收文档和状态记录，随后提交备份，不合并 PR。
