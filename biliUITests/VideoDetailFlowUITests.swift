@@ -511,6 +511,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         let start = app.buttons["recovery.test.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         XCTAssertFalse(start.isEnabled)
+        XCTAssertFalse(app.buttons["recovery.test.startBoundary"].isEnabled)
         XCTAssertTrue(app.staticTexts["请选择至少5分钟的普通视频。"].exists)
     }
 
@@ -527,7 +528,8 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertTrue(stop.waitForExistence(timeout: 10))
         stop.tap()
         let result = app.staticTexts["recovery.test.result"]
-        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        if !result.exists { app.swipeUp() }
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(result.label.contains("中断"))
         let copy = app.buttons["recovery.test.copy"]
         if !copy.isHittable { app.swipeUp() }
@@ -535,6 +537,30 @@ final class VideoDetailFlowUITests: XCTestCase {
         copy.tap()
         XCTAssertTrue(app.buttons["已复制测试报告"].waitForExistence(timeout: 5))
         XCTAssertFalse(stop.exists)
+    }
+
+    @MainActor
+    func testAutomaticRecoveryBoundaryShortTestStopsAndCopiesReport() {
+        let app = launchVideoDetail(waitForDetailMarker: false,
+                                    extraArguments: ["--ui-test-recovery-long-video"])
+        openAutomaticRecoveryTest(in: app)
+        let start = app.buttons["recovery.test.startBoundary"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        XCTAssertTrue(start.isEnabled, app.debugDescription)
+        start.tap()
+        let stop = app.buttons["recovery.test.stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        stop.tap()
+        let result = app.staticTexts["recovery.test.result"]
+        if !result.exists { app.swipeUp() }
+        XCTAssertTrue(result.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(result.label.contains("中断"))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "/3 项")).firstMatch.exists)
+        let copy = app.buttons["recovery.test.copy"]
+        if !copy.isHittable { app.swipeUp() }
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.tap()
+        XCTAssertTrue(app.buttons["已复制测试报告"].waitForExistence(timeout: 5))
     }
 
     @MainActor

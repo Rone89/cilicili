@@ -37,16 +37,20 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         return nil
     }
 
-    func start() {
+    func start(onlyPauseBoundary: Bool = false) {
         guard !isRunning, readinessMessage == nil else { return }
         generation &+= 1
         let token = generation
         let snapshot = driver.observation
         sourceIdentity = snapshot.sourceIdentity
         networkClass = snapshot.networkClass
+        let scenarios: [PlaybackRecoveryTestScenario] = onlyPauseBoundary
+            ? [.deactivatedImmediatePause] : PlaybackRecoveryTestScenario.allCases
+        var context = driver.reportContext
+        context["testPlan"] = onlyPauseBoundary ? "pauseBoundary" : "full"
         report = PlaybackRecoveryTestReport(
-            context: driver.reportContext,
-            plannedTrialCount: PlaybackRecoveryTestScenario.allCases.count * timing.repetitions
+            context: context,
+            plannedTrialCount: scenarios.count * timing.repetitions
         )
         guard let report else { return }
         reports.begin(report)
@@ -62,7 +66,7 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         }
         driver.setTestingActive(true)
         task = Task { @MainActor [weak self] in
-            await self?.execute(generation: token)
+            await self?.execute(scenarios: scenarios, generation: token)
         }
     }
 
@@ -74,9 +78,9 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         finish(status: "interrupted", reason: reason, pausePlayback: pausePlayback)
     }
 
-    private func execute(generation token: Int) async {
+    private func execute(scenarios: [PlaybackRecoveryTestScenario], generation token: Int) async {
         do {
-            for scenario in PlaybackRecoveryTestScenario.allCases {
+            for scenario in scenarios {
                 for repetition in 1...timing.repetitions {
                     try check(token)
                     progressText = "\(scenario.title) · 第\(repetition)/\(timing.repetitions)次 · 准备"
@@ -90,6 +94,8 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
                     progressText = "\(scenario.title) · 第\(repetition)/\(timing.repetitions)次"
                     if let pause = scenario.pauseSeconds {
                         try await pauseTrial(seconds: pause, token: token)
+                    } else if scenario == .deactivatedImmediatePause {
+                        try await deactivatedImmediatePauseTrial(token: token)
                     } else if scenario.isRapidToggle {
                         try await rapidToggleTrial(scenario: scenario, token: token)
                     } else {
@@ -241,26 +247,10 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
                 // Let the submitted worker start without waiting for it to finish.
                 try await delay(0.02, token: token)
             }
-            try check(token)
-            let startedAt = timing.now()
-            let pending = driver.observation.audioDeactivationPending
+            if action == "play" { finalPlayMetricIndex = metrics.count }
+            let command = try issueCommand(action, token: token)
             if action == "play" {
-                finalPlayMetricIndex = metrics.count
-                playedDuringDeactivation = playedDuringDeactivation || pending == true
-                driver.play()
-            } else {
-                driver.pause()
-            }
-            try check(token)
-            let command = PlaybackRecoveryTestCommand(
-                action: action,
-                startedMilliseconds: max(0, (startedAt - (trialStartedAt ?? startedAt)) * 1_000),
-                durationMilliseconds: max(0, (timing.now() - startedAt) * 1_000),
-                audioDeactivationPending: pending
-            )
-            updateTrial {
-                if $0.commands == nil { $0.commands = [] }
-                $0.commands?.append(command)
+                playedDuringDeactivation = playedDuringDeactivation || command.audioDeactivationPending == true
             }
         }
         updateTrial { $0.checks["playedDuringDeactivation"] = playedDuringDeactivation }
@@ -284,6 +274,63 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
             completeTrial(resumed && playedDuringDeactivation ? "observed" : resumed ? "missingEvidence" : "timeout",
                           reason: resumed && playedDuringDeactivation ? nil : "未取得停用在途或最后播放命令的恢复证据")
         }
+        try await delay(timing.settleSeconds, token: token)
+    }
+
+    private func issueCommand(_ action: String, token: Int) throws -> PlaybackRecoveryTestCommand {
+        try check(token)
+        let startedAt = timing.now()
+        let pending = driver.observation.audioDeactivationPending
+        if action == "play" { driver.play() } else { driver.pause() }
+        try check(token)
+        let after = driver.observation
+        let command = PlaybackRecoveryTestCommand(
+            action: action,
+            startedMilliseconds: max(0, (startedAt - (trialStartedAt ?? startedAt)) * 1_000),
+            durationMilliseconds: max(0, (timing.now() - startedAt) * 1_000),
+            audioDeactivationPending: pending,
+            isPlayingAfterCommand: after.isPlaying,
+            wantsPlaybackAfterCommand: after.wantsPlayback
+        )
+        updateTrial {
+            if $0.commands == nil { $0.commands = [] }
+            $0.commands?.append(command)
+        }
+        return command
+    }
+
+    private func deactivatedImmediatePauseTrial(token: Int) async throws {
+        _ = try issueCommand("pause", token: token)
+        let idle = try await wait(seconds: timing.recoveryTimeout, token: token) {
+            let value = self.driver.observation
+            return value.audioDeactivationPending == false || value.isPlaying || value.wantsPlayback
+        }
+        try await delay(0, token: token, requiresPaused: true)
+        guard idle, driver.observation.audioDeactivationPending == false else {
+            completeTrial("missingEvidence", reason: "未确认音频停用结束，没有执行边界播放／暂停")
+            return
+        }
+        // No await between these commands: queued playing callbacks must run
+        // after the newer pause, just as in the deterministic AVPlayer regression.
+        let play = try issueCommand("play", token: token)
+        let pause = try issueCommand("pause", token: token)
+        let covered = play.audioDeactivationPending == false
+            && pause.audioDeactivationPending == false && play.isPlayingAfterCommand == true
+            && play.wantsPlaybackAfterCommand == true
+        updateTrial {
+            $0.checks["deactivationFinishedBeforePlay"] = play.audioDeactivationPending == false
+            $0.checks["deactivationFinishedBeforeFinalPause"] = pause.audioDeactivationPending == false
+            $0.checks["playingBeforeFinalPause"] = play.isPlayingAfterCommand == true
+            $0.checks["playIntentBeforeFinalPause"] = play.wantsPlaybackAfterCommand == true
+        }
+        let finished = try await wait(seconds: timing.recoveryTimeout, token: token) {
+            let value = self.driver.observation
+            return value.audioDeactivationPending == false || value.isPlaying || value.wantsPlayback
+        }
+        try await delay(timing.rapidPausedHoldSeconds, token: token, requiresPaused: true)
+        updateTrial { $0.checks["keptPaused"] = true }
+        completeTrial(finished && covered ? "observed" : "missingEvidence",
+                      reason: finished && covered ? nil : "未取得停用已结束、实际播放及最后暂停保持的完整边界证据")
         try await delay(timing.settleSeconds, token: token)
     }
 

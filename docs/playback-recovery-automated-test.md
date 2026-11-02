@@ -1,12 +1,16 @@
-# Automated on-device recovery collection (Build 47)
+# Automated on-device recovery collection (Build 52)
 
-Build 50 adds three rapid pause/play scenarios for **30 trials** and report schema 3.
+Build 52 adds an idle-deactivation play/pause boundary scenario: **33 trials**
+in the full plan, or **3 trials** via “暂停边界短测（3次）”. Report schema is 4;
+`context.testPlan` distinguishes `full` from `pauseBoundary`. See
+[the Build 52 boundary guide](playback-recovery-pause-boundary-build52.md).
+Build 50 introduced three rapid pause/play scenarios for 30 trials and schema 3.
 See [rapid recovery collection](playback-recovery-rapid-build50.md). The original
 seven scenarios and their timing/evidence semantics below remain in the plan.
 
 Open a recorded video of at least five minutes, let its first frame appear,
 then choose More playback settings > Automatic recovery test > Start.
-The normal run executes all seven scenarios three times: pause 5/30/120 seconds,
+The original seven scenarios run three times: pause 5/30/120 seconds,
 near/distant seeks, paused seek, and a burst of three committed seeks. Normal
 duration is around twelve minutes. The app stays foreground and temporarily
 holds the existing idle-timer setting; it restores that setting on exit.
@@ -57,15 +61,15 @@ allowlisted; source identity stays in memory and is not exported.
 
 ## Validation
 
-Virtual-clock tests execute the complete unshortened 21-trial plan, including
+Virtual-clock tests execute the complete unshortened 33-trial plan, including
 all 465 seconds of requested pauses, without making the CI suite wait in real
 time. Additional regressions cover final-target matching, missing evidence,
 paused auto-play violations, cancellation/restart ownership, interruptions,
 preparation timeouts, invalid input, report durability/revision guards, write
 errors, credential exclusion and real idle-timer restoration.
 
-Two UI cases exercise the actual menu/test page: ordinary 120-second fixture
+Three UI cases exercise the actual menu/test page: ordinary 120-second fixture
 video must be blocked; an explicit Debug-only long-video fixture can start,
-stop and copy an interrupted report. The fixture does not bypass runner logic
+stop and copy an interrupted full or boundary-short report. The fixture does not bypass runner logic
 or produce measured-device performance results. Real-device measurements remain
 the user's next acceptance step.

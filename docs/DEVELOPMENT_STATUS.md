@@ -5,12 +5,12 @@
 ## 分支与工作区
 
 - 仓库：https://github.com/Rone89/cilicili
-- 当前分支：`codex/stale-player-observation-build51`，从 Build 50 源码 `317f89b` 接续；Build 50 分支 `codex/rapid-recovery-and-keyboard-build50`、草稿 PR #65 和原 PR #64 保留，不合并。
+- 当前分支：`codex/pause-boundary-short-test-build52`，从 Build 51 报告提交 `037167c` 接续；Build 50 分支 `codex/rapid-recovery-and-keyboard-build50`、草稿 PR #65 和原 PR #64 保留，不合并。
 - 最初接续基线：`8f7070c9622c6729c7f39a97d8e9be12ab103b60`；Build 51 本轮基线：`317f89b02ccdb81f8cf4dff8afe7e125199720e2`。最新源码备份提交见本文件末尾。
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 51（本地 Release 直接安装并启动）。本地单元 1222/1222 通过；Build 51 首轮真机 30 observed，最终暂停三次保持；停用刚完成后的边界仍待真机覆盖。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 重跑最终成功，不是 Build 51 云端验证。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.1 / Build 52，本地签名 Release 已原位安装并启动。Build 52 本地单元 1228/1228、重点 UI 3/3，通过；真机边界短测报告待采集。本地单元 1222/1222 通过；Build 51 首轮真机 30 observed，最终暂停三次保持；停用刚完成后的边界仍待真机覆盖。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 重跑最终成功，不是 Build 51 云端验证。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -174,3 +174,11 @@
 - 待办：优先补“停用完成后，同一主线程周期 play→pause”的可控自动真机场景，明确记录覆盖条件；随后补实际音画、后台／导航、耳机／中断、横竖屏及首次加载。本轮不要求用户再次重复整套旧计划来碰时序，也不新建 Build。
 - 云端收尾：CI #153 attempt 2 已 completed/success，ui-4 重跑 35/35、无失败后重试；其余六个成功任务保留，最终 1220 单元、141 UI、12 交互、Release 通过。首轮 launch／AX／RootTabScroll 超时与单元重试仍记录。该结果仅覆盖 Build 50 源码 `317f89b`，不冒充 Build 51 云端验证。
 - 原报告与机器可读核验保存于 Git 忽略的 `build/device-reports/build51-65833B09.json`、`build51-analysis.json`；SHA-256 为 `0f86d02f71ddc9236505f162e50e81fe7a8e1e71910c6ac67af0f1535e893f05`。本轮文档随后提交备份，未合并任何 PR。
+
+## 2026-11-02 Build 52 暂停边界短测轮
+
+- 分支 `codex/pause-boundary-short-test-build52`，本轮基线 `037167c4bdae228160f6a481424e116461f0cfa5`。新增停用完成后的同周期 play→pause 情景，完整计划 33 次，新增三次短测入口。详见 [边界短测说明](playback-recovery-pause-boundary-build52.md)。
+- 已实现：schema 4 记录计划类型及命令后实际播放／播放意图；只有停用完成、播放正状态和最终暂停保持均有证据才 observed。未知状态／未同步播放标记 missingEvidence，不放宽故障条件。播放器生产逻辑保持 Build 51，不新增延时策略。
+- 本地已验证：针对性 34/34、全量单元 1228/1228，均零失败／零跳过。证据 `build/logs/build52-focused.*`、`build52-unit.*` 及 summary.json。重点 UI 首轮 1 通过／2 失败，两个停止／复制用例因列表报告行在屏幕外未找到结果；补充滚动后复跑 3/3、零跳过通过，包含计划数为三次、停止中断和复制成功，未删除或放宽原断言。证据 `build52-recovery-ui.*`（首轮）和 `build52-recovery-ui-scroll.*`（最终）。尚未取得 Build 52 真机报告，不能记为真机通过或性能改善。
+- 已直接交付：Xcode 27.1／共享 Xcode-27 缓存串行签名 Release 构建 104.8 秒成功，签名深度核验通过，设备核验 1.1.1（52）、成功启动 PID 70198；原位更新，没有卸载或清容器。签名仅命令行覆盖，没有 IPA 下载／打包或新开完整云端 CI。既有 Swift 隔离等构建警告保留，未扩展范围修复。应用可执行文件 SHA-256 `791aa708dbace6d7c69a87e8b9aa224c0ba1938e8a082a1d865f51a9a332e266`，源码 hash／构建配置见 `build/logs/build52-device-build-info.json`，设备证据 `build52-device-apps-after.json`。
+- 下一步：提交备份；用户仅需跑三次短测并发最终报告，再据缺证／失败字段决定是否还需定向采集。实际音画、首次加载、后台／导航、耳机／系统中断、横竖屏仍待真机验收。

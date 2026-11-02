@@ -3,15 +3,15 @@ import XCTest
 
 @MainActor
 final class PlaybackRecoveryTestRunnerTests: XCTestCase {
-    func testFullScriptRunsAllThirtyTrialsAndKeepsAllThreePauseDurations() async throws {
+    func testFullScriptRunsAllThirtyThreeTrialsAndKeepsAllThreePauseDurations() async throws {
         let (runner, driver, clock, _) = makeRunner()
         runner.start()
         await finish(runner)
         let report = try XCTUnwrap(runner.report)
         XCTAssertEqual(report.status, "completed")
-        XCTAssertEqual(report.trials.count, 30)
-        XCTAssertEqual(report.trials.filter { $0.outcome == "observed" }.count, 30)
-        XCTAssertEqual(report.schemaVersion, 3)
+        XCTAssertEqual(report.trials.count, 33)
+        XCTAssertEqual(report.trials.filter { $0.outcome == "observed" }.count, 33)
+        XCTAssertEqual(report.schemaVersion, 4)
         for seconds in [5.0, 30, 120] {
             let trials = report.trials.filter { $0.requestedPauseSeconds == seconds }
             XCTAssertEqual(trials.count, 3)
@@ -255,6 +255,85 @@ final class PlaybackRecoveryTestRunnerTests: XCTestCase {
         XCTAssertEqual(trial.checks["wantsPlaybackAtPauseFailure"], true)
     }
 
+    func testPauseBoundaryShortPlanCoversIdlePlayAndPauseWithoutSuspension() async throws {
+        let (runner, _, clock, _) = makeRunner()
+        runner.start(onlyPauseBoundary: true)
+        await finish(runner)
+        let report = try XCTUnwrap(runner.report)
+        XCTAssertEqual(report.context["testPlan"], "pauseBoundary")
+        XCTAssertEqual(report.plannedTrialCount, 3)
+        XCTAssertEqual(report.trials.count, 3)
+        XCTAssertEqual(report.status, "completed")
+        XCTAssertLessThan(clock.time, 60)
+        for trial in report.trials {
+            XCTAssertEqual(trial.scenario, .deactivatedImmediatePause)
+            XCTAssertEqual(trial.outcome, "observed")
+            let commands = try XCTUnwrap(trial.commands)
+            XCTAssertEqual(commands.map(\.action), ["pause", "play", "pause"])
+            XCTAssertEqual(commands[1].audioDeactivationPending, false)
+            XCTAssertEqual(commands[2].audioDeactivationPending, false)
+            XCTAssertEqual(commands[1].isPlayingAfterCommand, true)
+            XCTAssertEqual(commands[1].wantsPlaybackAfterCommand, true)
+            XCTAssertEqual(commands[2].startedMilliseconds,
+                           commands[1].startedMilliseconds + commands[1].durationMilliseconds,
+                           accuracy: 0.001)
+            XCTAssertEqual(trial.checks["keptPaused"], true)
+        }
+    }
+
+    func testPauseBoundaryUnknownDeactivationNeverIssuesBoundaryPlay() async throws {
+        let (runner, driver, _, _) = makeRunner(repetitions: 1)
+        driver.exposesDeactivationPending = false
+        runner.start(onlyPauseBoundary: true)
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.first)
+        XCTAssertEqual(trial.outcome, "missingEvidence")
+        XCTAssertEqual(trial.commands?.map(\.action), ["pause"])
+    }
+
+    func testPauseBoundaryWithoutActualPlayingCannotClaimCoverage() async throws {
+        let (runner, driver, _, _) = makeRunner(repetitions: 1)
+        driver.suppressIdlePlay = true
+        runner.start(onlyPauseBoundary: true)
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.first)
+        XCTAssertEqual(trial.outcome, "missingEvidence")
+        XCTAssertEqual(trial.checks["playingBeforeFinalPause"], false)
+        XCTAssertEqual(trial.checks["keptPaused"], true)
+    }
+
+    func testPauseBoundaryRejectsLatePlaybackAfterFinalPause() async throws {
+        let (runner, driver, clock, _) = makeRunner(repetitions: 1)
+        clock.onSleep = {
+            if runner.report?.trials.last?.commands?.count == 3 {
+                clock.onSleep = nil
+                driver.forceUnexpectedPlayback()
+            }
+        }
+        runner.start(onlyPauseBoundary: true)
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.first)
+        XCTAssertEqual(runner.report?.status, "failed")
+        XCTAssertEqual(trial.checks["keptPaused"], false)
+        XCTAssertEqual(trial.checks["playingAtPauseFailure"], true)
+        XCTAssertEqual(trial.checks["wantsPlaybackAtPauseFailure"], true)
+    }
+
+    func testPauseBoundaryCancellationDuringDeactivationNeverIssuesObsoletePlay() async throws {
+        let (runner, _, clock, _) = makeRunner(repetitions: 1)
+        clock.onSleep = {
+            if runner.report?.trials.last?.commands?.count == 1 {
+                clock.onSleep = nil
+                runner.cancel()
+            }
+        }
+        runner.start(onlyPauseBoundary: true)
+        await finish(runner)
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(runner.report?.status, "interrupted")
+        XCTAssertEqual(runner.report?.trials.first?.commands?.map(\.action), ["pause"])
+    }
+
     private func makeRunner(repetitions: Int = 3) -> (
         PlaybackRecoveryTestRunner, RecoveryScriptDriver, RecoveryScriptClock, PlaybackRecoveryTestReportStore
     ) {
@@ -310,6 +389,7 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     var duration = 600.0
     var available = true
     var active = false
+    var suppressIdlePlay = false
     var omitResumeFrames = false
     var omitFinalRapidFrame = false
     var exposesDeactivationPending = true
@@ -359,6 +439,10 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     func play() {
         commands.append("play")
         guard playingAt == nil else { return }
+        if suppressIdlePlay, pauseSample != nil, clock.time >= deactivationPendingUntil {
+            wants = true
+            return
+        }
         playingAt = clock.time
         wants = true
         if let id = pauseSample {

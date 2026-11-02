@@ -14,8 +14,8 @@ struct PlaybackRecoveryTestView: View {
     var body: some View {
         List {
             Section {
-                Text("自动执行暂停、恢复、进度跳转和快速暂停／播放，共30次，约12分钟。请保持App前台；测试期间会保持屏幕常亮，并改变当前播放进度。结束后暂停播放。")
-                Text("可随时停止。新测试会替换上一轮报告。")
+                Text("自动执行暂停、恢复、进度跳转和快速暂停／播放，共33次，约12分钟。请保持App前台；测试期间会保持屏幕常亮，并改变当前播放进度。结束后暂停播放。")
+                Text("暂停边界短测只执行新增情景3次，通常约1分钟，准备或停用超时会延长。可随时停止；新测试会替换上一轮报告。")
                     .foregroundStyle(.secondary)
             }
 
@@ -33,6 +33,9 @@ struct PlaybackRecoveryTestView: View {
                     if let message = runner.readinessMessage {
                         Text(message).foregroundStyle(.secondary)
                     }
+                    Button("暂停边界短测（3次）") { runner.start(onlyPauseBoundary: true) }
+                        .disabled(runner.readinessMessage != nil)
+                        .accessibilityIdentifier("recovery.test.startBoundary")
                     Button(runner.report == nil ? "开始自动测试" : "重新开始自动测试") { runner.start() }
                         .disabled(runner.readinessMessage != nil)
                         .accessibilityIdentifier("recovery.test.start")

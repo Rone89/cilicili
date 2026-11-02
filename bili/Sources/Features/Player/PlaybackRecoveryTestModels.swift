@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated enum PlaybackRecoveryTestScenario: String, Codable, CaseIterable, Sendable {
     case pause5, pause30, pause120, nearbySeek, distantSeek, pausedSeek, continuousSeek
-    case immediateResume, rapidTogglePlaying, rapidTogglePaused
+    case immediateResume, rapidTogglePlaying, rapidTogglePaused, deactivatedImmediatePause
 
     var title: String {
         switch self {
@@ -16,6 +16,7 @@ nonisolated enum PlaybackRecoveryTestScenario: String, Codable, CaseIterable, Se
         case .immediateResume: "暂停后立即播放"
         case .rapidTogglePlaying: "反复切换后保持播放"
         case .rapidTogglePaused: "反复切换后保持暂停"
+        case .deactivatedImmediatePause: "停用完成后播放再立即暂停"
         }
     }
 
@@ -38,6 +39,8 @@ nonisolated struct PlaybackRecoveryTestCommand: Codable, Equatable, Sendable {
     let startedMilliseconds: Double
     let durationMilliseconds: Double
     let audioDeactivationPending: Bool?
+    var isPlayingAfterCommand: Bool? = nil
+    var wantsPlaybackAfterCommand: Bool? = nil
 }
 
 nonisolated struct PlaybackRecoveryTestMetric: Codable, Equatable, Sendable {
@@ -121,7 +124,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
     let limits: [String]
 
     init(context: [String: String], plannedTrialCount: Int) {
-        schemaVersion = 3
+        schemaVersion = 4
         runID = UUID()
         startedAt = Date()
         status = "running"
@@ -140,6 +143,7 @@ nonisolated struct PlaybackRecoveryTestReport: Codable, Equatable, Sendable {
             "A paused-resume recovery total starts at the subsequent play request, not at the earlier paused seek.",
             "Command durations measure synchronous API work, not display or audible output. actualPauseMilliseconds includes pause command work; pauseHoldMilliseconds begins after the pause command returns.",
             "From Build 49, audioDeactivationMs measures the background audio-session call; it is not part of pauseCommandMilliseconds and may be recorded after a play request with the original pause sampleID.",
+            "The deactivatedImmediatePause trial waits for known idle deactivation, then issues play and pause without an async suspension. Observed requires actual playing immediately after play, both commands starting with no pending deactivation, and a subsequent paused hold. Missing coverage is not success.",
             "Immediate resume has no scheduled hold; repeated toggles use 20ms spacing. Observed requires a play command while audio deactivation is pending, and evidence for the final intent only. Pending includes queued work; it is not proof of a system call executing concurrently.",
         ]
     }
