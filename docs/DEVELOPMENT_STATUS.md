@@ -10,7 +10,7 @@
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 51（本地 Release 直接安装并启动）。本地单元 1222/1222 通过；Build 51 真机修复效果待报告。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 失败分片重跑尚待结果，不能认作 Build 51 云端验证。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.1 / Build 51（本地 Release 直接安装并启动）。本地单元 1222/1222 通过；Build 51 首轮真机 30 observed，最终暂停三次保持；停用刚完成后的边界仍待真机覆盖。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 重跑最终成功，不是 Build 51 云端验证。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -164,3 +164,13 @@
 
 - Build 51 源码及本轮报告／工作流文档已提交并备份：`aa562916e76d9a54c14d6805661c158aca6e4fed`，分支 `codex/stale-player-observation-build51`。通过连接器发布 Git tree 并核对与本地一致，GitHub API 原始 commit 元数据重建后 SHA 逐字节相同；本地分支已对齐。设备实际构建时以 `317f89b` 加本轮工作树源码完成，后续备份的三个应用源文件 hash 均与实际构建记录一致，不冒称构建时 HEAD 已是新提交。
 - 仅作分支提交备份，没有创建新的 Build 51 PR、启动 Build 51 完整云端 CI、合并或强推。当前收尾记录为随后文档提交，应用源码提交保持上述 `aa562916`；Build 50 既有云端重跑仍待最终结果。后续每轮继续更新本文。
+
+## 2026-11-02 Build 51 真机报告分析轮
+
+- 分支 `codex/stale-player-observation-build51`，本轮开始 HEAD `4040b651948a4628b631ea4d6dbabfcd1e638279`，应用源码仍为 `aa562916e76d9a54c14d6805661c158aca6e4fed`；本轮只归档、校验和写文档，未改播放器、构建、安装或新开云端回归。
+- 收到 runID `65833B09-22BE-46EB-BACD-7D0A30D863FA` 的 Build 51 schema 3 报告：30/30 observed，无失败／超时／缺证。ID、情景次数、sampleBuild、checks、六次最终播放帧 ID、15 条 pending play、21 条成功停用、连续 seek 最后目标和 pausedSeek 单条记录均校验通过。
+- 已验证：本轮三次 rapidTogglePaused 均 keptPaused=true，Build 50 旧失败未复现。限制：三次最后暂停前 pending 都为 true，未覆盖 Build 50 失败时 pending=false 的停用结束边界；不能认定所有竞态真机验收完成。详见 `docs/playback-recovery-build51-device-analysis-2026-11-02.md`。
+- 性能：普通暂停命令中位数 4.66ms、playToFrame 151ms，仍同一量级；立即恢复 347ms、反复切换后播放 266ms，比 Build 50 本轮更慢，后台停用中位数 181ms。工具链和系统状态等未受控，不直接认定版本加速或退化，不缩短恢复保护窗口。
+- 待办：优先补“停用完成后，同一主线程周期 play→pause”的可控自动真机场景，明确记录覆盖条件；随后补实际音画、后台／导航、耳机／中断、横竖屏及首次加载。本轮不要求用户再次重复整套旧计划来碰时序，也不新建 Build。
+- 云端收尾：CI #153 attempt 2 已 completed/success，ui-4 重跑 35/35、无失败后重试；其余六个成功任务保留，最终 1220 单元、141 UI、12 交互、Release 通过。首轮 launch／AX／RootTabScroll 超时与单元重试仍记录。该结果仅覆盖 Build 50 源码 `317f89b`，不冒充 Build 51 云端验证。
+- 原报告与机器可读核验保存于 Git 忽略的 `build/device-reports/build51-65833B09.json`、`build51-analysis.json`；SHA-256 为 `0f86d02f71ddc9236505f162e50e81fe7a8e1e71910c6ac67af0f1535e893f05`。本轮文档随后提交备份，未合并任何 PR。

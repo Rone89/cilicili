@@ -43,3 +43,5 @@
 Build 50 首轮真机已收到：30 次中 29 observed、1 failed，最后一次 rapidTogglePaused 未保持暂停；15 条快速 play 均有在途证据。见 [报告分析](playback-recovery-build50-device-analysis-2026-11-02.md)。不能将本页的本地／CI 通过写成真机 30/30 通过。
 
 后续 Build 51 在本地真实 AVPlayer 测试复现并修复旧观察回调覆盖暂停的问题；本地全量 1222 项通过，Release 直接构建安装真机，效果待新报告。GitHub 只备份此日常迭代，不为其重新启动整轮云端回归；Build 50 既有 CI #153 的失败分片重跑仍单独记录。
+
+后续收尾：Build 50 的 CI #153 失败分片重跑后最终成功；Build 51 首轮真机 30/30 observed，但三次最终暂停均在停用尚未结束时发生，仍缺停用完成边界。完整口径见 [Build 51 真机分析](playback-recovery-build51-device-analysis-2026-11-02.md)，不将旧版云端通过或 observed 计数当作全面性能验收。
