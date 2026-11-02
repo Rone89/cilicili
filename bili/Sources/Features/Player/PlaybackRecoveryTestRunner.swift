@@ -90,6 +90,8 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
                     progressText = "\(scenario.title) · 第\(repetition)/\(timing.repetitions)次"
                     if let pause = scenario.pauseSeconds {
                         try await pauseTrial(seconds: pause, token: token)
+                    } else if scenario.isRapidToggle {
+                        try await rapidToggleTrial(scenario: scenario, token: token)
                     } else {
                         try await seekTrial(scenario: scenario, repetition: repetition, token: token)
                     }
@@ -225,11 +227,74 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
 
     private var metrics: [PlaybackRecoveryTestMetric] { report?.trials.last?.metrics ?? [] }
 
-    private var hasResumeFrame: Bool {
-        let ids = Set(metrics.filter {
+    private func rapidToggleTrial(scenario: PlaybackRecoveryTestScenario, token: Int) async throws {
+        let actions: [String]
+        switch scenario {
+        case .immediateResume: actions = ["pause", "play"]
+        case .rapidTogglePlaying: actions = ["pause", "play", "pause", "play"]
+        default: actions = ["pause", "play", "pause", "play", "pause"]
+        }
+        var finalPlayMetricIndex = 0
+        var playedDuringDeactivation = false
+        for (index, action) in actions.enumerated() {
+            if index > 0, scenario != .immediateResume {
+                // Let the submitted worker start without waiting for it to finish.
+                try await delay(0.02, token: token)
+            }
+            try check(token)
+            let startedAt = timing.now()
+            let pending = driver.observation.audioDeactivationPending
+            if action == "play" {
+                finalPlayMetricIndex = metrics.count
+                playedDuringDeactivation = playedDuringDeactivation || pending == true
+                driver.play()
+            } else {
+                driver.pause()
+            }
+            try check(token)
+            let command = PlaybackRecoveryTestCommand(
+                action: action,
+                startedMilliseconds: max(0, (startedAt - (trialStartedAt ?? startedAt)) * 1_000),
+                durationMilliseconds: max(0, (timing.now() - startedAt) * 1_000),
+                audioDeactivationPending: pending
+            )
+            updateTrial {
+                if $0.commands == nil { $0.commands = [] }
+                $0.commands?.append(command)
+            }
+        }
+        updateTrial { $0.checks["playedDuringDeactivation"] = playedDuringDeactivation }
+        if scenario == .rapidTogglePaused {
+            let idle = try await wait(seconds: timing.recoveryTimeout, token: token) {
+                let value = self.driver.observation
+                return value.audioDeactivationPending == false
+                    || value.isPlaying || value.wantsPlayback
+            }
+            try await delay(timing.rapidPausedHoldSeconds, token: token, requiresPaused: true)
+            updateTrial { $0.checks["keptPaused"] = true }
+            completeTrial(idle && playedDuringDeactivation ? "observed" : "missingEvidence",
+                          reason: idle && playedDuringDeactivation ? nil : "未取得音频停用在途及最终停止等待的证据")
+        } else {
+            let resumed = try await wait(seconds: timing.recoveryTimeout, token: token) {
+                let value = self.driver.observation
+                return self.hasResumeFrame(since: finalPlayMetricIndex)
+                    && value.isPlaying && value.wantsPlayback && !value.isSeeking
+            }
+            updateTrial { $0.checks["finalPlayRecovered"] = resumed }
+            completeTrial(resumed && playedDuringDeactivation ? "observed" : resumed ? "missingEvidence" : "timeout",
+                          reason: resumed && playedDuringDeactivation ? nil : "未取得停用在途或最后播放命令的恢复证据")
+        }
+        try await delay(timing.settleSeconds, token: token)
+    }
+
+    private var hasResumeFrame: Bool { hasResumeFrame(since: 0) }
+
+    private func hasResumeFrame(since index: Int) -> Bool {
+        let currentMetrics = metrics.dropFirst(index)
+        let ids = Set(currentMetrics.filter {
             $0.kind == "manualResume" && $0.fields["stage"] == "playRequested"
         }.compactMap { $0.fields["sampleID"] })
-        return metrics.contains {
+        return currentMetrics.contains {
             $0.kind == "manualResume" && $0.fields["stage"] == "firstAdvancingFrame"
                 && $0.fields["playToFrame"] != nil && $0.fields["playToFrame"] != "-"
                 && $0.fields["sampleID"].map(ids.contains) == true

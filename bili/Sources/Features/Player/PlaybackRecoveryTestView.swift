@@ -14,7 +14,7 @@ struct PlaybackRecoveryTestView: View {
     var body: some View {
         List {
             Section {
-                Text("自动执行暂停、恢复和进度跳转，每项三次，约12分钟。请保持App前台；测试期间会保持屏幕常亮，并改变当前播放进度。结束后暂停播放。")
+                Text("自动执行暂停、恢复、进度跳转和快速暂停／播放，共30次，约12分钟。请保持App前台；测试期间会保持屏幕常亮，并改变当前播放进度。结束后暂停播放。")
                 Text("可随时停止。新测试会替换上一轮报告。")
                     .foregroundStyle(.secondary)
             }

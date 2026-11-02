@@ -134,7 +134,7 @@ enum SearchResultItem: Identifiable, Hashable, Sendable {
     }
 }
 
-protocol SearchAPIProviding: Sendable {
+nonisolated protocol SearchAPIProviding: Sendable {
     func fetchHotSearch() async throws -> [HotSearchItem]
     func fetchSearchSuggest(term: String) async throws -> [SearchSuggestItem]
     func searchVideos(keyword: String, page: Int, order: String?) async throws -> [VideoItem]

@@ -117,6 +117,24 @@ final class PlayerOverlappingSeekTests: XCTestCase {
         }.count, 1)
     }
 
+    func testAsyncAudioCompletionKeepsOriginalPauseIDAfterResumeAndAnotherPause() throws {
+        let (player, engine, surface, metricsID) = makePlayer(playing: true)
+        defer { player.stop(); _ = surface }
+        player.pause()
+        let originalID = try XCTUnwrap(player.manualPauseAudioDeactivationSampleID)
+        engine.snapshotTime = 12
+        player.playFromUserInteraction()
+        player.pause()
+        let newerID = try XCTUnwrap(player.manualPauseAudioDeactivationSampleID)
+        XCTAssertNotEqual(originalID, newerID)
+        player.recordManualPauseAudioDeactivation(milliseconds: 631, succeeded: true, sampleID: originalID)
+        let event = try XCTUnwrap(PlayerPerformanceStore.shared.events.last {
+            $0.metricsID == metricsID && $0.message?.contains("stage=audioSessionDeactivation") == true
+        })
+        XCTAssertTrue(event.message?.contains("sampleID=\(originalID)") == true)
+        XCTAssertFalse(event.message?.contains("sampleID=\(newerID)") == true)
+    }
+
 
     func testHealthyPausedSeekResumeResolvesFreshGuardWithoutReseeking() async throws {
         let (player, engine, surface, metricsID) = makePlayer(playing: false)

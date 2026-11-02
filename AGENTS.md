@@ -1,3 +1,7 @@
+# Development handoff
+
+Read [the development status](docs/DEVELOPMENT_STATUS.md) before continuing work. After each work round, update completed work, pending tasks, test conclusions, branch and commit in that file. Keep implemented, verified and device-pending results distinct. Do not develop comment IP display or merge PRs without explicit user instruction.
+
 # Xcode build cache rules
 
 Follow [the build-cache guide](docs/build-cache.md) for every Xcode build, test, archive, or IPA workflow.

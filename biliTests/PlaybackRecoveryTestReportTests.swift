@@ -137,19 +137,38 @@ final class PlaybackRecoveryTestReportTests: XCTestCase {
         XCTAssertNil(unsafe.fields["action"])
     }
 
-    func testSchemaOneReportsStillDecodeWithMissingCommandDurations() throws {
+    func testSchemaOneAndTwoReportsStillDecodeWithMissingCommandDurations() throws {
         let old = """
         {"schemaVersion":1,"runID":"00000000-0000-0000-0000-000000000001","startedAt":"2026-01-01T00:00:00Z","status":"completed","context":{"build":"47"},"plannedTrialCount":21,"limits":[],"trials":[{"id":"00000000-0000-0000-0000-000000000002","scenario":"pause5","repetition":1,"outcome":"observed","targetProgresses":[],"metrics":[],"checks":{},"actualPauseMilliseconds":5738}]}
         """
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let report = try decoder.decode(PlaybackRecoveryTestReport.self, from: Data(old.utf8))
-        XCTAssertEqual(report.schemaVersion, 1)
-        XCTAssertEqual(report.trials.first?.actualPauseMilliseconds, 5738)
-        XCTAssertNil(report.trials.first?.pauseCommandMilliseconds)
-        XCTAssertNil(report.trials.first?.pauseHoldMilliseconds)
-        XCTAssertNil(report.trials.first?.playCommandMilliseconds)
-        XCTAssertNil(report.trials.first?.seekCommandMilliseconds)
+        for version in [1, 2] {
+            let data = Data(old.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":\(version)").utf8)
+            let report = try decoder.decode(PlaybackRecoveryTestReport.self, from: data)
+            XCTAssertEqual(report.schemaVersion, version)
+            XCTAssertEqual(report.trials.first?.actualPauseMilliseconds, 5738)
+            XCTAssertNil(report.trials.first?.pauseCommandMilliseconds)
+            XCTAssertNil(report.trials.first?.pauseHoldMilliseconds)
+            XCTAssertNil(report.trials.first?.playCommandMilliseconds)
+            XCTAssertNil(report.trials.first?.seekCommandMilliseconds)
+            XCTAssertNil(report.trials.first?.commands)
+        }
+    }
+
+    func testSchemaThreeRapidCommandTimelineRoundTrips() throws {
+        var report = PlaybackRecoveryTestReport(context: ["build": "50"], plannedTrialCount: 30)
+        var trial = PlaybackRecoveryTestTrial(id: UUID(), scenario: .rapidTogglePaused, repetition: 1)
+        trial.commands = [PlaybackRecoveryTestCommand(
+            action: "play", startedMilliseconds: 5, durationMilliseconds: 3, audioDeactivationPending: true
+        )]
+        report.trials = [trial]
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let restored = try decoder.decode(PlaybackRecoveryTestReport.self, from: Data(report.exportText.utf8))
+        XCTAssertEqual(restored.schemaVersion, 3)
+        XCTAssertEqual(restored.trials.first?.commands, trial.commands)
+        XCTAssertEqual(restored.trials.first?.scenario, .rapidTogglePaused)
     }
 
     private func temporaryURL() -> URL {

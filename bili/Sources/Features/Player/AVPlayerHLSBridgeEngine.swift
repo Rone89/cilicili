@@ -25,6 +25,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 
     private let player = AVPlayer()
+    private let audioSession: PlaybackAudioSession
     private weak var viewModel: PlayerStateViewModel?
     nonisolated(unsafe) private var itemEndObserver: Any?
     nonisolated(unsafe) private var itemFailedObserver: Any?
@@ -58,6 +59,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private var retainedAssets: [AVAsset] = []
     private var currentRate: Float = 1
     private var wantsPlayback = false
+    private var audioSessionActivationGeneration = 0
+    private var isAwaitingAudioSessionActivation = false
     private var didReportFirstFrame = false
     private var lastPlaybackState: PlayerEnginePlaybackState = .idle
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
@@ -251,7 +254,8 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     }
 #endif
 
-    init() {
+    init(audioSession: PlaybackAudioSession = .shared) {
+        self.audioSession = audioSession
         nativeDolbyVideoOverlay.onReadyForDisplay = { [weak self] in
             self?.handleNativeDolbyVideoOverlayReady()
         }
@@ -573,6 +577,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         playbackGeneration &+= 1
         let generation = playbackGeneration
         isStopped = false
+        invalidateAudioSessionActivation()
         tearDownCurrentItemForReplacement()
         self.source = source
         let recoveryKey = playbackFailureRecoveryKey(for: source)
@@ -699,10 +704,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             }
         }
         shouldPrerollPausedRecoveryAfterSeek = false
+        wantsPlayback = true
         configureAudioSession()
         audioSessionFinishedAt = CACurrentMediaTime()
         applyTargetAudioState()
-        wantsPlayback = true
+        guard !isAwaitingAudioSessionActivation else {
+            publishPlaybackState(.buffering)
+            return
+        }
         guard item.status == .readyToPlay else {
             if item.status == .unknown {
                 beginPlayback()
@@ -735,6 +744,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func pause(deactivatesAudioSession: Bool, notifiesStateChange: Bool) {
         guard !isStopped else { return }
+        invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
         cancelTerminalStallWatchdog()
@@ -755,6 +765,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryEvent("sessionEnded", fields: ["reason": "appBackground"])
         #endif
         guard !isStopped else { return }
+        invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
         cancelTerminalStallWatchdog()
@@ -771,6 +782,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
         guard !isStopped else { return }
+        invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
         cancelTerminalStallWatchdog()
@@ -789,6 +801,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
         guard !isStopped else { return }
+        invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
         cancelTerminalStallWatchdog()
@@ -804,6 +817,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
         playbackGeneration &+= 1
+        invalidateAudioSessionActivation()
         isStopped = true
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -1208,6 +1222,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func startPlaybackImmediately() {
         guard !isStopped, player.currentItem != nil else { return }
+        guard !isAwaitingAudioSessionActivation, !audioSession.isDeactivating else { return }
         applyTargetAudioState()
         #if DEBUG
         if debugRecoveryTraceID != nil, debugRecoveryPlayAt == nil {
@@ -1721,44 +1736,48 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         )
     }
 
+    private func invalidateAudioSessionActivation() {
+        audioSessionActivationGeneration &+= 1
+        isAwaitingAudioSessionActivation = false
+    }
+
     private func configureAudioSession() {
+        audioSessionActivationGeneration &+= 1
+        let generation = audioSessionActivationGeneration
+        let wasDeferred = audioSession.isDeactivating
+        isAwaitingAudioSessionActivation = wasDeferred
         #if DEBUG
         let phase = debugAudioPhase
-        RecoveryTraceStore.shared.event(debugRecoveryTraceID, "audioSessionActivationStart", fields: ["phase": phase])
-        var succeeded = false
-        defer {
-            RecoveryTraceStore.shared.event(debugRecoveryTraceID, "audioSessionActivationComplete", fields: ["phase": phase, "succeeded": String(succeeded)])
-        }
+        let traceID = debugRecoveryTraceID
+        RecoveryTraceStore.shared.event(traceID, "audioSessionActivationStart", fields: ["phase": phase])
         #endif
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try session.setActive(true)
+        audioSession.activate(when: { [weak self] in
+            guard let self, !self.isStopped, self.audioSessionActivationGeneration == generation else { return false }
+            if wasDeferred, let viewModel = self.viewModel {
+                return ActivePlaybackCoordinator.shared.isActive(viewModel)
+            }
+            return true
+        }, completion: { [weak self] succeeded in
+            guard let self else { return }
+            self.isAwaitingAudioSessionActivation = false
             #if DEBUG
-            succeeded = true
+            RecoveryTraceStore.shared.event(traceID, "audioSessionActivationComplete", fields: ["phase": phase, "succeeded": String(succeeded)])
             #endif
-        } catch {
-            // Playback can still proceed if the simulator or system declines the session update.
-        }
+            // As before, playback can proceed if the system declines activation.
+            if wasDeferred, self.wantsPlayback { self.beginPlayback() }
+        })
     }
 
     private func deactivateAudioSessionIfPossible() {
         guard let viewModel,
               ActivePlaybackCoordinator.shared.isActive(viewModel)
         else { return }
-        let startedAt = CACurrentMediaTime()
-        var succeeded = false
-        defer {
-            viewModel.recordManualPauseAudioDeactivation(
-                milliseconds: max(0, (CACurrentMediaTime() - startedAt) * 1_000),
-                succeeded: succeeded
+        let sampleID = viewModel.manualPauseAudioDeactivationSampleID
+        audioSession.deactivate { [weak viewModel] milliseconds, succeeded in
+            guard let sampleID else { return }
+            viewModel?.recordManualPauseAudioDeactivation(
+                milliseconds: milliseconds, succeeded: succeeded, sampleID: sampleID
             )
-        }
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-            succeeded = true
-        } catch {
-            // The session may already be inactive or owned by a system transition.
         }
     }
 

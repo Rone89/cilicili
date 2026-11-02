@@ -10,6 +10,34 @@ import XCTest
 
 final class DeterministicAVPlayerTransportTests: XCTestCase {
     @MainActor
+    func testPauseWhileAudioDeactivationIsPendingRejectsDeferredEnginePlay() async throws {
+        let fixture = try await DeterministicDASHPlaybackFixture.make()
+        defer { fixture.server.stop() }
+        let held = HeldAudioDeactivation()
+        defer { held.release() }
+        let session = PlaybackAudioSession(deactivate: { held.run() }, activate: { true })
+        let engine = AVPlayerHLSBridgeEngine(audioSession: session)
+        let host = PlaybackTestSurfaceHost()
+        defer { engine.stop(); host.close() }
+        engine.attachSurface(host.surface)
+        try await engine.prepare(source: fixture.primarySource)
+        engine.play()
+        try await waitUntil("playing before pause") { engine.debugActualPlayerRate > 0 }
+        engine.pause()
+        session.deactivate { _, _ in }
+        try await waitUntil("held deactivation starts") { held.started }
+        engine.play()
+        XCTAssertEqual(engine.debugActualPlayerRate, 0)
+        engine.pauseForAppBackground()
+        held.release()
+        try await waitUntil("deactivation completes") { !session.isDeactivating }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(engine.debugActualPlayerRate, 0, "The obsolete play must not resume in the background")
+        engine.play()
+        try await waitUntil("explicit play after deactivation") { engine.debugActualPlayerRate > 0 }
+    }
+
+    @MainActor
     func testGeneratedAudioVideoFixtureDoesNotContactNetwork() async throws {
         let fixture = try await DeterministicDASHPlaybackFixture.make()
         defer { fixture.server.stop() }

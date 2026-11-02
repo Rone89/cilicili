@@ -3,14 +3,15 @@ import XCTest
 
 @MainActor
 final class PlaybackRecoveryTestRunnerTests: XCTestCase {
-    func testFullScriptRunsAllTwentyOneTrialsAndKeepsAllThreePauseDurations() async throws {
+    func testFullScriptRunsAllThirtyTrialsAndKeepsAllThreePauseDurations() async throws {
         let (runner, driver, clock, _) = makeRunner()
         runner.start()
         await finish(runner)
         let report = try XCTUnwrap(runner.report)
         XCTAssertEqual(report.status, "completed")
-        XCTAssertEqual(report.trials.count, 21)
-        XCTAssertEqual(report.trials.filter { $0.outcome == "observed" }.count, 21)
+        XCTAssertEqual(report.trials.count, 30)
+        XCTAssertEqual(report.trials.filter { $0.outcome == "observed" }.count, 30)
+        XCTAssertEqual(report.schemaVersion, 3)
         for seconds in [5.0, 30, 120] {
             let trials = report.trials.filter { $0.requestedPauseSeconds == seconds }
             XCTAssertEqual(trials.count, 3)
@@ -39,7 +40,7 @@ final class PlaybackRecoveryTestRunnerTests: XCTestCase {
         driver.omitFinalContinuousRecovery = true
         runner.start()
         await finish(runner)
-        let last = try XCTUnwrap(runner.report?.trials.last)
+        let last = try XCTUnwrap(runner.report?.trials.first { $0.scenario == .continuousSeek })
         XCTAssertEqual(last.scenario, .continuousSeek)
         XCTAssertEqual(last.targetProgresses, [0.4, 0.75, 0.3])
         XCTAssertEqual(last.outcome, "timeout")
@@ -175,8 +176,65 @@ final class PlaybackRecoveryTestRunnerTests: XCTestCase {
         XCTAssertEqual(trial.pauseHoldMilliseconds ?? -1, 5000, accuracy: 0.001)
         XCTAssertEqual(trial.actualPauseMilliseconds ?? -1, 5750, accuracy: 0.001)
         XCTAssertNotNil(trial.playCommandMilliseconds)
-        let burst = try XCTUnwrap(runner.report?.trials.last)
+        let burst = try XCTUnwrap(runner.report?.trials.first { $0.scenario == .continuousSeek })
         XCTAssertEqual(burst.seekCommandMilliseconds?.count, 3)
+    }
+
+    func testRapidCommandsRetainOrderAndRequireDeactivationOverlapAndFinalIntent() async throws {
+        let (runner, _, _, _) = makeRunner(repetitions: 1)
+        runner.start()
+        await finish(runner)
+        let report = try XCTUnwrap(runner.report)
+        let immediate = try XCTUnwrap(report.trials.first { $0.scenario == .immediateResume })
+        let playing = try XCTUnwrap(report.trials.first { $0.scenario == .rapidTogglePlaying })
+        let paused = try XCTUnwrap(report.trials.first { $0.scenario == .rapidTogglePaused })
+        XCTAssertEqual(immediate.commands?.map(\.action), ["pause", "play"])
+        XCTAssertEqual(playing.commands?.map(\.action), ["pause", "play", "pause", "play"])
+        XCTAssertEqual(paused.commands?.map(\.action), ["pause", "play", "pause", "play", "pause"])
+        for trial in [immediate, playing, paused] {
+            XCTAssertEqual(trial.outcome, "observed")
+            XCTAssertEqual(trial.checks["playedDuringDeactivation"], true)
+            XCTAssertTrue(trial.commands?.allSatisfy { $0.durationMilliseconds >= 0 } == true)
+        }
+        XCTAssertEqual(playing.checks["finalPlayRecovered"], true)
+        XCTAssertEqual(paused.checks["keptPaused"], true)
+    }
+
+    func testEarlierRapidPlayFrameCannotPassTheFinalPlay() async throws {
+        let (runner, driver, _, _) = makeRunner(repetitions: 1)
+        driver.omitFinalRapidFrame = true
+        runner.start()
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.first { $0.scenario == .rapidTogglePlaying })
+        XCTAssertEqual(trial.outcome, "timeout")
+        XCTAssertEqual(trial.checks["finalPlayRecovered"], false)
+        XCTAssertTrue(trial.metrics.contains { $0.fields["stage"] == "firstAdvancingFrame" })
+    }
+
+    func testRapidCommandsWithoutDeactivationOverlapCannotClaimRaceWasExercised() async throws {
+        let (runner, driver, _, _) = makeRunner(repetitions: 1)
+        driver.exposesDeactivationPending = false
+        runner.start()
+        await finish(runner)
+        let trials = try XCTUnwrap(runner.report).trials.filter { $0.scenario.isRapidToggle }
+        XCTAssertEqual(trials.count, 3)
+        XCTAssertTrue(trials.allSatisfy { $0.outcome == "missingEvidence" })
+        XCTAssertTrue(trials.allSatisfy { $0.checks["playedDuringDeactivation"] == false })
+    }
+
+    func testLatePlaybackAfterFinalRapidPauseFailsAndRetainsEvidence() async throws {
+        let (runner, driver, clock, _) = makeRunner(repetitions: 1)
+        clock.onSleep = {
+            if runner.report?.trials.last?.scenario == .rapidTogglePaused,
+               runner.report?.trials.last?.commands?.count == 5 {
+                clock.onSleep = nil
+                driver.forceUnexpectedPlayback()
+            }
+        }
+        runner.start()
+        await finish(runner)
+        XCTAssertEqual(runner.report?.status, "failed")
+        XCTAssertEqual(runner.report?.trials.last?.checks["keptPaused"], false)
     }
 
     private func makeRunner(repetitions: Int = 3) -> (
@@ -235,6 +293,8 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     var available = true
     var active = false
     var omitResumeFrames = false
+    var omitFinalRapidFrame = false
+    var exposesDeactivationPending = true
     var omitFinalContinuousRecovery = false
     var autoplayPausedSeek = false
     var neverFinishesSeek = false
@@ -246,6 +306,7 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
     private var seeking = false
     private var pauseSample: String?
     private var pausedAt = 0.0
+    private var deactivationPendingUntil = 0.0
     private var seekGeneration = 0
     private var events: [(Double, () -> Void)] = []
 
@@ -255,7 +316,9 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
         PlaybackRecoveryTestObservation(
             available: available, currentTime: position + (playingAt.map { clock.time - $0 } ?? 0),
             duration: duration, isPlaying: playingAt != nil, wantsPlayback: wants,
-            isSeeking: seeking, sourceIdentity: identity, networkClass: network
+            isSeeking: seeking,
+            audioDeactivationPending: exposesDeactivationPending ? clock.time < deactivationPendingUntil : nil,
+            sourceIdentity: identity, networkClass: network
         )
     }
 
@@ -272,6 +335,7 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
         pausedAt = clock.time
         onMetric?("manualResume", "stage=paused sampleID=\(id) baselineFrame=\(position)")
         clock.time += pauseCommandDelay
+        deactivationPendingUntil = clock.time + 0.5
     }
 
     func play() {
@@ -284,7 +348,8 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
             events.append((clock.time + 0.05, { [weak self] in
                 self?.onMetric?("manualResume", "stage=transportPlaying sampleID=\(id) playToTransport=50ms")
             }))
-            if !omitResumeFrames {
+            let isFinalRapidPlay = Array(commands.suffix(4)) == ["pause", "play", "pause", "play"]
+            if !omitResumeFrames, !(omitFinalRapidFrame && isFinalRapidPlay) {
                 events.append((clock.time + 0.1, { [weak self] in
                     self?.onMetric?("manualResume", "stage=firstAdvancingFrame sampleID=\(id) playToFrame=100ms")
                 }))
@@ -324,6 +389,11 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
         let ready = events.filter { $0.0 <= clock.time }
         events.removeAll { $0.0 <= clock.time }
         for (_, action) in ready { action() }
+    }
+
+    func forceUnexpectedPlayback() {
+        playingAt = clock.time
+        wants = true
     }
 }
 
