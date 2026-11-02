@@ -237,6 +237,24 @@ final class PlaybackRecoveryTestRunnerTests: XCTestCase {
         XCTAssertEqual(runner.report?.trials.last?.checks["keptPaused"], false)
     }
 
+    func testIntentOnlyPauseViolationRecordsSeparateFlags() async throws {
+        let (runner, driver, clock, _) = makeRunner(repetitions: 1)
+        clock.onSleep = {
+            if runner.report?.trials.last?.scenario == .rapidTogglePaused,
+               runner.report?.trials.last?.commands?.count == 5 {
+                clock.onSleep = nil
+                driver.forceUnexpectedPlayback(intentOnly: true)
+            }
+        }
+        runner.start()
+        await finish(runner)
+        let trial = try XCTUnwrap(runner.report?.trials.last)
+        XCTAssertEqual(runner.report?.status, "failed")
+        XCTAssertEqual(trial.checks["keptPaused"], false)
+        XCTAssertEqual(trial.checks["playingAtPauseFailure"], false)
+        XCTAssertEqual(trial.checks["wantsPlaybackAtPauseFailure"], true)
+    }
+
     private func makeRunner(repetitions: Int = 3) -> (
         PlaybackRecoveryTestRunner, RecoveryScriptDriver, RecoveryScriptClock, PlaybackRecoveryTestReportStore
     ) {
@@ -391,8 +409,8 @@ private final class RecoveryScriptDriver: PlaybackRecoveryTestDriving {
         for (_, action) in ready { action() }
     }
 
-    func forceUnexpectedPlayback() {
-        playingAt = clock.time
+    func forceUnexpectedPlayback(intentOnly: Bool = false) {
+        playingAt = intentOnly ? nil : clock.time
         wants = true
     }
 }

@@ -5,12 +5,12 @@
 ## 分支与工作区
 
 - 仓库：https://github.com/Rone89/cilicili
-- 当前分支：`codex/rapid-recovery-and-keyboard-build50`；从 `codex/seek-intent-and-paused-watchdog-build48` 接续，保留原分支和 PR #64 不合并。
-- 本轮基线／已核实远端 HEAD：`8f7070c9622c6729c7f39a97d8e9be12ab103b60`。
+- 当前分支：`codex/stale-player-observation-build51`，从 Build 50 源码 `317f89b` 接续；Build 50 分支 `codex/rapid-recovery-and-keyboard-build50`、草稿 PR #65 和原 PR #64 保留，不合并。
+- 最初接续基线：`8f7070c9622c6729c7f39a97d8e9be12ab103b60`；Build 51 本轮基线：`317f89b02ccdb81f8cf4dff8afe7e125199720e2`。最新源码备份提交见本文件末尾。
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发版本为 1.1.1 / Build 50，新增 30 次／schema 3 快速操作计划和 UI 修复，验证与交付进行中。Build 49 首轮真机已确认暂停命令约 5ms；Build 50 真机结论仍待报告。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.1 / Build 51（本地 Release 直接安装并启动）。本地单元 1222/1222 通过；Build 51 真机修复效果待报告。Build 50 报告 29 observed／1 failed，不能记为验收通过；Build 50 CI #153 失败分片重跑尚待结果，不能认作 Build 51 云端验证。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -129,3 +129,35 @@
 
 - 发布补充：草稿 [PR #65](https://github.com/Rone89/cilicili/pull/65) 已创建，首个远端提交 `ebff3689efb31b9ffd50fc98ac154967462846af`，CI #152 正在执行。随后发现搜索 leading 布局导致其他场景回归，改回 principal 并采用自适应宽度，待最终提交与完整 CI 重新确认；不可使用 #152 的 Release 交付最终源码。
 - 本机 github.com Git 传输连续连接失败；api.github.com 可用。通过公开 Git commit API 元数据重建对象、逐字节 SHA-1 核验得到远端相同 commit，本地分支已对齐 `ebff3689`；原两次本地提交保存在 `codex/build50-local-backup`。没有修改全局网络／Git 配置。
+
+- 最终源码：`317f89b02ccdb81f8cf4dff8afe7e125199720e2`，本地与远端 tree 一致；CI [#153](https://github.com/Rone89/cilicili/actions/runs/41449548952) 已实际开始，#152 已自动取消。原本地补充提交保存在 `codex/build50-width-local-backup`。
+- 最终本地搜索全组 13/13 通过、0 跳过（`build/logs/build50-search-fitting.log/.xcresult` 和 summary.json），含取消、滚动、反复提交、详情返回、筛选、行外点击、我的页及无按钮时宽度回收。评论原生键盘在此前最终组 1/1 通过；该组的其他搜索失败对应已撤回的 leading 布局，不能合并算成最终失败或隐藏历史。原 main 已跟踪 diff 再次逐字节核对未改变。
+- 设备 RCe2027 / iOS 27.2 当前连接，签名安装仍待最终 CI 产物。此后本状态文档的更新为本地验收记录，不改变已提交源码或声称最终 CI 已完成。
+
+- CI #153 阶段结果：Release 成功；单元 1220 个唯一用例最终全部通过、0 跳过。`DeterministicAVPlayerTransportTests/testGeneratedDASHSourcePlaysThroughLocalHLSBridge` 首轮等待 AVPlayer item ready 超时，产生两条断言失败，Xcode 自动第二次迭代于 9.706 秒通过；合计 1221 次迭代，不误写成 1221 个独立用例或首轮全绿。首次超时原因尚未确定，不能直接归因于播放器生产逻辑或宣称仅环境问题。日志已保留 `build/ci-build50/verification/unit-log/bili-tests.log`。
+- CI artifact `13144841508` 下载与 ZIP digest 核验成功；未签名 IPA 为 1.1.1（50）、`cc.bili`、最低 iOS 26.1，无签名／描述文件。IPA SHA-256：`9f1ac9e04da8ac45a47c23b409fa9d8684ca02f171fbdb4406ba9a56154d2cde`。构建记录的合成 PR commit `88679c3f8bd7d6e2985fd91e49a013fb117f4bca` tree 与源码提交 `317f89b` 的 `7cdff79652d22f4c8a69ffd7d049c29fd9be915f` 完全一致；GitHub 的测试合成提交不代表 PR 已合并。
+- 产物与机器可读校验位于 `build/ci-build50/`、`verification/validation.json`（Git 忽略）。UI 分片、交互、签名安装和 Build 50 真机报告仍待完成。
+
+- Build 50 真机交付：沿用用户授权桌面签名材料和既有脚本，签名校验成功，原位覆盖更新 `app.bamboo2779.brussels691`，未卸载或清容器。设备列表核验 1.1.1（50），成功启动 PID 69451。签名日志 `build/logs/build50-sign-install.log`，设备证据 `build50-device-apps-after.json`。本次在单元、Release、本地重点 UI 通过后先行安装以便采样；远端完整 UI 仍在运行，不能据此写成全部 CI 已绿。待用户运行新版 30 次／schema 3 报告，Build 50 真机性能尚未验证。
+
+- CI #153 交互组 12/12 通过、0 跳过、无失败后重试，已核对逐用例日志，包含搜索取消与评论原生键盘两项旧失败用例。4 个完整 UI 分片仍在运行。
+- CI 的 swift-format 为既有非阻断检查；日志包含格式规则提示，不能把 job success 等同于源码格式完全无提示。本轮未扩大范围重排历史源码。
+
+- CI #153 首轮最终 6/7 jobs 成功：完整 UI 为 140/141 最终通过，搜索组 13/13 全通过。唯一最终失败 `CommentActionFlowUITests/testReplyActionOpensComposer` 在第 15 行 `app.launch()` 阶段两次失败（Xcode 启动超时、target pid 0 无后台断言），回复操作尚未执行；不能把已安装或搜索通过当作完整 CI 已通过。
+- 另有 `AccountLibraryManagementUITests/testCommentDraftReturnsAfterHostRecreationWithoutCrossingContentTargets` 首轮 AX focused-app 属性查询超时、重试通过；RootTabScroll 的 minimized／Reduce Motion 两项首轮超时后重试通过。三份其他 UI 分片分别 36/35/35 全通过。
+- 已请求仅重跑 ui-4（CI #153 attempt 2，job `125318440221`），其余成功结果保留，源码仍为 `317f89b`。同一回复用例本地独立复测 1/1 通过（`build/logs/build50-reply-launch-check.*`），Xcode 27.1／规定 iOS 27.0 模拟器／共享缓存，未改代码或放宽断言。首次失败日志保留 `build/ci-build50/verification/ui4-attempt1-log/bili-tests.log`，远端完整收尾仍待重跑结果。
+
+## 2026-11-02 Build 50 报告与本地 Build 51 轮
+
+- 用户新分工已写入 `docs/local-device-development.md` 并由 AGENTS 引用：Mac 修改／测试／日志分析，Xcode+iPhone 本地构建直接安装，GitHub 保存提交／备份并在重要版本云端回归。已有 Build 50 云端重跑继续，但不阻塞本地开发，不为 Build 51 日常迭代再跑整轮云端。
+- 分支已从 `317f89b` 切为 `codex/stale-player-observation-build51`，HEAD 暂仍 `317f89b02ccdb81f8cf4dff8afe7e125199720e2`，本轮源码与文档尚未提交。开发版本 1.1.1（51），手机目前仍为 Build 50。
+- 收到 Build 50 schema 3 原报告：30 次／29 observed／1 failed，最后一次 rapidTogglePaused keptPaused=false。15 条快速 play 均有 pending 在途证据，23 条音频停用均成功；前 21 个既有情景通过。详细校验、时序和性能口径见 `docs/playback-recovery-build50-device-analysis-2026-11-02.md`。
+- 可控复现：真实 AVPlayer 同一 MainActor 内 play→pause，实际 rate=0 但旧 KVO 仍发布 playing 并恢复意图；新增测试在旧代码稳定失败。仅重读 timeControlStatus 仍失败，补充实际正速率校验后独立回归通过。完整本地单元正在执行；补充暂停失败时 isPlaying／wantsPlayback／pending 独立字段，不放宽失败条件或修改音画保护。
+- 待办：完成 Build 51 本地单元、直接签名构建 `.app`、原位安装启动、提交备份，再采集新版真机报告。Build 50 原报告不能证明实际出声或唯一根因，Build 51 真机效果尚待验收。
+
+- Build 51 验证与安装已完成：全量本地单元 1222/1222、0 失败、0 跳过；新 KVO 回归由旧代码两个断言失败变为独立及全量通过，新增意图错误／实际播放独立诊断回归通过。最终源码只做观察值刷新与当前 rate>0 核验，没有新增延时、恢复窗口或放宽失败条件。
+- 使用 XcodeBuildMCP 和原共享 Xcode-27 缓存串行完成本地签名 Debug（40.3 秒）及 Release（110.2 秒）构建，签名参数仅为命令行覆盖。实际安装 Release 以保持与旧采样配置接近。直接安装 `.app`，没有制作／下载 IPA，没有改项目 bundle ID 或签名发布设置。
+- 设备核验 1.1.1（51）／`app.bamboo2779.brussels691`，原位更新成功、启动 PID 69933。应用可执行文件 SHA-256 `838bf878379a664fe5eb35b885261c6e6afc0e91fc97ba008dea891a19218c4c`，签名深度校验通过。`build/logs/build51-device-build-info.json` 记录源文件 hash、配置、构建基线和后续备份提交；`build51-device-apps-after.json` 为设备证据。
+- 本地测试证据：`build51-stale-kvo-before.*`（确定性失败）、`build51-stale-kvo-after.*`（仅刷新仍失败）、`build51-stale-kvo-rate-check.*`（补充正速率验证后通过）、`build51-unit.*`／`build51-unit-summary.json`（最终 1222 通过）。MCP 设备构建日志在用户 XcodeBuildMCP workspace 日志目录，构建有既存 Swift 隔离等警告，未扩展本轮修复范围。
+- 当前授权 profile 的 get-task-allow=false，可签名安装并收集日志；直接 LLDB 断点附加需要允许调试的开发 profile，未擅改权限。
+- 原 main 工作区 diff 再次与接续前逐字节一致。Build 50 首轮 UI4 完整日志已归档；其 256MB 可读诊断 ZIP 在下载时超时，`.zip.partial` 不可作为完整证据，完整远端 artifact 为 `13147406557`，首次失败日志不依赖该 ZIP。新分工下日常开发不等待云端；下一步运行 Build 51 的 30 次真机试验，重点复验 rapidTogglePaused 三次及实际声音／画面，另补后台／导航／耳机、中断和横竖屏验收。

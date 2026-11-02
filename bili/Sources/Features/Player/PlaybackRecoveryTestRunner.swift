@@ -352,7 +352,12 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
             if requiresPaused {
                 let value = driver.observation
                 if value.isPlaying || value.wantsPlayback {
-                    updateTrial { $0.checks["keptPaused"] = false }
+                    updateTrial {
+                        $0.checks["keptPaused"] = false
+                        $0.checks["playingAtPauseFailure"] = value.isPlaying
+                        $0.checks["wantsPlaybackAtPauseFailure"] = value.wantsPlayback
+                        $0.checks["audioDeactivationPendingAtPauseFailure"] = value.audioDeactivationPending
+                    }
                     throw TestError(message: "暂停期间出现播放意图或播放状态", isInterruption: false)
                 }
             }
@@ -365,7 +370,12 @@ final class PlaybackRecoveryTestRunner: ObservableObject {
         if requiresPaused {
             let value = driver.observation
             if value.isPlaying || value.wantsPlayback {
-                updateTrial { $0.checks["keptPaused"] = false }
+                updateTrial {
+                    $0.checks["keptPaused"] = false
+                    $0.checks["playingAtPauseFailure"] = value.isPlaying
+                    $0.checks["wantsPlaybackAtPauseFailure"] = value.wantsPlayback
+                    $0.checks["audioDeactivationPendingAtPauseFailure"] = value.audioDeactivationPending
+                }
                 throw TestError(message: "暂停期间出现播放意图或播放状态", isInterruption: false)
             }
         }

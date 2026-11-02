@@ -1872,16 +1872,18 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                     #if DEBUG
                     self.debugObserveRecoveryStatus(status, reason: reason, at: observedAt)
                     #endif
-                    self.handleTimeControlStatus(status)
+                    // A newer pause/play can run before this actor hop. Use
+                    // the current state, not the KVO event's obsolete snapshot.
+                    self.handleTimeControlStatus(player.timeControlStatus)
                 }
             },
             player.observe(\.rate, options: [.new]) { [weak self] player, _ in
-                let rate = player.rate
-                let itemStatus = player.currentItem?.status
-                let timeControlStatus = player.timeControlStatus
-                let currentSeconds = player.currentTime().seconds
                 Task { @MainActor [weak self] in
                     guard let self, !self.isStopped, player.currentItem === self.playerItem else { return }
+                    let rate = player.rate
+                    let itemStatus = player.currentItem?.status
+                    let timeControlStatus = player.timeControlStatus
+                    let currentSeconds = player.currentTime().seconds
                     if rate > 0 {
                         self.cancelTerminalStallWatchdog()
                         self.updatePlaybackIntent(true)
@@ -2849,6 +2851,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
                 scheduleTerminalStallWatchdog(reason: "timeControl-waiting")
             }
         case .playing:
+            guard player.rate > 0 else { return }
             cancelTerminalStallWatchdog()
             updatePlaybackIntent(true)
             publishPlaybackState(.playing)

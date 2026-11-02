@@ -10,6 +10,37 @@ import XCTest
 
 final class DeterministicAVPlayerTransportTests: XCTestCase {
     @MainActor
+    func testQueuedPlayingObservationsCannotOverrideSynchronousPause() async throws {
+        let fixture = try await DeterministicDASHPlaybackFixture.make()
+        defer { fixture.server.stop() }
+        let session = PlaybackAudioSession(deactivate: { true }, activate: { true })
+        let engine = AVPlayerHLSBridgeEngine(audioSession: session)
+        let host = PlaybackTestSurfaceHost()
+        defer { engine.stop(); host.close() }
+        engine.attachSurface(host.surface)
+        try await engine.prepare(source: fixture.primarySource)
+        try await waitUntil("ready before immediate play/pause") {
+            engine.debugCurrentPlayerItem?.status == .readyToPlay
+        }
+        var lateIntents: [Bool] = []
+        var lateStates: [PlayerEnginePlaybackState] = []
+        engine.onPlaybackIntentChange = { lateIntents.append($0) }
+        engine.onPlaybackStateChange = { lateStates.append($0) }
+        // Do not yield between commands: KVO has observed the positive rate,
+        // but its main-actor task must run after the newer explicit pause.
+        engine.play()
+        XCTAssertGreaterThan(engine.debugActualPlayerRate, 0)
+        engine.pause()
+        lateIntents.removeAll()
+        lateStates.removeAll()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(engine.debugActualPlayerRate, 0)
+        XCTAssertFalse(lateIntents.contains(true), "Queued KVO cannot restore a superseded play intent")
+        XCTAssertFalse(lateStates.contains { if case .playing = $0 { true } else { false } },
+                       "Queued KVO cannot publish playing after an explicit pause")
+    }
+
+    @MainActor
     func testPauseWhileAudioDeactivationIsPendingRejectsDeferredEnginePlay() async throws {
         let fixture = try await DeterministicDASHPlaybackFixture.make()
         defer { fixture.server.stop() }

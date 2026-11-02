@@ -2,6 +2,10 @@
 
 Read [the development status](docs/DEVELOPMENT_STATUS.md) before continuing work. After each work round, update completed work, pending tasks, test conclusions, branch and commit in that file. Keep implemented, verified and device-pending results distinct. Do not develop comment IP display or merge PRs without explicit user instruction.
 
+# Local device workflow
+
+Follow [the local device workflow](docs/local-device-development.md): daily code changes, tests and log analysis run on the Mac; build locally and directly install the signed app on the iPhone. Use GitHub for commits/backups and full cloud regression at important milestones. Do not wait for a cloud IPA on every iteration. Keep signing overrides local.
+
 # Xcode build cache rules
 
 Follow [the build-cache guide](docs/build-cache.md) for every Xcode build, test, archive, or IPA workflow.
