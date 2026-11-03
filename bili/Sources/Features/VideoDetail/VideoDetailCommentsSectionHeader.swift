@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct CommentsSectionHeader: View {
-    @Environment(\.appThemeTintColor) private var appTintColor
     @Environment(\.commentSectionHorizontalPadding) private var configuredHorizontalPadding
 
     @ObservedObject var store: VideoDetailCommentsRenderStore
@@ -25,22 +24,18 @@ struct CommentsSectionHeader: View {
 
             Spacer()
 
-            HStack(spacing: 4) {
+            Picker("评论排序", selection: Binding(
+                get: { store.selectedSort },
+                set: { selectCommentSort($0) }
+            )) {
                 ForEach(CommentSort.allCases) { sort in
-                    Button {
-                        selectCommentSort(sort)
-                    } label: {
-                        Text(sort.title)
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(store.selectedSort == sort ? appTintColor.opacity(0.14) : Color.clear)
-                            .foregroundStyle(store.selectedSort == sort ? appTintColor : .secondary)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
+                    Text(sort.title).tag(sort)
                 }
             }
+            .pickerStyle(.segmented)
+            .frame(width: 124)
+            .controlSize(.small)
+            .accessibilityLabel("评论排序")
         }
         .padding(.horizontal, horizontalPadding)
     }

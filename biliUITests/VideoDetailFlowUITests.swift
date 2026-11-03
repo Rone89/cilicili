@@ -5,6 +5,30 @@ final class VideoDetailFlowUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
+    func testVideoDetailCommentSortUsesNativeSegmentedControl() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state", "--start-tab", "home",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        app.launch()
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+        let sort = app.segmentedControls["评论排序"].firstMatch
+        XCTAssertTrue(sort.waitForExistence(timeout: 15), app.debugDescription)
+        let latest = sort.buttons["最新"]
+        let hot = sort.buttons["最热"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 5))
+        XCTAssertTrue(hot.isSelected)
+        latest.tap()
+        XCTAssertTrue(latest.isSelected)
+        hot.tap()
+        XCTAssertTrue(hot.isSelected)
+    }
+
 
     @MainActor
     func testDisconnectedNoticeVisibleInPausedRealPlayerHost() {
