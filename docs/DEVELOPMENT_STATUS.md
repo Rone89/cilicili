@@ -10,7 +10,7 @@
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 56，已原位安装并启动。Build 54 按用户选择投币时自动点赞。用户确认未点赞时 `-401 非法访问`，先点赞再投币成功；用户确认 Build 54 真机投币已正常。Build 52 的暂停边界及三组短验收已收集。不开发评论 IP 显示。
+- 当前开发及手机版本：1.1.2 / Build 57，已原位安装并启动。Build 54 按用户选择投币时自动点赞。用户确认未点赞时 `-401 非法访问`，先点赞再投币成功；用户确认 Build 54 真机投币已正常。Build 52 的暂停边界及三组短验收已收集。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -255,3 +255,10 @@
 - 模拟器（iPhone 18 Pro Max / iOS 27.0）相关回归 4/4 通过，涵盖隐藏、开启后测试页和报告复制；设置页开关、重启后持久化及菜单显示另 1/1 通过。持久化测试首次未进入“我的”（模拟器旧底栏设置影响），二次点击标签未改变系统开关，修正测试底栏及点击坐标后通过；结果分别位于 `build/logs/build56-recovery-ui.xcresult`、`build56-recovery-setting-ui*.xcresult`。未跑全量或云端 CI。
 - 共享 Xcode-27 缓存的 Release 签名构建、签名校验及版本 56 校验通过；原位安装 iPhone 并启动，PID 80545，可执行文件 SHA-256 `6ceefe71a35c8fec19503d69566dd05792c3bcaf6e31b74810f2f207f6285b0b`。真机开关体验待验收；Build 55 评论排序真机体验也尚未收到反馈。
 - 分支 `codex/coin-401-auto-like-build54`，本轮基线提交 `401f38a96a785c66bc3ab9dc1164e281f3188349`；本轮源码和记录已备份于 `1722f617a047b2053ccafd5f78a7d3cc44b1f736`；备份状态以独立文档提交补记。
+
+
+## 2026-11-03 版本 1.1.2 / Build 57
+
+- 对比 GitHub 最新正式 Release `v1.1.1`（tag 提交 `adf2995b61ad402f68d923407bd758f08a359bc6`）与当前分支，整理播放恢复与后台播放、收藏／稍后再看管理、评论草稿与显示、搜索和投币等用户可见变更。不能将未证实的整体播放性能改善写成已验证结果。
+- 所有 Xcode 配置的 marketing version 升为 1.1.2，build 升为 57。共享缓存 Release 签名构建成功，版本与签名核验通过，原位安装 iPhone 并启动（PID 80682）。此轮仅变更版本元数据，未重跑测试或完整 CI，真机使用体验待验证；没有发布 GitHub Release。
+- 分支 `codex/coin-401-auto-like-build54`；本地基线 `ed96771`，此前 Build 56 远端源码备份 `1722f617a047b2053ccafd5f78a7d3cc44b1f736`；因远端拉取连接超时，本地与远端相同文件树的提交 SHA 不同。本轮版本改动与本记录待备份。
