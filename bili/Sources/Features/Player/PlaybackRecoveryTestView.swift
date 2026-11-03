@@ -1,6 +1,10 @@
 import SwiftUI
 import UIKit
 
+enum PlaybackRecoveryTestSettings {
+    static let showsPlayerMenuEntryKey = "cc.bili.playback.showsRecoveryTestEntry.v1"
+}
+
 struct PlaybackRecoveryTestView: View {
     @ObservedObject private var player: PlayerStateViewModel
     @ObservedObject private var runner: PlaybackRecoveryTestRunner
@@ -60,7 +64,7 @@ struct PlaybackRecoveryTestSavedReportView: View {
             if let report = store.report {
                 PlaybackRecoveryTestReportSection(report: report, persistenceError: store.persistenceError)
             } else {
-                Text(store.persistenceError ?? "暂无报告。打开一个至少5分钟的视频，在“更多播放设置”中进入“自动恢复测试”。")
+                Text(store.persistenceError ?? "暂无报告。请先在“开发者与诊断”打开自动恢复测试入口，再从视频的“更多播放设置”进入测试。")
                     .foregroundStyle(.secondary)
             }
         }

@@ -1576,6 +1576,7 @@ private struct VideoListenArtworkLayer: View {
 }
 
 private struct SurfaceOnlyMoreControlsNavigationContent: View {
+    @AppStorage(PlaybackRecoveryTestSettings.showsPlayerMenuEntryKey) private var showsRecoveryTestEntry = false
     @ObservedObject var detailViewModel: VideoDetailViewModel
     @ObservedObject var viewModel: PlayerStateViewModel
     @ObservedObject var libraryStore: LibraryStore
@@ -1726,7 +1727,7 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     .accessibilityIdentifier("ui.player.backgroundPlayback")
                 }
 
-                if !detailViewModel.isVideoListenModeEnabled {
+                if showsRecoveryTestEntry && !detailViewModel.isVideoListenModeEnabled {
                     NavigationLink {
                         PlaybackRecoveryTestView(player: viewModel)
                     } label: {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MineDeveloperDiagnosticsView: View {
+    @AppStorage(PlaybackRecoveryTestSettings.showsPlayerMenuEntryKey) private var showsRecoveryTestEntry = false
     @ObservedObject var libraryStore: LibraryStore
     let api: BiliAPIClient
 
@@ -26,6 +27,16 @@ struct MineDeveloperDiagnosticsView: View {
 
     private var diagnosticsSection: some View {
         Section("诊断") {
+            Toggle(isOn: $showsRecoveryTestEntry) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("显示自动恢复测试入口", systemImage: "testtube.2")
+                    Text("在视频的更多播放设置中显示自动恢复测试。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("mine.diagnostics.recoveryTestEntry")
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.remoteImageDiagnosticsEnabled },

@@ -544,7 +544,7 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     func testAutomaticRecoveryTestBlocksShortVideo() {
-        let app = launchVideoDetail(waitForDetailMarker: false)
+        let app = launchVideoDetail(waitForDetailMarker: false, extraArguments: ["-cc.bili.playback.showsRecoveryTestEntry.v1", "YES"])
         openAutomaticRecoveryTest(in: app)
         let start = app.buttons["recovery.test.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
@@ -554,9 +554,58 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    func testAutomaticRecoveryEntryHiddenWhenDisabled() {
+        let app = launchVideoDetail(waitForDetailMarker: false,
+                                    extraArguments: ["-cc.bili.playback.showsRecoveryTestEntry.v1", "NO"])
+        revealPlayerControls(in: app)
+        let more = app.buttons["ui.player.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        tapPlayerControl(more, in: app)
+        XCTAssertTrue(app.navigationBars["播放设置"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["recovery.test.open"].exists)
+    }
+
+    @MainActor
+    func testRecoveryEntrySettingPersistsAndControlsPlayerMenu() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-cc.bili.display.visibleRootTabs.v1", "(home,mine)", "--start-tab", "mine"]
+        app.launch()
+        let diagnostics = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "开发者与诊断")).firstMatch
+        for _ in 0..<8 where !diagnostics.isHittable { app.swipeUp() }
+        XCTAssertTrue(diagnostics.isHittable, app.debugDescription)
+        diagnostics.tap()
+        let setting = app.switches["mine.diagnostics.recoveryTestEntry"]
+        XCTAssertTrue(setting.waitForExistence(timeout: 5), app.debugDescription)
+        if setting.value as? String != "1" {
+            setting.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(setting.value as? String, "1")
+        app.terminate()
+
+        app.launchArguments = ["--start-tab", "home", "--ui-test-video-detail-network",
+                               "--ui-test-player-controls-persistent", "--start-bvid", "BV1xx411c7mD"]
+        app.launch()
+        XCTAssertTrue(element("video.detail.toolbar-picker", in: app).firstMatch.waitForExistence(timeout: 15))
+        revealPlayerControls(in: app)
+        tapPlayerControl(app.buttons["ui.player.more"], in: app)
+        XCTAssertTrue(app.buttons["recovery.test.open"].waitForExistence(timeout: 5))
+        app.terminate()
+
+        app.launchArguments = ["-cc.bili.display.visibleRootTabs.v1", "(home,mine)", "--start-tab", "mine"]
+        app.launch()
+        for _ in 0..<8 where !diagnostics.isHittable { app.swipeUp() }
+        XCTAssertTrue(diagnostics.isHittable)
+        diagnostics.tap()
+        XCTAssertTrue(setting.waitForExistence(timeout: 5))
+        XCTAssertEqual(setting.value as? String, "1")
+        setting.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertEqual(setting.value as? String, "0")
+    }
+
+    @MainActor
     func testAutomaticRecoveryTestStopsAndCopiesPartialReport() {
         let app = launchVideoDetail(waitForDetailMarker: false,
-                                    extraArguments: ["--ui-test-recovery-long-video"])
+                                    extraArguments: ["--ui-test-recovery-long-video", "-cc.bili.playback.showsRecoveryTestEntry.v1", "YES"])
         openAutomaticRecoveryTest(in: app)
         let start = app.buttons["recovery.test.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
@@ -580,7 +629,7 @@ final class VideoDetailFlowUITests: XCTestCase {
     @MainActor
     func testAutomaticRecoveryBoundaryShortTestStopsAndCopiesReport() {
         let app = launchVideoDetail(waitForDetailMarker: false,
-                                    extraArguments: ["--ui-test-recovery-long-video"])
+                                    extraArguments: ["--ui-test-recovery-long-video", "-cc.bili.playback.showsRecoveryTestEntry.v1", "YES"])
         openAutomaticRecoveryTest(in: app)
         let start = app.buttons["recovery.test.startBoundary"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))

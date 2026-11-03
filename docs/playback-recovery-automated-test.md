@@ -8,7 +8,7 @@ Build 50 introduced three rapid pause/play scenarios for 30 trials and schema 3.
 See [rapid recovery collection](playback-recovery-rapid-build50.md). The original
 seven scenarios and their timing/evidence semantics below remain in the plan.
 
-Open a recorded video of at least five minutes, let its first frame appear,
+From Build 56, first enable “显示自动恢复测试入口” in Mine > Developer and diagnostics; the switch defaults to off. Open a recorded video of at least five minutes, let its first frame appear,
 then choose More playback settings > Automatic recovery test > Start.
 The original seven scenarios run three times: pause 5/30/120 seconds,
 near/distant seeks, paused seek, and a burst of three committed seeks. Normal
