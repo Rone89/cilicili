@@ -1,5 +1,23 @@
 import Foundation
 
+private nonisolated struct VideoCoinResponseData: Decodable, Sendable {
+    private struct GaiaData: Decodable, Sendable {
+        let decisions: [String]?
+    }
+
+    let requiresVerification: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case gaData = "ga_data"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let gaData = try? container.decode(GaiaData.self, forKey: .gaData)
+        requiresVerification = gaData?.decisions?.contains("verify_captcha_level2") == true
+    }
+}
+
 extension BiliAPIClient {
     private func favoriteFolderSummaries(
         rid: Int? = nil,
@@ -199,7 +217,7 @@ extension BiliAPIClient {
             throw BiliAPIError.api(code: -1, message: "投币数量无效")
         }
         let context = try await requireInteractionCSRFContext()
-        let response: BiliResponse<EmptyBiliPayload> = try await postForm(
+        let response: BiliResponse<VideoCoinResponseData> = try await postForm(
             base: baseURL,
             path: "/x/web-interface/coin/add",
             body: [
@@ -214,6 +232,9 @@ extension BiliAPIClient {
             cookieHeader: context.context.cookieHeader
         )
         guard response.code == 0 else {
+            if response.code == -401, response.payload?.requiresVerification == true {
+                throw BiliAPIError.api(code: response.code, message: "B站要求安全验证，请在官方页面验证并确认投币状态")
+            }
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
     }

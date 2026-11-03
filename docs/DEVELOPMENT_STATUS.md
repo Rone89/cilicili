@@ -1,16 +1,16 @@
 # 开发接续状态
 
-更新时间：2026-11-02（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
+更新时间：2026-11-03（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
 
 ## 分支与工作区
 
 - 仓库：https://github.com/Rone89/cilicili
-- 当前分支：`codex/pause-boundary-short-test-build52`，从 Build 51 报告提交 `037167c` 接续；Build 50 分支 `codex/rapid-recovery-and-keyboard-build50`、草稿 PR #65 和原 PR #64 保留，不合并。
+- 当前分支：`codex/coin-401-build53`，从 `3461341` 接续投币 401 调查；Build 50 分支 `codex/rapid-recovery-and-keyboard-build50`、草稿 PR #65 和原 PR #64 保留，不合并。
 - 最初接续基线：`8f7070c9622c6729c7f39a97d8e9be12ab103b60`；Build 51 本轮基线：`317f89b02ccdb81f8cf4dff8afe7e125199720e2`。最新源码备份提交见本文件末尾。
 - 接续工作树：`/Users/rayc/Desktop/cilicili-build48`。
 - 原工作树 `/Users/rayc/Desktop/ccswift` 留在 `main`（`adf2995`），保留原有 3 个修改文件和未跟踪的 `docs/local-main-update-analysis-2026-10-06.md`。没有 stash、覆盖或混入这些改动。
 - [PR #64](https://github.com/Rone89/cilicili/pull/64) 为开放的草稿 PR，未合并。用户已授权下一步整理提交并跑完整 CI；本轮仅推送新的 Build 50 分支并开草稿 PR，不合并。
-- 当前开发及手机版本：1.1.1 / Build 52，签名 Release 已原位安装。已验证：本地 1228 单元、3 项重点 UI 最终通过；Build 51 完整真机 30 observed，Build 52 定向边界短测 3/3 observed，覆盖停用结束后的 play→pause 并保持暂停。已收到三组真机短验收用户确认正常；待验证：首次加载性能、耳机／系统中断等专项项目，整体性能收益未证实。Build 50 CI #153 最终成功，仅覆盖 Build 50。不开发评论 IP 显示。
+- 当前开发版本：1.1.1 / Build 53（投币 -401 验证提示诊断）；手机最近确认仍为 Build 52。Build 52 暂停边界及三组短验收已收集；本次投币 401 的真实响应和根因尚待确认，不能宣称已解决。详见文末最新轮次。不开发评论 IP 显示。
 
 ## 已完成
 
@@ -220,3 +220,12 @@
 - 原 summary 保留，另存 `summary-reviewed.json` 和 `analysis.json` 补记澄清；原始 summary SHA-256 `ca1fbf369ea67b7af46c5b8ee0d6c60ad1891058c98b07d32b7cffaee94a2f1d`。详见 [一键验收分析](playback-build52-guided-acceptance-analysis-2026-11-02.md)。留存暂停边界报告 runID 未变，没有冒称是本轮新测量。设备数据仅本地归档。
 - 性能线索：本轮期间更新的三条会话 totalFirstFrame 为 552／840／1450ms；后两条有网页回退取流，playURL 506／605ms，prepare 124／411ms。不同视频／编码／缓存，且每组仅一次，不认定整体性能改善或退化。
 - 待办：保留 Build 52，下一阶段优先同条件首次加载采样，追踪取流回退与清单准备；耳机／系统中断仍待专项验收。原 main 改动保留，本轮 Mac 脚本和文档提交备份，不合并 PR、不启动云端回归。
+
+## 2026-11-03 未点赞投币 401 调查轮
+
+- 分支 `codex/coin-401-build53`，基线 `3461341a22fe44b060f46d30ed3cf148ed257c35`，原 main 未提交改动继续保留。用户反馈未点赞投币显示 401；完整错误文字、HTTP／业务码和同一视频先点赞后的结果已询问，尚待回复。
+- 已核对代码：未点赞 select_like=0，已点赞为 1，账号 Cookie／CSRF 来自互动用途快照，非幂等投币 POST 默认不自动重试。不能因 401 就擅自附加点赞、重试扣币或认定账号与点赞状态是根因。
+- 已完成 Build 53 诊断增强：仅当投币接口业务码 -401 且返回明确人机验证决定时显示对应提示，其他服务端错误保持原样。仅解析 decisions，不记录验证凭据；没有改变请求参数／点赞、投币或重试行为。详情见 [投币调查](video-coin-401-investigation-2026-11-03.md)。
+- 本地模拟回归：`coin401-repro.xcresult` 2/2、`coin401-verification.xcresult` 8/8 通过，验证明确验证信息、普通 -401、未点赞状态不变、不会自动重发、原表单及互动可靠性。模拟服务端不等于真实 401 已复现或功能修复。Build 53 全量单元 1230/1230、零失败／跳过；之后只将提示改为先核对投币状态，最终定向回归 8/8 通过。手机当前未连接，设备安装／真机复现待完成。
+- 本地签名 Release 构建成功（125.5 秒），版本 1.1.1／Build 53 与签名深度核验通过；可执行文件 SHA-256 `8f0c4c418ae3b572ac7d4f2c7e55275d5aad552d917309e7327f1758668a2708`，构建记录 `build/logs/build53-device-build-info.json`。没有制作 IPA，既有 Swift 隔离警告仍在。RCe2027 当前离线，未安装／启动，最近设备确认版本仍为 52。
+- 下一步：待设备连接后直接安装 Build 53；结合用户完整提示／先点赞结果确认真实服务端条件，继续定位根因并修复。不要强制点赞、重复投币或宣称 Build 53 已解决投币问题。

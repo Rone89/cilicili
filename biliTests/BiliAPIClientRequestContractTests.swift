@@ -1998,6 +1998,54 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testUnlikedCoinRejectedByServerDoesNotLikeRetryOrPretendSuccess() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":-401,"message":"非法访问","data":{"ga_data":{"decisions":["verify_captcha_level2"]}}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        let seed = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"BVtest","aid":789,"title":"测试"}"#.utf8))
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        defer { model.stopPlaybackForNavigation() }
+        model.interactionState = VideoInteractionState(isLiked: false, coinCount: 0)
+
+        let result = await model.addCoin(count: 1)
+
+        XCTAssertFalse(result)
+        XCTAssertFalse(model.interactionState.isLiked)
+        XCTAssertEqual(model.interactionState.coinCount, 0)
+        XCTAssertEqual(model.interactionMessage, "API -401: B站要求安全验证，请在官方页面验证并确认投币状态")
+        XCTAssertEqual(recorder.requests.count, 1)
+        let request = try XCTUnwrap(recorder.request)
+        XCTAssertEqual(request.url?.path, "/x/web-interface/coin/add")
+        XCTAssertEqual(formValues(in: request)["select_like"], "0")
+    }
+
+    @MainActor
+    func testCoinMinus401WithoutVerificationEvidencePreservesServerError() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            return Self.response(for: request, body: #"{"code":-401,"message":"非法访问","data":{}}"#)
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        do {
+            try await api.addVideoCoin(aid: 789, multiply: 1, selectLike: false)
+            XCTFail("Server rejection must not be reported as success")
+        } catch let error as BiliAPIError {
+            guard case .api(let code, let message) = error else { return XCTFail("Unexpected: \(error)") }
+            XCTAssertEqual(code, -401)
+            XCTAssertEqual(message, "非法访问")
+        }
+        XCTAssertEqual(recorder.requests.count, 1)
+    }
+
+    @MainActor
     func testVideoCoinValidatesMultiplyAndBuildsForm() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
 
