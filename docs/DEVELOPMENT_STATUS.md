@@ -268,5 +268,5 @@
 
 - 本地使用共享缓存与既有脚本构建未签名 IPA，核验版本 1.1.2 / 57、bundle ID `cc.bili`、无签名目录及 embedded.mobileprovision；SHA-256 `c7a25b3558115e40929e50d4e9f658f2eb043953c278b37c750c76082eaaa58e`。
 - GitHub Release 已发布中文说明并上传 IPA，页面显示的 SHA-256 与本地一致：https://github.com/Rone89/cilicili/releases/tag/v1.1.2 。未运行本轮完整云端回归。
-- 发布页面选择了开发分支，但实际生成的 `v1.1.2` 标签指向旧基线 `adf2995b61ad402f68d923407bd758f08a359bc6`，因此 Release 自动生成的源码不对应 IPA；已提示用户，等待同意修正标签到源码备份 `f15c51da490e5f1fda32b8574e5cfc8014f2e72d`。不得误认源码一致。
+- 发布页面选择了开发分支，但实际生成的 `v1.1.2` 标签指向旧基线 `adf2995b61ad402f68d923407bd758f08a359bc6`，因此 Release 自动生成的源码不对应 IPA；用户已同意修正到源码备份 `f15c51da490e5f1fda32b8574e5cfc8014f2e72d`；GitHub 网页不允许删除关联 Release 的标签，连接器更新标签报错，本机无 GitHub 推送凭据，标签尚未修正。Release 已明确警告并链接正确源码。不得误认源码一致。
 - 本地分支 `codex/coin-401-auto-like-build54`，本轮基线 `36920f4`，本记录未提交。
