@@ -2022,7 +2022,75 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertEqual(recorder.requests.count, 1)
         let request = try XCTUnwrap(recorder.request)
         XCTAssertEqual(request.url?.path, "/x/web-interface/coin/add")
-        XCTAssertEqual(formValues(in: request)["select_like"], "0")
+        XCTAssertEqual(formValues(in: request)["select_like"], "1")
+    }
+
+    @MainActor
+    func testCoinOnUnlikedVideoRequestsLikeAndPreservesConfirmedStateAgainstStaleRefresh() async throws {
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            switch request.url?.path {
+            case "/x/web-interface/coin/add":
+                return Self.response(for: request, body: #"{"code":0,"data":{"like":true}}"#)
+            case "/x/web-interface/archive/relation":
+                return Self.response(for: request, body: #"{"code":0,"data":{"like":0,"coin":0,"favorite":0}}"#)
+            default:
+                return Self.response(for: request, body: #"{"code":-404,"message":"not found"}"#)
+            }
+        }
+        defer { RequestContractURLProtocol.reset() }
+        let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+        let seed = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"BVtest","aid":789,"title":"测试"}"#.utf8))
+        let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+            sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+        defer { model.stopPlaybackForNavigation() }
+        model.interactionState = VideoInteractionState(isLiked: false, coinCount: 0)
+
+        let result = await model.addCoin(count: 1)
+
+        XCTAssertTrue(result)
+        XCTAssertTrue(model.interactionState.isLiked)
+        XCTAssertEqual(model.interactionState.coinCount, 1)
+        let posts = recorder.requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 1)
+        XCTAssertEqual(posts.first?.url?.path, "/x/web-interface/coin/add")
+        XCTAssertEqual(formValues(in: try XCTUnwrap(posts.first))["select_like"], "1")
+        XCTAssertTrue(recorder.requests.contains { $0.url?.path == "/x/web-interface/archive/relation" })
+    }
+
+    @MainActor
+    func testCoinSuccessWithoutLikeConfirmationPreservesExistingLikeState() async throws {
+        for initiallyLiked in [false, true] {
+            let recorder = RequestContractRecorder()
+            RequestContractURLProtocol.install { request in
+                recorder.record(request)
+                switch request.url?.path {
+                case "/x/web-interface/coin/add":
+                    return Self.response(for: request, body: #"{"code":0,"data":{"like":false}}"#)
+                case "/x/web-interface/archive/relation":
+                    return Self.response(for: request, body: #"{"code":0,"data":{"like":0,"coin":1,"favorite":0}}"#)
+                default:
+                    return Self.response(for: request, body: #"{"code":-404,"message":"not found"}"#)
+                }
+            }
+            defer { RequestContractURLProtocol.reset() }
+            let api = try makeAPI(cookieHeader: "SESSDATA=session-value; bili_jct=csrf-value; DedeUserID=1001")
+            let seed = try JSONDecoder.bili.decode(VideoItem.self, from: Data(#"{"bvid":"BVtest","aid":789,"title":"测试"}"#.utf8))
+            let model = VideoDetailViewModel(seedVideo: seed, api: api, libraryStore: api.libraryStore,
+                sessionStore: api.sessionStore, sponsorBlockService: SponsorBlockService())
+            defer { model.stopPlaybackForNavigation() }
+            model.interactionState = VideoInteractionState(isLiked: initiallyLiked, coinCount: 0)
+
+            let result = await model.addCoin(count: 1)
+
+            XCTAssertTrue(result)
+            XCTAssertEqual(model.interactionState.isLiked, initiallyLiked)
+            XCTAssertEqual(model.interactionState.coinCount, 1)
+            let posts = recorder.requests.filter { $0.httpMethod == "POST" }
+            XCTAssertEqual(posts.count, 1)
+            XCTAssertEqual(formValues(in: try XCTUnwrap(posts.first))["select_like"], "1")
+        }
     }
 
     @MainActor

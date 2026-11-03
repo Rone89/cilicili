@@ -10,7 +10,7 @@ struct VideoDetailCoinSheetHost: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 8) {
-                Text("已投 \(viewModel.interactionState.coinCount) / 2 枚")
+                Text("已投 \(viewModel.interactionState.coinCount) / 2 枚 · 投币时同时点赞")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 

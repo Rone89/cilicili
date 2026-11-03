@@ -6,15 +6,18 @@ private nonisolated struct VideoCoinResponseData: Decodable, Sendable {
     }
 
     let requiresVerification: Bool
+    let like: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case gaData = "ga_data"
+        case like
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let gaData = try? container.decode(GaiaData.self, forKey: .gaData)
         requiresVerification = gaData?.decisions?.contains("verify_captcha_level2") == true
+        like = container.decodeLossyBoolIfPresent(forKey: .like)
     }
 }
 
@@ -212,7 +215,8 @@ extension BiliAPIClient {
         }
     }
 
-    func addVideoCoin(aid: Int, multiply: Int = 1, selectLike: Bool = false) async throws {
+    @discardableResult
+    func addVideoCoin(aid: Int, multiply: Int = 1, selectLike: Bool = false) async throws -> Bool? {
         guard (1...2).contains(multiply) else {
             throw BiliAPIError.api(code: -1, message: "投币数量无效")
         }
@@ -237,6 +241,7 @@ extension BiliAPIClient {
             }
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)
         }
+        return response.payload?.like
     }
 
     func setVideoFavorite(aid: Int, favorited: Bool) async throws {

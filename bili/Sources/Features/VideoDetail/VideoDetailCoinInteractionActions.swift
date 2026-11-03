@@ -19,19 +19,21 @@ extension VideoDetailViewModel {
         let bvid = detail.bvid
         let previousCoinCount = interactionState.coinCount
         let expectedCoinCount = previousCoinCount + requestedCount
-        let shouldLike = interactionState.isLiked
-        return await performInteractionMutation(
+        var confirmedLike = interactionState.isLiked
+        let succeeded = await performInteractionMutation(
             .coin,
             isCurrent: { isCurrentVideoContext(aid: aid, bvid: bvid) }
         ) {
             do {
-                try await api.addVideoCoin(
+                let likedByCoin = try await api.addVideoCoin(
                     aid: aid,
                     multiply: requestedCount,
-                    selectLike: shouldLike
+                    selectLike: true
                 )
                 guard isCurrentVideoContext(aid: aid, bvid: bvid) else { throw CancellationError() }
+                confirmedLike = confirmedLike || likedByCoin == true
                 interactionState.coinCount = min(2, max(interactionState.coinCount, expectedCoinCount))
+                if confirmedLike { interactionState.isLiked = true }
             } catch {
                 guard isCurrentVideoContext(aid: aid, bvid: bvid) else { throw CancellationError() }
                 guard await recoverAmbiguousCoinMutationIfNeeded(
@@ -42,7 +44,12 @@ extension VideoDetailViewModel {
                 ) else {
                     throw error
                 }
+                confirmedLike = confirmedLike || interactionState.isLiked
             }
         }
+        if succeeded, confirmedLike, isCurrentVideoContext(aid: aid, bvid: bvid) {
+            interactionState.isLiked = true
+        }
+        return succeeded
     }
 }

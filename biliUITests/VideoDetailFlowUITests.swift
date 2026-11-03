@@ -505,6 +505,20 @@ final class VideoDetailFlowUITests: XCTestCase {
 
 
     @MainActor
+    func testCoinSheetExplainsAutomaticLikeBeforeSubmission() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let coin = app.buttons.matching(NSPredicate(format: "label == %@", "投币")).firstMatch
+        XCTAssertTrue(coin.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 where !coin.isHittable { app.swipeDown() }
+        XCTAssertTrue(coin.isHittable, app.debugDescription)
+        coin.tap()
+        let notice = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "投币时同时点赞")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["投 1 枚"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["投 1 枚"].isHittable)
+    }
+
+    @MainActor
     func testAutomaticRecoveryTestBlocksShortVideo() {
         let app = launchVideoDetail(waitForDetailMarker: false)
         openAutomaticRecoveryTest(in: app)
