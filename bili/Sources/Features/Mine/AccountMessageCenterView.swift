@@ -58,7 +58,6 @@ struct AccountMessageCenterView: View {
             }
         }
         .navigationTitle("通知")
-        .toolbarVisibility(.hidden, for: .tabBar)
         .toolbarTitleDisplayMode(.inline)
         .standardPageHorizontalContentMargins(libraryStore.standardPageHorizontalInset)
         .toolbarBackground(.automatic, for: .navigationBar)
