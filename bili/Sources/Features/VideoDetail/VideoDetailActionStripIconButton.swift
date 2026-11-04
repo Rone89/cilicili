@@ -8,6 +8,7 @@ struct VideoDetailActionStripIconButton: View {
     let action: () -> Void
     let usesPlainStyle: Bool
     let dimsWhenDisabled: Bool
+    let blocksTouches: Bool
 
     init(
         accessibilityTitle: String,
@@ -16,7 +17,8 @@ struct VideoDetailActionStripIconButton: View {
         isDisabled: Bool,
         action: @escaping () -> Void,
         usesPlainStyle: Bool = false,
-        dimsWhenDisabled: Bool = true
+        dimsWhenDisabled: Bool = true,
+        blocksTouches: Bool = false
     ) {
         self.accessibilityTitle = accessibilityTitle
         self.systemImage = systemImage
@@ -25,6 +27,7 @@ struct VideoDetailActionStripIconButton: View {
         self.action = action
         self.usesPlainStyle = usesPlainStyle
         self.dimsWhenDisabled = dimsWhenDisabled
+        self.blocksTouches = blocksTouches
     }
 
     var body: some View {
@@ -43,6 +46,7 @@ struct VideoDetailActionStripIconButton: View {
         // Keep the full column tappable while the icon remains visually unadorned.
         .contentShape(Rectangle())
         .disabled(isDisabled)
+        .allowsHitTesting(!blocksTouches)
         .opacity(isDisabled && dimsWhenDisabled ? 0.52 : 1)
         .accessibilityLabel(accessibilityTitle)
     }

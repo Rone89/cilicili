@@ -51,10 +51,11 @@ struct VideoDetailActionStripButtonRow: View {
                 accessibilityTitle: model.isCoined ? "已投币" : "投币",
                 systemImage: model.isCoined ? "bitcoinsign.circle.fill" : "bitcoinsign.circle",
                 foregroundStyle: iconForegroundStyle(isSelected: model.isCoined),
-                isDisabled: model.isMutatingCoin || model.coinCount >= 2,
+                isDisabled: model.isMutatingCoin,
                 action: onCoin,
                 usesPlainStyle: usesPlainStyle,
-                dimsWhenDisabled: false
+                dimsWhenDisabled: true,
+                blocksTouches: model.coinCount >= 2
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
             .accessibilityIdentifier("video.detail.coin")
