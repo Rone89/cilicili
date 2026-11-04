@@ -3055,7 +3055,9 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
             toggleDanmaku: toggleDanmaku,
             updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) },
             subtitleStore: detailViewModel.subtitleRenderStore,
-            onSelectSubtitleTrack: { detailViewModel.selectSubtitleTrack(lan: $0) }
+            onSelectSubtitleTrack: { lan in
+                Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+            }
         )
         .scrollContentBackground(.hidden)
         .listRowBackground(Color.clear)

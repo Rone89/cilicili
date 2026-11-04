@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @MainActor
@@ -51,14 +52,13 @@ final class VideoDetailSubtitleStore: ObservableObject {
     }
 
     func updateCurrentCue(at time: TimeInterval) {
-        guard let cues = cues(for: selectedLan), !cues.isEmpty else {
+        guard let lan = selectedLan, let cues = cues(for: lan), !cues.isEmpty else {
             if currentCue != nil { currentCue = nil }
             return
         }
-        if let match = Self.cue(at: time, in: cues), match != currentCue {
+        let match = Self.cue(at: time, in: cues)
+        if match != currentCue {
             currentCue = match
-        } else if match == nil, currentCue != nil {
-            currentCue = nil
         }
     }
 

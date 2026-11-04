@@ -9,7 +9,9 @@ struct VideoDetailDanmakuSettingsSheetHost: View {
         DanmakuSettingsSheet(
             store: viewModel.danmakuSettingsRenderStore,
             subtitleStore: viewModel.subtitleRenderStore,
-            onSelectSubtitleTrack: { viewModel.selectSubtitleTrack(lan: $0) },
+            onSelectSubtitleTrack: { lan in
+                Task { await viewModel.selectSubtitleTrack(lan: lan) }
+            },
             toggleDanmaku: actions.toggleDanmaku,
             updateDanmakuSettings: actions.updateDanmakuSettings
         )
