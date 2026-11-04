@@ -37,7 +37,6 @@ private struct NavigationToolbarSearch: ViewModifier {
                         }
                     }
                     .frame(idealWidth: availableWidth, maxWidth: availableWidth)
-                    .animation(.smooth(duration: 0.30), value: hasBackButton)
                     .background(SearchOutsideTapDismissalSource { isEditing = false; isFocused = false })
                 }
                 .sharedBackgroundVisibility(.hidden)
@@ -46,7 +45,7 @@ private struct NavigationToolbarSearch: ViewModifier {
     }
 
     private var availableWidth: CGFloat {
-        let buttonCount = (hasBackButton ? 1 : 0) + max(0, trailingButtonCount)
+        let buttonCount = max(0, trailingButtonCount)
         let horizontalMargins: CGFloat = 20 * 2
         let buttonWidthAndSpacing: CGFloat = 56
         return max(120, (pageWidth > 0 ? pageWidth : 360)
