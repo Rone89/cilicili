@@ -58,6 +58,7 @@ struct VideoDetailCoinSheetHost: View {
                     Button("取消") {
                         dismiss()
                     }
+                    .foregroundStyle(.primary)
                     .disabled(isSubmitting)
                 }
                 ToolbarItem(placement: .topBarTrailing) {

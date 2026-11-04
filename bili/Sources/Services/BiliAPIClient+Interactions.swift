@@ -221,6 +221,28 @@ extension BiliAPIClient {
             throw BiliAPIError.api(code: -1, message: "投币数量无效")
         }
         let context = try await requireInteractionCSRFContext()
+        // PiliPlus 的做法：app 端投币接口用 access_key + appsec 签名提交，绕开 web 端
+        // 对未点赞投币（select_like=0）的 -401 风控。仅扫码登录（有 access_key）可用；
+        // 纯 Cookie 会话回落 web 端原路径。
+        if let accessKey = context.context.appAccessKey, !accessKey.isEmpty {
+            let body = BiliAppSigner.sign(
+                [
+                    "aid": String(aid),
+                    "multiply": String(multiply),
+                    "select_like": selectLike ? "1" : "0",
+                    "access_key": accessKey,
+                ],
+                profile: .androidLogin
+            )
+            let response: BiliResponse<VideoCoinResponseData> = try await postForm(
+                base: appURL,
+                path: "/x/v2/view/coin/add",
+                body: body,
+                userAgent: BiliAppSigner.Profile.androidLogin.userAgent
+            )
+            guard response.code == 0 else { throw Self.coinMutationError(response) }
+            return response.payload?.like
+        }
         let response: BiliResponse<VideoCoinResponseData> = try await postForm(
             base: baseURL,
             path: "/x/web-interface/coin/add",
@@ -235,13 +257,15 @@ extension BiliAPIClient {
             ],
             cookieHeader: context.context.cookieHeader
         )
-        guard response.code == 0 else {
-            if response.code == -401, response.payload?.requiresVerification == true {
-                throw BiliAPIError.api(code: response.code, message: "B站要求安全验证，请在官方页面验证并确认投币状态")
-            }
-            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
-        }
+        guard response.code == 0 else { throw Self.coinMutationError(response) }
         return response.payload?.like
+    }
+
+    private static func coinMutationError(_ response: BiliResponse<VideoCoinResponseData>) -> Error {
+        if response.code == -401, response.payload?.requiresVerification == true {
+            return BiliAPIError.api(code: response.code, message: "B站要求安全验证，请在官方页面验证并确认投币状态")
+        }
+        return BiliAPIError.api(code: response.code, message: response.displayMessage)
     }
 
     func setVideoFavorite(aid: Int, favorited: Bool) async throws {
