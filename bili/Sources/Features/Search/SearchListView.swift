@@ -411,31 +411,35 @@ private struct SearchNonVideoResultSkeletonRow: View {
 
 }
 
-/// Spans the full screen width so every category capsule stays visible at once.
+/// Horizontally scrollable category row; the first capsule rests 20pt from the screen edge.
 private struct SearchScopeBar: View {
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(SearchScope.allCases) { scope in
-                let selected = scope == viewModel.selectedScope
-                Button {
-                    Task { await viewModel.selectScope(scope) }
-                } label: {
-                    Label(scope.title, systemImage: scope.systemImage)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 4)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
-                        .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SearchScope.allCases) { scope in
+                    let selected = scope == viewModel.selectedScope
+                    Button {
+                        Task { await viewModel.selectScope(scope) }
+                    } label: {
+                        Label(scope.title, systemImage: scope.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 44)
+                            .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                            .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("搜索类型：\(scope.title)")
+                    .accessibilityValue(selected ? "已选中" : "未选中")
+                    .accessibilityAddTraits(selected ? [.isSelected] : [])
+                    .accessibilityIdentifier("search.scope.\(scope.rawValue)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("搜索类型：\(scope.title)")
-                .accessibilityValue(selected ? "已选中" : "未选中")
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-                .accessibilityIdentifier("search.scope.\(scope.rawValue)")
             }
+            .padding(.horizontal, 20)
         }
         .padding(.vertical, 8)
         .background(Color(.systemGroupedBackground))
