@@ -6,9 +6,18 @@ struct DanmakuSettingsSheetContent: View {
     let hidesDanmakuInPortraitBinding: Binding<Bool>
     let toggleDanmaku: () -> Void
     let updateDanmakuSettings: (DanmakuSettings) -> Void
+    var subtitleStore: VideoDetailSubtitleStore? = nil
+    var onSelectSubtitleTrack: ((String?) -> Void)? = nil
 
     var body: some View {
         Form {
+            if let subtitleStore, let onSelectSubtitleTrack, subtitleStore.hasTracks {
+                VideoDetailSubtitleSection(
+                    store: subtitleStore,
+                    onSelect: onSelectSubtitleTrack
+                )
+            }
+
             DanmakuSettingsHeaderFormSection(
                 store: store,
                 summary: summary,
@@ -23,6 +32,30 @@ struct DanmakuSettingsSheetContent: View {
                 settings: store.danmakuSettings,
                 updateSettings: updateDanmakuSettings
             )
+        }
+    }
+}
+
+struct VideoDetailSubtitleSection: View {
+    @ObservedObject var store: VideoDetailSubtitleStore
+    let onSelect: (String?) -> Void
+
+    var body: some View {
+        Section("字幕（实验）") {
+            Picker("字幕轨", selection: Binding(
+                get: { store.selectedLan },
+                set: { onSelect($0) }
+            )) {
+                Text("关闭").tag(nil as String?)
+                ForEach(store.tracks) { track in
+                    Text(track.lanDoc).tag(track.lan as String?)
+                }
+            }
+            if let message = store.loadErrorMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

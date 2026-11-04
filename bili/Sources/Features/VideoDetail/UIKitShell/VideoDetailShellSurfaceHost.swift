@@ -837,6 +837,14 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(2.5)
+
+                    VideoDetailPlayerSurfaceSubtitleLayer(
+                        store: detailViewModel.subtitleRenderStore,
+                        clock: viewModel.playbackClock,
+                        cid: detailViewModel.selectedCID,
+                        loadTracks: { await detailViewModel.loadSubtitleTracksIfEligible() }
+                    )
+                    .zIndex(2.55)
                 }
             }
             .playerOfflineNotice(
@@ -3045,7 +3053,9 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
             summary: settingsSummary,
             hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
             toggleDanmaku: toggleDanmaku,
-            updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
+            updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) },
+            subtitleStore: detailViewModel.subtitleRenderStore,
+            onSelectSubtitleTrack: { detailViewModel.selectSubtitleTrack(lan: $0) }
         )
         .scrollContentBackground(.hidden)
         .listRowBackground(Color.clear)

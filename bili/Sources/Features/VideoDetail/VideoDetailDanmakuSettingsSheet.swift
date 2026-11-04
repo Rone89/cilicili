@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DanmakuSettingsSheet: View {
     @ObservedObject var store: VideoDetailDanmakuSettingsRenderStore
+    let subtitleStore: VideoDetailSubtitleStore?
+    let onSelectSubtitleTrack: ((String?) -> Void)?
     let toggleDanmaku: () -> Void
     let updateDanmakuSettings: (DanmakuSettings) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -13,7 +15,9 @@ struct DanmakuSettingsSheet: View {
                 summary: settingsSummary,
                 hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
                 toggleDanmaku: toggleDanmaku,
-                updateDanmakuSettings: updateDanmakuSettings
+                updateDanmakuSettings: updateDanmakuSettings,
+                subtitleStore: subtitleStore,
+                onSelectSubtitleTrack: onSelectSubtitleTrack
             )
             .navigationTitle("弹幕设置")
             .navigationBarTitleDisplayMode(.inline)

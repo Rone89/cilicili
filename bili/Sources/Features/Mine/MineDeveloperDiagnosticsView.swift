@@ -106,6 +106,20 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.metalDanmaku")
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.aiSubtitleExperimentEnabled },
+                set: { libraryStore.setAiSubtitleExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("AI 字幕实验", systemImage: "text.bubble")
+                    Text("解析播放详情接口的字幕轨（含 AI 生成），在播放器底部渲染。开关在下次进入视频详情时生效。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.aiSubtitle")
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },
