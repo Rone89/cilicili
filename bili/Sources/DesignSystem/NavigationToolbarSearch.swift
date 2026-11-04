@@ -37,6 +37,7 @@ private struct NavigationToolbarSearch: ViewModifier {
                         }
                     }
                     .frame(idealWidth: availableWidth, maxWidth: availableWidth)
+                    .animation(.smooth(duration: 0.30), value: hasBackButton)
                     .background(SearchOutsideTapDismissalSource { isEditing = false; isFocused = false })
                 }
                 .sharedBackgroundVisibility(.hidden)
