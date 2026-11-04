@@ -75,5 +75,9 @@ Packages/FFmpegKit/Sources/*.xcframework/
 !bili/Resources/*.png
 !assets/alipay-support.jpg
 
+# Agent session artifacts
+.zcode/
+.codex-local/
+
 # macOS
 .DS_Store
