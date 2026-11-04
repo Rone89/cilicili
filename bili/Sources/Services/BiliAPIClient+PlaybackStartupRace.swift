@@ -411,6 +411,25 @@ extension BiliAPIClient {
                     error: lastError
                 )
             }
+
+            if bestStartupResult == nil {
+                if let rescueResult = await appEndpointPlayURLRescue(
+                    bvid: bvid,
+                    cid: cid,
+                    requestedQuality: requestedQuality,
+                    raceStart: raceStart,
+                    lastError: lastError
+                ) {
+                    logPlayURLStage(
+                        "startupAppEndpointRescueAccepted",
+                        bvid: bvid,
+                        cid: cid,
+                        start: raceStart,
+                        data: rescueResult.data
+                    )
+                    bestStartupResult = rescueResult
+                }
+            }
             return bestStartupResult
         }
     }
