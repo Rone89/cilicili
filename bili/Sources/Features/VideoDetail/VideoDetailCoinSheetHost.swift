@@ -5,12 +5,13 @@ struct VideoDetailCoinSheetHost: View {
     @Environment(\.appThemeTintColor) private var appTintColor
     @ObservedObject var viewModel: VideoDetailViewModel
     @State private var selectedCoinCount = 1
+    @State private var shouldLike = true
     @State private var isSubmitting = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 8) {
-                Text("已投 \(viewModel.interactionState.coinCount) / 2 枚 · 投币时同时点赞")
+                Text("已投 \(viewModel.interactionState.coinCount) / 2 枚 · \(shouldLike ? "投币时同时点赞" : "投币，不点赞")")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -59,6 +60,16 @@ struct VideoDetailCoinSheetHost: View {
                     }
                     .disabled(isSubmitting)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        shouldLike.toggle()
+                    } label: {
+                        Image(systemName: shouldLike ? "hand.thumbsup.fill" : "hand.thumbsup")
+                            .foregroundStyle(shouldLike ? appTintColor : Color.secondary)
+                    }
+                    .disabled(isSubmitting)
+                    .accessibilityLabel(shouldLike ? "投币同时点赞：开" : "投币同时点赞：关")
+                }
             }
         }
         .presentationDetents([.height(330)])
@@ -91,7 +102,7 @@ struct VideoDetailCoinSheetHost: View {
         let coinCount = selectedCoinCount
         isSubmitting = true
         Task { @MainActor in
-            let succeeded = await viewModel.addCoin(count: coinCount)
+            let succeeded = await viewModel.addCoin(count: coinCount, like: shouldLike)
             isSubmitting = false
             if succeeded {
                 Haptics.success()

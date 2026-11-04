@@ -2,7 +2,7 @@ import Foundation
 
 extension VideoDetailViewModel {
     @discardableResult
-    func addCoin(count requestedCount: Int = 1) async -> Bool {
+    func addCoin(count requestedCount: Int = 1, like: Bool = true) async -> Bool {
         guard let aid = detail.aid else {
             interactionMessage = "没有找到视频 AV 号，无法投币"
             return false
@@ -28,7 +28,7 @@ extension VideoDetailViewModel {
                 let likedByCoin = try await api.addVideoCoin(
                     aid: aid,
                     multiply: requestedCount,
-                    selectLike: true
+                    selectLike: like
                 )
                 guard isCurrentVideoContext(aid: aid, bvid: bvid) else { throw CancellationError() }
                 confirmedLike = confirmedLike || likedByCoin == true
