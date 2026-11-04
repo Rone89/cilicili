@@ -28,6 +28,7 @@ struct SearchListView: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if !viewModel.showsDiscovery {
                     SearchScopeBar(viewModel: viewModel)
+                        .padding(.horizontal, -horizontalInset)
                 }
                 if viewModel.showsDiscovery {
                     discoveryContent
@@ -410,48 +411,33 @@ private struct SearchNonVideoResultSkeletonRow: View {
 
 }
 
-/// Scrolls vertically with results while keeping category navigation horizontal.
+/// Spans the full screen width so every category capsule stays visible at once.
 private struct SearchScopeBar: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var viewModel: SearchViewModel
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(SearchScope.allCases) { scope in
-                        let selected = scope == viewModel.selectedScope
-                        Button {
-                            Task { await viewModel.selectScope(scope) }
-                        } label: {
-                            Label(scope.title, systemImage: scope.systemImage)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, 16)
-                                .frame(minHeight: 44)
-                                .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
-                                .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("搜索类型：\(scope.title)")
-                        .accessibilityValue(selected ? "已选中" : "未选中")
-                        .accessibilityAddTraits(selected ? [.isSelected] : [])
-                        .accessibilityIdentifier("search.scope.\(scope.rawValue)")
-                        .id(scope)
-                    }
+        HStack(spacing: 6) {
+            ForEach(SearchScope.allCases) { scope in
+                let selected = scope == viewModel.selectedScope
+                Button {
+                    Task { await viewModel.selectScope(scope) }
+                } label: {
+                    Label(scope.title, systemImage: scope.systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                        .background(selected ? Color.primary : Color(.secondarySystemGroupedBackground), in: Capsule())
                 }
-                .padding(.vertical, 8)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("search.scopes")
-            .onAppear { proxy.scrollTo(viewModel.selectedScope, anchor: .center) }
-            .onChange(of: viewModel.selectedScope) { _, scope in
-                withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
-                    proxy.scrollTo(scope, anchor: .center)
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("搜索类型：\(scope.title)")
+                .accessibilityValue(selected ? "已选中" : "未选中")
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+                .accessibilityIdentifier("search.scope.\(scope.rawValue)")
             }
         }
+        .padding(.vertical, 8)
         .background(Color(.systemGroupedBackground))
     }
 }

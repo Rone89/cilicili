@@ -242,22 +242,20 @@ final class SearchScrollRetentionUITests: XCTestCase {
                              "Without trailing actions the search input should use the freed space")
     }
 
-    func testSearchFiltersShowBothGroupsAndCurrentSelectionsInOneMenu() {
+    func testSearchFiltersMenuShowsOnlySortOrders() {
         let app = launchFixture()
         let filters = app.buttons["search.filters.menu"]
-        XCTAssertEqual(filters.value as? String, "视频，综合排序")
+        XCTAssertEqual(filters.value as? String, "综合排序")
         XCTAssertFalse(app.buttons["search.scope.comprehensive"].exists)
         filters.tap()
-        XCTAssertFalse(app.buttons["综合内容"].exists)
-        for title in ["视频", "番剧", "影视", "专栏", "UP主",
-                      "综合排序", "最多播放", "最新发布", "最多收藏"] {
+        for title in ["综合排序", "最多播放", "最新发布", "最多收藏"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), title)
         }
+        XCTAssertFalse(app.buttons["番剧"].exists, "Scope selection lives in the capsule row")
         app.buttons["最新发布"].tap()
-        XCTAssertEqual(filters.value as? String, "视频，最新发布")
-        filters.tap()
-        app.buttons["专栏"].tap()
-        XCTAssertEqual(filters.value as? String, "专栏，当前类型不支持排序")
+        XCTAssertEqual(filters.value as? String, "最新发布")
+        app.buttons["search.scope.article"].tap()
+        XCTAssertEqual(filters.value as? String, "当前类型不支持排序")
         filters.tap()
         XCTAssertFalse(app.buttons["最多播放"].isEnabled)
         XCTAssertFalse(app.buttons["最新发布"].isEnabled)
@@ -295,21 +293,12 @@ final class SearchScrollRetentionUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
 
-        let categories = app.scrollViews["search.scopes"]
         let user = app.buttons["search.scope.user"]
-        for _ in 0..<4 {
-            if user.exists && categories.frame.contains(user.frame) { break }
-            // Nested scroll views may expose a frame extended behind the toolbar.
-            // Swipe along the visible capsule row, rather than its container center.
-            let bounds = categories.frame.intersection(app.frame)
-            let origin = app.coordinate(withNormalizedOffset: .zero)
-            let start = origin.withOffset(CGVector(dx: bounds.maxX - 20, dy: video.frame.midY))
-            let end = origin.withOffset(CGVector(dx: bounds.minX + 20, dy: video.frame.midY))
-            start.press(forDuration: 0.05, thenDragTo: end)
-        }
+        // All capsules now share the full screen width, so no horizontal swipe
+        // is needed to reveal the last category.
         let revealed = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                user.exists && categories.frame.contains(user.frame)
+                user.exists && user.isHittable
             }, object: nil
         )
         XCTAssertEqual(XCTWaiter.wait(for: [revealed], timeout: 5), .completed)
@@ -319,7 +308,7 @@ final class SearchScrollRetentionUITests: XCTestCase {
             predicate: NSPredicate(format: "value == %@", "已选中"), object: user
         )
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
-        XCTAssertEqual(app.buttons["search.filters.menu"].value as? String, "UP主，当前类型不支持排序")
+        XCTAssertEqual(app.buttons["search.filters.menu"].value as? String, "当前类型不支持排序")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Search categories scrolling with results"
         screenshot.lifetime = .keepAlways

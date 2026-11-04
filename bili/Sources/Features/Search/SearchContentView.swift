@@ -145,9 +145,6 @@ private struct SearchFilterToolbarMenu: View {
 
     var body: some View {
         Menu {
-            Section("搜索内容") {
-                scopeOptions
-            }
             Section("排序方式") {
                 orderOptions
             }
@@ -155,20 +152,9 @@ private struct SearchFilterToolbarMenu: View {
             Image(systemName: "slider.horizontal.3").foregroundStyle(.primary)
         }
         .tint(.primary)
-        .accessibilityLabel("搜索内容与排序")
+        .accessibilityLabel("排序方式")
         .accessibilityValue(selectionDescription)
         .accessibilityIdentifier("search.filters.menu")
-    }
-
-    private var scopeOptions: some View {
-        ForEach(SearchScope.allCases) { scope in
-            Button {
-                Task { await viewModel.selectScope(scope, animation: .smooth(duration: 0.28)) }
-            } label: {
-                Label(scope.title, systemImage: scope == viewModel.selectedScope ? "checkmark" : scope.systemImage)
-            }
-            .accessibilityValue(scope == viewModel.selectedScope ? "已选中" : "")
-        }
     }
 
     private var orderOptions: some View {
@@ -184,7 +170,6 @@ private struct SearchFilterToolbarMenu: View {
     }
 
     private var selectionDescription: String {
-        let order = viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "当前类型不支持排序"
-        return viewModel.selectedScope.title + "，" + order
+        viewModel.selectedScope.supportsOrder ? viewModel.selectedOrder.title : "当前类型不支持排序"
     }
 }
