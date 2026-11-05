@@ -744,7 +744,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func pause(deactivatesAudioSession: Bool, notifiesStateChange: Bool) {
         guard !isStopped else { return }
-        PlaybackHitchMonitor.shared.stop()
+        PlaybackHitchMonitor.shared.stop(owner: self)
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -817,7 +817,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         #if DEBUG
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
-        PlaybackHitchMonitor.shared.stop()
+        PlaybackHitchMonitor.shared.stop(owner: self)
         playbackGeneration &+= 1
         invalidateAudioSessionActivation()
         isStopped = true
@@ -1227,6 +1227,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         guard !isAwaitingAudioSessionActivation, !audioSession.isDeactivating else { return }
         if let source, !source.isLiveStream, source.playbackContentMode == .video {
             PlaybackHitchMonitor.shared.start(
+                owner: self,
                 metricsID: source.metricsID,
                 quality: source.videoStream?.id,
                 dynamicRange: source.dynamicRange

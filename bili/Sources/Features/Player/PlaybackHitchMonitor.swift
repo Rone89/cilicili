@@ -23,22 +23,33 @@ final class PlaybackHitchMonitor: NSObject {
     private var intervals: [Double] = []
     private var longGapCount = 0
     private var currentTargetSeconds: CFTimeInterval = 1.0 / 60.0
+    private var ownerID: ObjectIdentifier?
     private var context: Context?
 
     private override init() {
         super.init()
     }
 
-    func start(metricsID: String, quality: Int?, dynamicRange: BiliVideoDynamicRange) {
+    func start(owner: AnyObject, metricsID: String, quality: Int?, dynamicRange: BiliVideoDynamicRange) {
         let nextContext = Context(
             metricsID: metricsID,
             quality: quality,
             dynamicRange: dynamicRange.rawValue
         )
-        guard displayLink == nil else {
-            context = nextContext
+        let nextOwnerID = ObjectIdentifier(owner)
+        if displayLink != nil {
+            // 清晰度切换时旧播放器可能晚于新播放器执行 teardown；所有权移交到新播放器，
+            // 避免旧会话的 stop(owner:) 误停新会话。
+            if ownerID != nextOwnerID {
+                ownerID = nextOwnerID
+                context = nextContext
+                resetWindow(at: CACurrentMediaTime())
+            } else {
+                context = nextContext
+            }
             return
         }
+        ownerID = nextOwnerID
         context = nextContext
         windowStart = CACurrentMediaTime()
         lastTimestamp = nil
@@ -49,13 +60,15 @@ final class PlaybackHitchMonitor: NSObject {
         displayLink = link
     }
 
-    func stop() {
+    func stop(owner: AnyObject) {
+        guard ownerID == ObjectIdentifier(owner) else { return }
         displayLink?.invalidate()
         displayLink = nil
         lastTimestamp = nil
         windowStart = 0
         intervals.removeAll(keepingCapacity: false)
         longGapCount = 0
+        ownerID = nil
         context = nil
     }
 
