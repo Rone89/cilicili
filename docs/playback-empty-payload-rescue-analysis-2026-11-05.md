@@ -119,9 +119,34 @@ hdr=q125 range=PQ color=nclx primaries=9 transfer=16 matrix=9 limited codec=hvc1
 1. `startupAppEndpointRescue result=failure ... DecodingError.dataCorrupted`：app 端播放地址兜底对该 PGC 集返回非 JSON 载荷。兜底失败会被正常吞掉，不影响其它路由，但说明 app 端接口对 PGC 需要不同参数/端点，后续需修正或限定只对 UGC 使用。
 2. `manualAvailability failed q125 error=API -404: 啥都木有`：清晰度可用性探测对该集返回 -404，但实际播放 q125 正常；探测结果可能让菜单短暂显示"待确认"，不影响播放。
 
+### 两个非阻塞问题的修复（build 72）
+
+**问题 1：app 端兜底路由端点错误**
+
+- 原因：使用了不存在的 `https://app.bilibili.com/x/v2/playurl`，服务端返回非 JSON 载荷，触发 `DecodingError.dataCorrupted`。
+- 修复：改用真正的 app 鉴权端点 `https://api.bilibili.com/x/player/playurl`，参数为
+  `access_key + bvid + cid + qn + fnval=4048 + fnver=0 + fourk=1 + mobi_app=android +
+  platform=android + build=<profile>`，并附带 appkey/ts/sign（`BiliAppSigner.sign`）与登录 Cookie。
+
+**问题 2：PGC 播放信息 -404 导致清晰度解析失败**
+
+- 原因：部分剧集（实测《牧神记》107 集）的 PGC 播放信息或 web playurl 返回 `-404 啥都木有`，
+  但同一 bvid/cid 的启动期 target-first WBI / webpage 路径可用。
+- 修复：新增 `fetchPlayURLForManualQuality` 逐级回落：
+  PGC playinfo → UGC `fetchPlayURL` → `fetchPiliPlusStyleStartupPlayURL` → `fetchWebPagePlayURL`。
+  同时给启动播放、播放恢复、听视频预加载的 PGC 分支补上 PGC→UGC 回落（仅在错误时触发，
+  不改变成功路径）。
+
+验收（build 72）：
+
+1. 《牧神记》107 集切 HDR 真彩：日志应出现 `manualAvailability resolved q125`，不应再出现 `-404`。
+2. 若启动期所有 web 路由均失败，app 端兜底应记录 `startupAppEndpointRescue result=success`（不再出现 `dataCorrupted`）。
+3. HDR 表现应维持 build 71 已验证的状态（`range=PQ` + `displayPolicy hdr=true preferred=high toneMap=never`）。
+
 ## 提交
 
 - `4ec821a` AI 字幕实验（上一目标遗留，未验收）
 - `b31fa60` app 端播放地址兜底路由
 - `7048476` HDR10 VIDEO-RANGE + colr 注入（build 70）
 - `6ed18aa` HDR 输出策略改为 .high/.never（build 71）
+- `9cac0a3` app 端端点修正 + PGC→UGC 回落（build 72）
