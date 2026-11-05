@@ -23,16 +23,24 @@ struct CommentsSectionLoadMoreFooter: View {
                 actions.retryLoadMoreComments()
             }
         } else if store.hasMoreComments {
-            // 无缝下滑续载：提前 1400pt 预取下一页，用户持续下滑时内容源源不断，
-            // 不会看到"点击加载"的按钮。不要改回零高度视图 + onAppear 的触发方式，
-            // 也不要依赖视图身份变化——那会形成无节流的分页循环
-            // （实测 45 秒拉完 1196 条评论并造成严重掉帧）。
+            // 无缝下滑续载：三路触发。
+            // 1) onAppear：footer 被构建（进入视口/预取范围）时加载 —— 覆盖"已经滚到底、
+    //        没有后续滚动帧"的场景（onScrollGeometryChange 只在值变化时回调，到底后
+    //        不再触发）；
+            // 2) onScrollGeometryChange：footer 已在屏上、用户继续下滑时提前预取；
+            // 3) onTapGesture：手动兜底。
+            // 注意：不要给本视图加 `.id(...)`，也不要改回零高度常驻视图——每次分页后
+            // 身份重建会重触发 onAppear，形成无节流分页循环（实测拉完 1196 条评论）。
+            // VM 层另有 800ms 节流 + 总数判尾兜底。
             Text("继续下滑加载更多评论")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
+                .onAppear {
+                    Task { await actions.loadMore() }
+                }
                 .onTapGesture {
                     Task { await actions.loadMore() }
                 }
