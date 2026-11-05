@@ -78,10 +78,12 @@ final class PlaybackHitchSelfTest {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
         }
         try? await Task.sleep(nanoseconds: 3_000_000_000)
+        // sdr 模式的最后两个阶段开启程序化滚动，用于验证滚动触发分页时的流畅度。
         for index in 1...phaseCount {
+            let scroll = mode == "sdr" && index > phaseCount - 2
             await runPhase(
                 "\(mode)_\(index)",
-                scroll: false
+                scroll: scroll
             )
         }
         mark("done mode=\(mode)")

@@ -23,9 +23,9 @@ struct CommentsSectionLoadMoreFooter: View {
                 actions.retryLoadMoreComments()
             }
         } else if store.hasMoreComments {
-            // PiliPlus 式滚动触发：footer 有真实高度和稳定身份，只有滚到底部进入视口
-            // 才触发一次加载。不要给这个视图加 `.id(...)` 或改成零高度常驻视图——
-            // 那会让 onAppear 在每次分页后重新触发，形成无节流的分页循环
+            // PiliPlus 式滚动几何触发：只有用户真的滚到列表底部附近（剩余距离 < 700pt）
+            // 才自动加载下一页；同时保留点按手动加载。不要用零高度视图 + onAppear 做触发，
+            // 也不要依赖视图身份变化——那会形成无节流的分页循环
             // （实测 45 秒拉完 1196 条评论并造成严重掉帧）。
             Label("加载更多评论", systemImage: "arrow.down.circle")
                 .font(.caption.weight(.semibold))
@@ -33,10 +33,14 @@ struct CommentsSectionLoadMoreFooter: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
-                .onAppear {
+                .onTapGesture {
                     Task { await actions.loadMore() }
                 }
-                .onTapGesture {
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    let viewportBottom = geometry.contentOffset.y + geometry.containerSize.height
+                    return geometry.contentSize.height - viewportBottom
+                } action: { _, distanceFromEnd in
+                    guard distanceFromEnd < 700, !store.loadMoreState.isLoading else { return }
                     Task { await actions.loadMore() }
                 }
                 .accessibilityIdentifier("comments.loadMore")
