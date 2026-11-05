@@ -1,3 +1,4 @@
+import os
 import QuartzCore
 import UIKit
 
@@ -162,6 +163,7 @@ final class PlaybackHitchMonitor: NSObject {
             + " netActive=\(networkSnapshot?.active ?? -1) netPeak=\(networkSnapshot?.peak ?? -1)"
             + " danmaku=\(danmakuItemCount) danmakuOn=\(danmakuEnabled)"
             + " phase=\(selfTestPhase)"
+            + " memMB=\(availableMemoryMegabytes())"
             + " thermal=\(thermalTitle(ProcessInfo.processInfo.thermalState))"
         PlayerMetricsLog.record(.playbackHitch, metricsID: context.metricsID, message: message)
         resetWindow(at: timestamp)
@@ -181,8 +183,13 @@ final class PlaybackHitchMonitor: NSObject {
             .first
     }
 
-    private func thermalTitle(_ state: ProcessInfo.ThermalState) -> String {
-        switch state {
+    private func availableMemoryMegabytes() -> Int {
+        let bytes = os_proc_available_memory()
+        guard bytes > 0 else { return -1 }
+        return Int(bytes / (1024 * 1024))
+    }
+
+    private func thermalTitle(_ state: ProcessInfo.ThermalState) -> String {        switch state {
         case .nominal:
             return "nominal"
         case .fair:
