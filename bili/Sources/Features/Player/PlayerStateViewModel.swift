@@ -487,6 +487,8 @@ final class PlayerStateViewModel: NSObject, ObservableObject {
     private let metricsID: String
     private let metricsStartTime = CACurrentMediaTime()
     private let streamSource: PlayerStreamSource
+    /// 当前播放源的动态范围，供弹幕等叠加层按 HDR/SDR 调整渲染策略。
+    var playbackDynamicRange: BiliVideoDynamicRange { streamSource.dynamicRange }
     private let durationHint: TimeInterval?
     private let resumeTime: TimeInterval
     private let startupResumePolicy: PlayerStartupResumePolicy

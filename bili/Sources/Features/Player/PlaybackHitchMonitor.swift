@@ -22,6 +22,7 @@ final class PlaybackHitchMonitor: NSObject {
     private var windowStart: CFTimeInterval = 0
     private var intervals: [Double] = []
     private var longGapCount = 0
+    private var currentTargetSeconds: CFTimeInterval = 1.0 / 60.0
     private var context: Context?
 
     private override init() {
@@ -60,6 +61,9 @@ final class PlaybackHitchMonitor: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         let timestamp = link.timestamp
+        // ProMotion 会按内容把刷新率降到 48/40/30Hz；用系统给出的下一帧预期间隔
+        // 作为基准，避免把正常降频误判为掉帧。
+        currentTargetSeconds = max(link.targetTimestamp - link.timestamp, 0.001)
         // 应用不在前台时（切后台、来电、控制中心）会产生超长间隔，不能算作掉帧。
         guard UIApplication.shared.applicationState == .active else {
             resetWindow(at: timestamp)
@@ -122,6 +126,9 @@ final class PlaybackHitchMonitor: NSObject {
     }
 
     private func expectedFrameDuration() -> Double {
+        if currentTargetSeconds > 0.001 {
+            return currentTargetSeconds
+        }
         let maximumFramesPerSecond = activeScreen()?.maximumFramesPerSecond ?? 60
         return 1.0 / Double(max(maximumFramesPerSecond, 60))
     }
