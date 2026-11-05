@@ -1,10 +1,13 @@
-import CoreMedia
 import Foundation
+import QuartzCore
 
 extension VideoDetailViewModel {
     /// 评论分页最小间隔：视图层可能被多种路径触发（onAppear/滚动几何/点按），
     /// 数据层用时间节流兜底，保证任何触发风暴下最多每 800ms 发起一页。
-    private var lastCommentPageLoadStartedAt: CFTimeInterval = 0
+    private var lastCommentPageLoadStartedAt: CFTimeInterval {
+        get { commentListState.lastPageLoadStartedAt }
+        set { commentListState.lastPageLoadStartedAt = newValue }
+    }
 
     func loadMoreComments() async {
         guard !commentState.isLoading,

@@ -10,6 +10,8 @@ struct VideoDetailCommentListState {
     var end = false
     var pageLoadGeneration = 0
     var needsThreadReload = false
+    /// 评论分页最小间隔节流戳（视图层多路径触发时由数据层兜底）。
+    var lastPageLoadStartedAt: CFTimeInterval = 0
 }
 
 extension VideoDetailViewModel {
