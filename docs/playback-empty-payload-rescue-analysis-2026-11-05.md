@@ -150,3 +150,24 @@ hdr=q125 range=PQ color=nclx primaries=9 transfer=16 matrix=9 limited codec=hvc1
 - `7048476` HDR10 VIDEO-RANGE + colr 注入（build 70）
 - `6ed18aa` HDR 输出策略改为 .high/.never（build 71）
 - `9cac0a3` app 端端点修正 + PGC→UGC 回落（build 72）
+
+## 追加三：视频详情页掉帧的真正原因——评论自动分页失控（build 90/91）
+
+经过启动参数驱动的自动自测（`--hitch-self-test` + `--hitch-mode`）反复 A/B，最终定位：
+
+- 现象：特定视频播放页前 40–50 秒 fps 2–8、p95 300–500ms，之后恢复 45–85fps；与 HDR/EDR、清晰度、弹幕开关、渲染器、滚动、seek 位置、网络下载量均无关。
+- 决定性实验：`skipCommentLoading` 跳过评论加载后，同一视频从第 1 秒起 59–100fps、p95 16.7ms、内存完全平稳。
+- 量化证据：45 秒内 `commentPageLoaded` 连续记录 **64 页 / 1196 条评论**（约 1.4 页/秒），可用内存下降约 750MB 后稳定。
+- 根因：评论列表 footer 用零高度视图的 `onAppear` 自动加载下一页，且以"最后一条评论 id"作为视图 id；每加载一页 id 变化 → 视图重建 → 再次 `onAppear`，形成无节流的分页循环，直到评论全部加载完。
+
+修复：
+
+- `CommentsSectionLoadMoreFooter` 移除自动触发，改为显式的「加载更多评论」按钮（带 loading/失败重试状态）。
+- 回退 build 75 基于误判的"HDR 播放强制 DanmakuKit"逻辑；弹幕渲染器重新遵循用户的 Metal 实验开关（验证表明两种渲染器在 HDR 下均流畅）。
+
+验证（build 90/91，自动自测）：
+
+- 同视频 1080P：24 个窗口最低 58.6fps，p95 全部 16.7ms，内存平稳，评论只加载 1 页。
+- HDR 无弹幕：59–60fps / p95 17ms；HDR + Metal 弹幕：60–89fps / p95 17ms。
+
+UX 变化：评论不再自动无限加载，需要点击「加载更多评论」按钮继续加载。
