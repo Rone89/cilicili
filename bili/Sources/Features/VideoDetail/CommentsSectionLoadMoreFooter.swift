@@ -23,21 +23,23 @@ struct CommentsSectionLoadMoreFooter: View {
                 actions.retryLoadMoreComments()
             }
         } else if store.hasMoreComments {
-            // 之前用零高度视图的 onAppear 自动加载，每次加载后 id 变化会再次触发，
-            // 形成无节流的分页循环（实测 45 秒拉完 1196 条评论并造成严重掉帧）。
-            // 改为用户显式点击加载，行为可预期且不抢占播放/页面资源。
-            Button {
-                Task { await actions.loadMore() }
-            } label: {
-                Label("加载更多评论", systemImage: "arrow.down.circle")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("comments.loadMore")
+            // PiliPlus 式滚动触发：footer 有真实高度和稳定身份，只有滚到底部进入视口
+            // 才触发一次加载。不要给这个视图加 `.id(...)` 或改成零高度常驻视图——
+            // 那会让 onAppear 在每次分页后重新触发，形成无节流的分页循环
+            // （实测 45 秒拉完 1196 条评论并造成严重掉帧）。
+            Label("加载更多评论", systemImage: "arrow.down.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+                .onAppear {
+                    Task { await actions.loadMore() }
+                }
+                .onTapGesture {
+                    Task { await actions.loadMore() }
+                }
+                .accessibilityIdentifier("comments.loadMore")
         } else {
             Text("没有更多评论了")
                 .font(.caption)
