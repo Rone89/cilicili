@@ -2955,6 +2955,9 @@ final class PlayerPerformanceStore: ObservableObject {
             )
         case .mediaCache:
             session.mediaCacheMessage = event.message ?? session.mediaCacheMessage
+        case .playbackHitch:
+            // 卡顿探针明细直接写入 player-diagnostics.log，不进入首帧性能会话。
+            break
         case .manifestStage:
             session.manifestStageMessage = Self.appendManifestStageMessage(
                 session.manifestStageMessage,

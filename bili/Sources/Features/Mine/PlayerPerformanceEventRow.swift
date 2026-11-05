@@ -54,6 +54,7 @@ struct PlayerPerformanceEventRow: View {
         case .accessLog: return "dot.radiowaves.left.and.right"
         case .decodeLog: return "cpu"
         case .mediaCache: return "externaldrive.fill.badge.checkmark"
+        case .playbackHitch: return "speedometer"
         case .manifestStage: return "waveform.path.ecg.rectangle"
         case .qualitySupplement: return "arrow.triangle.2.circlepath"
         case .resumeDecision: return "clock.arrow.circlepath"
