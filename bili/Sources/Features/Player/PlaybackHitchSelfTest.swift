@@ -61,11 +61,15 @@ final class PlaybackHitchSelfTest {
             libraryStore?.setDanmakuEnabled(false)
             viewModel.isDanmakuEnabled = false
             PlaybackDiagnosticsExperiment.forceNonStreamingRanges = true
+        case "nocomment":
+            libraryStore?.setDanmakuEnabled(false)
+            viewModel.isDanmakuEnabled = false
+            PlaybackDiagnosticsExperiment.skipCommentLoading = true
         default:
             libraryStore?.setDanmakuEnabled(false)
             viewModel.isDanmakuEnabled = false
         }
-        let targetQuality = (mode == "sdr" || mode == "nostream") ? 112 : 125
+        let targetQuality = (mode == "sdr" || mode == "nostream" || mode == "nocomment") ? 112 : 125
         await selectQuality(targetQuality, viewModel: viewModel)
         _ = await waitForPlayback(viewModel, timeout: 25)
         if let progressText = Self.argumentValue(after: "--hitch-progress"),

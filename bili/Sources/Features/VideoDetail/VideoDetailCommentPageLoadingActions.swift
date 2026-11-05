@@ -2,6 +2,10 @@ import Foundation
 
 extension VideoDetailViewModel {
     func loadCommentsPage(presentsErrors: Bool, emptyPageSkipLimit: Int = 0) async {
+        if PlaybackDiagnosticsExperiment.skipCommentLoading {
+            commentState = .idle
+            return
+        }
         guard let target = commentTarget else {
             if comments.isEmpty {
                 commentState = .idle

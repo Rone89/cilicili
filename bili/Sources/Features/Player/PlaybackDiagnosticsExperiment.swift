@@ -11,6 +11,8 @@ enum PlaybackDiagnosticsExperiment {
     static var forceMetalDanmaku = false
     /// 强制使用 DanmakuKit（即使当前为 HDR）。
     static var forceDanmakuKit = false
+    /// 跳过详情页评论加载（诊断详情页内容对 UI 的影响）。
+    static var skipCommentLoading = false
     /// 禁用本地代理的"边下边播"流式返回，改为整段下载后返回。
     nonisolated(unsafe) static var forceNonStreamingRanges = false
     /// 显示策略变化时由引擎重新应用到当前播放层。
@@ -22,5 +24,6 @@ enum PlaybackDiagnosticsExperiment {
         forceMetalDanmaku = false
         forceDanmakuKit = false
         forceNonStreamingRanges = false
+        skipCommentLoading = false
     }
 }
