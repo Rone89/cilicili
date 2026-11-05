@@ -98,6 +98,27 @@ hdr=q125 range=PQ color=nclx primaries=9 transfer=16 matrix=9 limited codec=hvc1
 3. 若两者都在但画面仍为 SDR，则继续排查：视频采样位深（是否 10-bit）、
    AVPlayerItem 输出、或系统 HDR 显示设置；届时需抓取更底层的解码/渲染诊断。
 
+### 真机验证结果（2026-11-05 05:26–05:29，build 71，**用户确认 HDR 观感正常**）
+
+低层数据与观感一致：
+
+| 项目 | BV1QMxz6hEV5《牧神记 107 上苍》(PGC) | BV1R1e4zKEh1《4KHDR 真彩样片》 |
+| --- | --- | --- |
+| 画质 | q125（targetQ=116 为偏好值，手动切 HDR） | q125 |
+| manifest | `version=8`、`range=PQ` | `version=8`、`range=PQ` |
+| init colr | `nclx primaries=9 transfer=16 matrix=9 limited`（BT.2020/PQ） | 同上 |
+| CODECS | `hvc1.2.4.L153.90`（HEVC Main10 / Level 5.3） | `hvc1.2.4.L153.90` |
+| 输出策略 | `displayPolicy hdr=true preferred=high toneMap=never` | 同上 |
+| 首帧 | 5.12s | 1.40s |
+| 码率/稳定性 | indicated 10.06 Mbps，stalls=0，buffer 1.35s | indicated 21.84 Mbps，stalls=0 |
+
+结论：画质选择 → HLS 签名（VIDEO-RANGE=PQ）→ init 颜色信息 → 输出层 EDR 策略 → 稳定播放，全链路数据一致，HDR 生效已确认。
+
+观察到的两个非阻塞问题（与 HDR 无关，后续可单独处理）：
+
+1. `startupAppEndpointRescue result=failure ... DecodingError.dataCorrupted`：app 端播放地址兜底对该 PGC 集返回非 JSON 载荷。兜底失败会被正常吞掉，不影响其它路由，但说明 app 端接口对 PGC 需要不同参数/端点，后续需修正或限定只对 UGC 使用。
+2. `manualAvailability failed q125 error=API -404: 啥都木有`：清晰度可用性探测对该集返回 -404，但实际播放 q125 正常；探测结果可能让菜单短暂显示"待确认"，不影响播放。
+
 ## 提交
 
 - `4ec821a` AI 字幕实验（上一目标遗留，未验收）
