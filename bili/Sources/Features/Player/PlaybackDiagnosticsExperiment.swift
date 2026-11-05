@@ -9,6 +9,8 @@ enum PlaybackDiagnosticsExperiment {
     static var forceDanmakuLoadShedding = false
     /// 强制使用 Metal 弹幕渲染器（覆盖 HDR 自动回退）。
     static var forceMetalDanmaku = false
+    /// 强制使用 DanmakuKit（即使当前为 HDR）。
+    static var forceDanmakuKit = false
     /// 显示策略变化时由引擎重新应用到当前播放层。
     static var onDisplayPolicyChange: (() -> Void)?
 
@@ -16,5 +18,6 @@ enum PlaybackDiagnosticsExperiment {
         constrainedHighHDR = false
         forceDanmakuLoadShedding = false
         forceMetalDanmaku = false
+        forceDanmakuKit = false
     }
 }

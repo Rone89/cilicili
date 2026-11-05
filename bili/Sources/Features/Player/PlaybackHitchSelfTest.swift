@@ -21,7 +21,7 @@ final class PlaybackHitchSelfTest {
 
     private var hasStarted = false
     private var libraryStore: LibraryStore?
-    private let phaseDuration: TimeInterval = 15
+    private let phaseDuration: TimeInterval = 12
 
     private init() {}
 
@@ -45,32 +45,16 @@ final class PlaybackHitchSelfTest {
             return
         }
         await runPhase(
-            "hdr_baseline_noScroll",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        )
-        await runPhase(
-            "hdr_lowDanmaku_noScroll",
+            "hdr_danmakuKit_a",
             quality: 125,
             danmaku: true,
             scroll: false,
             viewModel: viewModel
         ) {
-            PlaybackDiagnosticsExperiment.forceDanmakuLoadShedding = true
+            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
         }
         await runPhase(
-            "hdr_constrainedEDR_noScroll",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        ) {
-            PlaybackDiagnosticsExperiment.constrainedHighHDR = true
-        }
-        await runPhase(
-            "hdr_metal_noScroll",
+            "hdr_metal_a",
             quality: 125,
             danmaku: true,
             scroll: false,
@@ -79,12 +63,32 @@ final class PlaybackHitchSelfTest {
             PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
         }
         await runPhase(
-            "sdr_scroll",
+            "hdr_danmakuKit_b",
+            quality: 125,
+            danmaku: true,
+            scroll: false,
+            viewModel: viewModel
+        ) {
+            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
+        }
+        await runPhase(
+            "hdr_metal_b",
+            quality: 125,
+            danmaku: true,
+            scroll: false,
+            viewModel: viewModel
+        ) {
+            PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
+        }
+        await runPhase(
+            "sdr_danmakuKit_scroll",
             quality: 112,
             danmaku: true,
             scroll: true,
             viewModel: viewModel
-        )
+        ) {
+            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
+        }
         mark("done")
         PlaybackDiagnosticsExperiment.reset()
         PlaybackHitchMonitor.shared.setSelfTestPhase("-")
