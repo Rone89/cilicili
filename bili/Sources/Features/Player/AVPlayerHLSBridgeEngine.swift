@@ -1225,7 +1225,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func startPlaybackImmediately() {
         guard !isStopped, player.currentItem != nil else { return }
         guard !isAwaitingAudioSessionActivation, !audioSession.isDeactivating else { return }
-        if let source, source.dynamicRange.isHDR, !source.isLiveStream {
+        if let source, !source.isLiveStream, source.playbackContentMode == .video {
             PlaybackHitchMonitor.shared.start(
                 metricsID: source.metricsID,
                 quality: source.videoStream?.id,

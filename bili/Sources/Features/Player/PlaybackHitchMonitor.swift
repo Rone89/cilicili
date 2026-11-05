@@ -21,6 +21,7 @@ final class PlaybackHitchMonitor: NSObject {
     private var lastTimestamp: CFTimeInterval?
     private var windowStart: CFTimeInterval = 0
     private var intervals: [Double] = []
+    private var longGapCount = 0
     private var context: Context?
 
     private override init() {
@@ -41,6 +42,7 @@ final class PlaybackHitchMonitor: NSObject {
         windowStart = CACurrentMediaTime()
         lastTimestamp = nil
         intervals.removeAll(keepingCapacity: true)
+        longGapCount = 0
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
@@ -52,25 +54,48 @@ final class PlaybackHitchMonitor: NSObject {
         lastTimestamp = nil
         windowStart = 0
         intervals.removeAll(keepingCapacity: false)
+        longGapCount = 0
         context = nil
     }
 
     @objc private func tick(_ link: CADisplayLink) {
         let timestamp = link.timestamp
+        // 应用不在前台时（切后台、来电、控制中心）会产生超长间隔，不能算作掉帧。
+        guard UIApplication.shared.applicationState == .active else {
+            resetWindow(at: timestamp)
+            return
+        }
         if let lastTimestamp {
-            intervals.append(timestamp - lastTimestamp)
+            let interval = timestamp - lastTimestamp
+            // 超过 0.5s 的间隔视为窗口外断裂（切页面/系统弹层），单列统计。
+            if interval > 0.5 {
+                longGapCount += 1
+            } else {
+                intervals.append(interval)
+            }
         }
         lastTimestamp = timestamp
-        guard timestamp - windowStart >= windowDuration, !intervals.isEmpty else { return }
+        guard timestamp - windowStart >= windowDuration else { return }
+        guard !intervals.isEmpty || longGapCount > 0 else {
+            resetWindow(at: timestamp)
+            return
+        }
         publish(at: timestamp)
+    }
+
+    private func resetWindow(at timestamp: CFTimeInterval) {
+        lastTimestamp = nil
+        windowStart = timestamp
+        intervals.removeAll(keepingCapacity: true)
+        longGapCount = 0
     }
 
     private func publish(at timestamp: CFTimeInterval) {
         guard let context else { return }
         let sorted = intervals.sorted()
         let count = sorted.count
-        let averageMilliseconds = sorted.reduce(0, +) / Double(count) * 1_000
-        let p95Milliseconds = sorted[min(count - 1, Int(Double(count) * 0.95))] * 1_000
+        let averageMilliseconds = count > 0 ? sorted.reduce(0, +) / Double(count) * 1_000 : 0
+        let p95Milliseconds = count > 0 ? sorted[min(count - 1, Int(Double(count) * 0.95))] * 1_000 : 0
         let maxMilliseconds = (sorted.last ?? 0) * 1_000
         let targetSeconds = expectedFrameDuration()
         let hitchThreshold = max(targetSeconds * 1.8, 0.034)
@@ -83,6 +108,8 @@ final class PlaybackHitchMonitor: NSObject {
             "hdrPlaybackHitch q=\(context.quality.map(String.init) ?? "-")"
             + " range=\(context.dynamicRange)"
             + " fps=\(String(format: "%.1f", framesPerSecond))"
+            + " frames=\(count)"
+            + " longGaps=\(longGapCount)"
             + " avgMs=\(String(format: "%.1f", averageMilliseconds))"
             + " p95Ms=\(String(format: "%.1f", p95Milliseconds))"
             + " maxMs=\(String(format: "%.1f", maxMilliseconds))"
@@ -91,9 +118,7 @@ final class PlaybackHitchMonitor: NSObject {
             + " edr=\(edrHeadroom) potentialEDR=\(potentialEDRHeadroom)"
             + " thermal=\(thermalTitle(ProcessInfo.processInfo.thermalState))"
         PlayerMetricsLog.record(.playbackHitch, metricsID: context.metricsID, message: message)
-        intervals.removeAll(keepingCapacity: true)
-        // 以当前帧时间为新窗口起点，避免窗口漂移累积。
-        windowStart = timestamp
+        resetWindow(at: timestamp)
     }
 
     private func expectedFrameDuration() -> Double {
