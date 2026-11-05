@@ -21,7 +21,7 @@ final class PlaybackHitchSelfTest {
 
     private var hasStarted = false
     private var libraryStore: LibraryStore?
-    private let phaseDuration: TimeInterval = 12
+    private let phaseDuration: TimeInterval = 18
 
     private init() {}
 
@@ -44,73 +44,35 @@ final class PlaybackHitchSelfTest {
             mark("failed reason=noPlayback")
             return
         }
-        await runPhase(
-            "hdr_danmakuKit_a",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        ) {
+        // `--hitch-mode off|kit|metal`：每次启动只固定一种弹幕配置，避免运行时切换污染数据。
+        let mode = Self.argumentValue(after: "--hitch-mode") ?? "off"
+        PlaybackDiagnosticsExperiment.reset()
+        switch mode {
+        case "kit":
             PlaybackDiagnosticsExperiment.forceDanmakuKit = true
-        }
-        await runPhase(
-            "hdr_metal_a",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        ) {
+            libraryStore?.setDanmakuEnabled(true)
+        case "metal":
             PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
+            libraryStore?.setDanmakuEnabled(true)
+        default:
+            libraryStore?.setDanmakuEnabled(false)
         }
-        await runPhase(
-            "hdr_danmakuKit_b",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        ) {
-            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
+        await selectQuality(125, viewModel: viewModel)
+        _ = await waitForPlayback(viewModel, timeout: 25)
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        for index in 1...3 {
+            await runPhase(
+                "hdr_\(mode)_\(index)",
+                scroll: false
+            )
         }
-        await runPhase(
-            "hdr_metal_b",
-            quality: 125,
-            danmaku: true,
-            scroll: false,
-            viewModel: viewModel
-        ) {
-            PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
-        }
-        await runPhase(
-            "sdr_danmakuKit_scroll",
-            quality: 112,
-            danmaku: true,
-            scroll: true,
-            viewModel: viewModel
-        ) {
-            PlaybackDiagnosticsExperiment.forceDanmakuKit = true
-        }
-        mark("done")
+        mark("done mode=\(mode)")
         PlaybackDiagnosticsExperiment.reset()
         PlaybackHitchMonitor.shared.setSelfTestPhase("-")
     }
 
-    private func runPhase(
-        _ name: String,
-        quality: Int,
-        danmaku: Bool,
-        scroll: Bool,
-        viewModel: VideoDetailViewModel,
-        configure: @MainActor () -> Void = {}
-    ) async {
-        mark("\(name)_start")
+    private func runPhase(_ name: String, scroll: Bool) async {
         PlaybackHitchMonitor.shared.setSelfTestPhase(name)
-        PlaybackDiagnosticsExperiment.reset()
-        configure()
-        PlaybackDiagnosticsExperiment.onDisplayPolicyChange?()
-        libraryStore?.setDanmakuEnabled(danmaku)
-        await selectQuality(quality, viewModel: viewModel)
-        _ = await waitForPlayback(viewModel, timeout: 25)
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
         mark("\(name)_measuring")
         if scroll {
             await DetailScrollDriver.scroll(duration: phaseDuration)
@@ -118,6 +80,15 @@ final class PlaybackHitchSelfTest {
             try? await Task.sleep(nanoseconds: UInt64(phaseDuration * 1_000_000_000))
         }
         mark("\(name)_end")
+        PlaybackHitchMonitor.shared.setSelfTestPhase("-")
+    }
+
+    private static func argumentValue(after flag: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
+            return nil
+        }
+        return arguments[index + 1]
     }
 
     private func selectQuality(_ quality: Int, viewModel: VideoDetailViewModel) async {
