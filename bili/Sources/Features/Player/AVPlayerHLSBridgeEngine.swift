@@ -309,6 +309,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         PlaybackDiagnosticsExperiment.onDisplayPolicyChange = { [weak self] in
             self?.refreshDisplayDynamicRangePolicy()
         }
+        PlaybackHitchMonitor.shared.setNetworkSnapshotProvider { [weak self] in
+            self?.hlsBridge?.remoteDownloadSnapshot() ?? (0, 0, 0)
+        }
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
             removePlayerLayer()
@@ -583,6 +586,18 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         invalidateAudioSessionActivation()
         tearDownCurrentItemForReplacement()
         self.source = source
+        PlayerMetricsLog.record(
+            .manifestStage,
+            metricsID: source.metricsID,
+            title: source.title,
+            message: "streamInfo"
+                + " video=\(source.videoStream?.codecs ?? "-")"
+                + " res=\(source.videoStream?.resolutionLabel ?? "-")"
+                + " fps=\(source.videoStream?.frameRate ?? "-")"
+                + " audio=\(source.audioStream?.codecs ?? "-")"
+                + " range=\(source.dynamicRange.rawValue)"
+                + " hw=\(source.videoStream?.isHardwareDecodingCompatibleVideo ?? false)"
+        )
         let recoveryKey = playbackFailureRecoveryKey(for: source)
         if !isPlaybackFailureRecoveryInProgress {
             playbackFailureRecoveryAttempts[recoveryKey] = 0
@@ -821,6 +836,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
         PlaybackHitchMonitor.shared.stop(owner: self)
+        PlaybackHitchMonitor.shared.setNetworkSnapshotProvider(nil)
         playbackGeneration &+= 1
         invalidateAudioSessionActivation()
         isStopped = true
@@ -4010,6 +4026,11 @@ struct LocalHLSBridge: Sendable {
 
     nonisolated func requestCountSnapshot() -> (total: Int, manifests: Int) {
         server.requestCountSnapshot()
+    }
+
+    nonisolated func remoteDownloadSnapshot() -> (bytes: Int, active: Int, peak: Int) {
+        let snapshot = server.downloadStats.snapshot()
+        return (snapshot.bytes, snapshot.active, snapshot.peak)
     }
 
     nonisolated func withCacheDiagnostics(routePlanState: String, serverState: String) -> LocalHLSBridge {
@@ -8002,6 +8023,41 @@ actor HLSSourcePreferenceCache {
 }
 
 nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
+    nonisolated final class RemoteDownloadStats: @unchecked Sendable {
+        struct Snapshot {
+            let bytes: Int
+            let active: Int
+            let peak: Int
+        }
+
+        private struct State {
+            var bytes = 0
+            var active = 0
+            var peak = 0
+        }
+
+        private let lock = OSAllocatedUnfairLock(initialState: State())
+
+        nonisolated func started() {
+            lock.withLock {
+                $0.active += 1
+                $0.peak = max($0.peak, $0.active)
+            }
+        }
+
+        nonisolated func finished(bytes: Int) {
+            lock.withLock {
+                $0.active = max(0, $0.active - 1)
+                $0.bytes += max(bytes, 0)
+            }
+        }
+
+        nonisolated func snapshot() -> Snapshot {
+            lock.withLock { Snapshot(bytes: $0.bytes, active: $0.active, peak: $0.peak) }
+        }
+    }
+
+    nonisolated let downloadStats = RemoteDownloadStats()
     #if DEBUG
     let recoveryScope = RecoveryRangeScope()
     #endif
@@ -8384,6 +8440,8 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
 
         do {
             let fetchStart = CACurrentMediaTime()
+            downloadStats.started()
+            defer { downloadStats.finished(bytes: fetchRange.length) }
             if shouldStreamRemoteRange(request: request, range: fetchRange, transform: transform) {
                 #if DEBUG
                 try await RecoveryRangeTaskContext.$current.withValue(recoveryTicket.map { .init(ticket: $0) }) {

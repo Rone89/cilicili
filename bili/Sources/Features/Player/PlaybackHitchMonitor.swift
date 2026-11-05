@@ -27,6 +27,8 @@ final class PlaybackHitchMonitor: NSObject {
     private var danmakuItemCount = 0
     private var danmakuEnabled = false
     private var selfTestPhase = "-"
+    private var networkSnapshotProvider: (() -> (bytes: Int, active: Int, peak: Int))?
+    private var lastNetworkBytes = 0
     private var context: Context?
 
     private override init() {
@@ -71,6 +73,11 @@ final class PlaybackHitchMonitor: NSObject {
 
     func setSelfTestPhase(_ phase: String) {
         selfTestPhase = phase
+    }
+
+    func setNetworkSnapshotProvider(_ provider: (() -> (bytes: Int, active: Int, peak: Int))?) {
+        networkSnapshotProvider = provider
+        lastNetworkBytes = 0
     }
 
     func stop(owner: AnyObject) {
@@ -134,6 +141,11 @@ final class PlaybackHitchMonitor: NSObject {
         let screen = activeScreen()
         let edrHeadroom = screen.map { String(format: "%.2f", $0.currentEDRHeadroom) } ?? "-"
         let potentialEDRHeadroom = screen.map { String(format: "%.2f", $0.potentialEDRHeadroom) } ?? "-"
+        let networkSnapshot = networkSnapshotProvider?()
+        let downloadedBytes = max((networkSnapshot?.bytes ?? 0) - lastNetworkBytes, 0)
+        if let networkSnapshot {
+            lastNetworkBytes = networkSnapshot.bytes
+        }
         let message =
             "hdrPlaybackHitch q=\(context.quality.map(String.init) ?? "-")"
             + " range=\(context.dynamicRange)"
@@ -146,6 +158,8 @@ final class PlaybackHitchMonitor: NSObject {
             + " hitches=\(hitchCount)"
             + " targetMs=\(String(format: "%.1f", targetSeconds * 1_000))"
             + " edr=\(edrHeadroom) potentialEDR=\(potentialEDRHeadroom)"
+            + " dlBytes=\(downloadedBytes)"
+            + " netActive=\(networkSnapshot?.active ?? -1) netPeak=\(networkSnapshot?.peak ?? -1)"
             + " danmaku=\(danmakuItemCount) danmakuOn=\(danmakuEnabled)"
             + " phase=\(selfTestPhase)"
             + " thermal=\(thermalTitle(ProcessInfo.processInfo.thermalState))"
