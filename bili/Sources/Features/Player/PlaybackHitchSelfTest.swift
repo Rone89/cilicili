@@ -21,7 +21,7 @@ final class PlaybackHitchSelfTest {
 
     private var hasStarted = false
     private var libraryStore: LibraryStore?
-    private let phaseDuration: TimeInterval = 20
+    private let phaseDuration: TimeInterval = 15
 
     private init() {}
 
@@ -45,41 +45,48 @@ final class PlaybackHitchSelfTest {
             return
         }
         await runPhase(
-            "hdr_on_noScroll",
+            "hdr_baseline_noScroll",
             quality: 125,
             danmaku: true,
             scroll: false,
             viewModel: viewModel
         )
         await runPhase(
-            "hdr_on_scroll",
+            "hdr_lowDanmaku_noScroll",
             quality: 125,
             danmaku: true,
-            scroll: true,
+            scroll: false,
             viewModel: viewModel
-        )
+        ) {
+            PlaybackDiagnosticsExperiment.forceDanmakuLoadShedding = true
+        }
         await runPhase(
-            "hdr_off_scroll",
+            "hdr_constrainedEDR_noScroll",
             quality: 125,
-            danmaku: false,
-            scroll: true,
+            danmaku: true,
+            scroll: false,
             viewModel: viewModel
-        )
+        ) {
+            PlaybackDiagnosticsExperiment.constrainedHighHDR = true
+        }
         await runPhase(
-            "sdr_on_scroll",
+            "hdr_metal_noScroll",
+            quality: 125,
+            danmaku: true,
+            scroll: false,
+            viewModel: viewModel
+        ) {
+            PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
+        }
+        await runPhase(
+            "sdr_scroll",
             quality: 112,
             danmaku: true,
-            scroll: true,
-            viewModel: viewModel
-        )
-        await runPhase(
-            "sdr_off_scroll",
-            quality: 112,
-            danmaku: false,
             scroll: true,
             viewModel: viewModel
         )
         mark("done")
+        PlaybackDiagnosticsExperiment.reset()
         PlaybackHitchMonitor.shared.setSelfTestPhase("-")
     }
 
@@ -88,10 +95,14 @@ final class PlaybackHitchSelfTest {
         quality: Int,
         danmaku: Bool,
         scroll: Bool,
-        viewModel: VideoDetailViewModel
+        viewModel: VideoDetailViewModel,
+        configure: @MainActor () -> Void = {}
     ) async {
         mark("\(name)_start")
         PlaybackHitchMonitor.shared.setSelfTestPhase(name)
+        PlaybackDiagnosticsExperiment.reset()
+        configure()
+        PlaybackDiagnosticsExperiment.onDisplayPolicyChange?()
         libraryStore?.setDanmakuEnabled(danmaku)
         await selectQuality(quality, viewModel: viewModel)
         _ = await waitForPlayback(viewModel, timeout: 25)

@@ -306,6 +306,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         pendingSurfaceDetachTask?.cancel()
         pendingSurfaceDetachTask = nil
         surfaceView = surface
+        PlaybackDiagnosticsExperiment.onDisplayPolicyChange = { [weak self] in
+            self?.refreshDisplayDynamicRangePolicy()
+        }
         if let playerViewController {
             configureNativePlaybackController(playerViewController)
             removePlayerLayer()
@@ -1715,6 +1718,15 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         return layer
     }
 
+    private func refreshDisplayDynamicRangePolicy() {
+        if let playerViewController {
+            applyDisplayDynamicRangePolicy(to: playerViewController)
+        }
+        if let playerLayer {
+            applyDisplayDynamicRangePolicy(to: playerLayer)
+        }
+    }
+
     private func applyDisplayDynamicRangePolicy(to controller: AVPlayerViewController) {
         let isHDR = source?.dynamicRange.isHDR == true
         var policyParts = ["target=controller", "hdr=\(isHDR)"]
@@ -1741,7 +1753,10 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
             policyParts.append("dvPolicy=\(DolbyVisionRenderingPolicy.stored().playablePolicy.rawValue)")
         }
         // 只在取值变化时写入，避免重复触发 CALayer/EDR 合成配置。
-        let preferredRange: CALayer.DynamicRange = isHDR ? .high : .standard
+        let preferredRange: CALayer.DynamicRange =
+            isHDR
+            ? (PlaybackDiagnosticsExperiment.constrainedHighHDR ? .constrainedHigh : .high)
+            : .standard
         if layer.preferredDynamicRange != preferredRange {
             layer.preferredDynamicRange = preferredRange
         }

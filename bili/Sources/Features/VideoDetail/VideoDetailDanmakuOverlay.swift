@@ -24,7 +24,8 @@ struct VideoDetailDanmakuOverlay: View {
             playbackRate: snapshot.playbackRate,
             isEnabled: snapshot.isEnabled && isVisibleInCurrentOrientation,
             hasPresentedPlayback: snapshot.hasPresentedPlayback,
-            isLoadShedding: snapshot.isLoadShedding,
+            isLoadShedding: snapshot.isLoadShedding
+                || PlaybackDiagnosticsExperiment.forceDanmakuLoadShedding,
             settings: snapshot.settings,
             topInset: usesLandscapePlaybackChrome ? 28 : 8,
             bottomInset: usesLandscapePlaybackChrome ? 84 : 54,
@@ -33,8 +34,9 @@ struct VideoDetailDanmakuOverlay: View {
             onPlaybackTime: onPlaybackTime,
             // Metal 弹幕在 4K HDR（EDR 合成）下与视频解码/合成争抢 GPU，实测会导致
             // 播放页 UI 严重掉帧（fps 2–27、最长卡顿 2s+）。HDR 播放回退到 DanmakuKit。
-            metalRendererEnabled: libraryStore.metalDanmakuRendererExperimentEnabled
-                && !playerViewModel.playbackDynamicRange.isHDR,
+            metalRendererEnabled: PlaybackDiagnosticsExperiment.forceMetalDanmaku
+                || (libraryStore.metalDanmakuRendererExperimentEnabled
+                    && !playerViewModel.playbackDynamicRange.isHDR),
             logicalCanvasSize: logicalCanvasSize,
             videoAspectRatio: videoAspectRatio
         )
