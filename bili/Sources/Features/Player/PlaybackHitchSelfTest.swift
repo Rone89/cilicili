@@ -61,12 +61,13 @@ final class PlaybackHitchSelfTest {
             libraryStore?.setDanmakuEnabled(false)
             viewModel.isDanmakuEnabled = false
         }
-        await selectQuality(125, viewModel: viewModel)
+        let targetQuality = mode == "sdr" ? 112 : 125
+        await selectQuality(targetQuality, viewModel: viewModel)
         _ = await waitForPlayback(viewModel, timeout: 25)
         try? await Task.sleep(nanoseconds: 3_000_000_000)
         for index in 1...phaseCount {
             await runPhase(
-                "hdr_\(mode)_\(index)",
+                "\(mode)_\(index)",
                 scroll: false
             )
         }
