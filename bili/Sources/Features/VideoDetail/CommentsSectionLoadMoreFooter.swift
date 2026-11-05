@@ -23,32 +23,29 @@ struct CommentsSectionLoadMoreFooter: View {
                 actions.retryLoadMoreComments()
             }
         } else if store.hasMoreComments {
-            // 无缝下滑续载：三路触发。
-            // 1) onAppear：footer 被构建（进入视口/预取范围）时加载 —— 覆盖"已经滚到底、
-    //        没有后续滚动帧"的场景（onScrollGeometryChange 只在值变化时回调，到底后
-    //        不再触发）；
-            // 2) onScrollGeometryChange：footer 已在屏上、用户继续下滑时提前预取；
-            // 3) onTapGesture：手动兜底。
-            // 注意：不要给本视图加 `.id(...)`，也不要改回零高度常驻视图——每次分页后
-            // 身份重建会重触发 onAppear，形成无节流分页循环（实测拉完 1196 条评论）。
-            // VM 层另有 800ms 节流 + 总数判尾兜底。
+            // 无缝下滑续载：观察 footer 自身的全局坐标（onGeometryChange 对任何滚动
+            // 容器都有效，不依赖 onAppear 生命周期 / onScrollGeometryChange 的滚动祖先
+            // 解析——前两者在本页 LazyVStack 上实测均不可靠）。footer 进入屏幕可视范围
+            // 即自动加载；VM 层 800ms 节流 + 总数判尾兜底防失控。
             Text("继续下滑加载更多评论")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
-                .onAppear {
-                    Task { await actions.loadMore() }
-                }
                 .onTapGesture {
                     Task { await actions.loadMore() }
                 }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    let viewportBottom = geometry.contentOffset.y + geometry.containerSize.height
-                    return geometry.contentSize.height - viewportBottom
-                } action: { _, distanceFromEnd in
-                    guard distanceFromEnd < 1400, !store.loadMoreState.isLoading else { return }
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .global)
+                } action: { _, frame in
+                    guard let screenHeight = Self.visibleScreenHeight() else { return }
+                    // footer 顶边进入屏幕底部 300pt 缓冲区即视为"接近底部"。
+                    let isNearViewport = frame.minY < screenHeight + 300
+                    guard isNearViewport, frame.maxY > 0, !store.loadMoreState.isLoading else { return }
+                    Task { await actions.loadMore() }
+                }
+                .onAppear {
                     Task { await actions.loadMore() }
                 }
                 .accessibilityIdentifier("comments.loadMore")
@@ -59,5 +56,12 @@ struct CommentsSectionLoadMoreFooter: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
         }
+    }
+
+    private static func visibleScreenHeight() -> CGFloat? {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first?
+            .bounds.height
     }
 }
