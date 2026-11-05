@@ -171,3 +171,17 @@ hdr=q125 range=PQ color=nclx primaries=9 transfer=16 matrix=9 limited codec=hvc1
 - HDR 无弹幕：59–60fps / p95 17ms；HDR + Metal 弹幕：60–89fps / p95 17ms。
 
 UX 变化：评论不再自动无限加载，需要点击「加载更多评论」按钮继续加载。
+
+### 最终方案：滚动几何触发（build 92→93）
+
+build 92 曾改回 `onAppear` 自动加载，自测显示仍会失控（LazyVStack 预取范围内 footer 反复触发，65 页再次全部拉完）。最终改为：
+
+- `CommentsSectionLoadMoreFooter` 用 `onScrollGeometryChange` 监听滚动位置，仅当距列表底部 < 700pt 时自动加载下一页；保留点按加载与"正在加载/失败重试/没有更多"状态。
+- `loadMoreComments()` 增加 PiliPlus 式总数判尾：已加载条数 ≥ `detail.stat.reply` 时置 `commentsEnd`。
+
+验证（build 93，自动自测 sdr 模式含滚动阶段）：同一视频 24 个窗口最低 59fps、滚动阶段最高 103fps，p95 全程 16.7ms，静置只加载 1 页，滚动开始才触发下一页。UX 与 PiliPlus 一致（滚动到底自动加载）。
+
+诊断过程要点（供后续参考）：
+
+- 排除法曾误指向 HDR/EDR、弹幕渲染器、网络流式下载等，最终靠 `skipCommentLoading` A/B 和 `commentPageLoaded` 计数锁定评论分页循环。
+- `--hitch-self-test --hitch-mode <off|kit|metal|sdr|nostream|nocomment>`（配合 `--start-detail --start-bvid ...`）可全自动复现与回归，性能类问题建议优先搭建此类可编程复现通道。
