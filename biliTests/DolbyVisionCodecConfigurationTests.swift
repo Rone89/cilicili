@@ -73,6 +73,47 @@ final class DolbyVisionCodecConfigurationTests: XCTestCase {
         XCTAssertEqual(BiliVideoDynamicRange.dolbyVision.hlsVideoRangeAttribute, "PQ")
     }
 
+    func testHDR10VideoRangeFallbackOnlyForAuthoritativeQualities() {
+        XCTAssertEqual(HLSRendition.hlsVideoRangeFallback(dynamicRange: .hdr10, quality: 125), "PQ")
+        XCTAssertEqual(HLSRendition.hlsVideoRangeFallback(dynamicRange: .hdr10, quality: 129), "PQ")
+        XCTAssertNil(HLSRendition.hlsVideoRangeFallback(dynamicRange: .hdr10, quality: 120))
+        XCTAssertNil(HLSRendition.hlsVideoRangeFallback(dynamicRange: .hdr10, quality: nil))
+        XCTAssertEqual(HLSRendition.hlsVideoRangeFallback(dynamicRange: .hlg, quality: nil), "HLG")
+        XCTAssertNil(HLSRendition.hlsVideoRangeFallback(dynamicRange: .sdr, quality: 125))
+    }
+
+    func testHDR10HEVCInitializationAddsPQColorInformation() {
+        let data = makeInitializationDataWithSampleEntry(
+            sampleEntryType: "hev1",
+            boxType: "hvcC",
+            payload: makeHEVCPayload(profileIDC: 2, compatibilityFlags: 4, levelIDC: 153)
+        )
+        XCTAssertNil(DolbyVisionCodecConfiguration.videoColorInformation(from: data))
+
+        let normalization = DolbyVisionCodecConfiguration.normalizedHEVCInitializationDataForHLS(
+            data,
+            dynamicRange: .hdr10
+        )
+        let color = DolbyVisionCodecConfiguration.videoColorInformation(from: normalization.data)
+        XCTAssertEqual(color?.colorPrimaries, 9)
+        XCTAssertEqual(color?.transferCharacteristics, 16)
+        XCTAssertEqual(color?.matrixCoefficients, 9)
+        XCTAssertEqual(color?.hlsVideoRangeAttribute, "PQ")
+    }
+
+    func testSDRHEVCInitializationKeepsMissingColorInformation() {
+        let data = makeInitializationDataWithSampleEntry(
+            sampleEntryType: "hev1",
+            boxType: "hvcC",
+            payload: makeHEVCPayload(profileIDC: 2, compatibilityFlags: 4, levelIDC: 153)
+        )
+        let normalization = DolbyVisionCodecConfiguration.normalizedHEVCInitializationDataForHLS(
+            data,
+            dynamicRange: .sdr
+        )
+        XCTAssertNil(DolbyVisionCodecConfiguration.videoColorInformation(from: normalization.data))
+    }
+
     func testParsesPQColorInformationFromInitializationData() {
         let data = makeInitializationDataWithSampleEntry(
             sampleEntryType: "hvc1",

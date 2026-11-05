@@ -89,6 +89,8 @@ enum BiliVideoDynamicRange: String, Hashable, Sendable {
         case .dolbyVision:
             return "PQ"
         case .hdr10:
+            // HDR10 不按标题/动态范围猜测：B 站 HDR 真彩（125）由播放层按画质码兜底，
+            // 其余仅信任 init 段 colr 信息。详见 HLSRendition.hlsVideoRangeValue。
             return nil
         case .hlg:
             return "HLG"

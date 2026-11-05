@@ -34,6 +34,35 @@
 2. 若依然失败：日志会显示 rescue 的失败原因（如 app 端接口返回码），据此继续定位。
 3. HDR 真彩（125）单项验证：找一个官方 App 里明确显示"HDR 真彩"的视频，App 内清晰度菜单应出现 HDR 真彩选项；若菜单仍无该选项，先在官方 App 确认该视频当前确实提供 125，再把视频 BV 号记录下来继续排查（本轮日志无法确认用户的 HDR 测试视频是哪一条）。
 
+## 追加：HDR 分辨率可播但无 HDR 效果（同日第二轮）
+
+用户补充：HDR 分辨率可选、能播，但画面没有 HDR 效果。重新拉取设备诊断日志后确认现场：
+
+- `2026-11-05T04:51:30Z` 番剧《107 上苍》（BV1QMxz6hEV5）播放地址返回 `qualities=125d,120d,...`，用户手动切到 **HDR 真彩（q125）**。
+- 切换后 HLS 走 `codec=hvc1.2.4.L153.90`、`res=3840x2160`、`bridge=true`，播放正常。
+- 对比：两条杜比视界视频（BV1vU4P6gEf3、BV1HEf2YWEvs）在 Manifest 事件里均有 `nativeHDR=localVideoHLS ... codec=dvh1.../hvc1...` 记录，HDR 真彩这条没有任何 range 相关记录。
+
+根因（代码层，已定位）：
+
+1. `HLSRendition.hlsVideoRangeValue` 对非杜比轨只信任 init 段的 `colr` box（`videoColorInformation`）。B 站 HDR10 流的 init 段若缺少 `colr`、或 transfer 不是 PQ(16)/HLG(18)，`VIDEO-RANGE` 属性整个缺失，AVPlayer 按 SDR 渲染 —— 表现正是"能播、但没 HDR 效果"。
+2. `BiliVideoDynamicRange.hlsVideoRangeAttribute` 对 `.hdr10` 曾返回 `nil`（刻意"不猜测"，有单测守护），因此没有任何按动态范围的兜底。
+3. `normalizedHEVCInitializationDataForHLS` 只把 `hev1` 重写为 `hvc1`，不像杜比路径那样补齐 `colr`（杜比路径有 `addingHLGColorInformationIfMissing`），HDR10 的 init 段因此可能完全没有颜色信息。
+
+修复（保守、可验证）：
+
+- `HLSRendition.hlsVideoRangeValue`：colr 优先；缺失时按 **B 站权威画质码**兜底 —— 仅 q125（HDR 真彩）/ q129（HDR Vivid）标 `PQ`，`.hlg` 标 `HLG`，其余 HDR10（标题推断）仍不猜测。
+- `DolbyVisionCodecConfiguration.normalizedHEVCInitializationDataForHLS(_:dynamicRange:)`：对 `.hdr10` 注入 BT.2020 + PQ（primaries 9 / transfer 16 / matrix 9）`colr`，对 `.hlg` 注入 transfer 18；仅当源 init 段没有 colr 时注入。HLG 注入实现泛化为通用 transfer 参数，原杜比路径行为不变。
+- 诊断增强：Manifest 持久化记录新增 `version=` 与 `hdr=q<画质> range=<PQ/HLG/-水平> color=<primaries/transfer/matrix>`；video-only 路径记录也补 `range/color`。下次真机测试可直接从 `Documents/player-diagnostics.log` 核准 `VIDEO-RANGE` 是否生效。
+
+单元测试：`DolbyVisionCodecConfigurationTests` 新增 HDR10 PQ 注入、SDR 不注入、画质兜底白名单（125/129 才 PQ）三组断言；保留原有"HDR10 不按标题猜测"断言。
+
+验收（睡醒后）：
+
+1. 重进《107 上苍》等有 HDR 真彩的视频 → 播放器设置里切换 HDR 真彩。
+2. 画面应进入 HDR 显示（高光更亮、暗部层次更明显；可在系统控制中心/照片 HDR 对比）。
+3. 诊断日志应出现 `hdr=q125 range=PQ`（若 init 自带 colr 则 range 仍为 PQ）；`version=8` 表示 master playlist 已带 `VIDEO-RANGE`。
+4. 若日志显示 `range=PQ` 但画面仍无 HDR 效果，则问题在渲染输出层（AVPlayerLayer/EDR），需继续从该层排查。
+
 ## 提交
 
 - `4ec821a` AI 字幕实验（上一目标遗留，未验收）

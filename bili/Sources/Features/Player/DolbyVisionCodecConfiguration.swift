@@ -173,7 +173,10 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         return baseLayerCodec
     }
 
-    nonisolated static func normalizedHEVCInitializationDataForHLS(_ initializationData: Data?) -> DolbyVisionInitializationNormalization {
+    nonisolated static func normalizedHEVCInitializationDataForHLS(
+        _ initializationData: Data?,
+        dynamicRange: BiliVideoDynamicRange? = nil
+    ) -> DolbyVisionInitializationNormalization {
         guard let initializationData, !initializationData.isEmpty else {
             return DolbyVisionInitializationNormalization(
                 data: initializationData,
@@ -199,12 +202,33 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         if hlsType != originalType {
             bytes.replaceSubrange(sampleEntryTypeOffset..<(sampleEntryTypeOffset + 4), with: Array(hlsType.utf8))
         }
+        // HDR10 / HLG 的 colr 若在源 init 段缺失，补齐 BT.2020 + PQ/HLG 颜色信息，
+        // 让 AVPlayer 在初始化时就能识别动态范围，而不是退化成 SDR 渲染。
+        if let transferCharacteristics = hdrColorTransferCharacteristics(for: dynamicRange) {
+            bytes = addingColorInformationIfMissing(
+                to: bytes,
+                transferCharacteristics: transferCharacteristics
+            )
+        }
         return DolbyVisionInitializationNormalization(
             data: Data(bytes),
             originalSampleEntryType: originalType,
             hlsSampleEntryType: hlsType,
             hlsBaseLayerCodec: hlsBaseLayerCodec
         )
+    }
+
+    nonisolated static func hdrColorTransferCharacteristics(
+        for dynamicRange: BiliVideoDynamicRange?
+    ) -> UInt16? {
+        switch dynamicRange {
+        case .hdr10:
+            return 16
+        case .hlg:
+            return 18
+        default:
+            return nil
+        }
     }
 
     nonisolated static func hevcCodecString(from initializationData: Data?) -> String? {
@@ -407,8 +431,19 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
     }
 
     nonisolated private static func addingHLGColorInformationIfMissing(to bytes: [UInt8]) -> [UInt8] {
+        addingColorInformationIfMissing(to: bytes, transferCharacteristics: 18)
+    }
+
+    nonisolated private static func addingColorInformationIfMissing(
+        to bytes: [UInt8],
+        transferCharacteristics: UInt16
+    ) -> [UInt8] {
         guard videoColorInformation(from: Data(bytes)) == nil,
-              let result = rebuiltBoxesAddingHLGColorInformation(in: bytes, range: 0..<bytes.count),
+              let result = rebuiltBoxesAddingColorInformation(
+                  in: bytes,
+                  range: 0..<bytes.count,
+                  transferCharacteristics: transferCharacteristics
+              ),
               result.added
         else { return bytes }
         return result.bytes
@@ -504,9 +539,10 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         )
     }
 
-    nonisolated private static func rebuiltBoxesAddingHLGColorInformation(
+    nonisolated private static func rebuiltBoxesAddingColorInformation(
         in bytes: [UInt8],
-        range: Range<Int>
+        range: Range<Int>,
+        transferCharacteristics: UInt16
     ) -> (bytes: [UInt8], added: Bool)? {
         var output = [UInt8]()
         var added = false
@@ -519,13 +555,21 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
             let rebuiltBox: [UInt8]
             let didAddInBox: Bool
             if box.type == "stsd" {
-                guard let rebuilt = rebuiltSTSDAddingHLGColorInformation(in: bytes, payloadRange: box.payloadRange) else {
+                guard let rebuilt = rebuiltSTSDAddingColorInformation(
+                    in: bytes,
+                    payloadRange: box.payloadRange,
+                    transferCharacteristics: transferCharacteristics
+                ) else {
                     return nil
                 }
                 rebuiltBox = makeBox(box.type, payload: rebuilt.bytes)
                 didAddInBox = rebuilt.added
             } else if isContainerBox(box.type) {
-                guard let rebuilt = rebuiltBoxesAddingHLGColorInformation(in: bytes, range: box.payloadRange) else {
+                guard let rebuilt = rebuiltBoxesAddingColorInformation(
+                    in: bytes,
+                    range: box.payloadRange,
+                    transferCharacteristics: transferCharacteristics
+                ) else {
                     return nil
                 }
                 rebuiltBox = makeBox(box.type, payload: rebuilt.bytes)
@@ -541,9 +585,10 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         return (output, added)
     }
 
-    nonisolated private static func rebuiltSTSDAddingHLGColorInformation(
+    nonisolated private static func rebuiltSTSDAddingColorInformation(
         in bytes: [UInt8],
-        payloadRange: Range<Int>
+        payloadRange: Range<Int>,
+        transferCharacteristics: UInt16
     ) -> (bytes: [UInt8], added: Bool)? {
         guard payloadRange.lowerBound + 8 <= payloadRange.upperBound else { return nil }
         var output = Array(bytes[payloadRange.lowerBound..<(payloadRange.lowerBound + 8)])
@@ -555,10 +600,11 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
                 return nil
             }
             if !added,
-               let rebuilt = rebuiltSampleEntryAddingHLGColorInformation(
+               let rebuilt = rebuiltSampleEntryAddingColorInformation(
                    in: bytes,
                    entryType: entry.type,
-                   payloadRange: entry.payloadRange
+                   payloadRange: entry.payloadRange,
+                   transferCharacteristics: transferCharacteristics
                ) {
                 output += makeBox(entry.type, payload: rebuilt.bytes)
                 added = rebuilt.added
@@ -571,10 +617,11 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         return (output, added)
     }
 
-    nonisolated private static func rebuiltSampleEntryAddingHLGColorInformation(
+    nonisolated private static func rebuiltSampleEntryAddingColorInformation(
         in bytes: [UInt8],
         entryType: String,
-        payloadRange: Range<Int>
+        payloadRange: Range<Int>,
+        transferCharacteristics: UInt16
     ) -> (bytes: [UInt8], added: Bool)? {
         guard isVisualSampleEntry(entryType),
               payloadRange.lowerBound + 78 <= payloadRange.upperBound
@@ -583,7 +630,8 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         let childRange = fixedHeaderEnd..<payloadRange.upperBound
         guard !containsBox("colr", in: bytes, range: childRange) else { return nil }
         return (
-            Array(bytes[payloadRange.lowerBound..<payloadRange.upperBound]) + hlgColorInformationBox(),
+            Array(bytes[payloadRange.lowerBound..<payloadRange.upperBound])
+                + colorInformationBox(transferCharacteristics: transferCharacteristics),
             true
         )
     }
@@ -723,12 +771,12 @@ nonisolated struct DolbyVisionCodecConfiguration: Equatable, Sendable {
         return false
     }
 
-    nonisolated private static func hlgColorInformationBox() -> [UInt8] {
+    nonisolated private static func colorInformationBox(transferCharacteristics: UInt16) -> [UInt8] {
         makeBox(
             "colr",
             payload: Array("nclx".utf8)
                 + uint16Bytes(9)
-                + uint16Bytes(18)
+                + uint16Bytes(transferCharacteristics)
                 + uint16Bytes(9)
                 + [0]
         )

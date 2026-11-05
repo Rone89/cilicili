@@ -4166,7 +4166,7 @@ struct LocalHLSBridge: Sendable {
         )
         await recordManifestStage(
             metricsID: metricsID,
-            "nativeHDR=localVideoHLS \(formatMilliseconds(elapsedMilliseconds)) codec=\(rendition.hlsAdvertisedCodec)"
+            "nativeHDR=localVideoHLS \(formatMilliseconds(elapsedMilliseconds)) codec=\(rendition.hlsAdvertisedCodec) range=\(rendition.hlsVideoRangeValue ?? "-") color=\(rendition.videoColorInformation?.diagnosticSummary ?? "-")"
         )
         return LocalHLSVideoOnlyBridge(
             masterPlaylistURL: renderedPlaylists.masterPlaylistURL,
@@ -4455,9 +4455,15 @@ struct LocalHLSBridge: Sendable {
                 "hlsBridgeDolbyVisionManifest \(dolbyVisionManifestSummary, privacy: .public)"
             )
         }
+        let hdrManifestSummary = videoRenditions
+            .filter { $0.dynamicRange.isHDR }
+            .map { rendition in
+                "q\(rendition.quality ?? -1) range=\(rendition.hlsVideoRangeValue ?? "-") color=\(rendition.videoColorInformation?.diagnosticSummary ?? "-") codec=\(rendition.hlsAdvertisedCodec)"
+            }
+            .joined(separator: ";")
         await recordManifestStage(
             metricsID: metricsID,
-            "server=\(formatMilliseconds(serverMilliseconds)) routes=\(routes.count) variants=\(videoRenditions.count) codec=\(videoRendition.codec)"
+            "server=\(formatMilliseconds(serverMilliseconds)) routes=\(routes.count) variants=\(videoRenditions.count) codec=\(videoRendition.codec) version=\(plan.masterPlaylistVersion)\(hdrManifestSummary.isEmpty ? "" : " hdr=\(hdrManifestSummary)")"
         )
 
         let originalMediaTimeOffset = [videoRendition.mediaTimeOffset, audioRendition.mediaTimeOffset]
@@ -5686,7 +5692,10 @@ struct LocalHLSBridge: Sendable {
             ? false
             : usesHEVCCompatibleHLS(for: track, codec: streamCodec)
         let hevcInitializationNormalization = dolbyVisionConfiguration == nil && usesHEVCCompatibleHLS
-            ? DolbyVisionCodecConfiguration.normalizedHEVCInitializationDataForHLS(initializationData)
+            ? DolbyVisionCodecConfiguration.normalizedHEVCInitializationDataForHLS(
+                initializationData,
+                dynamicRange: track.dynamicRange
+            )
             : nil
         let initializationNormalization = dolbyVisionConfiguration?.normalizedInitializationDataForHLS(
             initializationData,
@@ -6026,7 +6035,29 @@ struct HLSRendition: Sendable {
             return dolbyVisionConfiguration?.hlsVideoRangeAttribute
                 ?? videoColorInformation?.hlsVideoRangeAttribute
         }
+        // 非杜比轨（HDR10 / HLG）此前只依赖 init 段的 colr box。B 站部分 HDR10 流的
+        // colr 缺失或 transfer 非 PQ/HLG 时，VIDEO-RANGE 会整个消失，AVPlayer 因此
+        // 按 SDR 渲染（清晰度可选、能播，但没有 HDR 效果）。这里先信任 colr，再按
+        // B 站权威画质码兜底，避免仅凭标题猜测动态范围。
         return videoColorInformation?.hlsVideoRangeAttribute
+            ?? Self.hlsVideoRangeFallback(dynamicRange: dynamicRange, quality: quality)
+    }
+
+    /// B 站 HDR 真彩（125）与 HDR Vivid（129）均为 BT.2020 + PQ；其余 HDR10 场景
+    /// 不做猜测，保持 nil 交给 init 段 colr 判定。
+    nonisolated static func hlsVideoRangeFallback(
+        dynamicRange: BiliVideoDynamicRange,
+        quality: Int?
+    ) -> String? {
+        switch dynamicRange {
+        case .hlg:
+            return "HLG"
+        case .hdr10:
+            guard let quality, quality == 125 || quality == 129 else { return nil }
+            return "PQ"
+        default:
+            return nil
+        }
     }
 
     nonisolated var hlsResolutionAttribute: String {
