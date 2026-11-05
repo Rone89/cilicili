@@ -42,6 +42,16 @@ extension VideoDetailViewModel {
                     return
                 }
                 applyLoadedCommentPage(page, isInitialPage: isInitialPage)
+                let pageComments = (page.topReplies ?? []) + (page.replies ?? [])
+                let pageImageCount = pageComments.reduce(0) { $0 + ($1.content?.pictures.count ?? 0) }
+                PlayerMetricsLog.record(
+                    .manifestStage,
+                    metricsID: detail.bvid,
+                    message: "commentPageLoaded total=\(comments.count)"
+                        + " page=\(pageComments.count)"
+                        + " images=\(pageImageCount)"
+                        + " end=\(commentsEnd)"
+                )
 
                 guard shouldSkipEmptyCommentPage(
                     previousCount: previousCount,
