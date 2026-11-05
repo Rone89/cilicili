@@ -30,13 +30,26 @@ extension VideoDetailViewModel {
         requestLease: StartupPlayURLRequestLease? = nil
     ) async throws -> PlayURLData {
         if detail.isPGCEpisode {
-            return try await api.fetchPgcPlayURL(
-                bvid: bvid,
-                cid: cid,
-                seasonID: detail.pgcSeasonID,
-                epID: detail.pgcEpisodeID,
-                preferredQuality: adaptiveStartupPreferredQuality
-            )
+            do {
+                return try await api.fetchPgcPlayURL(
+                    bvid: bvid,
+                    cid: cid,
+                    seasonID: detail.pgcSeasonID,
+                    epID: detail.pgcEpisodeID,
+                    preferredQuality: adaptiveStartupPreferredQuality
+                )
+            } catch {
+                // PGC 播放信息对部分剧集返回 -404，同 bvid/cid 的 UGC 启动路径可用。
+                guard !Task.isCancelled else { throw error }
+                return try await api.fetchStartupPlayURL(
+                    bvid: bvid,
+                    cid: cid,
+                    page: page,
+                    preferredQuality: adaptiveStartupPreferredQuality,
+                    requestLease: requestLease,
+                    requestSource: .foreground
+                )
+            }
         }
         return try await api.fetchStartupPlayURL(
             bvid: bvid,

@@ -29,7 +29,8 @@ extension BiliAPIClient {
                 bvid: bvid,
                 cid: cid,
                 requestedQuality: requestedQuality,
-                accessKey: accessKey
+                accessKey: accessKey,
+                cookieHeader: context.cookieHeader
             )
             guard hasAnyPlayableAppPayload(data) else {
                 throw BiliAPIError.emptyPlayURL
@@ -76,8 +77,13 @@ extension BiliAPIClient {
         bvid: String,
         cid: Int,
         requestedQuality: Int,
-        accessKey: String
+        accessKey: String,
+        cookieHeader: String?
     ) async throws -> PlayURLData {
+        let profile = BiliAppSigner.Profile.androidLogin
+        // 真正的 app 播放地址端点是 api.bilibili.com/x/player/playurl（appkey + access_key +
+        // appsec 签名）。app.bilibili.com/x/v2/playurl 不存在，之前对该地址的请求会返回
+        // 非 JSON 载荷（DecodingError.dataCorrupted），现予修正。
         let query = BiliAppSigner.sign(
             [
                 "access_key": accessKey,
@@ -86,15 +92,19 @@ extension BiliAPIClient {
                 "fnval": "4048",
                 "fnver": "0",
                 "fourk": "1",
+                "mobi_app": profile.mobiApp,
+                "platform": profile.platform,
+                "build": profile.build,
                 "qn": String(requestedQuality),
             ],
-            profile: .androidLogin
+            profile: profile
         )
         let response: BiliResponse<PlayURLData> = try await get(
-            base: appURL,
-            path: "/x/v2/playurl",
+            base: baseURL,
+            path: "/x/player/playurl",
             query: query,
-            userAgent: BiliAppSigner.Profile.androidLogin.userAgent
+            userAgent: profile.userAgent,
+            cookieHeader: cookieHeader
         )
         guard response.code == 0 else {
             throw BiliAPIError.api(code: response.code, message: response.displayMessage)

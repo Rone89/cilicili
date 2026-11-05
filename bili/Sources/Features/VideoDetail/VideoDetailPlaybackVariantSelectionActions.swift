@@ -48,20 +48,11 @@ extension VideoDetailViewModel {
                 let requestedData = try await self.fetchPlayURLWithTimeout(
                     timeout: self.playURLFullRecoveryTimeoutNanoseconds
                 ) { [self] in
-                    if self.detail.isPGCEpisode {
-                        return try await self.api.fetchPgcPlayURL(
-                            bvid: bvid,
-                            cid: cid,
-                            seasonID: self.detail.pgcSeasonID,
-                            epID: self.detail.pgcEpisodeID,
-                            preferredQuality: requestedQuality
-                        )
-                    }
-                    return try await self.api.fetchPlayURL(
+                    try await self.fetchPlayURLForManualQuality(
                         bvid: bvid,
                         cid: cid,
                         page: page,
-                        preferredQuality: requestedQuality
+                        requestedQuality: requestedQuality
                     )
                 }
                 guard !Task.isCancelled,
@@ -160,6 +151,63 @@ extension VideoDetailViewModel {
         playVariantSwitchToken = nil
         pendingPlayVariantID = nil
         isSwitchingPlayQuality = false
+    }
+
+    /// 手动选择清晰度时的播放地址获取。部分内容（实测《牧神记》107 集）的 PGC
+    /// 播放信息或 web playurl 会返回 `-404 啥都木有`，但启动期使用的 target-first WBI
+    /// 与 webpage 路径仍能拿到同一 bvid/cid 的可用流，因此按可用性逐级回落。
+    private func fetchPlayURLForManualQuality(
+        bvid: String,
+        cid: Int,
+        page: Int?,
+        requestedQuality: Int
+    ) async throws -> PlayURLData {
+        var lastError: Error?
+        if detail.isPGCEpisode {
+            do {
+                return try await api.fetchPgcPlayURL(
+                    bvid: bvid,
+                    cid: cid,
+                    seasonID: detail.pgcSeasonID,
+                    epID: detail.pgcEpisodeID,
+                    preferredQuality: requestedQuality
+                )
+            } catch {
+                guard !Task.isCancelled else { throw error }
+                lastError = error
+            }
+        }
+        do {
+            return try await api.fetchPlayURL(
+                bvid: bvid,
+                cid: cid,
+                page: page,
+                preferredQuality: requestedQuality
+            )
+        } catch {
+            guard !Task.isCancelled else { throw error }
+            lastError = error
+        }
+        do {
+            return try await api.fetchPiliPlusStyleStartupPlayURL(
+                bvid: bvid,
+                cid: cid,
+                requestedQuality: requestedQuality
+            )
+        } catch {
+            guard !Task.isCancelled else { throw error }
+            lastError = error
+        }
+        do {
+            return try await api.fetchWebPagePlayURL(
+                bvid: bvid,
+                cid: cid,
+                page: page,
+                preferredQuality: requestedQuality
+            )
+        } catch {
+            throw lastError ?? error
+        }
     }
 
 }

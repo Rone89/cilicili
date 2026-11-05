@@ -35,13 +35,24 @@ extension VideoDetailViewModel {
             timeout: playURLFullRecoveryTimeoutNanoseconds
         ) { [self] in
             if detail.isPGCEpisode {
-                return try await api.fetchPgcPlayURL(
-                    bvid: detail.bvid,
-                    cid: cid,
-                    seasonID: detail.pgcSeasonID,
-                    epID: detail.pgcEpisodeID,
-                    preferredQuality: adaptiveStartupPreferredQuality
-                )
+                do {
+                    return try await api.fetchPgcPlayURL(
+                        bvid: detail.bvid,
+                        cid: cid,
+                        seasonID: detail.pgcSeasonID,
+                        epID: detail.pgcEpisodeID,
+                        preferredQuality: adaptiveStartupPreferredQuality
+                    )
+                } catch {
+                    // PGC 播放信息对部分剧集返回 -404，回落 UGC 恢复路径。
+                    guard !Task.isCancelled else { throw error }
+                    return try await api.fetchPlayURL(
+                        bvid: detail.bvid,
+                        cid: cid,
+                        page: page,
+                        preferredQuality: adaptiveStartupPreferredQuality
+                    )
+                }
             }
             return try await api.fetchPlayURL(
                 bvid: detail.bvid,

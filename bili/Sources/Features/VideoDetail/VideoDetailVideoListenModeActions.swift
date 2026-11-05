@@ -1232,13 +1232,25 @@ extension VideoDetailViewModel {
     private func preloadVideoListenPgcEpisode(_ video: VideoItem) async {
         guard let cid = video.cid else { return }
         do {
-            let data = try await api.fetchPgcPlayURL(
-                bvid: video.bvid,
-                cid: cid,
-                seasonID: video.pgcSeasonID,
-                epID: video.pgcEpisodeID,
-                preferredQuality: adaptiveStartupPreferredQuality
-            )
+            let data: PlayURLData
+            do {
+                data = try await api.fetchPgcPlayURL(
+                    bvid: video.bvid,
+                    cid: cid,
+                    seasonID: video.pgcSeasonID,
+                    epID: video.pgcEpisodeID,
+                    preferredQuality: adaptiveStartupPreferredQuality
+                )
+            } catch {
+                // PGC 播放信息对部分剧集返回 -404，回落 UGC 播放地址。
+                guard !Task.isCancelled else { throw error }
+                data = try await api.fetchPlayURL(
+                    bvid: video.bvid,
+                    cid: cid,
+                    page: nil,
+                    preferredQuality: adaptiveStartupPreferredQuality
+                )
+            }
             guard !Task.isCancelled else { return }
             await VideoPreloadCenter.shared.store(
                 data,
