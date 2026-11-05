@@ -8441,7 +8441,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         do {
             let fetchStart = CACurrentMediaTime()
             downloadStats.started()
-            defer { downloadStats.finished(bytes: fetchRange.length) }
+            defer { downloadStats.finished(bytes: Int(clamping: fetchRange.length)) }
             if shouldStreamRemoteRange(request: request, range: fetchRange, transform: transform) {
                 #if DEBUG
                 try await RecoveryRangeTaskContext.$current.withValue(recoveryTicket.map { .init(ticket: $0) }) {
