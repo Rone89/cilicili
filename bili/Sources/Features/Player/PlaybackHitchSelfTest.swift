@@ -21,7 +21,8 @@ final class PlaybackHitchSelfTest {
 
     private var hasStarted = false
     private var libraryStore: LibraryStore?
-    private let phaseDuration: TimeInterval = 18
+    private let phaseDuration: TimeInterval = 20
+    private let phaseCount = 6
 
     private init() {}
 
@@ -51,16 +52,19 @@ final class PlaybackHitchSelfTest {
         case "kit":
             PlaybackDiagnosticsExperiment.forceDanmakuKit = true
             libraryStore?.setDanmakuEnabled(true)
+            viewModel.isDanmakuEnabled = true
         case "metal":
             PlaybackDiagnosticsExperiment.forceMetalDanmaku = true
             libraryStore?.setDanmakuEnabled(true)
+            viewModel.isDanmakuEnabled = true
         default:
             libraryStore?.setDanmakuEnabled(false)
+            viewModel.isDanmakuEnabled = false
         }
         await selectQuality(125, viewModel: viewModel)
         _ = await waitForPlayback(viewModel, timeout: 25)
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        for index in 1...3 {
+        for index in 1...phaseCount {
             await runPhase(
                 "hdr_\(mode)_\(index)",
                 scroll: false
