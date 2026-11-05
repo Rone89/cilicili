@@ -1237,6 +1237,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
         case accessLog
         case decodeLog
         case mediaCache
+        case playbackHitch
         case manifestStage
         case qualitySupplement
         case resumeDecision
@@ -1277,6 +1278,7 @@ struct PlayerPerformanceEvent: Identifiable, Equatable {
             case .accessLog: return "AccessLog"
             case .decodeLog: return "Decode"
             case .mediaCache: return "媒体缓存"
+            case .playbackHitch: return "卡顿"
             }
         }
     }

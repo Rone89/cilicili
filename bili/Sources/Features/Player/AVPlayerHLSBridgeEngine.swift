@@ -744,6 +744,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
 
     private func pause(deactivatesAudioSession: Bool, notifiesStateChange: Bool) {
         guard !isStopped else { return }
+        PlaybackHitchMonitor.shared.stop()
         invalidateAudioSessionActivation()
         shouldPrerollPausedRecoveryAfterSeek = false
         wantsPlayback = false
@@ -816,6 +817,7 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         #if DEBUG
         debugRecoveryEvent("sessionEnded", fields: ["reason": "itemOrSessionTransition"])
         #endif
+        PlaybackHitchMonitor.shared.stop()
         playbackGeneration &+= 1
         invalidateAudioSessionActivation()
         isStopped = true
@@ -1223,6 +1225,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func startPlaybackImmediately() {
         guard !isStopped, player.currentItem != nil else { return }
         guard !isAwaitingAudioSessionActivation, !audioSession.isDeactivating else { return }
+        if let source, source.dynamicRange.isHDR, !source.isLiveStream {
+            PlaybackHitchMonitor.shared.start(
+                metricsID: source.metricsID,
+                quality: source.videoStream?.id,
+                dynamicRange: source.dynamicRange
+            )
+        }
         applyTargetAudioState()
         #if DEBUG
         if debugRecoveryTraceID != nil, debugRecoveryPlayAt == nil {
@@ -1711,8 +1720,14 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         // 与 NativeDolbyVideoOverlayRenderer 对齐：HDR 源必须显式申请高动态范围并关闭
         // tone mapping。`.automatic` 在 AVPlayerLayer/控制器上不保证激活 EDR，实测会把
         // HDR10 画面按 SDR 输出（杜比直连层用 .high/.never 所以一直正常）。
-        controller.preferredDisplayDynamicRange = isHDR ? .high : .standard
-        controller.view.layer.toneMapMode = isHDR ? .never : .automatic
+        let preferredRange: AVDisplayDynamicRange = isHDR ? .high : .standard
+        if controller.preferredDisplayDynamicRange != preferredRange {
+            controller.preferredDisplayDynamicRange = preferredRange
+        }
+        let toneMapMode: CALayer.ToneMapMode = isHDR ? .never : .automatic
+        if controller.view.layer.toneMapMode != toneMapMode {
+            controller.view.layer.toneMapMode = toneMapMode
+        }
         policyParts.append("preferred=\(isHDR ? "high" : "standard")")
         policyParts.append("toneMap=\(isHDR ? "never" : "automatic")")
         logDisplayDynamicRangePolicyIfNeeded(policyParts.joined(separator: " "))
@@ -1724,8 +1739,15 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if source?.dynamicRange == .dolbyVision {
             policyParts.append("dvPolicy=\(DolbyVisionRenderingPolicy.stored().playablePolicy.rawValue)")
         }
-        layer.preferredDynamicRange = isHDR ? .high : .standard
-        layer.toneMapMode = isHDR ? .never : .automatic
+        // 只在取值变化时写入，避免重复触发 CALayer/EDR 合成配置。
+        let preferredRange: CALayer.DynamicRange = isHDR ? .high : .standard
+        if layer.preferredDynamicRange != preferredRange {
+            layer.preferredDynamicRange = preferredRange
+        }
+        let toneMapMode: CALayer.ToneMapMode = isHDR ? .never : .automatic
+        if layer.toneMapMode != toneMapMode {
+            layer.toneMapMode = toneMapMode
+        }
         policyParts.append("preferred=\(isHDR ? "high" : "standard")")
         policyParts.append("toneMap=\(isHDR ? "never" : "automatic")")
         logDisplayDynamicRangePolicyIfNeeded(policyParts.joined(separator: " "))
