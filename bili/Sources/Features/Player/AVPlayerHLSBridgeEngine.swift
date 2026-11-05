@@ -8649,6 +8649,7 @@ nonisolated private final class LocalHLSProxyServer: @unchecked Sendable {
         range: HTTPByteRange,
         transform: HLSMediaSegmentTransform?
     ) -> Bool {
+        if PlaybackDiagnosticsExperiment.forceNonStreamingRanges { return false }
         guard case nil = request.range else { return false }
         guard request.method == "GET" else { return false }
         if request.path.contains("/media/video") {
