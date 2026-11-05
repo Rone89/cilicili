@@ -1708,10 +1708,13 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
     private func applyDisplayDynamicRangePolicy(to controller: AVPlayerViewController) {
         let isHDR = source?.dynamicRange.isHDR == true
         var policyParts = ["target=controller", "hdr=\(isHDR)"]
-        controller.preferredDisplayDynamicRange = isHDR ? .automatic : .standard
-        controller.view.layer.toneMapMode = .automatic
-        policyParts.append("preferred=\(isHDR ? "automatic" : "standard")")
-        policyParts.append("toneMap=automatic")
+        // 与 NativeDolbyVideoOverlayRenderer 对齐：HDR 源必须显式申请高动态范围并关闭
+        // tone mapping。`.automatic` 在 AVPlayerLayer/控制器上不保证激活 EDR，实测会把
+        // HDR10 画面按 SDR 输出（杜比直连层用 .high/.never 所以一直正常）。
+        controller.preferredDisplayDynamicRange = isHDR ? .high : .standard
+        controller.view.layer.toneMapMode = isHDR ? .never : .automatic
+        policyParts.append("preferred=\(isHDR ? "high" : "standard")")
+        policyParts.append("toneMap=\(isHDR ? "never" : "automatic")")
         logDisplayDynamicRangePolicyIfNeeded(policyParts.joined(separator: " "))
     }
 
@@ -1721,11 +1724,24 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         if source?.dynamicRange == .dolbyVision {
             policyParts.append("dvPolicy=\(DolbyVisionRenderingPolicy.stored().playablePolicy.rawValue)")
         }
-        layer.preferredDynamicRange = isHDR ? .automatic : .standard
-        layer.toneMapMode = .automatic
-        policyParts.append("preferred=\(isHDR ? "automatic" : "standard")")
-        policyParts.append("toneMap=automatic")
+        layer.preferredDynamicRange = isHDR ? .high : .standard
+        layer.toneMapMode = isHDR ? .never : .automatic
+        policyParts.append("preferred=\(isHDR ? "high" : "standard")")
+        policyParts.append("toneMap=\(isHDR ? "never" : "automatic")")
         logDisplayDynamicRangePolicyIfNeeded(policyParts.joined(separator: " "))
+    }
+
+    private func logDisplayDynamicRangePolicyIfNeeded(_ summary: String) {
+        guard lastDisplayDynamicRangePolicySummary != summary else { return }
+        lastDisplayDynamicRangePolicySummary = summary
+        PlayerMetricsLog.logger.info(
+            "avPlayerDisplayDynamicRangePolicy \(summary, privacy: .public)"
+        )
+        // 同时持久化到 player-diagnostics.log，便于真机验收确认 HDR 输出策略。
+        guard let metricsID = source?.metricsID, !metricsID.isEmpty else { return }
+        Task { [summary] in
+            await Self.recordManifestStage(metricsID: metricsID, "displayPolicy \(summary)")
+        }
     }
 
     private func logDisplayDynamicRangePolicyIfNeeded(_ summary: String) {
