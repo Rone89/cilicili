@@ -26,6 +26,7 @@ final class PlaybackHitchMonitor: NSObject {
     private var ownerID: ObjectIdentifier?
     private var danmakuItemCount = 0
     private var danmakuEnabled = false
+    private var selfTestPhase = "-"
     private var context: Context?
 
     private override init() {
@@ -66,6 +67,10 @@ final class PlaybackHitchMonitor: NSObject {
     func updateDanmakuContext(itemCount: Int, isEnabled: Bool) {
         danmakuItemCount = itemCount
         danmakuEnabled = isEnabled
+    }
+
+    func setSelfTestPhase(_ phase: String) {
+        selfTestPhase = phase
     }
 
     func stop(owner: AnyObject) {
@@ -142,6 +147,7 @@ final class PlaybackHitchMonitor: NSObject {
             + " targetMs=\(String(format: "%.1f", targetSeconds * 1_000))"
             + " edr=\(edrHeadroom) potentialEDR=\(potentialEDRHeadroom)"
             + " danmaku=\(danmakuItemCount) danmakuOn=\(danmakuEnabled)"
+            + " phase=\(selfTestPhase)"
             + " thermal=\(thermalTitle(ProcessInfo.processInfo.thermalState))"
         PlayerMetricsLog.record(.playbackHitch, metricsID: context.metricsID, message: message)
         resetWindow(at: timestamp)

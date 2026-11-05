@@ -51,6 +51,7 @@ final class VideoDetailViewModelHolder: ObservableObject {
 
     private func installViewModel(_ viewModel: VideoDetailViewModel) {
         self.viewModel = viewModel
+        VideoDetailPlaybackLocator.currentViewModel = viewModel
         cleanupPlayback = VideoDetailViewModelHolderCleanupActions(
             viewModel: viewModel
         )

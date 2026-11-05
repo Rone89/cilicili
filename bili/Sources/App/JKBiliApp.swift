@@ -74,6 +74,9 @@ private struct ProductionMainInterfaceHost: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
         }
+        .task {
+            PlaybackHitchSelfTest.shared.startIfRequested(libraryStore: dependencies.libraryStore)
+        }
     }
 }
 
