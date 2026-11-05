@@ -63,7 +63,44 @@
 3. 诊断日志应出现 `hdr=q125 range=PQ`（若 init 自带 colr 则 range 仍为 PQ）；`version=8` 表示 master playlist 已带 `VIDEO-RANGE`。
 4. 若日志显示 `range=PQ` 但画面仍无 HDR 效果，则问题在渲染输出层（AVPlayerLayer/EDR），需继续从该层排查。
 
+## 追加二：build 70 真机验证仍无 HDR 效果（第三轮）
+
+用户在 build 70 上仍反馈"HDR 分辨率可选，但没有 HDR 效果"。拉取设备日志确认 **manifest 层修复已生效**：
+
+```
+2026-11-05T05:16:00Z event=Manifest metricsID=BV1QMxz6hEV5
+message=server=2ms routes=508 variants=1 codec=hvc1.2.4.L153.90 version=8
+hdr=q125 range=PQ color=nclx primaries=9 transfer=16 matrix=9 limited codec=hvc1.2.4.L153.90
+```
+
+即 master playlist 已带 `VIDEO-RANGE=PQ`（version=8），init 段已含 BT.2020/PQ colr。问题由此确认在**渲染输出层**：
+
+- 主 HLS 播放层 `applyDisplayDynamicRangePolicy(to: AVPlayerLayer)` 对 HDR 源设置的是
+  `preferredDynamicRange = .automatic` + `toneMapMode = .automatic`。
+- 杜比视界能正确出 HDR，是因为它走 `NativeDolbyVideoOverlayRenderer` 的直连静音层，
+  该层显式设置 `preferredDynamicRange = .high` + `toneMapMode = .never`（真 HDR 输出）。
+- 按 QuartzCore SDK 文档：`preferredDynamicRange` 默认 `.standard`；`.automatic` 不保证激活
+  EDR，`.high` 才会按显示能力输出高动态范围；`toneMapMode = .automatic` 允许系统把画面
+  tone-map 回 SDR。二者叠加导致 HDR10 画面被按 SDR 输出——与用户观感一致。
+
+修复（build 71）：
+
+- `applyDisplayDynamicRangePolicy(to layer:)` 与 `(to controller:)`：HDR 源改为
+  `preferredDynamicRange = .high`、`toneMapMode = .never`；SDR 源保持 `.standard` + `.automatic`。
+  与杜比直连层策略保持一致。
+- 诊断：`displayPolicy target=layer hdr=true preferred=high toneMap=never` 会持久化到
+  `player-diagnostics.log`，用于确认策略实际应用。
+
+验收（build 71）：
+
+1. 重进《107 上苍》等视频，切 HDR 真彩，观察高光/暗部层次是否出现 HDR 观感。
+2. 日志应出现 `hdr=q125 range=PQ ... version=8` 与 `displayPolicy target=layer hdr=true preferred=high toneMap=never`。
+3. 若两者都在但画面仍为 SDR，则继续排查：视频采样位深（是否 10-bit）、
+   AVPlayerItem 输出、或系统 HDR 显示设置；届时需抓取更底层的解码/渲染诊断。
+
 ## 提交
 
 - `4ec821a` AI 字幕实验（上一目标遗留，未验收）
-- `b31fa60` app 端播放地址兜底路由（本轮修复）
+- `b31fa60` app 端播放地址兜底路由
+- `7048476` HDR10 VIDEO-RANGE + colr 注入（build 70）
+- `6ed18aa` HDR 输出策略改为 .high/.never（build 71）
