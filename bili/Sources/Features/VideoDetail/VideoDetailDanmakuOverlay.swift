@@ -40,6 +40,24 @@ struct VideoDetailDanmakuOverlay: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .onAppear {
+            PlaybackHitchMonitor.shared.updateDanmakuContext(
+                itemCount: snapshot.items.count,
+                isEnabled: snapshot.isEnabled
+            )
+        }
+        .onChange(of: snapshot.itemsRevision) { _, _ in
+            PlaybackHitchMonitor.shared.updateDanmakuContext(
+                itemCount: snapshot.items.count,
+                isEnabled: snapshot.isEnabled
+            )
+        }
+        .onChange(of: snapshot.isEnabled) { _, enabled in
+            PlaybackHitchMonitor.shared.updateDanmakuContext(
+                itemCount: snapshot.items.count,
+                isEnabled: enabled
+            )
+        }
         .videoDetailDanmakuOverlayLifecycle(
             store: store,
             playerViewModel: playerViewModel,

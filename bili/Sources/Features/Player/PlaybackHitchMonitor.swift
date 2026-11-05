@@ -24,6 +24,8 @@ final class PlaybackHitchMonitor: NSObject {
     private var longGapCount = 0
     private var currentTargetSeconds: CFTimeInterval = 1.0 / 60.0
     private var ownerID: ObjectIdentifier?
+    private var danmakuItemCount = 0
+    private var danmakuEnabled = false
     private var context: Context?
 
     private override init() {
@@ -58,6 +60,12 @@ final class PlaybackHitchMonitor: NSObject {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
+    }
+
+    /// 弹幕叠加层在窗口/开关变化时更新，用于把掉帧与弹幕密度关联起来。
+    func updateDanmakuContext(itemCount: Int, isEnabled: Bool) {
+        danmakuItemCount = itemCount
+        danmakuEnabled = isEnabled
     }
 
     func stop(owner: AnyObject) {
@@ -133,6 +141,7 @@ final class PlaybackHitchMonitor: NSObject {
             + " hitches=\(hitchCount)"
             + " targetMs=\(String(format: "%.1f", targetSeconds * 1_000))"
             + " edr=\(edrHeadroom) potentialEDR=\(potentialEDRHeadroom)"
+            + " danmaku=\(danmakuItemCount) danmakuOn=\(danmakuEnabled)"
             + " thermal=\(thermalTitle(ProcessInfo.processInfo.thermalState))"
         PlayerMetricsLog.record(.playbackHitch, metricsID: context.metricsID, message: message)
         resetWindow(at: timestamp)
