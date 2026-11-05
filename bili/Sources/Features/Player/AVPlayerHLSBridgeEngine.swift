@@ -1739,17 +1739,9 @@ final class AVPlayerHLSBridgeEngine: PlayerRenderingEngine {
         )
         // 同时持久化到 player-diagnostics.log，便于真机验收确认 HDR 输出策略。
         guard let metricsID = source?.metricsID, !metricsID.isEmpty else { return }
-        Task { [summary] in
-            await Self.recordManifestStage(metricsID: metricsID, "displayPolicy \(summary)")
+        Task { @MainActor [summary] in
+            PlayerMetricsLog.record(.manifestStage, metricsID: metricsID, message: "displayPolicy \(summary)")
         }
-    }
-
-    private func logDisplayDynamicRangePolicyIfNeeded(_ summary: String) {
-        guard lastDisplayDynamicRangePolicySummary != summary else { return }
-        lastDisplayDynamicRangePolicySummary = summary
-        PlayerMetricsLog.logger.info(
-            "avPlayerDisplayDynamicRangePolicy \(summary, privacy: .public)"
-        )
     }
 
     private func invalidateAudioSessionActivation() {
