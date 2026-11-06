@@ -375,3 +375,20 @@ build 104 真机三项反馈与处理：
 验证：新增 `BiliReplyMainListCodecTests` 单元测试（构造假 MainListReply 报文 →
 decodePage → 断言全部字段映射、嵌套回复/表情/图片/置顶/游标/总数；请求编码含
 排序模式与游标）；评论 UI 回归用例全绿。真机观察点：连续下滑翻多页后失败率。
+
+### 追加：gRPC 通道放开到 Release + 失败可观测（build 107）
+
+build 106 的 gRPC 路径只包在 `#if DEBUG` 里，而设备装的是 Release 包——用户看到
+的"失败明显减少"其实全来自 build 105 的失败退避，gRPC 从未在真机生效。本版修正：
+
+- **放开到 Release**：仅 UI 测试夹具（拦截网页接口）在 DEBUG 下跳过 gRPC。
+- **失败先重试一次**：gRPC 失败后等 300ms 原样重试，仍失败才回退网页接口——避免
+  一次抖动就落到风控严格的通道上。取消（超时/切页）不重试。
+- **凭据不足快速失败**：游客模式或没有 app accessKey 时 gRPC 必被拒，直接抛错回
+  网页路径，省掉两次无谓往返。
+- **通道可观测**：每页请求写一条 `commentSource=grpc|web` / `grpcFailed` 诊断
+  （含 items、cursor 是否有值、耗时、失败原因），落在 `player-diagnostics.log`，
+  便于用 devicectl 拉文件核对真机实际走的通道。Release 同样写入。
+
+验证：编解码单元测试、自动翻页 60 条、参差行高往返稳定用例全部通过；Build 107
+Release 签名安装到 RCe2027。

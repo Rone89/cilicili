@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 struct DynamicCommentImage: Encodable, Equatable, Sendable {
     let imageURL: String
@@ -230,21 +231,48 @@ extension BiliAPIClient {
     ) async throws
         -> CommentPage
     {
-        // 优先走 PiliPlus 同款 gRPC 通道（网页 /x/v2/reply/main 对连续翻页
-        // 风控严格，-352 高发）；任何失败回退网页接口，行为与旧路径一致。
-        // UI 测试夹具拦截的是网页接口，gRPC 路径仅在 DEBUG 关闭。
+        // 优先走 PiliPlus 同款 gRPC 通道：网页 /x/v2/reply/main 对短时连续翻页
+        // 风控严格（-352 高发），App 侧 MainList 不受该限流约束。Release 同样
+        // 启用；仅 UI 测试夹具（拦网页接口）时跳过。gRPC 失败先原样重试一次，
+        // 仍失败才回退网页接口——避免一次抖动就落到受限通道上。
+        let startedAt = CACurrentMediaTime()
         #if DEBUG
-        if !UITestVideoDetailNetworkFixture.isEnabled,
-           let oidNumber = Int(oid), oidNumber > 0,
-           let grpcPage = try? await fetchCommentsViaGrpc(
-               oid: oidNumber,
-               type: type,
-               cursor: cursor,
-               sort: sort
-           ) {
-            return grpcPage
-        }
+        let skipsGrpcChannel = UITestVideoDetailNetworkFixture.isEnabled
+        #else
+        let skipsGrpcChannel = false
         #endif
+        if !skipsGrpcChannel, let oidNumber = Int(oid), oidNumber > 0 {
+            for attempt in 0..<2 {
+                do {
+                    let page = try await fetchCommentsViaGrpc(
+                        oid: oidNumber,
+                        type: type,
+                        cursor: cursor,
+                        sort: sort
+                    )
+                    Self.logCommentChannel(
+                        oid: oid,
+                        message: "commentSource=grpc items=\(page.replies?.count ?? 0)"
+                            + " cursor=\(cursor.isEmpty ? "-" : "set")"
+                            + " attempt=\(attempt + 1)"
+                            + " ms=\(Int((CACurrentMediaTime() - startedAt) * 1000))"
+                    )
+                    return page
+                } catch {
+                    if Task.isCancelled { throw CancellationError() }
+                    Self.logCommentChannel(
+                        oid: oid,
+                        message: "commentSource=grpcFailed attempt=\(attempt + 1)"
+                            + " reason=\(Self.commentChannelReason(error))"
+                            + " cursor=\(cursor.isEmpty ? "-" : "set")"
+                    )
+                    if attempt == 0 {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        if Task.isCancelled { throw CancellationError() }
+                    }
+                }
+            }
+        }
         let mode = sort == .hot ? "3" : "2"
         let pagination = try Self.commentPaginationString(offset: cursor)
         let resolvedCookieHeader = await resolvedCommentCookieHeader(cookieHeader)
@@ -262,8 +290,33 @@ extension BiliAPIClient {
             cachePolicy: .reloadIgnoringLocalCacheData,
             priority: URLSessionTask.defaultPriority
         )
-        guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }
-        return response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
+        if response.code != 0 {
+            Self.logCommentChannel(
+                oid: oid,
+                message: "commentSource=webFailed code=\(response.code)"
+                    + " ms=\(Int((CACurrentMediaTime() - startedAt) * 1000))"
+            )
+            throw BiliAPIError.api(code: response.code, message: response.displayMessage)
+        }
+        let page = response.payload ?? CommentPage(replies: [], topReplies: [], cursor: nil)
+        Self.logCommentChannel(
+            oid: oid,
+            message: "commentSource=web items=\(page.replies?.count ?? 0)"
+                + " cursor=\(cursor.isEmpty ? "-" : "set")"
+                + " ms=\(Int((CACurrentMediaTime() - startedAt) * 1000))"
+        )
+        return page
+    }
+
+    /// 评论通道诊断（Devicectl 可读的持久日志）：用于核对实际走的通道与失败原因。
+    private static func logCommentChannel(oid: String, message: String) {
+        PlayerMetricsLog.record(.manifestStage, metricsID: "comments-\(oid)", message: message)
+    }
+
+    private static func commentChannelReason(_ error: Error) -> String {
+        let text = error.localizedDescription
+            .replacingOccurrences(of: " ", with: "_")
+        return text.count <= 60 ? text : String(text.prefix(60))
     }
 
     private static func commentPaginationString(offset: String) throws -> String {

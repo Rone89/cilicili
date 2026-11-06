@@ -295,10 +295,12 @@ extension BiliAPIClient {
         sort: CommentSort
     ) async throws -> CommentPage {
         let context = await videoListenPlaylistRequestContext()
-        guard !context.guestModeEnabled else {
+        let accessKey = context.appAccessKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // 没有 app 登录凭据时 gRPC 必被拒：直接抛错交回网页接口，
+        // 省掉两次无谓往返（游客/未登录场景）。
+        guard !context.guestModeEnabled, !accessKey.isEmpty else {
             throw BiliReplyMainListCodec.CodecError.invalidResponse
         }
-        let accessKey = context.appAccessKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let buvid =
             Self.cookieValue(named: "buvid3", in: context.cookieHeader)
             ?? Self.cookieValue(named: "buvid4", in: context.cookieHeader)
