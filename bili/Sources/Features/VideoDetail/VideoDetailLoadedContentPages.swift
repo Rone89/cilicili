@@ -51,6 +51,13 @@ struct VideoDetailLoadedDetailContentPage: View {
                 )
                 .padding(.horizontal, horizontalInset)
 
+                VideoDetailUgcSeasonSection(
+                    season: detail.ugcSeason,
+                    detail: detail,
+                    selectEpisode: renderPack.actions.selectUgcSeasonEpisode
+                )
+                .padding(.horizontal, horizontalInset)
+
                 VideoDetailPageMenu(
                     store: renderPack.pageSelectorStore,
                     selectPage: renderPack.actions.selectPage

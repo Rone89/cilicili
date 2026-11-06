@@ -162,6 +162,110 @@ final class VideoDetailPageSelectorUITests: XCTestCase {
         )
     }
 
+    // MARK: - 合集（ugc_season）
+
+    /// 合集紧凑行以「合集，当前」前缀标签查询（与分P/分集同样的标识符传播规避策略）。
+    @MainActor
+    private func seasonCompactRow(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "合集，当前")).firstMatch
+    }
+
+    @MainActor
+    private func launchAppWithSeason(compactSelectorEnabled: Bool) -> XCUIApplication {
+        let app = XCUIApplication()
+        var arguments: [String] = [
+            "--ui-test-reset-state", "--start-tab", "home",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
+            "--ui-test-video-season",
+            "--start-bvid", "BV1xx411c7mD",
+        ]
+        if compactSelectorEnabled {
+            arguments.append(contentsOf: [
+                "-cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1", "YES",
+            ])
+        }
+        app.launchArguments = arguments
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testCompactSeasonSelectorForUgcUsesSharedSheet() throws {
+        let app = launchAppWithSeason(compactSelectorEnabled: true)
+
+        let compact = seasonCompactRow(in: app)
+        XCTAssertTrue(compact.waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertTrue(compact.label.contains("合集视频 1"), compact.label)
+        XCTAssertTrue(compact.label.contains("3 个"), compact.label)
+        XCTAssertFalse(
+            app.buttons["展开全部合集"].firstMatch.exists,
+            "紧凑形态下不应再显示经典横滑菜单的展开按钮"
+        )
+
+        compact.tap()
+
+        let sheet = app.descendants(matching: .any)["video.detail.pageSheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(
+            app.buttons["video.detail.pageSheet.close"].firstMatch.exists,
+            app.debugDescription
+        )
+
+        let secondEpisode = app.buttons
+            .matching(NSPredicate(format: "label == %@", "合集视频 2"))
+            .firstMatch
+        XCTAssertTrue(secondEpisode.waitForExistence(timeout: 10), app.debugDescription)
+        secondEpisode.tap()
+
+        let updatedLabel = NSPredicate(format: "label CONTAINS %@", "合集视频 2")
+        expectation(for: updatedLabel, evaluatedWith: compact, handler: nil)
+        waitForExpectations(timeout: 15, handler: nil)
+
+        let sheetDismissed = NSPredicate(format: "exists == NO")
+        expectation(for: sheetDismissed, evaluatedWith: sheet, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
+    }
+
+    @MainActor
+    func testClassicSeasonSectionShowsTilesWhenExperimentOff() throws {
+        let app = launchAppWithSeason(compactSelectorEnabled: false)
+
+        let expandButton = app.buttons["展开全部合集"].firstMatch
+        XCTAssertTrue(expandButton.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertFalse(seasonCompactRow(in: app).exists, app.debugDescription)
+
+        // 当前播放瓦片不是按钮，与经典分P用例一样用任意元素查询。
+        let firstTile = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "合集视频 1"))
+            .firstMatch
+        XCTAssertTrue(firstTile.exists, app.debugDescription)
+
+        // 展开按钮打开与紧凑形态相同的共享弹窗，关闭按钮应收起。
+        expandButton.tap()
+        let sheet = app.descendants(matching: .any)["video.detail.pageSheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["video.detail.pageSheet.close"].firstMatch.tap()
+
+        let sheetDismissed = NSPredicate(format: "exists == NO")
+        expectation(for: sheetDismissed, evaluatedWith: sheet, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
+
+        // 点选第 2 集：原地切换后该条目变为当前播放瓦片，不再是可点按钮。
+        let secondTile = app.buttons
+            .matching(NSPredicate(format: "label == %@", "合集视频 2"))
+            .firstMatch
+        XCTAssertTrue(secondTile.waitForExistence(timeout: 10), app.debugDescription)
+        secondTile.tap()
+
+        let tileIsCurrent = NSPredicate(format: "exists == NO")
+        expectation(for: tileIsCurrent, evaluatedWith: secondTile, handler: nil)
+        waitForExpectations(timeout: 15, handler: nil)
+        let currentTile = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ AND value == %@", "合集视频 2", "当前播放"))
+            .firstMatch
+        XCTAssertTrue(currentTile.waitForExistence(timeout: 10), app.debugDescription)
+    }
+
     @MainActor
     private func launchApp(compactSelectorEnabled: Bool) -> XCUIApplication {
         let app = XCUIApplication()

@@ -145,10 +145,12 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
     let recommendationFeedback: HomeRecommendationFeedbackMetadata?
     let pgcSeasonID: Int?
     let pgcEpisodeID: Int?
+    let ugcSeason: UgcSeason?
 
     enum CodingKeys: String, CodingKey {
         case bvid, aid, title, pic, desc, duration, pubdate, owner, stat, cid, pages, dimension
         case historyResumeTime, historyCID, recommendReason, recommendationFeedback, pgcSeasonID, pgcEpisodeID
+        case ugcSeason = "ugc_season"
     }
 
     init(
@@ -169,7 +171,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         recommendReason: String? = nil,
         recommendationFeedback: HomeRecommendationFeedbackMetadata? = nil,
         pgcSeasonID: Int? = nil,
-        pgcEpisodeID: Int? = nil
+        pgcEpisodeID: Int? = nil,
+        ugcSeason: UgcSeason? = nil
     ) {
         self.bvid = bvid
         self.aid = aid
@@ -189,6 +192,7 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
         self.recommendationFeedback = recommendationFeedback
         self.pgcSeasonID = pgcSeasonID
         self.pgcEpisodeID = pgcEpisodeID
+        self.ugcSeason = ugcSeason
     }
 
     nonisolated func mergingFilledValues(from fullDetail: VideoItem) -> VideoItem {
@@ -226,7 +230,8 @@ nonisolated struct VideoItem: Identifiable, Decodable, Hashable, Sendable {
             recommendReason: recommendReason ?? fullDetail.recommendReason,
             recommendationFeedback: recommendationFeedback ?? fullDetail.recommendationFeedback,
             pgcSeasonID: pgcSeasonID ?? fullDetail.pgcSeasonID,
-            pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID
+            pgcEpisodeID: pgcEpisodeID ?? fullDetail.pgcEpisodeID,
+            ugcSeason: fullDetail.ugcSeason ?? ugcSeason
         )
     }
 
@@ -315,6 +320,194 @@ nonisolated struct VideoDimension: Decodable, Hashable {
             swap(&width, &height)
         }
         return Double(width) / Double(height)
+    }
+}
+
+/// 详情接口 `/x/web-interface/view` 自带的 UGC 合集（ugc_season）。
+/// 多个 section（如"正片/花絮"）按序展平；条目是独立视频（各自 bvid/cid）。
+nonisolated struct UgcSeason: Decodable, Hashable, Sendable {
+    let id: Int?
+    let title: String?
+    let cover: String?
+    let sections: [UgcSeasonSection]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, cover, sections
+    }
+
+    init(
+        id: Int?,
+        title: String?,
+        cover: String?,
+        sections: [UgcSeasonSection]?
+    ) {
+        self.id = id
+        self.title = title
+        self.cover = cover
+        self.sections = sections
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeLossyIntIfPresent(forKey: .id)
+        title = container.decodeLossyStringIfPresent(forKey: .title)
+        cover = container.decodeLossyStringIfPresent(forKey: .cover)
+        sections = try? container.decodeIfPresent([UgcSeasonSection].self, forKey: .sections)
+    }
+
+    var displayTitle: String? {
+        title?.removingHTMLTags().trimmingCharacters(in: .whitespacesAndNewlines).emptyToNil
+    }
+
+    var normalizedCover: String? {
+        let trimmed = cover?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? nil : trimmed?.normalizedBiliURL()
+    }
+
+    var episodes: [UgcSeasonEpisode] {
+        (sections ?? []).flatMap { $0.episodes ?? [] }
+    }
+}
+
+nonisolated struct UgcSeasonSection: Decodable, Hashable, Sendable {
+    let id: Int?
+    let title: String?
+    let episodes: [UgcSeasonEpisode]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, episodes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeLossyIntIfPresent(forKey: .id)
+        title = container.decodeLossyStringIfPresent(forKey: .title)
+        episodes = try? container.decodeIfPresent([UgcSeasonEpisode].self, forKey: .episodes)
+    }
+}
+
+/// 合集中的单个视频条目；顶层字段缺失时回落到 `arc` 档案对象。
+nonisolated struct UgcSeasonEpisode: Decodable, Hashable, Sendable {
+    let id: Int?
+    let aid: Int?
+    let bvid: String?
+    let cid: Int?
+    let title: String?
+    let cover: String?
+    let duration: Int?
+    let pubdate: Int?
+    let dimension: VideoDimension?
+    let arc: Arc?
+
+    enum CodingKeys: String, CodingKey {
+        case id, aid, bvid, cid, title, cover, duration, pubdate, dimension, arc
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeLossyIntIfPresent(forKey: .id)
+        aid = container.decodeLossyIntIfPresent(forKey: .aid)
+        bvid = container.decodeLossyStringIfPresent(forKey: .bvid)?.emptyToNil
+        cid = container.decodeLossyIntIfPresent(forKey: .cid)
+        title = container.decodeLossyStringIfPresent(forKey: .title)
+        cover = container.decodeLossyStringIfPresent(forKey: .cover)
+        duration = container.decodeLossyIntIfPresent(forKey: .duration)
+        pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
+        dimension = try? container.decodeIfPresent(VideoDimension.self, forKey: .dimension)
+        arc = try? container.decodeIfPresent(Arc.self, forKey: .arc)
+    }
+
+    nonisolated struct Arc: Decodable, Hashable, Sendable {
+        let aid: Int?
+        let bvid: String?
+        let cid: Int?
+        let title: String?
+        let pic: String?
+        let duration: Int?
+        let pubdate: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case aid, bvid, cid, title, pic, duration, pubdate
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            aid = container.decodeLossyIntIfPresent(forKey: .aid)
+            bvid = container.decodeLossyStringIfPresent(forKey: .bvid)?.emptyToNil
+            cid = container.decodeLossyIntIfPresent(forKey: .cid)
+            title = container.decodeLossyStringIfPresent(forKey: .title)
+            pic = container.decodeLossyStringIfPresent(forKey: .pic)
+            duration = container.decodeLossyIntIfPresent(forKey: .duration)
+            pubdate = container.decodeLossyIntIfPresent(forKey: .pubdate)
+        }
+    }
+
+    var displayTitle: String {
+        let topTitle = title?.removingHTMLTags().trimmingCharacters(in: .whitespacesAndNewlines)
+        let arcTitle = arc?.title?.removingHTMLTags().trimmingCharacters(in: .whitespacesAndNewlines)
+        return (topTitle?.isEmpty == false ? topTitle : arcTitle) ?? ""
+    }
+
+    var durationSeconds: Int? {
+        let seconds = duration ?? arc?.duration
+        guard let seconds, seconds > 0 else { return nil }
+        return seconds > 10_000 ? seconds / 1000 : seconds
+    }
+
+    var resolvedCover: String? {
+        let topCover = cover?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arcPic = arc?.pic?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = (topCover?.isEmpty == false ? topCover : arcPic)
+        return (chosen?.isEmpty ?? true) ? nil : chosen?.normalizedBiliURL()
+    }
+
+    private var resolvedBVID: String? {
+        let trimmed = bvid?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? arc?.bvid : trimmed
+    }
+
+    private var resolvedCID: Int? {
+        if let cid, cid > 0 { return cid }
+        if let arcCid = arc?.cid, arcCid > 0 { return arcCid }
+        return nil
+    }
+
+    var isPlayable: Bool {
+        guard let resolvedBVID, !resolvedBVID.isEmpty, let resolvedCID, resolvedCID > 0 else { return false }
+        return true
+    }
+
+    func videoItem(in season: UgcSeason) -> VideoItem? {
+        guard isPlayable, let bvid = resolvedBVID, let cid = resolvedCID else { return nil }
+        return VideoItem(
+            bvid: bvid,
+            aid: aid ?? arc?.aid,
+            title: displayTitle,
+            pic: resolvedCover ?? season.normalizedCover,
+            desc: nil,
+            duration: durationSeconds,
+            pubdate: pubdate ?? arc?.pubdate,
+            owner: nil,
+            stat: nil,
+            cid: cid,
+            pages: [
+                VideoPage(
+                    cid: cid,
+                    page: 1,
+                    part: displayTitle,
+                    duration: durationSeconds,
+                    dimension: dimension
+                )
+            ],
+            dimension: dimension,
+            ugcSeason: season
+        )
+    }
+}
+
+nonisolated extension String {
+    var emptyToNil: String? {
+        isEmpty ? nil : self
     }
 }
 

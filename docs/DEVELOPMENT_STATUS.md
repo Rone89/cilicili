@@ -1,6 +1,6 @@
 # 开发接续状态
 
-更新时间：2026-11-03（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
+更新时间：2026-11-07（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
 
 ## 分支与工作区
 
@@ -331,3 +331,15 @@
 - 验证：单元 7/7（新增 page→item、episode→item、无 part 回落 Pn、无封面置灰回落季封面等 5 项）；UI 4/4 通过，新增 `testCompactEpisodeSelectorForPgcUsesSharedSheet`：分集紧凑行（"3 集"）、弹窗选「第2话」后行标签更新、经典展开按钮不出现。证据 `build/logs/build114-compact-selection-unit/.xcresult`、`build114-compact-selection-ui.xcresult`。未跑全量单元与云端 CI。
 - 交付：1.1.2 / Build 114；未签名 IPA SHA-256 `adff9af96a62fcdd6da9cceb80f5a54e6a6993f2f0b6b55a61a86e2610f6ab5d`（构建完成后改过设置页文案，已删除旧 IPA 以最终源码重建，此为重建后校验值）；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2648）并启动；可执行文件 SHA-256 `08fbdcd5b17ef86a9922ad9699307a809c5cbbadf7b3d050a336911dba9cbe67`。设置项文案同步改为"分P/分集紧凑选择实验"。
 - 待验收：真机进入番剧详情确认分集紧凑行、每集独立封面、选集后播放切换正常。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-07 合集（ugc_season）接入紧凑选择 / Build 115
+
+- 用户要求把视频播放页的合集也接入分P/分集实验。与分集轮的差异：详情接口 `/x/web-interface/view` 返回的 `ugc_season` 此前完全未解析、详情页没有任何合集区块，本轮需要先补数据链路再接共享组件。
+- 模型：新增 `UgcSeason`/`UgcSeasonSection`/`UgcSeasonEpisode`（防御性解码，顶层字段缺失回落 `arc` 档案对象，毫秒时长归一）；`VideoItem` 增加 `ugcSeason`（CodingKeys `ugc_season`、init 带默认值、`mergingFilledValues` 以 fullDetail 优先）。
+- 选择动作：新增 `selectUgcSeasonEpisode` 原地切换——合集条目是独立视频（不同 bvid），不能复用 `selectPage`（同视频换 cid）也不能直接用 `selectPgcEpisode`（有 `guard video.isPGCEpisode`）。守卫按纯 bvid 语义；切换时把 `ugcSeason` 带到新条目上（区块不消失），之后 `refreshDetailMetadata` 补拉 stat/UP主/简介（合集条目无完整档案，分集流程不需要这一步）。
+- 视图：新增 `VideoDetailUgcSeasonSection`，数据同步来自 `detail.ugcSeason` 无额外请求，条目数 >1 才显示；实验开启=紧凑单行入口（`video.detail.seasonMenu.compact`，「合集」+「N 个」）+共享弹窗「全部合集」；关闭=横滑瓦片（`video.detail.seasonMenu`，展开按钮「展开全部合集」）。位置在 SummaryCard 与分P之间；选中匹配按 bvid。弹窗/弹窗行复用 Build 112/114 的共享组件零改动。
+- fixture：`--ui-test-video-season` 独立开关（不影响既有用例），三集合集、每集独立封面、第 1 集即当前视频 `BV1xx411c7mD`。
+- 测试：单元 12/12（新增 6 项：sections 展平解码、arc 回落与毫秒归一、紧凑条目映射含 `ugcSeason` 携带、缺 bvid 置灰、`mergingFilledValues` 合并、bvid 匹配），证据 `build/logs/build115-season-unit-5.xcresult`。UI 全组 `VideoDetailPageSelectorUITests` 6/6（新增紧凑合集弹窗选集原地切换、经典合集瓦片+展开弹窗+选集两用例），证据 `build/logs/build115-season-ui-final.xcresult`。未跑全量单元与云端 CI。
+- 调试结论：本轮踩坑三处已修正——xcodebuild 少传 `test` 动作会静默变成纯 build（exit 0、0 用例，xcresult totalTestCount=0 识别）；经典瓦片 Button 的标签会被内层 tile 的 accessibilityLabel 合并成重复标签（`'合集视频 2, 合集视频 2'`），共享弹窗行是在 Button 层设 `.accessibilityLabel` 所以干净，经典瓦片同样把标签提到 Button 层修复；当前播放瓦片不是按钮，断言需用 `descendants(matching: .any)` 而非 `app.buttons`（与经典分P用例一致）。
+- 交付：1.1.2 / Build 115（6 处配置全部递增）；未签名 IPA SHA-256 `cd2655a1178ec8a8b495a0e585bcc4710b20aa2e4dc07ef2f8de9128a89db478`；18pm 直传参数（不覆盖被其他项目占用的 conf）重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2656）并启动成功；重签后可执行文件 SHA-256 `eb61d3934fe39013d82d651f349e397f3c3d33ee98877cb5124454d1f151bc17`。
+- 待验收：真机确认合集区块显示（实验开/关两种形态）、弹窗选集原地切换后播放/弹幕/续播正常、切换后 stat/UP主/简介等元数据正确回填。多 section 合集（如"正片/花絮"）按序展平不分组；听视频连播未接入合集语义，待后续需求。分支 main，本轮源码+文档单次提交。

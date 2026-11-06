@@ -165,7 +165,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
     }
 
     private static var video: [String: Any] {
-        ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
+        var video: [String: Any] = ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
          "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": Self.fixtureDuration,
          "pubdate": 1700000000,
          "pic": "https://ui-test.invalid/pic.jpg",
@@ -173,6 +173,32 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
          "pages": Self.pages,
          "stat": ["view": 1000, "like": 20, "reply": Self.totalCommentCount]]
+        if usesSeason {
+            video["ugc_season"] = ugcSeasonFixture
+        }
+        return video
+    }
+
+    /// `--ui-test-video-season`：详情自带三集合集，第 1 集即当前视频，用于合集选择器回归。
+    private static var usesSeason: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-video-season")
+    }
+
+    private static var ugcSeasonFixture: [String: Any] {
+        ["id": 900, "title": "测试合集", "cover": "https://ui-test.invalid/season.jpg",
+         "sections": [["id": 1, "title": "正片", "episodes": (1...3).map(seasonEpisodePayload)]]]
+    }
+
+    private static func seasonEpisodePayload(_ index: Int) -> [String: Any] {
+        [
+            "id": 900 + index,
+            "aid": 900 + index,
+            "bvid": index == 1 ? "BV1xx411c7mD" : "BVFixtureSeason\(index)",
+            "cid": 2000 + index,
+            "title": "合集视频 \(index)",
+            "cover": "https://ui-test.invalid/season-ep\(index).jpg",
+            "duration": Self.fixtureDuration,
+        ]
     }
 
     /// `--start-bvid ep3001`：番剧季信息，三集，用于分集选择器回归。

@@ -132,6 +132,110 @@ final class VideoDetailCompactPageSelectorTests: XCTestCase {
         XCTAssertNil(item.selectVideo)
     }
 
+    // MARK: - UGC 合集
+
+    private func decodeUgcSeason() throws -> UgcSeason {
+        let json = #"""
+        {"id":900,"title":"测试合集","cover":"https://ui-test.invalid/season.jpg","sections":[
+          {"id":1,"title":"正片","episodes":[
+            {"id":901,"aid":901,"bvid":"BVSeason1","cid":2001,"title":"合集视频 1",
+             "cover":"https://ui-test.invalid/season-ep1.jpg","duration":120},
+            {"id":902,"aid":902,"bvid":"BVSeason2","cid":2002,"title":"合集视频 2",
+             "cover":"https://ui-test.invalid/season-ep2.jpg","duration":90}
+          ]},
+          {"id":2,"title":"花絮","episodes":[
+            {"id":903,"arc":{"aid":903,"bvid":"BVSeason3","cid":2003,"title":"合集视频 3",
+             "pic":"https://ui-test.invalid/season-ep3.jpg","duration":60000}}
+          ]}
+        ]}
+        """#
+        return try JSONDecoder.bili.decode(UgcSeason.self, from: Data(json.utf8))
+    }
+
+    @MainActor
+    func testUgcSeasonDecodesAndFlattensSectionEpisodes() throws {
+        let season = try decodeUgcSeason()
+        XCTAssertEqual(season.episodes.count, 3)
+        XCTAssertEqual(season.displayTitle, "测试合集")
+        XCTAssertEqual(season.normalizedCover, "https://ui-test.invalid/season.jpg")
+        // 第三集只有 arc 档案对象，标题/封面/时长应回落；毫秒时长归一到秒。
+        let third = season.episodes[2]
+        XCTAssertEqual(third.displayTitle, "合集视频 3")
+        XCTAssertEqual(third.resolvedCover, "https://ui-test.invalid/season-ep3.jpg")
+        XCTAssertEqual(third.durationSeconds, 60)
+        XCTAssertTrue(third.isPlayable)
+    }
+
+    @MainActor
+    func testUgcSeasonEpisodeItemMapsToCompactSelectionItem() throws {
+        let season = try decodeUgcSeason()
+        let episode = season.episodes[1]
+
+        let item = VideoDetailCompactSelectionItem(
+            ugcSeasonEpisode: episode,
+            season: season,
+            isSelected: true
+        )
+        XCTAssertEqual(item.id, 902)
+        XCTAssertEqual(item.displayTitle, "合集视频 2")
+        XCTAssertNil(item.numberLabel)
+        XCTAssertNotNil(item.durationText)
+        XCTAssertEqual(item.coverURLString, "https://ui-test.invalid/season-ep2.jpg")
+        XCTAssertTrue(item.isSelected)
+        XCTAssertTrue(item.isSelectable)
+        let video = try XCTUnwrap(item.selectVideo)
+        XCTAssertEqual(video.bvid, "BVSeason2")
+        XCTAssertEqual(video.cid, 2002)
+        // 原地切换时合集数据要带到新条目上，区块才能继续显示。
+        XCTAssertEqual(video.ugcSeason?.displayTitle, "测试合集")
+    }
+
+    @MainActor
+    func testUgcSeasonEpisodeWithoutBvidIsNotSelectable() throws {
+        let json = #"{"id":910,"sections":[{"episodes":[{"id":911,"cid":2011,"title":"缺bvid"}]}]}"#
+        let season = try JSONDecoder.bili.decode(UgcSeason.self, from: Data(json.utf8))
+        let episode = try XCTUnwrap(season.episodes.first)
+
+        let item = VideoDetailCompactSelectionItem(
+            ugcSeasonEpisode: episode,
+            season: season,
+            isSelected: false
+        )
+        XCTAssertFalse(item.isSelectable)
+        XCTAssertNil(item.selectVideo)
+    }
+
+    @MainActor
+    func testVideoItemMergesUgcSeasonFromFullDetail() {
+        let base = VideoItem(
+            bvid: "BVSeason2", aid: 902, title: "合集视频 2", pic: nil,
+            desc: nil, duration: 90, pubdate: nil, owner: nil, stat: nil,
+            cid: 2002, pages: nil, dimension: nil
+        )
+        let fullDetail = VideoItem(
+            bvid: "BVSeason2", aid: 902, title: "合集视频 2", pic: "https://example.com/pic.jpg",
+            desc: "完整简介", duration: 90, pubdate: nil, owner: nil, stat: nil,
+            cid: 2002, pages: nil, dimension: nil,
+            ugcSeason: UgcSeason(id: 900, title: "测试合集", cover: nil, sections: [])
+        )
+
+        let merged = base.mergingFilledValues(from: fullDetail)
+        XCTAssertEqual(merged.ugcSeason?.title, "测试合集")
+        XCTAssertEqual(merged.desc, "完整简介")
+    }
+
+    @MainActor
+    func testUgcSeasonEpisodeMatchesDetailByBvid() throws {
+        let season = try decodeUgcSeason()
+        let current = VideoItem(
+            bvid: "BVSeason2", aid: 902, title: "合集视频 2", pic: nil,
+            desc: nil, duration: 90, pubdate: nil, owner: nil, stat: nil,
+            cid: 2002, pages: nil, dimension: nil
+        )
+        XCTAssertTrue(season.episodes[1].matches(detail: current))
+        XCTAssertFalse(season.episodes[0].matches(detail: current))
+    }
+
     private func decodeSeason() throws -> PgcSeasonInfo {
         let json = #"""
         {"season_id":30,"media_id":300,"title":"测试番剧","season_title":"测试番剧",

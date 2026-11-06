@@ -53,6 +53,23 @@ extension VideoDetailCompactSelectionItem {
 }
 
 extension VideoDetailCompactSelectionItem {
+    /// UGC 合集条目：无 P 号语义，封面回落到合集封面；可选性只看 bvid/cid 是否可用。
+    init(ugcSeasonEpisode episode: UgcSeasonEpisode, season: UgcSeason, isSelected: Bool) {
+        let video = episode.videoItem(in: season)
+        self.id = episode.id ?? episode.cid ?? episode.aid ?? 0
+        let title = episode.displayTitle
+        self.displayTitle = title.isEmpty ? "合集视频" : title
+        self.numberLabel = nil
+        self.durationText = episode.durationSeconds.map { BiliFormatters.duration($0) }
+        self.badgeText = nil
+        self.coverURLString = episode.resolvedCover ?? season.normalizedCover
+        self.isSelected = isSelected
+        self.isSelectable = video != nil
+        self.selectVideo = video
+    }
+}
+
+extension VideoDetailCompactSelectionItem {
     private static func seasonCover(_ season: PgcSeasonInfo) -> String? {
         let cover = season.cover?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (cover?.isEmpty ?? true) ? nil : cover?.normalizedBiliURL()
