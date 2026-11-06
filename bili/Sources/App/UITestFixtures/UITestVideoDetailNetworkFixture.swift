@@ -72,10 +72,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
                     "sub_url": "https://ui-test.invalid/012345abcdefghijklmnopqrstuvwxyz.png",
                 ]]
             case "/x/v2/reply/main":
-                payload = ["replies": (1...25).map { index in
-                    ["rpid": index, "content": ["message": "详情评论 \(index)"],
-                     "member": ["mid": "1001", "uname": "评论用户"]] as [String: Any]
-                }, "cursor": ["is_end": true]]
+                payload = Self.commentRepliesPayload(query: query)
             default:
                 payload = [:] as [String: Any]
             }
@@ -93,6 +90,58 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 
+    /// `--ui-test-comment-pagination`：把评论接口切成每页 20 条、共 60 条的游标分页，
+    /// 用于验证“下滑自动续载”不再依赖 SwiftUI 几何回调。
+    private static var paginatesComments: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-comment-pagination")
+    }
+
+    private static var totalCommentCount: Int {
+        paginatesComments ? 60 : 25
+    }
+
+    private static func commentRepliesPayload(query: [URLQueryItem]) -> [String: Any] {
+        guard paginatesComments else {
+            return [
+                "replies": (1...totalCommentCount).map(commentPayload),
+                "cursor": ["is_end": true],
+            ]
+        }
+        let pageSize = 20
+        let offset = commentPageOffset(query: query)
+        let start = offset + 1
+        let end = min(offset + pageSize, totalCommentCount)
+        var cursor: [String: Any] = ["is_end": end >= totalCommentCount]
+        if end < totalCommentCount {
+            cursor["next"] = String(end)
+        }
+        return [
+            "replies": (start...end).map(commentPayload),
+            "cursor": cursor,
+        ]
+    }
+
+    private static func commentPageOffset(query: [URLQueryItem]) -> Int {
+        guard let pagination = query.first(where: { $0.name == "pagination_str" })?.value,
+              let data = pagination.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let offset = object["offset"] as? String
+        else { return 0 }
+        return Int(offset) ?? 0
+    }
+
+    private static func commentPayload(_ index: Int) -> [String: Any] {
+        // 每 4 条里有一条是长文本，制造参差行高（模拟真实评论区）。
+        let filler = index % 4 == 0
+            ? String(repeating: "这是一段用来撑高评论行的长文本内容，", count: 18)
+            : ""
+        return [
+            "rpid": index,
+            "content": ["message": "详情评论 \(index)\(filler)"],
+            "member": ["mid": "1001", "uname": "评论用户"],
+        ]
+    }
+
     private static var fixtureDuration: Int {
         ProcessInfo.processInfo.arguments.contains("--ui-test-recovery-long-video") ? 600 : 120
     }
@@ -104,7 +153,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
          "owner": ["mid": 1001, "name": "测试 UP", "face": "https://ui-test.invalid/face.png"],
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
          "pages": [["cid": 1001, "page": 1, "part": "测试分 P", "duration": Self.fixtureDuration]],
-         "stat": ["view": 1000, "like": 20, "reply": 25]]
+         "stat": ["view": 1000, "like": 20, "reply": Self.totalCommentCount]]
     }
 }
 #endif

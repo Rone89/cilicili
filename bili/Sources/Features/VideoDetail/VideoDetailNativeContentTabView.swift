@@ -21,6 +21,9 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
     let onScrollOffsetChange: ((VideoDetailContentTab, CGFloat) -> Void)?
     var onScrollPhaseChange: ((VideoDetailContentTab, ScrollPhase) -> Void)? = nil
     var summary: AnyView? = nil
+    /// 评论 tab 的 UIKit 页面构造器。提供后评论页由 `UITableView` 自己滚动，
+    /// 不再包在外层滚动宿主里（否则列表会被当成静态内容一次性布局）。
+    var commentsPage: ((VideoDetailCommentsPageContext) -> AnyView)? = nil
     let content: (VideoDetailContentTab, Bool) -> Content
 
     var body: some View {
@@ -76,13 +79,31 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
 
     @ViewBuilder
     private func page(for tab: VideoDetailContentTab) -> some View {
+        let mountsPageContent = mountsSecondaryContent
+            || (tab == .comments && selection == .comments)
         let pageContent = {
-            content(
-                tab,
-                mountsSecondaryContent || (tab == .comments && selection == .comments)
-            )
+            content(tab, mountsPageContent)
         }
-        if placesTopInsetInScrollContent {
+        if placesTopInsetInScrollContent, tab == .comments, let commentsPage {
+            if mountsPageContent {
+                commentsPage(
+                    VideoDetailCommentsPageContext(
+                        tab: tab,
+                        topInset: topInset,
+                        bottomInset: bottomInset + segmentedPickerHeight + 16,
+                        minimumPlayerHeight: interactiveMinimumPlayerHeight,
+                        standardHorizontalInset: standardHorizontalInset,
+                        isActive: selection == tab,
+                        showsBottomEdgeEffect: !hidesBottomToolbar,
+                        scrollAdjustment: scrollAdjustment,
+                        onScrollOffsetChange: onScrollOffsetChange,
+                        onScrollPhaseChange: onScrollPhaseChange
+                    )
+                )
+            } else {
+                Color.clear
+            }
+        } else if placesTopInsetInScrollContent {
             VideoDetailInteractiveScrollingTabPage(
                 tab: tab,
                 scrollAdjustment: scrollAdjustment,
@@ -94,8 +115,7 @@ struct VideoDetailNativeContentTabView<Content: View>: View {
                 bottomEdgeBlurEnabled: !hidesBottomToolbar,
                 isActiveContent: selection == tab,
                 contentRevision: contentRevision,
-                contentMountsSecondaryContent: mountsSecondaryContent
-                    || (tab == .comments && selection == .comments),
+                contentMountsSecondaryContent: mountsPageContent,
                 bottomInset: bottomInset + segmentedPickerHeight + 16,
                 standardHorizontalInset: standardHorizontalInset,
                 content: pageContent

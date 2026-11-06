@@ -584,14 +584,14 @@ nonisolated private struct BiliListenerPaginationReply {
     var previous: String?
 }
 
-nonisolated private enum BiliProtoWire: Int {
+nonisolated enum BiliProtoWire: Int {
     case varint = 0
     case fixed64 = 1
     case lengthDelimited = 2
     case fixed32 = 5
 }
 
-nonisolated private struct BiliProtoWriter {
+nonisolated struct BiliProtoWriter {
     private(set) var data = Data()
 
     mutating func appendVarint(field: Int, value: UInt64) {
@@ -625,7 +625,7 @@ nonisolated private struct BiliProtoWriter {
     }
 }
 
-nonisolated private struct BiliProtoReader {
+nonisolated struct BiliProtoReader {
     private let bytes: [UInt8]
     private var index = 0
 

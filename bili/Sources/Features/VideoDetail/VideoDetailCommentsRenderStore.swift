@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 final class VideoDetailCommentsRenderStore: ObservableObject {
-    @Published private var snapshot = VideoDetailCommentsRenderSnapshot()
+    @Published private(set) var snapshot = VideoDetailCommentsRenderSnapshot()
     private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailCommentsRenderSnapshot>()
 
     var detail: VideoItem? { snapshot.detail }
@@ -17,6 +17,16 @@ final class VideoDetailCommentsRenderStore: ObservableObject {
     var shouldShowEmptyCommentsState: Bool { snapshot.shouldShowEmptyCommentsState }
     var shouldShowCommentReloadPrompt: Bool { snapshot.shouldShowCommentReloadPrompt }
     var replyCountText: String? { snapshot.replyCountText }
+
+    /// 评论区初次加载的 task 标识：切换视频/分集时重新触发加载。
+    func commentsLoadTaskID(autoLoads: Bool) -> String {
+        [
+            detail?.bvid ?? "",
+            detail?.cid.map(String.init) ?? "cid-",
+            detail?.pgcEpisodeID.map { "ep\($0)" } ?? "ep-",
+            String(autoLoads)
+        ].joined(separator: "|")
+    }
 
     func updateSnapshot(_ transform: (inout VideoDetailCommentsRenderSnapshot) -> Void) {
         var next = deferredSnapshot.pendingOrNil ?? snapshot

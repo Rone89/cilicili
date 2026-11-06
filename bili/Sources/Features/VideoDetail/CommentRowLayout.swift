@@ -76,6 +76,9 @@ struct DynamicCommentFullRowReplyTarget<Content: View>: View {
     }
 
     var body: some View {
+        // 注意：按钮占位 `maxHeight: .infinity` 会随提议高度伸缩——ZStack 高度
+        // = max(提议, 内容)。因此离屏测高必须提议高度 0（弹性部分收敛到 0，
+        // ZStack 恰好等于内容理想高度）；提议无限会得到被撑爆的假高度。
         ZStack(alignment: .topLeading) {
             if let action {
                 Button(action: action) {

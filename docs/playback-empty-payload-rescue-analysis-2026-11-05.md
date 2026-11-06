@@ -185,3 +185,193 @@ build 92 曾改回 `onAppear` 自动加载，自测显示仍会失控（LazyVSta
 
 - 排除法曾误指向 HDR/EDR、弹幕渲染器、网络流式下载等，最终靠 `skipCommentLoading` A/B 和 `commentPageLoaded` 计数锁定评论分页循环。
 - `--hitch-self-test --hitch-mode <off|kit|metal|sdr|nostream|nocomment>`（配合 `--start-detail --start-bvid ...`）可全自动复现与回归，性能类问题建议优先搭建此类可编程复现通道。
+
+## 追加四：评论列表换 UIKit（build 99）
+
+滚动几何触发解决了"自动加载失控"，但评论量上千后 SwiftUI 侧仍会卡：`LazyVStack` 不会像
+UITableView 那样回收行，已构建的评论行会一直保留并参与每次更新的 diff。最终把评论页整页
+换成 UIKit：
+
+- 新 `VideoDetailCommentsUIKitPage` + `VideoDetailCommentsTableViewHost`：
+  `UITableView(style: .plain)` + `UITableViewDiffableDataSource`，行内容用
+  `UIHostingConfiguration` 承载原 `CommentRow`（点赞、图片、长按菜单、回复预览不变），
+  `rowHeight = automaticDimension`。`LazyVStack` 的评论列表实现保留给非交互外壳路径。
+- 列表自己充当滚动容器：`contentInset.top = 播放器展开高度`，滚动偏移仍上报给
+  `VideoDetailSwiftUIContainerModel`，播放器随滚动收缩、tab 切换的位置恢复语义不变。
+  内容不足一屏时补底部留白，保证播放器仍可完全收起。
+- 分页改由 `UIScrollViewDelegate` 的距底 320pt 阈值触发，失败态下滑自动重试；
+  VM 层 800ms 节流与总数判尾保留。排序切换后回到评论区顶部。
+- 行内 `@State`（点赞态）按评论 id `.id()` 隔离，cell 复用不会串状态；行内容固定纵轴
+  尺寸，避免 `automaticDimension` 把 estimated 高度吸收成永久行高。
+
+实现注意（踩坑记录）：
+
+- 先尝试 `UICollectionViewCompositionalLayout` + `UIHostingConfiguration`，在自适应行高
+  下触发 `_updateVisibleCellsNow` 递归 invalidate，栈溢出 SIGTRAP；换成 UITableView 的
+  自适应行高后稳定。
+- 不在 `layoutSubviews` 里同步改 `contentInset` / `contentOffset`，统一合并到下一轮
+  runloop；否则会与行高测量互相递归。
+- UIKit 宿主会隔断 SwiftUI 环境：cell 内容需显式注入 `AppDependencies`、`LibraryStore`、
+  主题色、`commentLikeTarget`、`commentContentOwnerMID`；评论页绕过
+  `VideoDetailContentPage` 后，`commentLikeTarget` 在 shell 里补挂。
+
+回归测试（模拟器，`--ui-test-video-detail-network`，新增 `--ui-test-comment-pagination`
+把评论切成 3 页 × 20 条）：
+
+- 行渲染与滚动、下滑自动续载到第 60 条、行内点赞按钮可交互；
+- 既有 collapse/origin 用例（评论头随播放器收缩、暂停后评论原点在播放器下方）保持通过。
+
+### 追加：减速途中触摸停不住（build 100）
+
+build 99 真机反馈：评论列表滑动流畅，但减速途中按下手指停不住，只能等它自己停下。
+两个叠加原因，均已修复并加了可复现的 UI 回归（`testCommentsUIKitListTouchStopsDeceleration`，
+修复前在模拟器上同样失败，触摸后列表继续滑出 ~86pt）：
+
+- 触摸被 SwiftUI 吞掉：cell 内容是 `UIHostingConfiguration` 承载的 SwiftUI（整行回复
+  按钮等），减速途中按下手指时其内部手势会延迟触摸，`UITableView` 的 `touchesBegan`
+  不可靠。新增挂在表格视图上的自定义 `DecelerationStopGestureRecognizer`（祖先层必然
+  收到触摸）：仅 `isDecelerating` 时识别并调用停止，其余时刻立即 failed，不影响点按
+  与拖拽；`touchesBegan` 直连路径同步兜底。
+- 减速距离被高估：`estimatedRowHeight`（120）远大于真实行高（约 85），估算失真会让
+  一次轻滑跑出很远。加行高缓存（`willDisplay` 记录实测值给 `estimatedHeightForRowAt`
+  回填），估算值贴近真实后滑动距离恢复可控。
+
+注意：停止减速用 `setContentOffset` 同值赋值可能被按 no-op 忽略，实现里沿滚动方向
+微调 1pt 以确保打断；手势不用 target-action（避免手势强持有 target 的循环引用）。
+另修复了视频切换换 store 时协调器未重订阅的问题（重订阅 + 清行高缓存 + 整表刷新）。
+
+### 追加：固定行高彻底替换自适配（build 101）
+
+build 100 真机反馈两个问题：减速途中触摸仍停不住、评论之间相对位置在滚动中变化。
+同一根因的两面：`automaticDimension` 自适配行高 + SwiftUI 内容（UIHostingConfiguration）
+多次测量结果有细微差异，UIKit 在滚动中反复修正行高与 contentOffset——行间相对位置
+漂移；触摸杀掉减速后这些修正仍在推动行移动，看起来"停不住"。
+
+修复：彻底放弃自适配，改为**离屏精确测量 + 固定行高**：
+
+- `refreshSnapshot` 应用快照前，把所有行的精确高度测出来（每条评论一个键，只测一次）；
+  `heightForRowAt` / `estimatedHeightForRowAt` 全部走缓存。contentSize 一次到位，
+  滚动中没有任何改行高的机会。
+- 测量方式：离屏 `UITableViewCell` 装入同样的 `UIContentConfiguration` 后
+  `systemLayoutSizeFitting`——与 UIKit 自适配内部同一条路径，高度与真实渲染一致。
+  注意不要用"裸容器 + makeContentView + 顶部约束"的方式测：hosting 内容视图不会向
+  无窗口的容器暴露高度，全部解出 0（cell 变 1pt、列表视觉空白但元素树完好）。
+- 结构性行（头部/尾部/错误/空态）的高度键带上动态内容（计数文本、排序、加载态）。
+- 宽度变化（首次拿到真实宽度/旋转）时清缓存重测并 `reloadData`；换视频换 store 同样清理。
+
+回归：新增"行间相对距离稳定"断言并入 `testCommentsUIKitListTouchStopsDeceleration`；
+六条评论相关用例（触摸停止、渲染滚动、自动翻页、行内点赞、排序、播放器收起耦合）全部通过。
+
+### 追加：重叠根因与测高引擎更换（build 102）
+
+build 101 真机反馈：挤动减轻但复杂评论（大图/回复预览）行内容溢出，与相邻行重叠。
+根因：离屏 sizing cell + `systemLayoutSizeFitting` 对 hosting 配置的测高不完整——
+SwiftUI 内容在没有进入真实窗口层次时不会完整布局，测出的高度对简单文本行够用、
+对复杂行偏小；内容理想高度大于 cell 高度时 `UIHostingConfiguration` 默认垂直居中，
+溢出向上下两头冒，形成"头像骑到上一条回复上"的重叠。
+
+修复（两层）：
+
+- 测高引擎换成 `UIHostingController.sizeThatFits`：与 cell 内渲染的是同一棵 SwiftUI
+  树（`cellContent(for:)` 统一供 cell 配置与测高使用，环境注入同一路径），理想高度
+  与真实渲染一致。
+- 自愈校验兜底：`willDisplay` 时 cell 已在窗口内，用 `contentView.systemLayoutSizeFitting`
+  求真实理想高度；与缓存偏差 > 1.5pt 时以渲染为准更新缓存，并包在
+  `performWithoutAnimation` 里做一次 `beginUpdates/endUpdates` 全局校正。正常路径
+  不触发（测量已准确），只有真实内容比测量时更动态的行才会被纠正，且纠正后不再重复。
+
+四条评论回归用例（触摸停止+行位置稳定、渲染滚动、自动翻页、行内点赞）全部通过。
+
+### 追加：放弃离屏预测，冻结系统自适配高度（build 103）
+
+build 102 真机反馈：重叠消失但行间出现大段空白（测高 > 渲染）。至此 101（测矮→重叠）、
+102（测高→空白）两个相反方向的失败证明了同一件事：评论行内容里有随"提议高度"伸缩的
+弹性视图（整行回复按钮的占位 `frame(maxHeight: .infinity)` + Spacer），任何离屏预测
+（sizing cell 的 compressed 提议、`sizeThatFits` 的无限提议）都会被它带偏，方向取决于
+提议值，不存在可靠的离屏高度。
+
+最终方案——不做任何预测，用系统自适配一次 + 冻结：
+
+- `heightForRowAt`：有缓存返回冻结高度，没有返回 `UITableView.automaticDimension`
+  交还系统自适配（返回该值时 UIKit 按内容撑开该行）。
+- `willDisplay`：把该行真实显示高度记入缓存（`cell.frame.height`，以 Item 为键）。
+  首次显示时内容在真实窗口层次里布局，这个高度是权威值；之后该行高度永久冻结，
+  重复经过零重算，行间距离不再变化。
+- `estimatedHeightForRowAt`：返回冻结值或默认估算，滚动数学稳定。
+- 头部/尾部/错误/空态等结构行内容随加载态变化，每次快照刷新逐出缓存让其重新自适配；
+  评论行高度冻结。宽度变化/换视频清空全部缓存。
+
+六条评论回归用例全部通过。
+
+### 追加：行距漂移的最终根因与托管 cell 重写（build 104）
+
+build 103 真机反馈：行间距离仍会变化、首滑仍有明显调整。通过"参差行高夹具 + 往返
+滚动断言 + 行高日志"在模拟器复现并层层定位，最终根因是：
+
+**`UIHostingConfiguration` 在 cell 复用换内容时是异步更新的。** UITableView 对复用
+cell 做自适配测高时，SwiftUI 内容可能还是"上一份"——量出来的高度是陈旧内容的高度
+（夹具里抓到短评论被量成 171.3 = 另一内容的高度），真实内容行高悬殊（85–470pt）
+时误差巨大；配合 96pt 固定估算，每次 diffable 批量更新都会扯动内容偏移。AX 树里的
+0×0 空内容、行重叠、大段空白都是这条竞态的不同表现。
+
+最终架构（build 104）：
+
+- **自定义 `VideoDetailCommentContentCell` 直持 `UIHostingController`**：配置时
+  同步替换 `rootView`（`prepareForReuse` 清空），内容与高度永远同源，复用不再有
+  异步竞态。`UIHostingConfiguration` 与 sizing-cell 两条路全部废弃。
+- **行高两级来源**：`heightForRowAt` = 显示捕获的冻结值 → 离屏精确种子 → 兜底
+  自适配；`estimatedHeightForRowAt` 同序。种子在快照刷新时批量离屏测量（在布局
+  路径之外，提议高度 0——整行回复按钮的 `maxHeight:.infinity` 弹性占位在提议 0
+  时收敛，测得恰好是内容理想高度；提议无限会被撑爆）。
+- **willDisplay 只记录、不做任何表几何操作**（曾加过的 begin/endUpdates 校正在
+  布局过程中重入，直接栈崩溃 SIGSEGV，也是行位置跳动来源之一，已删）。
+- 测试查询加固：评论 tab 点击可能被播放器转场吞掉（重试一次）；离屏 cell 的
+  hosting 内容 frame 为 0，XCUITest 会剪掉 0×0 元素，改用 cell 数量断言。
+
+七条评论用例全绿（渲染滚动、自动翻到 60 条、参差行高往返稳定、触摸停止、行内点赞、
+排序、动态评论回复流），日志确认全程 seed==captured、零校正、零自适配回退。
+
+### 追加：跟手/加载失败/底部边缘统一（build 105）
+
+build 104 真机三项反馈与处理：
+
+- **不跟手**：build 100 引入的"触摸即停"手势识别器（DecelerationStopGestureRecognizer）
+  在减速触摸时立即进入 began，按互斥规则会把表格 pan 手势强制 fail——那次触摸无法
+  继续拖拽，手感"粘住不跟手"。已删除该手势，触摸即停改由 `touchesBegan`（响应链
+  路径，行高确定后Hosting 内容不再延迟触摸）承担。触摸停止回归用例继续通过。
+- **下滑加载失败频发**：平滑滚动 + 320pt 预载窗口 + 失败后 800ms 一律自动重试，请求
+  密度过高容易触发 B 站风控，且一次失败后被自动重试持续放大。改为失败退避：连败按
+  3s/6s/12s 指数拉长自动重试间隔，连败 4 次后停止自动重试（footer 手动重试按钮保留）；
+  成功后连败清零。VM 层 800ms 节流保持不变。
+- **底部边缘 .hard/.soft 不统一**：评论页 UITableView 是自己的滚动容器，没接外壳的
+  边缘绑定，`UIScrollView.bottomEdgeEffect` 默认 .hard；简介页外壳滚动宿主显式 .soft。
+  已让评论表格走同一个 `VideoDetailBottomEdgeEffectBinding`（.soft + 工具栏容器交互），
+  样式由外壳配置（`showsBottomEdgeEffect = !hidesBottomToolbar`）驱动，两个 tab 视觉一致。
+
+评论回归用例全部通过（渲染滚动目标行按参差夹具调整）。
+
+### 追加：评论分页切换 gRPC 通道（build 106）
+
+对齐 PiliPlus 的加载通道，治理"下滑加载失败频发"的根因（网页版
+`/x/v2/reply/main` 对短时连续翻页风控严格，-352 高发；PiliPlus 走 App 侧 gRPC
+`bilibili.main.community.reply.v1.Reply/MainList`，不受该网页限流约束）：
+
+- 项目听视频功能已有完整 gRPC 基建（`BiliProtoWriter/Reader`、5 字节帧封装、
+  gzip、全套 `x-bili-*` 元数据头、grpc-status 从响应头读取——服务器已验证），
+  评论分页直接复用；`BiliProtoReader/Writer/Wire` 从 private 改 internal。
+- 新 `BiliAPIClient+CommentsGrpc.swift`：按 PiliPlus 生成的 proto 字段号手写
+  MainListReq 编码（oid/type/mode/FeedPagination{pageSize:20, offset}）与
+  MainListReply 解码（CursorReply/replies/SubjectControl/topReplies/upTop/
+  FeedPaginationReply），映射回现有 `CommentPage` 的 JSON 结构走原有
+  Decodable——UI 层零改动，排序映射 hot→3 / time→2。
+- 接入点在 `fetchComments`：DEBUG 构建优先 gRPC，任意失败回退网页接口
+  （UI 测试夹具拦截网页接口，gRPC 仅在 DEBUG 且非夹具时生效，Release 构建走
+  原路径等待后续放开）。
+- 游标兼容：`CommentCursor.effectiveNext` 优先取 `pagination_reply.next_offset`，
+  与 gRPC 的 FeedPagination.offset 是同一族不透明 token，两种通道可互换。
+- 失败退避（build 105 的 3s/6s/12s 指数退避 + 4 次封顶）保留，作为网页回退路径
+  的兜底。
+
+验证：新增 `BiliReplyMainListCodecTests` 单元测试（构造假 MainListReply 报文 →
+decodePage → 断言全部字段映射、嵌套回复/表情/图片/置顶/游标/总数；请求编码含
+排序模式与游标）；评论 UI 回归用例全绿。真机观察点：连续下滑翻多页后失败率。

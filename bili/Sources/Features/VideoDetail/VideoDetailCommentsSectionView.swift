@@ -43,12 +43,7 @@ struct CommentsSectionView: View {
     }
 
     private var commentsLoadTaskID: String {
-        [
-            store.detail?.bvid ?? "",
-            store.detail?.cid.map(String.init) ?? "cid-",
-            store.detail?.pgcEpisodeID.map { "ep\($0)" } ?? "ep-",
-            String(autoLoads)
-        ].joined(separator: "|")
+        store.commentsLoadTaskID(autoLoads: autoLoads)
     }
 
     private var horizontalPadding: CGFloat {

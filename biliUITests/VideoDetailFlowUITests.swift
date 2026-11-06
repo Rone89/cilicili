@@ -6,6 +6,218 @@ final class VideoDetailFlowUITests: XCTestCase {
     }
 
     @MainActor
+    private func openCommentsTab(in app: XCUIApplication) -> XCUIElement {
+        let list = app.tables["comments.list"].firstMatch
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        // 点按可能被播放器转场浮层吞掉：确认列表出现，未出现则重按一次。
+        toolbar.buttons["评论"].tap()
+        if !list.waitForExistence(timeout: 4) {
+            toolbar.buttons["评论"].tap()
+        }
+        XCTAssertTrue(list.waitForExistence(timeout: 10), app.debugDescription)
+        return list
+    }
+
+    @MainActor
+    func testCommentsUIKitListRendersAndScrollsRows() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+
+        let list = openCommentsTab(in: app)
+        // 首屏可见行渲染断言（离屏复用 cell 的 hosting 内容 frame 为 0，会被
+        // XCUITest 查询剪掉，因此只断言可见元素；整体视觉以截图为准）。
+        XCTAssertTrue(
+            list.buttons["详情评论 1"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
+
+        // 夹具第 4 行是 470pt 的长评论：两屏滑动到第 5 行附近。
+        list.swipeUp()
+        list.swipeUp()
+        XCTAssertTrue(
+            list.buttons["详情评论 5"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Comments UIKit list"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testCommentsUIKitListLoadsNextPageOnScroll() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["--ui-test-comment-pagination"]
+        )
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+
+        let list = openCommentsTab(in: app)
+        // 头部 + 20 条首页评论 + 尾部 = 22；全部 60 条加载完后为 62。
+        func loadedCellCount() -> Int { list.cells.count }
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in loadedCellCount() >= 10 },
+                    object: nil
+                )],
+                timeout: 10
+            ),
+            .completed
+        )
+
+        // 持续下滑应自动续载到最后一页，无需点按。
+        var reachedEnd = loadedCellCount() >= 62
+        for _ in 0..<24 where !reachedEnd {
+            list.swipeUp()
+            reachedEnd = loadedCellCount() >= 62
+        }
+        XCTAssertTrue(
+            reachedEnd
+                || XCTWaiter.wait(
+                    for: [XCTNSPredicateExpectation(
+                        predicate: NSPredicate { _, _ in loadedCellCount() >= 62 },
+                        object: nil
+                    )],
+                    timeout: 10
+                ) == .completed,
+            "cells loaded: \(loadedCellCount())"
+        )
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Comments UIKit list paginated"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testCommentsUIKitListTouchStopsDeceleration() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["--ui-test-comment-pagination"]
+        )
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+
+        let list = openCommentsTab(in: app)
+        XCTAssertTrue(
+            element("详情评论 1", in: app).firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
+
+        list.swipeUp()
+        // 减速途中按下手指（0.4s 长按避免触发整行回复按钮），列表应立即停止滚动。
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            .press(forDuration: 0.4)
+
+        let marker = list.cells.element(boundBy: 2)
+        XCTAssertTrue(marker.waitForExistence(timeout: 5), app.debugDescription)
+        let marker2 = list.cells.element(boundBy: 5)
+        XCTAssertTrue(marker2.waitForExistence(timeout: 5), app.debugDescription)
+        Thread.sleep(forTimeInterval: 0.15)
+        let firstFrame = marker.frame
+        let secondMarkerFirstFrame = marker2.frame
+        Thread.sleep(forTimeInterval: 0.8)
+        let secondFrame = marker.frame
+        let secondMarkerSecondFrame = marker2.frame
+        XCTAssertEqual(
+            secondFrame.minY,
+            firstFrame.minY,
+            accuracy: 2,
+            "touch during deceleration must stop the comment list"
+        )
+        // 行间相对距离必须不变——行高在滚动中反复修正会让评论互相挤动。
+        let firstDistance = secondMarkerFirstFrame.minY - firstFrame.minY
+        let secondDistance = secondMarkerSecondFrame.minY - secondFrame.minY
+        XCTAssertEqual(
+            secondDistance,
+            firstDistance,
+            accuracy: 2,
+            "relative positions between comments must not change after scrolling"
+        )
+    }
+
+    @MainActor
+    func testCommentsUIKitListRowsStableAfterRoundTrip() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["--ui-test-comment-pagination"]
+        )
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+
+        let list = openCommentsTab(in: app)
+        XCTAssertTrue(
+            list.buttons["详情评论 1"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
+
+        // 行间距与滚动偏移无关：下滑两屏再滑回，同两条评论的间距必须不变
+        // （行高冻结则间距恒定；行高被重新计算则会变化）。只在两条评论同时
+        // 可见时取 frame（列表作用域查询），避免离屏/隐藏元素污染测量。
+        func visibleDistance() -> CGFloat? {
+            let itemA = list.buttons["详情评论 1"].firstMatch
+            let itemB = list.buttons["详情评论 3"].firstMatch
+            guard itemA.exists, itemA.isHittable, itemB.exists, itemB.isHittable else {
+                return nil
+            }
+            return itemB.frame.minY - itemA.frame.minY
+        }
+
+        guard let initialDistance = visibleDistance() else {
+            XCTFail("markers 1 and 3 must be initially visible")
+            return
+        }
+
+        list.swipeUp()
+        list.swipeUp()
+        var returnedDistance: CGFloat?
+        for _ in 0..<8 where returnedDistance == nil {
+            list.swipeDown()
+            returnedDistance = visibleDistance()
+        }
+        let distance = returnedDistance ?? visibleDistance()
+        XCTAssertNotNil(distance, "markers must be visible again after scrolling back")
+        if let distance {
+            XCTAssertEqual(
+                distance, initialDistance, accuracy: 2,
+                "distance between comments must not change after scrolling away and back"
+            )
+        }
+    }
+
+
+    @MainActor
+    func testCommentsUIKitListLikesCommentInline() {
+        let app = launchVideoDetail(waitForDetailMarker: false)
+        let toolbar = element("video.detail.toolbar-picker", in: app).firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 15))
+        toolbar.buttons["评论"].tap()
+
+        XCTAssertTrue(
+            element("评论用户", in: app).firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
+        // 点赞按钮依赖 `commentLikeTarget` 环境；缺失时会退化成不可点的角标。
+        let likeButton = app.buttons["点赞评论"].firstMatch
+        XCTAssertTrue(likeButton.waitForExistence(timeout: 10), app.debugDescription)
+        // 未登录时点击应弹出提示而不是崩溃——同时验证 cell 里注入的
+        // `dependencies` / `libraryStore` 环境对象可用。
+        likeButton.tap()
+        let alert = app.alerts["评论点赞"].firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), app.debugDescription)
+        alert.buttons["好"].tap()
+    }
+
+    @MainActor
     func testVideoDetailCommentSortUsesNativeSegmentedControl() {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -172,7 +384,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         XCTAssertEqual(picker.frame.minY, pickerFrame.minY, accuracy: 2)
 
         commentsButton.tap()
-        let commentHeader = app.scrollViews.staticTexts["评论"].firstMatch
+        let commentHeader = element("comments.header", in: app).firstMatch
         XCTAssertTrue(commentHeader.waitForExistence(timeout: 5))
         XCTAssertTrue(commentHeader.isHittable)
         let hiddenSummary = XCTNSPredicateExpectation(
@@ -348,7 +560,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         commentsButton.tap()
 
         let playerFrame = app.descendants(matching: .any)["ui.videoDetail.playerFrame"].firstMatch
-        let commentHeader = app.scrollViews.staticTexts["评论"].firstMatch
+        let commentHeader = element("comments.header", in: app).firstMatch
         XCTAssertTrue(playerFrame.waitForExistence(timeout: 5))
         XCTAssertTrue(commentHeader.waitForExistence(timeout: 10))
 
@@ -363,11 +575,8 @@ final class VideoDetailFlowUITests: XCTestCase {
         initialAttachment.name = "Paused comment section begins below player"
         initialAttachment.lifetime = .keepAlways
         add(initialAttachment)
-        let scrollView = app.scrollViews.allElementsBoundByIndex.first { scrollView in
-            scrollView.isHittable && scrollView.frame.contains(commentHeader.frame)
-        }
-        XCTAssertNotNil(scrollView)
-        guard let scrollView else { return }
+        let scrollView = app.tables["comments.list"].firstMatch
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5), app.debugDescription)
 
         // Use absolute screen coordinates: the header itself moves while the
         // player collapses. A short press also avoids long-press reply actions.
@@ -864,7 +1073,7 @@ final class VideoDetailFlowUITests: XCTestCase {
         picker.buttons["评论"].tap()
 
         let playerFrame = app.descendants(matching: .any)["ui.videoDetail.playerFrame"].firstMatch
-        let commentHeader = app.scrollViews.staticTexts["评论"].firstMatch
+        let commentHeader = element("comments.header", in: app).firstMatch
         XCTAssertTrue(playerFrame.waitForExistence(timeout: 10))
         XCTAssertTrue(commentHeader.waitForExistence(timeout: 10))
         let playingPlayerFrame = playerFrame.frame

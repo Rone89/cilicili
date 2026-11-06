@@ -270,3 +270,13 @@
 - GitHub Release 已发布中文说明并上传 IPA，页面显示的 SHA-256 与本地一致：https://github.com/Rone89/cilicili/releases/tag/v1.1.2 。未运行本轮完整云端回归。
 - 发布页面选择了开发分支，但实际生成的 `v1.1.2` 标签指向旧基线 `adf2995b61ad402f68d923407bd758f08a359bc6`，因此 Release 自动生成的源码不对应 IPA；用户已同意修正到源码备份 `f15c51da490e5f1fda32b8574e5cfc8014f2e72d`；GitHub 网页不允许删除关联 Release 的标签，连接器更新标签报错，本机无 GitHub 推送凭据，标签尚未修正。Release 已明确警告并链接正确源码。不得误认源码一致。
 - 本地分支 `codex/coin-401-auto-like-build54`，本轮基线 `36920f4`，本记录未提交。
+
+
+## 2026-11-06 评论区 UIKit 重写 + gRPC 分页（Build 99–106）
+
+- 评论量上千时 SwiftUI `LazyVStack` 滚动掉帧，用户选择"评论列表换 UIKit"。评论 tab 整页改为 `UITableView`（`VideoDetailCommentsUIKitPage` + `VideoDetailCommentsTableViewHost`），行内容仍复用 SwiftUI `CommentRow`，列表自身充当滚动容器（`contentInset.top = 播放器展开高度`，滚动收缩播放器、tab 位置恢复语义不变），分页由距底 320pt 阈值触发，失败态随滚动自动重试。LazyVStack 版评论列表保留给非交互外壳路径。
+- 迭代过程中的已验证结论：`UICollectionViewCompositionalLayout` + 自适应行高会递归 invalidate 栈溢出；`UIHostingConfiguration` 换内容是异步的，自适配会量到"上一份内容"的高度（行重叠/空白/漂移三症状同源）；离屏预测高度不可靠（行内弹性视图随提议伸缩）。最终架构：自定义 cell 直持 `UIHostingController` 同步换 `rootView`，行高 = 显示捕获冻结值 → 离屏精确种子（提议 0）→ 兜底自适配。减速触摸即停由 `touchesBegan` 承担（手势识别器方案会抢 pan 导致不跟手，已废弃）。底部边缘评论页接入外壳绑定统一 .soft。详见 `docs/playback-empty-payload-rescue-analysis-2026-11-05.md` 追加一至七。
+- "下滑加载失败频发"根因：网页版 `/x/v2/reply/main` 对短时连续翻页风控严格；PiliPlus 同场景走 gRPC `bilibili.main.community.reply.v1.Reply/MainList` 不受限流。项目听视频功能已有完整 gRPC 基建，评论分页复用（`BiliAPIClient+CommentsGrpc.swift`，字段号取自 PiliPlus proto，解码映射回现有 `CommentPage` JSON 结构，UI 零改动）；`fetchComments` 优先 gRPC、任意失败回退网页接口；失败退避 3/6/12s 指数、4 次后仅手动重试。gRPC 路径 DEBUG 且非 UI 测试夹具时生效（夹具拦截网页接口），Release 构建仍走网页路径，放开待真机稳定性确认。
+- 测试：新增编解码单元测试 `BiliReplyMainListCodecTests`（假报文往返全字段断言）与 UI 用例（渲染滚动、自动翻页 60 条、参差行高往返稳定、触摸停止、行内点赞、排序、播放器收起耦合）全部通过；夹具评论改为参差行高并支持 3 页 × 20 条分页。全量单元/云端 CI 本轮未跑。
+- 版本递增至 1.1.2 / Build 106，共享缓存 Release 签名构建、重签与无线安装 RCe2027 每轮完成并启动。真机验收：触摸停止/跟手、底部边缘统一、加载失败"明显减少"均由用户确认；行间稳定性在 104/105 曾反馈问题并于 106 前修复，最终行距稳定性待用户进一步确认。
+- 本轮改动尚未提交（99–106 累积），随后按整批提交；未推送远端、未合并 PR、未跑云端回归。

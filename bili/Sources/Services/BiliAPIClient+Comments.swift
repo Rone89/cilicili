@@ -230,6 +230,21 @@ extension BiliAPIClient {
     ) async throws
         -> CommentPage
     {
+        // 优先走 PiliPlus 同款 gRPC 通道（网页 /x/v2/reply/main 对连续翻页
+        // 风控严格，-352 高发）；任何失败回退网页接口，行为与旧路径一致。
+        // UI 测试夹具拦截的是网页接口，gRPC 路径仅在 DEBUG 关闭。
+        #if DEBUG
+        if !UITestVideoDetailNetworkFixture.isEnabled,
+           let oidNumber = Int(oid), oidNumber > 0,
+           let grpcPage = try? await fetchCommentsViaGrpc(
+               oid: oidNumber,
+               type: type,
+               cursor: cursor,
+               sort: sort
+           ) {
+            return grpcPage
+        }
+        #endif
         let mode = sort == .hot ? "3" : "2"
         let pagination = try Self.commentPaginationString(offset: cursor)
         let resolvedCookieHeader = await resolvedCommentCookieHeader(cookieHeader)

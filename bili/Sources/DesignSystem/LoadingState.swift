@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated enum LoadingState: Equatable {
+nonisolated enum LoadingState: Equatable, Hashable {
     case idle
     case loading
     case loaded

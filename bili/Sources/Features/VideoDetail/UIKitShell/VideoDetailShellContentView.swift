@@ -132,6 +132,31 @@ private struct VideoDetailShellContentBody: View {
                 )
                 .accessibilityIdentifier("video.detail.summary")
             ),
+            commentsPage: { pageContext in
+                let bvid = viewModel.detail.bvid.trimmingCharacters(in: .whitespacesAndNewlines)
+                return AnyView(
+                    VideoDetailCommentsUIKitPage(
+                        viewModel: viewModel,
+                        onReply: { comment in
+                            guard !contentActionsSuppressed else { return }
+                            onReply(comment)
+                        },
+                        onComposeReply: { comment in
+                            onOpenCommentComposer(comment)
+                        },
+                        context: pageContext
+                    )
+                    // 评论页绕过了 `VideoDetailContentPage`，点赞所需的 target 环境
+                    // 需要在这里补上，否则行内点赞按钮会退化成不可点的角标。
+                    .commentLikeTarget(
+                        oid: viewModel.commentTarget?.oid,
+                        type: viewModel.commentTarget?.type,
+                        referer: bvid.isEmpty
+                            ? "https://www.bilibili.com"
+                            : "https://www.bilibili.com/video/\(bvid)"
+                    )
+                )
+            },
             content: { tab, mountsSecondaryContent in
                 VideoDetailContentPage(
                     viewModel: viewModel,

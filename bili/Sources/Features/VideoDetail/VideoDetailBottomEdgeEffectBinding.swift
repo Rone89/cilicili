@@ -8,6 +8,23 @@ final class VideoDetailBottomEdgeEffectBinding {
     private var originalStyle: UIScrollEdgeEffect.Style?
     private var originalHidden = false
 
+    /// 沿响应链向上找带工具栏的导航控制器（外壳各滚动容器共用）。
+    static func toolbarTarget(from view: UIView) -> (navigation: UINavigationController, toolbar: UIToolbar)? {
+        var responder: UIResponder? = view
+        while let current = responder {
+            if let controller = current as? UIViewController,
+               let navigation = controller.navigationController {
+                let toolbar = navigation.toolbar
+                if !navigation.isToolbarHidden, let toolbar, toolbar.isHidden == false {
+                    return (navigation: navigation, toolbar: toolbar)
+                }
+                return nil
+            }
+            responder = current.next
+        }
+        return nil
+    }
+
     func update(scrollView: UIScrollView, container: UIView?, enabled: Bool, isActiveContent: Bool = true) {
         guard enabled, let container else {
             detach()
@@ -82,22 +99,17 @@ final class VideoDetailEdgeEffectScrollView: UIScrollView {
     }
 
     private func updateBottomEdgeBinding() {
-        guard bottomEdgeBlurEnabled, window != nil else {
+        guard bottomEdgeBlurEnabled, window != nil,
+              let target = VideoDetailBottomEdgeEffectBinding.toolbarTarget(from: self)
+        else {
             edgeBinding.detach()
             return
         }
-        var responder: UIResponder? = self
-        while let current = responder {
-            if let controller = current as? UIViewController,
-               let navigation = controller.navigationController {
-                let toolbar = navigation.toolbar
-                edgeBinding.update(scrollView: self, container: toolbar,
-                                   enabled: !navigation.isToolbarHidden && toolbar?.isHidden == false,
-                                   isActiveContent: isActiveContent)
-                return
-            }
-            responder = current.next
-        }
-        edgeBinding.detach()
+        edgeBinding.update(
+            scrollView: self,
+            container: target.toolbar,
+            enabled: true,
+            isActiveContent: isActiveContent
+        )
     }
 }
