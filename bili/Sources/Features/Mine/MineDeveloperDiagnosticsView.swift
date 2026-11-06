@@ -120,6 +120,20 @@ struct MineDeveloperDiagnosticsView: View {
             }
             .accessibilityIdentifier("mine.experiments.aiSubtitle")
 
+            Toggle(isOn: Binding(
+                get: { libraryStore.videoDetailCompactPageSelectorExperimentEnabled },
+                set: { libraryStore.setVideoDetailCompactPageSelectorExperimentEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MineSettingsLabel("分P紧凑选择实验", systemImage: "rectangle.stack")
+                    Text("视频详情页的分P改为单行显示当前分P名称和总数，点按以弹窗查看全部分P。")
+                        .appTypography(.settingsSubtitle, fallback: .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityIdentifier("mine.experiments.compactPageSelector")
+
             Toggle(
                 isOn: Binding(
                     get: { libraryStore.dynamicCommentHitAreaVisualizationExperimentEnabled },

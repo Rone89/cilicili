@@ -296,3 +296,12 @@
 - 按要求去掉切换动画：删除两处 `.transition` 与 `.animation(..., value: mode)`；保留按 mode 分叉的 identity，切换时整块内容直接替换。同时给 `HomeFeedScrollActions.requestScrollToTop` 增加 `animated` 参数，切换模式时瞬时回顶（`animated: false`），点首页 tab 回顶仍保留 0.34s 平滑滚动。
 - 回归：`HomeRecommendationFeedbackUITests` 6/6 通过（点击、长按菜单、反馈、屏蔽、滚动不回顶）；未跑全量单元或云端 CI。动画是否彻底消失需真机确认（自动化难以断言“无动画”）。
 - 版本 1.1.2 / Build 110；Release 未签名 IPA SHA-256 `8942f9c6b5550462994dd2b8a4762830b48d2474c479679176cb375e1a0fa100`，18pm 证书重签、签名深度校验通过，安装 RCe2027 成功（databaseSequenceNumber 2600）并启动。
+
+## 2026-11-06 分P紧凑选择实验 / Build 111
+
+- 用户新增实验开关需求：开启后视频详情页分P区改为单行显示当前分P名称与分P总数，点击以既有弹窗（"全部分P"玻璃网格）查看并选择；关闭时保持原横滑瓦片形态。`LibraryStore` 新增 `videoDetailCompactPageSelectorExperimentEnabled`（默认关闭、持久化，键 `cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1`），读取统一走 `boolValue` 以兼容启动参数域的字符串布尔；入口在"我的 → 开发者与诊断 → 实验开关"（`mine.experiments.compactPageSelector`），切换对已打开的详情页即时生效。
+- 实现：`VideoDetailPageMenu` 按开关分叉为紧凑单行（含 P 号 + 分P标题 + 总数 + 展开三角，accessibilityLabel「分P，当前 Pn 标题，共 N P」）与经典形态；紧凑行复用既有 `VideoDetailPageSelectionSheet` 弹窗，`selectPage` 播放链路、云历史跨P恢复与听视频连播零改动。详情网络夹具新增 `--ui-test-video-multi-page`（三个分P），仅 DEBUG 生效。
+- 测试：新增单元 `VideoDetailCompactPageSelectorTests` 2/2（持久化默认值与快照字段）；新增 UI `VideoDetailPageSelectorUITests` 3/3（经典形态回归、紧凑显示+弹窗选择 P2 后标签更新且弹窗关闭、单P隐藏），均在规定 iPhone 18 Pro Max / iOS 27.0 模拟器与共享 Xcode-27 缓存完成。两处调试结论已固化：shell 简介容器会把 `video.detail.summary` 标识符传播覆盖全部子元素，UI 测试对分P行/瓦片改用 `accessibilityLabel` 前缀查询；launch args 布尔是字符串，实验键必须走 `boolValue` 而非 `object as? Bool`。
+- 签名环境注意：`~/.config/cilicili/sign-install-ipa.conf` 已被另一项目占用（Eric Kirsche 证书、旧设备 UDID，且 profile 路径已失效），本轮改用命令行直传 `--profile/--identity/--device`（18pm = Nazar Aryan G933USCY46，含 RCe2027，2027-09-22 到期）完成签名安装，未 `--save` 覆盖该配置；后续 cilicili 安装需继续直传或重做 cilicili 专用配置。
+- 交付：版本 1.1.2 / Build 111；未签名 IPA SHA-256 `7d8bc55e3b44ece6aba353aead976905cf600909bfc4aaa365572a1fad75a09d`，签名深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2624）并启动，可执行文件 SHA-256 `f9f16f6e7baafd499ca181da076055e88bb25bce40278fca31702fcdf1156600`。
+- 待验收：用户真机确认紧凑行样式、弹窗手感、切P后播放/弹幕/续播正常。经典形态由 UI 回归保护，未跑全量单元与云端 CI。分支 main，本轮源码+文档为单次提交。

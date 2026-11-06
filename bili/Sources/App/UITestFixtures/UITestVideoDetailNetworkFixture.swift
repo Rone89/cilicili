@@ -146,13 +146,29 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
         ProcessInfo.processInfo.arguments.contains("--ui-test-recovery-long-video") ? 600 : 120
     }
 
+    /// `--ui-test-video-multi-page`：让详情接口返回三个分P，用于分P选择器回归。
+    private static var usesMultiPage: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-video-multi-page")
+    }
+
+    private static var pages: [[String: Any]] {
+        let firstPage: [String: Any] = [
+            "cid": 1001, "page": 1, "part": "测试分 P", "duration": Self.fixtureDuration,
+        ]
+        guard usesMultiPage else { return [firstPage] }
+        return [firstPage] + [
+            ["cid": 1002, "page": 2, "part": "第二分 P", "duration": Self.fixtureDuration],
+            ["cid": 1003, "page": 3, "part": "第三分 P", "duration": Self.fixtureDuration],
+        ]
+    }
+
     private static var video: [String: Any] {
         ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
          "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": Self.fixtureDuration,
          "pubdate": 1700000000,
          "owner": ["mid": 1001, "name": "测试 UP", "face": "https://ui-test.invalid/face.png"],
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
-         "pages": [["cid": 1001, "page": 1, "part": "测试分 P", "duration": Self.fixtureDuration]],
+         "pages": Self.pages,
          "stat": ["view": 1000, "like": 20, "reply": Self.totalCommentCount]]
     }
 }

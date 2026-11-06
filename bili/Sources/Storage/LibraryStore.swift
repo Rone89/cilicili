@@ -156,6 +156,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var accountWatchLaterChangeRevision = 0
     @Published private(set) var dynamicCommentHitAreaVisualizationExperimentEnabled: Bool
     @Published private(set) var aiSubtitleExperimentEnabled: Bool
+    @Published private(set) var videoDetailCompactPageSelectorExperimentEnabled: Bool
     @Published private(set) var videoDetailActionButtonStyle: VideoDetailActionButtonStyle
     @Published private(set) var minimizesTabBarOnScroll: Bool
     @Published private(set) var liquidGlassStylePreference: AppLiquidGlassStylePreference
@@ -241,6 +242,8 @@ final class LibraryStore: ObservableObject {
     private static let dynamicCommentHitAreaVisualizationExperimentEnabledKey =
         "cc.bili.experimental.dynamicCommentHitAreaVisualization.v1"
     private static let aiSubtitleExperimentEnabledKey = "cc.bili.experimental.aiSubtitle.v1"
+    private static let videoDetailCompactPageSelectorExperimentEnabledKey =
+        "cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1"
     private static let blockedHomeRecommendationUPNamesKey = "cc.bili.home.blockedUPNames.v1"
     private static let blockedHomeRecommendationUPMIDsKey = "cc.bili.home.blockedUPMIDs.v1"
     private static let videoDetailActionButtonStyleKey =
@@ -626,6 +629,11 @@ final class LibraryStore: ObservableObject {
         userDefaults.removeObject(forKey: "cc.bili.dynamic.pgcCardExperimentEnabled.v1")
         self.metalDanmakuRendererExperimentEnabled = userDefaults.object(forKey: Self.metalDanmakuRendererExperimentEnabledKey) as? Bool ?? false
         self.aiSubtitleExperimentEnabled = userDefaults.object(forKey: Self.aiSubtitleExperimentEnabledKey) as? Bool ?? false
+        self.videoDetailCompactPageSelectorExperimentEnabled =
+            Self.boolValue(
+                forKey: Self.videoDetailCompactPageSelectorExperimentEnabledKey,
+                in: userDefaults
+            ) ?? false
         self.sponsorBlockEnabled = userDefaults.object(forKey: Self.sponsorBlockEnabledKey) as? Bool ?? false
         self.pictureInPictureEnabled = userDefaults.object(forKey: Self.pictureInPictureEnabledKey) as? Bool ?? false
         self.backgroundPlaybackEnabled = userDefaults.object(forKey: Self.backgroundPlaybackEnabledKey) as? Bool ?? false
@@ -1231,6 +1239,14 @@ final class LibraryStore: ObservableObject {
     func setAiSubtitleExperimentEnabled(_ enabled: Bool) {
         aiSubtitleExperimentEnabled = enabled
         userDefaults.set(enabled, forKey: Self.aiSubtitleExperimentEnabledKey)
+    }
+
+    func setVideoDetailCompactPageSelectorExperimentEnabled(_ isEnabled: Bool) {
+        videoDetailCompactPageSelectorExperimentEnabled = isEnabled
+        userDefaults.set(
+            isEnabled,
+            forKey: Self.videoDetailCompactPageSelectorExperimentEnabledKey
+        )
     }
 
     func setPlayerPerformanceOverlayEnabled(_ isEnabled: Bool) {

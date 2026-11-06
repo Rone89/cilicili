@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailPageMenu: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     @ObservedObject var store: VideoDetailPageSelectorRenderStore
     let selectPage: (VideoPage) -> Void
 
@@ -8,26 +9,37 @@ struct VideoDetailPageMenu: View {
 
     var body: some View {
         if store.shouldShowPageSelector {
-            VStack(alignment: .leading, spacing: 10) {
-                VideoDetailPageMenuHeader(
-                    pageCount: store.pages.count,
-                    showsPageSheet: $isPageSheetPresented
-                )
+            Group {
+                if libraryStore.videoDetailCompactPageSelectorExperimentEnabled {
+                    VideoDetailCompactPageMenuButton(
+                        pages: store.pages,
+                        selectedCID: store.selectedCID,
+                        showsPageSheet: $isPageSheetPresented
+                    )
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        VideoDetailPageMenuHeader(
+                            pageCount: store.pages.count,
+                            showsPageSheet: $isPageSheetPresented
+                        )
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 10) {
-                        ForEach(store.pages) { page in
-                            VideoDetailPageRoute(
-                                page: page,
-                                isSelected: page.cid == store.selectedCID,
-                                selectPage: selectPage
-                            )
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 10) {
+                                ForEach(store.pages) { page in
+                                    VideoDetailPageRoute(
+                                        page: page,
+                                        isSelected: page.cid == store.selectedCID,
+                                        selectPage: selectPage
+                                    )
+                                }
+                            }
                         }
+                        .padding(.horizontal, -16)
+                        .contentMargins(.horizontal, 16, for: .scrollContent)
+                        .frame(height: 54)
                     }
+                    .accessibilityIdentifier("video.detail.pageMenu")
                 }
-                .padding(.horizontal, -16)
-                .contentMargins(.horizontal, 16, for: .scrollContent)
-                .frame(height: 54)
             }
             .sheet(isPresented: $isPageSheetPresented) {
                 VideoDetailPageSelectionSheet(
@@ -37,6 +49,76 @@ struct VideoDetailPageMenu: View {
                 )
             }
         }
+    }
+}
+
+/// 实验开关开启时的紧凑形态：单行显示当前分P名称和分P总数，
+/// 点击后以既有弹窗查看并选择全部分P。
+private struct VideoDetailCompactPageMenuButton: View {
+    let pages: [VideoPage]
+    let selectedCID: Int?
+    @Binding var showsPageSheet: Bool
+
+    private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
+    private var currentPage: VideoPage? {
+        selectedCID.flatMap { cid in pages.first { $0.cid == cid } } ?? pages.first
+    }
+
+    var body: some View {
+        Button {
+            showsPageSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Text("分P")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text(compactTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text("\(pages.count) P")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Image(systemName: "triangle.fill")
+                    .font(.caption2.weight(.bold))
+                    .rotationEffect(.degrees(180))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: shape)
+            .overlay {
+                shape.strokeBorder(Color(.separator).opacity(0.16), lineWidth: 0.8)
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("查看全部分P")
+        .accessibilityIdentifier("video.detail.pageMenu.compact")
+    }
+
+    private var compactTitle: String {
+        guard let page = currentPage else { return "" }
+        let number = "P\(page.page ?? 1)"
+        let part = page.part?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return part.isEmpty ? number : "\(number) · \(part)"
+    }
+
+    private var accessibilityLabel: String {
+        guard let page = currentPage else { return "分P" }
+        let number = "P\(page.page ?? 1)"
+        let part = page.part?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = part.isEmpty ? "" : " \(part)"
+        return "分P，当前 \(number)\(title)，共 \(pages.count) P"
     }
 }
 
@@ -259,6 +341,7 @@ private struct VideoDetailPageSelectionSheet: View {
             .scrollContentBackground(.hidden)
             .background(.clear)
         }
+        .accessibilityIdentifier("video.detail.pageSheet")
         .presentationDetents([.fraction(0.7)])
         .presentationDragIndicator(.visible)
         .presentationBackground(.clear)
