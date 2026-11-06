@@ -123,7 +123,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Task {
             await RemoteImageCache.shared.clearMemoryCache(cancelInFlight: true)
             await PlayURLCache.shared.clearMemoryCache()
-            await SubtitleDanmakuResourceCache.shared.clear()
+            await DanmakuResourceCache.shared.clear()
         }
     }
 }

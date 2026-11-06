@@ -3570,7 +3570,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     @MainActor
     func testFetchDanmakuBuildsXMLRequestParsesAndUsesResourceCache() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
-        await SubtitleDanmakuResourceCache.shared.clear()
+        await DanmakuResourceCache.shared.clear()
 
         let requestExpectation = expectation(description: "XML danmaku request captured")
         let recorder = RequestContractRecorder()
@@ -3610,13 +3610,13 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertNotNil(cookies["buvid3"])
         XCTAssertNil(cookies["SESSDATA"])
 
-        await SubtitleDanmakuResourceCache.shared.clear()
+        await DanmakuResourceCache.shared.clear()
     }
 
     @MainActor
     func testFetchDanmakuSegmentNormalizesIndexBuildsProtobufRequestAndParses() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
-        await SubtitleDanmakuResourceCache.shared.clear()
+        await DanmakuResourceCache.shared.clear()
 
         let requestExpectation = expectation(description: "protobuf danmaku request captured")
         let recorder = RequestContractRecorder()
@@ -3658,7 +3658,7 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
         XCTAssertNotNil(cookies["buvid3"])
         XCTAssertNil(cookies["SESSDATA"])
 
-        await SubtitleDanmakuResourceCache.shared.clear()
+        await DanmakuResourceCache.shared.clear()
     }
 
     @MainActor

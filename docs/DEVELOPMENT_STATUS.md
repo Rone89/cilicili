@@ -1,6 +1,6 @@
 # 开发接续状态
 
-更新时间：2026-11-07（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
+更新时间：2026-11-08（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
 
 ## 分支与工作区
 
@@ -343,3 +343,12 @@
 - 调试结论：本轮踩坑三处已修正——xcodebuild 少传 `test` 动作会静默变成纯 build（exit 0、0 用例，xcresult totalTestCount=0 识别）；经典瓦片 Button 的标签会被内层 tile 的 accessibilityLabel 合并成重复标签（`'合集视频 2, 合集视频 2'`），共享弹窗行是在 Button 层设 `.accessibilityLabel` 所以干净，经典瓦片同样把标签提到 Button 层修复；当前播放瓦片不是按钮，断言需用 `descendants(matching: .any)` 而非 `app.buttons`（与经典分P用例一致）。
 - 交付：1.1.2 / Build 115（6 处配置全部递增）；未签名 IPA SHA-256 `cd2655a1178ec8a8b495a0e585bcc4710b20aa2e4dc07ef2f8de9128a89db478`；18pm 直传参数（不覆盖被其他项目占用的 conf）重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2656）并启动成功；重签后可执行文件 SHA-256 `eb61d3934fe39013d82d651f349e397f3c3d33ee98877cb5124454d1f151bc17`。
 - 待验收：真机确认合集区块显示（实验开/关两种形态）、弹窗选集原地切换后播放/弹幕/续播正常、切换后 stat/UP主/简介等元数据正确回填。多 section 合集（如"正片/花絮"）按序展平不分组；听视频连播未接入合集语义，待后续需求。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-08 紧凑选择转正 + 删除 AI 字幕 / Build 116
+
+- 用户要求：分P/分集实验转为正式默认功能，删除 AI 字幕实验。两个方向同时落地。
+- 紧凑选择转正：删除 `videoDetailCompactPageSelectorExperimentEnabled`（属性/键/setter）及 Mine 页开关；`VideoDetailPageMenu`、`VideoDetailPgcEpisodeSection`、`VideoDetailUgcSeasonSection` 三个区块移除实验分叉，仅保留紧凑形态（单行入口 + 共享单列弹窗）。经典横滑瓦片、PGC 旧玻璃网格弹窗、`VideoDetailPgcEpisodeOrder` 等死代码整体删除；`InitialPageMenuPlaceholder` 占位改为紧凑行骨架形态。旧 UserDefaults 键在 init 退役键清理区移除（init 兜底）。
+- AI 字幕整体删除：`VideoDetailSubtitleActions/Store/PlayerSurfaceSubtitleLayer`、`BiliAPIClient+VideoSubtitles`、`docs/ai-subtitle-experiment.md` 删除；`aiSubtitleExperimentEnabled` 开关及 Mine 页入口移除；弹幕设置面板的 `VideoDetailSubtitleSection` 与 `subtitleStore/onSelectSubtitleTrack` 参数链（Sheet/Host/Content/ShellSurfaceHost/夹具）清理；`SubtitleDanmakuResourceCache` 剥离字幕半区并更名 `DanmakuResourceCache`（`TimedResourceCacheStatistics.subtitleCount` 删除），缓存诊断/清理 UI 行改为"弹幕"。历史分析文档中的 AI 字幕提及保留为历史记录。
+- 测试：单元 43/43（`VideoDetailCompactPageSelectorTests` 删实验持久化用例；`ResourceLoadingServicesTests` 缓存用例重写为纯弹幕键隔离；`BiliAPIClientRequestContractTests` 缓存类型名同步），证据 `build/logs/build116-graduate-unit-2.xcresult`。UI 6/6：选择器组删两个经典形态用例、全部 launch args 去实验开关参数（`VideoDetailPageSelectorUITests` 整体重写为 4 用例），另回归弹幕设置面板两项，证据 `build/logs/build116-graduate-ui.xcresult`。未跑全量单元与云端 CI。
+- 交付：1.1.2 / Build 116（6 处配置递增）；未签名 IPA SHA-256 `1e96b8985f93cb6f400bff694f07700cb2330dc827bce93ff4bd574739a10f6d`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2664）并启动；重签后可执行文件 SHA-256 `966c7704f01bc4e7500173d0d1c9021ded53b29eac095d652ae12d036c2e0ec0`。
+- 待验收：真机确认无实验开关时分P/分集/合集紧凑形态直接可用；弹幕设置面板不再出现字幕区；资源缓存诊断行显示"弹幕"（原"字幕/弹幕"）。分支 main，本轮源码+文档单次提交。

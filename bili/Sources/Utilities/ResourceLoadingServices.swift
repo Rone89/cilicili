@@ -1738,21 +1738,12 @@ nonisolated struct RemoteImageDisplayCacheStatistics: Sendable {
     let misses: Int
 }
 
-nonisolated struct SubtitleCueCacheKey: Hashable, Sendable {
-    let bvid: String
-    let cid: Int
-    let subtitleId: String
-    let language: String
-    let urlHash: String
-}
-
 nonisolated struct DanmakuSegmentCacheKey: Hashable, Sendable {
     let cid: Int
     let segmentIndex: Int
 }
 
 nonisolated struct TimedResourceCacheStatistics: Sendable {
-    let subtitleCount: Int
     let danmakuSegmentCount: Int
     let estimatedBytes: Int
     let byteCapacity: Int
@@ -1761,15 +1752,8 @@ nonisolated struct TimedResourceCacheStatistics: Sendable {
     let evictions: Int
 }
 
-actor SubtitleDanmakuResourceCache {
-    static let shared = SubtitleDanmakuResourceCache()
-
-    private struct SubtitleEntry {
-        let data: Data
-        let bytes: Int
-        let storedAt: Date
-        var lastAccessedAt: Date
-    }
+actor DanmakuResourceCache {
+    static let shared = DanmakuResourceCache()
 
     private struct DanmakuEntry {
         let items: [DanmakuItem]
@@ -1779,10 +1763,8 @@ actor SubtitleDanmakuResourceCache {
     }
 
     private let ttl: TimeInterval
-    private let subtitleLimit: Int
     private let danmakuLimit: Int
     private let byteCapacity: Int
-    private var subtitles: [SubtitleCueCacheKey: SubtitleEntry] = [:]
     private var danmakuSegments: [DanmakuSegmentCacheKey: DanmakuEntry] = [:]
     private var estimatedBytes = 0
     private var hits = 0
@@ -1791,38 +1773,12 @@ actor SubtitleDanmakuResourceCache {
 
     init(
         ttl: TimeInterval = 30 * 60,
-        subtitleLimit: Int = 32,
         danmakuLimit: Int = 24,
         byteCapacity: Int = 3 * 1024 * 1024
     ) {
         self.ttl = ttl
-        self.subtitleLimit = subtitleLimit
         self.danmakuLimit = danmakuLimit
         self.byteCapacity = byteCapacity
-    }
-
-    func subtitleData(for key: SubtitleCueCacheKey) -> Data? {
-        trimExpired()
-        guard var entry = subtitles[key] else {
-            misses += 1
-            return nil
-        }
-        entry.lastAccessedAt = Date()
-        subtitles[key] = entry
-        hits += 1
-        return entry.data
-    }
-
-    func storeSubtitleData(_ data: Data, for key: SubtitleCueCacheKey) {
-        guard !data.isEmpty else { return }
-        if let existing = subtitles[key] {
-            estimatedBytes -= existing.bytes
-        }
-        let now = Date()
-        subtitles[key] = SubtitleEntry(data: data, bytes: data.count, storedAt: now, lastAccessedAt: now)
-        estimatedBytes += data.count
-        trimIfNeeded()
-        ResourceCacheAutoTrim.schedule()
     }
 
     func danmaku(for cid: Int, segmentIndex: Int = 1) -> [DanmakuItem]? {
@@ -1852,8 +1808,7 @@ actor SubtitleDanmakuResourceCache {
     }
 
     func clear() {
-        evictions += subtitles.count + danmakuSegments.count
-        subtitles.removeAll()
+        evictions += danmakuSegments.count
         danmakuSegments.removeAll()
         estimatedBytes = 0
     }
@@ -1861,7 +1816,6 @@ actor SubtitleDanmakuResourceCache {
     func statistics() -> TimedResourceCacheStatistics {
         trimExpired()
         return TimedResourceCacheStatistics(
-            subtitleCount: subtitles.count,
             danmakuSegmentCount: danmakuSegments.count,
             estimatedBytes: estimatedBytes,
             byteCapacity: byteCapacity,
@@ -1872,11 +1826,6 @@ actor SubtitleDanmakuResourceCache {
     }
 
     private func trimExpired(now: Date = Date()) {
-        for (key, entry) in subtitles where now.timeIntervalSince(entry.storedAt) >= ttl {
-            subtitles[key] = nil
-            estimatedBytes -= entry.bytes
-            evictions += 1
-        }
         for (key, entry) in danmakuSegments where now.timeIntervalSince(entry.storedAt) >= ttl {
             danmakuSegments[key] = nil
             estimatedBytes -= entry.bytes
@@ -1887,24 +1836,9 @@ actor SubtitleDanmakuResourceCache {
 
     private func trimIfNeeded() {
         trimExpired()
-        trimSubtitleCount()
         trimDanmakuCount()
         while estimatedBytes > byteCapacity {
             guard evictLeastRecentlyUsed() else { break }
-        }
-    }
-
-    private func trimSubtitleCount() {
-        guard subtitles.count > subtitleLimit else { return }
-        let overflow = subtitles.count - subtitleLimit
-        let keys = subtitles.sorted { $0.value.lastAccessedAt < $1.value.lastAccessedAt }
-            .prefix(overflow)
-            .map(\.key)
-        keys.forEach { key in
-            if let entry = subtitles.removeValue(forKey: key) {
-                estimatedBytes -= entry.bytes
-                evictions += 1
-            }
         }
     }
 
@@ -1923,26 +1857,11 @@ actor SubtitleDanmakuResourceCache {
     }
 
     private func evictLeastRecentlyUsed() -> Bool {
-        let subtitleCandidate = subtitles.min { $0.value.lastAccessedAt < $1.value.lastAccessedAt }
-        let danmakuCandidate = danmakuSegments.min { $0.value.lastAccessedAt < $1.value.lastAccessedAt }
-        switch (subtitleCandidate, danmakuCandidate) {
-        case let (.some(subtitle), .some(danmaku)):
-            if subtitle.value.lastAccessedAt <= danmaku.value.lastAccessedAt {
-                estimatedBytes -= subtitle.value.bytes
-                subtitles[subtitle.key] = nil
-            } else {
-                estimatedBytes -= danmaku.value.bytes
-                danmakuSegments[danmaku.key] = nil
-            }
-        case let (.some(subtitle), nil):
-            estimatedBytes -= subtitle.value.bytes
-            subtitles[subtitle.key] = nil
-        case let (nil, .some(danmaku)):
-            estimatedBytes -= danmaku.value.bytes
-            danmakuSegments[danmaku.key] = nil
-        case (nil, nil):
+        guard let danmaku = danmakuSegments.min(by: { $0.value.lastAccessedAt < $1.value.lastAccessedAt }) else {
             return false
         }
+        estimatedBytes -= danmaku.value.bytes
+        danmakuSegments[danmaku.key] = nil
         evictions += 1
         estimatedBytes = max(0, estimatedBytes)
         return true
@@ -1996,7 +1915,7 @@ nonisolated struct ResourceCacheSummary: Sendable {
     let apiMemory: BiliAPIResponseMemoryCacheStatistics
     let videoRangeMedia: VideoRangeCacheStatistics
     let progressiveMedia: ProgressiveMediaCacheStatistics
-    let subtitlesAndDanmaku: TimedResourceCacheStatistics
+    let danmakuSegments: TimedResourceCacheStatistics
 
     var diskBytes: Int {
         [
@@ -2014,7 +1933,7 @@ nonisolated struct ResourceCacheSummary: Sendable {
         [
             apiMemory.estimatedBytes,
             progressiveMedia.estimatedBytes,
-            subtitlesAndDanmaku.estimatedBytes
+            danmakuSegments.estimatedBytes
         ].reduce(0) { partial, value in
             partial + max(0, value)
         }
@@ -2121,7 +2040,7 @@ nonisolated enum ResourceCacheCenter {
         async let apiMemory = BiliAPIResponseMemoryCache.shared.statistics()
         async let videoRangeMedia = VideoRangeCache.shared.statistics()
         async let progressiveMedia = ProgressiveMediaSegmentCache.shared.statistics()
-        async let subtitlesAndDanmaku = SubtitleDanmakuResourceCache.shared.statistics()
+        async let danmakuSegments = DanmakuResourceCache.shared.statistics()
         return await ResourceCacheSummary(
             playURL: playURL,
             image: image,
@@ -2129,7 +2048,7 @@ nonisolated enum ResourceCacheCenter {
             apiMemory: apiMemory,
             videoRangeMedia: videoRangeMedia,
             progressiveMedia: progressiveMedia,
-            subtitlesAndDanmaku: subtitlesAndDanmaku
+            danmakuSegments: danmakuSegments
         )
     }
 
@@ -2164,7 +2083,7 @@ nonisolated enum ResourceCacheCenter {
         current = await summary()
         guard current.managedBytes > limitBytes else { return current }
 
-        await clearSubtitlesAndDanmaku()
+        await clearDanmakuSegments()
         current = await summary()
         guard current.managedBytes > limitBytes else { return current }
 
@@ -2212,8 +2131,8 @@ nonisolated enum ResourceCacheCenter {
         await BiliAPIResponseMemoryCache.shared.clear()
     }
 
-    static func clearSubtitlesAndDanmaku() async {
-        await SubtitleDanmakuResourceCache.shared.clear()
+    static func clearDanmakuSegments() async {
+        await DanmakuResourceCache.shared.clear()
     }
 
     static func clearProgressiveMedia() async {
@@ -2226,6 +2145,6 @@ nonisolated enum ResourceCacheCenter {
         await clearImages(includeDisk: true)
         await clearAPI()
         await clearProgressiveMedia()
-        await clearSubtitlesAndDanmaku()
+        await clearDanmakuSegments()
     }
 }

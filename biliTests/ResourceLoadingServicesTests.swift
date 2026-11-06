@@ -767,18 +767,8 @@ final class ResourceLoadingServicesTests: XCTestCase {
         XCTAssertEqual(RelatedPlaybackPrefetchPolicy.candidateLimit(environment: wifi, backgroundPreloadLimit: 4, isPlaying: true, isBuffering: true), 0)
     }
 
-    func testSubtitleAndDanmakuCacheKeysAndCapacity() async {
-        let cache = SubtitleDanmakuResourceCache(ttl: 60, subtitleLimit: 1, danmakuLimit: 2, byteCapacity: 4096)
-        let firstSubtitle = SubtitleCueCacheKey(bvid: "BV1", cid: 1, subtitleId: "1", language: "zh-CN", urlHash: "a")
-        let secondSubtitle = SubtitleCueCacheKey(bvid: "BV1", cid: 1, subtitleId: "1", language: "en", urlHash: "b")
-
-        await cache.storeSubtitleData(Data("zh".utf8), for: firstSubtitle)
-        await cache.storeSubtitleData(Data("en".utf8), for: secondSubtitle)
-
-        let firstSubtitleData = await cache.subtitleData(for: firstSubtitle)
-        let secondSubtitleData = await cache.subtitleData(for: secondSubtitle)
-        XCTAssertNil(firstSubtitleData)
-        XCTAssertEqual(secondSubtitleData, Data("en".utf8))
+    func testDanmakuCacheKeysAndCapacity() async {
+        let cache = DanmakuResourceCache(ttl: 60, danmakuLimit: 2, byteCapacity: 4096)
 
         await cache.storeDanmaku([danmakuItem("first")], for: 1, segmentIndex: 1)
         await cache.storeDanmaku([danmakuItem("second")], for: 1, segmentIndex: 2)
@@ -790,6 +780,10 @@ final class ResourceLoadingServicesTests: XCTestCase {
         XCTAssertNil(firstDanmaku)
         XCTAssertEqual(secondDanmaku?.first?.text, "second")
         XCTAssertEqual(thirdDanmaku?.first?.text, "third")
+
+        // 不同视频/分段的键互不串扰。
+        let otherSegment = await cache.danmaku(for: 2, segmentIndex: 1)
+        XCTAssertNil(otherSegment)
     }
 
     func testProgressiveMediaSegmentCacheHonorsCapacityAndKeys() async {

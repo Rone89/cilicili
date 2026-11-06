@@ -639,8 +639,6 @@ private struct UITestDanmakuFixtureView: View {
         .sheet(isPresented: $isShowingSettings) {
             DanmakuSettingsSheet(
                 store: store,
-                subtitleStore: nil,
-                onSelectSubtitleTrack: nil,
                 toggleDanmaku: toggleDanmaku,
                 updateDanmakuSettings: updateDanmakuSettings
             )

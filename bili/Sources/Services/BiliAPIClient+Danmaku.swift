@@ -66,12 +66,12 @@ extension BiliAPIClient {
     }
 
     func fetchDanmaku(cid: Int) async throws -> [DanmakuItem] {
-        if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
+        if let cached = await DanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
             return cached
         }
 
         return try await ResourceRequestLimiter.shared.runDanmaku { [self] in
-            if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
+            if let cached = await DanmakuResourceCache.shared.danmaku(for: cid, segmentIndex: 0) {
                 return cached
             }
 
@@ -101,14 +101,14 @@ extension BiliAPIClient {
                 data,
                 context: DanmakuXMLParseContext(cid: cid)
             )
-            await SubtitleDanmakuResourceCache.shared.storeDanmaku(items, for: cid, segmentIndex: 0)
+            await DanmakuResourceCache.shared.storeDanmaku(items, for: cid, segmentIndex: 0)
             return items
         }
     }
 
     func fetchDanmakuSegment(cid: Int, segmentIndex: Int) async throws -> [DanmakuItem] {
         let normalizedSegmentIndex = max(1, segmentIndex)
-        if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(
+        if let cached = await DanmakuResourceCache.shared.danmaku(
             for: cid,
             segmentIndex: normalizedSegmentIndex
         ) {
@@ -116,7 +116,7 @@ extension BiliAPIClient {
         }
 
         return try await ResourceRequestLimiter.shared.runDanmaku { [self] in
-            if let cached = await SubtitleDanmakuResourceCache.shared.danmaku(
+            if let cached = await DanmakuResourceCache.shared.danmaku(
                 for: cid,
                 segmentIndex: normalizedSegmentIndex
             ) {
@@ -155,7 +155,7 @@ extension BiliAPIClient {
                     segmentIndex: normalizedSegmentIndex
                 )
             )
-            await SubtitleDanmakuResourceCache.shared.storeDanmaku(
+            await DanmakuResourceCache.shared.storeDanmaku(
                 items,
                 for: cid,
                 segmentIndex: normalizedSegmentIndex

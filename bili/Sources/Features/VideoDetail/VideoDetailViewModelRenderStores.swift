@@ -9,7 +9,6 @@ struct VideoDetailViewModelRenderStores {
     let favoriteFolder = VideoDetailFavoriteFolderRenderStore()
     let danmakuSettings = VideoDetailDanmakuSettingsRenderStore()
     let danmaku = VideoDetailDanmakuRenderStore()
-    let subtitle = VideoDetailSubtitleStore()
     let networkDiagnostics = VideoDetailNetworkDiagnosticsRenderStore()
     let description = VideoDetailDescriptionRenderStore()
     let playerIdentity = VideoDetailPlayerIdentityRenderStore()
@@ -58,10 +57,6 @@ extension VideoDetailViewModel {
 
     var danmakuRenderStore: VideoDetailDanmakuRenderStore {
         renderStores.danmaku
-    }
-
-    var subtitleRenderStore: VideoDetailSubtitleStore {
-        renderStores.subtitle
     }
 
     var networkDiagnosticsRenderStore: VideoDetailNetworkDiagnosticsRenderStore {

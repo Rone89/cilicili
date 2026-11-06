@@ -5,19 +5,6 @@ import XCTest
 
 final class VideoDetailCompactPageSelectorTests: XCTestCase {
     @MainActor
-    func testCompactPageSelectorDefaultsToOffAndPersists() {
-        let defaults = makeUserDefaults()
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailCompactPageSelectorExperimentEnabled)
-
-        let store = LibraryStore(userDefaults: defaults)
-        store.setVideoDetailCompactPageSelectorExperimentEnabled(true)
-        XCTAssertTrue(LibraryStore(userDefaults: defaults).videoDetailCompactPageSelectorExperimentEnabled)
-
-        store.setVideoDetailCompactPageSelectorExperimentEnabled(false)
-        XCTAssertFalse(LibraryStore(userDefaults: defaults).videoDetailCompactPageSelectorExperimentEnabled)
-    }
-
-    @MainActor
     func testCompactPageSelectorSnapshotExposesCurrentSelectionAndCount() {
         let coverVideo = VideoItem(
             bvid: "BVTest", aid: 1, title: "测试", pic: "https://example.com/pic.jpg",
@@ -249,12 +236,5 @@ final class VideoDetailCompactPageSelectorTests: XCTestCase {
         ]}
         """#
         return try JSONDecoder.bili.decode(PgcSeasonInfo.self, from: Data(json.utf8))
-    }
-
-    private func makeUserDefaults() -> UserDefaults {
-        let name = "VideoDetailCompactPageSelectorTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
     }
 }

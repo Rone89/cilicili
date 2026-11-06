@@ -41,10 +41,10 @@ struct ResourceCacheCleanupSection: View {
 
                 Button {
                     performClear {
-                        await ResourceCacheCenter.clearSubtitlesAndDanmaku()
+                        await ResourceCacheCenter.clearDanmakuSegments()
                     }
                 } label: {
-                    MineSettingsLabel("清理字幕/弹幕缓存", systemImage: "text.bubble")
+                    MineSettingsLabel("清理弹幕缓存", systemImage: "text.bubble")
                 }
             }
 

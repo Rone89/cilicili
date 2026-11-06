@@ -1,36 +1,27 @@
 import SwiftUI
 
+/// 详情加载中分P区块的占位：紧凑单行入口的骨架形态。
 struct InitialPageMenuPlaceholder: View {
     let pageCount: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("分P")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            Text("分P")
+                .font(.headline)
+                .foregroundStyle(.secondary)
 
-                if let pageCount {
-                    Text("\(pageCount) P")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                Spacer()
-
-                SkeletonBlock(width: 28, height: 28, shape: .circle)
+            if let pageCount {
+                Text("\(pageCount) P")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(0..<min(max(pageCount ?? 4, 2), 6), id: \.self) { _ in
-                        SkeletonBlock(width: 124, height: 54, shape: .rounded(12))
-                    }
-                }
-            }
-            .scrollDisabled(true)
-            .frame(height: 54)
+            Spacer()
+
+            SkeletonBlock(width: 120, height: 14, shape: .capsule)
         }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

@@ -77,9 +77,9 @@ private struct ResourceCacheSummaryRows: View {
         )
 
         ResourceCacheRow(
-            title: "字幕/弹幕",
-            value: "\(summary.subtitlesAndDanmaku.subtitleCount + summary.subtitlesAndDanmaku.danmakuSegmentCount) 项",
-            subtitle: "\(ResourceCacheByteFormatter.bytes(summary.subtitlesAndDanmaku.estimatedBytes)) / \(ResourceCacheByteFormatter.bytes(summary.subtitlesAndDanmaku.byteCapacity))"
+            title: "弹幕",
+            value: "\(summary.danmakuSegments.danmakuSegmentCount) 段",
+            subtitle: "\(ResourceCacheByteFormatter.bytes(summary.danmakuSegments.estimatedBytes)) / \(ResourceCacheByteFormatter.bytes(summary.danmakuSegments.byteCapacity))"
         )
     }
 }
