@@ -21,6 +21,20 @@ final class VideoDetailPageSelectorUITests: XCTestCase {
             compactPageRow(in: app).exists,
             app.debugDescription
         )
+
+        // 展开按钮打开与紧凑形态相同的新弹窗，关闭按钮应收起弹窗。
+        expandButton.tap()
+        let sheet = app.descendants(matching: .any)["video.detail.pageSheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), app.debugDescription)
+        let secondPage = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "P2 第二分 P"))
+            .firstMatch
+        XCTAssertTrue(secondPage.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["video.detail.pageSheet.close"].firstMatch.tap()
+
+        let sheetDismissed = NSPredicate(format: "exists == NO")
+        expectation(for: sheetDismissed, evaluatedWith: sheet, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
     }
 
     /// 简介区的 shell 容器会把 `video.detail.summary` 标识符传播到所有子元素，
@@ -48,11 +62,25 @@ final class VideoDetailPageSelectorUITests: XCTestCase {
         let sheet = app.descendants(matching: .any)["video.detail.pageSheet"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 10), app.debugDescription)
 
-        // 弹窗瓦片的 label 会被嵌套无障碍元素拼接，用前缀匹配。
+        let closeButton = app.buttons["video.detail.pageSheet.close"].firstMatch
+        XCTAssertTrue(closeButton.exists, app.debugDescription)
+        let orderButton = app.buttons["video.detail.pageSheet.order"].firstMatch
+        XCTAssertTrue(orderButton.exists, app.debugDescription)
+
+        // 倒序：第一行应变为 P3。
+        let thirdPage = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "P3 第三分 P"))
+            .firstMatch
         let secondPage = app.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", "P2 第二分 P"))
             .firstMatch
         XCTAssertTrue(secondPage.waitForExistence(timeout: 10), app.debugDescription)
+        orderButton.tap()
+        XCTAssertTrue(thirdPage.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertLessThan(thirdPage.frame.minY, secondPage.frame.minY, "倒序时 P3 应在 P2 上方")
+        orderButton.tap()
+        XCTAssertLessThan(secondPage.frame.minY, thirdPage.frame.minY, "恢复正序后 P2 应在 P3 上方")
+
         secondPage.tap()
 
         let updatedLabel = NSPredicate(format: "label CONTAINS %@", "P2")

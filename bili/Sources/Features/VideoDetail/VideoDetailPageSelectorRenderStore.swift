@@ -7,6 +7,7 @@ final class VideoDetailPageSelectorRenderStore: ObservableObject {
     private var deferredSnapshot = VideoDetailDeferredValue<VideoDetailPageSelectorRenderSnapshot>()
 
     var pages: [VideoPage] { snapshot.pages }
+    var coverDisplay: VideoCardDisplayModel? { snapshot.coverDisplay }
     var selectedCID: Int? { snapshot.selectedCID }
     var pageCountText: String { snapshot.pageCountText }
     var shouldShowPageSelector: Bool { snapshot.shouldShowPageSelector }

@@ -166,6 +166,7 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
         ["aid": 100, "bvid": "BV1xx411c7mD", "cid": 1001,
          "title": "固定视频详情回归", "desc": "视频详情测试正文", "duration": Self.fixtureDuration,
          "pubdate": 1700000000,
+         "pic": "https://ui-test.invalid/pic.jpg",
          "owner": ["mid": 1001, "name": "测试 UP", "face": "https://ui-test.invalid/face.png"],
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
          "pages": Self.pages,

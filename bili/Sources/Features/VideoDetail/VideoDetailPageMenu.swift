@@ -44,6 +44,7 @@ struct VideoDetailPageMenu: View {
             .sheet(isPresented: $isPageSheetPresented) {
                 VideoDetailPageSelectionSheet(
                     pages: store.pages,
+                    coverDisplay: store.coverDisplay,
                     selectedCID: store.selectedCID,
                     selectPage: selectPage
                 )
@@ -304,77 +305,83 @@ private struct VideoDetailPageTile: View {
 }
 
 private struct VideoDetailPageSelectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
     let pages: [VideoPage]
+    let coverDisplay: VideoCardDisplayModel?
     let selectedCID: Int?
     let selectPage: (VideoPage) -> Void
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
+    @State private var isReverseOrder = false
+
+    private var displayedPages: [VideoPage] {
+        isReverseOrder ? pages.reversed() : pages
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    VideoDetailPageSheetHeader(pageCount: pages.count)
-                        .padding(.horizontal, 14)
-                        .padding(.top, 4)
-
-                    GlassEffectContainer(spacing: 10) {
-                        LazyVGrid(columns: columns, spacing: 10) {
-                            ForEach(pages) { page in
-                                VideoDetailPageSheetRoute(
-                                    page: page,
-                                    isSelected: page.cid == selectedCID,
-                                    selectPage: selectPage
-                                )
-                            }
-                        }
+                LazyVStack(spacing: 10) {
+                    ForEach(displayedPages) { page in
+                        VideoDetailPageSheetRow(
+                            page: page,
+                            coverDisplay: coverDisplay,
+                            isSelected: page.cid == selectedCID,
+                            selectPage: selectPage
+                        )
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 18)
                 }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 18)
             }
             .hiddenInlineNavigationTitle()
             .nativeTopScrollEdgeEffect()
             .scrollContentBackground(.hidden)
             .background(.clear)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("关闭")
+                    .accessibilityIdentifier("video.detail.pageSheet.close")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.smooth(duration: 0.2)) {
+                            isReverseOrder.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isReverseOrder ? "arrow.down" : "arrow.up")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel(isReverseOrder ? "正序" : "倒序")
+                    .accessibilityIdentifier("video.detail.pageSheet.order")
+                }
+            }
         }
         .accessibilityIdentifier("video.detail.pageSheet")
         .presentationDetents([.fraction(0.7)])
-        .presentationDragIndicator(.visible)
+        .presentationDragIndicator(.hidden)
         .presentationBackground(.clear)
     }
 }
 
-private struct VideoDetailPageSheetHeader: View {
-    let pageCount: Int
-
-    var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 10) {
-                Text("全部分P")
-                    .font(.headline)
-
-                Text("\(pageCount) P")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .commentPlayerGlassRoundedRectangle(cornerRadius: 14, showsShadow: false)
-        }
-    }
-}
-
-private struct VideoDetailPageSheetRoute: View {
+/// 弹窗行：左侧视频封面，右侧分P信息；选中勾选用灰色而非主题色。
+private struct VideoDetailPageSheetRow: View {
     @Environment(\.dismiss) private var dismiss
     let page: VideoPage
+    let coverDisplay: VideoCardDisplayModel?
     let isSelected: Bool
     let selectPage: (VideoPage) -> Void
+
+    private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    private static let coverSize = CGSize(width: 108, height: 61)
 
     var body: some View {
         Button {
@@ -382,13 +389,72 @@ private struct VideoDetailPageSheetRoute: View {
             guard !isSelected else { return }
             selectPage(page)
         } label: {
-            VideoDetailPageTile(
-                page: page,
-                isSelected: isSelected,
-                height: 68,
-                usesGlassBackground: true
-            )
+            HStack(alignment: .top, spacing: 10) {
+                cover
+                    .frame(width: Self.coverSize.width, height: Self.coverSize.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(title)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                                .padding(.top, 2)
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("P\(page.page ?? 1)")
+                        if let duration = page.duration {
+                            Text(BiliFormatters.duration(duration))
+                        }
+                        if isSelected {
+                            Text("当前播放")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+                .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground).opacity(0.55), in: shape)
+            .overlay {
+                shape.strokeBorder(Color(.separator).opacity(0.16), lineWidth: 0.8)
+            }
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("P\(page.page ?? 1) \(title)")
+        .accessibilityValue(isSelected ? "当前播放" : "")
+    }
+
+    @ViewBuilder
+    private var cover: some View {
+        if let coverDisplay {
+            AdaptiveVideoCoverImage(
+                display: coverDisplay,
+                style: .exactCrop,
+                fixedSize: Self.coverSize
+            )
+        } else {
+            BiliMediaPlaceholder(style: .video, iconSize: 16)
+        }
+    }
+
+    private var title: String {
+        let part = page.part?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return part.isEmpty ? "P\(page.page ?? 1)" : part
     }
 }

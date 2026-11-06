@@ -10,6 +10,7 @@ struct VideoDetailPlaybackRenderSnapshotFactory {
             historyCID: viewModel.playbackOptions.recordsPlaybackHistory ? viewModel.selectedCID : nil,
             duration: viewModel.detail.duration.map(TimeInterval.init),
             pages: viewModel.detail.pages ?? [],
+            coverDisplay: VideoCardDisplayModel(video: viewModel.detail),
             selectedCID: viewModel.selectedCID,
             playURLState: viewModel.playURLState,
             selectedPlayVariant: selectedPlayVariant,

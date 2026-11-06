@@ -5,6 +5,7 @@ struct VideoDetailPlaybackRenderSnapshot: Equatable {
     var historyCID: Int?
     var duration: TimeInterval?
     var pages: [VideoPage] = []
+    var coverDisplay: VideoCardDisplayModel?
     var selectedCID: Int?
     var playURLState: LoadingState = .idle
     var selectedPlayVariant: PlayVariant?
@@ -23,6 +24,7 @@ struct VideoDetailPlaybackRenderSnapshot: Equatable {
         historyCID: Int? = nil,
         duration: TimeInterval? = nil,
         pages: [VideoPage] = [],
+        coverDisplay: VideoCardDisplayModel? = nil,
         selectedCID: Int? = nil,
         playURLState: LoadingState = .idle,
         selectedPlayVariant: PlayVariant? = nil,
@@ -40,6 +42,7 @@ struct VideoDetailPlaybackRenderSnapshot: Equatable {
         self.historyCID = historyCID
         self.duration = duration
         self.pages = pages
+        self.coverDisplay = coverDisplay
         self.selectedCID = selectedCID
         self.playURLState = playURLState
         self.selectedPlayVariant = selectedPlayVariant

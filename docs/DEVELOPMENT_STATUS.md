@@ -305,3 +305,12 @@
 - 签名环境注意：`~/.config/cilicili/sign-install-ipa.conf` 已被另一项目占用（Eric Kirsche 证书、旧设备 UDID，且 profile 路径已失效），本轮改用命令行直传 `--profile/--identity/--device`（18pm = Nazar Aryan G933USCY46，含 RCe2027，2027-09-22 到期）完成签名安装，未 `--save` 覆盖该配置；后续 cilicili 安装需继续直传或重做 cilicili 专用配置。
 - 交付：版本 1.1.2 / Build 111；未签名 IPA SHA-256 `7d8bc55e3b44ece6aba353aead976905cf600909bfc4aaa365572a1fad75a09d`，签名深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2624）并启动，可执行文件 SHA-256 `f9f16f6e7baafd499ca181da076055e88bb25bce40278fca31702fcdf1156600`。
 - 待验收：用户真机确认紧凑行样式、弹窗手感、切P后播放/弹幕/续播正常。经典形态由 UI 回归保护，未跑全量单元与云端 CI。分支 main，本轮源码+文档为单次提交。
+
+## 2026-11-06 分P弹窗重设计 / Build 112
+
+- 用户要求：分P弹窗改单列一行一个P、左侧视频封面、右侧分P信息，左上角加收起按钮、右上角加正序/倒序切换按钮，图标不用主题色。实验开关与紧凑行入口保持 Build 111 行为；经典横滑形态的“展开全部分P”也打开同一新弹窗。
+- 实现：`VideoDetailPageSelectionSheet` 整页重写为 `LazyVStack` 单列行（`VideoDetailPageSheetRow`：108×61 封面 = `AdaptiveVideoCoverImage` exactCrop + 右侧 P 号/part 标题/时长/当前播放），替换原玻璃两列网格；选中勾为灰色 `.secondary`；顶部 toolbar leading `chevron.down`「关闭」（`video.detail.pageSheet.close`），trailing `arrow.up/arrow.down`「正序/倒序」（`video.detail.pageSheet.order`），倒序仅反转展示顺序，不改变 P 号语义。旧 `VideoDetailPageSheetHeader/Route` 与 drag indicator 删除；经典横滑瓦片 `VideoDetailPageTile` 保留。
+- 数据链路：`VideoDetailPlaybackRenderSnapshot` 新增 `coverDisplay: VideoCardDisplayModel?`，factory 由 `viewModel.detail` 构建，经 `VideoDetailPageSelectorRenderSnapshot/Store` 传入弹窗；封面为视频级（B站分P共用详情封面），非按P独立封面。
+- 测试：夹具视频详情响应补 `pic` 字段。单元 2/2（新增 coverDisplay 断言）；UI 3/3 一次通过：紧凑用例覆盖关闭/排序按钮存在、倒序后 P3 在 P2 上方、恢复正序、选 P2 后行标签更新且弹窗自动收起；经典用例覆盖展开按钮打开新弹窗并可关闭；单P隐藏不变。证据 `build/logs/build112-pageselector-unit.xcresult`、`build112-pageselector-ui.xcresult`。未跑全量单元与云端 CI。
+- 交付：版本 1.1.2 / Build 112；未签名 IPA SHA-256 `7af3bedc32da65690dd5d2c970a7399c8bbd176553bba702b58be31b3c522f48`；沿用直传 18pm 参数（不覆盖被其他项目占用的 conf）签名深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2632）并启动；可执行文件 SHA-256 `6a01f754026a29a32e2869f2202f124f04d5ae682f0d8525c516a6e797ee7741`。
+- 待验收：真机确认单列行视觉（封面加载、深浅色）、排序切换手感、关闭按钮位置。分支 main，本轮源码+文档单次提交。

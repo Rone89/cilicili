@@ -19,6 +19,11 @@ final class VideoDetailCompactPageSelectorTests: XCTestCase {
 
     @MainActor
     func testCompactPageSelectorSnapshotExposesCurrentSelectionAndCount() {
+        let coverVideo = VideoItem(
+            bvid: "BVTest", aid: 1, title: "测试", pic: "https://example.com/pic.jpg",
+            desc: nil, duration: 120, pubdate: nil, owner: nil, stat: nil, cid: 1001,
+            pages: nil, dimension: nil
+        )
         let store = VideoDetailPageSelectorRenderStore()
         store.update(VideoDetailPageSelectorRenderSnapshot(
             playback: VideoDetailPlaybackRenderSnapshot(
@@ -27,6 +32,7 @@ final class VideoDetailCompactPageSelectorTests: XCTestCase {
                     VideoPage(cid: 1002, page: 2, part: "第二分 P", duration: 90, dimension: nil),
                     VideoPage(cid: 1003, page: 3, part: "第三分 P", duration: 60, dimension: nil),
                 ],
+                coverDisplay: VideoCardDisplayModel(video: coverVideo),
                 selectedCID: 1002,
                 isDetailLoaded: true
             )
@@ -35,6 +41,8 @@ final class VideoDetailCompactPageSelectorTests: XCTestCase {
         XCTAssertTrue(store.shouldShowPageSelector)
         XCTAssertEqual(store.pages.count, 3)
         XCTAssertEqual(store.selectedCID, 1002)
+        XCTAssertEqual(store.coverDisplay?.id, coverVideo.id)
+        XCTAssertNotNil(store.coverDisplay?.sourceCoverURL)
         let selectedPart = store.pages.first { $0.cid == store.selectedCID }
         XCTAssertEqual(selectedPart?.part, "第二分 P")
     }
