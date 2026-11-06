@@ -59,35 +59,21 @@ final class VideoDetailFlowUITests: XCTestCase {
         toolbar.buttons["评论"].tap()
 
         let list = openCommentsTab(in: app)
-        // 头部 + 20 条首页评论 + 尾部 = 22；全部 60 条加载完后为 62。
-        func loadedCellCount() -> Int { list.cells.count }
-        XCTAssertEqual(
-            XCTWaiter.wait(
-                for: [XCTNSPredicateExpectation(
-                    predicate: NSPredicate { _, _ in loadedCellCount() >= 10 },
-                    object: nil
-                )],
-                timeout: 10
-            ),
-            .completed
+        XCTAssertTrue(
+            list.buttons["详情评论 1"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
         )
 
-        // 持续下滑应自动续载到最后一页，无需点按。
-        var reachedEnd = loadedCellCount() >= 62
-        for _ in 0..<24 where !reachedEnd {
+        // 持续下滑应自动续载；只有 60 条全部加载完才会出现“没有更多评论了”。
+        let endLabel = list.staticTexts["没有更多评论了"].firstMatch
+        var reachedEnd = endLabel.exists
+        for _ in 0..<30 where !reachedEnd {
             list.swipeUp()
-            reachedEnd = loadedCellCount() >= 62
+            reachedEnd = endLabel.exists
         }
         XCTAssertTrue(
-            reachedEnd
-                || XCTWaiter.wait(
-                    for: [XCTNSPredicateExpectation(
-                        predicate: NSPredicate { _, _ in loadedCellCount() >= 62 },
-                        object: nil
-                    )],
-                    timeout: 10
-                ) == .completed,
-            "cells loaded: \(loadedCellCount())"
+            reachedEnd || endLabel.waitForExistence(timeout: 10),
+            app.debugDescription
         )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -172,6 +158,10 @@ final class VideoDetailFlowUITests: XCTestCase {
             return itemB.frame.minY - itemA.frame.minY
         }
 
+        XCTAssertTrue(
+            list.buttons["详情评论 1"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
         guard let initialDistance = visibleDistance() else {
             XCTFail("markers 1 and 3 must be initially visible")
             return

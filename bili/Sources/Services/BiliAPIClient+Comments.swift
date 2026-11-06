@@ -241,7 +241,9 @@ extension BiliAPIClient {
         #else
         let skipsGrpcChannel = false
         #endif
+        let isPagination = !cursor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !skipsGrpcChannel, let oidNumber = Int(oid), oidNumber > 0 {
+            var lastGrpcError: Error?
             for attempt in 0..<2 {
                 do {
                     let page = try await fetchCommentsViaGrpc(
@@ -260,6 +262,7 @@ extension BiliAPIClient {
                     return page
                 } catch {
                     if Task.isCancelled { throw CancellationError() }
+                    lastGrpcError = error
                     Self.logCommentChannel(
                         oid: oid,
                         message: "commentSource=grpcFailed attempt=\(attempt + 1)"
@@ -271,6 +274,12 @@ extension BiliAPIClient {
                         if Task.isCancelled { throw CancellationError() }
                     }
                 }
+            }
+            // 分页失败不回退网页接口：网页通道对连续翻页风控更严，回退只会
+            // 制造“连环失败”。对齐 PiliPlus/PiliPod：失败静默，等下一次触发
+            // 自然重试。首屏仍回退，保证弱网/游客场景至少能看到评论。
+            if isPagination, let lastGrpcError {
+                throw lastGrpcError
             }
         }
         let mode = sort == .hot ? "3" : "2"

@@ -32,7 +32,12 @@ extension VideoDetailViewModel {
             let previousCount = comments.count
             let previousCursor = commentCursor
             do {
-                let page = try await fetchCommentsWithTimeout(target: target, cursor: commentCursor, sort: sort)
+                let page = try await fetchCommentsWithTimeout(
+                    target: target,
+                    cursor: commentCursor,
+                    sort: sort,
+                    timeout: isInitialPage ? 15 : nil
+                )
                 guard isCurrentCommentPageLoad(target: target, sort: sort, generation: generation) else {
                     return
                 }

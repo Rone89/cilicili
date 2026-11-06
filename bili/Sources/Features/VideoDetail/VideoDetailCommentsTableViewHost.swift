@@ -228,8 +228,6 @@ extension VideoDetailCommentsTableViewHost {
 
         /// 列表顶部留白：外壳 `padding(.top, 12)` + 内容页 `topPadding` 8。
         private static let listTopPadding: CGFloat = 20
-        /// 距底部多少 pt 触发分页（与旧版 300pt 预载窗口一致）。
-        private static let paginationPrefetchDistance: CGFloat = 320
         private static let cellReuseIdentifier = "comments.cell"
         /// 未测量行的估算高度：接近典型评论行（头像 + 两行文本），减小减速距离偏差。
         private static let defaultEstimatedRowHeight: CGFloat = 96
@@ -253,10 +251,10 @@ extension VideoDetailCommentsTableViewHost {
         private var pendingVirtualOffset: CGFloat?
         private var lastReportedVirtualOffset: CGFloat?
         private var lastPhase: ScrollPhase = .idle
-        private var lastPaginationRequestAt: CFTimeInterval = 0
-        /// 分页失败退避：连续失败指数拉长自动重试间隔，避免高频请求触发风控。
+        /// 上次已发起的分页游标：同一游标只发一次，成功/失败后清空，
+        /// 允许下一次 footer 进入可见区时自然重试（不对齐时间节流，对齐 PiliPod）。
+        private var requestedLoadMoreToken: Int?
         private var previousLoadMoreState: LoadingState = .idle
-        private var lastLoadMoreFailureAt: CFTimeInterval = 0
         private var consecutiveLoadMoreFailures = 0
         /// 行高缓存：以“首次真实显示时系统自适配出的高度”为准，之后冻结。
         /// 不做任何离屏预测——SwiftUI 行内容里有随提议高度伸缩的弹性视图
@@ -425,15 +423,16 @@ extension VideoDetailCommentsTableViewHost {
                 }
         }
 
-        /// 跟踪分页加载态转换：失败记时间并累计连败（供指数退避），成功清零。
+        /// 跟踪分页加载态转换：结束后清空游标占用，允许下一次可见触发重试。
+        /// 失败只计数供诊断，不做定时退避（对齐 PiliPlus/PiliPod 的静默语义）。
         private func trackLoadMoreStateTransition(_ state: LoadingState) {
             let previous = previousLoadMoreState
             previousLoadMoreState = state
             guard state != previous else { return }
             if state.isLoading {
-                // 新一轮加载开始：保留连败计数，直到真正成功。
-            } else if case .failed = state, previous.isLoading {
-                lastLoadMoreFailureAt = CACurrentMediaTime()
+                return
+            }
+            if case .failed = state, previous.isLoading {
                 consecutiveLoadMoreFailures += 1
                 if Self.logsHeightDebug {
                     NSLog("CILICILI-HEIGHT loadMore failed streak=%d", consecutiveLoadMoreFailures)
@@ -441,6 +440,7 @@ extension VideoDetailCommentsTableViewHost {
             } else if state == .loaded, previous.isLoading {
                 consecutiveLoadMoreFailures = 0
             }
+            requestedLoadMoreToken = nil
         }
 
         private func resubscribeToStore() {
@@ -467,6 +467,16 @@ extension VideoDetailCommentsTableViewHost {
             itemsByID = newItemsByID
 
             let items = makeItems(store: store, itemsByID: newItemsByID)
+            #if DEBUG
+            // 仅调试构建记录快照/偏移，便于排查行高与滚动问题。
+            PlayerMetricsLog.diagnostic(
+                "commentsRefresh items=\(items.count)"
+                    + " offset=\(Int(tableView?.contentOffset.y ?? 0))"
+                    + " size=\(Int(tableView?.contentSize.height ?? 0))"
+                    + " bounds=\(Int(tableView?.bounds.height ?? 0))"
+                    + " insetTop=\(Int(tableView?.contentInset.top ?? 0))"
+            )
+            #endif
 
             // 新行先离屏量好估算种子（快照刷新在布局路径之外），批量更新时
             // UIKit 的偏移数学全程使用精确值，不会在翻页时扯动可见内容。
@@ -515,9 +525,6 @@ extension VideoDetailCommentsTableViewHost {
             }
             lastSelectedSort = store.selectedSort
 
-            DispatchQueue.main.async { [weak self] in
-                self?.evaluatePaginationTrigger()
-            }
         }
 
         private func reconfigureChangedItems(
@@ -837,32 +844,22 @@ extension VideoDetailCommentsTableViewHost {
 
         // MARK: 分页
 
-        private func evaluatePaginationTrigger() {
-            guard let tableView, tableView.bounds.height > 0 else { return }
+        private func isLoadMoreFailed(_ state: LoadingState) -> Bool {
+            if case .failed = state { return true }
+            return false
+        }
+
+        private func requestLoadMorePage() {
             let store = props.store
             guard !store.loadMoreState.isLoading else { return }
-            let now = CACurrentMediaTime()
-            if case .failed = store.loadMoreState {
-                // 失败态随滚动自动重试，但按连败次数指数退避（3s/6s/12s 封顶），
-                // 连败 4 次后停止自动重试——高频请求只会持续触发风控，让失败
-                // 更频繁；此时保留 footer 的手动重试按钮。
-                guard consecutiveLoadMoreFailures < 4 else { return }
-                let backoff = min(3.0 * pow(2.0, Double(consecutiveLoadMoreFailures - 1)), 12.0)
-                guard now - lastLoadMoreFailureAt >= backoff else { return }
-            } else if !store.hasMoreComments {
-                return
+            // 以“已加载条数”作为页令牌：同一条数只发一次，成功/失败后清空，
+            // 下一次 footer 可见即可自然重试。
+            let token = store.comments.count
+            guard requestedLoadMoreToken != token else { return }
+            requestedLoadMoreToken = token
+            if Self.logsHeightDebug {
+                NSLog("CILICILI-HEIGHT loadMoreRequest count=%d", token)
             }
-            guard case .loaded = CommentsSectionContentState(
-                store: store,
-                shouldShowLoadingPlaceholder: true
-            ) else { return }
-
-            let distanceToBottom = tableView.contentSize.height
-                + tableView.contentInset.bottom
-                - (tableView.contentOffset.y + tableView.bounds.height)
-            guard distanceToBottom <= Self.paginationPrefetchDistance else { return }
-            guard now - lastPaginationRequestAt >= 0.8 else { return }
-            lastPaginationRequestAt = now
             props.actions.loadMoreCommentsAction()
         }
 
@@ -897,6 +894,11 @@ extension VideoDetailCommentsTableViewHost {
             forRowAt indexPath: IndexPath
         ) {
             guard let item = dataSource?.itemIdentifier(for: indexPath) else { return }
+            if case .footer = item {
+                // footer 即将显示 = 到达列表末尾，触发下一页（PiliPod 的 footer
+                // onAppear 同款触发点）。守卫在 requestLoadMorePage 内。
+                requestLoadMorePage()
+            }
             let height = cell.frame.height
             guard height > 1 else { return }
             // 记录真实显示高度供估算使用。绝不能在这里做 begin/endUpdates
@@ -931,7 +933,6 @@ extension VideoDetailCommentsTableViewHost {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             reportScrollOffset(in: scrollView)
-            evaluatePaginationTrigger()
         }
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
@@ -947,7 +948,6 @@ extension VideoDetailCommentsTableViewHost {
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
             reportPhase(.idle)
-            evaluatePaginationTrigger()
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
@@ -966,13 +966,18 @@ private struct CommentsTableFooterContent: View {
     let horizontalPadding: CGFloat
     let loadMore: () -> Void
 
+    private var isFailed: Bool {
+        if case .failed = loadMoreState { return true }
+        return false
+    }
+
     var body: some View {
         Group {
             if loadMoreState.isLoading {
                 InlineLoadingStateView(title: "正在加载评论")
-            } else if case .failed(let message) = loadMoreState {
-                CommentLoadMoreRetryButton(message: message, retry: loadMore)
-            } else if hasMoreComments {
+            } else if hasMoreComments || isFailed {
+                // 失败不进红字错误态（对齐 PiliPlus/PiliPod 的静默语义）：
+                // 保持中性文案，继续下滑或点按都会自然重试。
                 Text("继续下滑加载更多评论")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
