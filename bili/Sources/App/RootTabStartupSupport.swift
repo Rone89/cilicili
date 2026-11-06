@@ -26,7 +26,10 @@ extension RootTabView {
     }
 
     nonisolated static func seedVideo(bvid: String) -> VideoItem {
-        VideoItem(
+        // `--start-bvid ep<id>` mirrors the bangumi deep link so the PGC
+        // detail route loads through the season endpoint in UI tests.
+        let episodeID = bvid.hasPrefix("ep") ? Int(bvid.dropFirst(2)) : nil
+        return VideoItem(
             bvid: bvid,
             aid: nil,
             title: "正在加载",
@@ -38,7 +41,8 @@ extension RootTabView {
             stat: nil,
             cid: nil,
             pages: nil,
-            dimension: nil
+            dimension: nil,
+            pgcEpisodeID: episodeID
         )
     }
 

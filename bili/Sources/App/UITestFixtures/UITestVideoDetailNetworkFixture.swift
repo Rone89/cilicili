@@ -35,6 +35,8 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
                     video["bvid"] = bvid
                 }
                 payload = video
+            case "/pgc/view/web/season":
+                payload = Self.season
             case "/x/emote/user/panel/web":
                 payload = ["packages": [["emote": [["text": "[doge_金箍]",
                     "url": "https://ui-test.invalid/doge.png", "width": 32, "height": 32]]]]]
@@ -171,6 +173,25 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
          "dimension": ["width": 1920, "height": 1080, "rotate": 0],
          "pages": Self.pages,
          "stat": ["view": 1000, "like": 20, "reply": Self.totalCommentCount]]
+    }
+
+    /// `--start-bvid ep3001`：番剧季信息，三集，用于分集选择器回归。
+    private static var season: [String: Any] {
+        ["season_id": 30, "media_id": 300, "title": "测试番剧", "season_title": "测试番剧",
+         "cover": "https://ui-test.invalid/season.jpg",
+         "episodes": (1...3).map { index in episodePayload(index) }]
+    }
+
+    private static func episodePayload(_ index: Int) -> [String: Any] {
+        let id = 3000 + index
+        var episode: [String: Any] = [
+            "id": id, "aid": id, "cid": id, "ep_id": id,
+            "title": "第\(index)话", "long_title": "分集标题\(index)",
+            "cover": "https://ui-test.invalid/ep\(index).jpg",
+            "duration": Self.fixtureDuration,
+        ]
+        episode["badge"] = index == 3 ? "预告" : ""
+        return episode
     }
 }
 #endif

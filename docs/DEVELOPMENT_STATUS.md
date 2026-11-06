@@ -322,3 +322,12 @@
 - 验证：改动仅 `VideoDetailPageMenu` 弹窗视图层；UI 回归 3/3 通过（`build/logs/build113-pageselector-ui.xcresult`），含排序与关闭断言；单元与夹具本轮无改动。未跑全量单元与云端 CI。
 - 交付：1.1.2 / Build 113；未签名 IPA SHA-256 `b064b09a727b022f10bb2cd5ae09117258a7e449673c2fef39dc23d4ee89ddf1`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2640）并启动；可执行文件 SHA-256 `eb5bd0670b954e1127a5643267cf7567b40d28ea7a2abccf83e74a2fb0015753`。
 - 待验收：真机确认顶部图标已非主题色、行间分割线样式。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-06 分集（番剧）接入紧凑选择 / Build 114
+
+- 用户要求同一实验也接入番剧详情页的分集选择。实现：抽出共享组件 `VideoDetailCompactSelectionSheet.swift`——`VideoDetailCompactSelectionItem`（由 `VideoPage` 或 `PgcEpisode`+`PgcSeasonInfo` 映射）+ `VideoDetailCompactEntryButton`（区块名/当前项/总数单行）+ `VideoDetailCompactSelectionSheet`（单列封面行、分割线、灰色收起/排序按钮）。`VideoDetailPageMenu` 与 `VideoDetailPgcEpisodeSection` 均按开关分叉到共享组件，经典横滑形态各自原样保留；分集弹窗标题「全部分集」、计数单位「集」、标识 `video.detail.episodeMenu.compact`。
+- 语义差异：UGC 分P封面是视频级（详情 pic）；PGC 每集有独立 `cover`,空则回季封面，仍无封面或无 CID 则置灰不可选（与旧瓦片一致）。旧分集 sheet 的两列玻璃网格与页眉胶囊排序按钮在实验开启时不再使用（关闭时保留原样）。
+- 测试入口：`--start-bvid ep<id>` 现在解析为 `pgcEpisodeID` 种子，走 PGC 详情路径；夹具新增 `/pgc/view/web/season` 三集响应（每集独立封面，ep3 带"预告"角标）。
+- 验证：单元 7/7（新增 page→item、episode→item、无 part 回落 Pn、无封面置灰回落季封面等 5 项）；UI 4/4 通过，新增 `testCompactEpisodeSelectorForPgcUsesSharedSheet`：分集紧凑行（"3 集"）、弹窗选「第2话」后行标签更新、经典展开按钮不出现。证据 `build/logs/build114-compact-selection-unit/.xcresult`、`build114-compact-selection-ui.xcresult`。未跑全量单元与云端 CI。
+- 交付：1.1.2 / Build 114；未签名 IPA SHA-256 `adff9af96a62fcdd6da9cceb80f5a54e6a6993f2f0b6b55a61a86e2610f6ab5d`（构建完成后改过设置页文案，已删除旧 IPA 以最终源码重建，此为重建后校验值）；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2648）并启动；可执行文件 SHA-256 `08fbdcd5b17ef86a9922ad9699307a809c5cbbadf7b3d050a336911dba9cbe67`。设置项文案同步改为"分P/分集紧凑选择实验"。
+- 待验收：真机进入番剧详情确认分集紧凑行、每集独立封面、选集后播放切换正常。分支 main，本轮源码+文档单次提交。

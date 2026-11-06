@@ -93,6 +93,52 @@ final class VideoDetailPageSelectorUITests: XCTestCase {
         waitForExpectations(timeout: 10, handler: nil)
     }
 
+    /// 分集（番剧）紧凑行同样以「分集，当前」前缀标签查询。
+    @MainActor
+    private func episodeCompactRow(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "分集，当前")).firstMatch
+    }
+
+    @MainActor
+    func testCompactEpisodeSelectorForPgcUsesSharedSheet() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-reset-state", "--start-tab", "home",
+            "--ui-test-video-detail-network", "--ui-test-player-controls-persistent",
+            "-cc.bili.videoDetail.compactPageSelectorExperimentEnabled.v1", "YES",
+            "--start-bvid", "ep3001",
+        ]
+        app.launch()
+
+        let compact = episodeCompactRow(in: app)
+        XCTAssertTrue(compact.waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertTrue(compact.label.contains("3 集"), compact.label)
+        // 经典横滑分集瓦片在实验开启时不应出现。
+        XCTAssertFalse(
+            app.buttons["展开全部分集"].firstMatch.exists,
+            app.debugDescription
+        )
+
+        compact.tap()
+
+        let sheet = app.descendants(matching: .any)["video.detail.pageSheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), app.debugDescription)
+
+        let secondEpisode = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "第2话"))
+            .firstMatch
+        XCTAssertTrue(secondEpisode.waitForExistence(timeout: 10), app.debugDescription)
+        secondEpisode.tap()
+
+        let updatedLabel = NSPredicate(format: "label CONTAINS %@", "第2话")
+        expectation(for: updatedLabel, evaluatedWith: compact, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
+
+        let sheetDismissed = NSPredicate(format: "exists == NO")
+        expectation(for: sheetDismissed, evaluatedWith: sheet, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
+    }
+
     @MainActor
     func testSinglePageVideoHidesPageSelector() throws {
         let app = XCUIApplication()

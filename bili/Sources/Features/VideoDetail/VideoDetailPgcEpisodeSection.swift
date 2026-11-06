@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
+    @EnvironmentObject private var libraryStore: LibraryStore
     let detail: VideoItem
     let api: BiliAPIClient
     let selectEpisode: (VideoItem) -> Void
@@ -19,24 +20,56 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
         detail.pgcEpisodeID ?? detail.bvid.pgcRouteEpisodeID
     }
 
+    private var compactItems: [VideoDetailCompactSelectionItem] {
+        guard let season else { return [] }
+        return season.selectableEpisodes.map { episode in
+            VideoDetailCompactSelectionItem(
+                episode: episode,
+                season: season,
+                isSelected: episode.matches(detail: detail)
+            )
+        }
+    }
+
     var body: some View {
         Group {
             if let season {
-                VStack(alignment: .leading, spacing: 18) {
-                    VideoDetailPgcSeasonInfoBlock(
-                        season: season,
-                        detail: detail
-                    )
+                if libraryStore.videoDetailCompactPageSelectorExperimentEnabled {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VideoDetailPgcSeasonInfoBlock(
+                            season: season,
+                            detail: detail
+                        )
 
-                    actionContent()
+                        actionContent()
 
-                    VideoDetailPgcEpisodeLoadedSection(
-                        detail: detail,
-                        season: season,
-                        selectEpisode: selectEpisode,
-                        order: $order,
-                        showsEpisodeSheet: $isEpisodeSheetPresented
-                    )
+                        if season.selectableEpisodes.count > 1 {
+                            VideoDetailCompactEntryButton(
+                                sectionTitle: "分集",
+                                countUnit: "集",
+                                items: compactItems,
+                                accessibilityIdentifier: "video.detail.episodeMenu.compact",
+                                showsSheet: $isEpisodeSheetPresented
+                            )
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VideoDetailPgcSeasonInfoBlock(
+                            season: season,
+                            detail: detail
+                        )
+
+                        actionContent()
+
+                        VideoDetailPgcEpisodeLoadedSection(
+                            detail: detail,
+                            season: season,
+                            selectEpisode: selectEpisode,
+                            order: $order,
+                            showsEpisodeSheet: $isEpisodeSheetPresented
+                        )
+                    }
                 }
             } else if state == .idle || state.isLoading {
                 VideoDetailPgcEpisodeLoadingSection()
@@ -52,12 +85,23 @@ struct VideoDetailPgcEpisodeSection<ActionContent: View>: View {
         }
         .sheet(isPresented: $isEpisodeSheetPresented) {
             if let season {
-                VideoDetailPgcEpisodeSelectionSheet(
-                    detail: detail,
-                    season: season,
-                    selectEpisode: selectEpisode,
-                    order: $order
-                )
+                if libraryStore.videoDetailCompactPageSelectorExperimentEnabled {
+                    VideoDetailCompactSelectionSheet(
+                        sectionTitle: "全部分集",
+                        items: compactItems,
+                        selectItem: { item in
+                            guard let video = item.selectVideo else { return }
+                            selectEpisode(video)
+                        }
+                    )
+                } else {
+                    VideoDetailPgcEpisodeSelectionSheet(
+                        detail: detail,
+                        season: season,
+                        selectEpisode: selectEpisode,
+                        order: $order
+                    )
+                }
             }
         }
     }

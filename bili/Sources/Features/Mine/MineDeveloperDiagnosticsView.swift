@@ -125,8 +125,8 @@ struct MineDeveloperDiagnosticsView: View {
                 set: { libraryStore.setVideoDetailCompactPageSelectorExperimentEnabled($0) }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    MineSettingsLabel("分P紧凑选择实验", systemImage: "rectangle.stack")
-                    Text("视频详情页的分P改为单行显示当前分P名称和总数，点按以弹窗查看全部分P。")
+                    MineSettingsLabel("分P/分集紧凑选择实验", systemImage: "rectangle.stack")
+                    Text("视频详情页的分P与番剧分集改为单行显示当前名称和总数，点按以弹窗查看全部分P／分集。")
                         .appTypography(.settingsSubtitle, fallback: .caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
