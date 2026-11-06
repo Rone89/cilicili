@@ -1,24 +1,22 @@
 import SwiftUI
 
 struct HomeFeedScrollContent<FeedContent: View>: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isShowingInitialPlaceholder: Bool
     let isEmpty: Bool
     let mode: HomeFeedMode
     @ViewBuilder let feedContent: () -> FeedContent
 
     var body: some View {
+        // 推荐/热门切换不做过渡动画：两个分支保持不同 identity，
+        // 切换时整块内容直接替换，避免横向滑入滑出。
         ZStack(alignment: .top) {
             if mode == .recommend {
                 feedStateContent
-                    .transition(reduceMotion ? .identity : .move(edge: .leading))
             } else {
                 feedStateContent
-                    .transition(reduceMotion ? .identity : .move(edge: .trailing))
             }
         }
         .clipped()
-        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: mode)
         .padding(.bottom, 18)
     }
 

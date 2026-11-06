@@ -289,3 +289,10 @@
 - 修复：`VideoDetailCommentContentCell` 覆写 `init(style:reuseIdentifier:)`，清 `backgroundColor`、`contentView.backgroundColor`，并 `backgroundConfiguration = .clear()`。修复后同坐标评论页 = `#F2F2F7`。
 - 回归：评论渲染滚动、自动翻页（60 条滑到“没有更多评论了”）两条 UI 用例通过；未跑全量单元或云端 CI。临时像素探针测试已删除，工作区只保留这一处产品改动。
 - 版本 1.1.2 / Build 109；Release 未签名 IPA SHA-256 `d18c99757e80d4e78613b167ccadf48c5e87a87485aa80fc1f171d6a9ffa0873`，18pm 证书重签、签名深度校验通过，安装 RCe2027 成功（databaseSequenceNumber 2576）并启动。真机底色待用户确认。
+
+## 2026-11-06 去掉首页推荐/热门切换动画（Build 110）
+
+- 用户确认评论页底色已与简介页一致后，反馈首页“推荐 ↔ 热门”切换有动画。定位：`HomeFeedScrollContent` 对两种 mode 分别使用 `.transition(.move(edge: .leading/.trailing))`，外层 `.animation(.smooth(duration: 0.28), value: mode)`，旧列表向一侧滑出、新列表从另一侧滑入。该写法自 1.0.22（`932f0ed`，2026-09-01）就存在，后续 `10ec2ce` 仅补 Reduce Motion 判断，与本轮评论/背景改动无关。
+- 按要求去掉切换动画：删除两处 `.transition` 与 `.animation(..., value: mode)`；保留按 mode 分叉的 identity，切换时整块内容直接替换。同时给 `HomeFeedScrollActions.requestScrollToTop` 增加 `animated` 参数，切换模式时瞬时回顶（`animated: false`），点首页 tab 回顶仍保留 0.34s 平滑滚动。
+- 回归：`HomeRecommendationFeedbackUITests` 6/6 通过（点击、长按菜单、反馈、屏蔽、滚动不回顶）；未跑全量单元或云端 CI。动画是否彻底消失需真机确认（自动化难以断言“无动画”）。
+- 版本 1.1.2 / Build 110；Release 未签名 IPA SHA-256 `8942f9c6b5550462994dd2b8a4762830b48d2474c479679176cb375e1a0fa100`，18pm 证书重签、签名深度校验通过，安装 RCe2027 成功（databaseSequenceNumber 2600）并启动。

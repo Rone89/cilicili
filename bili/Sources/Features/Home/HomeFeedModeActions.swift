@@ -17,7 +17,8 @@ final class HomeFeedModeActions {
     ) {
         guard viewModel.mode != mode else { return }
         switchTask?.cancel()
-        scrollActions.requestScrollToTop()
+        // 切换模式时瞬时回顶：与取消的过渡动画配合，整页不再有任何切换动画。
+        scrollActions.requestScrollToTop(animated: false)
         let nativeRefreshAction = nativeRefreshActionStore.action
         switchTask = Task { @MainActor in
             await viewModel.switchMode(mode, using: nativeRefreshAction)

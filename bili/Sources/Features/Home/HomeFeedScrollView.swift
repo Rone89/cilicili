@@ -73,7 +73,7 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 viewModel: viewModel
             )
             .onChange(of: scrollActions.topScrollRequestID) { _, _ in
-                scrollToTop(proxy)
+                scrollToTop(proxy, animated: scrollActions.topScrollRequestIsAnimated)
             }
             .transaction { transaction in
                 if reduceMotion {
@@ -84,8 +84,8 @@ struct HomeFeedScrollView<FeedContent: View>: View {
         }
     }
 
-    private func scrollToTop(_ proxy: ScrollViewProxy) {
-        if reduceMotion {
+    private func scrollToTop(_ proxy: ScrollViewProxy, animated: Bool) {
+        if reduceMotion || !animated {
             proxy.scrollTo(HomeFeedScrollAnchor.top, anchor: .top)
         } else {
             withAnimation(.smooth(duration: 0.34)) {
