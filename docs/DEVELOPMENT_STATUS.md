@@ -314,3 +314,11 @@
 - 测试：夹具视频详情响应补 `pic` 字段。单元 2/2（新增 coverDisplay 断言）；UI 3/3 一次通过：紧凑用例覆盖关闭/排序按钮存在、倒序后 P3 在 P2 上方、恢复正序、选 P2 后行标签更新且弹窗自动收起；经典用例覆盖展开按钮打开新弹窗并可关闭；单P隐藏不变。证据 `build/logs/build112-pageselector-unit.xcresult`、`build112-pageselector-ui.xcresult`。未跑全量单元与云端 CI。
 - 交付：版本 1.1.2 / Build 112；未签名 IPA SHA-256 `7af3bedc32da65690dd5d2c970a7399c8bbd176553bba702b58be31b3c522f48`；沿用直传 18pm 参数（不覆盖被其他项目占用的 conf）签名深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2632）并启动；可执行文件 SHA-256 `6a01f754026a29a32e2869f2202f124f04d5ae682f0d8525c516a6e797ee7741`。
 - 待验收：真机确认单列行视觉（封面加载、深浅色）、排序切换手感、关闭按钮位置。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-06 分P弹窗样式微调 / Build 113
+
+- 用户真机反馈两点：顶部两个按钮图标仍是主题色；分P行不要背景容器。
+- 修复：toolbar 按钮同时设 `.tint(.secondary)` 与图像 `.foregroundStyle(.secondary)`（主题 tint 会经 toolbar 桥接染色，单靠 foregroundStyle 不生效）；行改为无背景、无描边，行间用整宽 `Divider()`（spacing 0，行内 padding 8/8），列表恢复统一 14pt 水平内边距。选中勾与“当前播放”仍是灰色。
+- 验证：改动仅 `VideoDetailPageMenu` 弹窗视图层；UI 回归 3/3 通过（`build/logs/build113-pageselector-ui.xcresult`），含排序与关闭断言；单元与夹具本轮无改动。未跑全量单元与云端 CI。
+- 交付：1.1.2 / Build 113；未签名 IPA SHA-256 `b064b09a727b022f10bb2cd5ae09117258a7e449673c2fef39dc23d4ee89ddf1`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2640）并启动；可执行文件 SHA-256 `eb5bd0670b954e1127a5643267cf7567b40d28ea7a2abccf83e74a2fb0015753`。
+- 待验收：真机确认顶部图标已非主题色、行间分割线样式。分支 main，本轮源码+文档单次提交。

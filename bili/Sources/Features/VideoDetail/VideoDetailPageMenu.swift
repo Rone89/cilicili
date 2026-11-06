@@ -320,14 +320,17 @@ private struct VideoDetailPageSelectionSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(displayedPages) { page in
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(displayedPages.enumerated()), id: \.element.id) { index, page in
                         VideoDetailPageSheetRow(
                             page: page,
                             coverDisplay: coverDisplay,
                             isSelected: page.cid == selectedCID,
                             selectPage: selectPage
                         )
+                        if index < displayedPages.count - 1 {
+                            Divider()
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
@@ -347,6 +350,7 @@ private struct VideoDetailPageSelectionSheet: View {
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
+                    .tint(.secondary)
                     .accessibilityLabel("关闭")
                     .accessibilityIdentifier("video.detail.pageSheet.close")
                 }
@@ -360,6 +364,7 @@ private struct VideoDetailPageSelectionSheet: View {
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
+                    .tint(.secondary)
                     .accessibilityLabel(isReverseOrder ? "正序" : "倒序")
                     .accessibilityIdentifier("video.detail.pageSheet.order")
                 }
@@ -372,7 +377,7 @@ private struct VideoDetailPageSelectionSheet: View {
     }
 }
 
-/// 弹窗行：左侧视频封面，右侧分P信息；选中勾选用灰色而非主题色。
+/// 弹窗行：左侧视频封面，右侧分P信息；无背景容器，行间用分割线；勾选用灰色而非主题色。
 private struct VideoDetailPageSheetRow: View {
     @Environment(\.dismiss) private var dismiss
     let page: VideoPage
@@ -380,7 +385,6 @@ private struct VideoDetailPageSheetRow: View {
     let isSelected: Bool
     let selectPage: (VideoPage) -> Void
 
-    private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
     private static let coverSize = CGSize(width: 108, height: 61)
 
     var body: some View {
@@ -427,13 +431,10 @@ private struct VideoDetailPageSheetRow: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground).opacity(0.55), in: shape)
-            .overlay {
-                shape.strokeBorder(Color(.separator).opacity(0.16), lineWidth: 0.8)
-            }
-            .contentShape(shape)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("P\(page.page ?? 1) \(title)")
