@@ -281,3 +281,11 @@
 - 版本递增至 1.1.2 / Build 106，共享缓存 Release 签名构建、重签与无线安装 RCe2027 每轮完成并启动。真机验收：触摸停止/跟手、底部边缘统一、加载失败"明显减少"均由用户确认；行间稳定性在 104/105 曾反馈问题并于 106 前修复，最终行距稳定性待用户进一步确认。
 - 本轮 99–106 累积改动已按整批提交：main `efff8fe`（19 文件，+2200/-56）；未推送远端、未合并 PR、未跑云端回归。
 - 追加 Build 107：发现 106 的 gRPC 通道被 `#if DEBUG` 挡住而设备装的是 Release 包，真机"失败减少"实际来自 105 的退避。本版放开 gRPC 到 Release（仅 UI 测试夹具跳过）、失败先重试一次再回退网页、无 app 凭据时快速失败、每页写 `commentSource=grpc|web|grpcFailed` 诊断日志。单元与评论 UI 用例通过，Release 签名安装 RCe2027（安装成功，设备锁屏导致自动启动被拒，用户解锁后打开即可）。真机失败率待复测。
+
+## 2026-11-06 评论页底色统一（Build 109）
+
+- 反馈：评论区与简介页背景色不一致。模拟器（iPhone 18 Pro Max / iOS 27）同坐标像素采样：简介页内容区 `#F2F2F7`，评论页 `#FFFFFF`；深色模式两页均为 `#000000`，差异只在浅色模式可见。
+- 根因：iOS 14+ `UITableViewCell` 的背景由 `backgroundConfiguration` 绘制，优先于 `backgroundColor`；`.plain` 表格默认配置是 `tableCellPlainBackgroundColor`（浅色纯白/深色纯黑）。UIKit 评论列表只把 `UITableView.backgroundColor` 设为 clear，cell 这层没清，表头/骨架/评论/footer 每一行都把整幅宽度刷白，盖住页面自己的分组灰底。运行时日志确认 cell 的 backgroundConfiguration 为该动态色，而 table、cell、contentView 均为 clear/nil。
+- 修复：`VideoDetailCommentContentCell` 覆写 `init(style:reuseIdentifier:)`，清 `backgroundColor`、`contentView.backgroundColor`，并 `backgroundConfiguration = .clear()`。修复后同坐标评论页 = `#F2F2F7`。
+- 回归：评论渲染滚动、自动翻页（60 条滑到“没有更多评论了”）两条 UI 用例通过；未跑全量单元或云端 CI。临时像素探针测试已删除，工作区只保留这一处产品改动。
+- 版本 1.1.2 / Build 109；Release 未签名 IPA SHA-256 `d18c99757e80d4e78613b167ccadf48c5e87a87485aa80fc1f171d6a9ffa0873`，18pm 证书重签、签名深度校验通过，安装 RCe2027 成功（databaseSequenceNumber 2576）并启动。真机底色待用户确认。

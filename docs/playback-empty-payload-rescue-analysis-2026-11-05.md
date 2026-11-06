@@ -421,3 +421,29 @@ P1（试做后回退）：
 
 回归：自动翻页（滑到“没有更多评论了”）、渲染滚动、参差行高往返、触摸停止、行内点赞、
 排序、播放器收起耦合全部通过。Build 108 Release 签名安装到 RCe2027。
+
+### 追加：评论页底色统一为分组灰（build 109）
+
+用户反馈评论区与简介页背景色不一致。模拟器（iPhone 18 Pro Max / iOS 27）同坐标像素采样：
+
+| 采样点（内容区） | 简介页 | 评论页（修复前） |
+| --- | --- | --- |
+| 左侧留白 | `#F2F2F7` | `#FFFFFF` |
+| 中间 | `#F2F2F7` | `#FFFFFF` |
+
+深色模式下两页均为 `#000000`，所以差异只在浅色模式可见。
+
+根因：iOS 14+ 的 `UITableViewCell` 背景由 `backgroundConfiguration` 绘制，优先于
+`backgroundColor`。`.plain` 表格的默认 cell 配置是 `tableCellPlainBackgroundColor`
+（浅色纯白、深色纯黑）。UIKit 评论列表只把 `UITableView.backgroundColor` 设为 clear，
+没有清 cell 这一层；表头、骨架、评论、footer 共用同一个 cell 类，于是每一行都把整幅
+宽度刷白，页面自己的 `VideoDetailTheme.background`（`systemGroupedBackground`，
+浅色 `#F2F2F7`）被完全盖住。运行时日志已确认：table/backgroundColor/contentView 均
+为 clear/nil，唯有 `backgroundConfiguration.backgroundColor` 是该动态色。
+
+修复：`VideoDetailCommentContentCell` 覆写 `init(style:reuseIdentifier:)`，把
+`backgroundColor`、`contentView.backgroundColor` 置为 clear，并
+`backgroundConfiguration = .clear()`。修复后同坐标评论页 = `#F2F2F7`，与简介页一致。
+
+回归：评论列表渲染滚动、自动翻页到“没有更多评论了”两条 UI 用例通过。
+Build 109 Release 签名安装到 RCe2027。

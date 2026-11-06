@@ -154,6 +154,22 @@ final class VideoDetailCommentsTableView: UITableView {
 final class VideoDetailCommentContentCell: UITableViewCell {
     private var hostingController: UIHostingController<AnyView>?
 
+    /// `.plain` 样式会给 cell 配默认 `backgroundConfiguration`
+    /// （`tableCellPlainBackgroundColor`，浅色纯白/深色纯黑），它绘制在
+    /// `backgroundColor` 之上，会把页面自己的分组灰底完全盖住。清掉这一层，
+    /// 让列表与简介页共用 `VideoDetailTheme.background`（#F2F2F7）。
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        backgroundConfiguration = .clear()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     func configure(rootView: AnyView) {
         if let hostingController {
             hostingController.rootView = rootView
