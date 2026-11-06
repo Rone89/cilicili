@@ -1174,6 +1174,164 @@ final class VideoDetailFlowUITests: XCTestCase {
         app.descendants(matching: .any)[identifier]
     }
 
+    /// 旋转往返后评论区不得错位：内容区在全屏布局下冻结尺寸，评论表
+    /// 宽度全程不变；回到竖屏后滚动位置与评论间距都必须复原。
+    /// 出现"header 与首条评论之间大段空洞"即本用例失败。
+    @MainActor
+    func testCommentsUIKitListStableAfterFullscreenRoundTrip() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["--ui-test-comment-pagination"]
+        )
+        let list = openCommentsTab(in: app)
+        let sortControl = app.segmentedControls["评论排序"].firstMatch
+        XCTAssertTrue(sortControl.waitForExistence(timeout: 10), app.debugDescription)
+        let comment1 = list.buttons["详情评论 1"].firstMatch
+        let comment3 = list.buttons["详情评论 3"].firstMatch
+        XCTAssertTrue(comment1.waitForExistence(timeout: 10), app.debugDescription)
+
+        func markerDistance() -> CGFloat? {
+            guard comment1.exists, comment1.isHittable,
+                  comment3.exists, comment3.isHittable else { return nil }
+            return comment3.frame.minY - comment1.frame.minY
+        }
+
+        guard let initialMarkerDistance = markerDistance() else {
+            XCTFail("comments 1 and 3 must be initially visible")
+            return
+        }
+
+        // 下滑两屏（加载第二页、播放器收起）再进入横屏，模拟真实使用路径。
+        list.swipeUp()
+        list.swipeUp()
+        let markerBeforeRotation = list.buttons["详情评论 5"].firstMatch
+        XCTAssertTrue(
+            markerBeforeRotation.waitForExistence(timeout: 10),
+            "deeper comments must be loaded before rotation"
+        )
+
+        let playerToggle = app.buttons["ui.player.fullscreen.toggle"].firstMatch
+        if !playerToggle.waitForExistence(timeout: 3) {
+            // 控件浮层被隐藏时先点播放器画面唤起。
+            app.buttons["ui.player.surface"].firstMatch.tap()
+        }
+        XCTAssertTrue(playerToggle.waitForExistence(timeout: 5), app.debugDescription)
+        playerToggle.tap()
+        // 等待系统转场、全屏布局与恢复稳定。
+        Thread.sleep(forTimeInterval: 2.5)
+
+        // 退出全屏：转场后控件浮层可能已隐藏，先点播放器画面唤起再点退出，
+        // 最多重试三次。
+        var exited = false
+        let surface = app.buttons["ui.player.surface"].firstMatch
+        for _ in 0..<3 where !exited {
+            let exitToggle = app.buttons["ui.player.fullscreen.toggle"].firstMatch
+            if exitToggle.waitForExistence(timeout: 3) {
+                exitToggle.tap()
+                exited = true
+            } else {
+                surface.tap()
+            }
+        }
+        XCTAssertTrue(exited, "fullscreen exit control must be reachable in landscape")
+        Thread.sleep(forTimeInterval: 2.0)
+        XCUIDevice.shared.orientation = .portrait
+
+        // 旋转后滚动位置必须保留：旋转前可见的评论仍应存在。
+        XCTAssertTrue(
+            markerBeforeRotation.waitForExistence(timeout: 10),
+            "comment visible before rotation must still exist after round trip"
+        )
+        // 滑回顶部直到 1/3 两条评论重新同时可见，间距必须与旋转前一致。
+        var restoredDistance: CGFloat?
+        for _ in 0..<8 where restoredDistance == nil {
+            list.swipeDown()
+            restoredDistance = markerDistance()
+        }
+        guard let finalMarkerDistance = restoredDistance ?? markerDistance() else {
+            XCTFail("comments 1 and 3 must be simultaneously visible after round trip")
+            return
+        }
+        XCTAssertEqual(
+            finalMarkerDistance, initialMarkerDistance, accuracy: 2,
+            "distance between comments must not change after fullscreen round trip"
+        )
+    }
+
+    /// 切换排序 = 内容整体替换：走 reloadData 语义后评论行间距与切换前
+    /// 一致，且头部到首条评论不得出现大段空洞；最热↔最新往返均成立。
+    @MainActor
+    func testCommentsUIKitListStableAfterSortSwitches() {
+        let app = launchVideoDetail(
+            waitForDetailMarker: false,
+            extraArguments: ["--ui-test-comment-pagination"]
+        )
+        let list = openCommentsTab(in: app)
+        let sortControl = app.segmentedControls["评论排序"].firstMatch
+        XCTAssertTrue(sortControl.waitForExistence(timeout: 10), app.debugDescription)
+        let comment1 = list.buttons["详情评论 1"].firstMatch
+        let comment3 = list.buttons["详情评论 3"].firstMatch
+        XCTAssertTrue(comment1.waitForExistence(timeout: 10), app.debugDescription)
+
+        func headerDistance() -> CGFloat? {
+            guard sortControl.exists, sortControl.isHittable,
+                  comment1.exists, comment1.isHittable else { return nil }
+            return comment1.frame.minY - sortControl.frame.minY
+        }
+        func markerDistance() -> CGFloat? {
+            guard comment1.exists, comment1.isHittable,
+                  comment3.exists, comment3.isHittable else { return nil }
+            return comment3.frame.minY - comment1.frame.minY
+        }
+
+        guard let initialMarkerDistance = markerDistance() else {
+            XCTFail("first comments must be initially visible")
+            return
+        }
+        // 首次头部距离是骨架屏期间捕获的高度，排序切换后结构行会重新
+        // 自适配（既有语义），因此基准取第一次切换之后的稳定态。
+        let latest = sortControl.buttons["最新"].firstMatch
+        let hot = sortControl.buttons["最热"].firstMatch
+
+        latest.tap()
+        XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching to latest")
+        var distanceAfterLatest: CGFloat?
+        for _ in 0..<6 where distanceAfterLatest == nil {
+            list.swipeDown()
+            distanceAfterLatest = headerDistance()
+        }
+        guard let latestHeaderDistance = distanceAfterLatest ?? headerDistance() else {
+            XCTFail("header and first comment must be visible after switching to latest")
+            return
+        }
+        // 绝对界限：出现用户报告的大段空洞（数百 pt）即失败。
+        XCTAssertLessThan(latestHeaderDistance, 300)
+        guard let latestMarkerDistance = markerDistance() else {
+            XCTFail("comments 1 and 3 must be simultaneously visible after switching to latest")
+            return
+        }
+        XCTAssertEqual(latestMarkerDistance, initialMarkerDistance, accuracy: 2)
+
+        hot.tap()
+        XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching back to hot")
+        var distanceAfterHot: CGFloat?
+        for _ in 0..<6 where distanceAfterHot == nil {
+            list.swipeDown()
+            distanceAfterHot = headerDistance()
+        }
+        guard let hotHeaderDistance = distanceAfterHot ?? headerDistance() else {
+            XCTFail("header and first comment must be visible after switching back to hot")
+            return
+        }
+        XCTAssertEqual(hotHeaderDistance, latestHeaderDistance, accuracy: 4)
+        XCTAssertLessThan(hotHeaderDistance, 300)
+        guard let hotMarkerDistance = markerDistance() else {
+            XCTFail("comments 1 and 3 must be simultaneously visible after switching back to hot")
+            return
+        }
+        XCTAssertEqual(hotMarkerDistance, initialMarkerDistance, accuracy: 2)
+    }
+
     @MainActor
     private func launchVideoDetail(waitForDetailMarker: Bool = true, extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait

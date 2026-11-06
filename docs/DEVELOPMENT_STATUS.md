@@ -352,3 +352,16 @@
 - 测试：单元 43/43（`VideoDetailCompactPageSelectorTests` 删实验持久化用例；`ResourceLoadingServicesTests` 缓存用例重写为纯弹幕键隔离；`BiliAPIClientRequestContractTests` 缓存类型名同步），证据 `build/logs/build116-graduate-unit-2.xcresult`。UI 6/6：选择器组删两个经典形态用例、全部 launch args 去实验开关参数（`VideoDetailPageSelectorUITests` 整体重写为 4 用例），另回归弹幕设置面板两项，证据 `build/logs/build116-graduate-ui.xcresult`。未跑全量单元与云端 CI。
 - 交付：1.1.2 / Build 116（6 处配置递增）；未签名 IPA SHA-256 `1e96b8985f93cb6f400bff694f07700cb2330dc827bce93ff4bd574739a10f6d`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2664）并启动；重签后可执行文件 SHA-256 `966c7704f01bc4e7500173d0d1c9021ded53b29eac095d652ae12d036c2e0ec0`。
 - 待验收：真机确认无实验开关时分P/分集/合集紧凑形态直接可用；弹幕设置面板不再出现字幕区；资源缓存诊断行显示"弹幕"（原"字幕/弹幕"）。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-07 评论区旋转/排序错位修复（Build 117，worktree 验证后回流）
+
+- 用户反馈：视频详情页旋转横屏或切换评论排序后评论错位（header 与首条评论间大段空洞）。分析确认根因在评论区 UIKit 重写（Build 99–109）的几何链路；分页语义（gRPC 每页 20 条、footer 可见触发、0.8s 节流、条数令牌、总数判尾）确认无需改动，本轮不触碰。
+- 根因：旋转时 `layoutLandscape` 在 preparing 阶段即翻转，竖屏内容区仅 opacity 0 隐藏仍挂载且 contentFrame 直接变为横屏宽度；评论表 `bounds.width` 变化触发 `handleWidthChangeIfAny` 清空全部行高缓存/种子 + `reloadData`（一次"竖→横→竖"往返 ≥2 次），而清空后没有重新播种（`seedMissingItems` 只在快照刷新时运行），表格停留在 96pt 默认估算几何上，contentSize 与 offset↔行号映射失真；`willDisplay` 又把失真布局里的 frame 无条件冻结进缓存，错误固化到下次宽度变化。排序切换的"删全部旧行+插入新行"批量更新在深偏移处做估算偏移补偿，属同类风险。
+- 修复（worktree 分支 `zcode/comments-rotation-misalignment` 实施并验证）：
+  1. `VideoDetailShellLayout.resolve` 新增 `fullscreenContentFrameSize`：全屏布局（横屏/竖屏全屏）时内容区沿用上一次嵌入布局尺寸（该区域此时已移到屏幕下方且透明），评论表宽度旋转前后不变，行高缓存、滚动位置、协调器状态完整存活——旋转不再触发评论表清缓存+reload（`VideoDetailSwiftUIContainerModel` 记录 `lastEmbeddedContentSize`，未提供时退回旧行为）。
+  2. 排序切换改走 `applySnapshotUsingReloadData` 整表替换语义，不再做删除/插入批量更新的偏移补偿；回顶仍走既有 `pendingVirtualOffset`。
+  3. `willDisplay` 高度冻结加可信门槛：显示高度与离屏种子偏差超过 max(80, 60%) 时不冻结、保留种子等下次稳定显示再捕获，阻断失真 frame 固化成空洞。
+  4. 宽度变化清缓存后立即用新宽度重播种（防御性，覆盖非旋转宽度变化路径）。
+- 测试：新增单测 `testFullscreenLayoutFreezesContentFrameAtLastEmbeddedSize` 通过。新增 UI 用例 `testCommentsUIKitListStableAfterFullscreenRoundTrip`（下滑两屏加载第二页→播放器全屏往返→旋转前可见评论仍在、回到顶部评论间距与旋转前一致）与 `testCommentsUIKitListStableAfterSortSwitches`（最热↔最新往返评论间距不变、header 到首条评论无空洞）通过；评论 UI 回归共 8/8 通过（渲染滚动、自动翻页 60 条、往返稳定、触摸停止、行内点赞、排序控件）。全量单元仅 4 条失败（`BiliAPIClientRequestContractTests.testMainCommentsBuildsRequestAndDecodesPaginationAndComments` + `DynamicDetailNavigationTests` ×3），与 main（534550a）基线逐条相同，为既有失败；`testProductionSurfaceAcrossTwentyGeometryCycles` 全量并行时失败、两仓单独运行均通过，判定为并行资源饥饿抖动而非回归。
+- 交付：1.1.2 / Build 117（6 处配置递增）；未签名 IPA SHA-256 `e6b22e23f158d7140988b1c23e60e6484a818b0037135572a8ee13e3c65dc881`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2672）；重签后可执行文件 SHA-256 `61dac15ee8972c5ba2086f33a869373e4a1767629ddfa82ed3f6d78f86f65b7b`。远程启动因设备锁屏被拒（与 Build 116 安装时相同），待用户解锁后打开。
+- 待验收：真机确认旋转横屏往返、最热↔最新切换后评论区无空洞、行序正确。本轮在 worktree 开发并完成模拟器验证后，修复以单提交 cherry-pick 回 main；worktree 分支保留实验全记录。

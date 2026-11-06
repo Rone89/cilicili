@@ -96,6 +96,11 @@ struct VideoDetailShellLayout: Equatable {
         return max(minimum, min(currentPlayerHeight ?? expanded, expanded))
     }
 
+    /// - Parameter fullscreenContentFrameSize: 全屏布局（横屏/竖屏全屏）时内容区
+    ///   沿用的上一次嵌入布局尺寸。内容区在全屏下不可见（移到屏幕下方、透明），
+    ///   尺寸冻结可以避免其中的 UIKit 评论表在旋转时经历宽度变化——宽度一变，
+    ///   表格就会清空全部行高缓存并 `reloadData`，回到竖屏后只剩 96pt 估算几何，
+    ///   偏移映射失真、出现大段空洞。`nil` 退回随转场缩放的旧行为。
     static func resolve(
         bounds: CGRect,
         safeAreaTop: CGFloat,
@@ -103,7 +108,8 @@ struct VideoDetailShellLayout: Equatable {
         currentPlayerHeight: CGFloat?,
         isPlaybackActive: Bool,
         isLandscape: Bool,
-        isPortraitFullscreen: Bool
+        isPortraitFullscreen: Bool,
+        fullscreenContentFrameSize: CGSize? = nil
     ) -> Self {
         let usesFullscreenLayout = isLandscape || isPortraitFullscreen
         let canInteractivelyCollapse = supportsInteractiveCollapse(
@@ -120,14 +126,15 @@ struct VideoDetailShellLayout: Equatable {
                 isPlaybackActive: isPlaybackActive
             )
         if usesFullscreenLayout {
+            let frozenContentSize = fullscreenContentFrameSize ?? bounds.size
             return Self(
                 playerFrame: bounds,
                 danmakuCanvasSize: bounds.size,
                 contentFrame: CGRect(
                     x: bounds.minX,
                     y: bounds.maxY,
-                    width: bounds.width,
-                    height: max(bounds.height, 1)
+                    width: frozenContentSize.width,
+                    height: max(frozenContentSize.height, 1)
                 ),
                 contentTopInset: nil,
                 usesFullscreenLayout: true

@@ -522,8 +522,25 @@ extension VideoDetailCommentsTableViewHost {
             snapshot.appendSections([SectionID.main])
             snapshot.appendItems(items)
 
-            if reloadData {
+            // 切换排序 = 内容整体替换：走 reloadData 语义，避免"删除全部旧行 +
+            // 插入新行"的批量更新在深偏移处做估算偏移补偿（错位来源之一）。
+            // 首次快照（lastSelectedSort == nil）不算切换。
+            let sortChanged = lastSelectedSort != nil && lastSelectedSort != store.selectedSort
+
+            if reloadData || sortChanged {
                 dataSource.applySnapshotUsingReloadData(snapshot)
+                if sortChanged {
+                    // reloadData 路径不会经过 reconfigureChangedItems，签名在这里对齐，
+                    // 避免下一次刷新对头部/尾部做多余 reconfigure。
+                    lastHeaderSignature = HeaderSignature(
+                        replyCountText: props.store.replyCountText,
+                        selectedSort: props.store.selectedSort
+                    )
+                    lastFooterSignature = FooterSignature(
+                        loadMoreState: props.store.loadMoreState,
+                        hasMoreComments: props.store.hasMoreComments
+                    )
+                }
             } else {
                 dataSource.apply(snapshot, animatingDifferences: false)
                 reconfigureChangedItems(
@@ -534,8 +551,8 @@ extension VideoDetailCommentsTableViewHost {
                 )
             }
 
-            if let lastSelectedSort, lastSelectedSort != store.selectedSort {
-                // 切换排序后内容整体替换，回到评论区顶部（播放器保持收起）。
+            if sortChanged {
+                // 切换排序后回到评论区顶部（播放器保持收起）。
                 pendingVirtualOffset = max(0, props.topInset - props.minimumPlayerHeight)
                 scheduleLayoutAdjustment()
             }
@@ -768,6 +785,11 @@ extension VideoDetailCommentsTableViewHost {
             cachedRowHeights.removeAll()
             seededHeights.removeAll()
             tableView.reloadData()
+            // 清空后立即用新宽度重播种：seedMissingItems 只在快照刷新时运行，
+            // 宽度变化不产生快照。不补种的话表格会停留在 96pt 默认估算上，
+            // contentSize 与偏移映射全部失真，回到竖屏后出现大段空洞。
+            let items = makeItems(store: props.store, itemsByID: itemsByID)
+            seedMissingItems(items: items, width: width)
         }
 
         /// 内容不足一屏时补足底部留白，保证播放器仍可随滚动完全收起
@@ -917,6 +939,19 @@ extension VideoDetailCommentsTableViewHost {
             }
             let height = cell.frame.height
             guard height > 1 else { return }
+            // 冻结可信门槛：显示高度与离屏种子偏差过大，说明这一帧来自失真
+            // 布局（转场瞬态宽度、批量更新竞态等）。此时不冻结，保留种子值，
+            // 等下一次稳定显示再捕获——否则错误高度会固化成行间大段空白。
+            if let seed = seededHeights[item],
+               abs(height - seed) > max(80, seed * 0.6) {
+                if Self.logsHeightDebug, case .comment(let id) = item {
+                    NSLog(
+                        "CILICILI-HEIGHT rejected id=%d frame=%.1f seed=%.1f",
+                        id, height, seed
+                    )
+                }
+                return
+            }
             // 记录真实显示高度供估算使用。绝不能在这里做 begin/endUpdates
             // 之类的表几何操作——willDisplay 处于布局过程中，重入会崩溃并抖动。
             if let previousHeight = cachedRowHeights[item],

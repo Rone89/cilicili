@@ -406,6 +406,57 @@ final class PlaybackDetailSharedLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testFullscreenLayoutFreezesContentFrameAtLastEmbeddedSize() {
+        // 旋转到横屏时内容区沿用上一次竖屏尺寸：其中的 UIKit 评论表
+        // 宽度不变，行高缓存与滚动几何在旋转前后完整存活。
+        let embeddedSize = CGSize(width: 393, height: 793)
+        let landscape = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 852, height: 393),
+            safeAreaTop: 0,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: true,
+            isPortraitFullscreen: false,
+            fullscreenContentFrameSize: embeddedSize
+        )
+
+        XCTAssertTrue(landscape.usesFullscreenLayout)
+        XCTAssertEqual(landscape.playerFrame, CGRect(x: 0, y: 0, width: 852, height: 393))
+        XCTAssertEqual(
+            landscape.contentFrame,
+            CGRect(x: 0, y: 393, width: 393, height: 793)
+        )
+
+        let portraitFullscreen = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 393, height: 852),
+            safeAreaTop: 0,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: false,
+            isPortraitFullscreen: true,
+            fullscreenContentFrameSize: embeddedSize
+        )
+        XCTAssertEqual(
+            portraitFullscreen.contentFrame,
+            CGRect(x: 0, y: 852, width: 393, height: 793)
+        )
+
+        // 未提供冻结尺寸时退回旧行为（随转场尺寸缩放）。
+        let fallback = VideoDetailShellLayout.resolve(
+            bounds: CGRect(x: 0, y: 0, width: 852, height: 393),
+            safeAreaTop: 0,
+            videoAspectRatio: 16.0 / 9.0,
+            currentPlayerHeight: nil,
+            isPlaybackActive: true,
+            isLandscape: true,
+            isPortraitFullscreen: false
+        )
+        XCTAssertEqual(fallback.contentFrame.width, 852)
+    }
+
+    @MainActor
     func testVideoDetailInitialVideoGeometryUsesPageDimensionWhenTopLevelDimensionIsMissing() {
         let pageDimension = VideoDimension(width: 1080, height: 1920, rotate: nil)
         let video = VideoItem(

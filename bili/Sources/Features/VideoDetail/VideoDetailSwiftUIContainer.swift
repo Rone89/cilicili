@@ -39,6 +39,9 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
     private var isBackgroundRenderFreezeActive = false
     private var layoutSynchronizationScheduled = false
     private var pendingLayout: VideoDetailShellLayout?
+    /// 上一次嵌入（非全屏）布局的内容区尺寸。进入全屏布局时内容区沿用该尺寸，
+    /// 其中的 UIKit 评论表在旋转前后宽度不变，行高缓存与滚动几何完整存活。
+    private var lastEmbeddedContentSize: CGSize?
 
     init(
         viewModel: VideoDetailViewModel,
@@ -129,15 +132,20 @@ final class VideoDetailSwiftUIContainerModel: ObservableObject {
             effectiveInteractiveOffset.map {
                 interactivePlayerHeight(forOffset: $0, bounds: size)
             } ?? currentPlayerHeight
-        return VideoDetailShellLayout.resolve(
+        let layout = VideoDetailShellLayout.resolve(
             bounds: CGRect(origin: .zero, size: size),
             safeAreaTop: safeAreaTop,
             videoAspectRatio: videoAspectRatio,
             currentPlayerHeight: effectivePlayerHeight,
             isPlaybackActive: isPlaybackActiveForLayout,
             isLandscape: rotationCoordinator.layoutLandscape,
-            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen
+            isPortraitFullscreen: rotationCoordinator.isPortraitFullscreen,
+            fullscreenContentFrameSize: lastEmbeddedContentSize
         )
+        if !layout.usesFullscreenLayout {
+            lastEmbeddedContentSize = layout.contentFrame.size
+        }
+        return layout
     }
 
     func storedInteractiveScrollOffset(for tab: VideoDetailContentTab) -> CGFloat {
