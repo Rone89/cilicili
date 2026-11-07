@@ -446,3 +446,14 @@
 - 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
 - 交付：1.1.2 / Build 125；未签名 IPA SHA-256 `10a9632d92659297e53da311870397023e309bcd0b41302c020a8a09786393c2`；18pm 重签安装 RCe2027（databaseSequenceNumber 2760）并启动。
 - 待验收：横屏点 CC 直接弹出系统菜单并可选轨；竖屏仍为系统 sheet；三键图标等高。
+
+## 2026-11-08 横屏设置改为右侧纯色抽屉 + 控件不自动隐藏 / Build 126
+
+- 用户要求：横屏设置菜单改为从右侧推出、宽度为横屏宽 40%、满高、圆角的纯色面板，点非面板区域向右滑出；面板跟随 App 深浅色；横屏字幕菜单与设置面板展开时视频控件不自动隐藏。
+- 面板：`SurfaceOnlyLandscapeMoreControlsOverlay` 重写为右侧抽屉——宽度 `min(max(width * 0.4, 320), 420)`、满高、leading 侧 24 连续圆角、`systemBackground` 纯色、左侧 0.6pt 分隔线、遮罩 `black 0.18` 点按关闭；滑入/滑出用 `.move(edge: .trailing)` + `easeInOut(0.28)`；内容按 key window 安全区留白，背景铺满。
+- 深浅色：`appearanceMode` 显式 light/dark 直接采用；`system` 时读 `UIScreen.main.traitCollection`（视频页为状态栏对比度会把窗口 trait 强制为深色，窗口 trait 不可用），再用 `systemBackground` 按该 scheme 解析颜色，并对内容强制同一 `colorScheme`。
+- 自动隐藏：面板沿用 `isSecondaryControlsPresented`（配置中已含 `isMoreControlsPresented`）挂起自动隐藏；横屏字幕 UIMenu 通过 `.menuActionTriggered` 在展开时 `cancelAutoHide()`，选中轨道后 `showAndSchedule` 恢复自动隐藏节奏。
+- 验证（XCUITest 截图导出，临时用例已删除）：深色与浅色外观下分别为深/浅纯色面板；面板宽度约 40%、满高、圆角；打开后等待 5 秒控制条仍可见；点左侧区域后向右滑出并恢复视频手势。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 126；未签名 IPA SHA-256 `580ef4c85fd312462c20946e1a25710ccd11d721bc1bb0f5ac544f663e8699de`；18pm 重签安装 RCe2027（databaseSequenceNumber 2768）成功，启动因设备锁屏被拒，解锁后可打开。
+- 待验收：横屏点齿轮右侧滑出纯色抽屉、随深浅色切换、点左侧滑出；面板与横屏字幕菜单打开期间控制条不自动隐藏。
