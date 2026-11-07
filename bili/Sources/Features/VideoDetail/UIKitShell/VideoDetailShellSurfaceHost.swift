@@ -841,8 +841,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
                     VideoDetailPlayerSurfaceSubtitleLayer(
                         store: detailViewModel.subtitleRenderStore,
+                        controlsVisibility: playbackControlsVisibility,
                         clock: viewModel.playbackClock,
                         cid: detailViewModel.selectedCID,
+                        isFullscreen: configuration.isFullscreenActive,
                         loadTracks: { await detailViewModel.loadSubtitleTracksForCurrentVideo() }
                     )
                     .allowsHitTesting(false)
