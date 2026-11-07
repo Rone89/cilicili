@@ -2009,7 +2009,6 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
             )
         }
         .padding(.top, safeArea.top)
-        .padding(.bottom, safeArea.bottom)
         .padding(.trailing, safeArea.trailing)
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -2238,7 +2237,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "听视频",
                             systemImage: "headphones",
-                            accessory: videoListenModeAccessory,
+                            accessory: nil,
                             isOn: videoListenModeBinding
                         )
                         .disabled(detailViewModel.isSwitchingVideoListenMode)
@@ -2250,7 +2249,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "画中画播放",
                             systemImage: "pip",
-                            accessory: pictureInPictureAccessory,
+                            accessory: nil,
                             isOn: Binding(
                                 get: { libraryStore.pictureInPictureEnabled },
                                 set: { libraryStore.setPictureInPictureEnabled($0) }
@@ -2262,7 +2261,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "后台播放",
                             systemImage: "speaker.wave.2",
-                            accessory: backgroundPlaybackAccessory,
+                            accessory: nil,
                             isOn: backgroundPlaybackBinding
                         )
 
@@ -2272,7 +2271,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     SurfaceOnlyLandscapeToggleRow(
                         title: "播放性能诊断",
                         systemImage: "waveform.path.ecg.rectangle",
-                        accessory: performanceOverlayAccessory,
+                        accessory: nil,
                         isOn: Binding(
                             get: { libraryStore.playerPerformanceOverlayEnabled },
                             set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
@@ -2284,7 +2283,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     SurfaceOnlyLandscapeToggleRow(
                         title: "播放控件边缘遮罩",
                         systemImage: "rectangle.topthird.inset.filled",
-                        accessory: controlEdgeScrimAccessory,
+                        accessory: nil,
                         isOn: Binding(
                             get: { libraryStore.playerControlEdgeScrimEnabled },
                             set: { libraryStore.setPlayerControlEdgeScrimEnabled($0) }
@@ -2576,14 +2575,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         SurfaceOnlyPlaybackFormatText.videoFormatTitle(for: viewModel.engineDiagnostics)
     }
 
-    private var pictureInPictureAccessory: String? {
-        return libraryStore.pictureInPictureEnabled ? "已开启" : "已关闭"
-    }
-
-    private var backgroundPlaybackAccessory: String? {
-        libraryStore.backgroundPlaybackEnabled ? "已开启" : "已关闭"
-    }
-
     private var backgroundPlaybackBinding: Binding<Bool> {
         Binding(
             get: { libraryStore.backgroundPlaybackEnabled },
@@ -2605,13 +2596,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         )
     }
 
-    private var videoListenModeAccessory: String? {
-        if detailViewModel.isSwitchingVideoListenMode {
-            return "切换中"
-        }
-        return detailViewModel.isVideoListenModeEnabled ? "已开启" : "已关闭"
-    }
-
     private var automaticAudioSubtitle: String {
         guard let variant = detailViewModel.automaticVideoListenAudioVariant else {
             return "优先选择兼容性较好的音轨"
@@ -2629,13 +2613,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         detailViewModel.isVideoListenModeEnabled ? "waveform" : "film"
     }
 
-    private var performanceOverlayAccessory: String? {
-        return libraryStore.playerPerformanceOverlayEnabled ? "已开启" : "已关闭"
-    }
-
-    private var controlEdgeScrimAccessory: String? {
-        return libraryStore.playerControlEdgeScrimEnabled ? "已开启" : "已关闭"
-    }
 }
 
 private struct SurfaceOnlyLandscapeToggleRow: View {
@@ -3334,10 +3311,10 @@ private extension View {
 
     @ViewBuilder
     func surfaceOnlyLandscapeGlassGroup() -> some View {
+        // 面板本身已是纯色抽屉，分组不再叠液态玻璃，避免视频透出导致内容发灰。
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         self
-            .background(Color(.secondarySystemGroupedBackground).opacity(0.34), in: shape)
-            .biliPlayerClearGlass(interactive: false, in: shape)
+            .background(Color(.secondarySystemGroupedBackground), in: shape)
     }
 }
 
