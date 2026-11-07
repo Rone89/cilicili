@@ -394,3 +394,5 @@
 - 测试：`VideoDetailSubtitleStoreTests` 11/11 通过（新增 3 项 URL 规范化：协议相对、http 升级、裸域名+空白），证据 `/tmp/ccswift-subtitle-urlfix.xcresult`。
 - 交付：1.1.2 / Build 120；未签名 IPA SHA-256 `6b5eacb8d1d7e60d4ebcceff024a106cb6b4271c9abe789d488a76abeff36e1a`；重签未执行——RCe2027 持续 `unavailable`（无线调试断开），待设备在线后安装。
 - 待验收：真机播放 `BV1hA4a6yEp9` 选任意 AI 轨，确认底部出现字幕文本；若出现「字幕内容加载失败」提示，按 `cc.bili/Subtitle` 日志中的 host 与错误码继续定位。
+
+- 补记：设备恢复在线（`available (paired)`）后执行重签安装成功——`app.bamboo2779.brussels691` 1.1.2 / Build 120，databaseSequenceNumber 2704，已启动。设备上同时存在旧包 `cc.bili` 1.1.2 / Build 119（非本轮 18pm 重签目标），验收时须打开「cilicili」且版本为 120 的那个（bundle ID `app.bamboo2779.brussels691`）。
