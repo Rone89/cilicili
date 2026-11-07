@@ -144,6 +144,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var videoDetailAutoplayEnabled: Bool
     @Published private(set) var videoListenPlaybackOrder: VideoListenPlaybackOrder
     @Published private(set) var videoListenPlaylistSortOrder: VideoListenPlaylistSortOrder
+    @Published private(set) var videoSubtitlePreference: VideoSubtitlePreference
     @Published private(set) var incognitoModeEnabled: Bool
     @Published private(set) var guestModeEnabled: Bool
     @Published private(set) var multiAccountEnabled: Bool
@@ -234,6 +235,7 @@ final class LibraryStore: ObservableObject {
     private static let videoDetailAutoplayEnabledKey = "cc.bili.videoDetail.autoplayEnabled.v1"
     private static let videoListenPlaybackOrderKey = "cc.bili.playback.videoListenPlaybackOrder.v1"
     private static let videoListenPlaylistSortOrderKey = "cc.bili.playback.videoListenPlaylistSortOrder.v1"
+    private static let videoSubtitlePreferenceKey = "cc.bili.playback.videoSubtitlePreference.v1"
     private static let incognitoModeEnabledKey = "cc.bili.privacy.incognitoModeEnabled.v1"
     private static let guestModeEnabledKey = "cc.bili.privacy.guestModeEnabled.v1"
     private static let multiAccountExperimentEnabledKey = "cc.bili.account.multiAccountExperimentEnabled.v1"
@@ -661,6 +663,10 @@ final class LibraryStore: ObservableObject {
             userDefaults.string(
                 forKey: Self.videoListenPlaylistSortOrderKey
             ).flatMap(VideoListenPlaylistSortOrder.init(rawValue:)) ?? .normal
+        self.videoSubtitlePreference =
+            userDefaults.string(
+                forKey: Self.videoSubtitlePreferenceKey
+            ).flatMap(VideoSubtitlePreference.init(rawValue:)) ?? .off
         self.incognitoModeEnabled = userDefaults.object(forKey: Self.incognitoModeEnabledKey) as? Bool ?? false
         self.guestModeEnabled = userDefaults.object(forKey: Self.guestModeEnabledKey) as? Bool ?? false
         // Multi-account routing is now a regular account feature. Preserve the
@@ -1282,6 +1288,11 @@ final class LibraryStore: ObservableObject {
     func setVideoListenPlaybackOrder(_ order: VideoListenPlaybackOrder) {
         videoListenPlaybackOrder = order
         userDefaults.set(order.rawValue, forKey: Self.videoListenPlaybackOrderKey)
+    }
+
+    func setVideoSubtitlePreference(_ preference: VideoSubtitlePreference) {
+        videoSubtitlePreference = preference
+        userDefaults.set(preference.rawValue, forKey: Self.videoSubtitlePreferenceKey)
     }
 
     func setVideoListenPlaylistSortOrder(_ order: VideoListenPlaylistSortOrder) {

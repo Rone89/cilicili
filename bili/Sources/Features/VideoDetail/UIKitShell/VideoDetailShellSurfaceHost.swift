@@ -635,6 +635,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @State private var portraitMoreControlsRequestID: UUID?
     @State private var isMoreControlsButtonPressed = false
     @State private var isVideoListenQueuePresented = false
+    @State private var isSubtitleSheetPresented = false
 
     private var isLandscape: Bool {
         rotationCoordinator.chromeLandscape
@@ -837,6 +838,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(2.5)
+
+                    VideoDetailPlayerSurfaceSubtitleLayer(
+                        store: detailViewModel.subtitleRenderStore,
+                        clock: viewModel.playbackClock,
+                        cid: detailViewModel.selectedCID,
+                        loadTracks: { await detailViewModel.loadSubtitleTracksForCurrentVideo() }
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(2.55)
                 }
             }
             .playerOfflineNotice(
@@ -882,6 +892,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 portraitMoreControlsRequestID = nil
                 onDismissMoreControls()
                 isVideoListenQueuePresented = false
+                isSubtitleSheetPresented = false
             } else {
                 isMoreControlsPresented = false
             }
@@ -890,6 +901,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             if mode != .audioOnly {
                 isVideoListenQueuePresented = false
             }
+            isSubtitleSheetPresented = false
             guard mode == .audioOnly else { return }
             isMoreControlsPresented = false
             portraitMoreControlsRequestID = nil
@@ -905,6 +917,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
+                isSubtitleSheetPresented = false
                 isMoreControlsButtonPressed = false
                 portraitMoreControlsRequestID = nil
             }
@@ -934,6 +947,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $isSubtitleSheetPresented) {
+            VideoDetailSubtitleSelectionSheet(
+                store: detailViewModel.subtitleRenderStore,
+                onSelect: { lan in
+                    Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                },
+                close: { isSubtitleSheetPresented = false }
+            )
         }
     }
 
@@ -1002,9 +1024,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             pausesOnDisappear: false,
             controlsAccessory: isAudioOnlyPlayback
                 ? AnyView(videoListenQuickControls)
-                : usesFullscreenStatusChrome
-                    ? AnyView(moreControlsButton)
-                    : nil,
+                : AnyView(subtitleAndMoreControlsAccessory),
             isDanmakuEnabled: keepsChromeMounted && overlaySnapshot.isDanmakuEnabled && !isAudioOnlyPlayback,
             onToggleDanmaku: isAudioOnlyPlayback ? nil : onToggleDanmaku,
             onShowDanmakuSettings: isAudioOnlyPlayback ? nil : onShowDanmakuSettings,
@@ -1031,6 +1051,24 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             metrics: controlMetrics,
             showQueue: { isVideoListenQueuePresented = true }
         )
+    }
+
+    /// 非听书模式下的 accessory 槽位：字幕（CC）按钮 + 全屏状态时的更多播放设置按钮。
+    private var subtitleAndMoreControlsAccessory: some View {
+        HStack(spacing: controlMetrics.controlSpacing) {
+            VideoDetailSubtitleControlButton(
+                store: detailViewModel.subtitleRenderStore,
+                metrics: controlMetrics,
+                onSelect: {
+                    playbackControlsVisibility.cancelAutoHide()
+                    isSubtitleSheetPresented = true
+                }
+            )
+
+            if usesFullscreenStatusChrome {
+                moreControlsButton
+            }
+        }
     }
 
     private var runtimeContext: BiliPlayerViewRuntimeContext {
@@ -1674,6 +1712,20 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     } label: {
                         Label("弹幕设置", systemImage: "text.bubble")
                     }
+
+                    NavigationLink {
+                        SurfaceOnlySubtitleSettingsPage(
+                            detailViewModel: detailViewModel,
+                            libraryStore: libraryStore
+                        )
+                    } label: {
+                        HStack {
+                            Label("字幕", systemImage: "captions.bbox")
+                            Spacer()
+                            Text(libraryStore.videoSubtitlePreference.title)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 NavigationLink {
@@ -1992,6 +2044,7 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
     case playbackOrder
     case sleepTimer
     case danmaku
+    case subtitle
     case rate
 
     var title: String {
@@ -2010,6 +2063,8 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
             return "定时关闭"
         case .danmaku:
             return "弹幕设置"
+        case .subtitle:
+            return "字幕"
         case .rate:
             return "倍速"
         }
@@ -2089,6 +2144,13 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     toggleDanmaku: onToggleDanmaku
                 )
                 .scrollContentBackground(.hidden)
+            case .subtitle:
+                SurfaceOnlySubtitleSettingsPage(
+                    detailViewModel: detailViewModel,
+                    libraryStore: libraryStore
+                )
+                .scrollContentBackground(.hidden)
+                .listStyle(.plain)
             case .rate:
                 ratePage
             }
@@ -2167,6 +2229,17 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                             showsChevron: true
                         ) {
                             page = .danmaku
+                        }
+
+                        Divider().padding(.leading, 44)
+
+                        SurfaceOnlyLandscapeMenuRow(
+                            title: "字幕",
+                            systemImage: "captions.bbox",
+                            accessory: libraryStore.videoSubtitlePreference.title,
+                            showsChevron: true
+                        ) {
+                            page = .subtitle
                         }
 
                         Divider().padding(.leading, 44)
@@ -2950,6 +3023,49 @@ private struct SurfaceOnlyVideoListenQueuePage: View {
         .task {
             await detailViewModel.prepareVideoListenQueue()
         }
+    }
+}
+
+/// 字幕偏好设置页：竖屏播放设置列表与横屏播放设置面板共用。
+private struct SurfaceOnlySubtitleSettingsPage: View {
+    @ObservedObject var detailViewModel: VideoDetailViewModel
+    @ObservedObject var libraryStore: LibraryStore
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(VideoSubtitlePreference.allCases) { preference in
+                    Button {
+                        libraryStore.setVideoSubtitlePreference(preference)
+                        Task { await detailViewModel.applySubtitlePreference() }
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(preference.title)
+                                    Text(preference.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: libraryStore.videoSubtitlePreference == preference
+                                    ? "checkmark.circle.fill"
+                                    : preference.systemImage)
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text("AI 字幕由哔哩哔哩自动生成，通常需要登录后才会出现；具体以视频实际提供的字幕轨为准。")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .listRowBackground(Color.clear)
+        .background(Color.clear)
+        .foregroundStyle(.primary)
+        .navigationTitle("字幕")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.automatic, for: .navigationBar)
     }
 }
 
