@@ -1,14 +1,18 @@
 import Foundation
 
-/// 字幕自动选轨偏好，四档语义对齐 PiliPlus 的 subtitlePreference。
+/// 字幕自动选轨偏好，严格对齐 PiliPlus 的 `SubtitlePrefType`：
+/// `off` / `on` / `withoutAi` / `auto`。
+///
+/// 选轨都以排序后的第一条为准（中文优先，同语言真人先于 AI），
+/// 与 PiliPlus `subtitle.subtitles` 的排序 + `switch` 保持一致。
 enum VideoSubtitlePreference: String, CaseIterable, Identifiable, Sendable {
     /// 默认不显示字幕。
     case off
-    /// 优先真人字幕，没有真人字幕时使用 AI 字幕。
-    case preferHuman
-    /// 仅真人字幕，跳过 AI 字幕。
-    case humanOnly
-    /// 有人声（真人）字幕时总是开启；仅有 AI 字幕时静音才开启。
+    /// PiliPlus `on`：优先选择非自动生成（AI）字幕——直接取首选轨。
+    case preferNonAI
+    /// PiliPlus `withoutAi`：首选轨是 AI 时关闭字幕，否则取首选轨。
+    case withoutAI
+    /// PiliPlus `auto`：静音时等同 `on`，非静音时等同 `withoutAi`。
     case autoWhenMuted
 
     var id: String { rawValue }
@@ -17,55 +21,53 @@ enum VideoSubtitlePreference: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .off:
             return "关闭"
-        case .preferHuman:
-            return "优先真人字幕"
-        case .humanOnly:
-            return "仅真人字幕"
+        case .preferNonAI:
+            return "优先非AI字幕"
+        case .withoutAI:
+            return "跳过AI字幕"
         case .autoWhenMuted:
-            return "静音时自动开启"
+            return "静音时自动"
         }
     }
 
     var subtitle: String {
         switch self {
         case .off:
-            return "不自动显示字幕，可在播放器字幕按钮中手动开启"
-        case .preferHuman:
-            return "有真人字幕用真人，否则使用 AI 字幕"
-        case .humanOnly:
-            return "跳过 AI 字幕，只显示人工字幕"
+            return "默认不显示字幕，可在播放器字幕按钮中手动开启"
+        case .preferNonAI:
+            return "优先选择非自动生成（AI）字幕"
+        case .withoutAI:
+            return "跳过自动生成（AI）字幕；首选轨是 AI 时不显示字幕"
         case .autoWhenMuted:
-            return "真人字幕总是开启；仅有 AI 字幕时静音才开启"
+            return "静音时等同「优先非AI」，非静音时等同「跳过AI」"
         }
     }
 
     var systemImage: String {
         switch self {
         case .off:
-            return "captions.bbox.slash"
-        case .preferHuman:
-            return "captions.bbox.fill"
-        case .humanOnly:
-            return "captions.bbox"
+            return "captions.bubble"
+        case .preferNonAI:
+            return "captions.bubble.fill"
+        case .withoutAI:
+            return "captions.bubble"
         case .autoWhenMuted:
             return "speaker.slash.fill"
         }
     }
 
-    /// 在已排序的字幕轨中按偏好选出默认轨。
+    /// 在已排序的字幕轨中按偏好选出默认轨（排列顺序与 PiliPlus 相同）。
     func preferredTrack(in tracks: [VideoSubtitleTrack], isMuted: Bool) -> VideoSubtitleTrack? {
+        guard let first = tracks.first else { return nil }
         switch self {
         case .off:
             return nil
-        case .preferHuman:
-            return tracks.first(where: { !$0.isAI }) ?? tracks.first
-        case .humanOnly:
-            return tracks.first(where: { !$0.isAI })
+        case .preferNonAI:
+            return first
+        case .withoutAI:
+            return first.isAI ? nil : first
         case .autoWhenMuted:
-            if let human = tracks.first(where: { !$0.isAI }) {
-                return human
-            }
-            return isMuted ? tracks.first : nil
+            return (!first.isAI || isMuted) ? first : nil
         }
     }
 

@@ -56,7 +56,7 @@ final class VideoDetailSubtitleStoreTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.lan), ["zh-1", "zh-2"])
     }
 
-    // MARK: - 偏好选轨
+    // MARK: - 偏好选轨（对齐 PiliPlus SubtitlePrefType）
 
     func testPreferenceWithHumanAndAITracks() {
         let human = VideoSubtitleTrack(lan: "zh", isAI: false)
@@ -64,8 +64,8 @@ final class VideoDetailSubtitleStoreTests: XCTestCase {
         let tracks = [human, ai]
 
         XCTAssertEqual(VideoSubtitlePreference.off.preferredTrack(in: tracks, isMuted: false), nil)
-        XCTAssertEqual(VideoSubtitlePreference.preferHuman.preferredTrack(in: tracks, isMuted: false), human)
-        XCTAssertEqual(VideoSubtitlePreference.humanOnly.preferredTrack(in: tracks, isMuted: false), human)
+        XCTAssertEqual(VideoSubtitlePreference.preferNonAI.preferredTrack(in: tracks, isMuted: false), human)
+        XCTAssertEqual(VideoSubtitlePreference.withoutAI.preferredTrack(in: tracks, isMuted: false), human)
         XCTAssertEqual(VideoSubtitlePreference.autoWhenMuted.preferredTrack(in: tracks, isMuted: false), human)
         XCTAssertEqual(VideoSubtitlePreference.autoWhenMuted.preferredTrack(in: tracks, isMuted: true), human)
     }
@@ -74,15 +74,30 @@ final class VideoDetailSubtitleStoreTests: XCTestCase {
         let ai = VideoSubtitleTrack(lan: "ai-zh", isAI: true)
         let tracks = [ai]
 
-        XCTAssertEqual(VideoSubtitlePreference.preferHuman.preferredTrack(in: tracks, isMuted: false), ai)
-        XCTAssertEqual(VideoSubtitlePreference.humanOnly.preferredTrack(in: tracks, isMuted: false), nil)
+        // PiliPlus on：首选轨是 AI 也照选。
+        XCTAssertEqual(VideoSubtitlePreference.preferNonAI.preferredTrack(in: tracks, isMuted: false), ai)
+        // PiliPlus withoutAi：首选轨是 AI 就关闭。
+        XCTAssertEqual(VideoSubtitlePreference.withoutAI.preferredTrack(in: tracks, isMuted: false), nil)
+        // PiliPlus auto：非静音关闭，静音才选 AI。
         XCTAssertEqual(VideoSubtitlePreference.autoWhenMuted.preferredTrack(in: tracks, isMuted: false), nil)
         XCTAssertEqual(VideoSubtitlePreference.autoWhenMuted.preferredTrack(in: tracks, isMuted: true), ai)
     }
 
+    func testPreferenceTakesFirstTrackBecauseChineseAndHumanSortFirst() {
+        // 排序后：中文AI（zh 优先）→ 英文真人。PiliPlus 直接取第一条，
+        // 因此「优先非AI」会选中文 AI，而不是英文真人 CC。
+        let chineseAI = VideoSubtitleTrack(lan: "ai-zh", isAI: true)
+        let englishHuman = VideoSubtitleTrack(lan: "en", isAI: false)
+        let sorted = VideoSubtitlePreference.sortedTracks([englishHuman, chineseAI])
+
+        XCTAssertEqual(sorted.map(\.lan), ["ai-zh", "en"])
+        XCTAssertEqual(VideoSubtitlePreference.preferNonAI.preferredTrack(in: sorted, isMuted: false), chineseAI)
+        XCTAssertEqual(VideoSubtitlePreference.withoutAI.preferredTrack(in: sorted, isMuted: false), nil)
+    }
+
     func testPreferenceWithNoTracks() {
         XCTAssertEqual(VideoSubtitlePreference.autoWhenMuted.preferredTrack(in: [], isMuted: true), nil)
-        XCTAssertEqual(VideoSubtitlePreference.preferHuman.preferredTrack(in: [], isMuted: false), nil)
+        XCTAssertEqual(VideoSubtitlePreference.preferNonAI.preferredTrack(in: [], isMuted: false), nil)
     }
 
     // MARK: - Store 状态
