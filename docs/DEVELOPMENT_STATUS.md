@@ -362,3 +362,15 @@
 - 测试：新增 `VideoDetailSubtitleStoreTests` 8/8 通过（排序、四档偏好×三种轨组合、cue 二分边界、按 lan 缓存隔离），证据 `/tmp/ccswift-subtitle-tests3.xcresult`。全量单元 1256 项：1249 通过、7 失败——3 项评论分页（DynamicDetailNavigation×2 + MainComments×1）经 stash 基线实验确认在**未含本轮改动的 pristine build 116 上同样失败**（build 116 遗留，非本轮引入）；其余 4 项未做基线复核，其中 2 项为 DeterministicAVPlayerTransport 的 writer 超时（历史上即主机环境敏感）、1 项启动竞态（历史记录同为环境依赖）、1 项同评论分页组。本轮未修改这些模块。
 - 交付：1.1.2 / Build 117（6 处配置递增）；未签名 IPA SHA-256 `3dec436665dd7ee0381141d4d7148d3520f46470f0951d4fbb9f46c161bb11a7`；18pm 直传参数重签安装 RCe2027（结果见下轮补记）。
 - 待验收：真机播放有 AI 字幕的视频，确认控制条出现 CC 按钮、弹层选轨即时生效、AI 角标正确；播放设置→字幕四档偏好切换后重进视频生效；无字幕轨视频不显示 CC 按钮。评论分页 3 项失败为 build 116 遗留，待单独排查。分支 `zcode/ai-subtitles`，本轮源码+文档提交 `768548d` + 文档提交。
+
+## 2026-11-08 Build 117 真机反馈修复：CC 按钮无响应 / Build 118
+
+- 用户实测 Build 117 真机点击字幕按钮无反应，并给出参考视频 `BV1hA4a6yEp9`（PiliPlus 下有多条 AI 字幕轨）。排查确认 B 站 `/x/player/v2` 匿名请求字幕列表为空，AI 字幕需要登录态；App 侧管线（拉轨→解码 cue→渲染）在模拟器带夹具时可完整走通，因此问题在 UI 交互层。
+- 根因一：控制条 CC 按钮用「玻璃修饰的 SwiftUI Button」，在 `UIHostingController` 嵌 UIKit 的播放器 overlay 里吞掉点击。项目里 `SurfaceOnlyUIKitMoreControlsButton` 的注释已记录同一个坑（"The owning SwiftUI view supplies the glass; UIKit only owns touch delivery"）。修复：CC 按钮改为 `UIViewRepresentable` + `UIButton(primaryAction:)` 承担触摸，SwiftUI 只提供玻璃外观（`biliPlayerClearGlass`）。
+- 根因二：选轨用系统 `.sheet`，在同一宿主结构下弹不出来（弹幕设置/更多播放设置都走 UIKit 回调在 overlay 外呈现，未用系统 sheet）。修复：改为 overlay 内浮层 `VideoDetailSubtitleSelectionPanel`（对齐横屏 `SurfaceOnlyLandscapeMoreControlsOverlay` 的既有模式），含 AI 角标、选中勾、点背景关闭。
+- 顺带修复：暂停时播放时钟不发 tick，选轨后 cue 不显示。`selectSubtitleTrack` 结束时按 `playbackClock.currentTime` 立即求值一次 cue。
+- 诊断设施（保留）：`--subtitle-fixture` DEBUG 启动参数注入两条假轨（真人/AI）与覆盖 0-600s 的 cue，无需登录即可端到端验证 UI 链路；同时豁免控制条 3 秒自动隐藏（`PlayerPlaybackControlsVisibilityModel`，DEBUG only）。新增 `VideoDetailSubtitleActions` 内的 Subtitle OSLog 分类（`cc.bili/Subtitle`）。
+- 测试：`VideoDetailSubtitleUITests` 首次执行 2/2 通过——CC 按钮命中 → 浮层出现 → 选 AI 轨 → 底部渲染「AI 夹具句」；选真人轨 → 渲染「字幕夹具第一句」。检查日志确认 `cc button tapped` → `panel rendering tracks=2` → `select lan=ai-zh` 全链路探针命中。后续多轮复跑出现不稳定：定位为**并行会话（另一 xcodebuild 进程）抢占同一台 iPhone 18 Pro Max 模拟器**，App 被互相 terminate 导致按钮查不到，与代码无关；日志中 `xcrun simctl` 截图亦超时，设备列表显示多台 unavailable。
+- 单元：`VideoDetailSubtitleStoreTests` 8/8 通过保持。
+- 交付：1.1.2 / Build 118（6 处配置递增）；未签名 IPA SHA-256 `1aff1e705220125a7692d5f6463c19bb470ba41778652d46cbba13ee4c15cb76`；18pm 重签校验通过（`satisfies its Designated Requirement`），**无线安装失败**：`CoreDeviceError 4016`，设备 `00008160-001C311028434036` 与其他设备同为 `unavailable`，待设备解锁/唤醒、无线调试恢复后重装。
+- 待验收：真机播放 `BV1hA4a6yEp9`（或其他有字幕的视频）确认 ① 控制条出现 CC 图标 ② 点按弹出选轨浮层 ③ 选中轨后底部出现字幕 ④ 暂停时选轨也能立即显示 ⑤ 设置→字幕四档偏好生效。分支 `zcode/ai-subtitles`，提交 `768548d`（功能）、`24f54db`（117 文档）、`5638b18`（本次修复）。
