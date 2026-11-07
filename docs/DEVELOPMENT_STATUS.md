@@ -405,3 +405,11 @@
 - 明确未实现（PiliPlus 有、本轮按用户选择不做）：字幕设置面板（字号/透明度/间距/字重/描边滑块）、字幕拖动定位与持久化。
 - 交付：1.1.2 / Build 121；未签名 IPA SHA-256 `2037aec97305562fa10278653cc85d6fa26644165af99ea52d2585f6769db984`；18pm 重签通过并安装 RCe2027（databaseSequenceNumber 2712）后启动成功。
 - 待验收：竖屏控制条出现时字幕上移且不被遮挡；横屏/全屏字幕明显放大；背景比 Build 120 更实一些。
+
+## 2026-11-08 更正：选轨偏好严格对齐 PiliPlus / Build 122
+
+- 用户询问 PiliPlus 是否有「优先真人/仅真人」设置，核对后发现上一轮表述有误：PiliPlus 的 `SubtitlePrefType` 四档为 `off` / `on`（优先选择非自动生成AI字幕，取排序后第一条）/ `withoutAi`（跳过AI：首选轨是 AI 就关闭，否则取第一条）/ `auto`（静音等同 `on`，非静音等同 `withoutAi`），**没有「仅真人字幕」这一档**。原实现的 `humanOnly` 属自加语义（会退而选任意非 AI 轨，如英文 CC），与 PiliPlus「宁可关闭」不同。
+- 按用户要求严格对齐：`VideoSubtitlePreference` 改为 `off / preferNonAI / withoutAI / autoWhenMuted`，选轨一律取排序后第一条（中文优先、同语言真人先于 AI，与 PiliPlus `SubtitleInfo` 排序一致）；设置页文案改为 PiliPlus 口径（优先非AI字幕 / 跳过AI字幕 / 静音时自动）。
+- 测试：`VideoDetailSubtitleStoreTests` 11/11 通过，新增边界用例「中文AI + 英文真人CC」——`preferNonAI` 取中文 AI（zh 优先）、`withoutAI` 返回 nil（首选是 AI 即关闭），与 PiliPlus 行为一致。
+- 交付：1.1.2 / Build 122；未签名 IPA SHA-256 `d8f830631ea2e71cea22bf6db11af1ae5734be1a14111eb5fad950e6f71f8f8d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2728）并启动。
+- 待验收：设置→字幕中四档名称与新语义（尤其「跳过AI字幕」在只有 AI 轨时应不显示字幕）。
