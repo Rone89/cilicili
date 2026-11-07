@@ -435,3 +435,14 @@
 - 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
 - 交付：1.1.2 / Build 124；未签名 IPA SHA-256 `5e3d9178590531158117442c03fe640caee4536eaabe2ad1ba692342158331f0`；18pm 重签安装 RCe2027（databaseSequenceNumber 2752）并启动。
 - 待验收：横屏点 CC 出现玻璃卡片（非全屏）、可选中轨；竖屏仍为系统 sheet；CC 图标与齿轮观感一致。
+
+## 2026-11-08 横屏改为原生菜单 + 图标缩到视觉等高 / Build 125
+
+- 用户指出字幕图标仍明显大于齿轮与全屏图标（指出的是图标本身），并要求横屏点字幕按钮时直接变成选择菜单（iOS 原生控件）。
+- 横屏菜单：CC 按钮改为 `UIButton + showsMenuAsPrimaryAction`，点按由按钮原生展开 `UIMenu`（系统液态玻璃菜单、当前轨自动勾选、含「关闭字幕」），不再有任何覆盖画面的弹层。移除 Build 124 的横屏玻璃面板 `SurfaceOnlyLandscapeSubtitlePanelOverlay` 及其状态与渲染分支；竖屏仍走评论同款系统 sheet。
+- 图标：同一 `pointSize` 下 `captions.bubble` 字形比 `gearshape.fill` 更饱满，`iconSize + 3` 在真机明显偏大。改为 `pointSize = metrics.iconSize`，并用 XCUITest 截图按三键同框比对，确认 CC/齿轮/全屏视觉等高。
+- 夹具：AI 轨 `lanDoc` 由「中文（AI）」改为「中文」，避免菜单标题拼成「中文（AI）（AI）」。
+- 验证（截图核对，临时用例已删除）：竖屏控制条三键等高；横屏点 CC 展开系统菜单，标题「字幕」、项为「中文」「中文（AI）」「关闭字幕 ✓」，菜单为液态玻璃样式。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 125；未签名 IPA SHA-256 `10a9632d92659297e53da311870397023e309bcd0b41302c020a8a09786393c2`；18pm 重签安装 RCe2027（databaseSequenceNumber 2760）并启动。
+- 待验收：横屏点 CC 直接弹出系统菜单并可选轨；竖屏仍为系统 sheet；三键图标等高。
