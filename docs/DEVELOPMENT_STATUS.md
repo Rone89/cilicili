@@ -352,3 +352,13 @@
 - 测试：单元 43/43（`VideoDetailCompactPageSelectorTests` 删实验持久化用例；`ResourceLoadingServicesTests` 缓存用例重写为纯弹幕键隔离；`BiliAPIClientRequestContractTests` 缓存类型名同步），证据 `build/logs/build116-graduate-unit-2.xcresult`。UI 6/6：选择器组删两个经典形态用例、全部 launch args 去实验开关参数（`VideoDetailPageSelectorUITests` 整体重写为 4 用例），另回归弹幕设置面板两项，证据 `build/logs/build116-graduate-ui.xcresult`。未跑全量单元与云端 CI。
 - 交付：1.1.2 / Build 116（6 处配置递增）；未签名 IPA SHA-256 `1e96b8985f93cb6f400bff694f07700cb2330dc827bce93ff4bd574739a10f6d`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2664）并启动；重签后可执行文件 SHA-256 `966c7704f01bc4e7500173d0d1c9021ded53b29eac095d652ae12d036c2e0ec0`。
 - 待验收：真机确认无实验开关时分P/分集/合集紧凑形态直接可用；弹幕设置面板不再出现字幕区；资源缓存诊断行显示"弹幕"（原"字幕/弹幕"）。分支 main，本轮源码+文档单次提交。
+
+## 2026-11-08 AI 字幕重建为正式功能 / Build 117（分支 zcode/ai-subtitles）
+
+- 背景：Build 116 应用户要求退役了实验版 AI 字幕；用户随后要求参考 PiliPlus 重建为正式功能，UI 入口选定为控制条 CC 按钮。在独立工作树 `~/.zcode/worktrees/ai-subtitles`（分支 `zcode/ai-subtitles`，基于 build 116 提交 `534550a`）开发。
+- 管线重建（参考 PiliPlus 与 build 68 旧实现）：`BiliAPIClient+VideoSubtitles` 走 `/x/player/wbi/v2`（WBI 签名 + 登录 cookie）拉字幕轨（`type==1` 为 AI 轨），下载 cue JSON（优先 `subtitle_url_v2`，http 升 https）；`VideoDetailSubtitleStore` 持轨列表/选中轨/按 lan 的 cue 缓存/二分定位当前 cue；`VideoDetailSubtitleActions` 接到 `VideoDetailViewModel`（`subtitleRenderStore` 重新挂回 RenderStores）。
+- 选轨偏好：新增 `VideoSubtitlePreference` 四档（关闭=默认 / 优先真人 / 仅真人 / 静音时自动开 AI），`LibraryStore` 持久化键 `cc.bili.playback.videoSubtitlePreference.v1`；轨排序对齐 PiliPlus（中文优先、同语言真人先于 AI）。AI 判定、静音判定（`isMuted || volume<=0`）与 PiliPlus 语义一致。
+- UI：控制条新增字幕（CC）按钮（仅字幕轨存在时显示，经 `controlsAccessory` 槽位注入，全屏状态与更多播放设置按钮共存），点开选轨弹层（关闭 + 各轨 `lan_doc`，AI 轨带「AI」角标）；竖屏播放设置与横屏播放设置面板各加「字幕」行进入共享的 `SurfaceOnlySubtitleSettingsPage` 偏好页；底部胶囊渲染层复用 `PlayerPlaybackClock` 0.2s 节流驱动，zIndex 2.55（弹幕 2.5 与控制条 3 之间），转场/听书模式自动收起弹层。
+- 测试：新增 `VideoDetailSubtitleStoreTests` 8/8 通过（排序、四档偏好×三种轨组合、cue 二分边界、按 lan 缓存隔离），证据 `/tmp/ccswift-subtitle-tests3.xcresult`。全量单元 1256 项：1249 通过、7 失败——3 项评论分页（DynamicDetailNavigation×2 + MainComments×1）经 stash 基线实验确认在**未含本轮改动的 pristine build 116 上同样失败**（build 116 遗留，非本轮引入）；其余 4 项未做基线复核，其中 2 项为 DeterministicAVPlayerTransport 的 writer 超时（历史上即主机环境敏感）、1 项启动竞态（历史记录同为环境依赖）、1 项同评论分页组。本轮未修改这些模块。
+- 交付：1.1.2 / Build 117（6 处配置递增）；未签名 IPA SHA-256 `3dec436665dd7ee0381141d4d7148d3520f46470f0951d4fbb9f46c161bb11a7`；18pm 直传参数重签安装 RCe2027（结果见下轮补记）。
+- 待验收：真机播放有 AI 字幕的视频，确认控制条出现 CC 按钮、弹层选轨即时生效、AI 角标正确；播放设置→字幕四档偏好切换后重进视频生效；无字幕轨视频不显示 CC 按钮。评论分页 3 项失败为 build 116 遗留，待单独排查。分支 `zcode/ai-subtitles`，本轮源码+文档提交 `768548d` + 文档提交。
