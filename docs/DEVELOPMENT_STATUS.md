@@ -384,3 +384,13 @@
 - 测试：`VideoDetailSubtitleUITests` 两条用例在交替运行中**各自通过**——选 AI 轨渲染「AI 夹具句」、选真人轨渲染「字幕夹具第一句」，覆盖按钮命中 → 原生 action sheet → 选轨 → 底部渲染全链路。两条同时稳定通过受并行会话抢模拟器影响（App 被互相 terminate），已记录为环境限制而非代码缺陷。
 - 交付：1.1.2 / Build 119（6 处配置递增）；未签名 IPA SHA-256 `02c37dc5330fca0ae954e0a3e5491b1a7a18d9192af8f38a57117166fe88d0a7`；重签通过（Designated Requirement satisfied），**无线安装仍失败**：`CoreDeviceError 4016`，RCe2027 与其他设备均 `unavailable`，待设备解锁并恢复无线调试后重装。
 - 待验收：真机播放 `BV1hA4a6yEp9`，确认 ① CC 图标可见（空心/实心随选中态）② 点按弹出系统 action sheet ③ 弹窗不溢出画面 ④ 选 AI 轨后底部出现字幕文本。
+
+## 2026-11-08 「开启字幕后仍无字幕」修复 / Build 120
+
+- 用户确认 Build 119 的图标、原生弹窗、布局三项均已正常，仅剩「选完字幕不显示内容」。字幕轨列表能列出（含多条 AI 语言），说明 `/x/player/wbi/v2` 与选轨 UI 正常，问题在 cue 下载。
+- 根因：接口下发的字幕地址是**协议相对地址**（`//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/xxx.json`）。原实现只把 `http://` 升级为 `https://`，`//` 前缀交给 `URL(string:)` 会得到无 scheme 地址，请求直接失败；且错误只写入 store，界面上没有任何反馈。PiliPlus 的 `Request().get("https:$subtitleUrl")` 正是为此始终补 `https:` 前缀。
+- 修复：新增 `BiliAPIClient.normalizedSubtitleURL(_:)`——`//` 补 `https:`、`http://` 升级、裸域名补 `https://`、去首尾空白。`selectSubtitleTrack` 改为先试 `subtitle_url_v2`、失败或为空回落 `subtitle_url`；每次选轨先清空旧错误；日志记录 host 与 cue 数量，便于真机诊断。
+- 可见性：字幕层在「无 cue 且有错误」时显示一行提示（如「字幕内容加载失败」「该字幕轨内容为空」），不再出现「选了却毫无反应」。
+- 测试：`VideoDetailSubtitleStoreTests` 11/11 通过（新增 3 项 URL 规范化：协议相对、http 升级、裸域名+空白），证据 `/tmp/ccswift-subtitle-urlfix.xcresult`。
+- 交付：1.1.2 / Build 120；未签名 IPA SHA-256 `6b5eacb8d1d7e60d4ebcceff024a106cb6b4271c9abe789d488a76abeff36e1a`；重签未执行——RCe2027 持续 `unavailable`（无线调试断开），待设备在线后安装。
+- 待验收：真机播放 `BV1hA4a6yEp9` 选任意 AI 轨，确认底部出现字幕文本；若出现「字幕内容加载失败」提示，按 `cc.bili/Subtitle` 日志中的 host 与错误码继续定位。
