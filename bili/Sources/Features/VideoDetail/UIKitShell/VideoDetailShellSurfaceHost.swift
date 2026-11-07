@@ -632,7 +632,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @StateObject private var legacyObservationBridge: VideoDetailPlayerOverlayLegacyObservationBridge
     @State private var lastPreparedScrubProgress = -1.0
     @State private var isMoreControlsPresented = false
-    @State private var isLandscapeSubtitlePanelPresented = false
     @State private var portraitMoreControlsRequestID: UUID?
     @State private var isMoreControlsButtonPressed = false
     @State private var isVideoListenQueuePresented = false
@@ -812,19 +811,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                             .transition(.opacity)
                             .zIndex(9)
                         }
-
-                        if isLandscape, isLandscapeSubtitlePanelPresented {
-                            SurfaceOnlyLandscapeSubtitlePanelOverlay(
-                                store: detailViewModel.subtitleRenderStore,
-                                contentInsets: videoInsets,
-                                onSelect: { lan in
-                                    Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
-                                },
-                                close: { isLandscapeSubtitlePanelPresented = false }
-                            )
-                            .transition(.opacity)
-                            .zIndex(9)
-                        }
                     }
                     .opacity(isBareSurfaceTransitionActive ? 0 : 1)
                     .allowsHitTesting(!isBareSurfaceTransitionActive)
@@ -910,14 +896,12 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 detailViewModel.isShowingSubtitleSelection = false
             } else {
                 isMoreControlsPresented = false
-                isLandscapeSubtitlePanelPresented = false
-            }
+                }
         }
         .onChange(of: overlaySnapshot.playbackContentMode) { _, mode in
             if mode != .audioOnly {
                 isVideoListenQueuePresented = false
             }
-            isLandscapeSubtitlePanelPresented = false
             guard mode == .audioOnly else { return }
             isMoreControlsPresented = false
             portraitMoreControlsRequestID = nil
@@ -933,8 +917,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
-                isLandscapeSubtitlePanelPresented = false
-                isMoreControlsButtonPressed = false
+                    isMoreControlsButtonPressed = false
                 portraitMoreControlsRequestID = nil
             }
             onDismissMoreControls()
@@ -1076,18 +1059,27 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     /// 字幕（CC）按钮：与其他控制按钮等宽等高，触控区单独扩展，
     /// 保证与齿轮/全屏按钮的间距一致。选轨弹窗交给外层系统 sheet 呈现。
     private var subtitleControlButton: some View {
-        VideoDetailSubtitleControlButton(
-            store: detailViewModel.subtitleRenderStore,
-            metrics: controlMetrics,
-            onSelect: {
-                playbackControlsVisibility.cancelAutoHide()
-                if isLandscape {
-                    isLandscapeSubtitlePanelPresented = true
-                } else {
-                    detailViewModel.isShowingSubtitleSelection = true
-                }
+        Group {
+            if isLandscape {
+                // 横屏：点按直接由按钮展开系统菜单（UIMenu），不覆盖画面。
+                VideoDetailSubtitleMenuButton(
+                    store: detailViewModel.subtitleRenderStore,
+                    metrics: controlMetrics,
+                    onSelect: { lan in
+                        Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                    }
+                )
+            } else {
+                VideoDetailSubtitleControlButton(
+                    store: detailViewModel.subtitleRenderStore,
+                    metrics: controlMetrics,
+                    onSelect: {
+                        playbackControlsVisibility.cancelAutoHide()
+                        detailViewModel.isShowingSubtitleSelection = true
+                    }
+                )
             }
-        )
+        }
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
         .biliPlayerClearGlass(interactive: true, in: Circle())
         .biliPlayerExpandedHitTarget(metrics: controlMetrics)
@@ -2041,91 +2033,6 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
         return min(max(value, lower), upper)
     }
 
-}
-
-/// 横屏字幕选轨面板：与横屏「播放设置」同款玻璃卡片，不全屏。
-private struct SurfaceOnlyLandscapeSubtitlePanelOverlay: View {
-    @ObservedObject var store: VideoDetailSubtitleStore
-    let contentInsets: EdgeInsets
-    let onSelect: (String?) -> Void
-    let close: () -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            let visibleFrame = visibleVideoFrame(in: proxy.size)
-            let panelSize = landscapePanelSize(in: visibleFrame)
-            let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-            ZStack {
-                Color.black.opacity(0.04)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: close)
-
-                VideoDetailSubtitleSelectionPanel(
-                    store: store,
-                    onSelect: onSelect,
-                    close: close
-                )
-                .frame(width: panelSize.width, height: panelSize.height)
-                .surfaceOnlyLandscapeGlassPanel(in: shape)
-                .clipShape(shape)
-                .overlay {
-                    shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.6)
-                }
-                .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 10)
-                .position(landscapePanelCenter(panelSize: panelSize, visibleFrame: visibleFrame))
-                .contentShape(Rectangle())
-                .onTapGesture {}
-            }
-        }
-    }
-
-    private func visibleVideoFrame(in size: CGSize) -> CGRect {
-        CGRect(
-            x: contentInsets.leading,
-            y: contentInsets.top,
-            width: max(1, size.width - contentInsets.leading - contentInsets.trailing),
-            height: max(1, size.height - contentInsets.top - contentInsets.bottom)
-        )
-    }
-
-    private func landscapePanelSize(in visibleFrame: CGRect) -> CGSize {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let topOffset: CGFloat = 58
-        let availableWidth = max(1, visibleFrame.width - horizontalMargin * 2)
-        let width = min(330, availableWidth)
-        let availableHeight = max(1, visibleFrame.height - topOffset - verticalMargin)
-        let height = min(318, availableHeight)
-        return CGSize(width: width, height: height)
-    }
-
-    private func landscapePanelCenter(panelSize: CGSize, visibleFrame: CGRect) -> CGPoint {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let preferredTop: CGFloat = visibleFrame.minY + 58
-        let preferredX = visibleFrame.maxX - horizontalMargin - panelSize.width / 2
-        let preferredY = preferredTop + panelSize.height / 2
-        return CGPoint(
-            x: clamped(
-                preferredX,
-                lower: visibleFrame.minX + horizontalMargin + panelSize.width / 2,
-                upper: visibleFrame.maxX - horizontalMargin - panelSize.width / 2,
-                fallback: visibleFrame.midX
-            ),
-            y: clamped(
-                preferredY,
-                lower: visibleFrame.minY + verticalMargin + panelSize.height / 2,
-                upper: visibleFrame.maxY - verticalMargin - panelSize.height / 2,
-                fallback: visibleFrame.midY
-            )
-        )
-    }
-
-    private func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat, fallback: CGFloat) -> CGFloat {
-        guard lower <= upper else { return fallback }
-        return min(max(value, lower), upper)
-    }
 }
 
 private enum SurfaceOnlyLandscapeMoreControlsPage {

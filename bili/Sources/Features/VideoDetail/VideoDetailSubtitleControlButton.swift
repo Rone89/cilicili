@@ -5,7 +5,7 @@ import UIKit
 ///
 /// 触摸必须由 UIKit 承担——玻璃修饰的 SwiftUI Button 在 UIHostingController
 /// 嵌 UIKit 的播放器 overlay 里会吞掉点击（同 SurfaceOnlyUIKitMoreControlsButton）。
-/// 图标字号与「更多播放设置」齿轮一致（metrics.iconSize + 3）。
+/// 图标字号按视觉对齐控制条其它图标（气泡字形本身更饱满，故不使用 +3）。
 struct VideoDetailSubtitleControlButton: UIViewRepresentable {
     @ObservedObject var store: VideoDetailSubtitleStore
     let metrics: PlayerNativeControlMetrics
@@ -26,19 +26,26 @@ struct VideoDetailSubtitleControlButton: UIViewRepresentable {
 
     func updateUIView(_ button: UIButton, context: Context) {
         context.coordinator.onSelect = onSelect
+        button.configuration = Self.configuration(
+            symbolName: store.selectedLan == nil ? "captions.bubble" : "captions.bubble.fill",
+            metrics: metrics
+        )
+    }
+
+    static func configuration(
+        symbolName: String,
+        metrics: PlayerNativeControlMetrics
+    ) -> UIButton.Configuration {
         var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .white
         configuration.contentInsets = .zero
-        // 与 SurfaceOnlyUIKitMoreControlsButton 的齿轮图标同字号/同字重，
-        // 保证控制条上两个图标视觉大小一致。
+        // 气泡字形比齿轮/全屏更饱满，同字号会显得更大；用 iconSize 使其视觉等高。
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: metrics.iconSize + 3,
+            pointSize: metrics.iconSize,
             weight: .semibold
         )
-        configuration.image = UIImage(
-            systemName: store.selectedLan == nil ? "captions.bubble" : "captions.bubble.fill"
-        )
-        button.configuration = configuration
+        configuration.image = UIImage(systemName: symbolName)
+        return configuration
     }
 
     @MainActor
@@ -54,7 +61,66 @@ struct VideoDetailSubtitleControlButton: UIViewRepresentable {
     }
 }
 
-/// 字幕轨行：竖屏系统 sheet 与横屏玻璃面板共用。
+/// 横屏字幕按钮：点按直接展开系统菜单（UIMenu），由按钮位置原生展开，
+/// 不再是覆盖画面的弹窗。
+struct VideoDetailSubtitleMenuButton: UIViewRepresentable {
+    @ObservedObject var store: VideoDetailSubtitleStore
+    let metrics: PlayerNativeControlMetrics
+    let onSelect: (String?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelect: onSelect)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(primaryAction: nil)
+        button.accessibilityLabel = "字幕"
+        button.accessibilityIdentifier = "ui.player.subtitle.toggle"
+        button.tintColor = .white
+        button.showsMenuAsPrimaryAction = true
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.onSelect = onSelect
+        button.configuration = VideoDetailSubtitleControlButton.configuration(
+            symbolName: store.selectedLan == nil ? "captions.bubble" : "captions.bubble.fill",
+            metrics: metrics
+        )
+        button.menu = context.coordinator.makeMenu(store: store)
+    }
+
+    @MainActor
+    final class Coordinator {
+        var onSelect: (String?) -> Void
+
+        init(onSelect: @escaping (String?) -> Void) {
+            self.onSelect = onSelect
+        }
+
+        func makeMenu(store: VideoDetailSubtitleStore) -> UIMenu {
+            var actions: [UIMenuElement] = store.tracks.map { track in
+                UIAction(
+                    title: track.isAI ? "\(track.lanDoc)（AI）" : track.lanDoc,
+                    state: store.selectedLan == track.lan ? .on : .off
+                ) { [weak self] _ in
+                    self?.onSelect(track.lan)
+                }
+            }
+            actions.append(
+                UIAction(
+                    title: "关闭字幕",
+                    state: store.selectedLan == nil ? .on : .off
+                ) { [weak self] _ in
+                    self?.onSelect(nil)
+                }
+            )
+            return UIMenu(title: "字幕", children: actions)
+        }
+    }
+}
+
+/// 字幕轨行：竖屏系统 sheet 使用。
 struct VideoDetailSubtitleSelectionRow: View {
     let title: String
     let isAI: Bool
@@ -142,59 +208,5 @@ struct VideoDetailSubtitleSelectionSheet: View {
                 }
             }
         }
-    }
-}
-
-/// 字幕轨选择面板（横屏）：复用播放设置同款玻璃卡片，不全屏。
-struct VideoDetailSubtitleSelectionPanel: View {
-    @ObservedObject var store: VideoDetailSubtitleStore
-    let onSelect: (String?) -> Void
-    let close: () -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("字幕")
-                    .font(.headline)
-                Spacer()
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 4)
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(store.tracks) { track in
-                        VideoDetailSubtitleSelectionRow(
-                            title: track.lanDoc,
-                            isAI: track.isAI,
-                            isSelected: store.selectedLan == track.lan,
-                            accessibilityIdentifier: "ui.player.subtitle.track.\(track.lan)"
-                        ) {
-                            onSelect(track.lan)
-                            close()
-                        }
-                        Divider().padding(.leading, 16)
-                    }
-
-                    VideoDetailSubtitleSelectionRow(
-                        title: "关闭字幕",
-                        isAI: false,
-                        isSelected: store.selectedLan == nil,
-                        accessibilityIdentifier: "ui.player.subtitle.track.off"
-                    ) {
-                        onSelect(nil)
-                        close()
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-        }
-        .padding(14)
     }
 }

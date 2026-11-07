@@ -122,7 +122,7 @@ extension VideoDetailViewModel {
         let store = subtitleRenderStore
         store.setTracks([
             VideoSubtitleTrack(lan: "zh", lanDoc: "中文", isAI: false),
-            VideoSubtitleTrack(lan: "ai-zh", lanDoc: "中文（AI）", isAI: true),
+            VideoSubtitleTrack(lan: "ai-zh", lanDoc: "中文", isAI: true),
         ])
         store.storeCues(
             [
