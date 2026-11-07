@@ -374,3 +374,13 @@
 - 单元：`VideoDetailSubtitleStoreTests` 8/8 通过保持。
 - 交付：1.1.2 / Build 118（6 处配置递增）；未签名 IPA SHA-256 `1aff1e705220125a7692d5f6463c19bb470ba41778652d46cbba13ee4c15cb76`；18pm 重签校验通过（`satisfies its Designated Requirement`），**无线安装失败**：`CoreDeviceError 4016`，设备 `00008160-001C311028434036` 与其他设备同为 `unavailable`，待设备解锁/唤醒、无线调试恢复后重装。
 - 待验收：真机播放 `BV1hA4a6yEp9`（或其他有字幕的视频）确认 ① 控制条出现 CC 图标 ② 点按弹出选轨浮层 ③ 选中轨后底部出现字幕 ④ 暂停时选轨也能立即显示 ⑤ 设置→字幕四档偏好生效。分支 `zcode/ai-subtitles`，提交 `768548d`（功能）、`24f54db`（117 文档）、`5638b18`（本次修复）。
+
+## 2026-11-08 真机反馈四项修复 / Build 119
+
+- 用户提供真机截图反馈四项：① 字幕按钮无图标 ② 选轨弹窗不是 iOS 原生弹窗 ③ 弹窗超出画面 ④ 选完字幕不显示内容。截图同时证明**字幕轨已成功获取**（弹窗中出现「العربية AI」「Português AI」等 AI 轨），问题在呈现层与 cue 下载。
+- ① 图标：原实现用子视图 tag + `UIImage(systemName:)`，图标未渲染。改为 `UIButton.Configuration.image`，符号换为 `captions.bubble` / `captions.bubble.fill`（选中态实心）。
+- ② 原生弹窗 + ③ 溢出：自绘 overlay 浮层整体移除，改为 `UIAlertController(actionSheet)` 由 UIKit 直接呈现（`topMostViewController` + iPad/横屏 popover 锚点）。此前尝试的 SwiftUI `.sheet` 经 UI 测试元素树确认在该 UIKit 宿主 overlay 内不会弹出，故不可用。系统 action sheet 自带布局、滚动、安全区处理，溢出问题随之消失。
+- ④ 选完不显示：`fetchVideoSubtitleCues` 此前只带 `Accept: application/json`，字幕 CDN（aisubtitle.hdslb.com 等）会拒绝。改为复用 `BiliURLSessionFactory.apiHeaders(referer:userAgent:cookieHeader:)` 补齐 UA/Referer/登录 cookie，与播放详情请求一致。另保留暂停时选轨立即求值 cue 的修复。
+- 测试：`VideoDetailSubtitleUITests` 两条用例在交替运行中**各自通过**——选 AI 轨渲染「AI 夹具句」、选真人轨渲染「字幕夹具第一句」，覆盖按钮命中 → 原生 action sheet → 选轨 → 底部渲染全链路。两条同时稳定通过受并行会话抢模拟器影响（App 被互相 terminate），已记录为环境限制而非代码缺陷。
+- 交付：1.1.2 / Build 119（6 处配置递增）；未签名 IPA SHA-256 `02c37dc5330fca0ae954e0a3e5491b1a7a18d9192af8f38a57117166fe88d0a7`；重签通过（Designated Requirement satisfied），**无线安装仍失败**：`CoreDeviceError 4016`，RCe2027 与其他设备均 `unavailable`，待设备解锁并恢复无线调试后重装。
+- 待验收：真机播放 `BV1hA4a6yEp9`，确认 ① CC 图标可见（空心/实心随选中态）② 点按弹出系统 action sheet ③ 弹窗不溢出画面 ④ 选 AI 轨后底部出现字幕文本。
