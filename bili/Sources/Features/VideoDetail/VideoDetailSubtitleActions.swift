@@ -58,23 +58,50 @@ extension VideoDetailViewModel {
             return
         }
         store.setSelectedLan(lan)
+        store.setLoadErrorMessage(nil)
         if store.cues(for: lan) == nil {
-            guard let track = store.tracks.first(where: { $0.lan == lan }),
-                  let url = track.subtitleURLV2 ?? track.subtitleURL,
-                  !url.isEmpty
-            else {
-                subtitleLogger.info("select lan=\(lan, privacy: .public) has no subtitle url")
+            guard let track = store.tracks.first(where: { $0.lan == lan }) else {
+                subtitleLogger.info("select lan=\(lan, privacy: .public) track missing")
                 return
             }
-            do {
-                let cues = try await api.fetchVideoSubtitleCues(subtitleURL: url)
-                store.storeCues(cues, for: lan)
-                subtitleLogger.info("cues loaded: lan=\(lan, privacy: .public) count=\(cues.count)")
-            } catch is CancellationError {
+            // v2 地址优先（AI 多语言轨常见），失败或为空时回落旧地址。
+            let candidates = [track.subtitleURLV2, track.subtitleURL]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+            guard !candidates.isEmpty else {
+                subtitleLogger.info("select lan=\(lan, privacy: .public) has no subtitle url")
+                store.setLoadErrorMessage("该字幕轨没有可用的字幕地址")
                 return
-            } catch {
+            }
+            var loaded: [VideoSubtitleCue] = []
+            var lastError: Error?
+            for rawURL in candidates {
+                do {
+                    let cues = try await api.fetchVideoSubtitleCues(subtitleURL: rawURL)
+                    subtitleLogger.info(
+                        "cues loaded: lan=\(lan, privacy: .public) count=\(cues.count) host=\(URL(string: BiliAPIClient.normalizedSubtitleURL(rawURL))?.host ?? "?", privacy: .public)"
+                    )
+                    if !cues.isEmpty {
+                        loaded = cues
+                        break
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    lastError = error
+                    subtitleLogger.error(
+                        "cue fetch failed lan=\(lan, privacy: .public) host=\(URL(string: BiliAPIClient.normalizedSubtitleURL(rawURL))?.host ?? "?", privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                }
+            }
+            if loaded.isEmpty, let lastError {
                 store.setLoadErrorMessage("字幕内容加载失败")
-                subtitleLogger.error("cue fetch failed lan=\(lan, privacy: .public): \(String(describing: error), privacy: .public)")
+                subtitleLogger.error("all cue urls failed lan=\(lan, privacy: .public): \(String(describing: lastError), privacy: .public)")
+                return
+            }
+            store.storeCues(loaded, for: lan)
+            if loaded.isEmpty {
+                store.setLoadErrorMessage("该字幕轨内容为空")
             }
         } else {
             subtitleLogger.info("select lan=\(lan, privacy: .public) cached=true")

@@ -22,6 +22,15 @@ struct VideoDetailPlayerSurfaceSubtitleLayer: View {
                     .padding(.horizontal, 16)
                     .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
                     .padding(.bottom, 22)
+            } else if let message = store.loadErrorMessage {
+                // 选轨失败/空内容时给出可见反馈，避免「选了但什么都不显示」。
+                Text(message)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.42), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(.bottom, 22)
             }
         }
         .allowsHitTesting(false)

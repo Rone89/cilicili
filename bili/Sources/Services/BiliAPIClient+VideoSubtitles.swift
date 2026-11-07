@@ -82,10 +82,9 @@ extension BiliAPIClient {
     }
 
     func fetchVideoSubtitleCues(subtitleURL: String) async throws -> [VideoSubtitleCue] {
-        // 字幕 JSON 的地址可能以 http 下发，统一升级 https。
-        let secureURL = subtitleURL.hasPrefix("http://")
-            ? subtitleURL.replacingOccurrences(of: "http://", with: "https://")
-            : subtitleURL
+        // 字幕地址有多种下发形态：`//aisubtitle.hdslb.com/...`（协议相对，最常见）、
+        // 完整 http(s)、以及偶见的裸域名。统一规范成 https 绝对地址。
+        let secureURL = Self.normalizedSubtitleURL(subtitleURL)
         guard let requestURL = URL(string: secureURL) else {
             throw BiliAPIError.missingPayload
         }
@@ -108,5 +107,20 @@ extension BiliAPIClient {
         guard !data.isEmpty else { throw BiliAPIError.emptyData }
         let cues = try JSONDecoder().decode(VideoSubtitleCueList.self, from: data)
         return cues.body ?? []
+    }
+
+    /// 对齐 PiliPlus 的 `"https:$subtitleUrl"`：接口多数情况下给协议相对地址。
+    static func normalizedSubtitleURL(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("//") {
+            return "https:" + trimmed
+        }
+        if trimmed.hasPrefix("http://") {
+            return "https://" + trimmed.dropFirst("http://".count)
+        }
+        if trimmed.hasPrefix("https://") {
+            return trimmed
+        }
+        return "https://" + trimmed
     }
 }

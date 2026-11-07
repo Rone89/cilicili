@@ -4,6 +4,32 @@ import XCTest
 @testable import bili
 
 final class VideoDetailSubtitleStoreTests: XCTestCase {
+    // MARK: - 字幕地址规范化
+
+    func testNormalizedSubtitleURLHandlesProtocolRelativeAddress() {
+        XCTAssertEqual(
+            BiliAPIClient.normalizedSubtitleURL("//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/x.json"),
+            "https://aisubtitle.hdslb.com/bfs/ai_subtitle/prod/x.json"
+        )
+    }
+
+    func testNormalizedSubtitleURLUpgradesHTTPAndKeepsHTTPS() {
+        XCTAssertEqual(
+            BiliAPIClient.normalizedSubtitleURL("http://i0.hdslb.com/x.json"),
+            "https://i0.hdslb.com/x.json"
+        )
+        XCTAssertEqual(
+            BiliAPIClient.normalizedSubtitleURL("https://i0.hdslb.com/x.json"),
+            "https://i0.hdslb.com/x.json"
+        )
+    }
+
+    func testNormalizedSubtitleURLPrefixesBareHostAndTrimsWhitespace() {
+        XCTAssertEqual(
+            BiliAPIClient.normalizedSubtitleURL(" aisubtitle.hdslb.com/x.json\n"),
+            "https://aisubtitle.hdslb.com/x.json"
+        )
+    }
     // MARK: - 排序
 
     func testSortedTracksPutsHumanChineseFirstThenChineseAIThenOthers() {
