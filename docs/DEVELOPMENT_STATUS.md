@@ -457,3 +457,13 @@
 - 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
 - 交付：1.1.2 / Build 126；未签名 IPA SHA-256 `580ef4c85fd312462c20946e1a25710ccd11d721bc1bb0f5ac544f663e8699de`；18pm 重签安装 RCe2027（databaseSequenceNumber 2768）成功，启动因设备锁屏被拒，解锁后可打开。
 - 待验收：横屏点齿轮右侧滑出纯色抽屉、随深浅色切换、点左侧滑出；面板与横屏字幕菜单打开期间控制条不自动隐藏。
+
+## 2026-11-08 设置抽屉纯色分组与底部贯穿 / Build 127
+
+- 用户要求：横屏设置抽屉内的液态玻璃背景改纯色；去掉开关行的「已开启/已关闭」；底部内容去掉遮罩、贯穿到底边。
+- `surfaceOnlyLandscapeGlassGroup()` 改为不透明 `secondarySystemGroupedBackground`（去掉 `biliPlayerClearGlass` 与 0.34 透明度），视频不再透出，分组不再发灰。
+- 删除 5 个开关状态文案辅助属性（`pictureInPictureAccessory` / `backgroundPlaybackAccessory` / `videoListenModeAccessory` / `performanceOverlayAccessory` / `controlEdgeScrimAccessory`），开关行 `accessory` 一律 nil；状态由开关本身表达。
+- 面板移除 `.padding(.bottom, safeArea.bottom)`，列表内容与纯色背景贯穿到屏幕底边。
+- 验证（XCUITest 截图导出，临时用例已删除）：深色外观下分组为纯色、开关行只剩图标/标题/开关、列表滚动到底后内容贴底。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 127；未签名 IPA SHA-256 `4d9012feecc04366bc5cf21014b1ff0cee81b12e07060c76558a8e0e5f3f2c9d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2808）并启动成功。
