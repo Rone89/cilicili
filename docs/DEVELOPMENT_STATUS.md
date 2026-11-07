@@ -424,3 +424,14 @@
 - 测试：`VideoDetailSubtitleUITests` 保留按钮出现用例（通过）。系统 sheet 在 XCUITest 下观察不到（直接启动可见），因此删除依赖自动弹窗的两条 UI 用例，改以模拟器截图人工验证：确认弹窗为评论同款系统 sheet，含「中文」「中文（AI）AI」「关闭字幕 ✓」。单测 11/11 通过。新增 `--subtitle-fixture-auto-sheet`（DEBUG）便于本地复验弹窗。
 - 交付：1.1.2 / Build 123；未签名 IPA SHA-256 `d10136d847a8220fca948e0460a00d1306f315e794da9bcb095b9bb6fbc973ea`；18pm 重签安装 RCe2027（databaseSequenceNumber 2744）并启动。
 - 待验收：① 详情页播放设置与横屏面板不再有「字幕」行，我的→播放体验出现「字幕」菜单；② 控制条上字幕/齿轮/全屏三键等距；③ 点字幕弹出评论同款系统 sheet。
+
+## 2026-11-08 横屏玻璃面板 + 图标字号对齐 / Build 124
+
+- 背景：用户确认「横屏不要全屏弹窗」方案，选择复用项目既有的横屏玻璃卡片；同时指出字幕图标与「设置」齿轮图标大小不一致（指图标本身，非背景容器）。
+- 横屏面板：新增 `SurfaceOnlyLandscapeSubtitlePanelOverlay`，复用横屏「播放设置」的几何与材质（330×318、圆角 24、`surfaceOnlyLandscapeGlassPanel`、点空白关闭），内部承载 `VideoDetailSubtitleSelectionPanel`。CC 按钮按方向分支：横屏开玻璃面板，竖屏开系统 sheet；旋转时互相关闭对应形态，切听视频/转场时清空。
+- 行视图抽取：`VideoDetailSubtitleSelectionRow` 供竖屏 sheet（List 内）与横屏面板共用，AI 角标与选中勾一致。
+- 图标字号：CC 按钮改用 `UIButton.Configuration.preferredSymbolConfigurationForImage = SymbolConfiguration(pointSize: metrics.iconSize + 3, weight: .semibold)`，与 `SurfaceOnlyUIKitMoreControlsButton` 的齿轮完全同字号同字重；此前是 +2 且未设置 preferredSymbolConfiguration，渲染偏小。
+- 视觉核对（模拟器 XCUITest 截图导出，临时用例已删除）：竖屏控制条 CC / 齿轮 / 全屏三键图标基本同高（气泡字形本身更宽且带尾巴）；横屏字幕面板为玻璃卡片、覆盖约 330×318、不全屏，含「中文」「中文（AI）AI」「关闭字幕 ✓」与关闭 X。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 124；未签名 IPA SHA-256 `5e3d9178590531158117442c03fe640caee4536eaabe2ad1ba692342158331f0`；18pm 重签安装 RCe2027（databaseSequenceNumber 2752）并启动。
+- 待验收：横屏点 CC 出现玻璃卡片（非全屏）、可选中轨；竖屏仍为系统 sheet；CC 图标与齿轮观感一致。
