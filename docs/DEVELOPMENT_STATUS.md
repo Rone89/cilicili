@@ -396,3 +396,12 @@
 - 待验收：真机播放 `BV1hA4a6yEp9` 选任意 AI 轨，确认底部出现字幕文本；若出现「字幕内容加载失败」提示，按 `cc.bili/Subtitle` 日志中的 host 与错误码继续定位。
 
 - 补记：设备恢复在线（`available (paired)`）后执行重签安装成功——`app.bamboo2779.brussels691` 1.1.2 / Build 120，databaseSequenceNumber 2704，已启动。设备上同时存在旧包 `cc.bili` 1.1.2 / Build 119（非本轮 18pm 重签目标），验收时须打开「cilicili」且版本为 120 的那个（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-08 字幕位置/样式对齐 PiliPlus 默认值 / Build 121
+
+- 用户询问字幕位置是否与 PiliPlus 一致，并要求「只对齐默认值与避让」，不新增设置面板。
+- 对照 PiliPlus 实现（`lib/plugin/pl_player/controller.dart` 的 `getSubConfig` 与 `lib/utils/storage_pref.dart` 默认值）：`subtitlePaddingH=24`、`subtitlePaddingB=24`、`subtitleBgOpacity=0.67`、`subtitleFontScale=1.0`、`subtitleFontScaleFS=1.5`、字号 16×缩放；`view.dart` 中控制条可见且字幕开启时把 `subtitlePaddingB` 临时抬到 `minPadding=70`，隐藏后恢复。
+- 本工程改动（`VideoDetailPlayerSurfaceSubtitleLayer.swift` + Shell 调用点）：底部/水平 24pt；控制条可见时底部 `max(24, 70)` 并带 0.2s 缓动；字号 `16 ×（全屏 1.5 / 竖屏 1.0）`；背景不透明度 0.67；新增 `controlsVisibility`、`isFullscreen` 输入。错误提示沿用同一底部避让。
+- 明确未实现（PiliPlus 有、本轮按用户选择不做）：字幕设置面板（字号/透明度/间距/字重/描边滑块）、字幕拖动定位与持久化。
+- 交付：1.1.2 / Build 121；未签名 IPA SHA-256 `2037aec97305562fa10278653cc85d6fa26644165af99ea52d2585f6769db984`；18pm 重签通过并安装 RCe2027（databaseSequenceNumber 2712）后启动成功。
+- 待验收：竖屏控制条出现时字幕上移且不被遮挡；横屏/全屏字幕明显放大；背景比 Build 120 更实一些。
