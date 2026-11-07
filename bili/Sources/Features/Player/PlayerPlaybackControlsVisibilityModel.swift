@@ -148,6 +148,11 @@ final class PlayerPlaybackControlsVisibilityModel: ObservableObject {
            arguments.contains("--ui-test-player-controls-persistent") {
             return
         }
+        // 字幕夹具（真实网络）同样需要控制条常显：XCUI 快照与点击排队
+        // 常超过 3 秒，会与控制条自动隐藏竞态，造成按钮点击落空。
+        if arguments.contains("--subtitle-fixture") {
+            return
+        }
         #endif
         autoHideTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)

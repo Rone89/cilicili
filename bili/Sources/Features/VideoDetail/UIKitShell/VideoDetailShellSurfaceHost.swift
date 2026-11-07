@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import os
 import SwiftUI
 import UIKit
 
@@ -812,6 +813,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                             .transition(.opacity)
                             .zIndex(9)
                         }
+
+                        if isSubtitleSheetPresented {
+                            VideoDetailSubtitleSelectionPanel(
+                                store: detailViewModel.subtitleRenderStore,
+                                onSelect: { lan in
+                                    Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                                },
+                                close: { isSubtitleSheetPresented = false }
+                            )
+                            .zIndex(9)
+                        }
                     }
                     .opacity(isBareSurfaceTransitionActive ? 0 : 1)
                     .allowsHitTesting(!isBareSurfaceTransitionActive)
@@ -948,15 +960,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $isSubtitleSheetPresented) {
-            VideoDetailSubtitleSelectionSheet(
-                store: detailViewModel.subtitleRenderStore,
-                onSelect: { lan in
-                    Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
-                },
-                close: { isSubtitleSheetPresented = false }
-            )
-        }
     }
 
     private var fullscreenMode: PlayerFullscreenMode? {
@@ -1056,19 +1059,28 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     /// 非听书模式下的 accessory 槽位：字幕（CC）按钮 + 全屏状态时的更多播放设置按钮。
     private var subtitleAndMoreControlsAccessory: some View {
         HStack(spacing: controlMetrics.controlSpacing) {
-            VideoDetailSubtitleControlButton(
-                store: detailViewModel.subtitleRenderStore,
-                metrics: controlMetrics,
-                onSelect: {
-                    playbackControlsVisibility.cancelAutoHide()
-                    isSubtitleSheetPresented = true
-                }
-            )
+            subtitleControlButton
 
             if usesFullscreenStatusChrome {
                 moreControlsButton
             }
         }
+    }
+
+    /// 字幕（CC）按钮：UIKit 承担触摸，SwiftUI 提供玻璃外观（同 moreControlsButton）。
+    private var subtitleControlButton: some View {
+        VideoDetailSubtitleControlButton(
+            store: detailViewModel.subtitleRenderStore,
+            metrics: controlMetrics,
+            onSelect: {
+                playbackControlsVisibility.cancelAutoHide()
+                isSubtitleSheetPresented = true
+            }
+        )
+        .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
+        .biliPlayerClearGlass(interactive: true, in: Circle())
+        .frame(width: 44, height: controlMetrics.controlHeight, alignment: .leading)
+        .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
     }
 
     private var runtimeContext: BiliPlayerViewRuntimeContext {
