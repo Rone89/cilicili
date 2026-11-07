@@ -5,11 +5,11 @@ import UIKit
 ///
 /// 触摸必须由 UIKit 承担——玻璃修饰的 SwiftUI Button 在 UIHostingController
 /// 嵌 UIKit 的播放器 overlay 里会吞掉点击（同 SurfaceOnlyUIKitMoreControlsButton）。
-/// 选轨弹窗同样由 UIKit 呈现：该宿主结构下 SwiftUI `.sheet` 不会弹出。
+/// 选轨弹窗由详情页最外层 SwiftUI sheet 宿主呈现（与评论弹窗同款）。
 struct VideoDetailSubtitleControlButton: UIViewRepresentable {
     @ObservedObject var store: VideoDetailSubtitleStore
     let metrics: PlayerNativeControlMetrics
-    let onSelect: (String?) -> Void
+    let onSelect: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onSelect: onSelect)
@@ -21,14 +21,11 @@ struct VideoDetailSubtitleControlButton: UIViewRepresentable {
         button.accessibilityIdentifier = "ui.player.subtitle.toggle"
         button.tintColor = .white
         button.imageView?.contentMode = .center
-        context.coordinator.button = button
         return button
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
         context.coordinator.onSelect = onSelect
-        context.coordinator.store = store
-        context.coordinator.button = button
         var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .white
         configuration.contentInsets = .zero
@@ -44,65 +41,99 @@ struct VideoDetailSubtitleControlButton: UIViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        var onSelect: (String?) -> Void
-        var store: VideoDetailSubtitleStore?
-        weak var button: UIButton?
+        var onSelect: () -> Void
         lazy var primaryAction = UIAction { [weak self] _ in
-            self?.presentSelection()
+            self?.onSelect()
         }
 
-        init(onSelect: @escaping (String?) -> Void) {
+        init(onSelect: @escaping () -> Void) {
             self.onSelect = onSelect
         }
+    }
+}
 
-        /// 用系统 action sheet 选轨（原生弹窗，UIKit 直接呈现）。
-        func presentSelection() {
-            guard let store, let button else { return }
-            guard let presenter = Self.topMostViewController(from: button) else { return }
+/// 字幕轨选择弹层：与评论弹窗同款系统 sheet（外层 SwiftUI 呈现）。
+struct VideoDetailSubtitleSelectionSheet: View {
+    @ObservedObject var store: VideoDetailSubtitleStore
+    let onSelect: (String?) -> Void
+    let close: () -> Void
 
-            let alert = UIAlertController(title: "字幕", message: nil, preferredStyle: .actionSheet)
-
-            for track in store.tracks {
-                let title = track.isAI ? "\(track.lanDoc)（AI）" : track.lanDoc
-                let action = UIAlertAction(title: title, style: .default) { [weak self] _ in
-                    self?.onSelect(track.lan)
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(store.tracks) { track in
+                        row(
+                            title: track.lanDoc,
+                            isAI: track.isAI,
+                            isSelected: store.selectedLan == track.lan,
+                            accessibilityIdentifier: "ui.player.subtitle.track.\(track.lan)"
+                        ) {
+                            onSelect(track.lan)
+                            close()
+                        }
+                    }
                 }
-                if store.selectedLan == track.lan {
-                    action.setValue(true, forKey: "checked")
+
+                Section {
+                    row(
+                        title: "关闭字幕",
+                        isAI: false,
+                        isSelected: store.selectedLan == nil,
+                        accessibilityIdentifier: "ui.player.subtitle.track.off"
+                    ) {
+                        onSelect(nil)
+                        close()
+                    }
                 }
-                alert.addAction(action)
-            }
 
-            let offAction = UIAlertAction(title: "关闭字幕", style: .default) { [weak self] _ in
-                self?.onSelect(nil)
+                if let message = store.loadErrorMessage {
+                    Section {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            if store.selectedLan == nil {
-                offAction.setValue(true, forKey: "checked")
+            .navigationTitle("字幕")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成", action: close)
+                }
             }
-            alert.addAction(offAction)
-            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-
-            // iPad / 横屏需要锚点，否则呈现会抛异常。
-            if let popover = alert.popoverPresentationController {
-                popover.sourceView = button
-                popover.sourceRect = button.bounds
-                popover.permittedArrowDirections = [.down, .up]
-            }
-            presenter.present(alert, animated: true)
         }
+    }
 
-        private static func topMostViewController(from view: UIView) -> UIViewController? {
-            var root = view.window?.rootViewController
-            if root == nil {
-                root = UIApplication.shared.connectedScenes
-                    .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-                    .first?.rootViewController
+    private func row(
+        title: String,
+        isAI: Bool,
+        isSelected: Bool,
+        accessibilityIdentifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                if isAI {
+                    Text("AI")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .foregroundStyle(Color.accentColor)
+                }
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
             }
-            var candidate = root
-            while let presented = candidate?.presentedViewController {
-                candidate = presented
-            }
-            return candidate
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }

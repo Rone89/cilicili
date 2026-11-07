@@ -137,6 +137,15 @@ extension VideoDetailViewModel {
         )
         store.setLoadErrorMessage(nil)
         subtitleLogger.info("subtitle fixture injected")
+        if ProcessInfo.processInfo.arguments.contains("--subtitle-fixture-auto-sheet") {
+            // 用独立 Task：视图任务在播放器重绑时会被取消，不能让它吞掉弹窗触发。
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard let self else { return }
+                self.isShowingSubtitleSelection = true
+                subtitleLogger.info("fixture auto sheet requested")
+            }
+        }
         await selectSubtitleTrack(lan: libraryStore.videoSubtitlePreference.preferredTrack(
             in: store.tracks,
             isMuted: false

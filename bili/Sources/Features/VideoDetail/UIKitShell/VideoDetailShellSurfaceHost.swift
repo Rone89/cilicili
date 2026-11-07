@@ -1,6 +1,5 @@
 import AVFoundation
 import Combine
-import os
 import SwiftUI
 import UIKit
 
@@ -1056,19 +1055,20 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     /// 字幕（CC）按钮：UIKit 承担触摸与选轨弹窗（系统 action sheet），
     /// SwiftUI 只提供玻璃外观（同 moreControlsButton）。
+    /// 字幕（CC）按钮：与其他控制按钮等宽等高，触控区单独扩展，
+    /// 保证与齿轮/全屏按钮的间距一致。选轨弹窗交给外层系统 sheet 呈现。
     private var subtitleControlButton: some View {
         VideoDetailSubtitleControlButton(
             store: detailViewModel.subtitleRenderStore,
             metrics: controlMetrics,
-            onSelect: { lan in
+            onSelect: {
                 playbackControlsVisibility.cancelAutoHide()
-                Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                detailViewModel.isShowingSubtitleSelection = true
             }
         )
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
         .biliPlayerClearGlass(interactive: true, in: Circle())
-        .frame(width: 44, height: controlMetrics.controlHeight, alignment: .leading)
-        .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
+        .biliPlayerExpandedHitTarget(metrics: controlMetrics)
     }
 
     private var runtimeContext: BiliPlayerViewRuntimeContext {
@@ -1133,8 +1133,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
         // Render the glass with the same SwiftUI container/visibility as the other controls.
         .biliPlayerClearGlass(interactive: true, in: Circle())
-        .frame(width: 44, height: controlMetrics.controlHeight, alignment: .trailing)
-        .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
+        .biliPlayerExpandedHitTarget(metrics: controlMetrics)
         .accessibilityLabel("更多播放设置")
     }
 
@@ -1712,20 +1711,6 @@ private struct SurfaceOnlyMoreControlsNavigationContent: View {
                     } label: {
                         Label("弹幕设置", systemImage: "text.bubble")
                     }
-
-                    NavigationLink {
-                        SurfaceOnlySubtitleSettingsPage(
-                            detailViewModel: detailViewModel,
-                            libraryStore: libraryStore
-                        )
-                    } label: {
-                        HStack {
-                            Label("字幕", systemImage: "captions.bbox")
-                            Spacer()
-                            Text(libraryStore.videoSubtitlePreference.title)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
 
                 NavigationLink {
@@ -2044,7 +2029,6 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
     case playbackOrder
     case sleepTimer
     case danmaku
-    case subtitle
     case rate
 
     var title: String {
@@ -2063,8 +2047,6 @@ private enum SurfaceOnlyLandscapeMoreControlsPage {
             return "定时关闭"
         case .danmaku:
             return "弹幕设置"
-        case .subtitle:
-            return "字幕"
         case .rate:
             return "倍速"
         }
@@ -2144,13 +2126,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     toggleDanmaku: onToggleDanmaku
                 )
                 .scrollContentBackground(.hidden)
-            case .subtitle:
-                SurfaceOnlySubtitleSettingsPage(
-                    detailViewModel: detailViewModel,
-                    libraryStore: libraryStore
-                )
-                .scrollContentBackground(.hidden)
-                .listStyle(.plain)
             case .rate:
                 ratePage
             }
@@ -2229,17 +2204,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                             showsChevron: true
                         ) {
                             page = .danmaku
-                        }
-
-                        Divider().padding(.leading, 44)
-
-                        SurfaceOnlyLandscapeMenuRow(
-                            title: "字幕",
-                            systemImage: "captions.bbox",
-                            accessory: libraryStore.videoSubtitlePreference.title,
-                            showsChevron: true
-                        ) {
-                            page = .subtitle
                         }
 
                         Divider().padding(.leading, 44)
@@ -3023,49 +2987,6 @@ private struct SurfaceOnlyVideoListenQueuePage: View {
         .task {
             await detailViewModel.prepareVideoListenQueue()
         }
-    }
-}
-
-/// 字幕偏好设置页：竖屏播放设置列表与横屏播放设置面板共用。
-private struct SurfaceOnlySubtitleSettingsPage: View {
-    @ObservedObject var detailViewModel: VideoDetailViewModel
-    @ObservedObject var libraryStore: LibraryStore
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(VideoSubtitlePreference.allCases) { preference in
-                    Button {
-                        libraryStore.setVideoSubtitlePreference(preference)
-                        Task { await detailViewModel.applySubtitlePreference() }
-                    } label: {
-                        HStack {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(preference.title)
-                                    Text(preference.subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: libraryStore.videoSubtitlePreference == preference
-                                    ? "checkmark.circle.fill"
-                                    : preference.systemImage)
-                            }
-                        }
-                    }
-                }
-            } footer: {
-                Text("AI 字幕由哔哩哔哩自动生成，通常需要登录后才会出现；具体以视频实际提供的字幕轨为准。")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .listRowBackground(Color.clear)
-        .background(Color.clear)
-        .foregroundStyle(.primary)
-        .navigationTitle("字幕")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.automatic, for: .navigationBar)
     }
 }
 

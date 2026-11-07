@@ -28,6 +28,7 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
                 forceHardwareDecodeToggle
                 dolbyVisionRenderingPolicyPicker
                 defaultPlaybackRatePicker
+                subtitlePreferencePicker
             } header: {
                 Text("播放体验")
             } footer: {
@@ -382,5 +383,21 @@ struct MinePlaybackPreferenceSection<ProbeSummary: View>: View {
             MineSettingsLabel("默认倍速", systemImage: "speedometer")
         }
         .pickerStyle(.menu)
+    }
+
+    /// 字幕选轨偏好（四档语义对齐 PiliPlus）。播放器内 CC 按钮仍可临时改轨。
+    private var subtitlePreferencePicker: some View {
+        Picker(selection: Binding(
+            get: { libraryStore.videoSubtitlePreference },
+            set: { libraryStore.setVideoSubtitlePreference($0) }
+        )) {
+            ForEach(VideoSubtitlePreference.allCases) { preference in
+                Text(preference.title).tag(preference)
+            }
+        } label: {
+            MineSettingsLabel("字幕", systemImage: "captions.bubble")
+        }
+        .pickerStyle(.menu)
+        .accessibilityIdentifier("mine.settings.playback.subtitlePreference")
     }
 }
