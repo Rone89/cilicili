@@ -66,10 +66,11 @@ struct VideoDetailSubtitleControlButton: UIViewRepresentable {
 struct VideoDetailSubtitleMenuButton: UIViewRepresentable {
     @ObservedObject var store: VideoDetailSubtitleStore
     let metrics: PlayerNativeControlMetrics
+    let onMenuWillOpen: () -> Void
     let onSelect: (String?) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
+        Coordinator(onMenuWillOpen: onMenuWillOpen, onSelect: onSelect)
     }
 
     func makeUIView(context: Context) -> UIButton {
@@ -78,10 +79,13 @@ struct VideoDetailSubtitleMenuButton: UIViewRepresentable {
         button.accessibilityIdentifier = "ui.player.subtitle.toggle"
         button.tintColor = .white
         button.showsMenuAsPrimaryAction = true
+        // UIMenu 即将展开时通知外部（用于挂起控制条自动隐藏）。
+        button.addAction(context.coordinator.menuWillOpenAction, for: .menuActionTriggered)
         return button
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.onMenuWillOpen = onMenuWillOpen
         context.coordinator.onSelect = onSelect
         button.configuration = VideoDetailSubtitleControlButton.configuration(
             symbolName: store.selectedLan == nil ? "captions.bubble" : "captions.bubble.fill",
@@ -92,9 +96,14 @@ struct VideoDetailSubtitleMenuButton: UIViewRepresentable {
 
     @MainActor
     final class Coordinator {
+        var onMenuWillOpen: () -> Void
         var onSelect: (String?) -> Void
+        lazy var menuWillOpenAction = UIAction { [weak self] _ in
+            self?.onMenuWillOpen()
+        }
 
-        init(onSelect: @escaping (String?) -> Void) {
+        init(onMenuWillOpen: @escaping () -> Void, onSelect: @escaping (String?) -> Void) {
+            self.onMenuWillOpen = onMenuWillOpen
             self.onSelect = onSelect
         }
 

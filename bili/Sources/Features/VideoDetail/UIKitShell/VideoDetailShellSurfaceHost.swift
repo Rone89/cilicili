@@ -806,9 +806,12 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                                 selectPlayVariant: { detailViewModel.selectPlayVariant($0) },
                                 onToggleDanmaku: onToggleDanmaku,
                                 contentInsets: videoInsets,
-                                close: { isMoreControlsPresented = false }
+                                close: {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+                                        isMoreControlsPresented = false
+                                    }
+                                }
                             )
-                            .transition(.opacity)
                             .zIndex(9)
                         }
                     }
@@ -1065,8 +1068,17 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 VideoDetailSubtitleMenuButton(
                     store: detailViewModel.subtitleRenderStore,
                     metrics: controlMetrics,
+                    onMenuWillOpen: {
+                        // 菜单展开期间挂起控制条自动隐藏。
+                        playbackControlsVisibility.cancelAutoHide()
+                    },
                     onSelect: { lan in
                         Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                        // 菜单关闭后恢复正常的自动隐藏节奏。
+                        playbackControlsVisibility.showAndSchedule(
+                            showsPlaybackControls: keepsChromeMounted,
+                            isLayoutTransitioning: isBareSurfaceTransitionActive
+                        )
                     }
                 )
             } else {
@@ -1132,7 +1144,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         ) {
             playbackControlsVisibility.cancelAutoHide()
             if isLandscape {
-                withAnimation(reduceMotion ? nil : .default) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
                     isMoreControlsPresented = true
                 }
             } else {
@@ -1937,26 +1949,45 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visibleFrame = visibleVideoFrame(in: proxy.size)
-            let panelSize = landscapePanelSize(in: visibleFrame)
-            ZStack {
-                Color.black.opacity(0.04)
+            // 宽度取横屏宽度的 40%，并夹在 320...420 之间，避免超宽屏过于空旷。
+            let panelWidth = min(max(proxy.size.width * 0.4, 320), 420)
+            let safeArea = Self.safeAreaInsets()
+            ZStack(alignment: .trailing) {
+                Color.black.opacity(0.18)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture(perform: close)
 
-                landscapePanel(size: panelSize)
-                    .position(landscapePanelCenter(panelSize: panelSize, visibleFrame: visibleFrame))
-                    .contentShape(Rectangle())
-                    .onTapGesture {}
+                panel(width: panelWidth, safeArea: safeArea)
+                    .transition(.move(edge: .trailing))
             }
         }
     }
 
-    @ViewBuilder
-    private func landscapePanel(size: CGSize) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-        VStack(spacing: 0) {
+    /// 面板跟随 App 的深浅色设置；播放器 overlay 可能被强制为深色，这里单独决议。
+    private var resolvedColorScheme: ColorScheme {
+        switch libraryStore.appearanceMode {
+        case .system:
+            // 视频页会为状态栏对比度把窗口强制为深色，窗口 trait 不可用；
+            // 屏幕 trait 反映系统外观设置。
+            return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
+
+    private func panel(width: CGFloat, safeArea: EdgeInsets) -> some View {
+        let scheme = resolvedColorScheme
+        let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
+        let background = Color(UIColor.systemBackground.resolvedColor(with: traits))
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: 24,
+            bottomLeadingRadius: 24,
+            style: .continuous
+        )
+        return VStack(spacing: 0) {
             SurfaceOnlyLandscapeMoreHeader(
                 title: page.title,
                 canGoBack: page != .root,
@@ -1977,62 +2008,31 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
                 close: close
             )
         }
-        .frame(width: size.width, height: size.height)
-        .surfaceOnlyLandscapeGlassPanel(in: shape)
+        .padding(.top, safeArea.top)
+        .padding(.bottom, safeArea.bottom)
+        .padding(.trailing, safeArea.trailing)
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(background)
         .clipShape(shape)
-        .overlay {
-            shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.6)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 0.6)
         }
-        .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 10)
+        .environment(\.colorScheme, scheme)
     }
 
-    private func visibleVideoFrame(in size: CGSize) -> CGRect {
-        CGRect(
-            x: contentInsets.leading,
-            y: contentInsets.top,
-            width: max(1, size.width - contentInsets.leading - contentInsets.trailing),
-            height: max(1, size.height - contentInsets.top - contentInsets.bottom)
+    private static func safeAreaInsets() -> EdgeInsets {
+        guard let insets = UIApplication.shared.playbackDetailForegroundKeyWindow?.safeAreaInsets
+        else { return EdgeInsets() }
+        return EdgeInsets(
+            top: max(insets.top, 0),
+            leading: max(insets.left, 0),
+            bottom: max(insets.bottom, 0),
+            trailing: max(insets.right, 0)
         )
     }
-
-    private func landscapePanelSize(in visibleFrame: CGRect) -> CGSize {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let topOffset: CGFloat = 58
-        let availableWidth = max(1, visibleFrame.width - horizontalMargin * 2)
-        let width = min(330, availableWidth)
-        let availableHeight = max(1, visibleFrame.height - topOffset - verticalMargin)
-        let height = min(318, availableHeight)
-        return CGSize(width: width, height: height)
-    }
-
-    private func landscapePanelCenter(panelSize: CGSize, visibleFrame: CGRect) -> CGPoint {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let preferredTop: CGFloat = visibleFrame.minY + 58
-        let preferredX = visibleFrame.maxX - horizontalMargin - panelSize.width / 2
-        let preferredY = preferredTop + panelSize.height / 2
-        return CGPoint(
-            x: clamped(
-                preferredX,
-                lower: visibleFrame.minX + horizontalMargin + panelSize.width / 2,
-                upper: visibleFrame.maxX - horizontalMargin - panelSize.width / 2,
-                fallback: visibleFrame.midX
-            ),
-            y: clamped(
-                preferredY,
-                lower: visibleFrame.minY + verticalMargin + panelSize.height / 2,
-                upper: visibleFrame.maxY - verticalMargin - panelSize.height / 2,
-                fallback: visibleFrame.midY
-            )
-        )
-    }
-
-    private func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat, fallback: CGFloat) -> CGFloat {
-        guard lower <= upper else { return fallback }
-        return min(max(value, lower), upper)
-    }
-
 }
 
 private enum SurfaceOnlyLandscapeMoreControlsPage {
