@@ -5,164 +5,104 @@ import UIKit
 ///
 /// 触摸必须由 UIKit 承担——玻璃修饰的 SwiftUI Button 在 UIHostingController
 /// 嵌 UIKit 的播放器 overlay 里会吞掉点击（同 SurfaceOnlyUIKitMoreControlsButton）。
+/// 选轨弹窗同样由 UIKit 呈现：该宿主结构下 SwiftUI `.sheet` 不会弹出。
 struct VideoDetailSubtitleControlButton: UIViewRepresentable {
     @ObservedObject var store: VideoDetailSubtitleStore
     let metrics: PlayerNativeControlMetrics
-    let onSelect: () -> Void
+    let onSelect: (String?) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onSelect: onSelect)
     }
 
     func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(
-            configuration: Self.configuration,
-            primaryAction: context.coordinator.primaryAction
-        )
+        let button = UIButton(primaryAction: context.coordinator.primaryAction)
         button.accessibilityLabel = "字幕"
         button.accessibilityIdentifier = "ui.player.subtitle.toggle"
         button.tintColor = .white
+        button.imageView?.contentMode = .center
+        context.coordinator.button = button
         return button
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
         context.coordinator.onSelect = onSelect
-        let imageName = store.selectedLan == nil ? "captions.bbox" : "captions.bbox.fill"
-        if button.viewWithTag(Self.iconViewTag) == nil {
-            let iconView = UIImageView()
-            iconView.tag = Self.iconViewTag
-            iconView.contentMode = .center
-            iconView.tintColor = .white
-            iconView.isUserInteractionEnabled = false
-            iconView.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(iconView)
-            NSLayoutConstraint.activate([
-                iconView.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-                iconView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            ])
-        }
-        (button.viewWithTag(Self.iconViewTag) as? UIImageView)?.image = UIImage(
-            systemName: imageName,
+        context.coordinator.store = store
+        context.coordinator.button = button
+        var configuration = UIButton.Configuration.plain()
+        configuration.baseForegroundColor = .white
+        configuration.contentInsets = .zero
+        configuration.image = UIImage(
+            systemName: store.selectedLan == nil ? "captions.bubble" : "captions.bubble.fill",
             withConfiguration: UIImage.SymbolConfiguration(
                 pointSize: metrics.iconSize + 2,
                 weight: .semibold
             )
         )
+        button.configuration = configuration
     }
-
-    static let iconViewTag = 0x51C
-
-    private static let configuration: UIButton.Configuration = {
-        // 玻璃由宿主 SwiftUI 视图提供；这里只负责触摸投递。
-        var configuration = UIButton.Configuration.plain()
-        configuration.baseForegroundColor = .white
-        configuration.contentInsets = .zero
-        return configuration
-    }()
 
     @MainActor
     final class Coordinator {
-        var onSelect: () -> Void
+        var onSelect: (String?) -> Void
+        var store: VideoDetailSubtitleStore?
+        weak var button: UIButton?
         lazy var primaryAction = UIAction { [weak self] _ in
-            self?.onSelect()
+            self?.presentSelection()
         }
 
-        init(onSelect: @escaping () -> Void) {
+        init(onSelect: @escaping (String?) -> Void) {
             self.onSelect = onSelect
         }
-    }
-}
 
-/// 字幕轨选择浮层：overlay 内呈现（对齐横屏播放设置面板模式），
-/// 不用系统 sheet——UIHostingController 嵌 UIKit 层时系统 sheet 弹不出来。
-struct VideoDetailSubtitleSelectionPanel: View {
-    @ObservedObject var store: VideoDetailSubtitleStore
-    let onSelect: (String?) -> Void
-    let close: () -> Void
+        /// 用系统 action sheet 选轨（原生弹窗，UIKit 直接呈现）。
+        func presentSelection() {
+            guard let store, let button else { return }
+            guard let presenter = Self.topMostViewController(from: button) else { return }
 
-    var body: some View {
-        Color.black.opacity(0.01)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: close)
-            .overlay(alignment: .bottom) {
-                panel
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 132)
-            }
-            .transition(.opacity)
-    }
+            let alert = UIAlertController(title: "字幕", message: nil, preferredStyle: .actionSheet)
 
-    private var panel: some View {
-        VStack(spacing: 0) {
-            ForEach(store.tracks) { track in
-                row(
-                    title: track.lanDoc,
-                    badge: track.isAI ? "AI" : nil,
-                    isSelected: store.selectedLan == track.lan,
-                    accessibilityIdentifier: "ui.player.subtitle.track.\(track.lan)"
-                ) {
-                    onSelect(track.lan)
-                    close()
+            for track in store.tracks {
+                let title = track.isAI ? "\(track.lanDoc)（AI）" : track.lanDoc
+                let action = UIAlertAction(title: title, style: .default) { [weak self] _ in
+                    self?.onSelect(track.lan)
                 }
-                if track.id != store.tracks.last?.id {
-                    Divider().overlay(Color.white.opacity(0.12))
+                if store.selectedLan == track.lan {
+                    action.setValue(true, forKey: "checked")
                 }
+                alert.addAction(action)
             }
 
-            Divider().overlay(Color.white.opacity(0.12))
-
-            row(
-                title: "关闭字幕",
-                badge: nil,
-                isSelected: store.selectedLan == nil,
-                accessibilityIdentifier: "ui.player.subtitle.track.off"
-            ) {
-                onSelect(nil)
-                close()
+            let offAction = UIAlertAction(title: "关闭字幕", style: .default) { [weak self] _ in
+                self?.onSelect(nil)
             }
+            if store.selectedLan == nil {
+                offAction.setValue(true, forKey: "checked")
+            }
+            alert.addAction(offAction)
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+
+            // iPad / 横屏需要锚点，否则呈现会抛异常。
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = button
+                popover.sourceRect = button.bounds
+                popover.permittedArrowDirections = [.down, .up]
+            }
+            presenter.present(alert, animated: true)
         }
-        .frame(maxWidth: 300)
-        .padding(.vertical, 6)
-        .background(Color.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.14), lineWidth: 0.6)
-        }
-        .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-    }
 
-    private func row(
-        title: String,
-        badge: String?,
-        isSelected: Bool,
-        accessibilityIdentifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(.white)
-                if let badge {
-                    Text(badge)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                Spacer(minLength: 0)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+        private static func topMostViewController(from view: UIView) -> UIViewController? {
+            var root = view.window?.rootViewController
+            if root == nil {
+                root = UIApplication.shared.connectedScenes
+                    .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+                    .first?.rootViewController
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .contentShape(Rectangle())
+            var candidate = root
+            while let presented = candidate?.presentedViewController {
+                candidate = presented
+            }
+            return candidate
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }

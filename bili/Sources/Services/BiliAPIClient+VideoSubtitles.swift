@@ -90,7 +90,16 @@ extension BiliAPIClient {
             throw BiliAPIError.missingPayload
         }
         var request = URLRequest(url: requestURL)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // 字幕 CDN（如 aisubtitle.hdslb.com）会校验来源；只带 Accept 会被拒绝。
+        // 复用 API 头构造，与播放详情请求保持同一 UA/Referer/登录 cookie。
+        let context = await interactionRequestContext()
+        for (field, value) in BiliURLSessionFactory.apiHeaders(
+            referer: "https://www.bilibili.com/",
+            userAgent: nil,
+            cookieHeader: context.cookieHeader
+        ) {
+            request.setValue(value, forHTTPHeaderField: field)
+        }
         let (data, _) = try await data(
             for: request,
             priority: URLSessionTask.lowPriority,

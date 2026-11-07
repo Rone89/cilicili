@@ -636,7 +636,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     @State private var portraitMoreControlsRequestID: UUID?
     @State private var isMoreControlsButtonPressed = false
     @State private var isVideoListenQueuePresented = false
-    @State private var isSubtitleSheetPresented = false
 
     private var isLandscape: Bool {
         rotationCoordinator.chromeLandscape
@@ -813,17 +812,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                             .transition(.opacity)
                             .zIndex(9)
                         }
-
-                        if isSubtitleSheetPresented {
-                            VideoDetailSubtitleSelectionPanel(
-                                store: detailViewModel.subtitleRenderStore,
-                                onSelect: { lan in
-                                    Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
-                                },
-                                close: { isSubtitleSheetPresented = false }
-                            )
-                            .zIndex(9)
-                        }
                     }
                     .opacity(isBareSurfaceTransitionActive ? 0 : 1)
                     .allowsHitTesting(!isBareSurfaceTransitionActive)
@@ -904,7 +892,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 portraitMoreControlsRequestID = nil
                 onDismissMoreControls()
                 isVideoListenQueuePresented = false
-                isSubtitleSheetPresented = false
             } else {
                 isMoreControlsPresented = false
             }
@@ -913,7 +900,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             if mode != .audioOnly {
                 isVideoListenQueuePresented = false
             }
-            isSubtitleSheetPresented = false
             guard mode == .audioOnly else { return }
             isMoreControlsPresented = false
             portraitMoreControlsRequestID = nil
@@ -929,7 +915,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
-                isSubtitleSheetPresented = false
                 isMoreControlsButtonPressed = false
                 portraitMoreControlsRequestID = nil
             }
@@ -1067,14 +1052,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         }
     }
 
-    /// 字幕（CC）按钮：UIKit 承担触摸，SwiftUI 提供玻璃外观（同 moreControlsButton）。
+    /// 字幕（CC）按钮：UIKit 承担触摸与选轨弹窗（系统 action sheet），
+    /// SwiftUI 只提供玻璃外观（同 moreControlsButton）。
     private var subtitleControlButton: some View {
         VideoDetailSubtitleControlButton(
             store: detailViewModel.subtitleRenderStore,
             metrics: controlMetrics,
-            onSelect: {
+            onSelect: { lan in
                 playbackControlsVisibility.cancelAutoHide()
-                isSubtitleSheetPresented = true
+                Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
             }
         )
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
