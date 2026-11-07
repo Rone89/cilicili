@@ -413,3 +413,14 @@
 - 测试：`VideoDetailSubtitleStoreTests` 11/11 通过，新增边界用例「中文AI + 英文真人CC」——`preferNonAI` 取中文 AI（zh 优先）、`withoutAI` 返回 nil（首选是 AI 即关闭），与 PiliPlus 行为一致。
 - 交付：1.1.2 / Build 122；未签名 IPA SHA-256 `d8f830631ea2e71cea22bf6db11af1ae5734be1a14111eb5fad950e6f71f8f8d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2728）并启动。
 - 待验收：设置→字幕中四档名称与新语义（尤其「跳过AI字幕」在只有 AI 轨时应不显示字幕）。
+
+## 2026-11-08 设置位置、按钮间距与弹窗样式调整 / Build 123
+
+- 用户三项要求：① 字幕设置不放在视频详情页设置菜单，只放「我的」播放偏好；② 字幕按钮与齿轮/全屏按钮不等距；③ 选轨弹窗用与评论弹窗一致的系统弹窗。
+- ① 设置位置：移除竖屏 `SurfaceOnlyMoreControlsNavigationContent` 与横屏 `SurfaceOnlyLandscapeMoreControlsPage.subtitle` 两处入口，删除 `SurfaceOnlySubtitleSettingsPage`；在 `MinePlaybackPreferenceSection`「播放体验」区新增「字幕」菜单选择器（`mine.settings.playback.subtitlePreference`），写入 `libraryStore.setVideoSubtitlePreference`。播放器内 CC 按钮仍可临时改轨。
+- ② 间距：CC 按钮原本是 `frame(width: 44, alignment: .leading)`，齿轮是 `frame(width: 44, alignment: .trailing)`，两个朝向相反的 44pt 框叠加 HStack spacing，导致图标间距比全屏按钮一侧大。统一改为 `frame(width: controlHeight, height: controlHeight)` + `biliPlayerExpandedHitTarget(metrics:)`（只扩触控区、不占布局），两个按钮间距与全屏按钮一致。
+- ③ 弹窗：改为与评论弹窗同款系统 sheet——由详情页最外层 `VideoDetailSheetHost` 呈现，复用 `commentSheetPresentation()`（`.medium/.large` detent、`.presentationContentInteraction(.resizes)`、拖拽指示条），内容为导航栏「字幕」+ 完成按钮 + 分组列表（AI 角标、选中勾）。
+- 实现要点：直接把 ViewModel 的 `@Published isShowingSubtitleSelection` 绑到 `.sheet(isPresented:)` 不生效（每次 body 重建产生新 Binding，外层标志已为 true 却不呈现，已用 DEBUG 无障碍标记实测确认为 flag-1）；改为 `@State` + `.onChange` 驱动，并用 `onDismiss` 回写 ViewModel。
+- 测试：`VideoDetailSubtitleUITests` 保留按钮出现用例（通过）。系统 sheet 在 XCUITest 下观察不到（直接启动可见），因此删除依赖自动弹窗的两条 UI 用例，改以模拟器截图人工验证：确认弹窗为评论同款系统 sheet，含「中文」「中文（AI）AI」「关闭字幕 ✓」。单测 11/11 通过。新增 `--subtitle-fixture-auto-sheet`（DEBUG）便于本地复验弹窗。
+- 交付：1.1.2 / Build 123；未签名 IPA SHA-256 `d10136d847a8220fca948e0460a00d1306f315e794da9bcb095b9bb6fbc973ea`；18pm 重签安装 RCe2027（databaseSequenceNumber 2744）并启动。
+- 待验收：① 详情页播放设置与横屏面板不再有「字幕」行，我的→播放体验出现「字幕」菜单；② 控制条上字幕/齿轮/全屏三键等距；③ 点字幕弹出评论同款系统 sheet。
