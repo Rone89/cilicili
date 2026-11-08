@@ -3238,15 +3238,12 @@ private struct VideoDetailFullscreenBatteryControl: View {
     @State private var batteryLevel: Float = -1
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(percentageText)
-                .monospacedDigit()
-            Image(systemName: batterySymbolName)
-        }
-        .font(.caption.weight(.semibold))
-        .lineLimit(1)
-        .padding(.horizontal, 10)
-        .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
+        Image(systemName: batterySymbolName)
+            .font(.caption.weight(.semibold))
+            .frame(
+                width: PlayerNativeControlMetrics.landscape.controlHeight,
+                height: PlayerNativeControlMetrics.landscape.controlHeight
+            )
         .biliPlayerClearGlass(
             interactive: false,
             in: Capsule(),
