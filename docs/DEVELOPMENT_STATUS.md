@@ -633,3 +633,11 @@
 - Xcode 27.1、iPhone 18 Pro Max / iOS 27.0 模拟器、共享 Xcode-27 缓存串行运行。排序切换、分页、全屏往返和播放器收起四项 UI 回归全部通过。排序用例延迟最新响应，分别断言加载中、最新返回及切回最热后的表头位置、可点击性和首条评论间距。加载骨架期间日志记录表头 61pt。证据 `build/logs/build142-comments-ui.xcresult`、`build/logs/build142-sort-geometry.log`。四个用例启动时都出现 SwiftUI 视图更新期间发布状态的警告，未在本轮定位其调用栈。
 - 已原位安装到 RCe2027（iOS 27.3），设备应用列表核验 `1.1.2 (142)`，启动成功（PID 53624）。证据 `build/logs/build142-device-apps-after.log`。待在该机重进 `BV1JvpC6mEv7`，不滚动直接最热→最新→最热，确认无空白，再复验播放器收起态。
 - 本地 `main` 从 `756a2a9` 接续，修复与回归提交 `d9fa16f`，本轮接续记录另行提交。
+
+## 2026-11-09 横屏时间与电量分置两角 / Build 143
+
+- GPT-6 Luna（极高推理）将横屏全屏顶部居中的时间与电池环拆成两枚独立液态玻璃胶囊。左上为按整分钟刷新的本地系统时间，右上为系统电量百分比与 SF Symbols 电池图标。两枚胶囊采用横屏控制条高度，沿屏幕安全区左右对齐，随播放控制条淡入淡出。
+- 电池数据沿用 `UIDevice` 通知。充电以绿色和闪电标记提示，低电量以红色提示，读不到电量时显示 `--%`。播放性能诊断在横屏下为状态胶囊预留一行高度。
+- Xcode 27.1 与 iPhone 18 Pro Max / iOS 27.0 模拟器使用共享 Xcode-27 缓存串行验证。最终版本的横竖屏往返和字幕按钮 UI 用例 2/2 通过。横屏断言两枚状态控件在顶部、分列两侧、同高，退出全屏后消失。模拟器实播截图确认两枚玻璃底托及电池轮廓，电量数据未知。证据 `build/logs/build143-landscape-final-ui.xcresult`、`build/logs/build143-landscape-glass.png`。
+- 已用原描述文件和权限签名本地 Release `.app`，原位安装到 RCe2027（iOS 27.3）。设备应用列表核验 `1.1.2 (143)`，启动成功（PID 53725）。真机横屏画面、电量读数和充电提示待验收。证据 `build/logs/build143-device-final.log`、`build/logs/build143-device-apps-after.log`。
+- 本地 `main` 从 `63e1001` 接续，源码和 UI 回归提交 `347dec5`，本轮接续记录另行提交。
