@@ -23,7 +23,8 @@ struct DynamicFeedTextContent: View {
                 // Keep all dynamic text on one layout engine so Unicode
                 // fallback glyphs and inline emotes share the same line boxes.
                 usesTextKitLayout: true,
-                onContentLayoutChange: { updateExpansionVisibility(fittingWidth: measuredTextWidth) }
+                onContentLayoutChange: { updateExpansionVisibility(fittingWidth: measuredTextWidth) },
+                onExpand: expandAction
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -32,11 +33,11 @@ struct DynamicFeedTextContent: View {
             }
             .dynamicCopyableText(copyText)
 
-            if shouldShowExpandButton {
+            if isExpanded && shouldShowExpandButton {
                 Button(action: toggleExpanded) {
                     HStack(spacing: 4) {
-                        Text(isExpanded ? "收起" : "展开")
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        Text("收起")
+                        Image(systemName: "chevron.up")
                             .font(.caption2.weight(.bold))
                     }
                     .appTypography(.action, fallback: .footnote.weight(.semibold))
@@ -67,6 +68,11 @@ struct DynamicFeedTextContent: View {
 
     private var displayedInput: DynamicAttributedTextInput {
         allowsCollapsing && !isExpanded ? collapsedInput : expandedInput
+    }
+
+    private var expandAction: (() -> Void)? {
+        guard allowsCollapsing, !isExpanded else { return nil }
+        return { toggleExpanded() }
     }
 
     private var shouldShowExpandButton: Bool { allowsCollapsing && measuredShowsExpandButton == true }

@@ -9,6 +9,26 @@ final class CommentTypographyTests: XCTestCase {
         XCTAssertEqual(AppTypography.Role.commentBody.pointSize, 15)
     }
 
+    func testInlineExpansionPreservesShortTextAndMarksOnlyTheAction() throws {
+        let font = UIFont.systemFont(ofSize: 15)
+        let short = NSAttributedString(string: "短评论", attributes: [.font: font])
+        XCTAssertNil(InlineTextExpansion.preview(short, width: 150, lineLimit: 2, tint: .systemBlue))
+        let long = NSAttributedString(
+            string: String(repeating: "测试评论 👩🏽‍💻 ", count: 20),
+            attributes: [.font: font]
+        )
+        let preview = try XCTUnwrap(InlineTextExpansion.preview(long, width: 150, lineLimit: 2, tint: .systemBlue))
+        XCTAssertTrue(preview.string.hasSuffix("… 展开"))
+        XCTAssertNil(preview.attribute(.biliMentionURL, at: preview.length - 3, effectiveRange: nil))
+        let view = label(preview, font: font)
+        view.frame.size = view.sizeThatFits(CGSize(width: 150, height: CGFloat.greatestFiniteMagnitude))
+        view.frame.size.width = 150
+        var opened: URL?
+        view.onLinkTap = { opened = $0 }
+        view.handleTap(at: point(at: preview.length - 2, text: preview, label: view))
+        XCTAssertEqual(opened, InlineTextExpansion.link)
+    }
+
     func testFixedLineBoxesCacheMeasurementAndAttachmentsAcrossDynamicType() throws {
         for category in [UIContentSizeCategory.large, .extraExtraExtraLarge, .accessibilityExtraExtraExtraLarge] {
             let font = AppTypography.Role.commentBody.uiFont(contentSizeCategory: category)

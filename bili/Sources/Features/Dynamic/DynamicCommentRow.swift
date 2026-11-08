@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicCommentRow: View {
     @AppStorage(CommentInteractionSettings.longPressActionsEnabledKey)
     private var longPressCommentActionsEnabled = false
+    @State private var isTextExpanded = false
     let item: DynamicCommentRowItem
     let showReplies: () -> Void
     let replyToComment: ((Comment, Comment) -> Void)?
@@ -64,7 +65,8 @@ struct DynamicCommentRow: View {
                 textColor: .primary,
                 emoteSize: 21,
                 typographyRole: .commentBody,
-                onNonLinkTap: contentReplyAction
+                onNonLinkTap: contentReplyAction,
+                onExpand: isTextExpanded ? nil : { isTextExpanded = true }
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         } media: {

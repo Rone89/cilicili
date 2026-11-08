@@ -2,11 +2,13 @@ import SwiftUI
 import UIKit
 
 struct DynamicAttributedTextLabel: UIViewRepresentable {
+    @Environment(\.appThemeTintColor) private var appTintColor
     let input: DynamicAttributedTextInput
     let preferredWidth: CGFloat?
     let onURLTap: (URL) -> Void
     let onNonLinkTap: (() -> Void)?
     let onContentLayoutChange: (() -> Void)?
+    let onExpand: (() -> Void)?
     private static let sharedRenderCache = DynamicAttributedTextRenderCache()
 
     init(
@@ -14,13 +16,15 @@ struct DynamicAttributedTextLabel: UIViewRepresentable {
         preferredWidth: CGFloat?,
         onURLTap: @escaping (URL) -> Void,
         onNonLinkTap: (() -> Void)?,
-        onContentLayoutChange: (() -> Void)? = nil
+        onContentLayoutChange: (() -> Void)? = nil,
+        onExpand: (() -> Void)? = nil
     ) {
         self.input = input
         self.preferredWidth = preferredWidth
         self.onURLTap = onURLTap
         self.onNonLinkTap = onNonLinkTap
         self.onContentLayoutChange = onContentLayoutChange
+        self.onExpand = onExpand
     }
 
     func makeCoordinator() -> Coordinator {
@@ -38,6 +42,8 @@ struct DynamicAttributedTextLabel: UIViewRepresentable {
         label.onLinkTap = onURLTap
         label.onNonLinkTap = onNonLinkTap
         label.onContentLayoutChange = onContentLayoutChange
+        label.onExpand = onExpand
+        label.expansionTint = UIColor(appTintColor)
         label.numberOfLines = input.maxLines ?? 0
         label.lineBreakMode = input.lineBreakMode
         let renderResult = context.coordinator.render(input)
@@ -160,8 +166,10 @@ final class DynamicTextKitAttributedLabel: UIView {
     var attributedText: NSAttributedString? {
         didSet {
             textStorage.setAttributedString(attributedText ?? NSAttributedString())
+            previewWidth = nil
             accessibilityLabel = attributedText?.string
             invalidateIntrinsicContentSize()
+            setNeedsLayout()
             setNeedsDisplay()
         }
     }
@@ -185,6 +193,37 @@ final class DynamicTextKitAttributedLabel: UIView {
     var onLinkTap: ((URL) -> Void)?
     var onNonLinkTap: (() -> Void)?
     var onContentLayoutChange: (() -> Void)?
+    var onExpand: (() -> Void)? {
+        didSet {
+            if oldValue != nil, onExpand == nil {
+                expandButton?.isHidden = true
+                isAccessibilityElement = true
+                accessibilityElements = nil
+                previewWidth = nil
+            }
+        }
+    }
+    var expansionTint: UIColor = .systemBlue {
+        didSet {
+            if oldValue != expansionTint {
+                previewWidth = nil
+                setNeedsLayout()
+                setNeedsDisplay()
+            }
+        }
+    }
+    private var previewWidth: CGFloat?
+    private lazy var accessibleBody = UIAccessibilityElement(accessibilityContainer: self)
+    private var expandButton: UIButton?
+
+    private func makeExpandButton() -> UIButton {
+        let button = UIButton(type: .custom)
+        button.accessibilityLabel = InlineTextExpansion.title
+        button.addAction(UIAction { [weak self] _ in self?.onExpand?() }, for: .touchUpInside)
+        addSubview(button)
+        expandButton = button
+        return button
+    }
 
     private let textStorage = NSTextStorage()
     private let layoutManager = NSLayoutManager()
@@ -219,6 +258,33 @@ final class DynamicTextKitAttributedLabel: UIView {
         layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard onExpand != nil || previewWidth != nil else { return }
+        configureTextContainer(size: bounds.size)
+        let range = NSRange(location: 0, length: textStorage.length)
+        var buttonFrame: CGRect?
+        textStorage.enumerateAttribute(.biliMentionURL, in: range) { value, range, stop in
+            guard value as? URL == InlineTextExpansion.link else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            buttonFrame = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            stop.pointee = true
+        }
+        isAccessibilityElement = buttonFrame == nil
+        if let buttonFrame {
+            let button = expandButton ?? makeExpandButton()
+            button.isHidden = false
+            button.frame = buttonFrame.insetBy(dx: -3, dy: -2)
+            accessibleBody.accessibilityLabel = textStorage.string
+            accessibleBody.accessibilityTraits = .staticText
+            accessibleBody.accessibilityFrameInContainerSpace = bounds
+            accessibilityElements = [accessibleBody, button]
+        } else {
+            expandButton?.isHidden = true
+            accessibilityElements = nil
+        }
+    }
+
     func measuredSize(fittingWidth width: CGFloat) -> CGSize {
         guard width.isFinite, width > 1, textStorage.length > 0 else {
             return CGSize(width: max(ceil(width), 0), height: 0)
@@ -245,10 +311,17 @@ final class DynamicTextKitAttributedLabel: UIView {
     private func installTapRecognizer() {
         isUserInteractionEnabled = true
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        recognizer.cancelsTouchesInView = false
         addGestureRecognizer(recognizer)
     }
 
     private func configureTextContainer(size: CGSize) {
+        if let attributedText, onExpand != nil, previewWidth != size.width {
+            previewWidth = size.width
+            let preview = InlineTextExpansion.preview(attributedText, width: size.width, lineLimit: numberOfLines, tint: expansionTint)
+            textStorage.setAttributedString(preview ?? attributedText)
+            accessibilityLabel = textStorage.string
+        }
         textContainer.size = CGSize(
             width: max(size.width, 0),
             height: max(size.height, 0)
@@ -278,8 +351,9 @@ final class DynamicTextKitAttributedLabel: UIView {
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
         guard recognizer.state == .ended else { return }
-
-        handleTap(at: recognizer.location(in: self))
+        let point = recognizer.location(in: self)
+        if let expandButton, !expandButton.isHidden, expandButton.frame.contains(point) { return }
+        handleTap(at: point)
     }
 
     func handleTap(at point: CGPoint) {

@@ -11,6 +11,7 @@ struct DynamicRichTextView: View {
     let onNonLinkTap: (() -> Void)?
     let usesTextKitLayout: Bool
     let onContentLayoutChange: (() -> Void)?
+    private var onExpand: (() -> Void)? = nil
     private let textInput: DynamicAttributedTextInput
     @Environment(\.openAppURLAction) private var openAppURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -51,7 +52,8 @@ struct DynamicRichTextView: View {
         preferredWidth: CGFloat? = nil,
         onNonLinkTap: (() -> Void)? = nil,
         usesTextKitLayout: Bool = false,
-        onContentLayoutChange: (() -> Void)? = nil
+        onContentLayoutChange: (() -> Void)? = nil,
+        onExpand: (() -> Void)? = nil
     ) {
         self.segments = input.segments
         self.font = input.baseFont
@@ -63,6 +65,7 @@ struct DynamicRichTextView: View {
         self.usesTextKitLayout = usesTextKitLayout
         self.onContentLayoutChange = onContentLayoutChange
         self.textInput = input
+        self.onExpand = onExpand
     }
 
     var body: some View {
@@ -78,7 +81,8 @@ struct DynamicRichTextView: View {
                     openAppURL?(url)
                 },
                 onNonLinkTap: onNonLinkTap,
-                onContentLayoutChange: onContentLayoutChange
+                onContentLayoutChange: onContentLayoutChange,
+                onExpand: onExpand
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         }

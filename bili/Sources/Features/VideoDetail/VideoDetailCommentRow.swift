@@ -7,6 +7,7 @@ struct CommentRow: View, Equatable {
     let style: CommentSectionStyle
     let showReplies: () -> Void
     let replyToComment: ((Comment) -> Void)?
+    let onExpandText: (() -> Void)?
 
     private var comment: Comment { item.comment }
     private var display: VideoDetailCommentDisplayModel { item.display }
@@ -15,12 +16,14 @@ struct CommentRow: View, Equatable {
         item: VideoDetailCommentDisplayItem,
         style: CommentSectionStyle,
         showReplies: @escaping () -> Void,
-        replyToComment: ((Comment) -> Void)? = nil
+        replyToComment: ((Comment) -> Void)? = nil,
+        onExpandText: (() -> Void)? = nil
     ) {
         self.item = item
         self.style = style
         self.showReplies = showReplies
         self.replyToComment = replyToComment
+        self.onExpandText = onExpandText
     }
 
     static func == (lhs: CommentRow, rhs: CommentRow) -> Bool {
@@ -28,6 +31,7 @@ struct CommentRow: View, Equatable {
             && lhs.style == rhs.style
             && lhs.longPressCommentActionsEnabled == rhs.longPressCommentActionsEnabled
             && (lhs.replyToComment != nil) == (rhs.replyToComment != nil)
+            && (lhs.onExpandText != nil) == (rhs.onExpandText != nil)
     }
 
     var body: some View {
@@ -49,7 +53,8 @@ struct CommentRow: View, Equatable {
                 textColor: .primary,
                 emoteSize: 21,
                 typographyRole: .commentBody,
-                onNonLinkTap: commentTapAction
+                onNonLinkTap: commentTapAction,
+                onExpand: onExpandText
             )
                 .fixedSize(horizontal: false, vertical: true)
         } media: {

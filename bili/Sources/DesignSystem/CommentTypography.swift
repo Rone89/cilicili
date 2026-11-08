@@ -15,6 +15,7 @@ struct CommentBodyText: View {
     var showsLinkButtons: Bool = true
     var typographyRole: AppTypography.Role? = .commentBody
     var onNonLinkTap: (() -> Void)? = nil
+    var onExpand: (() -> Void)? = nil
 
     var body: some View {
         BiliEmoteText(
@@ -22,7 +23,7 @@ struct CommentBodyText: View {
             leadingName: leadingName, leadingNameColor: leadingNameColor,
             lineSpacing: CommentTypography.bodyLineSpacing,
             showsLinkButtons: showsLinkButtons, typographyRole: typographyRole,
-            onNonLinkTap: onNonLinkTap
+            onNonLinkTap: onNonLinkTap, onExpand: onExpand
         )
     }
 }

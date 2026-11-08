@@ -19,6 +19,7 @@ struct BiliEmoteText: View {
     let typographyRole: AppTypography.Role?
     let leadingNameTypographyRole: AppTypography.Role?
     let onNonLinkTap: (() -> Void)?
+    let onExpand: (() -> Void)?
 
     @Environment(\.lineLimit) private var lineLimit
     @Environment(\.openAppURLAction) private var openAppURL
@@ -37,7 +38,8 @@ struct BiliEmoteText: View {
         fillsAvailableWidth: Bool = true,
         typographyRole: AppTypography.Role? = nil,
         leadingNameTypographyRole: AppTypography.Role? = nil,
-        onNonLinkTap: (() -> Void)? = nil
+        onNonLinkTap: (() -> Void)? = nil,
+        onExpand: (() -> Void)? = nil
     ) {
         self.content = content
         self.plainText = plainText
@@ -53,6 +55,7 @@ struct BiliEmoteText: View {
         self.typographyRole = typographyRole
         self.leadingNameTypographyRole = leadingNameTypographyRole
         self.onNonLinkTap = onNonLinkTap
+        self.onExpand = onExpand
     }
 
     var body: some View {
@@ -68,13 +71,14 @@ struct BiliEmoteText: View {
                 leadingNameColor: UIColor(leadingNameColor),
                 leadingNameFont: resolvedLeadingNameUIFont,
                 emoteSize: resolvedEmoteSize,
-                lineLimit: lineLimit,
+                lineLimit: onExpand == nil ? lineLimit : (lineLimit ?? 6),
                 lineSpacing: lineSpacing
             ),
             onURLTap: { url in
                 openAppURL?(url)
             },
-            onNonLinkTap: onNonLinkTap
+            onNonLinkTap: onNonLinkTap,
+            onExpand: onExpand
         )
         .frame(maxWidth: fillsAvailableWidth ? .infinity : nil, alignment: .leading)
     }
@@ -153,6 +157,7 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     let input: BiliEmoteRenderInput
     let onURLTap: (URL) -> Void
     let onNonLinkTap: (() -> Void)?
+    var onExpand: (() -> Void)? = nil
     private static let sharedRenderCache = BiliEmoteRenderCache()
 
     static func clearRenderCache() {
@@ -176,7 +181,13 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
     }
 
     func updateUIView(_ label: BiliInteractiveAttributedLabel, context: Context) {
-        label.onLinkTap = onURLTap
+        label.onLinkTap = { url in
+            if url == InlineTextExpansion.link, let onExpand {
+                onExpand()
+            } else {
+                onURLTap(url)
+            }
+        }
         label.onNonLinkTap = onNonLinkTap
         label.numberOfLines = input.lineLimit ?? 0
         label.lineBreakMode = input.lineBreakMode
@@ -189,6 +200,9 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
             label.attributedText = renderResult.attributedString
             label.invalidateIntrinsicContentSize()
             context.coordinator.appliedRenderKey = renderResult.key
+        }
+        if onExpand == nil {
+            label.accessibilityCustomActions = nil
         }
 
         context.coordinator.currentInput = input
@@ -207,6 +221,20 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
 
         context.coordinator.lastMeasuredWidth = width
         uiView.preferredMaxLayoutWidth = width
+        if let onExpand, let limit = input.lineLimit {
+            let source = context.coordinator.render(input)
+            let preview = context.coordinator.inlinePreview(source, width: width, limit: limit, tint: input.accentColor)
+            let displayText = preview ?? source.attributedString
+            if uiView.attributedText != displayText {
+                uiView.attributedText = displayText
+            }
+            uiView.accessibilityCustomActions = preview == nil ? nil : [
+                UIAccessibilityCustomAction(name: InlineTextExpansion.title) { _ in
+                    onExpand()
+                    return true
+                }
+            ]
+        }
         let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(width: width, height: ceil(size.height))
     }
@@ -218,6 +246,17 @@ private struct BiliAttributedEmoteLabel: UIViewRepresentable {
         private var cachedInputKey: String?
         private var cachedRenderResult: BiliEmoteRenderResult?
         private var imageTasks: [URL: Task<Void, Never>] = [:]
+        private var previewKey: String?
+        private var preview: NSAttributedString?
+
+        func inlinePreview(_ source: BiliEmoteRenderResult, width: CGFloat, limit: Int, tint: UIColor) -> NSAttributedString? {
+            let key = source.key + "|\(width)"
+            if previewKey != key {
+                previewKey = key
+                preview = InlineTextExpansion.preview(source.attributedString, width: width, lineLimit: limit, tint: tint)
+            }
+            return preview
+        }
 
         func measuredWidth(proposedWidth: CGFloat?, boundsWidth: CGFloat) -> CGFloat? {
             if let proposedWidth, proposedWidth.isFinite, proposedWidth > 1 {

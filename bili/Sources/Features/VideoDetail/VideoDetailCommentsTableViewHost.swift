@@ -261,6 +261,7 @@ extension VideoDetailCommentsTableViewHost {
         private var refreshScheduled = false
         private var layoutAdjustmentScheduled = false
         private var itemsByID: [Int: VideoDetailCommentDisplayItem] = [:]
+        private var expandedCommentIDs: Set<Int> = []
         private var lastHeaderSignature: HeaderSignature?
         private var lastFooterSignature: FooterSignature?
         private var lastSelectedSort: CommentSort?
@@ -406,6 +407,7 @@ extension VideoDetailCommentsTableViewHost {
             )
 
             if storeChanged {
+                expandedCommentIDs.removeAll()
                 if Self.logsHeightDebug {
                     NSLog("CILICILI-HEIGHT clearAll storeChanged")
                 }
@@ -734,7 +736,10 @@ extension VideoDetailCommentsTableViewHost {
                             item: displayItem,
                             style: props.style,
                             showReplies: { actions.showReplies(displayItem.comment) },
-                            replyToComment: actions.replyToComment
+                            replyToComment: actions.replyToComment,
+                            onExpandText: expandedCommentIDs.contains(id) ? nil : { [weak self] in
+                                self?.expandCommentText(id)
+                            }
                         )
                         .equatable()
                         .padding(.horizontal, props.horizontalPadding)
@@ -755,6 +760,18 @@ extension VideoDetailCommentsTableViewHost {
                     loadMore: props.actions.loadMoreCommentsAction
                 )
             }
+        }
+
+        private func expandCommentText(_ id: Int) {
+            let item = Item.comment(id)
+            guard let dataSource, let tableView, dataSource.indexPath(for: item) != nil,
+                  expandedCommentIDs.insert(id).inserted else { return }
+            cachedRowHeights[item] = nil
+            seededHeights[item] = nil
+            seedMissingItems(items: [item], width: tableView.bounds.width)
+            var snapshot = dataSource.snapshot()
+            snapshot.reloadItems([item])
+            dataSource.apply(snapshot, animatingDifferences: false)
         }
 
         /// UIKit 宿主不会继承外层 SwiftUI 环境，

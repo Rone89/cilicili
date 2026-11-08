@@ -11,6 +11,7 @@ struct DynamicCommentText: View {
     let leadingNameColor: Color
     let typographyRole: AppTypography.Role?
     let onNonLinkTap: (() -> Void)?
+    let onExpand: (() -> Void)?
 
     init(
         content: CommentContent?,
@@ -20,7 +21,8 @@ struct DynamicCommentText: View {
         leadingName: String? = nil,
         leadingNameColor: Color = .pink,
         typographyRole: AppTypography.Role? = nil,
-        onNonLinkTap: (() -> Void)? = nil
+        onNonLinkTap: (() -> Void)? = nil,
+        onExpand: (() -> Void)? = nil
     ) {
         self.content = content
         self.font = font
@@ -30,6 +32,7 @@ struct DynamicCommentText: View {
         self.leadingNameColor = leadingNameColor
         self.typographyRole = typographyRole
         self.onNonLinkTap = onNonLinkTap
+        self.onExpand = onExpand
     }
 
     var body: some View {
@@ -42,7 +45,8 @@ struct DynamicCommentText: View {
             leadingNameColor: leadingNameColor,
             lineSpacing: CommentTypography.bodyLineSpacing,
             typographyRole: typographyRole,
-            onNonLinkTap: onNonLinkTap
+            onNonLinkTap: onNonLinkTap,
+            onExpand: onExpand
         )
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
