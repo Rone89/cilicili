@@ -486,3 +486,16 @@
 - 验证（截图核对，临时用例已删除）：图标为圆环开口朝下 + Wi-Fi 居中 + 四点，中心距两边约 55pt。
 - 测试：单测 11/11、字幕 UI 用例通过。
 - 交付：1.1.2 / Build 129；未签名 IPA SHA-256 `dc2ccd4cb46555fb8f2f394b8bf31188c7f338c9c8cf6818dca5ce5647a34a1c`；18pm 重签安装 RCe2027（databaseSequenceNumber 2832）成功（首次安装连接中断，重试成功）。
+
+## 2026-11-08 横屏状态接入 status-trio 样式与真实数据 / Build 130
+
+- 用户提供 lingyired/status-trio（macOS 版 Duo 三合一状态图标），要求参照样式并真实接入电量/Wi-Fi/蜂窝。
+- 读取其 `StatusIconGeometry.swift` / `status-menubar.svg`：画布 120×120；电池环半径 51.5、描边 8、起点 148.69°、扫过 242.62°（开口朝下），顶部可用虚线留出数值/闪电缺口；Wi-Fi 外层弧 r=31(227.35°→312.65°)、中层 r=18.5(227.5°→312.5°)、中心点；底部四点 r=5.5，坐标 (33,104.2)/(50.5,111.2)/(68.5,111.7)/(86,105.8)。
+- 新增 `VideoDetailFullscreenStatusTrioIcon.swift`：自绘 Canvas 按上述几何等比缩放；数据源：
+  - 电量/充电：`UIDevice.batteryLevel` / `batteryState`（通知驱动）；充电绿色、≤20% 红色。
+  - Wi-Fi：`NWPathMonitor` 判定是否 Wi-Fi 承载流量；连接显示两条弧，无互联网一条弧且降透明度，未连接只留中心点。
+  - 蜂窝：`CTTelephonyNetworkInfo.serviceCurrentRadioAccessTechnology` 映射制式档位（5G=4、LTE=3、3G=2、2G=1），15 秒轮询兜底；底部四点按档位点亮。
+- 明确限制（已告知用户）：iOS 公开 API 无法获取 Wi-Fi 信号强度与蜂窝信号格数，因此 Wi-Fi 为两态、底部四点是「制式档位」而非信号强度。
+- 位置沿用 32pt + 屏幕右上圆角弧心，随控制条淡入淡出；移除上一版 Figma Levels 手绘图标。
+- 验证：截图核对环/Wi-Fi 弧/四点渲染正确（模拟器无电量与蜂窝数据，呈现轨道与暗点）；单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 130；未签名 IPA SHA-256 `2fcb529fcd04f5adaf5a4f758e943f7bc2ce053816dd7bacf891bf65c97b8843`；18pm 重签安装 RCe2027（databaseSequenceNumber 2848）并启动。
