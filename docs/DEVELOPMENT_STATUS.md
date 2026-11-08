@@ -615,3 +615,11 @@
 - 待真机验收：播放器收起态下最热↔最新往返，header 保持在收起播放器下方原位、无空洞；若仍错位，需要真机截图与操作序列再取证（模拟器 DEBUG 已无法复现）。
 - 安装状态：未签名 IPA 已出包（`build/logs/release-unsigned-ipa.log`），重签校验通过，但无线安装 RCe2027 两次 `CoreDeviceError 4016`（设备 `unavailable`，锁屏/无线调试断开），**Build 140 尚未装上真机**，待设备解锁在线后重跑 sign-install 命令。
 - 安装补记：设备恢复在线后重跑安装成功——`app.bamboo2779.brussels691` 1.1.2 / Build 140，databaseSequenceNumber 2944；重签后可执行文件 SHA-256 `b2842c0e979f90069fdcf2617ca94ddd48cc8a8644ff19eefa641f61cd81caa0`。真机验收:播放器收起态下最热↔最新往返,header 保持在收起播放器下方原位、无空洞。
+
+## 2026-11-09 排序错位真机取证 / Build 141（诊断版）
+
+- Build 140 真机验收反馈：刚进评论区未滚屏、第一次最热→最新即错位。真机截图测量：header 位于 ~527pt（播放器可视区下方 ~217pt），header 与首条评论间又有 ~110pt+ 空洞——与模拟器（header 紧贴播放器下方 ~330pt）完全不同。
+- 新分析：该视频（老猫鱼不吃鱼）疑似非 16:9，`expandedPlayerHeight` 对 `usesFullWidthAspectRatioVideo`（aspect=h/w ∈ [1.0,16/9)）返回 width/aspect 的**加高播放器 frame**（例 aspect 1.15 → 383pt），视频在 frame 内 letterbox，黑色区域属播放器本身——header 位置可能自洽；真正的异常是 header→首评论间的空洞，疑似结构行（header 行）自适配异常高度。模拟器 DEBUG 无法复现，需要真机几何数据。
+- 诊断埋点：`commentsRefresh` 几何从 `#if DEBUG diagnostic()` 改为 `PlayerMetricsLog.record(.manifestStage, metricsID: "comments")`（Release 进播放诊断报告，DEBUG 写诊断文件两头痛覆盖），另在 `willDisplay` 对非评论行记录 `commentsRow <item> height=`。
+- 交付：1.1.2 / Build 141（6 处配置递增）；18pm 重签安装 RCe2027（databaseSequenceNumber 2952）成功。取证步骤：复现错位后 我的→开发者与诊断→播放与网络诊断 取报告，搜 `commentsRefresh` / `commentsRow`。
+- 分支 `main`，本诊断版独立提交，不构成修复。

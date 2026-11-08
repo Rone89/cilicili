@@ -483,16 +483,19 @@ extension VideoDetailCommentsTableViewHost {
             itemsByID = newItemsByID
 
             let items = makeItems(store: store, itemsByID: newItemsByID)
-            #if DEBUG
-            // 仅调试构建记录快照/偏移，便于排查行高与滚动问题。
-            PlayerMetricsLog.diagnostic(
-                "commentsRefresh items=\(items.count)"
+            // 快照/偏移几何走 record()：DEBUG 写诊断文件，Release 进播放诊断
+            // 报告，真机排查行高与滚动问题两头都能取到。
+            PlayerMetricsLog.record(
+                .manifestStage,
+                metricsID: "comments",
+                message: "commentsRefresh sort=\(store.selectedSort.rawValue)"
+                    + " items=\(items.count)"
                     + " offset=\(Int(tableView?.contentOffset.y ?? 0))"
                     + " size=\(Int(tableView?.contentSize.height ?? 0))"
                     + " bounds=\(Int(tableView?.bounds.height ?? 0))"
                     + " insetTop=\(Int(tableView?.contentInset.top ?? 0))"
+                    + " width=\(Int(tableView?.bounds.width ?? 0))"
             )
-            #endif
 
             // 新行先离屏量好估算种子（快照刷新在布局路径之外），批量更新时
             // UIKit 的偏移数学全程使用精确值，不会在翻页时扯动可见内容。
@@ -943,6 +946,17 @@ extension VideoDetailCommentsTableViewHost {
             forRowAt indexPath: IndexPath
         ) {
             guard let item = dataSource?.itemIdentifier(for: indexPath) else { return }
+            if case .comment = item {
+                // 评论行走下方冻结/拒绝逻辑,不逐行刷诊断。
+            } else {
+                // 结构行(头/尾/骨架等)每次快照都重新自适配,真机排查错位时
+                // 需要知道它们的实际显示高度。
+                PlayerMetricsLog.record(
+                    .manifestStage,
+                    metricsID: "comments",
+                    message: "commentsRow \(String(describing: item)) height=\(cell.frame.height)"
+                )
+            }
             if case .footer = item {
                 // footer 即将显示 = 到达列表末尾，触发下一页（PiliPod 的 footer
                 // onAppear 同款触发点）。守卫在 requestLoadMorePage 内。
