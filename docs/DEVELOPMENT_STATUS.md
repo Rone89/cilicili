@@ -513,3 +513,11 @@
 - 明确风险：私有 API 仅供自签名侧载，上架 App Store 违规；系统升级可能失效，失效时自动回退公开信息（连接态/制式）。
 - 验证：模拟器截图确认 46pt 布局与 Wi-Fi 弧、四点渲染；单测 11/11、字幕 UI 用例通过；真机私有探针实际返回值需用户在设备上确认（日志 `cc.bili/SignalProbe`）。
 - 交付：1.1.2 / Build 131；未签名 IPA SHA-256 `fd21ce73b4448f8596fb63a743dec41f5ecf4793fffc54f086c450f089685240`；18pm 重签安装 RCe2027（databaseSequenceNumber 2856）并启动。
+
+## 2026-11-08 修复横屏全屏闪退：关闭私有探针 / Build 132
+
+- 用户反馈 Build 131 进入横屏全屏即闪退。定位到 Build 131 新增的私有信号探针（CTServerConnectionCreate / `_CTServerConnectionGetSignalStrength` / MobileWiFi 的 dlsym 调用）——系统拦截或函数签名不匹配会在调用时崩溃。
+- 修复：私有探针**默认关闭**（`--enable-private-signal-probe` 启动参数才启用），恢复为公开信息：Wi-Fi 连接态 + 蜂窝制式档位；底部四点仍按制式点亮。探针代码保留以便后续单独验证。
+- 回归：模拟器旋转横屏用例通过（进入横屏全屏 5 秒 + 唤出控件，应用保持前台且控件可交互）。
+- 交付：1.1.2 / Build 132；未签名 IPA SHA-256 `b4ef0a3a4ccf31175861e4cda69c47dd6e0f6293d7d1ff2e6a8e9c6c2423ed39`；18pm 重签安装 RCe2027（databaseSequenceNumber 2864）并启动。
+- 待办：真机稳定性确认；若要继续做真实信号格，需带 `--enable-private-signal-probe` 启动并抓取崩溃日志，逐个符号验证签名后再恢复。
