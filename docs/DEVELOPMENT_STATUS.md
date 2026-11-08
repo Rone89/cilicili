@@ -1,6 +1,6 @@
 # 开发接续状态
 
-更新时间：2026-11-08（Asia/Shanghai）。每轮工作结束后更新本文的完成内容、待办、测试结论、分支和提交号。
+更新于 2026-11-09（Asia/Shanghai）。当前接续进度见文末，前部保留早期工作树与测试记录。
 
 ## 分支与工作区
 
@@ -623,3 +623,13 @@
 - 诊断埋点：`commentsRefresh` 几何从 `#if DEBUG diagnostic()` 改为 `PlayerMetricsLog.record(.manifestStage, metricsID: "comments")`（Release 进播放诊断报告，DEBUG 写诊断文件两头痛覆盖），另在 `willDisplay` 对非评论行记录 `commentsRow <item> height=`。
 - 交付：1.1.2 / Build 141（6 处配置递增）；18pm 重签安装 RCe2027（databaseSequenceNumber 2952）成功。取证步骤：复现错位后 我的→开发者与诊断→播放与网络诊断 取报告，搜 `commentsRefresh` / `commentsRow`。
 - 分支 `main`，本诊断版独立提交，不构成修复。
+
+## 2026-11-09 评论排序表头异常增高 / Build 142
+
+- RCe2027 上 Build 141 的诊断日志显示，截图对应视频 `BV1JvpC6mEv7` 在 00:18:51、00:24:37 两次复现。切换前表头 61pt，最热→最新的骨架快照中表头升到 169.67pt。两次均为 `contentOffset.y = -248`、`insetTop = 248`、表格宽度 440pt，虚拟偏移为 0。截图的 1920×1080 和 248pt 顶部 inset 也符合 16:9 展开态。
+- `refreshSnapshot` 离屏测高后立即逐出结构行种子，表头在重载时交给 UIKit 自适配，`willDisplay` 随后又会冻结异常高度。真机空白量与表头多出的约 109pt 一致。另一个独立问题是 Build 140 在整表重载之后才读取偏移，此时偏移可能已被 UIKit 修正。
+- GPT-6 Luna（极高推理）修改评论表协调器。快照应用前按当前宽度及表头内容测量，保留该高度给实际行高和估算行高使用。宽度变化先重测再 reload，排序切换也改为 reload 前取锚。诊断归入当前视频 BVID。
+- Xcode 直接签名遇到依赖不支持 provisioning profile 及 ClassKit 权限类型校验。通过共享 Xcode-27 缓存构建本地 Release `.app`，用 Build 141 相同的授权描述文件和完整权限重签。版本 `1.1.2 (142)` 及 `codesign --verify --deep --strict` 校验通过。证据 `build/logs/build142-device-unsigned-build.log`。
+- Xcode 27.1、iPhone 18 Pro Max / iOS 27.0 模拟器、共享 Xcode-27 缓存串行运行。排序切换、分页、全屏往返和播放器收起四项 UI 回归全部通过。排序用例延迟最新响应，分别断言加载中、最新返回及切回最热后的表头位置、可点击性和首条评论间距。加载骨架期间日志记录表头 61pt。证据 `build/logs/build142-comments-ui.xcresult`、`build/logs/build142-sort-geometry.log`。四个用例启动时都出现 SwiftUI 视图更新期间发布状态的警告，未在本轮定位其调用栈。
+- 已原位安装到 RCe2027（iOS 27.3），设备应用列表核验 `1.1.2 (142)`，启动成功（PID 53624）。证据 `build/logs/build142-device-apps-after.log`。待在该机重进 `BV1JvpC6mEv7`，不滚动直接最热→最新→最热，确认无空白，再复验播放器收起态。
+- 本地 `main` 从 `756a2a9` 接续，修复与回归提交 `d9fa16f`，本轮接续记录另行提交。
