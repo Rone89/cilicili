@@ -592,4 +592,4 @@
 - 验证：`DynamicFeedTabsUITests` 6/6 通过（默认五项与顺序、自定义顺序与隐藏、单项无导航栏且内容上移、单项推入二级页仍有导航栏、设置页开关与最后一项禁用、原生编辑模式），规定 iPhone 18 Pro Max / iOS 27.0 模拟器与共享 Xcode-27 缓存串行执行；单元测试本轮无逻辑改动未重跑（Build 137 结果 9/9）。证据 `build/logs/build138-dyntabs-ui.xcresult`。
 - 交付：1.1.2 / Build 138（6 处配置递增）；未签名 IPA SHA-256 `ef874316f7ba1f8a317ef520ce2006d322778ae0ea40e903b7f693368e56fc13`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2920）并启动；重签后可执行文件 SHA-256 `6011309792f029a704798d70a983e19bdf212e7a920a0c6a66291bf316a8a31c`。记录 `build/logs/build138-device-build-info.json`、`build138-device-apps-after.txt`。
 - 待真机验收：仅保留一个选项时动态页顶部无栏无标题、内容顶到状态栏下方；推入动态详情/视频详情正常返回；多选项时顶部分段照旧。
-- 分支 `main`；本轮源码与文档提交见下条。
+- 分支 `main`，基线 `f8b8a04`；源码与本文档已提交 `37d00e2`（工作区干净，未推送远端，未合并 PR）。
