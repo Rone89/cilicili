@@ -475,3 +475,14 @@
 - 验证（截图核对，临时用例已删除）：横屏右上角为圆形玻璃胶囊、电池图标居中；时间胶囊不变。
 - 测试：单测 11/11、字幕 UI 用例通过。
 - 交付：1.1.2 / Build 128；未签名 IPA SHA-256 `6bea7a45b355232f5d7d2bbdf22d5cc27ed98919b30565ea746da4d98d146280`；18pm 重签安装 RCe2027（databaseSequenceNumber 2816）成功（首次安装遇设备断连，重试成功）。
+
+## 2026-11-08 横屏状态改为 iPhone Duo 组合图标并定位圆角弧心 / Build 129
+
+- 用户指出此前的电量胶囊不是目标：要的是 Figma「iPhone Duo」里的**整组**信号/电量图标（圆环 + Wi-Fi + 四点），且位置应在屏幕右上圆角弧心。
+- Figma 参数（REST API，节点 `12884:7912` Horizontal / `12884:7871` Vertical）：Levels 46×46，圆环 40.67、黑色描边 3 INSIDE、arc 150°→390°（240° 弧、开口朝下、圆头端点）；Wi-Fi 矢量 18×13.33；蜂窝为 4 个 4×4 圆点、间距 2.33。
+- 新组件 `VideoDetailFullscreenStatusLevelsIcon`：按上述比例绘制（圆环 trim 2/3 + 150° 旋转、SF Symbol wifi、四点），默认 32pt——屏幕圆角半径 55pt 时弧心到圆角边缘仅约 16pt，46pt 会被屏幕圆角裁切。
+- 定位：`.overlay(alignment: .topTrailing)` + 39pt 内边距，使图标中心落在 (width-55, 55) 即圆角弧心；随控制条淡入淡出、不参与命中。
+- 移除 `VideoDetailFullscreenBatteryControl`；恢复误删的 `surfaceOnlyLandscapeGlassGroup` 扩展（纯色分组）。
+- 验证（截图核对，临时用例已删除）：图标为圆环开口朝下 + Wi-Fi 居中 + 四点，中心距两边约 55pt。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 129；未签名 IPA SHA-256 `dc2ccd4cb46555fb8f2f394b8bf31188c7f338c9c8cf6818dca5ce5647a34a1c`；18pm 重签安装 RCe2027（databaseSequenceNumber 2832）成功（首次安装连接中断，重试成功）。
