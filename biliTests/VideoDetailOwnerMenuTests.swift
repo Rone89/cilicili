@@ -16,14 +16,21 @@ final class VideoDetailOwnerMenuTests: XCTestCase {
         }
     }
 
-    func testFiveColumnsFitNarrowAndWideContent() {
-        let widths: [CGFloat] = [220, 320, 390, 768]
+    func testActionStripUsesCompactLeftAlignedGeometryWithoutOverflow() {
+        let widths: [CGFloat] = [160, 220, 226, 240, 320, 390, 768]
         for width in widths {
             let layout = VideoDetailActionStripLayout(contentWidth: width)
             XCTAssertEqual(layout.avatarColumnWidth, layout.columnWidth)
-            XCTAssertEqual(layout.columnWidth * 5 + layout.columnSpacing * 4, width, accuracy: 0.001)
+            XCTAssertLessThanOrEqual(layout.contentGroupWidth, width + 0.001)
             XCTAssertGreaterThan(layout.columnWidth, 0)
-            XCTAssertGreaterThanOrEqual(layout.columnSpacing, 0)
+            XCTAssertGreaterThanOrEqual(layout.avatarActionSpacing, layout.actionSpacing)
+            XCTAssertLessThanOrEqual(layout.avatarActionSpacing, 12)
+            XCTAssertLessThanOrEqual(layout.actionSpacing, 6)
         }
+
+        let wideLayout = VideoDetailActionStripLayout(contentWidth: 390)
+        XCTAssertEqual(wideLayout.avatarActionSpacing, 12)
+        XCTAssertEqual(wideLayout.actionSpacing, 6)
+        XCTAssertLessThan(wideLayout.contentGroupWidth, wideLayout.contentWidth)
     }
 }

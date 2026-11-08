@@ -18,9 +18,10 @@ private struct InitialVideoDetailActionStrip: View {
     let contentWidth: CGFloat
 
     var body: some View {
-        HStack(spacing: layout.columnSpacing) {
+        HStack(spacing: layout.actionSpacing) {
             avatarPlaceholder
                 .frame(width: layout.avatarColumnWidth, height: layout.rowHeight)
+                .padding(.trailing, layout.avatarActionSpacing - layout.actionSpacing)
 
             ForEach(0..<4, id: \.self) { _ in
                 iconPlaceholder
@@ -30,7 +31,7 @@ private struct InitialVideoDetailActionStrip: View {
         .frame(
             width: contentWidth,
             height: layout.rowHeight,
-            alignment: .center
+            alignment: .leading
         )
         .accessibilityHidden(true)
     }

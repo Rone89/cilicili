@@ -13,7 +13,7 @@ struct VideoDetailActionStripButtonRow: View {
     let usesPlainStyle: Bool
 
     var body: some View {
-        HStack(spacing: layout.columnSpacing) {
+        HStack(spacing: layout.actionSpacing) {
             Group {
                 if let owner = model.owner, owner.mid > 0 {
                     VideoDetailActionStripOwnerMenu(
@@ -35,6 +35,7 @@ struct VideoDetailActionStripButtonRow: View {
                 }
             }
             .frame(width: layout.avatarColumnWidth, height: layout.rowHeight)
+            .padding(.trailing, layout.avatarActionSpacing - layout.actionSpacing)
 
             VideoDetailActionStripIconButton(
                 accessibilityTitle: "点赞",
@@ -78,6 +79,7 @@ struct VideoDetailActionStripButtonRow: View {
             )
             .frame(width: layout.columnWidth, height: layout.rowHeight)
         }
+        .frame(width: layout.contentWidth, alignment: .leading)
     }
 
     private func iconForegroundStyle(isSelected: Bool) -> Color {

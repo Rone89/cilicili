@@ -756,12 +756,26 @@ final class VideoDetailFlowUITests: XCTestCase {
 
     @MainActor
     func testCoinSheetExplainsAutomaticLikeBeforeSubmission() {
-        let app = launchVideoDetail(waitForDetailMarker: false)
+        let app = launchVideoDetail()
         let coin = app.buttons.matching(NSPredicate(format: "label == %@", "投币")).firstMatch
         XCTAssertTrue(coin.waitForExistence(timeout: 10), app.debugDescription)
-        for _ in 0..<3 where !coin.isHittable { app.swipeDown() }
-        XCTAssertTrue(coin.isHittable, app.debugDescription)
-        coin.tap()
+        let owner = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "UP 主菜单")).firstMatch
+        let like = app.buttons["点赞"].firstMatch
+        let favorite = app.buttons["收藏"].firstMatch
+        let more = app.buttons["更多视频操作"].firstMatch
+        XCTAssertTrue(owner.exists && like.exists && favorite.exists && more.exists)
+        let actionSpacing = coin.frame.midX - like.frame.midX
+        XCTAssertGreaterThan(like.frame.midX - owner.frame.midX, actionSpacing)
+        XCTAssertEqual(favorite.frame.midX - coin.frame.midX, actionSpacing, accuracy: 1)
+        XCTAssertEqual(more.frame.midX - favorite.frame.midX, actionSpacing, accuracy: 1)
+        XCTAssertLessThan(more.frame.maxX, app.windows.firstMatch.frame.maxX - 70)
+        let actionStrip = XCTAttachment(screenshot: app.screenshot())
+        actionStrip.name = "Compact video action strip"
+        actionStrip.lifetime = .keepAlways
+        add(actionStrip)
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: coin.frame.midX, dy: coin.frame.midY))
+            .tap()
         let notice = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "投币时同时点赞")).firstMatch
         XCTAssertTrue(notice.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["投 1 枚"].waitForExistence(timeout: 5))
