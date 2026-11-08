@@ -614,3 +614,4 @@
 - 交付：1.1.2 / Build 140（6 处配置递增）。
 - 待真机验收：播放器收起态下最热↔最新往返，header 保持在收起播放器下方原位、无空洞；若仍错位，需要真机截图与操作序列再取证（模拟器 DEBUG 已无法复现）。
 - 安装状态：未签名 IPA 已出包（`build/logs/release-unsigned-ipa.log`），重签校验通过，但无线安装 RCe2027 两次 `CoreDeviceError 4016`（设备 `unavailable`，锁屏/无线调试断开），**Build 140 尚未装上真机**，待设备解锁在线后重跑 sign-install 命令。
+- 安装补记：设备恢复在线后重跑安装成功——`app.bamboo2779.brussels691` 1.1.2 / Build 140，databaseSequenceNumber 2944；重签后可执行文件 SHA-256 `b2842c0e979f90069fdcf2617ca94ddd48cc8a8644ff19eefa641f61cd81caa0`。真机验收:播放器收起态下最热↔最新往返,header 保持在收起播放器下方原位、无空洞。
