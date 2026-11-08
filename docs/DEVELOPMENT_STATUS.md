@@ -561,3 +561,13 @@
 - 截图对比：子页卡片与一级页的宽度、圆角、底色、间距一致。
 - 测试：单测 11/11、字幕 UI 用例通过。
 - 交付：1.1.2 / Build 135；未签名 IPA SHA-256 `1f733155c24723e6e58a9739cd680e385ab8a2aabd0d80f63eea8a86eeede8b4`；18pm 重签安装 RCe2027（databaseSequenceNumber 2896）并启动。
+
+## 2026-11-08 本地 main 构建安装 / Build 136
+
+- 用户要求把本地 `main` 编译安装到 RCe2027。`main` HEAD `45caca5`（版本递增提交），源码来自合并提交 `1b67bad`：并入字幕功能分支，同时带回 main 侧评论表旋转修复等 6 个文件（相对分支 tip `4c708c5`）；合并结果与分支 tip 不完全相同，不能把 Build 135 当作本轮 main 的等价包。
+- 安装前设备上未检出 `app.bamboo2779.brussels691`（应用列表无该包），本轮为重新安装，不是原位覆盖更新。描述文件仍为固定 App ID、TeamID G933USCY46，登记设备 `00008160-001C311028434036`，2027-09-22 到期。
+- 构建：共享 Xcode-27 缓存、`Scripts/build-release-unsigned-ipa.sh`；1.1.2 / Build 136，原始 bundle `cc.bili`。未签名 IPA SHA-256 `b2316076bbd3049378f146f5527f9b827954b91db31511a2b64d7868e40638c0`。
+- 签名安装：沿用 18pm 直传参数（未覆盖其他项目占用的 `sign-install-ipa.conf`），`codesign --verify --deep --strict` 通过；安装 `app.bamboo2779.brussels691` 成功，databaseSequenceNumber 2904，设备应用列表核验 1.1.2（136），远程启动成功。签名后可执行文件 SHA-256 `61c6bb81e81032adf5c416f7e8d90b6d1ad128295de71cefd2d69cad8c9c43bf`。
+- 证据：`build/logs/build136-device-build-info.json`、`build/logs/build136-device-apps-after.txt`；未签名构建日志 `build/logs/release-unsigned-ipa.log`。
+- 本轮只做构建、签名、安装与启动核验，未重跑单元／UI 测试或云端回归，不构成功能验收。待真机确认字幕 CC 与选轨、横屏顶部时间/电池图标、横屏设置抽屉、评论区旋转与排序等既有能力；异常再按动作／时刻取日志。
+- 分支 `main`；本轮提交：`45caca5`（Build 136 递增），本文档随后单独提交。
