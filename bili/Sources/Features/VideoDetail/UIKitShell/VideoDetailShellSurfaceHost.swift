@@ -640,9 +640,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         rotationCoordinator.chromeLandscape
     }
 
-    /// 横屏状态胶囊距屏幕安全区边缘的最小间距。
-    private static let statusClockTopInset: CGFloat = 14
-
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
     }
@@ -783,13 +780,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
                         if isAudioOnlyPlayback {
                             persistentMoreControlsButton(contentInsets: videoInsets)
-                        }
-
-                        if showsFullscreenStatusControls {
-                            fullscreenStatusControls
-                                .opacity(playbackControlsVisibility.opacity)
-                                .allowsHitTesting(false)
-                                .zIndex(7.5)
                         }
 
                         if runtimeSettings.playerPerformanceOverlayEnabled {
@@ -1230,8 +1220,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private var fullscreenStatusControls: some View {
-        let safeAreaInsets = fullscreenSafeAreaInsets()
-        return GlassEffectContainer(spacing: 12) {
+        GlassEffectContainer(spacing: 12) {
             HStack(spacing: 12) {
                 VideoDetailFullscreenClockStatus()
                     .frame(height: controlMetrics.controlHeight)
@@ -1244,11 +1233,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     .biliPlayerClearGlass(interactive: false, in: Capsule())
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, max(Self.statusClockTopInset, safeAreaInsets.top))
-        .padding(.leading, 14 + safeAreaInsets.left)
-        .padding(.trailing, 14 + safeAreaInsets.right)
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func visibleVideoInsets(in size: CGSize) -> EdgeInsets {
@@ -1349,7 +1333,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             playbackControlsOpacity: playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
-            topCenterControlsAccessory: nil,
+            topCenterControlsAccessory: showsFullscreenStatusControls
+                ? AnyView(fullscreenStatusControls.allowsHitTesting(false))
+                : nil,
             topTrailingControlsAccessory: nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,

@@ -698,31 +698,37 @@ final class VideoDetailFlowUITests: XCTestCase {
         )
         XCTAssertEqual(XCTWaiter.wait(for: [completedRotation], timeout: 10), .completed)
         XCTAssertFalse(picker.waitForExistence(timeout: 2))
-        let fullscreenTime = app.descendants(matching: .any)
-            .matching(identifier: "video.fullscreen.status.time")
-            .firstMatch
-        let fullscreenBattery = app.descendants(matching: .any)
-            .matching(identifier: "video.fullscreen.status.battery")
-            .firstMatch
-        XCTAssertTrue(fullscreenTime.waitForExistence(timeout: 5))
-        XCTAssertTrue(fullscreenBattery.waitForExistence(timeout: 5))
-        let landscapeFrame = app.windows.firstMatch.frame
-        XCTAssertLessThan(fullscreenTime.frame.midX, landscapeFrame.midX)
-        XCTAssertGreaterThan(fullscreenBattery.frame.midX, landscapeFrame.midX)
-        XCTAssertLessThan(fullscreenTime.frame.minY, landscapeFrame.minY + landscapeFrame.height * 0.25)
-        XCTAssertLessThan(fullscreenBattery.frame.minY, landscapeFrame.minY + landscapeFrame.height * 0.25)
-        XCTAssertEqual(fullscreenTime.frame.midY, fullscreenBattery.frame.midY, accuracy: 2)
-        let landscapeAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        landscapeAttachment.name = "Geometry landscape after fullscreen"
-        landscapeAttachment.lifetime = .keepAlways
-        add(landscapeAttachment)
-        XCTAssertFalse(app.buttons["ui.player.back"].exists)
         if !waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 2) {
             let surface = app.buttons["ui.player.surface"]
             XCTAssertTrue(surface.waitForExistence(timeout: 5))
             surface.tap()
         }
         XCTAssertTrue(waitForVisiblePlayerControl(in: app, { fullscreenControl(in: app) }, timeout: 5))
+        let fullscreenTime = app.descendants(matching: .any)
+            .matching(identifier: "video.fullscreen.status.time")
+            .firstMatch
+        let fullscreenBattery = app.descendants(matching: .any)
+            .matching(identifier: "video.fullscreen.status.battery")
+            .firstMatch
+        let fullscreenProgress = app.descendants(matching: .any)
+            .matching(identifier: "ui.player.progress")
+            .firstMatch
+        XCTAssertTrue(fullscreenTime.waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreenBattery.waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreenProgress.waitForExistence(timeout: 5))
+        let landscapeFrame = app.windows.firstMatch.frame
+        XCTAssertLessThan(fullscreenTime.frame.midX, landscapeFrame.midX)
+        XCTAssertGreaterThan(fullscreenBattery.frame.midX, landscapeFrame.midX)
+        XCTAssertLessThan(fullscreenTime.frame.minY, landscapeFrame.minY + landscapeFrame.height * 0.25)
+        XCTAssertLessThan(fullscreenBattery.frame.minY, landscapeFrame.minY + landscapeFrame.height * 0.25)
+        XCTAssertEqual(fullscreenTime.frame.midY, fullscreenBattery.frame.midY, accuracy: 2)
+        XCTAssertEqual(fullscreenTime.frame.minX, fullscreenProgress.frame.minX, accuracy: 2)
+        XCTAssertEqual(fullscreenBattery.frame.maxX, fullscreenProgress.frame.maxX, accuracy: 2)
+        let landscapeAttachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        landscapeAttachment.name = "Geometry landscape after fullscreen"
+        landscapeAttachment.lifetime = .keepAlways
+        add(landscapeAttachment)
+        XCTAssertFalse(app.buttons["ui.player.back"].exists)
         let landscapeExit = fullscreenControl(in: app)
         tapPlayerControl(landscapeExit, in: app)
         XCUIDevice.shared.orientation = .portrait

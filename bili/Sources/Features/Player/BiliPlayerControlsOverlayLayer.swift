@@ -26,6 +26,8 @@ struct BiliPlayerControlsOverlayLayer: View {
         let leadingInset = max(safeAreaInsets.leading, state.contentInsets.leading)
         let bottomInset = max(safeAreaInsets.bottom, state.contentInsets.bottom)
         let trailingInset = max(safeAreaInsets.trailing, state.contentInsets.trailing)
+        let leadingControlsPadding = horizontalControlsPadding + state.controlsHorizontalInset + leadingInset
+        let trailingControlsPadding = horizontalControlsPadding + state.controlsHorizontalInset + trailingInset
         ZStack(alignment: .bottom) {
             if isEdgeScrimEnabled, state.showsActivePlaybackControls {
                 PlayerControlEdgeScrimLayer(contentInsets: state.contentInsets)
@@ -37,15 +39,17 @@ struct BiliPlayerControlsOverlayLayer: View {
                 topLeadingControlsAccessory
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, topControlsPadding + topInset)
-                    .padding(.leading, horizontalControlsPadding + state.controlsHorizontalInset + leadingInset)
+                    .padding(.leading, leadingControlsPadding)
                     .transition(.opacity)
                     .zIndex(8)
             }
 
-            if state.showsActivePlaybackControls, let topCenterControlsAccessory = state.topCenterControlsAccessory {
+            if let topCenterControlsAccessory = state.topCenterControlsAccessory {
                 topCenterControlsAccessory
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, topControlsPadding + topInset)
+                    .padding(.top, max(topControlsPadding, safeAreaInsets.top))
+                    .padding(.leading, leadingControlsPadding)
+                    .padding(.trailing, trailingControlsPadding)
                     .transition(.opacity)
                     .zIndex(8)
             }
@@ -54,7 +58,7 @@ struct BiliPlayerControlsOverlayLayer: View {
                 topTrailingControlsAccessory
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.top, topControlsPadding + topInset)
-                    .padding(.trailing, horizontalControlsPadding + state.controlsHorizontalInset + trailingInset)
+                    .padding(.trailing, trailingControlsPadding)
                     .transition(.opacity)
                     .zIndex(8)
             }
@@ -62,8 +66,8 @@ struct BiliPlayerControlsOverlayLayer: View {
             if state.showsActivePlaybackControls {
                 playbackControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.leading, horizontalControlsPadding + state.controlsHorizontalInset + leadingInset)
-                    .padding(.trailing, horizontalControlsPadding + state.controlsHorizontalInset + trailingInset)
+                    .padding(.leading, leadingControlsPadding)
+                    .padding(.trailing, trailingControlsPadding)
                     .padding(.bottom, bottomControlsPadding + state.controlsBottomLift + bottomInset)
                     .transition(.opacity)
                     .zIndex(7)
