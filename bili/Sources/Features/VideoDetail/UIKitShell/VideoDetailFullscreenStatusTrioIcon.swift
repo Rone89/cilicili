@@ -12,6 +12,12 @@ import UIKit
 final class VideoDetailPrivateSignalProbe {
     static let shared = VideoDetailPrivateSignalProbe()
 
+    /// 私有探针默认关闭（Build 131 在横屏全屏时闪退，先回退到公开信息）。
+    /// 需要实测时用启动参数 `--enable-private-signal-probe` 打开。
+    private var isEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("--enable-private-signal-probe")
+    }
+
     private let logger = Logger(subsystem: "cc.bili", category: "SignalProbe")
 
     private var ctConnection: UnsafeMutableRawPointer?
@@ -29,6 +35,7 @@ final class VideoDetailPrivateSignalProbe {
 
     /// 返回 0...4 的信号格数；拿不到返回 nil。
     func cellularBars() -> Int? {
+        guard isEnabled else { return nil }
         resolveCellularIfNeeded()
         guard let connection = ctConnection, let strength = ctStrengthFunction else { return nil }
         var raw: Int32 = 0
@@ -79,6 +86,7 @@ final class VideoDetailPrivateSignalProbe {
 
     /// 返回 RSSI（dBm，通常 -30...-90）；拿不到返回 nil。
     func wifiRSSI() -> Int? {
+        guard isEnabled else { return nil }
         resolveWiFiIfNeeded()
         guard let device = wifiDevice,
               let copyNetwork = wifiCopyNetwork,
