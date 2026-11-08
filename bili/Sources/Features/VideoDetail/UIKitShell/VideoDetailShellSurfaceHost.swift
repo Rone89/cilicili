@@ -640,6 +640,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         rotationCoordinator.chromeLandscape
     }
 
+    /// iPhone 屏幕圆角半径（pt）。用于把状态组合图标放到圆角弧心。
+    private static let displayCornerRadius: CGFloat = 55
+    /// 图标 32pt 时，让其中心落在弧心所需的边距（55 - 16）。
+    private static let statusIconInset: CGFloat = 39
+
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
     }
@@ -851,6 +856,15 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(2.55)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if configuration.isFullscreenActive, isLandscape, !isAudioOnlyPlayback {
+                    VideoDetailFullscreenStatusLevelsIcon()
+                        .opacity(playbackControlsVisibility.opacity)
+                        .padding(.top, Self.statusIconInset)
+                        .padding(.trailing, Self.statusIconInset)
+                        .allowsHitTesting(false)
                 }
             }
             .playerOfflineNotice(
@@ -1316,9 +1330,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             topCenterControlsAccessory: showsFullscreenStatusControls
                 ? AnyView(VideoDetailFullscreenClockControl())
                 : nil,
-            topTrailingControlsAccessory: showsFullscreenStatusControls
-                ? AnyView(VideoDetailFullscreenBatteryControl())
-                : nil,
+            topTrailingControlsAccessory: nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,
             controlsHorizontalInset: context.configuration.controlsHorizontalInset,
@@ -3234,81 +3246,56 @@ private struct VideoDetailFullscreenClockControl: View {
     }
 }
 
-private struct VideoDetailFullscreenBatteryControl: View {
-    @State private var batteryLevel: Float = -1
+/// 横屏状态组合图标：圆环（开口朝下）+ Wi-Fi + 四点，对齐 Figma
+/// `Status bar - iPhone Duo` 的 Levels（46×46：环 40.67、描边 3、Wi-Fi 18×13.33、四点 4×4）。
+/// 默认 32pt：弧心到屏幕圆角边缘只有约 16pt，更大尺寸会被圆角裁切。
+private struct VideoDetailFullscreenStatusLevelsIcon: View {
+    var size: CGFloat = 32
+
+    private var scale: CGFloat { size / 46 }
+    private var ringDiameter: CGFloat { 40.666 * scale }
+    private var ringStroke: CGFloat { 3 * scale }
+    private var wifiSize: CGFloat { 18 * scale }
+    private var dotSize: CGFloat { 4 * scale }
+    private var dotSpacing: CGFloat { 2.33 * scale }
+    private var dotsOffsetY: CGFloat { 13 * scale }
 
     var body: some View {
-        Image(systemName: batterySymbolName)
-            .font(.caption.weight(.semibold))
-            .frame(
-                width: PlayerNativeControlMetrics.landscape.controlHeight,
-                height: PlayerNativeControlMetrics.landscape.controlHeight
-            )
-        .biliPlayerClearGlass(
-            interactive: false,
-            in: Capsule(),
-            isEnabled: true
-        )
-        .biliLiquidGlassForeground(shadowOpacity: 0.20)
-        .allowsHitTesting(false)
+        ZStack {
+            // 240° 圆弧，开口朝下（Figma arc 150°→390°）。
+            Circle()
+                .trim(from: 0, to: 2.0 / 3.0)
+                .stroke(
+                    Color.white,
+                    style: StrokeStyle(lineWidth: ringStroke, lineCap: .round)
+                )
+                .rotationEffect(.degrees(150))
+                .frame(width: ringDiameter, height: ringDiameter)
+
+            Image(systemName: "wifi")
+                .font(.system(size: wifiSize * 0.92, weight: .semibold))
+                .foregroundStyle(.white)
+                .offset(y: -1.5 * scale)
+
+            HStack(spacing: dotSpacing) {
+                ForEach(0..<4, id: \.self) { _ in
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: dotSize, height: dotSize)
+                }
+            }
+            .offset(y: dotsOffsetY)
+        }
+        .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("设备电量 \(percentageText)")
-        .onAppear {
-            UIDevice.current.isBatteryMonitoringEnabled = true
-            updateBatteryLevel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
-            updateBatteryLevel()
-        }
-        .onDisappear {
-            UIDevice.current.isBatteryMonitoringEnabled = false
-        }
-    }
-
-    private var percentage: Int? {
-        guard batteryLevel >= 0 else { return nil }
-        return min(max(Int((batteryLevel * 100).rounded()), 0), 100)
-    }
-
-    private var percentageText: String {
-        percentage.map { "\($0)%" } ?? "--%"
-    }
-
-    private var batterySymbolName: String {
-        guard let percentage else { return "battery.0percent" }
-        switch percentage {
-        case 76...:
-            return "battery.100percent"
-        case 51...:
-            return "battery.75percent"
-        case 26...:
-            return "battery.50percent"
-        case 1...:
-            return "battery.25percent"
-        default:
-            return "battery.0percent"
-        }
-    }
-
-    private func updateBatteryLevel() {
-        batteryLevel = UIDevice.current.batteryLevel
+        .accessibilityLabel("信号、Wi-Fi 与电量状态")
     }
 }
 
 private extension View {
-    @ViewBuilder
-    func surfaceOnlyLandscapeGlassPanel<S: Shape>(in shape: S) -> some View {
-        self
-            .background(Color(.systemBackground).opacity(0.22), in: shape)
-            .biliGlassEffect(
-                interactive: false,
-                in: shape
-            )
-    }
-
+    /// 设置抽屉内的分组容器：面板已是纯色，分组不再叠液态玻璃。
     @ViewBuilder
     func surfaceOnlyLandscapeGlassGroup() -> some View {
-        // 面板本身已是纯色抽屉，分组不再叠液态玻璃，避免视频透出导致内容发灰。
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         self
             .background(Color(.secondarySystemGroupedBackground), in: shape)
