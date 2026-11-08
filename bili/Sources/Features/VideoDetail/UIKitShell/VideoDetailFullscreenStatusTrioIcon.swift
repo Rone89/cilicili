@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 import UIKit
 
-/// 横屏顶部状态图标的数据源：只保留真实电量（充电状态）。
+/// 横屏顶部状态栏的数据源：只保留真实电量与充电状态。
 @MainActor
 final class VideoDetailStatusBatteryMonitor: ObservableObject {
     @Published private(set) var batteryLevel: Double?
@@ -47,13 +47,23 @@ final class VideoDetailStatusBatteryMonitor: ObservableObject {
     }
 }
 
-/// 横屏顶部居中的状态图标：status-trio 画布（120×120）的电池环 + 中间时间。
-/// 电池环比例不变；中间不再显示网络信息，底部四点已移除。
-struct VideoDetailFullscreenStatusClockIcon: View {
-    @StateObject private var battery = VideoDetailStatusBatteryMonitor()
-    var size: CGFloat = 68
+struct VideoDetailFullscreenClockStatus: View {
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            let formattedTime = context.date.formatted(date: .omitted, time: .shortened)
+            Text(formattedTime)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .accessibilityLabel("时间，\(formattedTime)")
+                .accessibilityIdentifier("video.fullscreen.status.time")
+        }
+    }
+}
 
-    private var scale: CGFloat { size / 120 }
+struct VideoDetailFullscreenBatteryStatus: View {
+    @StateObject private var battery = VideoDetailStatusBatteryMonitor()
 
     private var batteryTint: Color {
         if battery.isCharging { return Color(red: 0.20, green: 0.78, blue: 0.35) }
@@ -63,64 +73,50 @@ struct VideoDetailFullscreenStatusClockIcon: View {
         return .white
     }
 
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 5)) { context in
-            Canvas { graphics, _ in
-                drawBattery(in: &graphics)
-                drawTime(context.date, in: &graphics)
-            }
+    private var batterySymbol: String {
+        guard let level = battery.batteryLevel else { return "battery.0percent" }
+        return switch level {
+        case ...0.125: "battery.0percent"
+        case ...0.375: "battery.25percent"
+        case ...0.625: "battery.50percent"
+        case ...0.875: "battery.75percent"
+        default: "battery.100percent"
         }
-        .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - 电池环
-
-    private func drawBattery(in context: inout GraphicsContext) {
-        let center = CGPoint(x: 59.5 * scale, y: 61.487 * scale)
-        let radius = 51.5 * scale
-        let style = StrokeStyle(lineWidth: 7.2 * scale, lineCap: .round)
-
-        var track = Path()
-        track.addArc(
-            center: center,
-            radius: radius,
-            startAngle: .degrees(148.69),
-            endAngle: .degrees(148.69 + 242.6198),
-            clockwise: false
-        )
-        context.stroke(track, with: .color(.white.opacity(0.22)), style: style)
-
-        guard let level = battery.batteryLevel, level > 0.005 else { return }
-        var fill = Path()
-        fill.addArc(
-            center: center,
-            radius: radius,
-            startAngle: .degrees(148.69),
-            endAngle: .degrees(148.69 + 242.6198 * min(max(level, 0), 1)),
-            clockwise: false
-        )
-        context.stroke(fill, with: .color(batteryTint), style: style)
-    }
-
-    // MARK: - 中间时间
-
-    private func drawTime(_ date: Date, in context: inout GraphicsContext) {
-        let text = date.formatted(date: .omitted, time: .shortened)
-        let resolved = context.resolve(
-            Text(text)
-                .font(.system(size: 28 * scale, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-        )
-        context.draw(resolved, at: CGPoint(x: 59.5 * scale, y: 61.5 * scale), anchor: .center)
+    private var percentageText: String {
+        battery.batteryLevel.map { "\(Int(($0 * 100).rounded()))%" } ?? "--%"
     }
 
     private var accessibilitySummary: String {
-        let levelText = battery.batteryLevel.map { "电量 \(Int(($0 * 100).rounded()))%" } ?? "电量未知"
-        let timeText = Date().formatted(date: .omitted, time: .shortened)
-        return "\(timeText)，\(levelText)"
+        let levelText = battery.batteryLevel.map {
+            "电量 \(Int(($0 * 100).rounded()))%"
+        } ?? "电量未知"
+        return battery.isCharging ? "\(levelText)，正在充电" : levelText
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text(percentageText)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(batteryTint)
+
+            Image(systemName: batterySymbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(batteryTint)
+                .overlay(alignment: .bottomTrailing) {
+                    if battery.isCharging {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(batteryTint)
+                            .offset(x: 3, y: 3)
+                    }
+                }
+        }
+        .padding(.horizontal, 12)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityIdentifier("video.fullscreen.status.battery")
     }
 }

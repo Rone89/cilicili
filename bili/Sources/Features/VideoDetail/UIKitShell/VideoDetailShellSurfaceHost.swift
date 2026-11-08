@@ -640,8 +640,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         rotationCoordinator.chromeLandscape
     }
 
-    /// 顶部状态图标（60pt）距屏幕上沿的间距。
-    private static let statusClockTopInset: CGFloat = 8
+    /// 横屏状态胶囊距屏幕安全区边缘的最小间距。
+    private static let statusClockTopInset: CGFloat = 14
 
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
@@ -785,6 +785,13 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                             persistentMoreControlsButton(contentInsets: videoInsets)
                         }
 
+                        if showsFullscreenStatusControls {
+                            fullscreenStatusControls
+                                .opacity(playbackControlsVisibility.opacity)
+                                .allowsHitTesting(false)
+                                .zIndex(7.5)
+                        }
+
                         if runtimeSettings.playerPerformanceOverlayEnabled {
                             performanceOverlay(contentInsets: videoInsets, in: proxy.size)
                                 .zIndex(8)
@@ -854,14 +861,6 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(2.55)
-                }
-            }
-            .overlay(alignment: .top) {
-                if configuration.isFullscreenActive, isLandscape, !isAudioOnlyPlayback {
-                    VideoDetailFullscreenStatusClockIcon()
-                        .opacity(playbackControlsVisibility.opacity)
-                        .padding(.top, Self.statusClockTopInset)
-                        .allowsHitTesting(false)
                 }
             }
             .playerOfflineNotice(
@@ -1198,7 +1197,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     private func performanceOverlay(contentInsets: EdgeInsets, in size: CGSize) -> some View {
         let safeAreaInsets = fullscreenSafeAreaInsets()
-        let topInset = max(safeAreaInsets.top, contentInsets.top)
+        let statusRowClearance = showsFullscreenStatusControls
+            ? controlMetrics.controlHeight + 8
+            : 0
+        let topInset = max(safeAreaInsets.top + statusRowClearance, contentInsets.top)
         let leadingInset = max(safeAreaInsets.left, contentInsets.leading)
         let trailingInset = max(safeAreaInsets.right, contentInsets.trailing)
         let bottomInset = max(safeAreaInsets.bottom, contentInsets.bottom)
@@ -1225,6 +1227,28 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var fullscreenStatusControls: some View {
+        let safeAreaInsets = fullscreenSafeAreaInsets()
+        return GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                VideoDetailFullscreenClockStatus()
+                    .frame(height: controlMetrics.controlHeight)
+                    .biliPlayerClearGlass(interactive: false, in: Capsule())
+
+                Spacer(minLength: 0)
+
+                VideoDetailFullscreenBatteryStatus()
+                    .frame(height: controlMetrics.controlHeight)
+                    .biliPlayerClearGlass(interactive: false, in: Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, max(Self.statusClockTopInset, safeAreaInsets.top))
+        .padding(.leading, 14 + safeAreaInsets.left)
+        .padding(.trailing, 14 + safeAreaInsets.right)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func visibleVideoInsets(in size: CGSize) -> EdgeInsets {
@@ -1290,7 +1314,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
     }
 
     private var showsFullscreenStatusControls: Bool {
-        VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
+        configuration.isFullscreenActive
+            && VideoDetailSurfaceChromePolicy.showsFullscreenStatusControls(
             usesFullscreenChrome: usesFullscreenStatusChrome
                 && fullscreenMode?.isLandscape == true,
             isPortraitFullscreen: isPortraitFullscreen
@@ -3212,49 +3237,6 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
         lazy var primaryAction = UIAction { [weak self] _ in
             self?.action()
         }
-    }
-}
-
-private struct VideoDetailFullscreenStatusLevelsIcon: View {
-    var size: CGFloat = 32
-
-    private var scale: CGFloat { size / 46 }
-    private var ringDiameter: CGFloat { 40.666 * scale }
-    private var ringStroke: CGFloat { 3 * scale }
-    private var wifiSize: CGFloat { 18 * scale }
-    private var dotSize: CGFloat { 4 * scale }
-    private var dotSpacing: CGFloat { 2.33 * scale }
-    private var dotsOffsetY: CGFloat { 13 * scale }
-
-    var body: some View {
-        ZStack {
-            // 240° 圆弧，开口朝下（Figma arc 150°→390°）。
-            Circle()
-                .trim(from: 0, to: 2.0 / 3.0)
-                .stroke(
-                    Color.white,
-                    style: StrokeStyle(lineWidth: ringStroke, lineCap: .round)
-                )
-                .rotationEffect(.degrees(150))
-                .frame(width: ringDiameter, height: ringDiameter)
-
-            Image(systemName: "wifi")
-                .font(.system(size: wifiSize * 0.92, weight: .semibold))
-                .foregroundStyle(.white)
-                .offset(y: -1.5 * scale)
-
-            HStack(spacing: dotSpacing) {
-                ForEach(0..<4, id: \.self) { _ in
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: dotSize, height: dotSize)
-                }
-            }
-            .offset(y: dotsOffsetY)
-        }
-        .frame(width: size, height: size)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("信号、Wi-Fi 与电量状态")
     }
 }
 
