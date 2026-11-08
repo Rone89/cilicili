@@ -33,6 +33,17 @@ struct DanmakuKitSettingsSection: View {
 
     var body: some View {
         Section("DanmakuKit 渲染设置") {
+            DanmakuKitSettingsContent(settings: settings, updateSettings: updateSettings)
+        }
+    }
+}
+
+struct DanmakuKitSettingsContent: View {
+    let settings: DanmakuSettings
+    let updateSettings: (DanmakuSettings) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("显示区域")
@@ -145,7 +156,6 @@ struct DanmakuKitSettingsSection: View {
             set: { newValue in updateKitSettings { $0[keyPath: keyPath] = newValue } }
         )
     }
-
     private func doubleBinding(
         _ keyPath: WritableKeyPath<DanmakuKitRenderSettings, Double>
     ) -> Binding<Double> {
@@ -154,7 +164,6 @@ struct DanmakuKitSettingsSection: View {
             set: { newValue in updateKitSettings { $0[keyPath: keyPath] = newValue } }
         )
     }
-
     private func enumBinding<Value: Hashable>(
         _ keyPath: WritableKeyPath<DanmakuKitRenderSettings, Value>
     ) -> Binding<Value> {
@@ -163,7 +172,6 @@ struct DanmakuKitSettingsSection: View {
             set: { newValue in updateKitSettings { $0[keyPath: keyPath] = newValue } }
         )
     }
-
     private func updateKitSettings(_ update: (inout DanmakuKitRenderSettings) -> Void) {
         var nextSettings = settings
         var kitSettings = nextSettings.danmakuKit
@@ -178,8 +186,73 @@ struct DanmakuSettingsPortraitVisibilitySection: View {
 
     var body: some View {
         Section("竖屏播放") {
-            Toggle("竖屏时隐藏弹幕", isOn: $hidesDanmakuInPortrait)
-                .accessibilityIdentifier("ui.videoDetail.sheet.danmakuSettings.hidesInPortrait")
+            DanmakuSettingsPortraitVisibilityContent(hidesDanmakuInPortrait: $hidesDanmakuInPortrait)
         }
+    }
+}
+
+struct DanmakuSettingsPortraitVisibilityContent: View {
+    @Binding var hidesDanmakuInPortrait: Bool
+
+    var body: some View {
+        Toggle("竖屏时隐藏弹幕", isOn: $hidesDanmakuInPortrait)
+            .accessibilityIdentifier("ui.videoDetail.sheet.danmakuSettings.hidesInPortrait")
+    }
+}
+
+/// 横屏设置抽屉里的弹幕设置子页：复用一级页的卡片容器（12pt 内边距、圆角 14）。
+struct DanmakuSettingsLandscapePanelContent: View {
+    @ObservedObject var store: VideoDetailDanmakuSettingsRenderStore
+    let summary: String
+    let hidesDanmakuInPortraitBinding: Binding<Bool>
+    let toggleDanmaku: () -> Void
+    let updateDanmakuSettings: (DanmakuSettings) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                card {
+                    DanmakuSettingsHeaderSectionContent(
+                        isDanmakuEnabled: store.isDanmakuEnabled,
+                        settings: store.danmakuSettings,
+                        summary: summary,
+                        toggleDanmaku: toggleDanmaku
+                    )
+                }
+
+                sectionHeader("竖屏播放")
+                card {
+                    DanmakuSettingsPortraitVisibilityContent(
+                        hidesDanmakuInPortrait: hidesDanmakuInPortraitBinding
+                    )
+                }
+
+                sectionHeader("DanmakuKit 渲染设置")
+                card {
+                    DanmakuKitSettingsContent(
+                        settings: store.danmakuSettings,
+                        updateSettings: updateDanmakuSettings
+                    )
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 4)
+    }
+
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
     }
 }

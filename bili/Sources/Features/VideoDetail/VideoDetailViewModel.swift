@@ -44,6 +44,8 @@ final class VideoDetailViewModel: ObservableObject {
     @Published var isSwitchingVideoListenMode = false {
         didSet { scheduleRenderStoreSync(.playback) }
     }
+    /// 字幕选轨弹窗由详情页最外层 SwiftUI sheet 宿主呈现（与评论弹窗同款路由）。
+    @Published var isShowingSubtitleSelection = false
     @Published var videoListenAudioVariants: [VideoListenAudioVariant] = []
     @Published var selectedVideoListenAudioPreferenceKey: String?
     var automaticVideoListenAudioVariantID: String?

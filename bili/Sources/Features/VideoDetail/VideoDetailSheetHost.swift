@@ -3,6 +3,9 @@ import SwiftUI
 private struct VideoDetailSheetHostModifier: ViewModifier {
     @ObservedObject var viewModel: VideoDetailViewModel
     @ObservedObject var libraryStore: LibraryStore
+    /// 字幕选轨弹窗用本地 @State 驱动：ViewModel 的 @Published 直接绑定
+    /// 在每次 body 重建时都会生成新 Binding，sheet 不会呈现。
+    @State private var isShowingSubtitleSelection = false
     let sheetState: VideoDetailSheetState
     let sheetActions: VideoDetailSheetActions
     let submitReply: (DynamicCommentComposerTarget, String, [DynamicCommentImage]?) async throws -> Void
@@ -83,6 +86,23 @@ private struct VideoDetailSheetHostModifier: ViewModifier {
                     viewModel: viewModel,
                     libraryStore: libraryStore
                 )
+            }
+            .onChange(of: viewModel.isShowingSubtitleSelection) { _, isShowing in
+                isShowingSubtitleSelection = isShowing
+            }
+            .sheet(
+                isPresented: $isShowingSubtitleSelection,
+                onDismiss: { viewModel.isShowingSubtitleSelection = false }
+            ) {
+                VideoDetailSubtitleSelectionSheet(
+                    store: viewModel.subtitleRenderStore,
+                    onSelect: { lan in
+                        Task { await viewModel.selectSubtitleTrack(lan: lan) }
+                    },
+                    close: { isShowingSubtitleSelection = false }
+                )
+                // 与评论弹窗同款系统 sheet 外观（medium/large + 拖拽指示条）。
+                .commentSheetPresentation()
             }
     }
 

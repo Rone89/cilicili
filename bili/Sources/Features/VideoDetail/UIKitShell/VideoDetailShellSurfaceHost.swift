@@ -640,6 +640,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         rotationCoordinator.chromeLandscape
     }
 
+    /// 顶部状态图标（60pt）距屏幕上沿的间距。
+    private static let statusClockTopInset: CGFloat = 8
+
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
     }
@@ -806,9 +809,12 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                                 selectPlayVariant: { detailViewModel.selectPlayVariant($0) },
                                 onToggleDanmaku: onToggleDanmaku,
                                 contentInsets: videoInsets,
-                                close: { isMoreControlsPresented = false }
+                                close: {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+                                        isMoreControlsPresented = false
+                                    }
+                                }
                             )
-                            .transition(.opacity)
                             .zIndex(9)
                         }
                     }
@@ -837,6 +843,25 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     )
                     .allowsHitTesting(false)
                     .zIndex(2.5)
+
+                    VideoDetailPlayerSurfaceSubtitleLayer(
+                        store: detailViewModel.subtitleRenderStore,
+                        controlsVisibility: playbackControlsVisibility,
+                        clock: viewModel.playbackClock,
+                        cid: detailViewModel.selectedCID,
+                        isFullscreen: configuration.isFullscreenActive,
+                        loadTracks: { await detailViewModel.loadSubtitleTracksForCurrentVideo() }
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(2.55)
+                }
+            }
+            .overlay(alignment: .top) {
+                if configuration.isFullscreenActive, isLandscape, !isAudioOnlyPlayback {
+                    VideoDetailFullscreenStatusClockIcon()
+                        .opacity(playbackControlsVisibility.opacity)
+                        .padding(.top, Self.statusClockTopInset)
+                        .allowsHitTesting(false)
                 }
             }
             .playerOfflineNotice(
@@ -882,9 +907,10 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                 portraitMoreControlsRequestID = nil
                 onDismissMoreControls()
                 isVideoListenQueuePresented = false
+                detailViewModel.isShowingSubtitleSelection = false
             } else {
                 isMoreControlsPresented = false
-            }
+                }
         }
         .onChange(of: overlaySnapshot.playbackContentMode) { _, mode in
             if mode != .audioOnly {
@@ -905,7 +931,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             withTransaction(transaction) {
                 isMoreControlsPresented = false
                 isVideoListenQueuePresented = false
-                isMoreControlsButtonPressed = false
+                    isMoreControlsButtonPressed = false
                 portraitMoreControlsRequestID = nil
             }
             onDismissMoreControls()
@@ -1002,9 +1028,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             pausesOnDisappear: false,
             controlsAccessory: isAudioOnlyPlayback
                 ? AnyView(videoListenQuickControls)
-                : usesFullscreenStatusChrome
-                    ? AnyView(moreControlsButton)
-                    : nil,
+                : AnyView(subtitleAndMoreControlsAccessory),
             isDanmakuEnabled: keepsChromeMounted && overlaySnapshot.isDanmakuEnabled && !isAudioOnlyPlayback,
             onToggleDanmaku: isAudioOnlyPlayback ? nil : onToggleDanmaku,
             onShowDanmakuSettings: isAudioOnlyPlayback ? nil : onShowDanmakuSettings,
@@ -1031,6 +1055,57 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             metrics: controlMetrics,
             showQueue: { isVideoListenQueuePresented = true }
         )
+    }
+
+    /// 非听书模式下的 accessory 槽位：字幕（CC）按钮 + 全屏状态时的更多播放设置按钮。
+    private var subtitleAndMoreControlsAccessory: some View {
+        HStack(spacing: controlMetrics.controlSpacing) {
+            subtitleControlButton
+
+            if usesFullscreenStatusChrome {
+                moreControlsButton
+            }
+        }
+    }
+
+    /// 字幕（CC）按钮：UIKit 承担触摸与选轨弹窗（系统 action sheet），
+    /// SwiftUI 只提供玻璃外观（同 moreControlsButton）。
+    /// 字幕（CC）按钮：与其他控制按钮等宽等高，触控区单独扩展，
+    /// 保证与齿轮/全屏按钮的间距一致。选轨弹窗交给外层系统 sheet 呈现。
+    private var subtitleControlButton: some View {
+        Group {
+            if isLandscape {
+                // 横屏：点按直接由按钮展开系统菜单（UIMenu），不覆盖画面。
+                VideoDetailSubtitleMenuButton(
+                    store: detailViewModel.subtitleRenderStore,
+                    metrics: controlMetrics,
+                    onMenuWillOpen: {
+                        // 菜单展开期间挂起控制条自动隐藏。
+                        playbackControlsVisibility.cancelAutoHide()
+                    },
+                    onSelect: { lan in
+                        Task { await detailViewModel.selectSubtitleTrack(lan: lan) }
+                        // 菜单关闭后恢复正常的自动隐藏节奏。
+                        playbackControlsVisibility.showAndSchedule(
+                            showsPlaybackControls: keepsChromeMounted,
+                            isLayoutTransitioning: isBareSurfaceTransitionActive
+                        )
+                    }
+                )
+            } else {
+                VideoDetailSubtitleControlButton(
+                    store: detailViewModel.subtitleRenderStore,
+                    metrics: controlMetrics,
+                    onSelect: {
+                        playbackControlsVisibility.cancelAutoHide()
+                        detailViewModel.isShowingSubtitleSelection = true
+                    }
+                )
+            }
+        }
+        .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
+        .biliPlayerClearGlass(interactive: true, in: Circle())
+        .biliPlayerExpandedHitTarget(metrics: controlMetrics)
     }
 
     private var runtimeContext: BiliPlayerViewRuntimeContext {
@@ -1080,7 +1155,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         ) {
             playbackControlsVisibility.cancelAutoHide()
             if isLandscape {
-                withAnimation(reduceMotion ? nil : .default) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
                     isMoreControlsPresented = true
                 }
             } else {
@@ -1095,8 +1170,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         .frame(width: controlMetrics.controlHeight, height: controlMetrics.controlHeight)
         // Render the glass with the same SwiftUI container/visibility as the other controls.
         .biliPlayerClearGlass(interactive: true, in: Circle())
-        .frame(width: 44, height: controlMetrics.controlHeight, alignment: .trailing)
-        .biliPlayerExpandedHitTarget(horizontal: 0, vertical: 8)
+        .biliPlayerExpandedHitTarget(metrics: controlMetrics)
         .accessibilityLabel("更多播放设置")
     }
 
@@ -1250,12 +1324,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             playbackControlsOpacity: playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
-            topCenterControlsAccessory: showsFullscreenStatusControls
-                ? AnyView(VideoDetailFullscreenClockControl())
-                : nil,
-            topTrailingControlsAccessory: showsFullscreenStatusControls
-                ? AnyView(VideoDetailFullscreenBatteryControl())
-                : nil,
+            topCenterControlsAccessory: nil,
+            topTrailingControlsAccessory: nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,
             controlsHorizontalInset: context.configuration.controlsHorizontalInset,
@@ -1886,26 +1956,45 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visibleFrame = visibleVideoFrame(in: proxy.size)
-            let panelSize = landscapePanelSize(in: visibleFrame)
-            ZStack {
-                Color.black.opacity(0.04)
+            // 宽度取横屏宽度的 40%，并夹在 320...420 之间，避免超宽屏过于空旷。
+            let panelWidth = min(max(proxy.size.width * 0.4, 320), 420)
+            let safeArea = Self.safeAreaInsets()
+            ZStack(alignment: .trailing) {
+                Color.black.opacity(0.18)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture(perform: close)
 
-                landscapePanel(size: panelSize)
-                    .position(landscapePanelCenter(panelSize: panelSize, visibleFrame: visibleFrame))
-                    .contentShape(Rectangle())
-                    .onTapGesture {}
+                panel(width: panelWidth, safeArea: safeArea)
+                    .transition(.move(edge: .trailing))
             }
         }
     }
 
-    @ViewBuilder
-    private func landscapePanel(size: CGSize) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-        VStack(spacing: 0) {
+    /// 面板跟随 App 的深浅色设置；播放器 overlay 可能被强制为深色，这里单独决议。
+    private var resolvedColorScheme: ColorScheme {
+        switch libraryStore.appearanceMode {
+        case .system:
+            // 视频页会为状态栏对比度把窗口强制为深色，窗口 trait 不可用；
+            // 屏幕 trait 反映系统外观设置。
+            return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
+
+    private func panel(width: CGFloat, safeArea: EdgeInsets) -> some View {
+        let scheme = resolvedColorScheme
+        let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
+        let background = Color(UIColor.systemBackground.resolvedColor(with: traits))
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: 24,
+            bottomLeadingRadius: 24,
+            style: .continuous
+        )
+        return VStack(spacing: 0) {
             SurfaceOnlyLandscapeMoreHeader(
                 title: page.title,
                 canGoBack: page != .root,
@@ -1926,62 +2015,30 @@ private struct SurfaceOnlyLandscapeMoreControlsOverlay: View {
                 close: close
             )
         }
-        .frame(width: size.width, height: size.height)
-        .surfaceOnlyLandscapeGlassPanel(in: shape)
+        .padding(.top, safeArea.top)
+        .padding(.trailing, safeArea.trailing)
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(background)
         .clipShape(shape)
-        .overlay {
-            shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.6)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 0.6)
         }
-        .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 10)
+        .environment(\.colorScheme, scheme)
     }
 
-    private func visibleVideoFrame(in size: CGSize) -> CGRect {
-        CGRect(
-            x: contentInsets.leading,
-            y: contentInsets.top,
-            width: max(1, size.width - contentInsets.leading - contentInsets.trailing),
-            height: max(1, size.height - contentInsets.top - contentInsets.bottom)
+    private static func safeAreaInsets() -> EdgeInsets {
+        guard let insets = UIApplication.shared.playbackDetailForegroundKeyWindow?.safeAreaInsets
+        else { return EdgeInsets() }
+        return EdgeInsets(
+            top: max(insets.top, 0),
+            leading: max(insets.left, 0),
+            bottom: max(insets.bottom, 0),
+            trailing: max(insets.right, 0)
         )
     }
-
-    private func landscapePanelSize(in visibleFrame: CGRect) -> CGSize {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let topOffset: CGFloat = 58
-        let availableWidth = max(1, visibleFrame.width - horizontalMargin * 2)
-        let width = min(330, availableWidth)
-        let availableHeight = max(1, visibleFrame.height - topOffset - verticalMargin)
-        let height = min(318, availableHeight)
-        return CGSize(width: width, height: height)
-    }
-
-    private func landscapePanelCenter(panelSize: CGSize, visibleFrame: CGRect) -> CGPoint {
-        let horizontalMargin: CGFloat = 18
-        let verticalMargin: CGFloat = 14
-        let preferredTop: CGFloat = visibleFrame.minY + 58
-        let preferredX = visibleFrame.maxX - horizontalMargin - panelSize.width / 2
-        let preferredY = preferredTop + panelSize.height / 2
-        return CGPoint(
-            x: clamped(
-                preferredX,
-                lower: visibleFrame.minX + horizontalMargin + panelSize.width / 2,
-                upper: visibleFrame.maxX - horizontalMargin - panelSize.width / 2,
-                fallback: visibleFrame.midX
-            ),
-            y: clamped(
-                preferredY,
-                lower: visibleFrame.minY + verticalMargin + panelSize.height / 2,
-                upper: visibleFrame.maxY - verticalMargin - panelSize.height / 2,
-                fallback: visibleFrame.midY
-            )
-        )
-    }
-
-    private func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat, fallback: CGFloat) -> CGFloat {
-        guard lower <= upper else { return fallback }
-        return min(max(value, lower), upper)
-    }
-
 }
 
 private enum SurfaceOnlyLandscapeMoreControlsPage {
@@ -2187,7 +2244,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "听视频",
                             systemImage: "headphones",
-                            accessory: videoListenModeAccessory,
+                            accessory: nil,
                             isOn: videoListenModeBinding
                         )
                         .disabled(detailViewModel.isSwitchingVideoListenMode)
@@ -2199,7 +2256,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "画中画播放",
                             systemImage: "pip",
-                            accessory: pictureInPictureAccessory,
+                            accessory: nil,
                             isOn: Binding(
                                 get: { libraryStore.pictureInPictureEnabled },
                                 set: { libraryStore.setPictureInPictureEnabled($0) }
@@ -2211,7 +2268,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                         SurfaceOnlyLandscapeToggleRow(
                             title: "后台播放",
                             systemImage: "speaker.wave.2",
-                            accessory: backgroundPlaybackAccessory,
+                            accessory: nil,
                             isOn: backgroundPlaybackBinding
                         )
 
@@ -2221,7 +2278,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     SurfaceOnlyLandscapeToggleRow(
                         title: "播放性能诊断",
                         systemImage: "waveform.path.ecg.rectangle",
-                        accessory: performanceOverlayAccessory,
+                        accessory: nil,
                         isOn: Binding(
                             get: { libraryStore.playerPerformanceOverlayEnabled },
                             set: { libraryStore.setPlayerPerformanceOverlayEnabled($0) }
@@ -2233,7 +2290,7 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
                     SurfaceOnlyLandscapeToggleRow(
                         title: "播放控件边缘遮罩",
                         systemImage: "rectangle.topthird.inset.filled",
-                        accessory: controlEdgeScrimAccessory,
+                        accessory: nil,
                         isOn: Binding(
                             get: { libraryStore.playerControlEdgeScrimEnabled },
                             set: { libraryStore.setPlayerControlEdgeScrimEnabled($0) }
@@ -2525,14 +2582,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         SurfaceOnlyPlaybackFormatText.videoFormatTitle(for: viewModel.engineDiagnostics)
     }
 
-    private var pictureInPictureAccessory: String? {
-        return libraryStore.pictureInPictureEnabled ? "已开启" : "已关闭"
-    }
-
-    private var backgroundPlaybackAccessory: String? {
-        libraryStore.backgroundPlaybackEnabled ? "已开启" : "已关闭"
-    }
-
     private var backgroundPlaybackBinding: Binding<Bool> {
         Binding(
             get: { libraryStore.backgroundPlaybackEnabled },
@@ -2554,13 +2603,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         )
     }
 
-    private var videoListenModeAccessory: String? {
-        if detailViewModel.isSwitchingVideoListenMode {
-            return "切换中"
-        }
-        return detailViewModel.isVideoListenModeEnabled ? "已开启" : "已关闭"
-    }
-
     private var automaticAudioSubtitle: String {
         guard let variant = detailViewModel.automaticVideoListenAudioVariant else {
             return "优先选择兼容性较好的音轨"
@@ -2578,13 +2620,6 @@ private struct SurfaceOnlyLandscapeMoreContent: View {
         detailViewModel.isVideoListenModeEnabled ? "waveform" : "film"
     }
 
-    private var performanceOverlayAccessory: String? {
-        return libraryStore.playerPerformanceOverlayEnabled ? "已开启" : "已关闭"
-    }
-
-    private var controlEdgeScrimAccessory: String? {
-        return libraryStore.playerControlEdgeScrimEnabled ? "已开启" : "已关闭"
-    }
 }
 
 private struct SurfaceOnlyLandscapeToggleRow: View {
@@ -3040,20 +3075,15 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
     let toggleDanmaku: () -> Void
 
     var body: some View {
-        DanmakuSettingsSheetContent(
+        // 与一级页面共用同一套卡片容器（12pt 内边距、圆角 14、同一底色），
+        // 不再使用 Form，避免 iOS 26 分组卡片的额外内缩与更大圆角。
+        DanmakuSettingsLandscapePanelContent(
             store: detailViewModel.danmakuSettingsRenderStore,
             summary: settingsSummary,
             hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
             toggleDanmaku: toggleDanmaku,
             updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
         )
-        .scrollContentBackground(.hidden)
-        .listRowBackground(Color.clear)
-        .listStyle(.plain)
-        .background(Color.clear)
-        .navigationTitle("弹幕设置")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.automatic, for: .navigationBar)
     }
 
     private var settingsSummary: String {
@@ -3185,108 +3215,56 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
     }
 }
 
-private struct VideoDetailFullscreenClockControl: View {
+private struct VideoDetailFullscreenStatusLevelsIcon: View {
+    var size: CGFloat = 32
+
+    private var scale: CGFloat { size / 46 }
+    private var ringDiameter: CGFloat { 40.666 * scale }
+    private var ringStroke: CGFloat { 3 * scale }
+    private var wifiSize: CGFloat { 18 * scale }
+    private var dotSize: CGFloat { 4 * scale }
+    private var dotSpacing: CGFloat { 2.33 * scale }
+    private var dotsOffsetY: CGFloat { 13 * scale }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text(context.date, format: .dateTime.hour().minute())
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
-        }
-        .biliPlayerClearGlass(
-            interactive: false,
-            in: Capsule(),
-            isEnabled: true
-        )
-        .biliLiquidGlassForeground(shadowOpacity: 0.20)
-        .allowsHitTesting(false)
-        .accessibilityLabel("系统时间")
-    }
-}
+        ZStack {
+            // 240° 圆弧，开口朝下（Figma arc 150°→390°）。
+            Circle()
+                .trim(from: 0, to: 2.0 / 3.0)
+                .stroke(
+                    Color.white,
+                    style: StrokeStyle(lineWidth: ringStroke, lineCap: .round)
+                )
+                .rotationEffect(.degrees(150))
+                .frame(width: ringDiameter, height: ringDiameter)
 
-private struct VideoDetailFullscreenBatteryControl: View {
-    @State private var batteryLevel: Float = -1
+            Image(systemName: "wifi")
+                .font(.system(size: wifiSize * 0.92, weight: .semibold))
+                .foregroundStyle(.white)
+                .offset(y: -1.5 * scale)
 
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(percentageText)
-                .monospacedDigit()
-            Image(systemName: batterySymbolName)
+            HStack(spacing: dotSpacing) {
+                ForEach(0..<4, id: \.self) { _ in
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: dotSize, height: dotSize)
+                }
+            }
+            .offset(y: dotsOffsetY)
         }
-        .font(.caption.weight(.semibold))
-        .lineLimit(1)
-        .padding(.horizontal, 10)
-        .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
-        .biliPlayerClearGlass(
-            interactive: false,
-            in: Capsule(),
-            isEnabled: true
-        )
-        .biliLiquidGlassForeground(shadowOpacity: 0.20)
-        .allowsHitTesting(false)
+        .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("设备电量 \(percentageText)")
-        .onAppear {
-            UIDevice.current.isBatteryMonitoringEnabled = true
-            updateBatteryLevel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
-            updateBatteryLevel()
-        }
-        .onDisappear {
-            UIDevice.current.isBatteryMonitoringEnabled = false
-        }
-    }
-
-    private var percentage: Int? {
-        guard batteryLevel >= 0 else { return nil }
-        return min(max(Int((batteryLevel * 100).rounded()), 0), 100)
-    }
-
-    private var percentageText: String {
-        percentage.map { "\($0)%" } ?? "--%"
-    }
-
-    private var batterySymbolName: String {
-        guard let percentage else { return "battery.0percent" }
-        switch percentage {
-        case 76...:
-            return "battery.100percent"
-        case 51...:
-            return "battery.75percent"
-        case 26...:
-            return "battery.50percent"
-        case 1...:
-            return "battery.25percent"
-        default:
-            return "battery.0percent"
-        }
-    }
-
-    private func updateBatteryLevel() {
-        batteryLevel = UIDevice.current.batteryLevel
+        .accessibilityLabel("信号、Wi-Fi 与电量状态")
     }
 }
 
 private extension View {
-    @ViewBuilder
-    func surfaceOnlyLandscapeGlassPanel<S: Shape>(in shape: S) -> some View {
-        self
-            .background(Color(.systemBackground).opacity(0.22), in: shape)
-            .biliGlassEffect(
-                interactive: false,
-                in: shape
-            )
-    }
-
+    /// 设置抽屉内的分组容器：面板已是纯色，分组不再叠液态玻璃。
     @ViewBuilder
     func surfaceOnlyLandscapeGlassGroup() -> some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         self
-            .background(Color(.secondarySystemGroupedBackground).opacity(0.34), in: shape)
-            .biliPlayerClearGlass(interactive: false, in: shape)
+            .background(Color(.secondarySystemGroupedBackground), in: shape)
     }
 }
 

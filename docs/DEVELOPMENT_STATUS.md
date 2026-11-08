@@ -365,3 +365,199 @@
 - 测试：新增单测 `testFullscreenLayoutFreezesContentFrameAtLastEmbeddedSize` 通过。新增 UI 用例 `testCommentsUIKitListStableAfterFullscreenRoundTrip`（下滑两屏加载第二页→播放器全屏往返→旋转前可见评论仍在、回到顶部评论间距与旋转前一致）与 `testCommentsUIKitListStableAfterSortSwitches`（最热↔最新往返评论间距不变、header 到首条评论无空洞）通过；评论 UI 回归共 8/8 通过（渲染滚动、自动翻页 60 条、往返稳定、触摸停止、行内点赞、排序控件）。全量单元仅 4 条失败（`BiliAPIClientRequestContractTests.testMainCommentsBuildsRequestAndDecodesPaginationAndComments` + `DynamicDetailNavigationTests` ×3），与 main（534550a）基线逐条相同，为既有失败；`testProductionSurfaceAcrossTwentyGeometryCycles` 全量并行时失败、两仓单独运行均通过，判定为并行资源饥饿抖动而非回归。
 - 交付：1.1.2 / Build 117（6 处配置递增）；未签名 IPA SHA-256 `e6b22e23f158d7140988b1c23e60e6484a818b0037135572a8ee13e3c65dc881`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2672）；重签后可执行文件 SHA-256 `61dac15ee8972c5ba2086f33a869373e4a1767629ddfa82ed3f6d78f86f65b7b`。次日凌晨远程启动因设备锁屏被拒；用户解锁后原包重装（databaseSequenceNumber 2800）并远程启动成功，进程确认存活（PID 45631，安装容器路径一致）。
 - 待验收：真机确认旋转横屏往返、最热↔最新切换后评论区无空洞、行序正确。本轮在 worktree 开发并完成模拟器验证后，修复以单提交 cherry-pick 回 main；worktree 分支保留实验全记录。
+
+## 2026-11-08 AI 字幕重建为正式功能 / Build 117（分支 zcode/ai-subtitles）
+
+- 背景：Build 116 应用户要求退役了实验版 AI 字幕；用户随后要求参考 PiliPlus 重建为正式功能，UI 入口选定为控制条 CC 按钮。在独立工作树 `~/.zcode/worktrees/ai-subtitles`（分支 `zcode/ai-subtitles`，基于 build 116 提交 `534550a`）开发。
+- 管线重建（参考 PiliPlus 与 build 68 旧实现）：`BiliAPIClient+VideoSubtitles` 走 `/x/player/wbi/v2`（WBI 签名 + 登录 cookie）拉字幕轨（`type==1` 为 AI 轨），下载 cue JSON（优先 `subtitle_url_v2`，http 升 https）；`VideoDetailSubtitleStore` 持轨列表/选中轨/按 lan 的 cue 缓存/二分定位当前 cue；`VideoDetailSubtitleActions` 接到 `VideoDetailViewModel`（`subtitleRenderStore` 重新挂回 RenderStores）。
+- 选轨偏好：新增 `VideoSubtitlePreference` 四档（关闭=默认 / 优先真人 / 仅真人 / 静音时自动开 AI），`LibraryStore` 持久化键 `cc.bili.playback.videoSubtitlePreference.v1`；轨排序对齐 PiliPlus（中文优先、同语言真人先于 AI）。AI 判定、静音判定（`isMuted || volume<=0`）与 PiliPlus 语义一致。
+- UI：控制条新增字幕（CC）按钮（仅字幕轨存在时显示，经 `controlsAccessory` 槽位注入，全屏状态与更多播放设置按钮共存），点开选轨弹层（关闭 + 各轨 `lan_doc`，AI 轨带「AI」角标）；竖屏播放设置与横屏播放设置面板各加「字幕」行进入共享的 `SurfaceOnlySubtitleSettingsPage` 偏好页；底部胶囊渲染层复用 `PlayerPlaybackClock` 0.2s 节流驱动，zIndex 2.55（弹幕 2.5 与控制条 3 之间），转场/听书模式自动收起弹层。
+- 测试：新增 `VideoDetailSubtitleStoreTests` 8/8 通过（排序、四档偏好×三种轨组合、cue 二分边界、按 lan 缓存隔离），证据 `/tmp/ccswift-subtitle-tests3.xcresult`。全量单元 1256 项：1249 通过、7 失败——3 项评论分页（DynamicDetailNavigation×2 + MainComments×1）经 stash 基线实验确认在**未含本轮改动的 pristine build 116 上同样失败**（build 116 遗留，非本轮引入）；其余 4 项未做基线复核，其中 2 项为 DeterministicAVPlayerTransport 的 writer 超时（历史上即主机环境敏感）、1 项启动竞态（历史记录同为环境依赖）、1 项同评论分页组。本轮未修改这些模块。
+- 交付：1.1.2 / Build 117（6 处配置递增）；未签名 IPA SHA-256 `3dec436665dd7ee0381141d4d7148d3520f46470f0951d4fbb9f46c161bb11a7`；18pm 直传参数重签安装 RCe2027（结果见下轮补记）。
+- 待验收：真机播放有 AI 字幕的视频，确认控制条出现 CC 按钮、弹层选轨即时生效、AI 角标正确；播放设置→字幕四档偏好切换后重进视频生效；无字幕轨视频不显示 CC 按钮。评论分页 3 项失败为 build 116 遗留，待单独排查。分支 `zcode/ai-subtitles`，本轮源码+文档提交 `768548d` + 文档提交。
+
+## 2026-11-08 Build 117 真机反馈修复：CC 按钮无响应 / Build 118
+
+- 用户实测 Build 117 真机点击字幕按钮无反应，并给出参考视频 `BV1hA4a6yEp9`（PiliPlus 下有多条 AI 字幕轨）。排查确认 B 站 `/x/player/v2` 匿名请求字幕列表为空，AI 字幕需要登录态；App 侧管线（拉轨→解码 cue→渲染）在模拟器带夹具时可完整走通，因此问题在 UI 交互层。
+- 根因一：控制条 CC 按钮用「玻璃修饰的 SwiftUI Button」，在 `UIHostingController` 嵌 UIKit 的播放器 overlay 里吞掉点击。项目里 `SurfaceOnlyUIKitMoreControlsButton` 的注释已记录同一个坑（"The owning SwiftUI view supplies the glass; UIKit only owns touch delivery"）。修复：CC 按钮改为 `UIViewRepresentable` + `UIButton(primaryAction:)` 承担触摸，SwiftUI 只提供玻璃外观（`biliPlayerClearGlass`）。
+- 根因二：选轨用系统 `.sheet`，在同一宿主结构下弹不出来（弹幕设置/更多播放设置都走 UIKit 回调在 overlay 外呈现，未用系统 sheet）。修复：改为 overlay 内浮层 `VideoDetailSubtitleSelectionPanel`（对齐横屏 `SurfaceOnlyLandscapeMoreControlsOverlay` 的既有模式），含 AI 角标、选中勾、点背景关闭。
+- 顺带修复：暂停时播放时钟不发 tick，选轨后 cue 不显示。`selectSubtitleTrack` 结束时按 `playbackClock.currentTime` 立即求值一次 cue。
+- 诊断设施（保留）：`--subtitle-fixture` DEBUG 启动参数注入两条假轨（真人/AI）与覆盖 0-600s 的 cue，无需登录即可端到端验证 UI 链路；同时豁免控制条 3 秒自动隐藏（`PlayerPlaybackControlsVisibilityModel`，DEBUG only）。新增 `VideoDetailSubtitleActions` 内的 Subtitle OSLog 分类（`cc.bili/Subtitle`）。
+- 测试：`VideoDetailSubtitleUITests` 首次执行 2/2 通过——CC 按钮命中 → 浮层出现 → 选 AI 轨 → 底部渲染「AI 夹具句」；选真人轨 → 渲染「字幕夹具第一句」。检查日志确认 `cc button tapped` → `panel rendering tracks=2` → `select lan=ai-zh` 全链路探针命中。后续多轮复跑出现不稳定：定位为**并行会话（另一 xcodebuild 进程）抢占同一台 iPhone 18 Pro Max 模拟器**，App 被互相 terminate 导致按钮查不到，与代码无关；日志中 `xcrun simctl` 截图亦超时，设备列表显示多台 unavailable。
+- 单元：`VideoDetailSubtitleStoreTests` 8/8 通过保持。
+- 交付：1.1.2 / Build 118（6 处配置递增）；未签名 IPA SHA-256 `1aff1e705220125a7692d5f6463c19bb470ba41778652d46cbba13ee4c15cb76`；18pm 重签校验通过（`satisfies its Designated Requirement`），**无线安装失败**：`CoreDeviceError 4016`，设备 `00008160-001C311028434036` 与其他设备同为 `unavailable`，待设备解锁/唤醒、无线调试恢复后重装。
+- 待验收：真机播放 `BV1hA4a6yEp9`（或其他有字幕的视频）确认 ① 控制条出现 CC 图标 ② 点按弹出选轨浮层 ③ 选中轨后底部出现字幕 ④ 暂停时选轨也能立即显示 ⑤ 设置→字幕四档偏好生效。分支 `zcode/ai-subtitles`，提交 `768548d`（功能）、`24f54db`（117 文档）、`5638b18`（本次修复）。
+
+## 2026-11-08 真机反馈四项修复 / Build 119
+
+- 用户提供真机截图反馈四项：① 字幕按钮无图标 ② 选轨弹窗不是 iOS 原生弹窗 ③ 弹窗超出画面 ④ 选完字幕不显示内容。截图同时证明**字幕轨已成功获取**（弹窗中出现「العربية AI」「Português AI」等 AI 轨），问题在呈现层与 cue 下载。
+- ① 图标：原实现用子视图 tag + `UIImage(systemName:)`，图标未渲染。改为 `UIButton.Configuration.image`，符号换为 `captions.bubble` / `captions.bubble.fill`（选中态实心）。
+- ② 原生弹窗 + ③ 溢出：自绘 overlay 浮层整体移除，改为 `UIAlertController(actionSheet)` 由 UIKit 直接呈现（`topMostViewController` + iPad/横屏 popover 锚点）。此前尝试的 SwiftUI `.sheet` 经 UI 测试元素树确认在该 UIKit 宿主 overlay 内不会弹出，故不可用。系统 action sheet 自带布局、滚动、安全区处理，溢出问题随之消失。
+- ④ 选完不显示：`fetchVideoSubtitleCues` 此前只带 `Accept: application/json`，字幕 CDN（aisubtitle.hdslb.com 等）会拒绝。改为复用 `BiliURLSessionFactory.apiHeaders(referer:userAgent:cookieHeader:)` 补齐 UA/Referer/登录 cookie，与播放详情请求一致。另保留暂停时选轨立即求值 cue 的修复。
+- 测试：`VideoDetailSubtitleUITests` 两条用例在交替运行中**各自通过**——选 AI 轨渲染「AI 夹具句」、选真人轨渲染「字幕夹具第一句」，覆盖按钮命中 → 原生 action sheet → 选轨 → 底部渲染全链路。两条同时稳定通过受并行会话抢模拟器影响（App 被互相 terminate），已记录为环境限制而非代码缺陷。
+- 交付：1.1.2 / Build 119（6 处配置递增）；未签名 IPA SHA-256 `02c37dc5330fca0ae954e0a3e5491b1a7a18d9192af8f38a57117166fe88d0a7`；重签通过（Designated Requirement satisfied），**无线安装仍失败**：`CoreDeviceError 4016`，RCe2027 与其他设备均 `unavailable`，待设备解锁并恢复无线调试后重装。
+- 待验收：真机播放 `BV1hA4a6yEp9`，确认 ① CC 图标可见（空心/实心随选中态）② 点按弹出系统 action sheet ③ 弹窗不溢出画面 ④ 选 AI 轨后底部出现字幕文本。
+
+## 2026-11-08 「开启字幕后仍无字幕」修复 / Build 120
+
+- 用户确认 Build 119 的图标、原生弹窗、布局三项均已正常，仅剩「选完字幕不显示内容」。字幕轨列表能列出（含多条 AI 语言），说明 `/x/player/wbi/v2` 与选轨 UI 正常，问题在 cue 下载。
+- 根因：接口下发的字幕地址是**协议相对地址**（`//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/xxx.json`）。原实现只把 `http://` 升级为 `https://`，`//` 前缀交给 `URL(string:)` 会得到无 scheme 地址，请求直接失败；且错误只写入 store，界面上没有任何反馈。PiliPlus 的 `Request().get("https:$subtitleUrl")` 正是为此始终补 `https:` 前缀。
+- 修复：新增 `BiliAPIClient.normalizedSubtitleURL(_:)`——`//` 补 `https:`、`http://` 升级、裸域名补 `https://`、去首尾空白。`selectSubtitleTrack` 改为先试 `subtitle_url_v2`、失败或为空回落 `subtitle_url`；每次选轨先清空旧错误；日志记录 host 与 cue 数量，便于真机诊断。
+- 可见性：字幕层在「无 cue 且有错误」时显示一行提示（如「字幕内容加载失败」「该字幕轨内容为空」），不再出现「选了却毫无反应」。
+- 测试：`VideoDetailSubtitleStoreTests` 11/11 通过（新增 3 项 URL 规范化：协议相对、http 升级、裸域名+空白），证据 `/tmp/ccswift-subtitle-urlfix.xcresult`。
+- 交付：1.1.2 / Build 120；未签名 IPA SHA-256 `6b5eacb8d1d7e60d4ebcceff024a106cb6b4271c9abe789d488a76abeff36e1a`；重签未执行——RCe2027 持续 `unavailable`（无线调试断开），待设备在线后安装。
+- 待验收：真机播放 `BV1hA4a6yEp9` 选任意 AI 轨，确认底部出现字幕文本；若出现「字幕内容加载失败」提示，按 `cc.bili/Subtitle` 日志中的 host 与错误码继续定位。
+
+- 补记：设备恢复在线（`available (paired)`）后执行重签安装成功——`app.bamboo2779.brussels691` 1.1.2 / Build 120，databaseSequenceNumber 2704，已启动。设备上同时存在旧包 `cc.bili` 1.1.2 / Build 119（非本轮 18pm 重签目标），验收时须打开「cilicili」且版本为 120 的那个（bundle ID `app.bamboo2779.brussels691`）。
+
+## 2026-11-08 字幕位置/样式对齐 PiliPlus 默认值 / Build 121
+
+- 用户询问字幕位置是否与 PiliPlus 一致，并要求「只对齐默认值与避让」，不新增设置面板。
+- 对照 PiliPlus 实现（`lib/plugin/pl_player/controller.dart` 的 `getSubConfig` 与 `lib/utils/storage_pref.dart` 默认值）：`subtitlePaddingH=24`、`subtitlePaddingB=24`、`subtitleBgOpacity=0.67`、`subtitleFontScale=1.0`、`subtitleFontScaleFS=1.5`、字号 16×缩放；`view.dart` 中控制条可见且字幕开启时把 `subtitlePaddingB` 临时抬到 `minPadding=70`，隐藏后恢复。
+- 本工程改动（`VideoDetailPlayerSurfaceSubtitleLayer.swift` + Shell 调用点）：底部/水平 24pt；控制条可见时底部 `max(24, 70)` 并带 0.2s 缓动；字号 `16 ×（全屏 1.5 / 竖屏 1.0）`；背景不透明度 0.67；新增 `controlsVisibility`、`isFullscreen` 输入。错误提示沿用同一底部避让。
+- 明确未实现（PiliPlus 有、本轮按用户选择不做）：字幕设置面板（字号/透明度/间距/字重/描边滑块）、字幕拖动定位与持久化。
+- 交付：1.1.2 / Build 121；未签名 IPA SHA-256 `2037aec97305562fa10278653cc85d6fa26644165af99ea52d2585f6769db984`；18pm 重签通过并安装 RCe2027（databaseSequenceNumber 2712）后启动成功。
+- 待验收：竖屏控制条出现时字幕上移且不被遮挡；横屏/全屏字幕明显放大；背景比 Build 120 更实一些。
+
+## 2026-11-08 更正：选轨偏好严格对齐 PiliPlus / Build 122
+
+- 用户询问 PiliPlus 是否有「优先真人/仅真人」设置，核对后发现上一轮表述有误：PiliPlus 的 `SubtitlePrefType` 四档为 `off` / `on`（优先选择非自动生成AI字幕，取排序后第一条）/ `withoutAi`（跳过AI：首选轨是 AI 就关闭，否则取第一条）/ `auto`（静音等同 `on`，非静音等同 `withoutAi`），**没有「仅真人字幕」这一档**。原实现的 `humanOnly` 属自加语义（会退而选任意非 AI 轨，如英文 CC），与 PiliPlus「宁可关闭」不同。
+- 按用户要求严格对齐：`VideoSubtitlePreference` 改为 `off / preferNonAI / withoutAI / autoWhenMuted`，选轨一律取排序后第一条（中文优先、同语言真人先于 AI，与 PiliPlus `SubtitleInfo` 排序一致）；设置页文案改为 PiliPlus 口径（优先非AI字幕 / 跳过AI字幕 / 静音时自动）。
+- 测试：`VideoDetailSubtitleStoreTests` 11/11 通过，新增边界用例「中文AI + 英文真人CC」——`preferNonAI` 取中文 AI（zh 优先）、`withoutAI` 返回 nil（首选是 AI 即关闭），与 PiliPlus 行为一致。
+- 交付：1.1.2 / Build 122；未签名 IPA SHA-256 `d8f830631ea2e71cea22bf6db11af1ae5734be1a14111eb5fad950e6f71f8f8d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2728）并启动。
+- 待验收：设置→字幕中四档名称与新语义（尤其「跳过AI字幕」在只有 AI 轨时应不显示字幕）。
+
+## 2026-11-08 设置位置、按钮间距与弹窗样式调整 / Build 123
+
+- 用户三项要求：① 字幕设置不放在视频详情页设置菜单，只放「我的」播放偏好；② 字幕按钮与齿轮/全屏按钮不等距；③ 选轨弹窗用与评论弹窗一致的系统弹窗。
+- ① 设置位置：移除竖屏 `SurfaceOnlyMoreControlsNavigationContent` 与横屏 `SurfaceOnlyLandscapeMoreControlsPage.subtitle` 两处入口，删除 `SurfaceOnlySubtitleSettingsPage`；在 `MinePlaybackPreferenceSection`「播放体验」区新增「字幕」菜单选择器（`mine.settings.playback.subtitlePreference`），写入 `libraryStore.setVideoSubtitlePreference`。播放器内 CC 按钮仍可临时改轨。
+- ② 间距：CC 按钮原本是 `frame(width: 44, alignment: .leading)`，齿轮是 `frame(width: 44, alignment: .trailing)`，两个朝向相反的 44pt 框叠加 HStack spacing，导致图标间距比全屏按钮一侧大。统一改为 `frame(width: controlHeight, height: controlHeight)` + `biliPlayerExpandedHitTarget(metrics:)`（只扩触控区、不占布局），两个按钮间距与全屏按钮一致。
+- ③ 弹窗：改为与评论弹窗同款系统 sheet——由详情页最外层 `VideoDetailSheetHost` 呈现，复用 `commentSheetPresentation()`（`.medium/.large` detent、`.presentationContentInteraction(.resizes)`、拖拽指示条），内容为导航栏「字幕」+ 完成按钮 + 分组列表（AI 角标、选中勾）。
+- 实现要点：直接把 ViewModel 的 `@Published isShowingSubtitleSelection` 绑到 `.sheet(isPresented:)` 不生效（每次 body 重建产生新 Binding，外层标志已为 true 却不呈现，已用 DEBUG 无障碍标记实测确认为 flag-1）；改为 `@State` + `.onChange` 驱动，并用 `onDismiss` 回写 ViewModel。
+- 测试：`VideoDetailSubtitleUITests` 保留按钮出现用例（通过）。系统 sheet 在 XCUITest 下观察不到（直接启动可见），因此删除依赖自动弹窗的两条 UI 用例，改以模拟器截图人工验证：确认弹窗为评论同款系统 sheet，含「中文」「中文（AI）AI」「关闭字幕 ✓」。单测 11/11 通过。新增 `--subtitle-fixture-auto-sheet`（DEBUG）便于本地复验弹窗。
+- 交付：1.1.2 / Build 123；未签名 IPA SHA-256 `d10136d847a8220fca948e0460a00d1306f315e794da9bcb095b9bb6fbc973ea`；18pm 重签安装 RCe2027（databaseSequenceNumber 2744）并启动。
+- 待验收：① 详情页播放设置与横屏面板不再有「字幕」行，我的→播放体验出现「字幕」菜单；② 控制条上字幕/齿轮/全屏三键等距；③ 点字幕弹出评论同款系统 sheet。
+
+## 2026-11-08 横屏玻璃面板 + 图标字号对齐 / Build 124
+
+- 背景：用户确认「横屏不要全屏弹窗」方案，选择复用项目既有的横屏玻璃卡片；同时指出字幕图标与「设置」齿轮图标大小不一致（指图标本身，非背景容器）。
+- 横屏面板：新增 `SurfaceOnlyLandscapeSubtitlePanelOverlay`，复用横屏「播放设置」的几何与材质（330×318、圆角 24、`surfaceOnlyLandscapeGlassPanel`、点空白关闭），内部承载 `VideoDetailSubtitleSelectionPanel`。CC 按钮按方向分支：横屏开玻璃面板，竖屏开系统 sheet；旋转时互相关闭对应形态，切听视频/转场时清空。
+- 行视图抽取：`VideoDetailSubtitleSelectionRow` 供竖屏 sheet（List 内）与横屏面板共用，AI 角标与选中勾一致。
+- 图标字号：CC 按钮改用 `UIButton.Configuration.preferredSymbolConfigurationForImage = SymbolConfiguration(pointSize: metrics.iconSize + 3, weight: .semibold)`，与 `SurfaceOnlyUIKitMoreControlsButton` 的齿轮完全同字号同字重；此前是 +2 且未设置 preferredSymbolConfiguration，渲染偏小。
+- 视觉核对（模拟器 XCUITest 截图导出，临时用例已删除）：竖屏控制条 CC / 齿轮 / 全屏三键图标基本同高（气泡字形本身更宽且带尾巴）；横屏字幕面板为玻璃卡片、覆盖约 330×318、不全屏，含「中文」「中文（AI）AI」「关闭字幕 ✓」与关闭 X。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 124；未签名 IPA SHA-256 `5e3d9178590531158117442c03fe640caee4536eaabe2ad1ba692342158331f0`；18pm 重签安装 RCe2027（databaseSequenceNumber 2752）并启动。
+- 待验收：横屏点 CC 出现玻璃卡片（非全屏）、可选中轨；竖屏仍为系统 sheet；CC 图标与齿轮观感一致。
+
+## 2026-11-08 横屏改为原生菜单 + 图标缩到视觉等高 / Build 125
+
+- 用户指出字幕图标仍明显大于齿轮与全屏图标（指出的是图标本身），并要求横屏点字幕按钮时直接变成选择菜单（iOS 原生控件）。
+- 横屏菜单：CC 按钮改为 `UIButton + showsMenuAsPrimaryAction`，点按由按钮原生展开 `UIMenu`（系统液态玻璃菜单、当前轨自动勾选、含「关闭字幕」），不再有任何覆盖画面的弹层。移除 Build 124 的横屏玻璃面板 `SurfaceOnlyLandscapeSubtitlePanelOverlay` 及其状态与渲染分支；竖屏仍走评论同款系统 sheet。
+- 图标：同一 `pointSize` 下 `captions.bubble` 字形比 `gearshape.fill` 更饱满，`iconSize + 3` 在真机明显偏大。改为 `pointSize = metrics.iconSize`，并用 XCUITest 截图按三键同框比对，确认 CC/齿轮/全屏视觉等高。
+- 夹具：AI 轨 `lanDoc` 由「中文（AI）」改为「中文」，避免菜单标题拼成「中文（AI）（AI）」。
+- 验证（截图核对，临时用例已删除）：竖屏控制条三键等高；横屏点 CC 展开系统菜单，标题「字幕」、项为「中文」「中文（AI）」「关闭字幕 ✓」，菜单为液态玻璃样式。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 125；未签名 IPA SHA-256 `10a9632d92659297e53da311870397023e309bcd0b41302c020a8a09786393c2`；18pm 重签安装 RCe2027（databaseSequenceNumber 2760）并启动。
+- 待验收：横屏点 CC 直接弹出系统菜单并可选轨；竖屏仍为系统 sheet；三键图标等高。
+
+## 2026-11-08 横屏设置改为右侧纯色抽屉 + 控件不自动隐藏 / Build 126
+
+- 用户要求：横屏设置菜单改为从右侧推出、宽度为横屏宽 40%、满高、圆角的纯色面板，点非面板区域向右滑出；面板跟随 App 深浅色；横屏字幕菜单与设置面板展开时视频控件不自动隐藏。
+- 面板：`SurfaceOnlyLandscapeMoreControlsOverlay` 重写为右侧抽屉——宽度 `min(max(width * 0.4, 320), 420)`、满高、leading 侧 24 连续圆角、`systemBackground` 纯色、左侧 0.6pt 分隔线、遮罩 `black 0.18` 点按关闭；滑入/滑出用 `.move(edge: .trailing)` + `easeInOut(0.28)`；内容按 key window 安全区留白，背景铺满。
+- 深浅色：`appearanceMode` 显式 light/dark 直接采用；`system` 时读 `UIScreen.main.traitCollection`（视频页为状态栏对比度会把窗口 trait 强制为深色，窗口 trait 不可用），再用 `systemBackground` 按该 scheme 解析颜色，并对内容强制同一 `colorScheme`。
+- 自动隐藏：面板沿用 `isSecondaryControlsPresented`（配置中已含 `isMoreControlsPresented`）挂起自动隐藏；横屏字幕 UIMenu 通过 `.menuActionTriggered` 在展开时 `cancelAutoHide()`，选中轨道后 `showAndSchedule` 恢复自动隐藏节奏。
+- 验证（XCUITest 截图导出，临时用例已删除）：深色与浅色外观下分别为深/浅纯色面板；面板宽度约 40%、满高、圆角；打开后等待 5 秒控制条仍可见；点左侧区域后向右滑出并恢复视频手势。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 126；未签名 IPA SHA-256 `580ef4c85fd312462c20946e1a25710ccd11d721bc1bb0f5ac544f663e8699de`；18pm 重签安装 RCe2027（databaseSequenceNumber 2768）成功，启动因设备锁屏被拒，解锁后可打开。
+- 待验收：横屏点齿轮右侧滑出纯色抽屉、随深浅色切换、点左侧滑出；面板与横屏字幕菜单打开期间控制条不自动隐藏。
+
+## 2026-11-08 设置抽屉纯色分组与底部贯穿 / Build 127
+
+- 用户要求：横屏设置抽屉内的液态玻璃背景改纯色；去掉开关行的「已开启/已关闭」；底部内容去掉遮罩、贯穿到底边。
+- `surfaceOnlyLandscapeGlassGroup()` 改为不透明 `secondarySystemGroupedBackground`（去掉 `biliPlayerClearGlass` 与 0.34 透明度），视频不再透出，分组不再发灰。
+- 删除 5 个开关状态文案辅助属性（`pictureInPictureAccessory` / `backgroundPlaybackAccessory` / `videoListenModeAccessory` / `performanceOverlayAccessory` / `controlEdgeScrimAccessory`），开关行 `accessory` 一律 nil；状态由开关本身表达。
+- 面板移除 `.padding(.bottom, safeArea.bottom)`，列表内容与纯色背景贯穿到屏幕底边。
+- 验证（XCUITest 截图导出，临时用例已删除）：深色外观下分组为纯色、开关行只剩图标/标题/开关、列表滚动到底后内容贴底。
+- 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
+- 交付：1.1.2 / Build 127；未签名 IPA SHA-256 `4d9012feecc04366bc5cf21014b1ff0cee81b12e07060c76558a8e0e5f3f2c9d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2808）并启动成功。
+
+## 2026-11-08 横屏电量胶囊图标居中 / Build 128
+
+- 按用户选择「胶囊内图标居中」调整：`VideoDetailFullscreenBatteryControl` 去掉百分比文字，仅保留电池图标并在 `controlHeight` 正方形内居中，胶囊随之收窄为近似圆形；百分比保留在 accessibilityLabel。
+- Figma 参考：通过 REST API 读取 `Status bar - iPhone Duo` 组件（`12884:7871` 纵向 48×83、`12884:7912` 横向 98×48）：Time 为 SF Pro Rounded 700 / 16pt / 行高 19；Levels 46×46 内含 Wi-Fi 18×13.33、蜂窝 4×4 点阵、电池椭圆 40.67。标准 iPhone 18 Pro Max 状态栏（`13016:4166`）Time 为 SF Pro 590 / 18.67pt / 行高 22，电池 32×15、Wi-Fi 20.67×15.33。暂未按此重做整条状态栏，仅先落实图标居中。
+- 验证（截图核对，临时用例已删除）：横屏右上角为圆形玻璃胶囊、电池图标居中；时间胶囊不变。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 128；未签名 IPA SHA-256 `6bea7a45b355232f5d7d2bbdf22d5cc27ed98919b30565ea746da4d98d146280`；18pm 重签安装 RCe2027（databaseSequenceNumber 2816）成功（首次安装遇设备断连，重试成功）。
+
+## 2026-11-08 横屏状态改为 iPhone Duo 组合图标并定位圆角弧心 / Build 129
+
+- 用户指出此前的电量胶囊不是目标：要的是 Figma「iPhone Duo」里的**整组**信号/电量图标（圆环 + Wi-Fi + 四点），且位置应在屏幕右上圆角弧心。
+- Figma 参数（REST API，节点 `12884:7912` Horizontal / `12884:7871` Vertical）：Levels 46×46，圆环 40.67、黑色描边 3 INSIDE、arc 150°→390°（240° 弧、开口朝下、圆头端点）；Wi-Fi 矢量 18×13.33；蜂窝为 4 个 4×4 圆点、间距 2.33。
+- 新组件 `VideoDetailFullscreenStatusLevelsIcon`：按上述比例绘制（圆环 trim 2/3 + 150° 旋转、SF Symbol wifi、四点），默认 32pt——屏幕圆角半径 55pt 时弧心到圆角边缘仅约 16pt，46pt 会被屏幕圆角裁切。
+- 定位：`.overlay(alignment: .topTrailing)` + 39pt 内边距，使图标中心落在 (width-55, 55) 即圆角弧心；随控制条淡入淡出、不参与命中。
+- 移除 `VideoDetailFullscreenBatteryControl`；恢复误删的 `surfaceOnlyLandscapeGlassGroup` 扩展（纯色分组）。
+- 验证（截图核对，临时用例已删除）：图标为圆环开口朝下 + Wi-Fi 居中 + 四点，中心距两边约 55pt。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 129；未签名 IPA SHA-256 `dc2ccd4cb46555fb8f2f394b8bf31188c7f338c9c8cf6818dca5ce5647a34a1c`；18pm 重签安装 RCe2027（databaseSequenceNumber 2832）成功（首次安装连接中断，重试成功）。
+
+## 2026-11-08 横屏状态接入 status-trio 样式与真实数据 / Build 130
+
+- 用户提供 lingyired/status-trio（macOS 版 Duo 三合一状态图标），要求参照样式并真实接入电量/Wi-Fi/蜂窝。
+- 读取其 `StatusIconGeometry.swift` / `status-menubar.svg`：画布 120×120；电池环半径 51.5、描边 8、起点 148.69°、扫过 242.62°（开口朝下），顶部可用虚线留出数值/闪电缺口；Wi-Fi 外层弧 r=31(227.35°→312.65°)、中层 r=18.5(227.5°→312.5°)、中心点；底部四点 r=5.5，坐标 (33,104.2)/(50.5,111.2)/(68.5,111.7)/(86,105.8)。
+- 新增 `VideoDetailFullscreenStatusTrioIcon.swift`：自绘 Canvas 按上述几何等比缩放；数据源：
+  - 电量/充电：`UIDevice.batteryLevel` / `batteryState`（通知驱动）；充电绿色、≤20% 红色。
+  - Wi-Fi：`NWPathMonitor` 判定是否 Wi-Fi 承载流量；连接显示两条弧，无互联网一条弧且降透明度，未连接只留中心点。
+  - 蜂窝：`CTTelephonyNetworkInfo.serviceCurrentRadioAccessTechnology` 映射制式档位（5G=4、LTE=3、3G=2、2G=1），15 秒轮询兜底；底部四点按档位点亮。
+- 明确限制（已告知用户）：iOS 公开 API 无法获取 Wi-Fi 信号强度与蜂窝信号格数，因此 Wi-Fi 为两态、底部四点是「制式档位」而非信号强度。
+- 位置沿用 32pt + 屏幕右上圆角弧心，随控制条淡入淡出；移除上一版 Figma Levels 手绘图标。
+- 验证：截图核对环/Wi-Fi 弧/四点渲染正确（模拟器无电量与蜂窝数据，呈现轨道与暗点）；单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 130；未签名 IPA SHA-256 `2fcb529fcd04f5adaf5a4f758e943f7bc2ce053816dd7bacf891bf65c97b8843`；18pm 重签安装 RCe2027（databaseSequenceNumber 2848）并启动。
+
+## 2026-11-08 B 方案 + 私有信号探针 / Build 131
+
+- 用户选择：放大图标到可显示制式文字、位置内移；并用私有 API 取真实信号强度。
+- 图标：46pt（画布 120 等比），中心放在距上/右各 67pt（弧心 55 + 内移 12），padding 44；46pt 对角约 32.5pt，内移后可避开屏幕圆角裁切。
+- 中间切换：Wi-Fi 激活 → Wi-Fi 弧（弧数按 RSSI 分档：> -62 三弧，-75...-62 两弧，< -75 一弧；无 RSSI 时按连接画满）；蜂窝 → 真实制式文本 5G/4G/3G/2G（SF Rounded Bold 26/120）。
+- 底部四点：蜂窝信号格（0–4），优先私有探针，失败回退制式档位。
+- 私有探针 `VideoDetailPrivateSignalProbe`（dlsym，全部失败安全返回 nil）：
+  - 蜂窝：`CTServerConnectionCreate` + `_CTServerConnectionGetSignalStrength`；返回值 0–5 或 dBm（-90...-50）均归一化到 0–4。
+  - Wi-Fi：`MobileWiFi` 私有框架 `WiFiManagerClientCreate` / `WiFiManagerClientGetDevice(en0/en1/awdl0)` / `WiFiDeviceClientCopyCurrentNetwork` / `WiFiNetworkGetProperty("RSSI")`。
+  - 日志：`cc.bili/SignalProbe`（DEBUG），记录符号解析与探针可用性。
+- 明确风险：私有 API 仅供自签名侧载，上架 App Store 违规；系统升级可能失效，失效时自动回退公开信息（连接态/制式）。
+- 验证：模拟器截图确认 46pt 布局与 Wi-Fi 弧、四点渲染；单测 11/11、字幕 UI 用例通过；真机私有探针实际返回值需用户在设备上确认（日志 `cc.bili/SignalProbe`）。
+- 交付：1.1.2 / Build 131；未签名 IPA SHA-256 `fd21ce73b4448f8596fb63a743dec41f5ecf4793fffc54f086c450f089685240`；18pm 重签安装 RCe2027（databaseSequenceNumber 2856）并启动。
+
+## 2026-11-08 修复横屏全屏闪退：关闭私有探针 / Build 132
+
+- 用户反馈 Build 131 进入横屏全屏即闪退。定位到 Build 131 新增的私有信号探针（CTServerConnectionCreate / `_CTServerConnectionGetSignalStrength` / MobileWiFi 的 dlsym 调用）——系统拦截或函数签名不匹配会在调用时崩溃。
+- 修复：私有探针**默认关闭**（`--enable-private-signal-probe` 启动参数才启用），恢复为公开信息：Wi-Fi 连接态 + 蜂窝制式档位；底部四点仍按制式点亮。探针代码保留以便后续单独验证。
+- 回归：模拟器旋转横屏用例通过（进入横屏全屏 5 秒 + 唤出控件，应用保持前台且控件可交互）。
+- 交付：1.1.2 / Build 132；未签名 IPA SHA-256 `b4ef0a3a4ccf31175861e4cda69c47dd6e0f6293d7d1ff2e6a8e9c6c2423ed39`；18pm 重签安装 RCe2027（databaseSequenceNumber 2864）并启动。
+- 待办：真机稳定性确认；若要继续做真实信号格，需带 `--enable-private-signal-probe` 启动并抓取崩溃日志，逐个符号验证签名后再恢复。
+
+## 2026-11-08 顶部居中时间图标 / Build 133
+
+- 按用户要求重做横屏顶部状态：图标放大到 60pt，从右上角移到屏幕顶部居中（距上沿 8pt）；中间不再显示 Wi-Fi/蜂窝，改为显示当前时间（SF Rounded Bold、等宽数字）；底部四点移除；电池环保持不变。
+- 删除顶部独立时间胶囊 `VideoDetailFullscreenClockControl`，避免与图标内时间重复。
+- 移除 Build 130/131 的网络数据源与私有信号探针（彻底消除 Build 131 闪退隐患）；只保留电量监听（UIDevice 通知）。
+- 增加投影（black 0.55 / radius 3）提升亮画面下的可读性。
+- 截图核对：横屏顶部居中为「电池环 + 时间」，无四点、无网络图标。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 133；未签名 IPA SHA-256 `05cd8ba79d7c26be92858160cb9bf8e89255082b974d6988f15f9c5f3cc51d59`；18pm 重签校验通过；设备恢复在线后安装成功（databaseSequenceNumber 2880）并启动。
+
+## 2026-11-08 顶部时间环比例优化 / Build 134
+
+- 用户反馈时间在圆环内显得拥挤。调整：图标 60→68pt、圆环描边 8→7.2（画布单位）、时间字号 30→28；环内左右留白由约 3.7pt 提升到约 5.5pt。
+- 环半径、开口角度、顶部居中位置均不变。
+- 截图核对：68pt 下时间与圆环间距更舒展。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 134；未签名 IPA SHA-256 `2566cb4d23ff0519c4e957048808b67c24708fe96916925d7e41f72aa610523d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2888）并启动。
+
+## 2026-11-08 横屏弹幕设置子页对齐一级页卡片样式 / Build 135
+
+- 用户反馈横屏「弹幕设置」子页的背景容器宽度/样式与一级页面不一致。原因：子页使用 Form，iOS 26 的分组卡片自带更大内缩与圆角，且与一级页的 12pt/圆角 14 卡片不同。
+- 重构：新增 `DanmakuSettingsLandscapePanelContent`（ScrollView + 卡片），使用与一级页相同的容器：12pt 内边距、10pt 分组间距、`secondarySystemGroupedBackground`、圆角 14、灰色分区标题；子页不再使用 Form。
+- 抽出 `DanmakuKitSettingsContent` 与 `DanmakuSettingsPortraitVisibilityContent`，竖屏 sheet 继续用 Section 包装同一份内容，行为不变。
+- 截图对比：子页卡片与一级页的宽度、圆角、底色、间距一致。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 135；未签名 IPA SHA-256 `1f733155c24723e6e58a9739cd680e385ab8a2aabd0d80f63eea8a86eeede8b4`；18pm 重签安装 RCe2027（databaseSequenceNumber 2896）并启动。
