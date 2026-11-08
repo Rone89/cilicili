@@ -2,15 +2,19 @@ import SwiftUI
 
 /// Button style affects appearance only; both styles share the same compact action geometry.
 struct VideoDetailActionStripLayout {
+    private static let preferredAvatarGap: CGFloat = 20
+    private static let preferredActionGap: CGFloat = 12
+
     let contentWidth: CGFloat
 
-    var avatarActionSpacing: CGFloat { compactSpacingScale * 12 }
-    var actionSpacing: CGFloat { compactSpacingScale * 6 }
+    var avatarActionSpacing: CGFloat { compactSpacingScale * Self.preferredAvatarGap }
+    var actionSpacing: CGFloat { compactSpacingScale * Self.preferredActionGap }
     var contentGroupWidth: CGFloat {
         columnWidth * 5 + avatarActionSpacing + actionSpacing * 3
     }
     private var compactSpacingScale: CGFloat {
-        min(max(contentWidth - columnWidth * 5, 0) / 30, 1)
+        let preferredSpacing = Self.preferredAvatarGap + Self.preferredActionGap * 3
+        return min(max(contentWidth - columnWidth * 5, 0) / preferredSpacing, 1)
     }
     var rowHeight: CGFloat { VideoDetailActionStrip.Metrics.rowHeight }
     var actionLabelSide: CGFloat { VideoDetailActionStrip.Metrics.actionLabelSide }

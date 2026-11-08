@@ -116,9 +116,9 @@ final class DynamicInteractionAndDetailTests: XCTestCase {
         XCTAssertEqual(layout.actionLabelSide, 32)
         XCTAssertEqual(layout.avatarImageSide, 44)
         XCTAssertEqual(layout.columnWidth, 44)
-        XCTAssertEqual(layout.avatarActionSpacing, 12)
-        XCTAssertEqual(layout.actionSpacing, 6)
-        XCTAssertEqual(layout.contentGroupWidth, 250)
+        XCTAssertEqual(layout.avatarActionSpacing, 20)
+        XCTAssertEqual(layout.actionSpacing, 12)
+        XCTAssertEqual(layout.contentGroupWidth, 276)
         XCTAssertEqual(layout.rowHeight, VideoDetailActionStrip.Metrics.rowHeight)
     }
 
