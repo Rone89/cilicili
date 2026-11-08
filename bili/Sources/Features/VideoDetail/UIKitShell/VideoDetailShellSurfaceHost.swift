@@ -860,7 +860,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             }
             .overlay(alignment: .topTrailing) {
                 if configuration.isFullscreenActive, isLandscape, !isAudioOnlyPlayback {
-                    VideoDetailFullscreenStatusLevelsIcon()
+                    VideoDetailFullscreenStatusTrioIcon()
                         .opacity(playbackControlsVisibility.opacity)
                         .padding(.top, Self.statusIconInset)
                         .padding(.trailing, Self.statusIconInset)
@@ -3246,9 +3246,6 @@ private struct VideoDetailFullscreenClockControl: View {
     }
 }
 
-/// 横屏状态组合图标：圆环（开口朝下）+ Wi-Fi + 四点，对齐 Figma
-/// `Status bar - iPhone Duo` 的 Levels（46×46：环 40.67、描边 3、Wi-Fi 18×13.33、四点 4×4）。
-/// 默认 32pt：弧心到屏幕圆角边缘只有约 16pt，更大尺寸会被圆角裁切。
 private struct VideoDetailFullscreenStatusLevelsIcon: View {
     var size: CGFloat = 32
 
