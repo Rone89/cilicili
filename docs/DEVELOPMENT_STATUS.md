@@ -641,3 +641,11 @@
 - Xcode 27.1 与 iPhone 18 Pro Max / iOS 27.0 模拟器使用共享 Xcode-27 缓存串行验证。最终版本的横竖屏往返和字幕按钮 UI 用例 2/2 通过。横屏断言两枚状态控件在顶部、分列两侧、同高，退出全屏后消失。模拟器实播截图确认两枚玻璃底托及电池轮廓，电量数据未知。证据 `build/logs/build143-landscape-final-ui.xcresult`、`build/logs/build143-landscape-glass.png`。
 - 已用原描述文件和权限签名本地 Release `.app`，原位安装到 RCe2027（iOS 27.3）。设备应用列表核验 `1.1.2 (143)`，启动成功（PID 53725）。真机横屏画面、电量读数和充电提示待验收。证据 `build/logs/build143-device-final.log`、`build/logs/build143-device-apps-after.log`。
 - 本地 `main` 从 `63e1001` 接续，源码和 UI 回归提交 `347dec5`，本轮接续记录另行提交。
+
+## 2026-11-09 横屏状态胶囊与播放控件外沿对齐 / Build 144
+
+- GPT-6 Luna（极高推理）将横屏状态行接入播放控件层。时间胶囊左缘与底部播放控件左缘对齐，电池胶囊右缘与底部控件右缘对齐。上下共用窗口安全区、视频留边和控件边距计算出的左右边距。状态行沿用屏幕顶部安全区高度。
+- 首轮回归在旋转后找不到时间控件。恢复状态行原有的挂载条件，并在用例中唤出底部控制条后再测量。Xcode 27.1、iPhone 18 Pro Max / iOS 27.0 模拟器使用共享 Xcode-27 缓存，最终全屏往返用例 1/1 通过。两枚胶囊的外缘与进度轨两端误差不超过 2pt，退出全屏后消失。证据 `build/logs/build144-landscape-alignment-final.xcresult`。
+- 最终 Release `.app` 通过共享 Xcode-27 缓存构建，沿用 Build 143 的描述文件和签名权限。版本 `1.1.2 (144)` 和深度签名校验通过。证据 `build/logs/build144-device-final.log`。
+- 已原位安装到 RCe2027（iOS 27.3），设备应用列表核验 `1.1.2 (144)`，启动成功（PID 53823）。真机横屏玻璃外沿对齐待目视验收。证据 `build/logs/build144-device-apps-after.log`。
+- 本地 `main` 从 `7ce7426` 接续，源码与回归提交 `5f634f2`，本轮接续记录另行提交。
