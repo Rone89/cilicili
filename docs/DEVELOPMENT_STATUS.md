@@ -605,3 +605,12 @@
 - 待真机验收：真机最热↔最新往返后排序 header 可见、可点、无空洞；旋转横屏往返既有行为不回归。
 - 交付补记：未签名 IPA SHA-256 `3bba8c2b58dac0f2a1bdfc99952cdfabaddcf9832a2e29e6168f5d0a77290273`；18pm 直传参数重签、`codesign --verify` 深度校验通过，无线安装 RCe2027（databaseSequenceNumber 2936）成功；重签后可执行文件 SHA-256 `c79addd1396aac7f385d314998ba0ead3b474c117e43da72530ddc4bfc6ff117`。
 - 分支 `main`，基线 `d4df2cb`；源码与本文档已提交 `d830b71`（工作区干净，未推送远端，未合并 PR）。
+
+## 2026-11-08 排序切换锚定改为原位重锚 / Build 140
+
+- Build 139 真机反馈"问题依旧"。复核发现场景差异：模拟器复现/验证均在播放器展开态（虚拟 0），而真机点排序时播放器通常已被用户滚动收起（虚拟 194，内容顶 116）。Build 139 的"回顶到虚拟 0"在收起态会把内容拉到展开播放器下方，与收起播放器（62..116）之间空出约 194pt，且依赖 shell 重新展开（已实测程序化上报不保证 shell 跟随）——另一种错位。Build 138 的虚拟 194 在展开态同理。
+- 修复：排序切换不再挑选任何目标位置，改为**原位重锚定**——`pendingVirtualOffset = 当前 contentOffset.y + contentInset.top`（能点到排序控件必然已在顶部，reloadData 换内容后钉回切换前的虚拟值）。两种播放器状态由构造保证正确，不依赖 shell 配合。
+- 测试：`testCommentsUIKitListStableAfterSortSwitches`（含 header 立即可命中断言）通过；模拟器真数据展开态切换复验正常（header 在播放器正下方、排序正确）。收起态因 idb 合成滑动被行内回复按钮吞掉无法在模拟器模拟真实拖拽，靠构造保证 + 真机验收。
+- 交付：1.1.2 / Build 140（6 处配置递增）。
+- 待真机验收：播放器收起态下最热↔最新往返，header 保持在收起播放器下方原位、无空洞；若仍错位，需要真机截图与操作序列再取证（模拟器 DEBUG 已无法复现）。
+- 安装状态：未签名 IPA 已出包（`build/logs/release-unsigned-ipa.log`），重签校验通过，但无线安装 RCe2027 两次 `CoreDeviceError 4016`（设备 `unavailable`，锁屏/无线调试断开），**Build 140 尚未装上真机**，待设备解锁在线后重跑 sign-install 命令。

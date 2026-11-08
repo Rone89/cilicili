@@ -552,11 +552,19 @@ extension VideoDetailCommentsTableViewHost {
             }
 
             if sortChanged {
-                // 切换排序后回到评论区顶部：虚拟偏移 0 = 内容顶停在展开播放器
-                // 正下方，header 完整可见可点。不预设"播放器已收起"——程序化
-                // 回顶上报的偏移并不保证 shell 跟随收起（模拟器实测脱节，header
-                // 会被顶到播放器底下，即排序切换错位），因此不再依赖 shell 配合。
-                pendingVirtualOffset = 0
+                // 切换排序不改变滚动位置，只做原位重锚定：能点到排序控件说明
+                // 已在评论区顶部，reloadData 换内容后把偏移钉回切换前的虚拟值
+                // （0=播放器展开态 / 194=播放器收起态）。不挑选任何"目标位置"，
+                // 避免依赖 shell 收起/展开配合——程序化滚动上报并不保证 shell
+                // 跟随（实测脱节），预设目标会在另一种播放器状态下留出空洞。
+                if let tableView {
+                    pendingVirtualOffset = max(
+                        0,
+                        tableView.contentOffset.y + tableView.contentInset.top
+                    )
+                } else {
+                    pendingVirtualOffset = 0
+                }
                 scheduleLayoutAdjustment()
             }
             lastSelectedSort = store.selectedSort
