@@ -508,9 +508,9 @@ extension VideoDetailCommentsTableViewHost {
                     + " width=\(Int(tableView?.bounds.width ?? 0))"
             )
 
-            // Header 内容随排序/回复数变化，先丢掉旧尺寸；随后按当前宽度与内容
-            // 量一次，保留该种子给 reloadData 的 height/estimate 查询使用。
+            // 表头和骨架屏在重载前按当前宽度与内容测量，保留种子供行高查询。
             seededHeights[.header] = nil
+            seededHeights[.loading] = nil
 
             // 新行先离屏量好估算种子（快照刷新在布局路径之外），批量更新时
             // UIKit 的偏移数学全程使用精确值，不会在翻页时扯动可见内容。
@@ -518,8 +518,7 @@ extension VideoDetailCommentsTableViewHost {
                 seedMissingItems(items: items, width: tableView.bounds.width)
             }
 
-            // 结构性行（头部/尾部/错误/空态）内容随加载态变化且只有一行，
-            // 逐出缓存让它们重新自适配；评论行高度冻结不动。
+            // 清理结构行的显示缓存。尾部、错误与空态仍由 UIKit 自适配。
             let beforeCount = cachedRowHeights.count
             cachedRowHeights = cachedRowHeights.filter { item, _ in
                 if case .comment = item { return true }
@@ -527,7 +526,7 @@ extension VideoDetailCommentsTableViewHost {
             }
             seededHeights = seededHeights.filter { item, _ in
                 switch item {
-                case .comment, .header: true
+                case .comment, .header, .loading: true
                 default: false
                 }
             }
@@ -704,6 +703,9 @@ extension VideoDetailCommentsTableViewHost {
 
             case .loading:
                 CommentsSkeletonContent(horizontalPadding: props.horizontalPadding)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("正在加载评论")
+                    .accessibilityIdentifier("comments.loading")
 
             case .error(let message):
                 CommentErrorView(
@@ -974,9 +976,8 @@ extension VideoDetailCommentsTableViewHost {
                     message: "commentsRow \(String(describing: item)) height=\(cell.frame.height)"
                 )
             }
-            // Header 使用快照前按当前宽度/内容测出的稳定种子。willDisplay 时
-            // 自动布局仍可能处于骨架切换的临时高度，不把该帧冻结成缓存值。
-            if case .header = item { return }
+            // 表头和骨架屏使用快照前测出的行高，避免冻结重载时的临时高度。
+            if item == .header || item == .loading { return }
             if case .footer = item {
                 // footer 即将显示 = 到达列表末尾，触发下一页（PiliPod 的 footer
                 // onAppear 同款触发点）。守卫在 requestLoadMorePage 内。

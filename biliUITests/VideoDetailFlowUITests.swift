@@ -1339,6 +1339,10 @@ final class VideoDetailFlowUITests: XCTestCase {
             "hot first comment must leave while the delayed latest response is loading"
         )
         XCTAssertFalse(latestFirstComment.exists, "latest result must still be loading")
+        let skeleton = list.descendants(matching: .any)["comments.loading"].firstMatch
+        XCTAssertTrue(skeleton.waitForExistence(timeout: 2))
+        XCTAssertGreaterThanOrEqual(skeleton.frame.minY, sortControl.frame.maxY - 1)
+        XCTAssertGreaterThan(skeleton.frame.height, 300)
         XCTAssertTrue(sortControl.isHittable, "sort control must stay hittable during latest loading")
         XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
         XCTAssertTrue(

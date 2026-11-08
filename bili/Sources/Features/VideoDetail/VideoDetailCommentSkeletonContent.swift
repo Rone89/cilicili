@@ -5,7 +5,7 @@ struct CommentsSkeletonContent: View {
     let horizontalPadding: CGFloat
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(0..<rowCount, id: \.self) { _ in
                 CommentSkeletonRow()
                     .padding(.horizontal, horizontalPadding)
