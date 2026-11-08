@@ -604,3 +604,4 @@
 - 交付：1.1.2 / Build 139（6 处配置递增）。
 - 待真机验收：真机最热↔最新往返后排序 header 可见、可点、无空洞；旋转横屏往返既有行为不回归。
 - 交付补记：未签名 IPA SHA-256 `3bba8c2b58dac0f2a1bdfc99952cdfabaddcf9832a2e29e6168f5d0a77290273`；18pm 直传参数重签、`codesign --verify` 深度校验通过，无线安装 RCe2027（databaseSequenceNumber 2936）成功；重签后可执行文件 SHA-256 `c79addd1396aac7f385d314998ba0ead3b474c117e43da72530ddc4bfc6ff117`。
+- 分支 `main`，基线 `d4df2cb`；源码与本文档已提交 `d830b71`（工作区干净，未推送远端，未合并 PR）。
