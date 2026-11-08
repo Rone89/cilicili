@@ -539,3 +539,12 @@
 - 截图核对：68pt 下时间与圆环间距更舒展。
 - 测试：单测 11/11、字幕 UI 用例通过。
 - 交付：1.1.2 / Build 134；未签名 IPA SHA-256 `2566cb4d23ff0519c4e957048808b67c24708fe96916925d7e41f72aa610523d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2888）并启动。
+
+## 2026-11-08 横屏弹幕设置子页对齐一级页卡片样式 / Build 135
+
+- 用户反馈横屏「弹幕设置」子页的背景容器宽度/样式与一级页面不一致。原因：子页使用 Form，iOS 26 的分组卡片自带更大内缩与圆角，且与一级页的 12pt/圆角 14 卡片不同。
+- 重构：新增 `DanmakuSettingsLandscapePanelContent`（ScrollView + 卡片），使用与一级页相同的容器：12pt 内边距、10pt 分组间距、`secondarySystemGroupedBackground`、圆角 14、灰色分区标题；子页不再使用 Form。
+- 抽出 `DanmakuKitSettingsContent` 与 `DanmakuSettingsPortraitVisibilityContent`，竖屏 sheet 继续用 Section 包装同一份内容，行为不变。
+- 截图对比：子页卡片与一级页的宽度、圆角、底色、间距一致。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 135；未签名 IPA SHA-256 `1f733155c24723e6e58a9739cd680e385ab8a2aabd0d80f63eea8a86eeede8b4`；18pm 重签安装 RCe2027（databaseSequenceNumber 2896）并启动。
