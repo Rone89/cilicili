@@ -3075,20 +3075,15 @@ private struct SurfaceOnlyDanmakuSettingsPage: View {
     let toggleDanmaku: () -> Void
 
     var body: some View {
-        DanmakuSettingsSheetContent(
+        // 与一级页面共用同一套卡片容器（12pt 内边距、圆角 14、同一底色），
+        // 不再使用 Form，避免 iOS 26 分组卡片的额外内缩与更大圆角。
+        DanmakuSettingsLandscapePanelContent(
             store: detailViewModel.danmakuSettingsRenderStore,
             summary: settingsSummary,
             hidesDanmakuInPortraitBinding: hidesDanmakuInPortraitBinding,
             toggleDanmaku: toggleDanmaku,
             updateDanmakuSettings: { detailViewModel.updateDanmakuSettings($0) }
         )
-        .scrollContentBackground(.hidden)
-        .listRowBackground(Color.clear)
-        .listStyle(.plain)
-        .background(Color.clear)
-        .navigationTitle("弹幕设置")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.automatic, for: .navigationBar)
     }
 
     private var settingsSummary: String {
