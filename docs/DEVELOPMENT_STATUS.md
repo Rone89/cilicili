@@ -467,3 +467,11 @@
 - 验证（XCUITest 截图导出，临时用例已删除）：深色外观下分组为纯色、开关行只剩图标/标题/开关、列表滚动到底后内容贴底。
 - 测试：单测 11/11、`VideoDetailSubtitleUITests` 通过。
 - 交付：1.1.2 / Build 127；未签名 IPA SHA-256 `4d9012feecc04366bc5cf21014b1ff0cee81b12e07060c76558a8e0e5f3f2c9d`；18pm 重签安装 RCe2027（databaseSequenceNumber 2808）并启动成功。
+
+## 2026-11-08 横屏电量胶囊图标居中 / Build 128
+
+- 按用户选择「胶囊内图标居中」调整：`VideoDetailFullscreenBatteryControl` 去掉百分比文字，仅保留电池图标并在 `controlHeight` 正方形内居中，胶囊随之收窄为近似圆形；百分比保留在 accessibilityLabel。
+- Figma 参考：通过 REST API 读取 `Status bar - iPhone Duo` 组件（`12884:7871` 纵向 48×83、`12884:7912` 横向 98×48）：Time 为 SF Pro Rounded 700 / 16pt / 行高 19；Levels 46×46 内含 Wi-Fi 18×13.33、蜂窝 4×4 点阵、电池椭圆 40.67。标准 iPhone 18 Pro Max 状态栏（`13016:4166`）Time 为 SF Pro 590 / 18.67pt / 行高 22，电池 32×15、Wi-Fi 20.67×15.33。暂未按此重做整条状态栏，仅先落实图标居中。
+- 验证（截图核对，临时用例已删除）：横屏右上角为圆形玻璃胶囊、电池图标居中；时间胶囊不变。
+- 测试：单测 11/11、字幕 UI 用例通过。
+- 交付：1.1.2 / Build 128；未签名 IPA SHA-256 `6bea7a45b355232f5d7d2bbdf22d5cc27ed98919b30565ea746da4d98d146280`；18pm 重签安装 RCe2027（databaseSequenceNumber 2816）成功（首次安装遇设备断连，重试成功）。
