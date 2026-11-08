@@ -51,7 +51,7 @@ final class VideoDetailStatusBatteryMonitor: ObservableObject {
 /// 电池环比例不变；中间不再显示网络信息，底部四点已移除。
 struct VideoDetailFullscreenStatusClockIcon: View {
     @StateObject private var battery = VideoDetailStatusBatteryMonitor()
-    var size: CGFloat = 60
+    var size: CGFloat = 68
 
     private var scale: CGFloat { size / 120 }
 
@@ -81,7 +81,7 @@ struct VideoDetailFullscreenStatusClockIcon: View {
     private func drawBattery(in context: inout GraphicsContext) {
         let center = CGPoint(x: 59.5 * scale, y: 61.487 * scale)
         let radius = 51.5 * scale
-        let style = StrokeStyle(lineWidth: 8 * scale, lineCap: .round)
+        let style = StrokeStyle(lineWidth: 7.2 * scale, lineCap: .round)
 
         var track = Path()
         track.addArc(
@@ -111,7 +111,7 @@ struct VideoDetailFullscreenStatusClockIcon: View {
         let text = date.formatted(date: .omitted, time: .shortened)
         let resolved = context.resolve(
             Text(text)
-                .font(.system(size: 30 * scale, weight: .bold, design: .rounded))
+                .font(.system(size: 28 * scale, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .monospacedDigit()
         )
