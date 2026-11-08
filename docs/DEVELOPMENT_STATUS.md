@@ -577,9 +577,19 @@
 - 需求：我的 → 界面显示新增“动态页顶部选项”，可自定义 全部/投稿/番剧/专栏/UP 的显示与排序，至少保留一个；只剩一个时不显示顶部分段控件，改为显示「动态」大标题；仅使用 iOS 原生控件。
 - 存储：`LibraryStore` 新增 `visibleDynamicFeedKinds`（键 `cc.bili.display.visibleDynamicFeedKinds.v1`），`DynamicFeedKind.normalizedVisibleKinds` 负责丢未知值/去重，**列表缺失即视为隐藏**（只有空列表或全未知才回退默认 5 项）；`setDynamicFeedTab` 隐藏时守住“最少一项”，重新开启按默认顺序插回；`moveDynamicFeedKinds` 复用 SwiftUI `.onMove` 契约；`resetDynamicFeedTabs` 恢复默认。单测 9/9 覆盖默认值、归一化、最少一项、插回位置、排序持久化与重置。
 - 设置页 `DynamicFeedTabSettingsView`：Form 原生控件——“显示的选项”分组 Toggle + 原生“编辑”拖动排序（编辑模式仅显示文本行，避免与 Toggle 命中冲突）、“已隐藏”分组 Toggle、恢复默认；我的页入口行显示当前配置摘要（单选项时“仅显示 X”）。
-- 动态页 `DynamicContentRoot`：分段控件只渲染可见项并按其顺序；配置变化时若当前项被隐藏自动切到第一项；`visibleFeedKinds.count == 1` 时不注册 principal ToolbarItem，改用 `.toolbarTitleDisplayMode(.large)` 显示原生大标题，并通过常量 false 的 `rootNavigationTitleHidden` 绑定让标题跟随原生大标题收起、不被滚动边缘效果提前清空。仅剩 UP 选项时进入页面自动弹出选择 UP 的 sheet。
+- 动态页 `DynamicContentRoot`：分段控件只渲染可见项并按其顺序；配置变化时若当前项被隐藏自动切到第一项；`visibleFeedKinds.count == 1` 时不注册 principal ToolbarItem（Build 138 起同时隐藏整条导航栏，内容上移，见下节）。仅剩 UP 选项时进入页面自动弹出选择 UP 的 sheet。
 - 验证：单元 9/9；`DynamicFeedTabsUITests` 5/5（默认五项与顺序、自定义顺序与隐藏、单项时无分段且导航栏显示“动态”、设置页开关与最后一项禁用、原生编辑模式），均使用规定 iPhone 18 Pro Max / iOS 27.0 模拟器与共享 Xcode-27 缓存串行执行。证据 `build/logs/build137-dyntabs-unit4.xcresult`、`build137-dyntabs-ui6.xcresult`。
 - 未跑全量单元与云端 CI；已知 Build 116 遗留的评论分页 3 项单测失败与本轮无关。
 - 交付：1.1.2 / Build 137（6 处配置递增）；未签名 IPA SHA-256 `da6b87e4b788fddf4f95e9031f19444c258e7da936a0a5a110d5a6849631f919`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2912）并启动；重签后可执行文件 SHA-256 `7d8ef4dfc8d1a2bc29d399202f0b543ab57b46f6262648aa3cd13a78f0df16c1`。记录 `build/logs/build137-device-build-info.json`、`build137-device-apps-after.txt`。
 - 待真机验收：① 我的 → 界面显示出现“动态页顶部选项”；② 关闭/开启选项并拖动排序后，动态页顶部分段即时同步；③ 仅保留一个选项时顶部分段消失、显示“动态”大标题；④ 重启 App 后配置保持。
 - 分支 `main`，基线 `43fe324`；源码与本文档已提交 `cc74a93`（工作区干净，未推送远端，未合并 PR）。
+
+## 2026-11-08 单项时隐藏导航栏、内容上移 / Build 138
+
+- 用户调整需求：动态页顶部只有一个选项时不显示「动态」大标题，改为不显示顶部栏、页面内容上移（替换 Build 137 的大标题方案）。
+- 实现：`DynamicContentRoot` 在 `visibleFeedKinds.count > 1` 时 `.toolbar(.visible, for: .navigationBar)` 并保留 principal 分段控件；只有一个可见项时 `.toolbar(.hidden, for: .navigationBar)`，不注册任何 ToolbarItem，滚动内容随安全区上移；`.toolbarTitleDisplayMode(.inline)` 两种模式一致。
+- 关键回归：根页面隐藏导航栏后，从动态页推入的二级页仍显示自己的导航栏（返回可用）。夹具新增 `fixture.pushDetail` 推入「二级」页，UI 用例断言 `navigationBars.count == 0` 后推入仍出现「二级」导航栏，均已通过；`DynamicDetailDestination` 无需改动。
+- 验证：`DynamicFeedTabsUITests` 6/6 通过（默认五项与顺序、自定义顺序与隐藏、单项无导航栏且内容上移、单项推入二级页仍有导航栏、设置页开关与最后一项禁用、原生编辑模式），规定 iPhone 18 Pro Max / iOS 27.0 模拟器与共享 Xcode-27 缓存串行执行；单元测试本轮无逻辑改动未重跑（Build 137 结果 9/9）。证据 `build/logs/build138-dyntabs-ui.xcresult`。
+- 交付：1.1.2 / Build 138（6 处配置递增）；未签名 IPA SHA-256 `ef874316f7ba1f8a317ef520ce2006d322778ae0ea40e903b7f693368e56fc13`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2920）并启动；重签后可执行文件 SHA-256 `6011309792f029a704798d70a983e19bdf212e7a920a0c6a66291bf316a8a31c`。记录 `build/logs/build138-device-build-info.json`、`build138-device-apps-after.txt`。
+- 待真机验收：仅保留一个选项时动态页顶部无栏无标题、内容顶到状态栏下方；推入动态详情/视频详情正常返回；多选项时顶部分段照旧。
+- 分支 `main`；本轮源码与文档提交见下条。

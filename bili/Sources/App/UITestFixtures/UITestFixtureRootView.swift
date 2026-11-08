@@ -68,9 +68,10 @@ struct UITestFixtureRootView: View {
 private struct UITestDynamicFeedTabsFixtureView: View {
     let dependencies: AppDependencies
     @EnvironmentObject private var libraryStore: LibraryStore
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             DynamicContentRoot(
                 api: dependencies.api,
                 libraryStore: dependencies.libraryStore,
@@ -79,6 +80,21 @@ private struct UITestDynamicFeedTabsFixtureView: View {
             )
             .navigationTitle("动态")
             .toolbarTitleDisplayMode(.inline)
+            .overlay(alignment: .topTrailing) {
+                // Verifies that pushing from the single-kind page (navigation bar
+                // hidden at the root) still shows the destination's own bar.
+                Button("详情") { path.append("detail") }
+                    .accessibilityIdentifier("fixture.pushDetail")
+                    .padding(8)
+            }
+            .navigationDestination(for: String.self) { _ in
+                ScrollView {
+                    Text("二级页面")
+                        .padding()
+                }
+                .navigationTitle("二级")
+                .toolbarTitleDisplayMode(.inline)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             configProbe

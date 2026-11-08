@@ -90,15 +90,24 @@ final class DynamicFeedTabsUITests: XCTestCase {
         XCTAssertEqual(probeText(app), "up,article")
     }
 
-    func testSingleKindHidesToolbarAndShowsLargeTitle() {
+    func testSingleKindHidesNavigationBarSoContentMovesUp() {
         let app = launchFixture("dynamicFeedTabs", visibleTabs: ["video"])
         XCTAssertFalse(app.segmentedControls["dynamic.feedPicker"].exists)
         XCTAssertFalse(app.otherElements["dynamic.feedPicker"].exists)
         XCTAssertFalse(app.buttons["投稿"].exists)
-        let navigationBar = app.navigationBars.firstMatch
-        XCTAssertTrue(navigationBar.waitForExistence(timeout: 5))
-        XCTAssertTrue(navigationBar.staticTexts["动态"].exists, app.debugDescription)
+        // 单个选项时不显示顶部导航栏/大标题，内容上移。
+        XCTAssertEqual(app.navigationBars.count, 0, app.debugDescription)
         XCTAssertEqual(probeText(app), "video")
+    }
+
+    func testSingleKindPushStillShowsDestinationNavigationBar() {
+        let app = launchFixture("dynamicFeedTabs", visibleTabs: ["video"])
+        XCTAssertEqual(app.navigationBars.count, 0)
+        let pushButton = app.buttons["fixture.pushDetail"]
+        XCTAssertTrue(pushButton.waitForExistence(timeout: 5), app.debugDescription)
+        pushButton.tap()
+        XCTAssertTrue(app.navigationBars["二级"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["二级页面"].exists)
     }
 
     func testSettingsEntryTogglesVisibilityAndProtectsLastKind() {

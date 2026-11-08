@@ -85,7 +85,8 @@ struct DynamicContentRoot: View {
                 DynamicInitialFeedContent(isLoggedIn: sessionStore.isLoggedIn)
             }
         }
-        .toolbarTitleDisplayMode(showsFeedToolbar ? .inline : .large)
+        .toolbar(showsFeedToolbar ? .visible : .hidden, for: .navigationBar)
+        .toolbarTitleDisplayMode(.inline)
         .environment(\.rootNavigationTitleHidden, navigationChromeVisibility)
         .toolbar {
             if showsFeedToolbar {
