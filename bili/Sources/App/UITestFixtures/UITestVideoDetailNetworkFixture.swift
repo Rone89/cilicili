@@ -23,6 +23,12 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
         do {
             let url = request.url!
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if url.path == "/x/v2/reply/main",
+               Self.delaysLatestSortFixtureResponse(query: query) {
+                // Keep the latest-sort loading state visible long enough for the UI test
+                // to inspect the header. URLProtocol runs this request on URLSession's queue.
+                Thread.sleep(forTimeInterval: 4)
+            }
             let payload: Any
             switch url.path {
             case "/x/web-interface/view", "/x/web-interface/wbi/view":
@@ -103,9 +109,12 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
     }
 
     private static func commentRepliesPayload(query: [URLQueryItem]) -> [String: Any] {
+        let firstCommentSortMarker = commentSortFixtureMarker(query: query)
         guard paginatesComments else {
             return [
-                "replies": (1...totalCommentCount).map(commentPayload),
+                "replies": (1...totalCommentCount).map {
+                    commentPayload($0, firstCommentSortMarker: $0 == 1 ? firstCommentSortMarker : nil)
+                },
                 "cursor": ["is_end": true],
             ]
         }
@@ -118,9 +127,28 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
             cursor["next"] = String(end)
         }
         return [
-            "replies": (start...end).map(commentPayload),
+            "replies": (start...end).map {
+                commentPayload($0, firstCommentSortMarker: $0 == 1 ? firstCommentSortMarker : nil)
+            },
             "cursor": cursor,
         ]
+    }
+
+    private static func commentSortFixtureMarker(query: [URLQueryItem]) -> String? {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-test-comment-sort-sentinel") else {
+            return nil
+        }
+        switch query.first(where: { $0.name == "mode" })?.value {
+        case "3": return "排序标记甲"
+        case "2": return "排序标记乙"
+        default: return nil
+        }
+    }
+
+    private static func delaysLatestSortFixtureResponse(query: [URLQueryItem]) -> Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-comment-sort-sentinel")
+            && query.first(where: { $0.name == "mode" })?.value == "2"
+            && commentPageOffset(query: query) == 0
     }
 
     private static func commentPageOffset(query: [URLQueryItem]) -> Int {
@@ -132,7 +160,10 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
         return Int(offset) ?? 0
     }
 
-    private static func commentPayload(_ index: Int) -> [String: Any] {
+    private static func commentPayload(
+        _ index: Int,
+        firstCommentSortMarker: String? = nil
+    ) -> [String: Any] {
         // 每 4 条里有一条是长文本，制造参差行高（模拟真实评论区）。
         let filler = index % 4 == 0
             ? String(repeating: "这是一段用来撑高评论行的长文本内容，", count: 18)
@@ -140,7 +171,10 @@ nonisolated private final class VideoDetailFixtureURLProtocol: URLProtocol {
         return [
             "rpid": index,
             "content": ["message": "详情评论 \(index)\(filler)"],
-            "member": ["mid": "1001", "uname": "评论用户"],
+            "member": [
+                "mid": "1001",
+                "uname": index == 1 ? (firstCommentSortMarker ?? "评论用户") : "评论用户",
+            ],
         ]
     }
 

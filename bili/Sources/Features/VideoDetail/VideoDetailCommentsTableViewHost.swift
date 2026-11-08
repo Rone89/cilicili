@@ -25,6 +25,7 @@ struct VideoDetailCommentsTableViewHost: UIViewRepresentable {
     let style: CommentSectionStyle
     let horizontalPadding: CGFloat
     let ownerMID: Int?
+    let diagnosticsMetricsID: String
     let cellEnvironment: VideoDetailCommentsCellEnvironment
     let context: VideoDetailCommentsPageContext
 
@@ -60,6 +61,7 @@ struct VideoDetailCommentsTableViewHost: UIViewRepresentable {
             style: style,
             horizontalPadding: horizontalPadding,
             ownerMID: ownerMID,
+            diagnosticsMetricsID: diagnosticsMetricsID,
             cellEnvironment: cellEnvironment,
             tab: context.tab,
             topInset: context.topInset,
@@ -217,6 +219,7 @@ extension VideoDetailCommentsTableViewHost {
             let style: CommentSectionStyle
             let horizontalPadding: CGFloat
             let ownerMID: Int?
+            let diagnosticsMetricsID: String
             let cellEnvironment: VideoDetailCommentsCellEnvironment
             let tab: VideoDetailContentTab
             let topInset: CGFloat
@@ -392,6 +395,7 @@ extension VideoDetailCommentsTableViewHost {
             let layoutChanged = self.props.style != props.style
                 || self.props.horizontalPadding != props.horizontalPadding
                 || self.props.ownerMID != props.ownerMID
+            let headerLayoutChanged = self.props.horizontalPadding != props.horizontalPadding
             let activeChanged = self.props.isActive != props.isActive
             // 视频切换会换一个 render store：重订阅并整表刷新。
             let storeChanged = props.store !== self.props.store
@@ -414,6 +418,13 @@ extension VideoDetailCommentsTableViewHost {
                 refreshSnapshot(reloadData: true)
             }
             if layoutChanged {
+                if headerLayoutChanged {
+                    cachedRowHeights[.header] = nil
+                    seededHeights[.header] = nil
+                    if let tableView, tableView.bounds.width > 10 {
+                        seedMissingItems(items: [.header], width: tableView.bounds.width)
+                    }
+                }
                 tableView?.reloadData()
             }
             if activeChanged {
@@ -487,7 +498,7 @@ extension VideoDetailCommentsTableViewHost {
             // 报告，真机排查行高与滚动问题两头都能取到。
             PlayerMetricsLog.record(
                 .manifestStage,
-                metricsID: "comments",
+                metricsID: props.diagnosticsMetricsID,
                 message: "commentsRefresh sort=\(store.selectedSort.rawValue)"
                     + " items=\(items.count)"
                     + " offset=\(Int(tableView?.contentOffset.y ?? 0))"
@@ -496,6 +507,10 @@ extension VideoDetailCommentsTableViewHost {
                     + " insetTop=\(Int(tableView?.contentInset.top ?? 0))"
                     + " width=\(Int(tableView?.bounds.width ?? 0))"
             )
+
+            // Header 内容随排序/回复数变化，先丢掉旧尺寸；随后按当前宽度与内容
+            // 量一次，保留该种子给 reloadData 的 height/estimate 查询使用。
+            seededHeights[.header] = nil
 
             // 新行先离屏量好估算种子（快照刷新在布局路径之外），批量更新时
             // UIKit 的偏移数学全程使用精确值，不会在翻页时扯动可见内容。
@@ -511,8 +526,10 @@ extension VideoDetailCommentsTableViewHost {
                 return false
             }
             seededHeights = seededHeights.filter { item, _ in
-                if case .comment = item { return true }
-                return false
+                switch item {
+                case .comment, .header: true
+                default: false
+                }
             }
             if Self.logsHeightDebug, cachedRowHeights.count != beforeCount {
                 NSLog(
@@ -529,6 +546,15 @@ extension VideoDetailCommentsTableViewHost {
             // 插入新行"的批量更新在深偏移处做估算偏移补偿（错位来源之一）。
             // 首次快照（lastSelectedSort == nil）不算切换。
             let sortChanged = lastSelectedSort != nil && lastSelectedSort != store.selectedSort
+
+            if sortChanged {
+                // 在 reloadData 改变行高与 contentSize 前取锚，避免 reload 已经
+                // 修正估算偏移后再把瞬时位置误当成切换前的虚拟偏移。
+                pendingVirtualOffset = max(
+                    0,
+                    (tableView?.contentOffset.y ?? 0) + (tableView?.contentInset.top ?? 0)
+                )
+            }
 
             if reloadData || sortChanged {
                 dataSource.applySnapshotUsingReloadData(snapshot)
@@ -560,14 +586,6 @@ extension VideoDetailCommentsTableViewHost {
                 // （0=播放器展开态 / 194=播放器收起态）。不挑选任何"目标位置"，
                 // 避免依赖 shell 收起/展开配合——程序化滚动上报并不保证 shell
                 // 跟随（实测脱节），预设目标会在另一种播放器状态下留出空洞。
-                if let tableView {
-                    pendingVirtualOffset = max(
-                        0,
-                        tableView.contentOffset.y + tableView.contentInset.top
-                    )
-                } else {
-                    pendingVirtualOffset = 0
-                }
                 scheduleLayoutAdjustment()
             }
             lastSelectedSort = store.selectedSort
@@ -798,12 +816,11 @@ extension VideoDetailCommentsTableViewHost {
             }
             cachedRowHeights.removeAll()
             seededHeights.removeAll()
-            tableView.reloadData()
-            // 清空后立即用新宽度重播种：seedMissingItems 只在快照刷新时运行，
-            // 宽度变化不产生快照。不补种的话表格会停留在 96pt 默认估算上，
-            // contentSize 与偏移映射全部失真，回到竖屏后出现大段空洞。
             let items = makeItems(store: props.store, itemsByID: itemsByID)
+            // 清空后立即用新宽度重播种：seedMissingItems 只在快照刷新时运行，
+            // 宽度变化不产生快照。先种再 reload，首次高度查询就能取到新尺寸。
             seedMissingItems(items: items, width: width)
+            tableView.reloadData()
         }
 
         /// 内容不足一屏时补足底部留白，保证播放器仍可随滚动完全收起
@@ -953,10 +970,13 @@ extension VideoDetailCommentsTableViewHost {
                 // 需要知道它们的实际显示高度。
                 PlayerMetricsLog.record(
                     .manifestStage,
-                    metricsID: "comments",
+                    metricsID: props.diagnosticsMetricsID,
                     message: "commentsRow \(String(describing: item)) height=\(cell.frame.height)"
                 )
             }
+            // Header 使用快照前按当前宽度/内容测出的稳定种子。willDisplay 时
+            // 自动布局仍可能处于骨架切换的临时高度，不把该帧冻结成缓存值。
+            if case .header = item { return }
             if case .footer = item {
                 // footer 即将显示 = 到达列表末尾，触发下一页（PiliPod 的 footer
                 // onAppear 同款触发点）。守卫在 requestLoadMorePage 内。

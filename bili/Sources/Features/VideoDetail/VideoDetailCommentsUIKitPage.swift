@@ -56,6 +56,7 @@ struct VideoDetailCommentsUIKitPage: View {
             style: .plain,
             horizontalPadding: context.standardHorizontalInset,
             ownerMID: viewModel.detail.owner?.mid,
+            diagnosticsMetricsID: viewModel.detail.bvid,
             cellEnvironment: VideoDetailCommentsCellEnvironment(
                 dependencies: dependencies,
                 libraryStore: libraryStore,

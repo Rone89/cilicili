@@ -1264,81 +1264,90 @@ final class VideoDetailFlowUITests: XCTestCase {
     func testCommentsUIKitListStableAfterSortSwitches() {
         let app = launchVideoDetail(
             waitForDetailMarker: false,
-            extraArguments: ["--ui-test-comment-pagination"]
+            extraArguments: [
+                "--ui-test-comment-pagination",
+                "--ui-test-comment-sort-sentinel",
+            ]
         )
         let list = openCommentsTab(in: app)
         let sortControl = app.segmentedControls["评论排序"].firstMatch
         XCTAssertTrue(sortControl.waitForExistence(timeout: 10), app.debugDescription)
-        let comment1 = list.buttons["详情评论 1"].firstMatch
+        let hotFirstComment = list.buttons["回复 排序标记甲 的评论"].firstMatch
+        let latestFirstComment = list.buttons["回复 排序标记乙 的评论"].firstMatch
         let comment3 = list.buttons["详情评论 3"].firstMatch
-        XCTAssertTrue(comment1.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(hotFirstComment.waitForExistence(timeout: 10), app.debugDescription)
 
-        func headerDistance() -> CGFloat? {
+        func headerDistance(to firstComment: XCUIElement) -> CGFloat? {
             guard sortControl.exists, sortControl.isHittable,
-                  comment1.exists, comment1.isHittable else { return nil }
-            return comment1.frame.minY - sortControl.frame.minY
+                  firstComment.exists, firstComment.isHittable else { return nil }
+            return firstComment.frame.minY - sortControl.frame.minY
         }
-        func markerDistance() -> CGFloat? {
-            guard comment1.exists, comment1.isHittable,
+        func markerDistance(from firstComment: XCUIElement) -> CGFloat? {
+            guard firstComment.exists, firstComment.isHittable,
                   comment3.exists, comment3.isHittable else { return nil }
-            return comment3.frame.minY - comment1.frame.minY
+            return comment3.frame.minY - firstComment.frame.minY
         }
 
-        guard let initialMarkerDistance = markerDistance() else {
-            XCTFail("first comments must be initially visible")
+        let initialHeaderY = sortControl.frame.minY
+        guard let initialHeaderDistance = headerDistance(to: hotFirstComment),
+              let initialMarkerDistance = markerDistance(from: hotFirstComment) else {
+            XCTFail("header, first hot comment, and third comment must be initially visible")
             return
         }
-        // 首次头部距离是骨架屏期间捕获的高度，排序切换后结构行会重新
-        // 自适配（既有语义），因此基准取第一次切换之后的稳定态。
+        // The full-row reply button begins at the comment row top; with the current
+        // header padding its gap from the picker origin is about 40–55pt.
+        XCTAssertGreaterThanOrEqual(initialHeaderDistance, 35)
+        XCTAssertLessThan(initialHeaderDistance, 65)
         let latest = sortControl.buttons["最新"].firstMatch
         let hot = sortControl.buttons["最热"].firstMatch
 
         latest.tap()
-        XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching to latest")
-        // 回顶必须落在展开播放器正下方：排序控件立即可见可命中，
-        // 不允许被顶到播放器底下（需要滑动才能找回的错位状态）。
         XCTAssertTrue(
             sortControl.waitForExistence(timeout: 5) && sortControl.isHittable,
-            "sort control must be hittable immediately after switching sort"
+            "sort control must remain hittable immediately after switching to latest"
         )
-        var distanceAfterLatest: CGFloat?
-        for _ in 0..<6 where distanceAfterLatest == nil {
-            list.swipeDown()
-            distanceAfterLatest = headerDistance()
-        }
-        guard let latestHeaderDistance = distanceAfterLatest ?? headerDistance() else {
-            XCTFail("header and first comment must be visible after switching to latest")
+        XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
+        XCTAssertTrue(
+            hotFirstComment.waitForNonExistence(timeout: 2),
+            "hot first comment must leave while the delayed latest response is loading"
+        )
+        XCTAssertFalse(latestFirstComment.exists, "latest result must still be loading")
+        XCTAssertTrue(sortControl.isHittable, "sort control must stay hittable during latest loading")
+        XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
+        XCTAssertTrue(
+            latestFirstComment.waitForExistence(timeout: 10),
+            "latest first comment must appear after the latest-sort request finishes"
+        )
+        XCTAssertTrue(sortControl.isHittable, "sort control must stay hittable after latest loads")
+        XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
+        guard let latestHeaderDistance = headerDistance(to: latestFirstComment),
+              let latestMarkerDistance = markerDistance(from: latestFirstComment) else {
+            XCTFail("latest header and first comments must be visible without scrolling")
             return
         }
-        // 绝对界限：出现用户报告的大段空洞（数百 pt）即失败。
-        XCTAssertLessThan(latestHeaderDistance, 300)
-        guard let latestMarkerDistance = markerDistance() else {
-            XCTFail("comments 1 and 3 must be simultaneously visible after switching to latest")
-            return
-        }
+        XCTAssertEqual(latestHeaderDistance, initialHeaderDistance, accuracy: 4)
+        XCTAssertLessThan(latestHeaderDistance, 70)
         XCTAssertEqual(latestMarkerDistance, initialMarkerDistance, accuracy: 2)
 
         hot.tap()
-        XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching back to hot")
         XCTAssertTrue(
             sortControl.waitForExistence(timeout: 5) && sortControl.isHittable,
-            "sort control must be hittable immediately after switching back to hot"
+            "sort control must remain hittable immediately after switching back to hot"
         )
-        var distanceAfterHot: CGFloat?
-        for _ in 0..<6 where distanceAfterHot == nil {
-            list.swipeDown()
-            distanceAfterHot = headerDistance()
-        }
-        guard let hotHeaderDistance = distanceAfterHot ?? headerDistance() else {
-            XCTFail("header and first comment must be visible after switching back to hot")
+        XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
+        XCTAssertTrue(
+            hotFirstComment.waitForExistence(timeout: 10),
+            "hot first comment must reappear after the hot-sort request finishes"
+        )
+        XCTAssertTrue(sortControl.isHittable, "sort control must stay hittable after hot loads")
+        XCTAssertEqual(sortControl.frame.minY, initialHeaderY, accuracy: 2)
+        guard let hotHeaderDistance = headerDistance(to: hotFirstComment),
+              let hotMarkerDistance = markerDistance(from: hotFirstComment) else {
+            XCTFail("hot header and first comments must be visible without scrolling")
             return
         }
-        XCTAssertEqual(hotHeaderDistance, latestHeaderDistance, accuracy: 4)
-        XCTAssertLessThan(hotHeaderDistance, 300)
-        guard let hotMarkerDistance = markerDistance() else {
-            XCTFail("comments 1 and 3 must be simultaneously visible after switching back to hot")
-            return
-        }
+        XCTAssertEqual(hotHeaderDistance, initialHeaderDistance, accuracy: 4)
+        XCTAssertLessThan(hotHeaderDistance, 70)
         XCTAssertEqual(hotMarkerDistance, initialMarkerDistance, accuracy: 2)
     }
 
