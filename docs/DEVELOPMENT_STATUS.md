@@ -530,4 +530,4 @@
 - 增加投影（black 0.55 / radius 3）提升亮画面下的可读性。
 - 截图核对：横屏顶部居中为「电池环 + 时间」，无四点、无网络图标。
 - 测试：单测 11/11、字幕 UI 用例通过。
-- 交付：1.1.2 / Build 133；未签名 IPA SHA-256 `05cd8ba79d7c26be92858160cb9bf8e89255082b974d6988f15f9c5f3cc51d59`；18pm 重签校验通过，但安装时 RCe2027 变为 unavailable（两次重试均 CoreDeviceError 4016），待设备恢复在线后安装。
+- 交付：1.1.2 / Build 133；未签名 IPA SHA-256 `05cd8ba79d7c26be92858160cb9bf8e89255082b974d6988f15f9c5f3cc51d59`；18pm 重签校验通过；设备恢复在线后安装成功（databaseSequenceNumber 2880）并启动。
