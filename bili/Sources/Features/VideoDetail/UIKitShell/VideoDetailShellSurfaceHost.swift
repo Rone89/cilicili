@@ -642,8 +642,9 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
 
     /// iPhone 屏幕圆角半径（pt）。用于把状态组合图标放到圆角弧心。
     private static let displayCornerRadius: CGFloat = 55
-    /// 图标 32pt 时，让其中心落在弧心所需的边距（55 - 16）。
-    private static let statusIconInset: CGFloat = 39
+    /// 图标 46pt：中心放在距两边 67pt 处（弧心 55 + 内移 12），
+    /// 避免 46pt 图标的对角超出屏幕圆角被裁切；padding = 67 - 23。
+    private static let statusIconInset: CGFloat = 44
 
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
