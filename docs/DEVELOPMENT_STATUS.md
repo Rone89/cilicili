@@ -499,3 +499,17 @@
 - 位置沿用 32pt + 屏幕右上圆角弧心，随控制条淡入淡出；移除上一版 Figma Levels 手绘图标。
 - 验证：截图核对环/Wi-Fi 弧/四点渲染正确（模拟器无电量与蜂窝数据，呈现轨道与暗点）；单测 11/11、字幕 UI 用例通过。
 - 交付：1.1.2 / Build 130；未签名 IPA SHA-256 `2fcb529fcd04f5adaf5a4f758e943f7bc2ce053816dd7bacf891bf65c97b8843`；18pm 重签安装 RCe2027（databaseSequenceNumber 2848）并启动。
+
+## 2026-11-08 B 方案 + 私有信号探针 / Build 131
+
+- 用户选择：放大图标到可显示制式文字、位置内移；并用私有 API 取真实信号强度。
+- 图标：46pt（画布 120 等比），中心放在距上/右各 67pt（弧心 55 + 内移 12），padding 44；46pt 对角约 32.5pt，内移后可避开屏幕圆角裁切。
+- 中间切换：Wi-Fi 激活 → Wi-Fi 弧（弧数按 RSSI 分档：> -62 三弧，-75...-62 两弧，< -75 一弧；无 RSSI 时按连接画满）；蜂窝 → 真实制式文本 5G/4G/3G/2G（SF Rounded Bold 26/120）。
+- 底部四点：蜂窝信号格（0–4），优先私有探针，失败回退制式档位。
+- 私有探针 `VideoDetailPrivateSignalProbe`（dlsym，全部失败安全返回 nil）：
+  - 蜂窝：`CTServerConnectionCreate` + `_CTServerConnectionGetSignalStrength`；返回值 0–5 或 dBm（-90...-50）均归一化到 0–4。
+  - Wi-Fi：`MobileWiFi` 私有框架 `WiFiManagerClientCreate` / `WiFiManagerClientGetDevice(en0/en1/awdl0)` / `WiFiDeviceClientCopyCurrentNetwork` / `WiFiNetworkGetProperty("RSSI")`。
+  - 日志：`cc.bili/SignalProbe`（DEBUG），记录符号解析与探针可用性。
+- 明确风险：私有 API 仅供自签名侧载，上架 App Store 违规；系统升级可能失效，失效时自动回退公开信息（连接态/制式）。
+- 验证：模拟器截图确认 46pt 布局与 Wi-Fi 弧、四点渲染；单测 11/11、字幕 UI 用例通过；真机私有探针实际返回值需用户在设备上确认（日志 `cc.bili/SignalProbe`）。
+- 交付：1.1.2 / Build 131；未签名 IPA SHA-256 `fd21ce73b4448f8596fb63a743dec41f5ecf4793fffc54f086c450f089685240`；18pm 重签安装 RCe2027（databaseSequenceNumber 2856）并启动。
