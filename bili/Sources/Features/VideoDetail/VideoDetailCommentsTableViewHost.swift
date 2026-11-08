@@ -552,8 +552,11 @@ extension VideoDetailCommentsTableViewHost {
             }
 
             if sortChanged {
-                // 切换排序后回到评论区顶部（播放器保持收起）。
-                pendingVirtualOffset = max(0, props.topInset - props.minimumPlayerHeight)
+                // 切换排序后回到评论区顶部：虚拟偏移 0 = 内容顶停在展开播放器
+                // 正下方，header 完整可见可点。不预设"播放器已收起"——程序化
+                // 回顶上报的偏移并不保证 shell 跟随收起（模拟器实测脱节，header
+                // 会被顶到播放器底下，即排序切换错位），因此不再依赖 shell 配合。
+                pendingVirtualOffset = 0
                 scheduleLayoutAdjustment()
             }
             lastSelectedSort = store.selectedSort

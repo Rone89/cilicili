@@ -593,3 +593,14 @@
 - 交付：1.1.2 / Build 138（6 处配置递增）；未签名 IPA SHA-256 `ef874316f7ba1f8a317ef520ce2006d322778ae0ea40e903b7f693368e56fc13`；18pm 直传参数重签、深度校验通过，原位安装 RCe2027（databaseSequenceNumber 2920）并启动；重签后可执行文件 SHA-256 `6011309792f029a704798d70a983e19bdf212e7a920a0c6a66291bf316a8a31c`。记录 `build/logs/build138-device-build-info.json`、`build138-device-apps-after.txt`。
 - 待真机验收：仅保留一个选项时动态页顶部无栏无标题、内容顶到状态栏下方；推入动态详情/视频详情正常返回；多选项时顶部分段照旧。
 - 分支 `main`，基线 `f8b8a04`；源码与本文档已提交 `37d00e2`（工作区干净，未推送远端，未合并 PR）。
+
+## 2026-11-08 评论排序切换错位修复（模拟器实机复现）/ Build 139
+
+- 用户反馈 Build 138 真机最热↔最新切换评论仍会错位。本轮先取证：DEBUG 包（真实网络 + gRPC）在 iPhone 18 Pro Max / iOS 27.0 模拟器 idb 驱动复现，稳定复现且根因与此前推测不同。
+- 根因（实测）：Build 117 的排序切换回顶 `pendingVirtualOffset = topInset - minimumPlayerHeight`（248−54=194）隐含假设"shell 会把播放器从 248 收起到 54"。实测 `setContentOffset` 后表格上报偏移 194，但 `ui.videoDetail.playerFrame` 始终为 (0,62,440,248) 未收起——表格停在"预设已收起"的虚拟偏移，排序 header（窗口 y≈131）整体被顶到播放器（底部 310）底下，不可见且 describe-point 命中 playerFrame（不可点），首条评论从播放器边缘截断开始；用户需盲拖才能找回 header，即"错位"。诊断日志 `commentsRefresh items=6 offset=-54`（虚拟 194）与播放器 frame 同帧取证，存档 `build/logs/sort-misalign-diagnostics.log`、复现截图 `build/logs/sim-repro-hot.png`。
+- 修复：`refreshSnapshot` 的 sortChanged 分支回顶改为 `pendingVirtualOffset = 0`——内容顶停在展开播放器正下方（窗口 310 = 表格 frame 62 + insetTop 248），header 完整可见可点，不依赖 shell 收起配合。顺带核实评论图片行种子高度方案不必要：`CompactCommentMosaicContainer` 为自定义 Layout，`sizeThatFits` 只按提议宽度返回确定性尺寸（≤4 图固定 9:16），离屏种子与真实渲染同源。
+- 测试补强：`testCommentsUIKitListStableAfterSortSwitches` 在两次切换后各新增断言"排序控件立即可见可命中（isHittable）"，把修复行为固化（原用例靠 swipeDown×6 找回 header，正是对本 bug 的绕过）。
+- 验证：规定模拟器与共享 Xcode-27 缓存，评论 UI 回归 3/3 通过（排序切换含新断言、渲染滚动、参差行高往返），证据 `build/DerivedData/Xcode-27/Logs/Test/Test-bili-2026.11.08_22-19-58-+0800.xcresult`。修复包重装模拟器后真数据复验：切换「最新」后 header 完整可见（播放器正下方）、首条评论紧跟无空洞无截断、控件可点（截图 `build/logs/sim-fixed-after-switch.png`）。未跑全量单元与云端 CI；Build 116 遗留评论分页 3 项单测失败与本轮无关。
+- 交付：1.1.2 / Build 139（6 处配置递增）。
+- 待真机验收：真机最热↔最新往返后排序 header 可见、可点、无空洞；旋转横屏往返既有行为不回归。
+- 交付补记：未签名 IPA SHA-256 `3bba8c2b58dac0f2a1bdfc99952cdfabaddcf9832a2e29e6168f5d0a77290273`；18pm 直传参数重签、`codesign --verify` 深度校验通过，无线安装 RCe2027（databaseSequenceNumber 2936）成功；重签后可执行文件 SHA-256 `c79addd1396aac7f385d314998ba0ead3b474c117e43da72530ddc4bfc6ff117`。

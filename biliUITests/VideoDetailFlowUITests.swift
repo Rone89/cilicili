@@ -1295,6 +1295,12 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         latest.tap()
         XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching to latest")
+        // 回顶必须落在展开播放器正下方：排序控件立即可见可命中，
+        // 不允许被顶到播放器底下（需要滑动才能找回的错位状态）。
+        XCTAssertTrue(
+            sortControl.waitForExistence(timeout: 5) && sortControl.isHittable,
+            "sort control must be hittable immediately after switching sort"
+        )
         var distanceAfterLatest: CGFloat?
         for _ in 0..<6 where distanceAfterLatest == nil {
             list.swipeDown()
@@ -1314,6 +1320,10 @@ final class VideoDetailFlowUITests: XCTestCase {
 
         hot.tap()
         XCTAssertTrue(comment1.waitForExistence(timeout: 10), "first comment must re-render after switching back to hot")
+        XCTAssertTrue(
+            sortControl.waitForExistence(timeout: 5) && sortControl.isHittable,
+            "sort control must be hittable immediately after switching back to hot"
+        )
         var distanceAfterHot: CGFloat?
         for _ in 0..<6 where distanceAfterHot == nil {
             list.swipeDown()
