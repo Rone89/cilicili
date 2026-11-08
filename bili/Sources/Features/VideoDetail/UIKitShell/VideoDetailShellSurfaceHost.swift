@@ -640,11 +640,8 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
         rotationCoordinator.chromeLandscape
     }
 
-    /// iPhone 屏幕圆角半径（pt）。用于把状态组合图标放到圆角弧心。
-    private static let displayCornerRadius: CGFloat = 55
-    /// 图标 46pt：中心放在距两边 67pt 处（弧心 55 + 内移 12），
-    /// 避免 46pt 图标的对角超出屏幕圆角被裁切；padding = 67 - 23。
-    private static let statusIconInset: CGFloat = 44
+    /// 顶部状态图标（60pt）距屏幕上沿的间距。
+    private static let statusClockTopInset: CGFloat = 8
 
     private var isPortraitFullscreen: Bool {
         rotationCoordinator.isPortraitFullscreen
@@ -859,12 +856,11 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
                     .zIndex(2.55)
                 }
             }
-            .overlay(alignment: .topTrailing) {
+            .overlay(alignment: .top) {
                 if configuration.isFullscreenActive, isLandscape, !isAudioOnlyPlayback {
-                    VideoDetailFullscreenStatusTrioIcon()
+                    VideoDetailFullscreenStatusClockIcon()
                         .opacity(playbackControlsVisibility.opacity)
-                        .padding(.top, Self.statusIconInset)
-                        .padding(.trailing, Self.statusIconInset)
+                        .padding(.top, Self.statusClockTopInset)
                         .allowsHitTesting(false)
                 }
             }
@@ -1328,9 +1324,7 @@ private struct SurfaceOnlyPlayerOverlayRoot: View {
             playbackControlsOpacity: playbackControlsVisibility.opacity,
             playbackControlsAllowsHitTesting: playbackControlsVisibility.acceptsHitTesting,
             topLeadingControlsAccessory: context.configuration.topLeadingControlsAccessory,
-            topCenterControlsAccessory: showsFullscreenStatusControls
-                ? AnyView(VideoDetailFullscreenClockControl())
-                : nil,
+            topCenterControlsAccessory: nil,
             topTrailingControlsAccessory: nil,
             isFullscreenActive: context.configuration.isFullscreenActive,
             controlsBottomLift: context.configuration.controlsBottomLift,
@@ -3223,27 +3217,6 @@ private struct SurfaceOnlyUIKitMoreControlsButton: UIViewRepresentable {
         lazy var primaryAction = UIAction { [weak self] _ in
             self?.action()
         }
-    }
-}
-
-private struct VideoDetailFullscreenClockControl: View {
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text(context.date, format: .dateTime.hour().minute())
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .frame(height: PlayerNativeControlMetrics.landscape.controlHeight)
-        }
-        .biliPlayerClearGlass(
-            interactive: false,
-            in: Capsule(),
-            isEnabled: true
-        )
-        .biliLiquidGlassForeground(shadowOpacity: 0.20)
-        .allowsHitTesting(false)
-        .accessibilityLabel("系统时间")
     }
 }
 
