@@ -159,6 +159,16 @@ struct MineDisplaySettingsSection: View {
                 MineSettingsLabel("底部 Tab 显示", systemImage: "rectangle.bottomthird.inset.filled")
             }
 
+            NavigationLink {
+                DynamicFeedTabSettingsView(libraryStore: libraryStore)
+            } label: {
+                PlainSettingsNavigationRow(
+                    title: "动态页顶部选项",
+                    subtitle: dynamicFeedTabsSummary
+                )
+            }
+            .accessibilityIdentifier("settings.dynamicFeedTabs.entry")
+
             Picker(
                 selection: Binding(
                     get: { libraryStore.videoDetailActionButtonStyle },
@@ -217,6 +227,14 @@ struct MineDisplaySettingsSection: View {
                 libraryStore.setManualFontSize(size)
             }
         )
+    }
+
+    private var dynamicFeedTabsSummary: String {
+        let kinds = libraryStore.visibleDynamicFeedKinds
+        if kinds.count == 1, let only = kinds.first {
+            return "仅显示\(only.title)"
+        }
+        return kinds.map(\.title).joined(separator: "、")
     }
 }
 

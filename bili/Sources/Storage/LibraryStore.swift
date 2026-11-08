@@ -166,6 +166,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var remoteImageDiagnosticsEnabled: Bool
     @Published private(set) var force120HzScrollingEnabled: Bool
     @Published private(set) var visibleRootTabs: [AppTab]
+    @Published private(set) var visibleDynamicFeedKinds: [DynamicFeedKind]
     @Published private(set) var homeFeedLayout: HomeFeedLayout
     @Published private(set) var homeRecommendFeedSourcePreference: HomeRecommendFeedSourcePreference
     @Published private(set) var showsHotSearches: Bool
@@ -378,6 +379,7 @@ final class LibraryStore: ObservableObject {
     private static let remoteImageDiagnosticsEnabledKey = RemoteImageDiagnosticsSettings.storageKey
     private static let force120HzScrollingEnabledKey = RefreshRateManager.isEnabledKey
     private static let visibleRootTabsKey = "cc.bili.display.visibleRootTabs.v1"
+    private static let visibleDynamicFeedKindsKey = "cc.bili.display.visibleDynamicFeedKinds.v1"
     private static let homeFeedLayoutKey = "cc.bili.home.feedLayout.v1"
     private static let homeRecommendFeedSourcePreferenceKey = "cc.bili.home.recommendFeedSourcePreference.v1"
     private static let showsHotSearchesKey = "cc.bili.search.showsHotSearches.v1"
@@ -709,6 +711,9 @@ final class LibraryStore: ObservableObject {
             userDefaults.object(forKey: Self.force120HzScrollingEnabledKey) as? Bool ?? false
         self.visibleRootTabs = Self.normalizedVisibleRootTabs(
             userDefaults.stringArray(forKey: Self.visibleRootTabsKey)
+        )
+        self.visibleDynamicFeedKinds = DynamicFeedKind.normalizedVisibleKinds(
+            userDefaults.stringArray(forKey: Self.visibleDynamicFeedKindsKey)
         )
         self.homeFeedLayout =
             HomeFeedLayout(
@@ -1465,6 +1470,43 @@ final class LibraryStore: ObservableObject {
         guard normalized != visibleRootTabs else { return }
         visibleRootTabs = normalized
         userDefaults.set(normalized.map(\.rawValue), forKey: Self.visibleRootTabsKey)
+    }
+
+    func setDynamicFeedTab(_ kind: DynamicFeedKind, isVisible: Bool) {
+        var kinds = visibleDynamicFeedKinds
+        if isVisible {
+            guard !kinds.contains(kind) else { return }
+            // Re-showing an option slots it back by product default order, so the
+            // segment order stays deterministic without persisting hidden rows.
+            let defaultIndex = DynamicFeedKind.defaultOrder.firstIndex(of: kind) ?? kinds.count
+            let insertionIndex =
+                kinds.firstIndex { existing in
+                    (DynamicFeedKind.defaultOrder.firstIndex(of: existing) ?? Int.max) > defaultIndex
+                } ?? kinds.count
+            kinds.insert(kind, at: insertionIndex)
+        } else {
+            // A native segmented control always needs at least one segment.
+            guard kinds.contains(kind), kinds.count > 1 else { return }
+            kinds.removeAll { $0 == kind }
+        }
+        setVisibleDynamicFeedKinds(kinds)
+    }
+
+    func moveDynamicFeedKinds(fromOffsets: IndexSet, toOffset: Int) {
+        var kinds = visibleDynamicFeedKinds
+        kinds.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        setVisibleDynamicFeedKinds(kinds)
+    }
+
+    func resetDynamicFeedTabs() {
+        setVisibleDynamicFeedKinds(DynamicFeedKind.defaultOrder)
+    }
+
+    private func setVisibleDynamicFeedKinds(_ kinds: [DynamicFeedKind]) {
+        let normalized = DynamicFeedKind.normalizedVisibleKinds(kinds.map(\.rawValue))
+        guard normalized != visibleDynamicFeedKinds else { return }
+        visibleDynamicFeedKinds = normalized
+        userDefaults.set(normalized.map(\.rawValue), forKey: Self.visibleDynamicFeedKindsKey)
     }
 
     func setHomeFeedLayout(_ layout: HomeFeedLayout) {

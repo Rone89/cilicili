@@ -32,6 +32,10 @@ struct UITestFixtureRootView: View {
                 UITestDynamicPGCFixtureView(api: dependencies.api)
             case .dynamicSpacing:
                 UITestDynamicSpacingFixtureView()
+            case .dynamicFeedTabs:
+                UITestDynamicFeedTabsFixtureView(dependencies: dependencies)
+            case .dynamicFeedTabSettings:
+                UITestDynamicFeedTabSettingsFixtureView(dependencies: dependencies)
             case .homeFeedback:
                 UITestHomeFeedbackFixtureView()
             case .videoOwnerMenu:
@@ -54,6 +58,69 @@ struct UITestFixtureRootView: View {
         .environmentObject(dependencies.sessionStore)
     }
 }
+
+#if DEBUG
+/// Configures the visible dynamic tabs via the `-key value` launch-argument
+/// domain (see DynamicFeedTabsUITests); fixtures never touch the store here so
+/// the argument override stays authoritative for the whole session.
+
+/// Hosts the production dynamic page root with the configured visible tabs.
+private struct UITestDynamicFeedTabsFixtureView: View {
+    let dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+
+    var body: some View {
+        NavigationStack {
+            DynamicContentRoot(
+                api: dependencies.api,
+                libraryStore: dependencies.libraryStore,
+                sessionStore: dependencies.sessionStore,
+                pageWidth: 390
+            )
+            .navigationTitle("动态")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            configProbe
+        }
+    }
+
+    private var configProbe: some View {
+        Text(libraryStore.visibleDynamicFeedKinds.map(\.rawValue).joined(separator: ","))
+            .font(.caption2)
+            .monospaced()
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 6)
+            .accessibilityIdentifier("fixture.dynamicTabs.config")
+    }
+}
+
+/// Hosts the production Mine interface settings page with the new dynamic tabs entry.
+private struct UITestDynamicFeedTabSettingsFixtureView: View {
+    let dependencies: AppDependencies
+    @EnvironmentObject private var libraryStore: LibraryStore
+
+    var body: some View {
+        NavigationStack {
+            MineInterfaceSettingsView(libraryStore: dependencies.libraryStore)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            configProbe
+        }
+    }
+
+    private var configProbe: some View {
+        Text(libraryStore.visibleDynamicFeedKinds.map(\.rawValue).joined(separator: ","))
+            .font(.caption2)
+            .monospaced()
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 6)
+            .accessibilityIdentifier("fixture.dynamicTabs.config")
+    }
+}
+#endif
 
 private struct UITestCommentActionFixtureView: View {
     let api: BiliAPIClient

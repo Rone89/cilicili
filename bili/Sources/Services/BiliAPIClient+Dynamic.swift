@@ -22,6 +22,25 @@ nonisolated enum DynamicFeedKind: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// Product default tab order, also used as the fallback when a stored
+    /// configuration omits entries.
+    static let defaultOrder: [DynamicFeedKind] = allCases
+
+    /// Normalizes a persisted visible-tab list: drops unknown values and
+    /// duplicates. Kinds missing from the list stay hidden (the list is the
+    /// authority); only an empty or all-unknown list falls back to the default
+    /// order so at least one option always stays visible.
+    static func normalizedVisibleKinds(_ stored: [String]?) -> [DynamicFeedKind] {
+        guard let stored, !stored.isEmpty else { return defaultOrder }
+        var seen = Set<DynamicFeedKind>()
+        let kinds = stored.compactMap { raw -> DynamicFeedKind? in
+            guard let kind = DynamicFeedKind(rawValue: raw) else { return nil }
+            guard seen.insert(kind).inserted else { return nil }
+            return kind
+        }
+        return kinds.isEmpty ? defaultOrder : kinds
+    }
+
     func includes(_ item: DynamicFeedItem) -> Bool {
         switch self {
         case .all, .up: true

@@ -14,6 +14,8 @@ enum UITestFixtureScenario: String {
     case dynamicReplies
     case dynamicPGC
     case dynamicSpacing
+    case dynamicFeedTabs
+    case dynamicFeedTabSettings
     case homeFeedback
     case videoOwnerMenu
     #endif
