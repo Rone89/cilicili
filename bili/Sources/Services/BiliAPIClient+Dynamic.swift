@@ -62,7 +62,7 @@ extension BiliAPIClient {
         isLoggedIn ? authenticatedCookieHeader : anonymousCookieHeader
     }
 
-    func fetchDynamicFeed(offset: String? = nil, kind: DynamicFeedKind = .all, hostMID: Int? = nil) async throws -> DynamicFeedData {
+    func fetchDynamicFeed(offset: String? = nil, kind: DynamicFeedKind = .all, hostMID: Int? = nil, bypassCache: Bool = false) async throws -> DynamicFeedData {
         if kind == .up, (hostMID ?? 0) <= 0 {
             throw BiliAPIError.api(code: -1, message: "请先选择 UP 主")
         }
@@ -87,7 +87,7 @@ extension BiliAPIClient {
             isInitialRequest && kind == .all
             ? DynamicFeedDiskSnapshotStore.accountIdentity(for: context.currentUserMID)
             : nil
-        if let diskSnapshotIdentity,
+        if !bypassCache, let diskSnapshotIdentity,
             let cachedData = await DynamicFeedDiskSnapshotStore.shared.freshData(for: diskSnapshotIdentity)
         {
             if let cachedResponse: BiliResponse<DynamicFeedData> = try? await Self.decodeDynamicFeedResponse(
@@ -100,7 +100,8 @@ extension BiliAPIClient {
                     _ = try? await self.fetchDynamicFeedFromNetwork(
                         query: query,
                         cookieHeader: context.cookieHeader,
-                        diskSnapshotIdentity: diskSnapshotIdentity
+                        diskSnapshotIdentity: diskSnapshotIdentity,
+                        bypassCache: true
                     )
                 }
                 return cachedPage
@@ -111,14 +112,16 @@ extension BiliAPIClient {
         return try await fetchDynamicFeedFromNetwork(
             query: query,
             cookieHeader: context.cookieHeader,
-            diskSnapshotIdentity: diskSnapshotIdentity
+            diskSnapshotIdentity: diskSnapshotIdentity,
+            bypassCache: bypassCache
         )
     }
 
     private func fetchDynamicFeedFromNetwork(
         query: [String: String],
         cookieHeader: String,
-        diskSnapshotIdentity: String?
+        diskSnapshotIdentity: String?,
+        bypassCache: Bool
     ) async throws -> DynamicFeedData {
         let responseDataObserver: (@Sendable (Data) -> Void)?
         if let diskSnapshotIdentity {
@@ -136,7 +139,8 @@ extension BiliAPIClient {
             path: "/x/polymer/web-dynamic/v1/feed/all",
             query: query,
             cookieHeader: cookieHeader,
-            responseCachePolicy: .brief,
+            cachePolicy: bypassCache ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy,
+            responseCachePolicy: bypassCache ? nil : .brief,
             responseDataObserver: responseDataObserver
         )
         guard response.code == 0 else { throw BiliAPIError.api(code: response.code, message: response.displayMessage) }

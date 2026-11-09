@@ -86,7 +86,7 @@ final class DynamicFeedLifecycleCoordinator {
         requestGeneration &+= 1
         let generation = requestGeneration
         let identityKey = cacheIdentityKey
-        let page = try await api.fetchDynamicFeed(kind: feedKind, hostMID: hostMID)
+        let page = try await api.fetchDynamicFeed(kind: feedKind, hostMID: hostMID, bypassCache: true)
         try validate(generation)
         if feedKind == .all {
             await DynamicFeedWarmCache.shared.store(page, identityKey: identityKey)

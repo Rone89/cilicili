@@ -976,6 +976,34 @@ final class BiliAPIClientRequestContractTests: H264PlaybackTestCase {
     }
 
     @MainActor
+    func testExplicitDynamicRefreshReturnsNetworkPageDespiteCachedResponses() async throws {
+        await BiliAPIResponseMemoryCache.shared.clear()
+        let identity = try XCTUnwrap(DynamicFeedDiskSnapshotStore.accountIdentity(for: 900124))
+        await DynamicFeedDiskSnapshotStore.shared.store(
+            Data(#"{"code":0,"data":{"items":[],"offset":"old-disk","has_more":false}}"#.utf8),
+            for: identity
+        )
+        defer { RequestContractURLProtocol.reset() }
+        let recorder = RequestContractRecorder()
+        RequestContractURLProtocol.install { request in
+            recorder.record(request)
+            let offset = request.cachePolicy == .reloadIgnoringLocalCacheData ? "new-network" : "old-memory"
+            return Self.response(for: request, body: """
+            {"code":0,"data":{"items":[],"offset":"\(offset)","has_more":false}}
+            """)
+        }
+        let api = try makeAPI(cookieHeader: "SESSDATA=refresh-session; DedeUserID=900124")
+        let cachedVideoPage = try await api.fetchDynamicFeed(kind: .video)
+        XCTAssertEqual(cachedVideoPage.offset, "old-memory")
+        let refreshedVideoPage = try await api.fetchDynamicFeed(kind: .video, bypassCache: true)
+        let refreshedAllPage = try await api.fetchDynamicFeed(bypassCache: true)
+        XCTAssertEqual(refreshedVideoPage.offset, "new-network")
+        XCTAssertEqual(refreshedAllPage.offset, "new-network")
+        XCTAssertEqual(recorder.requests.count, 3)
+        await DynamicFeedDiskSnapshotStore.shared.removeData(for: identity)
+    }
+
+    @MainActor
     func testVideoDynamicFeedUsesVideoTypeForInitialAndPaginationWithoutAllSnapshot() async throws {
         await BiliAPIResponseMemoryCache.shared.clear()
         let snapshotIdentity = try XCTUnwrap(DynamicFeedDiskSnapshotStore.accountIdentity(for: 900123))
