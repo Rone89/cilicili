@@ -35,7 +35,7 @@ jobs:
         include:
           - suite: interaction-regression
             test_target: |
-              biliUITests/RootTabScrollUITests/testDynamicTabReselectionScrollsToTopWithoutRefresh
+              biliUITests/RootTabScrollUITests/testDynamicTabReselectionRefreshesOnlyAtTop
               biliUITests/RootTabScrollUITests/testDynamicTabReselectionWithMinimizedTabBar
               biliUITests/SearchScrollRetentionUITests/testSearchScopeBarScrollsWithResultsAndSwitchesDirectly
               biliUITests/SearchScrollRetentionUITests/testTapOutsideActiveSearchDismissesKeyboardAndPreservesResults

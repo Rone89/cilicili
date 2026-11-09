@@ -15,6 +15,8 @@ enum HomeNativeRefreshLayout {
 
 struct HomeFeedScrollView<FeedContent: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
+    @State private var isAtTop = false
     @ObservedObject var viewModel: HomeViewModel
     @Binding var viewportState: HomeFeedViewportState
     @ObservedObject var scrollActions: HomeFeedScrollActions
@@ -38,7 +40,7 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                     HomeFeedWidthReader()
                 }
                 .background {
-                    HomeNativeRefreshControlTrigger(
+                    NativeFeedRefreshControlTrigger(
                         requestID: scrollActions.programmaticRefreshRequestID,
                         action: viewModel.refreshFromUserPull
                     )
@@ -64,6 +66,21 @@ struct HomeFeedScrollView<FeedContent: View>: View {
                 scrollActions: scrollActions
             )
             .refreshable(action: viewModel.refreshFromUserPull)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top <= 0.5
+            } action: { _, atTop in
+                isAtTop = atTop
+            }
+            .onChange(of: rootTabScrollRequest) { _, request in
+                guard request != nil else { return }
+                if isAtTop, viewModel.mode == .recommend {
+                    if !viewModel.isRefreshing, !viewModel.isUserRefreshing {
+                        scrollActions.requestProgrammaticRefresh()
+                    }
+                } else {
+                    scrollActions.requestScrollToTop()
+                }
+            }
             .scrollBounceBehavior(.always, axes: .vertical)
             .defersRemoteImageLoadsDuringFastScroll()
             .background(layout.homeFeedBackground)
@@ -131,7 +148,7 @@ private struct HomeNativeRefreshActionReader: View {
     }
 }
 
-private struct HomeNativeRefreshControlTrigger: UIViewRepresentable {
+struct NativeFeedRefreshControlTrigger: UIViewRepresentable {
     let requestID: Int
     let action: @MainActor () async -> Void
 
@@ -175,7 +192,8 @@ private struct HomeNativeRefreshControlTrigger: UIViewRepresentable {
                 defer { self?.refreshTask = nil }
                 guard let sourceView,
                       let scrollView = await self?.findScrollView(from: sourceView),
-                      let refreshControl = scrollView.refreshControl
+                      let refreshControl = scrollView.refreshControl,
+                      !refreshControl.isRefreshing
                 else { return }
 
                 let restingTopOffsetY = -scrollView.adjustedContentInset.top

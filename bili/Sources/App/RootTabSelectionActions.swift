@@ -7,11 +7,7 @@ extension RootTabView {
             set: { tab in
                 guard tab != selectedTab else {
                     guard activeRootNavigationPathIsEmpty else { return }
-                    if tab == .home {
-                        homeActionStore.scroll.requestScrollToTop()
-                    } else {
-                        rootTabScrollRequests[tab] = RootTabScrollRequest()
-                    }
+                    rootTabScrollRequests[tab] = RootTabScrollRequest()
                     return
                 }
                 selectAvailableRootTab(tab)

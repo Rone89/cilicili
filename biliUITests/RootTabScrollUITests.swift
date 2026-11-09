@@ -58,11 +58,15 @@ final class RootTabScrollUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5))
     }
 
-    func testRootTabReselectionScrollsToTopWithoutRefresh() {
-        verifyReselection(arguments: [])
+    func testHomeTabReselectionRefreshesOnlyAtTop() {
+        verifyReselection(arguments: [], selectedTabs: ["首页"])
     }
 
-    func testDynamicTabReselectionScrollsToTopWithoutRefresh() {
+    func testRootTabReselectionScrollsToTopWithoutRefresh() {
+        verifyReselection(arguments: [], selectedTabs: ["直播", "搜索", "我的"])
+    }
+
+    func testDynamicTabReselectionRefreshesOnlyAtTop() {
         verifyReselection(arguments: [], selectedTabs: ["动态"])
     }
 
@@ -195,9 +199,17 @@ final class RootTabScrollUITests: XCTestCase {
             XCTAssertFalse(app.keyboards.firstMatch.exists)
             XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests, "Reselection must not refresh \(tab)")
             app.tabBars.buttons[tab].tap()
+            let requestCount = app.staticTexts["fixture.root.requests"]
+            if tab == "首页" || tab == "动态" {
+                let refreshed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    (Int(requestCount.label) ?? 0) > (Int(requests) ?? 0)
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [refreshed], timeout: 5), .completed, tab)
+            } else {
+                XCTAssertEqual(requestCount.label, requests)
+            }
             assertOffset(top, in: app, message: "Already at top: \(tab)")
             XCTAssertFalse(app.keyboards.firstMatch.exists)
-            XCTAssertEqual(app.staticTexts["fixture.root.requests"].label, requests)
             XCTAssertTrue(app.tabBars.firstMatch.exists)
             if tab != "搜索" {
                 XCTAssertTrue(app.tabBars.buttons["首页"].exists)

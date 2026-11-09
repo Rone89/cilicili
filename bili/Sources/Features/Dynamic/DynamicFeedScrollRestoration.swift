@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DynamicFeedScrollRestoration: ViewModifier {
     let viewModel: DynamicViewModel
+    let canRefresh: Bool
+    let refresh: () -> Void
     @Environment(\.rootTabScrollRequest) private var rootTabScrollRequest
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = ScrollPosition()
@@ -22,11 +24,11 @@ struct DynamicFeedScrollRestoration: ViewModifier {
             .onAppear { restorePosition() }
             .onDisappear { samples.save() }
             .onChange(of: rootTabScrollRequest) { _, request in
-                if request != nil {
-                    samples.update(0, for: viewModel)
-                    samples.save()
-                    // Restoration and tab reselection must drive one binding.
-                    // A second scrollPosition modifier overrides this owner.
+                guard request != nil else { return }
+                if samples.isAtTop(of: viewModel) {
+                    if canRefresh { refresh() }
+                } else {
+                    // Restoration and tab reselection share one scroll binding.
                     withAnimation(reduceMotion ? nil : .smooth(duration: 0.34)) {
                         position.scrollTo(edge: .top)
                     }
@@ -48,6 +50,10 @@ struct DynamicFeedScrollRestoration: ViewModifier {
 final class DynamicFeedScrollState {
     private weak var model: DynamicViewModel?
     private var current: CGFloat = 0
+
+    func isAtTop(of source: DynamicViewModel) -> Bool {
+        model === source && current <= 0.5
+    }
 
     func activate(_ next: DynamicViewModel) -> CGFloat {
         if model !== next {

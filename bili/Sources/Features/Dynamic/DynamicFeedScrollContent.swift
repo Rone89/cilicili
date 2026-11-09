@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DynamicFeedScrollContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var refreshRequestID = 0
     let api: BiliAPIClient
     @ObservedObject var viewModel: DynamicViewModel
     var topUploaderStripViewModel: DynamicViewModel? = nil
@@ -26,10 +27,18 @@ struct DynamicFeedScrollContent: View {
                 .padding(.horizontal, horizontalInset)
                 .padding(.bottom, 18)
             }
+            .background {
+                NativeFeedRefreshControlTrigger(requestID: refreshRequestID, action: refreshFromNativePull)
+                    .frame(width: 0, height: 0)
+            }
         }
         .rootFloatingTabBarContentPadding()
         .environment(\.dynamicArticleFeedContext, viewModel.feedKind == .article)
-        .modifier(DynamicFeedScrollRestoration(viewModel: viewModel))
+        .modifier(DynamicFeedScrollRestoration(
+            viewModel: viewModel,
+            canRefresh: isLoggedIn && !viewModel.isRefreshing && !viewModel.state.isLoading,
+            refresh: { refreshRequestID &+= 1 }
+        ))
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollBounceBehavior(.always, axes: .vertical)
         .defersRemoteImageLoadsDuringFastScroll()
@@ -54,7 +63,7 @@ struct DynamicFeedScrollContent: View {
     }
 
     private func refreshFromNativePull() async {
-        guard isLoggedIn else { return }
+        guard isLoggedIn, !viewModel.isRefreshing, !viewModel.state.isLoading else { return }
         if viewModel.feedKind != .all {
             topUploaderStripViewModel?.refreshTopUploaderStrip()
         }

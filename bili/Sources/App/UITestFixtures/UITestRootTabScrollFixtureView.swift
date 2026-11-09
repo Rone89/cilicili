@@ -29,21 +29,28 @@ struct UITestRootTabScrollFixtureView: View {
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
+        let keychain = KeychainStore.inMemory(service: "root-tab-scroll-fixture")
+        try! keychain.save("SESSDATA=fixture; DedeUserID=1001", for: "LOGIN_COOKIE_HEADER")
+        try! keychain.save("fixture", for: "SESSDATA")
+        let session = SessionStore(keychain: keychain)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RootTabFixtureURLProtocol.self]
-        let api = BiliAPIClient(session: URLSession(configuration: configuration),
+        let urlSession = URLSession(configuration: configuration)
+        let api = BiliAPIClient(session: urlSession,
             sessionStore: dependencies.sessionStore, libraryStore: dependencies.libraryStore,
             homeRecommendDiagnosticsStore: .shared)
         self.api = api
+        let feedAPI = BiliAPIClient(session: urlSession, sessionStore: session,
+            libraryStore: dependencies.libraryStore, homeRecommendDiagnosticsStore: .shared)
         let videos = (1...60).map { (index: Int) in
             VideoItem(bvid: "BVroot\(index)", aid: index, title: "搜索结果 \(index)", pic: nil,
                 desc: nil, duration: 120, pubdate: nil, owner: nil, stat: nil, cid: nil, pages: nil, dimension: nil)
         }
-        let home = HomeViewModel(api: api, libraryStore: dependencies.libraryStore, sessionStore: dependencies.sessionStore)
+        let home = HomeViewModel(api: feedAPI, libraryStore: dependencies.libraryStore, sessionStore: session)
         home.updateFeed(videos)
         home.state = .loaded
         _home = StateObject(wrappedValue: home)
-        let dynamic = DynamicViewModel(api: api, libraryStore: dependencies.libraryStore, sessionStore: dependencies.sessionStore)
+        let dynamic = DynamicViewModel(api: feedAPI, libraryStore: dependencies.libraryStore, sessionStore: session)
         dynamic.items = (1...60).map { (index: Int) in
             let json = "{\"id_str\":\"\(index)\",\"type\":\"DYNAMIC_TYPE_WORD\",\"modules\":{\"module_author\":{\"mid\":1,\"name\":\"测试作者\"},\"module_dynamic\":{\"desc\":{\"text\":\"动态内容 \(index)\"}}}}"
             return try! JSONDecoder.bili.decode(DynamicFeedItem.self, from: Data(json.utf8))
@@ -65,8 +72,7 @@ struct UITestRootTabScrollFixtureView: View {
         Binding(get: { selectedTab }, set: { tab in
             if tab == selectedTab {
                 guard paths[tab]?.isEmpty ?? true else { return }
-                if tab == .home { homeActions.requestScrollToTop() }
-                else { scrollRequests[tab] = RootTabScrollRequest() }
+                scrollRequests[tab] = RootTabScrollRequest()
             } else { selectedTab = tab }
         })
     }
