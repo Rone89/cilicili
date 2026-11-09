@@ -15,10 +15,7 @@ struct VideoDetailResolvedInfoContent: View {
 
             VideoDetailInfoMetadataRow(
                 metadataText: presentation.metadataText,
-                hasDescriptionContent: presentation.hasDescriptionContent,
-                isExpanded: isExpanded,
-                descriptionCopyText: presentation.hasDescriptionContent && !isExpanded ? presentation.descriptionText : nil,
-                toggleExpansion: toggleExpansion
+                descriptionCopyText: presentation.hasDescriptionContent && !isExpanded ? presentation.descriptionText : nil
             )
 
             if isExpanded && presentation.hasDescriptionContent {
@@ -29,25 +26,33 @@ struct VideoDetailResolvedInfoContent: View {
         .animation(.snappy(duration: 0.22), value: isExpanded)
     }
 
+    @ViewBuilder
     private var titleRow: some View {
-        ViewThatFits(in: .horizontal) {
-            VideoDetailInfoTitleText(text: presentation.titleText, isExpanded: false)
-                .fixedSize(horizontal: true, vertical: false)
+        if presentation.hasDescriptionContent || presentation.titleText.contains(where: \.isNewline) {
+            expandableTitle
+        } else {
+            ViewThatFits(in: .horizontal) {
+                VideoDetailInfoTitleText(text: presentation.titleText, isExpanded: false)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                expandableTitle
+            }
+        }
+    }
+
+    private var expandableTitle: some View {
+        HStack(alignment: .top, spacing: 6) {
+            VideoDetailInfoTitleText(text: presentation.titleText, isExpanded: isExpanded)
 
             Button(action: toggleExpansion) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    VideoDetailInfoTitleText(text: presentation.titleText, isExpanded: isExpanded)
-
-                    Text(isExpanded ? "收起" : "展开")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                }
-                .contentShape(Rectangle())
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(presentation.titleText)
-            .accessibilityHint(isExpanded ? "收起视频标题" : "展开视频标题")
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(isExpanded ? "收起视频详情" : "展开视频详情")
         }
     }
 
