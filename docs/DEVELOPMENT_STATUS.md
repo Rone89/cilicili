@@ -673,3 +673,10 @@
 - iPhone 18 Pro Max / iOS 27.0 模拟器定向验证 4/4 通过。覆盖宽窄尺寸、触控列，以及实际页面的中心距、右侧留白和投币面板。证据 `build/logs/build147-video-actions-final.xcresult`。
 - 共享 Xcode-27 缓存构建 Release，沿用 Build 146 的签名权限。1.1.2 (147) 已原位安装到 RCe2027 并启动（PID 55827）。真机目视验收待确认。
 - 本地 `main` 基线 `12576ce`，源码与回归提交 `916ab87`。
+
+## 2026-11-09 放宽视频详情操作按钮间距 / Build 148
+
+- 常见宽度下，四个操作按钮间距从 6pt 放宽至 12pt，头像到操作组从 12pt 放宽至 20pt。整组宽 276pt，保持靠左与原触控列宽。加载占位与两种按钮样式沿用共用布局，窄宽继续按可用空间收紧。
+- iPhone 18 Pro Max / iOS 27.0 的投币与页面间距 UI 回归通过。更新旧的组宽断言后，三个布局单测通过。证据 `build/logs/build148-video-actions.xcresult`、`build/logs/build148-video-actions-unit.xcresult`。
+- 本地 Release 使用共享 Xcode-27 缓存构建，沿用 Build 147 签名权限。1.1.2 (148) 已原位安装到 RCe2027 并启动（PID 55997），真机目视验收待确认。
+- 本地 `main` 基线 `b35ae1c`，源码及回归提交 `6021435`。
