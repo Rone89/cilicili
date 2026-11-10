@@ -194,12 +194,31 @@ final class VideoDetailShellSurfaceHost: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        reconcileSwappedFullscreenBounds()
 #if DEBUG
         guard bounds != lastReportedDiagnosticOverlayBounds else { return }
         guard overlayHostingController.view.bounds.size == bounds.size else { return }
         lastReportedDiagnosticOverlayBounds = bounds
         state.playerViewModel.onVideoDetailPlaybackDiagnosticLayoutEvent?(.overlayGeometry)
 #endif
+    }
+
+    /// 旋转后宿主尺寸若恰好是旋转前窗口的宽高互换值，说明 SwiftUI 的布局提案没跟上旋转，
+    /// 播放表面会停在竖屏全屏尺寸上（画面按竖屏比例居中、偏下并右侧黑屏）。此处以窗口真实
+    /// 尺寸为准纠正自身 frame。内联小窗尺寸不满足宽高互换判据，不会被误伤。
+    private func reconcileSwappedFullscreenBounds() {
+        guard let window else { return }
+        let windowSize = window.bounds.size
+        guard windowSize.width > 1, windowSize.height > 1 else { return }
+        let currentSize = bounds.size
+        let isSwapped = abs(currentSize.width - windowSize.height) <= 1
+            && abs(currentSize.height - windowSize.width) <= 1
+        guard isSwapped, currentSize != windowSize else { return }
+        guard let superview else { return }
+        let target = superview.convert(window.bounds, from: window)
+        guard frame != target else { return }
+        layer.removeAllAnimations()
+        frame = target
     }
 
     func attach(to parent: UIViewController) {
