@@ -729,3 +729,14 @@
 - 新增 2 项回归测试（陈旧协调器写入的重同步；门控宿主纠正与内联不误伤），反向验证确认无修复时失败。VideoDetailSurfaceHostTests 8/8、扩展播放回归 8 类 175/175 通过（Xcode 27.1、iPhone 18 Pro Max / iOS 27.0、共享 Xcode-27 缓存）。证据 `build/logs/build152-fullscreen-layer-sync.xcresult`、`build152-negative-check.xcresult`、`build152-extended-regression.xcresult`。
 - 本地 Release 构建成功，未签名 IPA SHA-256 `4534e7e70a6ad3f168efbe18a7d816f71ecf48e29899b2d2c51ee9825d99024c`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (152)，PID 4219。真机验收待确认：横竖屏反复切换、全屏进出画面应铺满无偏移，旋转过渡应保持平滑。
 - 本地 `main` 源码提交 `b0c3f1d`（含 Build 152），基线 `631c6f8`。未推送 GitHub、未跑完整云端 CI；issue #66 报告者设备（iPhone 16 / iOS 26、全能签环境）的验证待跟进。
+
+## 2026-11-12 Ibili 启动对比分析 + 启动 P0 修复（云端历史门控）/ 1.1.4 Build 153
+
+- 配对实测 10 个视频（同 Wi-Fi、同画质 HEVC、间隔约 1 分钟）：本项目平均首帧 744ms，Ibili（pa-jesusf/Ibili，源码克隆于 `/Users/rayc/Desktop/ibili-review/Ibili`）1143ms；本项目 6 胜 1 平 3 负。Ibili 慢在 8/10 视频发 2–3 次串行 playurl（两阶段画质发现）；其"先从 0 秒播再跳历史"与首测视频锚定效应可解释体感偏差。Ibili 可借鉴点（touch-down 预取、256KiB 全 CDN 头部竞速、init 头部切片）降为蜂窝/慢 CDN 场景的后续项。
+- 根因（本项目 playURL 阶段 400–500ms 差额）：无本地历史时，url 阶段在取流完成后、playURLLoaded 之前同步等待 `/x/v2/history`（`prepareHistoryResumeBeforeApplyingPlayURL` → `prepareCloudHistoryResumeIfNeeded`）。数据关联：无本地历史 4 视频差额 207–496ms，有本地历史 2 视频仅 19/21ms。已排除二次验证请求、质量拒收、账号合并。
+- 修复 A+C：① url 阶段历史等待限时（Wi-Fi 150ms / unknown 120 / 蜂窝受限 80），预算内按原语义恢复，超预算先出帧、历史晚到再校正；晚到护栏：播放器已创建时仅同分 P、用户未手动 seek、当前时间未过历史点、有界等首帧后复查；播放器未创建时写入待恢复路径。② 历史请求移入 VideoPreloadCenter 共享存储：tap 时与 playurl 预取并行（userInitiated）、详情页加入同一任务、在途去重、成功结果 120s TTL 缓存；取消页面包装任务不再取消共享请求。
+- 测试：新增 `CloudHistoryStartupGateTests` 3/3 通过（慢历史不阻塞门控、快历史门内恢复、共享预取去重缓存）。扩展启动/预加载回归 8 类 307 项：306 通过，唯一失败 `BiliAPIClientRequestContractTests/testMainCommentsBuildsRequestAndDecodesPaginationAndComments` 在干净 HEAD 上同样失败，确认为存量问题，本轮未处理。证据 `build/logs/build153-history-gate2.xcresult`、`build153-extended.xcresult`、`build153-contract-baseline.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `7ad10ffd860f3d11077f1def18ced1753c951a85dbba5a251b8115404a76004a`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (153)，PID 5109。
+- 真机验收待确认：无本地历史视频首帧应明显变快（playURL 阶段降至约 150–200ms，日志 `cloudHistoryResumeDeferred`）；晚到历史应校正（`cloudHistoryLateResumeApplied`）且不打断用户手动 seek；有本地历史视频行为不变。建议复测同 10 视频取配对样本。
+- 本地 `main` 源码提交 `aeba25e`（含 Build 153），基线 `78801a0`。未推送 GitHub、未跑完整云端 CI。
+- 工作区备注：stash 列表存在历史遗留条目 `pre-main-merge-b7e0ac2`（非本轮创建，本轮基线对照误触发 pop 后已完整恢复工作区并保留该条目，勿随意 pop）；本轮基线对照改用临时 checkout 完成。
