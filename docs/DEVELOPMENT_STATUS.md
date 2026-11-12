@@ -740,3 +740,13 @@
 - 真机验收待确认：无本地历史视频首帧应明显变快（playURL 阶段降至约 150–200ms，日志 `cloudHistoryResumeDeferred`）；晚到历史应校正（`cloudHistoryLateResumeApplied`）且不打断用户手动 seek；有本地历史视频行为不变。建议复测同 10 视频取配对样本。
 - 本地 `main` 源码提交 `aeba25e`（含 Build 153），基线 `78801a0`。未推送 GitHub、未跑完整云端 CI。
 - 工作区备注：stash 列表存在历史遗留条目 `pre-main-merge-b7e0ac2`（非本轮创建，本轮基线对照误触发 pop 后已完整恢复工作区并保留该条目，勿随意 pop）；本轮基线对照改用临时 checkout 完成。
+
+## 2026-11-12 Build 153 真机验收 + 启动 P0-2（恢复位置预热转后台）/ 1.1.4 Build 154
+
+- Build 153 验收（8 个无进度视频 + 7 个带云端进度视频）：历史门控精确生效——无本地历史视频 playURL 差额全部压到 167–179ms（修复前 400–500ms），命中缓存的 9–10ms；带进度视频 playURL 112–164ms、页面与预取共用请求（role=owner/joined 成对）、开销 5–9ms；云端进度正确生效，出帧即落在历史位置（155s/321s/182s/49s/77s/118s），无"先播 0 秒再跳"。
+- 新暴露存量问题：带进度视频 url>player 稳定 245–260ms（无进度仅 18ms）——播放器创建前同步等待"恢复位置预热"（historyResumeWarm，预算 220ms），数据 6/6 超时，变成固定 220ms 税。相关推荐入口打开时 open>detail 仅 6ms，证实首页路径 ~115ms 为入口相关。
+- P0-2 修复（`VideoDetailPlayURLApplySideEffectActions.swift`）：恢复位置预热改为后台执行，播放器立即创建；预热与播放器取流经 VideoRangeCache 去重共享，命中场景收益保留、常见超时场景不再付 220ms；诊断日志保留 historyResumeWarm 并加 mode=background。
+- 测试：启动/预加载回归 7 类 151/151 通过（含 CloudHistoryStartupGateTests 3/3）。证据 `build/logs/build154-resume-warm.xcresult`。
+- 本地 Release 构建成功，未签名 IPA SHA-256 `2b84fb02ad6fe3bba6661d1c98f286790fb8eba28e2597fc50a99c8d00b18f29`；18pm 证书重签后无线覆盖安装至 RCe2027 并启动 1.1.4 (154)，PID 5302。
+- 真机验收待确认：带云端进度视频 url>player 应降至 ~20–30ms、总首帧再省约 200ms（日志 historyResumeWarm mode=background）；恢复位置仍准确。另 AV1 60fps 首帧解码偏重（play>frame 210–586ms）为编解码特性，可用编码偏好设置规避。
+- 本地 `main` 源码提交 `ead01c5`（含 Build 154），基线 `aeba25e`。未推送 GitHub、未跑完整云端 CI。剩余杠杆：首页路径 open>detail ~115ms、url>player 偶发尖峰（评论区布局争用）。
